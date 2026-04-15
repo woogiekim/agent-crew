@@ -6,28 +6,18 @@
 ## 완료된 작업
 - 요구사항 수집 완료
 - 설계 완료
-- 구현 완료 (D→C→B→A 전 영역)
+- 구현 완료 (D→C→B→A)
+- 검증 통과 (PASS)
 
 ## 미완료 작업
-- 검증 (VERIFICATION) 단계
+없음 — 모든 단계 완료
 
 ## 다음 세션 컨텍스트
-- 페이즈: VERIFICATION
+- 페이즈: DONE
 - 에이전트: backend
 - 반복: 0
-- 참고: /verify 실행하여 검증 진행
 
-## 구현 완료 목록
-- plugin.json (Claude Code 플러그인 매니페스트)
-- .claude/commands/setup.md
-- .claude/commands/start.md
-- .claude/commands/requirements.md (pipeline.json 라우팅)
-- .claude/commands/design.md (pipeline.json 라우팅)
-- .claude/commands/implement.md (pipeline.json 라우팅)
-- .claude/commands/verify.md (pipeline.json 라우팅)
-- .claude/state/pipeline.json (초기 상태)
-- .claude/agents/planner/AGENT.md + commands/requirements.md
-- .claude/agents/designer/AGENT.md + commands/design.md
-- .claude/agents/frontend/AGENT.md + commands/implement.md + commands/verify.md
-- CLAUDE.md (agent-crew 기준 전면 갱신)
-- install.sh URL 갱신 (agent-crew)
+## 향후 보강 가능 사항
+- planner/designer/frontend skills/ 지식베이스 추가
+- frontend 기술 스택 확정 후 AGENT.md 보강
+- GitHub 리포지토리 이름 변경 완료 (woogiekim/agent-crew)
