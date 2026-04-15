@@ -111,9 +111,10 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ## 플러그인 설치
 
-```bash
+```
 # 한 번만 설치 (모든 프로젝트에서 사용 가능)
-curl -s https://raw.githubusercontent.com/woogiekim/agent-crew/main/install.sh | bash
+/plugin marketplace add https://github.com/woogiekim/agent-crew
+/plugin install agent-crew
 
 # 새 프로젝트 시작 시
 /setup
