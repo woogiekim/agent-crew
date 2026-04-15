@@ -1,9 +1,15 @@
 # designer /design — UI/UX 명세 작성
 
+## 상태 경로
+```
+PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
+```
+
 ## 실행 순서
 
-1. `.claude/state/context/prd.md` 읽기
-2. `.claude/state/handoff.md` 읽기
+1. `{STATE_DIR}/context/prd.md` 읽기
+2. `{STATE_DIR}/handoff.md` 읽기
 
 3. 아래 항목으로 UI/UX 명세 작성
 
@@ -14,11 +20,11 @@
 - **인터랙션 흐름**: 사용자 동선, 상태 전환
 - **API 연동 포인트**: 백엔드와의 인터페이스 정의
 
-4. `.claude/state/context/design-spec.md` 저장
+4. `{STATE_DIR}/context/design-spec.md` 저장
 
-5. `.claude/state/pipeline.json` 갱신 (currentIndex + 1)
+5. `{STATE_DIR}/pipeline.json` currentIndex + 1 갱신
 
-6. `.claude/state/handoff.md` 갱신
+6. `{STATE_DIR}/handoff.md` 갱신
    - 완성된 화면 목록
    - 컴포넌트 구조 요약
    - frontend에게 전달할 구현 우선순위

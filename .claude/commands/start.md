@@ -1,20 +1,27 @@
 # /start — 전체 파이프라인 자동 실행
 
+## 상태 경로 규칙
+```
+PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
+```
+
 ## 실행 순서
 
 1. `/start "[요청]"` 형태로 입력 받음
    - 인자 없으면: "어떤 작업을 시작할까요?" 질문 후 입력 받기
 
-2. `.claude/state/phase.txt` 확인
+2. `{STATE_DIR}/phase.txt` 확인
+   - 파일 없으면: "워크스페이스가 초기화되지 않았습니다. /setup을 먼저 실행하세요."
    - `REQUIREMENTS`가 아니면: "진행 중인 작업이 있습니다 (phase: [현재값]). 새로 시작하면 초기화됩니다. 계속할까요? [y/N]"
    - N이면 종료
 
 3. planner 에이전트 활성화
-   - `.claude/state/active_agent.txt` → `planner`
-   - `.claude/agents/planner/AGENT.md` 읽기
+   - `{STATE_DIR}/active_agent.txt` → `planner`
+   - `~/.claude/agent-crew/agents/planner/AGENT.md` 읽기
 
 4. planner가 요청 분석 → 필요 에이전트 목록 결정
-   - 판단 기준: `.claude/agents/planner/AGENT.md` 참조
+   - 판단 기준: `~/.claude/agent-crew/agents/planner/AGENT.md` 참조
 
 5. 사용자 확인
    ```
@@ -27,7 +34,7 @@
    ```
    - N이면 종료
 
-6. pipeline.json 저장
+6. `{STATE_DIR}/pipeline.json` 저장
    ```json
    {
      "task": "[요청 원문]",
@@ -54,7 +61,7 @@
 
 ```
 현재 에이전트 완료
-  → .claude/state/handoff.md 갱신
+  → {STATE_DIR}/handoff.md 갱신
   → pipeline.json currentIndex + 1
   → currentIndex < agents.length:
       active_agent.txt → agents[currentIndex]

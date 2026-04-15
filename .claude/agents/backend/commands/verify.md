@@ -1,8 +1,14 @@
 # /verify — 검증
 
+## 상태 경로
+```
+PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
+```
+
 ## 실행 순서
-1. `.claude/agents/backend/skills/oop-principles.md` 읽기
-2. `.claude/agents/backend/skills/ddd.md` 읽기
+1. `~/.claude/agent-crew/agents/backend/skills/oop-principles.md` 읽기
+2. `~/.claude/agent-crew/agents/backend/skills/ddd.md` 읽기
 3. `./gradlew test` 실행 → 전체 테스트 통과 확인
 4. 아래 체크리스트 하나씩 점검
 
@@ -21,17 +27,17 @@
   - Domain Event가 발행되는가
   - Repository 인터페이스가 도메인 레이어에 있는가
 - [ ] 모든 테스트 GREEN (`./gradlew test`)
-- [ ] 트레이드오프 문서화 (`.claude/state/context/design.md`)
+- [ ] 트레이드오프 문서화 (`{STATE_DIR}/context/design.md`)
 
 ## 결과 처리
 
 ### 통과 시
-1. `.claude/state/context/verify_checklist.md` 갱신 (PASS)
-2. `.claude/state/phase.txt` → `DONE` 갱신
+1. `{STATE_DIR}/context/verify_checklist.md` 갱신 (PASS)
+2. `{STATE_DIR}/phase.txt` → `DONE` 갱신
 3. git commit: `chore: verification passed`
 
 ### 실패 시
-1. `.claude/state/context/verify_checklist.md` 갱신 (FAIL + 실패 항목)
-2. `.claude/state/iterations.txt` 값 +1 갱신
-3. iterations < 5: `.claude/state/phase.txt` → `DESIGN`
-4. iterations >= 5: `.claude/state/phase.txt` → `REQUIREMENTS`, iterations → `0`
+1. `{STATE_DIR}/context/verify_checklist.md` 갱신 (FAIL + 실패 항목)
+2. `{STATE_DIR}/iterations.txt` 값 +1 갱신
+3. iterations < 5: `{STATE_DIR}/phase.txt` → `DESIGN`
+4. iterations >= 5: `{STATE_DIR}/phase.txt` → `REQUIREMENTS`, iterations → `0`

@@ -1,9 +1,15 @@
 # /implement — TDD 구현
 
+## 상태 경로
+```
+PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
+```
+
 ## 실행 순서
-1. `.claude/state/context/design.md` 읽기
-2. `.claude/agents/backend/skills/tdd.md` 읽기
-3. `.claude/agents/backend/skills/oop-principles.md` 읽기
+1. `{STATE_DIR}/context/design.md` 읽기
+2. `~/.claude/agent-crew/agents/backend/skills/tdd.md` 읽기
+3. `~/.claude/agent-crew/agents/backend/skills/oop-principles.md` 읽기
 4. 아래 TDD 사이클 반복
 
 ## TDD 사이클 (반드시 준수)
@@ -24,6 +30,6 @@
 - 여전히 PASS 확인
 
 ## 사이클 완료 시
-- `.claude/state/context/tdd_log.md` 에 사이클 결과 기록
-- 모든 기능 구현 완료 시 `.claude/state/phase.txt` → `VERIFICATION` 갱신
+- `{STATE_DIR}/context/tdd_log.md` 에 사이클 결과 기록
+- 모든 기능 구현 완료 시 `{STATE_DIR}/phase.txt` → `VERIFICATION` 갱신
 - git commit: `feat: [구현내용] with tests`

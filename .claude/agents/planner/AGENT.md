@@ -18,11 +18,11 @@
 
 ### requirements 단계
 1. 사용자 요청 분석
-2. PRD 작성 (`.claude/state/context/prd.md`)
+2. PRD 작성 (`~/.claude/agent-crew/{PROJECT_NAME}/context/prd.md`)
 3. 필요 에이전트 결정 → `pipeline.json` 저장
 4. `phase.txt` → 현재 에이전트 작업 완료 표시
 
 ## 산출물
-- `.claude/state/context/prd.md` — 기능명세서
-- `.claude/state/pipeline.json` — 결정된 파이프라인
-- `.claude/state/handoff.md` — 다음 에이전트로 인계 내용
+- `~/.claude/agent-crew/{PROJECT_NAME}/context/prd.md` — 기능명세서
+- `~/.claude/agent-crew/{PROJECT_NAME}/pipeline.json` — 결정된 파이프라인
+- `~/.claude/agent-crew/{PROJECT_NAME}/handoff.md` — 다음 에이전트로 인계 내용

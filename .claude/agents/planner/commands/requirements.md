@@ -1,5 +1,11 @@
 # planner /requirements — PRD 작성 및 파이프라인 결정
 
+## 상태 경로
+```
+PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
+```
+
 ## 실행 순서
 
 1. `/start`에서 전달된 요청 또는 사용자 입력 확인
@@ -11,11 +17,11 @@
    - UI 포함 여부 (백엔드만 / 풀스택)
    - 완료 기준
 
-3. PRD 작성 → `.claude/state/context/prd.md` 저장
+3. PRD 작성 → `{STATE_DIR}/context/prd.md` 저장
 
-4. 필요 에이전트 결정 (AGENT.md의 파이프라인 결정 기준 참조)
+4. 필요 에이전트 결정 (`~/.claude/agent-crew/agents/planner/AGENT.md`의 파이프라인 결정 기준 참조)
 
-5. `.claude/state/pipeline.json` 갱신
+5. `{STATE_DIR}/pipeline.json` 갱신
    ```json
    {
      "task": "[요청 원문]",
@@ -24,9 +30,8 @@
      "status": "IN_PROGRESS"
    }
    ```
-   - currentIndex를 1로 갱신 (planner 완료, 다음 에이전트로 이동)
 
-6. `.claude/state/handoff.md` 갱신
+6. `{STATE_DIR}/handoff.md` 갱신
    - PRD 요약
    - 다음 에이전트에게 전달할 핵심 컨텍스트
 

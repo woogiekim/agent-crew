@@ -9,8 +9,8 @@
 ## 워크플로우
 
 ### implement 단계
-1. `.claude/state/context/design-spec.md` 읽기
-2. `.claude/state/handoff.md` 읽기
+1. `~/.claude/agent-crew/{PROJECT_NAME}/context/design-spec.md` 읽기
+2. `~/.claude/agent-crew/{PROJECT_NAME}/handoff.md` 읽기
 3. 컴포넌트 단위로 UI 구현
 4. 구현 완료 후 verify 단계로 자동 진행
 
@@ -27,4 +27,4 @@
 
 ## 산출물
 - 프론트엔드 소스 코드
-- `.claude/state/handoff.md` 갱신
+- `~/.claude/agent-crew/{PROJECT_NAME}/handoff.md` 갱신
