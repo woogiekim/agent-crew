@@ -8,8 +8,8 @@
 
 set -e
 
-REPO_URL="https://github.com/woogiekim/ai-agents"
-REPO_RAW="https://raw.githubusercontent.com/woogiekim/ai-agents/main"
+REPO_URL="https://github.com/woogiekim/agent-crew"
+REPO_RAW="https://raw.githubusercontent.com/woogiekim/agent-crew/main"
 AGENT_DIR=".claude"
 INSTALL_MODE="copy"  # copy | submodule
 

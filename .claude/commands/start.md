@@ -1,0 +1,66 @@
+# /start — 전체 파이프라인 자동 실행
+
+## 실행 순서
+
+1. `/start "[요청]"` 형태로 입력 받음
+   - 인자 없으면: "어떤 작업을 시작할까요?" 질문 후 입력 받기
+
+2. `.claude/state/phase.txt` 확인
+   - `REQUIREMENTS`가 아니면: "진행 중인 작업이 있습니다 (phase: [현재값]). 새로 시작하면 초기화됩니다. 계속할까요? [y/N]"
+   - N이면 종료
+
+3. planner 에이전트 활성화
+   - `.claude/state/active_agent.txt` → `planner`
+   - `.claude/agents/planner/AGENT.md` 읽기
+
+4. planner가 요청 분석 → 필요 에이전트 목록 결정
+   - 판단 기준: `.claude/agents/planner/AGENT.md` 참조
+
+5. 사용자 확인
+   ```
+   다음 순서로 진행합니다:
+     1. planner  — 요구사항 분석 및 PRD 작성
+     2. designer — UI/UX 명세 (필요한 경우)
+     3. backend  — 도메인 설계 및 TDD 구현
+
+   계속할까요? [Y/n]
+   ```
+   - N이면 종료
+
+6. pipeline.json 저장
+   ```json
+   {
+     "task": "[요청 원문]",
+     "agents": ["planner", ...],
+     "currentIndex": 0,
+     "status": "IN_PROGRESS"
+   }
+   ```
+
+7. 파이프라인 순차 실행 (자동)
+   - 현재 에이전트의 담당 단계를 순서대로 실행
+   - 각 단계 완료 후 다음 에이전트로 자동 인계 (아래 인계 규칙 참조)
+
+## 에이전트별 담당 단계
+
+| 에이전트 | 실행 단계 |
+|---------|---------|
+| planner | requirements |
+| designer | design |
+| frontend | implement → verify |
+| backend | design → implement → verify |
+
+## 인계 규칙 (각 에이전트 완료 후 자동 실행)
+
+```
+현재 에이전트 완료
+  → .claude/state/handoff.md 갱신
+  → pipeline.json currentIndex + 1
+  → currentIndex < agents.length:
+      active_agent.txt → agents[currentIndex]
+      다음 에이전트의 첫 번째 단계 자동 실행
+  → currentIndex >= agents.length:
+      pipeline.json status → "DONE"
+      phase.txt → "DONE"
+      "✅ 모든 에이전트 작업 완료" 출력
+```

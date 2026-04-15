@@ -5,20 +5,29 @@
 
 ## 완료된 작업
 - 요구사항 수집 완료
-- 설계 완료 (design.md 저장)
+- 설계 완료
+- 구현 완료 (D→C→B→A 전 영역)
 
 ## 미완료 작업
-- 구현 (IMPLEMENTATION) 단계 시작 전
+- 검증 (VERIFICATION) 단계
 
 ## 다음 세션 컨텍스트
-- 페이즈: IMPLEMENTATION
+- 페이즈: VERIFICATION
 - 에이전트: backend
 - 반복: 0
-- 참고: `.claude/state/context/design.md` 읽고 /implement 실행
+- 참고: /verify 실행하여 검증 진행
 
-## 구현 우선순위
-D → C → B → A 순서:
-1. D: plugin.json + /setup + /start 명령어
-2. C: pipeline.json 기반 자동 인계 오케스트레이션
-3. B: 기존 백엔드 명령어 라우팅 개선
-4. A: planner, designer, frontend 에이전트 구현
+## 구현 완료 목록
+- plugin.json (Claude Code 플러그인 매니페스트)
+- .claude/commands/setup.md
+- .claude/commands/start.md
+- .claude/commands/requirements.md (pipeline.json 라우팅)
+- .claude/commands/design.md (pipeline.json 라우팅)
+- .claude/commands/implement.md (pipeline.json 라우팅)
+- .claude/commands/verify.md (pipeline.json 라우팅)
+- .claude/state/pipeline.json (초기 상태)
+- .claude/agents/planner/AGENT.md + commands/requirements.md
+- .claude/agents/designer/AGENT.md + commands/design.md
+- .claude/agents/frontend/AGENT.md + commands/implement.md + commands/verify.md
+- CLAUDE.md (agent-crew 기준 전면 갱신)
+- install.sh URL 갱신 (agent-crew)
