@@ -43,7 +43,7 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
    상태 경로: ~/.claude/agent-crew/{PROJECT_NAME}/
 
 사용 방법:
-  /start "요청 내용"   — 전체 파이프라인 자동 실행
+  /ship "요청 내용"    — 전체 파이프라인 자동 실행
   /requirements        — 요구사항 단계 수동 실행
   /design              — 설계 단계 수동 실행
   /implement           — 구현 단계 수동 실행
