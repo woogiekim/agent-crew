@@ -12,15 +12,18 @@
       "name": "agent-crew",
       "version": "1.0.0",
       "description": "Multi-agent development workspace — planner, designer, frontend, backend agents with full pipeline orchestration",
-      "source": "https://github.com/woogiekim/agent-crew",
-      "commands": [
-        { "name": "setup" },
-        { "name": "start" },
-        { "name": "requirements" },
-        { "name": "design" },
-        { "name": "implement" },
-        { "name": "verify" }
-      ]
+      "source": {
+        "type": "github",
+        "url": "https://github.com/woogiekim/agent-crew"
+      },
+      "commands": {
+        "setup": { "description": "현재 프로젝트 워크스페이스 초기화" },
+        "start": { "description": "전체 파이프라인 자동 실행" },
+        "requirements": { "description": "요구사항 단계 수동 실행" },
+        "design": { "description": "설계 단계 수동 실행" },
+        "implement": { "description": "구현 단계 수동 실행" },
+        "verify": { "description": "검증 단계 수동 실행" }
+      }
     }
   ]
 }
