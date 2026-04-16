@@ -21,7 +21,7 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ```
 /setup          # 현재 프로젝트 워크스페이스 초기화 (최초 1회)
-/start "요청"   # 전체 파이프라인 자동 실행 (권장)
+/ship "요청"    # 전체 파이프라인 자동 실행 (권장)
 
 /requirements   # 요구사항 단계 수동 실행
 /design         # 설계 단계 수동 실행
@@ -118,5 +118,5 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 # 새 프로젝트 시작 시
 /setup
-/start "요청 내용"
+/ship "요청 내용"
 ```
