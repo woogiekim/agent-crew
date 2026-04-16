@@ -1,0 +1,51 @@
+# /setup — 워크스페이스 초기화
+
+## 프로젝트명 결정
+```
+PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
+```
+
+## 실행 순서
+
+1. 현재 디렉토리에서 프로젝트명 결정 (위 규칙 적용)
+
+2. `{STATE_DIR}` 존재 확인
+   - 존재하면: "'{PROJECT_NAME}' 워크스페이스가 이미 있습니다. 초기화하면 모든 상태가 리셋됩니다. 계속할까요? [y/N]"
+   - N이면 종료
+
+3. `{STATE_DIR}/context/` 디렉토리 생성
+
+4. 상태 파일 초기화
+   - `{STATE_DIR}/phase.txt` → `REQUIREMENTS`
+   - `{STATE_DIR}/iterations.txt` → `0`
+   - `{STATE_DIR}/active_agent.txt` → `planner`
+   - `{STATE_DIR}/pipeline.json` → 초기값
+   - `{STATE_DIR}/handoff.md` → 빈 문서
+   - `{STATE_DIR}/context/session_handoff.md` → 초기 상태
+
+5. 완료 메시지 출력
+
+## pipeline.json 초기값
+```json
+{
+  "task": "",
+  "agents": [],
+  "currentIndex": 0,
+  "status": "PENDING"
+}
+```
+
+## 완료 메시지 형식
+```
+✅ agent-crew 워크스페이스 초기화 완료!
+   프로젝트: {PROJECT_NAME}
+   상태 경로: ~/.claude/agent-crew/{PROJECT_NAME}/
+
+사용 방법:
+  /start "요청 내용"   — 전체 파이프라인 자동 실행
+  /requirements        — 요구사항 단계 수동 실행
+  /design              — 설계 단계 수동 실행
+  /implement           — 구현 단계 수동 실행
+  /verify              — 검증 단계 수동 실행
+```
