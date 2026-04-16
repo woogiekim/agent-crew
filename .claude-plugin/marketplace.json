@@ -1,29 +1,21 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "agent-crew",
-  "version": "1.0.0",
-  "description": "Multi-agent development workspace for Claude Code",
+  "description": "Multi-agent development workspace for Claude Code — planner, designer, frontend, backend agents with full pipeline orchestration",
   "owner": {
     "name": "woogiekim",
     "email": "mdir2kor@gmail.com"
   },
-  "repository": "https://github.com/woogiekim/agent-crew",
   "plugins": [
     {
       "name": "agent-crew",
-      "version": "1.0.0",
       "description": "Multi-agent development workspace — planner, designer, frontend, backend agents with full pipeline orchestration",
+      "category": "development",
       "source": {
-        "type": "github",
-        "url": "https://github.com/woogiekim/agent-crew"
+        "source": "url",
+        "url": "https://github.com/woogiekim/agent-crew.git"
       },
-      "commands": {
-        "setup": { "description": "현재 프로젝트 워크스페이스 초기화" },
-        "start": { "description": "전체 파이프라인 자동 실행" },
-        "requirements": { "description": "요구사항 단계 수동 실행" },
-        "design": { "description": "설계 단계 수동 실행" },
-        "implement": { "description": "구현 단계 수동 실행" },
-        "verify": { "description": "검증 단계 수동 실행" }
-      }
+      "homepage": "https://github.com/woogiekim/agent-crew"
     }
   ]
 }
