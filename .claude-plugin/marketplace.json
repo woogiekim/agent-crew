@@ -2,15 +2,25 @@
   "name": "agent-crew",
   "version": "1.0.0",
   "description": "Multi-agent development workspace for Claude Code",
-  "author": "woogiekim",
+  "owner": {
+    "name": "woogiekim",
+    "email": "mdir2kor@gmail.com"
+  },
   "repository": "https://github.com/woogiekim/agent-crew",
   "plugins": [
     {
       "name": "agent-crew",
       "version": "1.0.0",
       "description": "Multi-agent development workspace — planner, designer, frontend, backend agents with full pipeline orchestration",
-      "installScript": "install.sh",
-      "commands": ["setup", "start", "requirements", "design", "implement", "verify"]
+      "source": "https://github.com/woogiekim/agent-crew",
+      "commands": [
+        { "name": "setup" },
+        { "name": "start" },
+        { "name": "requirements" },
+        { "name": "design" },
+        { "name": "implement" },
+        { "name": "verify" }
+      ]
     }
   ]
 }
