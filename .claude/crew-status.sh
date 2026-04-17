@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # crew-status — agent-crew 전체 상태 패널 출력
 # Usage:
-#   bash crew-status.sh              — 모든 프로젝트 상태 1회 출력
-#   watch -n 2 bash crew-status.sh   — 2초마다 실시간 갱신
+#   crew-status              — 모든 프로젝트 상태 1회 출력
+#   crew-status --live       — 2초마다 실시간 갱신 (Ctrl+C 종료)
+#   crew-status --live 5     — 5초마다 실시간 갱신
+
+if [[ "${1:-}" == "--live" ]]; then
+  INTERVAL="${2:-2}"
+  while true; do
+    clear
+    bash "$0"
+    sleep "$INTERVAL"
+  done
+  exit 0
+fi
 
 AGENT_CREW_DIR="${HOME}/.claude/agent-crew"
 CURRENT_PROJECT=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
@@ -168,7 +179,7 @@ for name in projects:
     row(f'  {B}Daemon{R} {daemon_lbl}  pid:{daemon_pid}  events:{events_count}')
 
 divider()
-row(f'{D}  watch -n 2 bash ~/.claude/agent-crew/crew-status.sh{R}')
+row(f'{D}  crew-status --live{R}')
 bottom()
 print()
 PYEOF

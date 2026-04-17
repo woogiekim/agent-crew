@@ -67,6 +67,22 @@ install_global() {
   log_info "crew-daemon 설치 완료 → ${AGENT_CREW_DIR}/crew-daemon.sh"
   log_info "crew-status 설치 완료 → ${AGENT_CREW_DIR}/crew-status.sh"
 
+  # ~/.local/bin 에 PATH 명령어로 설치
+  BIN_DIR="${HOME}/.local/bin"
+  mkdir -p "$BIN_DIR"
+  ln -sf "${AGENT_CREW_DIR}/crew-status.sh" "${BIN_DIR}/crew-status"
+  ln -sf "${AGENT_CREW_DIR}/crew-daemon.sh" "${BIN_DIR}/crew-daemon"
+  chmod +x "${BIN_DIR}/crew-status" "${BIN_DIR}/crew-daemon"
+  log_info "명령어 설치 완료 → ${BIN_DIR}/crew-status, crew-daemon"
+
+  # PATH에 없으면 셸 설정에 추가
+  if ! echo "$PATH" | grep -q "${BIN_DIR}"; then
+    SHELL_RC="${HOME}/.zshrc"
+    [[ "$SHELL" == *bash* ]] && SHELL_RC="${HOME}/.bashrc"
+    echo "export PATH=\"${BIN_DIR}:\$PATH\"" >> "$SHELL_RC"
+    log_warn "PATH 추가됨 → ${SHELL_RC}  (새 터미널 또는 source ${SHELL_RC} 필요)"
+  fi
+
   rm -rf "$TEMP_DIR"
 }
 
