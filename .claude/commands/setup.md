@@ -31,9 +31,12 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 5. crew-daemon 시작
    ```bash
-   bash ~/.claude/agent-crew/crew-daemon.sh &
+   bash ~/.claude/agent-crew/crew-daemon.sh start &
    ```
-   백그라운드로 실행한다. PID는 `{STATE_DIR}/orchestrator.pid`에 자동 기록된다.
+   - PID는 `{STATE_DIR}/orchestrator.pid`에 자동 기록됨
+   - 파이프라인 DONE/FAILED 시 자동 종료
+   - 30분 이벤트 없으면 유휴 타임아웃으로 자동 종료
+   - 수동 종료: `bash ~/.claude/agent-crew/crew-daemon.sh stop`
 
 6. 완료 메시지 출력
 
@@ -55,8 +58,12 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 사용 방법:
   /ship "요청 내용"    — 전체 파이프라인 자동 실행
+  /status              — 파이프라인 및 데몬 상태 패널 출력
   /requirements        — 요구사항 단계 수동 실행
   /design              — 설계 단계 수동 실행
   /implement           — 구현 단계 수동 실행
   /verify              — 검증 단계 수동 실행
+
+실시간 모니터링 (별도 터미널):
+  watch -n 2 bash ~/.claude/agent-crew/crew-status.sh
 ```

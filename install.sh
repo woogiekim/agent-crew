@@ -60,10 +60,12 @@ install_global() {
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
 
-  # crew-daemon 설치
+  # crew-daemon 및 crew-status 설치
   cp "$TEMP_DIR/.claude/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-daemon.sh"
-  chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh"
+  cp "$TEMP_DIR/.claude/crew-status.sh" "${AGENT_CREW_DIR}/crew-status.sh"
+  chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-status.sh"
   log_info "crew-daemon 설치 완료 → ${AGENT_CREW_DIR}/crew-daemon.sh"
+  log_info "crew-status 설치 완료 → ${AGENT_CREW_DIR}/crew-status.sh"
 
   rm -rf "$TEMP_DIR"
 }
