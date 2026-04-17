@@ -7,8 +7,11 @@
 
 if [[ "${1:-}" == "--live" ]]; then
   INTERVAL="${2:-2}"
+  tput smcup 2>/dev/null
+  tput civis 2>/dev/null
+  trap 'tput rmcup 2>/dev/null; tput cnorm 2>/dev/null; exit 0' INT TERM
   while true; do
-    clear
+    tput cup 0 0
     bash "$0"
     sleep "$INTERVAL"
   done
