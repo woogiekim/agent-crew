@@ -28,6 +28,11 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 - 태스크 완료 시 반드시 `{STATE_DIR}/context/session_handoff.md` 갱신 후 git commit
 - 태스크와 무관한 파일 읽기 금지
 
+## UX 규칙 (YOU MUST)
+- 사용자에게 확인이나 선택을 요청할 때는 반드시 `AskUserQuestion` 도구를 사용한다
+- `[y/N]`, `[Y/n]` 등 텍스트 프롬프트 방식은 절대 사용하지 않는다
+- 선택지는 명확한 label과 description으로 구성하며, 권장 옵션이 있으면 "(Recommended)"를 붙여 첫 번째에 배치한다
+
 ## 절대 규칙 (YOU MUST)
 - 구현 코드 작성 전 반드시 실패하는 테스트 먼저 작성
 - 테스트 없는 소스 코드 커밋 금지

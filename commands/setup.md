@@ -11,8 +11,12 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 1. 현재 디렉토리에서 프로젝트명 결정 (위 규칙 적용)
 
 2. `{STATE_DIR}` 존재 확인
-   - 존재하면: "'{PROJECT_NAME}' 워크스페이스가 이미 있습니다. 초기화하면 모든 상태가 리셋됩니다. 계속할까요? [y/N]"
-   - N이면 종료
+   - 존재하면: AskUserQuestion 도구로 확인
+     - 질문: "'{PROJECT_NAME}' 워크스페이스가 이미 있습니다. 초기화하면 모든 상태가 리셋됩니다."
+     - 선택지:
+       - "취소 (Recommended)" — setup 종료
+       - "초기화" — 모든 상태 리셋 후 진행
+     - "취소" 선택 시 종료
 
 3. `{STATE_DIR}/context/` 디렉토리 생성
 

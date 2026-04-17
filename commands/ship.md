@@ -13,8 +13,17 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 2. `{STATE_DIR}/phase.txt` 확인
    - 파일 없으면: "워크스페이스가 초기화되지 않았습니다. /setup을 먼저 실행하세요."
-   - `REQUIREMENTS`가 아니면: "진행 중인 작업이 있습니다 (phase: [현재값]). 새로 시작하면 초기화됩니다. 계속할까요? [y/N]"
-   - N이면 종료
+   - `DONE` 또는 `REQUIREMENTS`이면: 정상 진행 (새 작업 시작)
+   - 그 외 (IN_PROGRESS 상태): `{STATE_DIR}/pipeline.json`의 `status` 확인
+     - `status == "DONE"`이면: 정상 진행
+     - `status == "IN_PROGRESS"`이면: AskUserQuestion 도구로 확인
+       ```
+       질문: "진행 중인 작업이 있습니다 (phase: [현재값]). 어떻게 할까요?"
+       선택지:
+         - "새로 시작" — 현재 작업을 초기화하고 새 작업 시작
+         - "취소" — ship 종료
+       ```
+     - "취소" 선택 시 종료
 
 3. planner 에이전트 활성화
    - `{STATE_DIR}/active_agent.txt` → `planner`
@@ -23,16 +32,12 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 4. planner가 요청 분석 → 필요 에이전트 목록 결정
    - 판단 기준: `~/.claude/agent-crew/agents/planner/AGENT.md` 참조
 
-5. 사용자 확인
-   ```
-   다음 순서로 진행합니다:
-     1. planner  — 요구사항 분석 및 PRD 작성
-     2. designer — UI/UX 명세 (필요한 경우)
-     3. backend  — 도메인 설계 및 TDD 구현
-
-   계속할까요? [Y/n]
-   ```
-   - N이면 종료
+5. 사용자 확인 (AskUserQuestion 도구 사용)
+   - 질문: "다음 순서로 진행합니다: [에이전트 목록]. 시작할까요?"
+   - 선택지:
+     - "시작 (Recommended)" — 파이프라인 실행
+     - "취소" — ship 종료
+   - "취소" 선택 시 종료
 
 6. `{STATE_DIR}/pipeline.json` 저장
    ```json
