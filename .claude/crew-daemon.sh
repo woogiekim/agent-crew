@@ -106,6 +106,12 @@ if p['currentIndex'] >= len(agents):
     print("PIPELINE_DONE")
 else:
     next_agent = agents[p['currentIndex']]
+    initial_phase = {
+        'planner': 'REQUIREMENTS', 'designer': 'DESIGN',
+        'frontend': 'IMPLEMENTATION', 'backend': 'DESIGN',
+    }.get(next_agent, 'IN_PROGRESS')
+    with open(phase_file, 'w') as f:
+        f.write(initial_phase)
     signal_path = os.path.join(signal_dir, f"{next_agent}.ready")
     open(signal_path, 'w').close()
     with open(os.path.join(os.path.dirname(pipeline_file), 'active_agent.txt'), 'w') as f:
