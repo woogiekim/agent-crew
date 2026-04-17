@@ -112,12 +112,23 @@ crew-daemon stop        # 데몬 수동 종료
 ╔════════════════════════════════════════════════════════╗
 ║ agent-crew  projects: 2                                ║
 ╠════════════════════════════════════════════════════════╣
+║   updated: 14:32:01                                    ║
+╠════════════════════════════════════════════════════════╣
 ║ ▶ my-project                                           ║
-║   Task   주문 도메인 API 구현                           ║
+║   Task   Implement order domain API with TDD           ║
 ║   Status IN_PROGRESS  phase: IMPLEMENTATION            ║
 ║   Agent  backend                                       ║
 ║   ✓planner → ▶backend                                  ║
 ║   Daemon ● RUNNING  pid:12345  events:3                ║
+╠════════════════════════════════════════════════════════╣
+║   other-project                                        ║
+║   Task   -                                             ║
+║   Status DONE  phase: DONE                             ║
+║   Agent  planner                                       ║
+║   ✓planner → ✓backend                                  ║
+║   Daemon ● STOPPED  pid:-  events:5                    ║
+╠════════════════════════════════════════════════════════╣
+║   crew-status --live                                   ║
 ╚════════════════════════════════════════════════════════╝
 ```
 
