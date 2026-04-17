@@ -30,5 +30,10 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ## 완료 시
 1. `{STATE_DIR}/context/design.md` 갱신
-2. `{STATE_DIR}/phase.txt` → `IMPLEMENTATION` 갱신
+2. 완료 이벤트 emit
+   ```bash
+   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"backend\",\"event\":\"PHASE_COMPLETE\",\"payload\":{\"phase\":\"design\"}}" >> {STATE_DIR}/events.jsonl
+   ```
+   - 데몬 실행 중: 데몬이 상태 갱신 처리
+   - 데몬 없음 (fallback): `{STATE_DIR}/phase.txt` → `IMPLEMENTATION` 직접 갱신
 3. git commit: `docs: update design`

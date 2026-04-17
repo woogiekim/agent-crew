@@ -19,6 +19,10 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ## 완료 시
 1. `{STATE_DIR}/context/requirements.md` 갱신
-2. `{STATE_DIR}/phase.txt` → `DESIGN` 갱신
-3. `{STATE_DIR}/active_agent.txt` → `backend` 갱신
-4. git commit: `chore: update requirements`
+2. 완료 이벤트 emit
+   ```bash
+   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"backend\",\"event\":\"PHASE_COMPLETE\",\"payload\":{\"phase\":\"requirements\"}}" >> {STATE_DIR}/events.jsonl
+   ```
+   - 데몬 실행 중: 데몬이 상태 갱신 처리
+   - 데몬 없음 (fallback): `{STATE_DIR}/phase.txt` → `DESIGN` 직접 갱신
+3. git commit: `chore: update requirements`

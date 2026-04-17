@@ -22,7 +22,12 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 4. `{STATE_DIR}/context/design-spec.md` 저장
 
-5. `{STATE_DIR}/pipeline.json` currentIndex + 1 갱신
+5. 완료 이벤트 emit
+   ```bash
+   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"designer\",\"event\":\"PHASE_COMPLETE\",\"payload\":{}}" >> {STATE_DIR}/events.jsonl
+   ```
+   - 데몬 실행 중: 데몬이 `currentIndex` 증가 및 다음 에이전트 신호 발행
+   - 데몬 없음 (fallback): `{STATE_DIR}/pipeline.json` currentIndex + 1 직접 갱신
 
 6. `{STATE_DIR}/handoff.md` 갱신
    - 완성된 화면 목록

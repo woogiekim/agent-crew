@@ -33,11 +33,16 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ### 통과 시
 1. `{STATE_DIR}/context/verify_checklist.md` 갱신 (PASS)
-2. `{STATE_DIR}/phase.txt` → `DONE` 갱신
+2. 완료 이벤트 emit
+   ```bash
+   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"backend\",\"event\":\"PHASE_COMPLETE\",\"payload\":{\"phase\":\"verification\"}}" >> {STATE_DIR}/events.jsonl
+   ```
+   - 데몬 실행 중: 데몬이 `pipeline.json` status → DONE, `phase.txt` → DONE 처리
+   - 데몬 없음 (fallback): `{STATE_DIR}/phase.txt` → `DONE` 직접 갱신
 3. git commit: `chore: verification passed`
 
 ### 실패 시
 1. `{STATE_DIR}/context/verify_checklist.md` 갱신 (FAIL + 실패 항목)
 2. `{STATE_DIR}/iterations.txt` 값 +1 갱신
-3. iterations < 5: `{STATE_DIR}/phase.txt` → `DESIGN`
-4. iterations >= 5: `{STATE_DIR}/phase.txt` → `REQUIREMENTS`, iterations → `0`
+3. iterations < 5: `{STATE_DIR}/phase.txt` → `DESIGN` 직접 갱신 (복귀이므로 데몬 우회)
+4. iterations >= 5: `{STATE_DIR}/phase.txt` → `REQUIREMENTS`, iterations → `0` 직접 갱신

@@ -31,5 +31,10 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ## 사이클 완료 시
 - `{STATE_DIR}/context/tdd_log.md` 에 사이클 결과 기록
-- 모든 기능 구현 완료 시 `{STATE_DIR}/phase.txt` → `VERIFICATION` 갱신
+- 모든 기능 구현 완료 시 완료 이벤트 emit
+  ```bash
+  echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"backend\",\"event\":\"PHASE_COMPLETE\",\"payload\":{\"phase\":\"implementation\"}}" >> {STATE_DIR}/events.jsonl
+  ```
+  - 데몬 실행 중: 데몬이 상태 갱신 처리
+  - 데몬 없음 (fallback): `{STATE_DIR}/phase.txt` → `VERIFICATION` 직접 갱신
 - git commit: `feat: [구현내용] with tests`

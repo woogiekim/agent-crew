@@ -21,12 +21,12 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 4. 필요 에이전트 결정 (`~/.claude/agent-crew/agents/planner/AGENT.md`의 파이프라인 결정 기준 참조)
 
-5. `{STATE_DIR}/pipeline.json` 갱신
+5. `{STATE_DIR}/pipeline.json` 갱신 (planner는 파이프라인 결정 주체이므로 직접 작성)
    ```json
    {
      "task": "[요청 원문]",
      "agents": ["planner", ...결정된 에이전트들],
-     "currentIndex": 1,
+     "currentIndex": 0,
      "status": "IN_PROGRESS"
    }
    ```
@@ -35,7 +35,14 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
    - PRD 요약
    - 다음 에이전트에게 전달할 핵심 컨텍스트
 
-7. git commit: `chore: planner requirements complete`
+7. 완료 이벤트 emit
+   ```bash
+   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"planner\",\"event\":\"PHASE_COMPLETE\",\"payload\":{}}" >> {STATE_DIR}/events.jsonl
+   ```
+   - 데몬 실행 중: 데몬이 `currentIndex` 증가 및 다음 에이전트 신호 발행
+   - 데몬 없음 (fallback): `pipeline.json` currentIndex → 1, `active_agent.txt` → agents[1] 직접 갱신
+
+8. git commit: `chore: planner requirements complete`
 
 ## 완료 후
 자동으로 다음 에이전트(agents[1])의 첫 번째 단계를 실행한다.

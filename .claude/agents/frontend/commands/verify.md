@@ -21,8 +21,13 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ### 통과 시
 1. `{STATE_DIR}/context/verify_checklist.md` 갱신 (PASS)
-2. `{STATE_DIR}/pipeline.json` currentIndex + 1
-3. `{STATE_DIR}/handoff.md` 갱신 (frontend 산출물 요약)
+2. `{STATE_DIR}/handoff.md` 갱신 (frontend 산출물 요약)
+3. 완료 이벤트 emit
+   ```bash
+   echo "{\"ts\":\"$(date -u +%FT%TZ)\",\"agent\":\"frontend\",\"event\":\"PHASE_COMPLETE\",\"payload\":{}}" >> {STATE_DIR}/events.jsonl
+   ```
+   - 데몬 실행 중: 데몬이 `currentIndex` 증가 및 다음 에이전트 신호 발행
+   - 데몬 없음 (fallback): `{STATE_DIR}/pipeline.json` currentIndex + 1 직접 갱신
 4. git commit: `chore: frontend verification passed`
 5. 다음 에이전트 자동 실행
 

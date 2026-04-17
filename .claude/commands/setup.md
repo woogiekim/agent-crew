@@ -11,10 +11,14 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 1. 현재 디렉토리에서 프로젝트명 결정 (위 규칙 적용)
 
 2. `{STATE_DIR}` 존재 확인
-   - 존재하면: "'{PROJECT_NAME}' 워크스페이스가 이미 있습니다. 초기화하면 모든 상태가 리셋됩니다. 계속할까요? [y/N]"
-   - N이면 종료
+   - 존재하면: AskUserQuestion 도구로 확인
+     - 질문: "'{PROJECT_NAME}' 워크스페이스가 이미 있습니다. 초기화하면 모든 상태가 리셋됩니다."
+     - 선택지:
+       - "취소 (Recommended)" — setup 종료
+       - "초기화" — 모든 상태 리셋 후 진행
+     - "취소" 선택 시 종료
 
-3. `{STATE_DIR}/context/` 디렉토리 생성
+3. `{STATE_DIR}/context/` 및 `{STATE_DIR}/agent_signal/` 디렉토리 생성
 
 4. 상태 파일 초기화
    - `{STATE_DIR}/phase.txt` → `REQUIREMENTS`
@@ -23,8 +27,15 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
    - `{STATE_DIR}/pipeline.json` → 초기값
    - `{STATE_DIR}/handoff.md` → 빈 문서
    - `{STATE_DIR}/context/session_handoff.md` → 초기 상태
+   - `{STATE_DIR}/events.jsonl` → 빈 파일 생성
 
-5. 완료 메시지 출력
+5. crew-daemon 시작
+   ```bash
+   bash ~/.claude/agent-crew/crew-daemon.sh &
+   ```
+   백그라운드로 실행한다. PID는 `{STATE_DIR}/orchestrator.pid`에 자동 기록된다.
+
+6. 완료 메시지 출력
 
 ## pipeline.json 초기값
 ```json
