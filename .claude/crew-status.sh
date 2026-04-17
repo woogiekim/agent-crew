@@ -1,110 +1,174 @@
 #!/usr/bin/env bash
-# crew-status — agent-crew 상태 패널 출력
+# crew-status — agent-crew 전체 상태 패널 출력
 # Usage:
-#   bash crew-status.sh              — 현재 상태 1회 출력
+#   bash crew-status.sh              — 모든 프로젝트 상태 1회 출력
 #   watch -n 2 bash crew-status.sh   — 2초마다 실시간 갱신
 
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
+AGENT_CREW_DIR="${HOME}/.claude/agent-crew"
+CURRENT_PROJECT=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
-# ── 컬러 ────────────────────────────────────────────────────────
-RESET='\033[0m'
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-DIM='\033[2m'
+python3 - "$AGENT_CREW_DIR" "$CURRENT_PROJECT" <<'PYEOF'
+import sys, json, os, subprocess, unicodedata
+from datetime import datetime
 
-# ── 상태 읽기 ────────────────────────────────────────────────────
-read_file() { [ -f "$1" ] && cat "$1" || echo "${2:--}"; }
+AGENT_CREW_DIR = sys.argv[1]
+CURRENT_PROJECT = sys.argv[2]
+W = 54  # 내부 너비 (테두리 제외)
 
-PHASE=$(read_file "${STATE_DIR}/phase.txt")
-ACTIVE_AGENT=$(read_file "${STATE_DIR}/active_agent.txt")
-ITERATIONS=$(read_file "${STATE_DIR}/iterations.txt" "0")
-EVENTS_COUNT=0
-[ -f "${STATE_DIR}/events.jsonl" ] && EVENTS_COUNT=$(wc -l < "${STATE_DIR}/events.jsonl" | tr -d ' ')
+# ── ANSI ────────────────────────────────────────────────────────
+R  = '\033[0m'
+B  = '\033[1m'
+G  = '\033[0;32m'
+Y  = '\033[1;33m'
+C  = '\033[0;36m'
+RE = '\033[0;31m'
+D  = '\033[2m'
 
-# pipeline.json 파싱
-TASK="-"
-AGENTS_LIST=""
-CURRENT_INDEX=0
-PIPELINE_STATUS="PENDING"
-if [ -f "${STATE_DIR}/pipeline.json" ]; then
-  TASK=$(python3 -c "import json; p=json.load(open('${STATE_DIR}/pipeline.json')); print(p.get('task','')[:50] or '-')" 2>/dev/null || echo "-")
-  CURRENT_INDEX=$(python3 -c "import json; p=json.load(open('${STATE_DIR}/pipeline.json')); print(p.get('currentIndex',0))" 2>/dev/null || echo "0")
-  PIPELINE_STATUS=$(python3 -c "import json; p=json.load(open('${STATE_DIR}/pipeline.json')); print(p.get('status','PENDING'))" 2>/dev/null || echo "PENDING")
-  AGENTS_LIST=$(python3 -c "
-import json
-p = json.load(open('${STATE_DIR}/pipeline.json'))
-agents = p.get('agents', [])
-idx = p.get('currentIndex', 0)
-parts = []
-for i, a in enumerate(agents):
-    if i < idx:
-        parts.append(f'✓ {a}')
-    elif i == idx:
-        parts.append(f'▶ {a}')
-    else:
-        parts.append(f'○ {a}')
-print('  →  '.join(parts) if parts else '-')
-" 2>/dev/null || echo "-")
-fi
+def dw(s):
+    """터미널 표시 너비 계산 (한글 등 CJK = 2칸)"""
+    w = 0
+    for ch in s:
+        ea = unicodedata.east_asian_width(ch)
+        w += 2 if ea in ('W', 'F') else 1
+    return w
 
-# 데몬 상태
-DAEMON_STATUS="${RED}● STOPPED${RESET}"
-DAEMON_PID="-"
-if [ -f "${STATE_DIR}/orchestrator.pid" ]; then
-  PID=$(cat "${STATE_DIR}/orchestrator.pid")
-  if kill -0 "$PID" 2>/dev/null; then
-    DAEMON_STATUS="${GREEN}● RUNNING${RESET}"
-    DAEMON_PID="$PID"
-  else
-    DAEMON_STATUS="${YELLOW}● STALE${RESET}  (stale pid)"
-  fi
-fi
+def strip_ansi(s):
+    import re
+    return re.sub(r'\033\[[0-9;]*m', '', s)
 
-# 파이프라인 상태 컬러
-case "$PIPELINE_STATUS" in
-  DONE)        STATUS_COLOR="${GREEN}" ;;
-  FAILED)      STATUS_COLOR="${RED}" ;;
-  IN_PROGRESS) STATUS_COLOR="${CYAN}" ;;
-  *)           STATUS_COLOR="${DIM}" ;;
-esac
+def pad(text, width):
+    """ANSI 코드를 제거한 표시 너비 기준으로 오른쪽을 공백으로 채움"""
+    fill = width - dw(strip_ansi(text))
+    return text + ' ' * max(fill, 0)
 
-# 페이즈 컬러
-case "$PHASE" in
-  DONE)           PHASE_COLOR="${GREEN}" ;;
-  IMPLEMENTATION) PHASE_COLOR="${CYAN}" ;;
-  VERIFICATION)   PHASE_COLOR="${YELLOW}" ;;
-  DESIGN)         PHASE_COLOR="${CYAN}" ;;
-  REQUIREMENTS)   PHASE_COLOR="${DIM}" ;;
-  *)              PHASE_COLOR="${DIM}" ;;
-esac
+def trunc(text, max_w):
+    """표시 너비 기준으로 자르고 … 추가"""
+    w = 0
+    result = []
+    for ch in text:
+        cw = 2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1
+        if w + cw > max_w - 1:
+            result.append('…')
+            break
+        result.append(ch)
+        w += cw
+    return ''.join(result)
 
-W=52  # 패널 너비
+def row(content):
+    print(f'║ {pad(content, W)} ║')
+
+def top():
+    print('╔' + '═' * (W + 2) + '╗')
+
+def bottom():
+    print('╚' + '═' * (W + 2) + '╝')
+
+def divider():
+    print('╠' + '═' * (W + 2) + '╣')
+
+def read_f(path, default='-'):
+    try:
+        return open(path).read().strip() or default
+    except:
+        return default
+
+def daemon_status(state_dir):
+    pid_file = os.path.join(state_dir, 'orchestrator.pid')
+    if not os.path.exists(pid_file):
+        return f'{RE}● STOPPED{R}', '-'
+    pid = open(pid_file).read().strip()
+    try:
+        os.kill(int(pid), 0)
+        return f'{G}● RUNNING{R}', pid
+    except:
+        return f'{Y}● STALE  {R}', pid
+
+def parse_pipeline(state_dir):
+    path = os.path.join(state_dir, 'pipeline.json')
+    if not os.path.exists(path):
+        return '-', 'PENDING', 0, []
+    p = json.load(open(path))
+    task = p.get('task', '') or '-'
+    status = p.get('status', 'PENDING')
+    idx = p.get('currentIndex', 0)
+    agents = p.get('agents', [])
+    return task, status, idx, agents
+
+def progress_line(agents, idx):
+    if not agents:
+        return '-'
+    parts = []
+    for i, a in enumerate(agents):
+        if i < idx:   parts.append(f'{D}✓{a}{R}')
+        elif i == idx: parts.append(f'{B}▶{a}{R}')
+        else:          parts.append(f'{D}○{a}{R}')
+    return ' → '.join(parts)
+
+def status_color(s):
+    return {
+        'DONE': G, 'FAILED': RE, 'IN_PROGRESS': C
+    }.get(s, D)
+
+def phase_color(p):
+    return {
+        'DONE': G, 'IMPLEMENTATION': C, 'VERIFICATION': Y, 'DESIGN': C
+    }.get(p, D)
+
+# ── 프로젝트 수집 ────────────────────────────────────────────────
+projects = []
+try:
+    for name in sorted(os.listdir(AGENT_CREW_DIR)):
+        if name in ('agents', 'hooks'):
+            continue
+        d = os.path.join(AGENT_CREW_DIR, name)
+        if os.path.isdir(d) and os.path.exists(os.path.join(d, 'pipeline.json')):
+            projects.append(name)
+except:
+    pass
+
+if not projects:
+    print(f'\n{D}  agent-crew: 활성 프로젝트 없음 (/setup으로 시작하세요){R}\n')
+    sys.exit(0)
 
 # ── 렌더 ────────────────────────────────────────────────────────
-line() { printf "║ %-${W}s ║\n" "$1"; }
-divider() { printf "╠%s╣\n" "$(printf '═%.0s' $(seq 1 $((W+2))))"; }
-top()     { printf "╔%s╗\n" "$(printf '═%.0s' $(seq 1 $((W+2))))"; }
-bottom()  { printf "╚%s╝\n" "$(printf '═%.0s' $(seq 1 $((W+2))))"; }
+print()
+top()
+row(f'{B}{C}agent-crew{R}  projects: {len(projects)}')
+divider()
+row(f'{D}  updated: {datetime.now().strftime("%H:%M:%S")}{R}')
 
-echo ""
-top
-printf "║ ${BOLD}${CYAN}agent-crew${RESET}  %-$((W-10))s ║\n" "project: ${PROJECT_NAME}"
-divider
-printf "║ ${BOLD}Task   ${RESET} %-$((W-7))s ║\n" "${TASK}"
-printf "║ ${BOLD}Status ${RESET} ${STATUS_COLOR}%-$((W-7))s${RESET} ║\n" "${PIPELINE_STATUS}"
-printf "║ ${BOLD}Phase  ${RESET} ${PHASE_COLOR}%-$((W-7))s${RESET} ║\n" "${PHASE}"
-printf "║ ${BOLD}Agent  ${RESET} %-$((W-7))s ║\n" "${ACTIVE_AGENT}"
-divider
-printf "║ ${DIM}Pipeline Progress${RESET}%-$((W-17))s ║\n" ""
-printf "║   %-${W}s ║\n" "${AGENTS_LIST}"
-divider
-printf "║ ${BOLD}Daemon ${RESET} $(echo -e ${DAEMON_STATUS})%-$((W-18))s ║\n" "  PID: ${DAEMON_PID}"
-printf "║ ${BOLD}Events ${RESET} %-$((W-7))s ║\n" "${EVENTS_COUNT} processed  |  iterations: ${ITERATIONS}"
-bottom
-echo ""
-printf "${DIM}  Live: watch -n 2 bash ~/.claude/agent-crew/crew-status.sh${RESET}\n"
-echo ""
+for name in projects:
+    state_dir = os.path.join(AGENT_CREW_DIR, name)
+    phase        = read_f(os.path.join(state_dir, 'phase.txt'))
+    agent        = read_f(os.path.join(state_dir, 'active_agent.txt'))
+    iterations   = read_f(os.path.join(state_dir, 'iterations.txt'), '0')
+    events_count = 0
+    ef = os.path.join(state_dir, 'events.jsonl')
+    if os.path.exists(ef):
+        with open(ef) as f:
+            events_count = sum(1 for _ in f)
+
+    task, pip_status, idx, agents = parse_pipeline(state_dir)
+    daemon_lbl, daemon_pid = daemon_status(state_dir)
+    prog = progress_line(agents, idx)
+
+    sc = status_color(pip_status)
+    pc = phase_color(phase)
+
+    is_current = (name == CURRENT_PROJECT)
+    prefix = f'{B}{C}▶ ' if is_current else f'{B}  '
+    name_label = f'{prefix}{name}{R}'
+
+    divider()
+    row(name_label)
+    row(f'  {B}Task  {R} {trunc(task, W - 8)}')
+    row(f'  {B}Status{R} {sc}{pip_status}{R}  {D}phase: {pc}{phase}{R}')
+    row(f'  {B}Agent {R} {agent}')
+    row(f'  {prog}')
+    row(f'  {B}Daemon{R} {daemon_lbl}  pid:{daemon_pid}  events:{events_count}')
+
+divider()
+row(f'{D}  watch -n 2 bash ~/.claude/agent-crew/crew-status.sh{R}')
+bottom()
+print()
+PYEOF
