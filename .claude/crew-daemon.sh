@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# crew-daemon — agent-crew 파이프라인 오케스트레이터 데몬
+# crew-daemon — multi-task pipeline orchestrator
 # Usage:
 #   crew-daemon.sh          — start (default)
 #   crew-daemon.sh start    — start
 #   crew-daemon.sh stop     — stop running instance
-#   crew-daemon.sh status   — check if running
+#   crew-daemon.sh status   — check if RUNNING / STOPPED
 set -euo pipefail
 
 PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
 AGENT_CREW_DIR="${HOME}/.claude/agent-crew"
-EVENTS_FILE="${STATE_DIR}/events.jsonl"
-OFFSET_FILE="${STATE_DIR}/events.offset"
+TASKS_DIR="${STATE_DIR}/tasks"
 PID_FILE="${STATE_DIR}/orchestrator.pid"
-SIGNAL_DIR="${STATE_DIR}/agent_signal"
-PIPELINE_FILE="${STATE_DIR}/pipeline.json"
-PHASE_FILE="${STATE_DIR}/phase.txt"
 
-# 이벤트 없을 때 자동 종료까지의 최대 유휴 시간 (초)
-IDLE_TIMEOUT=1800  # 30분
+IDLE_TIMEOUT=1800   # 프로젝트 전체 유휴 종료 (초)
+ZOMBIE_TIMEOUT=600  # task당 이벤트 없으면 zombie 판정 (초)
+MAX_RETRIES=5
 
 # ── stop / status ────────────────────────────────────────────────
 CMD="${1:-start}"
@@ -43,13 +41,13 @@ case "$CMD" in
     if [ -f "$PID_FILE" ]; then
       PID=$(cat "$PID_FILE")
       if kill -0 "$PID" 2>/dev/null; then
-        echo "[crew-daemon] 실행 중 (PID $PID, project: ${PROJECT_NAME})"
+        echo "RUNNING (PID $PID, project: ${PROJECT_NAME})"
       else
-        echo "[crew-daemon] 종료됨 (stale PID file)"
+        echo "STOPPED (stale PID)"
         rm -f "$PID_FILE"
       fi
     else
-      echo "[crew-daemon] 실행 중인 데몬 없음"
+      echo "STOPPED"
     fi
     exit 0
     ;;
@@ -68,9 +66,9 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # ── 시작 ─────────────────────────────────────────────────────────
-mkdir -p "$SIGNAL_DIR"
+mkdir -p "$TASKS_DIR"
 echo $$ > "$PID_FILE"
-echo "[crew-daemon] 시작 (PID $$, project: ${PROJECT_NAME}, idle_timeout: ${IDLE_TIMEOUT}s)"
+echo "[crew-daemon] 시작 (PID $$, project: ${PROJECT_NAME})"
 
 cleanup() {
   echo "[crew-daemon] 종료"
@@ -78,85 +76,177 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-pipeline_update() {
-  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" advance "$PIPELINE_FILE" "$PHASE_FILE" "$SIGNAL_DIR"
+# ── 헬퍼 ─────────────────────────────────────────────────────────
+
+task_status() {
+  local pipeline="$1/pipeline.json"
+  [ -f "$pipeline" ] || { echo "PENDING"; return; }
+  python3 -c "import json; print(json.load(open('$pipeline')).get('status','PENDING'))" 2>/dev/null || echo "PENDING"
 }
 
-pipeline_abort() {
-  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" abort "$PIPELINE_FILE"
+task_pipeline_advance() {
+  local task_dir="$1"
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" advance \
+    "${task_dir}/pipeline.json" \
+    "${task_dir}/phase.txt" \
+    "${task_dir}/agent_signal"
 }
 
-pipeline_is_done() {
-  [ -f "$PIPELINE_FILE" ] || return 1
-  local status
-  status=$(python3 -c "import json; print(json.load(open('$PIPELINE_FILE')).get('status',''))" 2>/dev/null || echo "")
-  [[ "$status" == "DONE" || "$status" == "FAILED" ]]
+task_pipeline_abort() {
+  local task_dir="$1" reason="$2"
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" abort "${task_dir}/pipeline.json"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ABORT: $reason" >> "${task_dir}/error.log"
 }
 
-# ── 이벤트 처리 ──────────────────────────────────────────────────
+merge_task_branch() {
+  local task_dir="$1"
+  local branch worktree_path
+  branch=$(cat "${task_dir}/branch.txt" 2>/dev/null || echo "")
+  worktree_path=$(cat "${task_dir}/worktree_path.txt" 2>/dev/null || echo "")
+
+  [ -z "$branch" ] && { echo "NO_BRANCH"; return; }
+
+  # feature/main 으로 merge 시도
+  git -C "$PROJECT_ROOT" checkout feature/main 2>/dev/null || true
+  if git -C "$PROJECT_ROOT" merge --no-ff "$branch" -m "merge: $branch → feature/main" 2>/dev/null; then
+    # 성공: worktree 및 브랜치 정리
+    [ -n "$worktree_path" ] && git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+    git -C "$PROJECT_ROOT" branch -D "$branch" 2>/dev/null || true
+    echo "MERGE_OK"
+  else
+    git -C "$PROJECT_ROOT" merge --abort 2>/dev/null || true
+    # resolver 에이전트 활성화
+    mkdir -p "${task_dir}/agent_signal"
+    touch "${task_dir}/agent_signal/resolver.ready"
+    echo "resolver" > "${task_dir}/active_agent.txt"
+    echo "MERGE_CONFLICT"
+  fi
+}
+
+cleanup_task_dir() {
+  local task_id="$1"
+  rm -rf "${TASKS_DIR}/${task_id}"
+}
+
 process_event() {
-  local line="$1"
+  local task_dir="$1" line="$2"
   local event agent
-  event=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('event',''))" "$line")
-  agent=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('agent',''))" "$line")
+  event=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('event',''))" "$line" 2>/dev/null || echo "")
+  agent=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('agent',''))" "$line" 2>/dev/null || echo "")
+  local task_id
+  task_id=$(basename "$task_dir")
 
-  echo "[crew-daemon] 이벤트: event=${event} agent=${agent}"
+  echo "[crew-daemon] task=${task_id} event=${event} agent=${agent}"
 
-  local result
   case "$event" in
     PHASE_COMPLETE)
-      result=$(pipeline_update)
-      echo "[crew-daemon] $result"
+      local result
+      result=$(task_pipeline_advance "$task_dir")
+      echo "[crew-daemon] task=${task_id} $result"
       if [[ "$result" == "PIPELINE_DONE" ]]; then
-        echo "[crew-daemon] 파이프라인 완료 — 데몬 종료"
-        exit 0
+        local merge_result
+        merge_result=$(merge_task_branch "$task_dir")
+        echo "[crew-daemon] task=${task_id} merge=${merge_result}"
+        if [[ "$merge_result" == "MERGE_OK" ]]; then
+          cleanup_task_dir "$task_id"
+        fi
+        # MERGE_CONFLICT: resolver 활성화 — task dir 유지
       fi
       ;;
     PIPELINE_ABORT)
-      result=$(pipeline_abort)
-      echo "[crew-daemon] $result — 데몬 종료"
-      exit 0
+      task_pipeline_abort "$task_dir" "에이전트 요청"
+      echo "[crew-daemon] task=${task_id} ABORTED"
       ;;
     *)
-      echo "[crew-daemon] 알 수 없는 이벤트: ${event}"
+      echo "[crew-daemon] task=${task_id} 알 수 없는 이벤트: ${event}"
       ;;
   esac
 }
 
-# ── 오프셋 복원 ──────────────────────────────────────────────────
-OFFSET=0
-[ -f "$OFFSET_FILE" ] && OFFSET=$(cat "$OFFSET_FILE")
-
-LAST_EVENT_TIME=$(date +%s)
-
 # ── 메인 루프 ────────────────────────────────────────────────────
+
+# 마지막 활성 활동 시간 (프로젝트 전체 유휴 판정용)
+LAST_ACTIVE_TIME=$(date +%s)
+
+# per-task 마지막 이벤트 시간 추적 (zombie 판정용)
+declare -A TASK_LAST_EVENT
+declare -A TASK_RETRY_COUNT
+
 while true; do
-  # 파이프라인 완료 여부 주기적 확인 (이벤트 유실 대비 안전망)
-  if pipeline_is_done; then
-    echo "[crew-daemon] 파이프라인 이미 완료 — 데몬 종료"
-    exit 0
-  fi
+  ACTIVE_TASKS=0
 
-  # 유휴 타임아웃 확인
-  NOW=$(date +%s)
-  IDLE=$((NOW - LAST_EVENT_TIME))
-  if [ "$IDLE" -ge "$IDLE_TIMEOUT" ]; then
-    echo "[crew-daemon] ${IDLE_TIMEOUT}s 동안 이벤트 없음 — 유휴 타임아웃으로 종료"
-    exit 0
-  fi
+  # tasks/ 하위의 모든 task 디렉토리 스캔
+  for task_dir in "${TASKS_DIR}"/*/; do
+    [ -d "$task_dir" ] || continue
+    task_id=$(basename "$task_dir")
+    status=$(task_status "$task_dir")
 
-  # 새 이벤트 처리
-  if [ -f "$EVENTS_FILE" ]; then
-    TOTAL=$(wc -l < "$EVENTS_FILE" | tr -d ' ')
-    if [ "$TOTAL" -gt "$OFFSET" ]; then
-      while IFS= read -r line; do
-        [ -n "$line" ] && process_event "$line"
-        OFFSET=$((OFFSET + 1))
-        echo "$OFFSET" > "$OFFSET_FILE"
-        LAST_EVENT_TIME=$(date +%s)
-      done < <(tail -n "+$((OFFSET + 1))" "$EVENTS_FILE")
+    [[ "$status" == "DONE" || "$status" == "FAILED" ]] && continue
+
+    ACTIVE_TASKS=$((ACTIVE_TASKS + 1))
+    LAST_ACTIVE_TIME=$(date +%s)
+
+    # per-task 시간 초기화
+    if [ -z "${TASK_LAST_EVENT[$task_id]+x}" ]; then
+      TASK_LAST_EVENT[$task_id]=$(date +%s)
+      TASK_RETRY_COUNT[$task_id]=$(cat "${task_dir}/retry_count.txt" 2>/dev/null || echo "0")
     fi
+
+    events_file="${task_dir}/events.jsonl"
+    offset_file="${task_dir}/events.offset"
+    OFFSET=0
+    [ -f "$offset_file" ] && OFFSET=$(cat "$offset_file")
+
+    # 새 이벤트 처리
+    if [ -f "$events_file" ]; then
+      TOTAL=$(wc -l < "$events_file" | tr -d ' ')
+      if [ "$TOTAL" -gt "$OFFSET" ]; then
+        while IFS= read -r line; do
+          [ -n "$line" ] && process_event "$task_dir" "$line"
+          OFFSET=$((OFFSET + 1))
+          echo "$OFFSET" > "$offset_file"
+          TASK_LAST_EVENT[$task_id]=$(date +%s)
+        done < <(tail -n "+$((OFFSET + 1))" "$events_file")
+      fi
+    fi
+
+    # zombie 감지
+    NOW=$(date +%s)
+    TASK_IDLE=$(( NOW - ${TASK_LAST_EVENT[$task_id]} ))
+    if [ "$TASK_IDLE" -ge "$ZOMBIE_TIMEOUT" ]; then
+      RETRY=${TASK_RETRY_COUNT[$task_id]}
+      if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
+        echo "[crew-daemon] task=${task_id} zombie — 재시도 ${MAX_RETRIES}회 초과, FAILED"
+        task_pipeline_abort "$task_dir" "zombie timeout (retry exhausted)"
+        # worktree 정리
+        branch=$(cat "${task_dir}/branch.txt" 2>/dev/null || echo "")
+        worktree_path=$(cat "${task_dir}/worktree_path.txt" 2>/dev/null || echo "")
+        [ -n "$worktree_path" ] && git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+        [ -n "$branch" ] && git -C "$PROJECT_ROOT" branch -D "$branch" 2>/dev/null || true
+      else
+        NEW_RETRY=$((RETRY + 1))
+        echo "$NEW_RETRY" > "${task_dir}/retry_count.txt"
+        TASK_RETRY_COUNT[$task_id]=$NEW_RETRY
+        TASK_LAST_EVENT[$task_id]=$(date +%s)
+        echo "[crew-daemon] task=${task_id} zombie 감지 — 재시작 시도 ${NEW_RETRY}/${MAX_RETRIES}"
+        # 현재 active_agent 의 signal 재생성
+        active_agent=$(cat "${task_dir}/active_agent.txt" 2>/dev/null || echo "")
+        if [ -n "$active_agent" ]; then
+          mkdir -p "${task_dir}/agent_signal"
+          touch "${task_dir}/agent_signal/${active_agent}.ready"
+          echo "[crew-daemon] task=${task_id} signal: ${active_agent}.ready 재생성"
+        fi
+      fi
+    fi
+  done
+
+  # 프로젝트 전체 유휴 타임아웃
+  NOW=$(date +%s)
+  IDLE=$(( NOW - LAST_ACTIVE_TIME ))
+  if [ "$ACTIVE_TASKS" -eq 0 ] && [ "$IDLE" -ge "$IDLE_TIMEOUT" ]; then
+    echo "[crew-daemon] ${IDLE_TIMEOUT}s 동안 활성 task 없음 — 유휴 종료"
+    exit 0
   fi
 
-  sleep 1
+  sleep 2
 done

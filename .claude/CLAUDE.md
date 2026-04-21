@@ -1,10 +1,20 @@
 # Agent Orchestrator
 
 ## 상태 경로 규칙
+```bash
+PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+TASK_ID=$(cat "${PROJECT_ROOT}/.crew_task_id" 2>/dev/null || echo "")
+
+if [ -n "$TASK_ID" ]; then
+  STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}/tasks/${TASK_ID}"
+else
+  STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
+fi
 ```
-PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
-STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
-```
+
+에이전트는 항상 위 규칙으로 STATE_DIR을 결정한다.
+워크트리 내에서 실행 중이면 TASK_ID가 존재하므로 task-level STATE_DIR을 사용한다.
 
 ## 세션 시작 시 필수 수행
 1. `{STATE_DIR}/context/session_handoff.md` 읽기 → 직전 세션 컨텍스트 파악
@@ -18,6 +28,7 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 - 디자이너: `~/.claude/agent-crew/agents/designer/AGENT.md`
 - 프론트엔드: `~/.claude/agent-crew/agents/frontend/AGENT.md`
 - 백엔드 개발자: `~/.claude/agent-crew/agents/backend/AGENT.md`
+- 충돌 해결자: `~/.claude/agent-crew/agents/resolver/AGENT.md`
 
 ## 에이전트 간 인계
 - 인계 문서: `{STATE_DIR}/handoff.md`

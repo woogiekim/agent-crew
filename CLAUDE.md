@@ -70,19 +70,25 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
     │   ├── frontend/
     │   └── backend/
     └── {PROJECT_NAME}/          ← 프로젝트별 상태 (자동 생성)
-        ├── pipeline.json
-        ├── phase.txt
-        ├── active_agent.txt
-        ├── iterations.txt
-        ├── handoff.md
-        └── context/
-            ├── session_handoff.md
-            ├── prd.md
-            ├── design-spec.md
-            ├── requirements.md
-            ├── design.md
-            ├── tdd_log.md
-            └── verify_checklist.md
+        ├── config.json          ← {"maxConcurrentTasks": 2}
+        ├── orchestrator.pid     ← 데몬 PID
+        └── tasks/
+            └── {TASK_ID}/       ← task별 상태 (TASK_ID = YYYYmmdd-HHMMSS)
+                ├── pipeline.json
+                ├── phase.txt
+                ├── active_agent.txt
+                ├── branch.txt       ← feature/task-{id}
+                ├── worktree_path.txt
+                ├── retry_count.txt
+                ├── events.jsonl
+                ├── events.offset
+                ├── agent_signal/    ← {agent}.ready 신호 파일
+                ├── handoff.md
+                └── context/
+                    ├── session_handoff.md
+                    ├── prd.md
+                    ├── design-spec.md
+                    └── ...
 ```
 
 ### 에이전트 구성
@@ -93,6 +99,7 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 | designer | UI/UX 명세 작성 |
 | frontend | UI 구현 및 검증 |
 | backend | Kotlin+Spring Boot DDD/TDD 구현 |
+| resolver | 병합 충돌 자동 해결 |
 
 ### 파이프라인 자동 결정 (planner 기준)
 

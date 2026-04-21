@@ -49,7 +49,7 @@ install_global() {
   cp -r "$TEMP_DIR/.claude/commands/"* "${GLOBAL_DIR}/commands/"
   log_info "명령어 설치 완료 → ${GLOBAL_DIR}/commands/"
 
-  # ~/.claude/agent-crew/agents/ 에 에이전트 설치
+  # ~/.claude/agent-crew/agents/ 에 에이전트 설치 (resolver 포함)
   mkdir -p "${AGENT_CREW_DIR}/agents"
   cp -r "$TEMP_DIR/.claude/agents/"* "${AGENT_CREW_DIR}/agents/"
   log_info "에이전트 설치 완료 → ${AGENT_CREW_DIR}/agents/"
