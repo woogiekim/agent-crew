@@ -13,9 +13,18 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 2. `{STATE_DIR}/phase.txt` 확인
    - 파일 없으면: "워크스페이스가 초기화되지 않았습니다. /setup을 먼저 실행하세요."
-   - `DONE` 또는 `REQUIREMENTS`이면: 정상 진행
+   - `REQUIREMENTS`이면: 정상 진행
+   - `DONE` 이거나 `{STATE_DIR}/pipeline.json`의 `status == "DONE"`이면:
+     → **이전 파이프라인 자동 리셋** (아래 Bash 도구로 실행):
+     ```bash
+     rm -f "${STATE_DIR}/events.jsonl" "${STATE_DIR}/events.offset"
+     echo '{"task":"","agents":[],"currentIndex":0,"status":"PENDING"}' > "${STATE_DIR}/pipeline.json"
+     echo "REQUIREMENTS" > "${STATE_DIR}/phase.txt"
+     echo "" > "${STATE_DIR}/handoff.md"
+     rm -f "${STATE_DIR}/agent_signal/"*.ready
+     ```
+     리셋 완료 후 정상 진행
    - 그 외: `{STATE_DIR}/pipeline.json`의 `status` 확인
-     - `status == "DONE"`이면: 정상 진행
      - `status == "IN_PROGRESS"`이면: AskUserQuestion 도구로 확인
        - 질문: "진행 중인 작업이 있습니다 (phase: [현재값]). 어떻게 할까요?"
        - 선택지: "새로 시작" / "취소"
