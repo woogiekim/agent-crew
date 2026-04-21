@@ -18,4 +18,4 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 4. git commit: `feat: frontend implement [화면명]`
 
 ## 완료 후
-자동으로 frontend /verify 단계로 진행한다.
+`{STATE_DIR}/phase.txt` → `VERIFICATION` 갱신 후 frontend /verify 단계로 진행한다.

@@ -9,6 +9,7 @@ set -euo pipefail
 
 PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
+AGENT_CREW_DIR="${HOME}/.claude/agent-crew"
 EVENTS_FILE="${STATE_DIR}/events.jsonl"
 OFFSET_FILE="${STATE_DIR}/events.offset"
 PID_FILE="${STATE_DIR}/orchestrator.pid"
@@ -77,67 +78,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ── JSON 헬퍼 ────────────────────────────────────────────────────
-json_get() {
-  local json="$1" key="$2"
-  if command -v jq &>/dev/null; then
-    echo "$json" | jq -r ".$key // empty"
-  else
-    python3 -c "import sys,json; d=json.loads(sys.argv[1]); print(d.get('$key',''))" "$json"
-  fi
-}
-
 pipeline_update() {
-  python3 - "$PIPELINE_FILE" "$PHASE_FILE" "$SIGNAL_DIR" <<'PYEOF'
-import sys, json, os
-
-pipeline_file, phase_file, signal_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-
-with open(pipeline_file) as f:
-    p = json.load(f)
-
-p['currentIndex'] = p.get('currentIndex', 0) + 1
-agents = p.get('agents', [])
-
-if p['currentIndex'] >= len(agents):
-    p['status'] = 'DONE'
-    with open(phase_file, 'w') as f:
-        f.write('DONE')
-    print("PIPELINE_DONE")
-else:
-    next_agent = agents[p['currentIndex']]
-    initial_phase = {
-        'planner': 'REQUIREMENTS', 'designer': 'DESIGN',
-        'frontend': 'IMPLEMENTATION', 'backend': 'DESIGN',
-    }.get(next_agent, 'IN_PROGRESS')
-    with open(phase_file, 'w') as f:
-        f.write(initial_phase)
-    signal_path = os.path.join(signal_dir, f"{next_agent}.ready")
-    open(signal_path, 'w').close()
-    with open(os.path.join(os.path.dirname(pipeline_file), 'active_agent.txt'), 'w') as f:
-        f.write(next_agent)
-    print(f"NEXT_AGENT:{next_agent}")
-
-tmp = pipeline_file + '.tmp'
-with open(tmp, 'w') as f:
-    json.dump(p, f, indent=2, ensure_ascii=False)
-os.replace(tmp, pipeline_file)
-PYEOF
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" advance "$PIPELINE_FILE" "$PHASE_FILE" "$SIGNAL_DIR"
 }
 
 pipeline_abort() {
-  python3 - "$PIPELINE_FILE" <<'PYEOF'
-import sys, json, os
-f = sys.argv[1]
-with open(f) as fp:
-    p = json.load(fp)
-p['status'] = 'FAILED'
-tmp = f + '.tmp'
-with open(tmp, 'w') as fp:
-    json.dump(p, fp, indent=2, ensure_ascii=False)
-os.replace(tmp, f)
-print("PIPELINE_FAILED")
-PYEOF
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" abort "$PIPELINE_FILE"
 }
 
 pipeline_is_done() {
@@ -151,8 +97,8 @@ pipeline_is_done() {
 process_event() {
   local line="$1"
   local event agent
-  event=$(json_get "$line" "event")
-  agent=$(json_get "$line" "agent")
+  event=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('event',''))" "$line")
+  agent=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('agent',''))" "$line")
 
   echo "[crew-daemon] 이벤트: event=${event} agent=${agent}"
 

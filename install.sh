@@ -60,12 +60,15 @@ install_global() {
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
 
-  # crew-daemon 및 crew-status 설치
+  # crew-daemon, crew-status, lib 설치
   cp "$TEMP_DIR/.claude/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-daemon.sh"
   cp "$TEMP_DIR/.claude/crew-status.sh" "${AGENT_CREW_DIR}/crew-status.sh"
   chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-status.sh"
+  mkdir -p "${AGENT_CREW_DIR}/lib"
+  cp -r "$TEMP_DIR/.claude/lib/"* "${AGENT_CREW_DIR}/lib/"
   log_info "crew-daemon 설치 완료 → ${AGENT_CREW_DIR}/crew-daemon.sh"
   log_info "crew-status 설치 완료 → ${AGENT_CREW_DIR}/crew-status.sh"
+  log_info "lib 설치 완료 → ${AGENT_CREW_DIR}/lib/"
 
   # ~/.local/bin 에 PATH 명령어로 설치
   BIN_DIR="${HOME}/.local/bin"
