@@ -21,12 +21,14 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
        - 선택지: "새로 시작" / "취소"
      - "취소" 선택 시 종료
 
-3. crew-daemon 상태 확인 및 시작
+3. crew-daemon 상태 확인 및 시작 (반드시 Bash 도구로 실행)
    ```bash
-   bash ~/.claude/agent-crew/crew-daemon.sh status
+   bash ~/.claude/agent-crew/crew-daemon.sh status | grep -q RUNNING \
+     || nohup bash ~/.claude/agent-crew/crew-daemon.sh start \
+          >> "${STATE_DIR}/daemon.log" 2>&1 &
    ```
-   - 실행 중이면: 그대로 사용
-   - 아니면: `bash ~/.claude/agent-crew/crew-daemon.sh start &`
+   - RUNNING이면: 그대로 사용
+   - 아니면: nohup으로 백그라운드 시작 (Bash 툴 종료 후에도 생존)
 
 4. planner 에이전트 활성화
    - `{STATE_DIR}/active_agent.txt` → `planner`

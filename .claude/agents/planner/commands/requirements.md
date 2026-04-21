@@ -8,6 +8,14 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 
 ## 실행 순서
 
+### 0단계 — 데몬 시작 (반드시 실행)
+아래 명령을 Bash 도구로 실행한다. 이미 실행 중이면 "이미 실행 중" 메시지가 출력되고 무시된다.
+```bash
+bash ~/.claude/agent-crew/crew-daemon.sh status | grep -q RUNNING \
+  || nohup bash ~/.claude/agent-crew/crew-daemon.sh start \
+       >> "${HOME}/.claude/agent-crew/$(basename $(git rev-parse --show-toplevel 2>/dev/null || pwd))/daemon.log" 2>&1 &
+```
+
 ### 1단계 — 요청 분석 (내부)
 사용자 요청을 읽고 다음 항목을 초안으로 추출한다 (아직 사용자에게 보여주지 않음):
 - 도메인/비즈니스 컨텍스트
