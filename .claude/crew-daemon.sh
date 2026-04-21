@@ -89,12 +89,12 @@ task_pipeline_advance() {
   python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" advance \
     "${task_dir}/pipeline.json" \
     "${task_dir}/phase.txt" \
-    "${task_dir}/agent_signal"
+    "${task_dir}/agent_signal" || echo "ADVANCE_ERROR"
 }
 
 task_pipeline_abort() {
   local task_dir="$1" reason="$2"
-  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" abort "${task_dir}/pipeline.json"
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" abort "${task_dir}/pipeline.json" || true
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ABORT: $reason" >> "${task_dir}/error.log"
 }
 
@@ -108,9 +108,11 @@ merge_task_branch() {
 
   # feature/main 으로 merge 시도
   git -C "$PROJECT_ROOT" checkout feature/main 2>/dev/null || true
-  if git -C "$PROJECT_ROOT" merge --no-ff "$branch" -m "merge: $branch → feature/main" 2>/dev/null; then
+  if git -C "$PROJECT_ROOT" merge --no-ff "$branch" -m "merge: $branch into feature/main" 2>/dev/null; then
     # 성공: worktree 및 브랜치 정리
-    [ -n "$worktree_path" ] && git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+    if [ -n "$worktree_path" ]; then
+      git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+    fi
     git -C "$PROJECT_ROOT" branch -D "$branch" 2>/dev/null || true
     echo "MERGE_OK"
   else
@@ -128,12 +130,21 @@ cleanup_task_dir() {
   rm -rf "${TASKS_DIR}/${task_id}"
 }
 
+# per-task 마지막 이벤트 시간 — 파일 기반 (bash 3.x 호환)
+get_last_event_time() {
+  local ts_file="${1}/zombie_last_event.txt"
+  [ -f "$ts_file" ] && cat "$ts_file" || date +%s
+}
+
+set_last_event_time() {
+  date +%s > "${1}/zombie_last_event.txt"
+}
+
 process_event() {
   local task_dir="$1" line="$2"
-  local event agent
+  local event agent task_id
   event=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('event',''))" "$line" 2>/dev/null || echo "")
   agent=$(python3 -c "import sys,json; print(json.loads(sys.argv[1]).get('agent',''))" "$line" 2>/dev/null || echo "")
-  local task_id
   task_id=$(basename "$task_dir")
 
   echo "[crew-daemon] task=${task_id} event=${event} agent=${agent}"
@@ -165,17 +176,11 @@ process_event() {
 
 # ── 메인 루프 ────────────────────────────────────────────────────
 
-# 마지막 활성 활동 시간 (프로젝트 전체 유휴 판정용)
 LAST_ACTIVE_TIME=$(date +%s)
-
-# per-task 마지막 이벤트 시간 추적 (zombie 판정용)
-declare -A TASK_LAST_EVENT
-declare -A TASK_RETRY_COUNT
 
 while true; do
   ACTIVE_TASKS=0
 
-  # tasks/ 하위의 모든 task 디렉토리 스캔
   for task_dir in "${TASKS_DIR}"/*/; do
     [ -d "$task_dir" ] || continue
     task_id=$(basename "$task_dir")
@@ -186,11 +191,8 @@ while true; do
     ACTIVE_TASKS=$((ACTIVE_TASKS + 1))
     LAST_ACTIVE_TIME=$(date +%s)
 
-    # per-task 시간 초기화
-    if [ -z "${TASK_LAST_EVENT[$task_id]+x}" ]; then
-      TASK_LAST_EVENT[$task_id]=$(date +%s)
-      TASK_RETRY_COUNT[$task_id]=$(cat "${task_dir}/retry_count.txt" 2>/dev/null || echo "0")
-    fi
+    # zombie_last_event.txt 초기화 (처음 보는 task)
+    [ -f "${task_dir}/zombie_last_event.txt" ] || set_last_event_time "$task_dir"
 
     events_file="${task_dir}/events.jsonl"
     offset_file="${task_dir}/events.offset"
@@ -205,31 +207,31 @@ while true; do
           [ -n "$line" ] && process_event "$task_dir" "$line"
           OFFSET=$((OFFSET + 1))
           echo "$OFFSET" > "$offset_file"
-          TASK_LAST_EVENT[$task_id]=$(date +%s)
+          set_last_event_time "$task_dir"
         done < <(tail -n "+$((OFFSET + 1))" "$events_file")
       fi
     fi
 
     # zombie 감지
     NOW=$(date +%s)
-    TASK_IDLE=$(( NOW - ${TASK_LAST_EVENT[$task_id]} ))
+    LAST_EVENT=$(get_last_event_time "$task_dir")
+    TASK_IDLE=$(( NOW - LAST_EVENT ))
     if [ "$TASK_IDLE" -ge "$ZOMBIE_TIMEOUT" ]; then
-      RETRY=${TASK_RETRY_COUNT[$task_id]}
+      RETRY=$(cat "${task_dir}/retry_count.txt" 2>/dev/null || echo "0")
       if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
         echo "[crew-daemon] task=${task_id} zombie — 재시도 ${MAX_RETRIES}회 초과, FAILED"
         task_pipeline_abort "$task_dir" "zombie timeout (retry exhausted)"
-        # worktree 정리
         branch=$(cat "${task_dir}/branch.txt" 2>/dev/null || echo "")
         worktree_path=$(cat "${task_dir}/worktree_path.txt" 2>/dev/null || echo "")
-        [ -n "$worktree_path" ] && git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+        if [ -n "$worktree_path" ]; then
+          git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || true
+        fi
         [ -n "$branch" ] && git -C "$PROJECT_ROOT" branch -D "$branch" 2>/dev/null || true
       else
         NEW_RETRY=$((RETRY + 1))
         echo "$NEW_RETRY" > "${task_dir}/retry_count.txt"
-        TASK_RETRY_COUNT[$task_id]=$NEW_RETRY
-        TASK_LAST_EVENT[$task_id]=$(date +%s)
+        set_last_event_time "$task_dir"
         echo "[crew-daemon] task=${task_id} zombie 감지 — 재시작 시도 ${NEW_RETRY}/${MAX_RETRIES}"
-        # 현재 active_agent 의 signal 재생성
         active_agent=$(cat "${task_dir}/active_agent.txt" 2>/dev/null || echo "")
         if [ -n "$active_agent" ]; then
           mkdir -p "${task_dir}/agent_signal"
