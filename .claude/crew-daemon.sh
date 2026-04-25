@@ -133,7 +133,13 @@ cleanup_task_dir() {
 # per-task 마지막 이벤트 시간 — 파일 기반 (bash 3.x 호환)
 get_last_event_time() {
   local ts_file="${1}/zombie_last_event.txt"
-  [ -f "$ts_file" ] && cat "$ts_file" || date +%s
+  local val
+  if [ -f "$ts_file" ]; then
+    val=$(tr -d '[:space:]' < "$ts_file")
+    [[ "$val" =~ ^[0-9]+$ ]] && echo "$val" || date +%s
+  else
+    date +%s
+  fi
 }
 
 set_last_event_time() {
@@ -162,6 +168,9 @@ process_event() {
           cleanup_task_dir "$task_id"
         fi
         # MERGE_CONFLICT: resolver 활성화 — task dir 유지
+      elif [[ "$result" == "ADVANCE_ERROR" ]]; then
+        task_pipeline_abort "$task_dir" "pipeline advance failed"
+        echo "[crew-daemon] task=${task_id} ABORTED (advance error)"
       fi
       ;;
     PIPELINE_ABORT)
