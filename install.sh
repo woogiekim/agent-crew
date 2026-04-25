@@ -60,10 +60,15 @@ install_global() {
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
 
-  # crew-daemon, crew-status, lib 설치
-  cp "$TEMP_DIR/.claude/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-daemon.sh"
-  cp "$TEMP_DIR/.claude/crew-status.sh" "${AGENT_CREW_DIR}/crew-status.sh"
-  chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-status.sh"
+  # crew-daemon, crew-status, ship 스크립트, lib 설치
+  cp "$TEMP_DIR/.claude/crew-daemon.sh"  "${AGENT_CREW_DIR}/crew-daemon.sh"
+  cp "$TEMP_DIR/.claude/crew-status.sh"  "${AGENT_CREW_DIR}/crew-status.sh"
+  cp "$TEMP_DIR/.claude/ship-check.sh"   "${AGENT_CREW_DIR}/ship-check.sh"
+  cp "$TEMP_DIR/.claude/ship-init.sh"    "${AGENT_CREW_DIR}/ship-init.sh"
+  cp "$TEMP_DIR/.claude/ship-cancel.sh"  "${AGENT_CREW_DIR}/ship-cancel.sh"
+  chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-status.sh" \
+           "${AGENT_CREW_DIR}/ship-check.sh" "${AGENT_CREW_DIR}/ship-init.sh" \
+           "${AGENT_CREW_DIR}/ship-cancel.sh"
   mkdir -p "${AGENT_CREW_DIR}/lib"
   cp -r "$TEMP_DIR/.claude/lib/"* "${AGENT_CREW_DIR}/lib/"
   log_info "crew-daemon 설치 완료 → ${AGENT_CREW_DIR}/crew-daemon.sh"
