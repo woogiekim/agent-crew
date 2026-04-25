@@ -23,18 +23,28 @@ CMD="${1:-start}"
 
 case "$CMD" in
   stop)
+    # PID 파일의 프로세스 + pgrep으로 동명 프로세스 모두 종료 (다중 기동 방어)
+    STOPPED=0
     if [ -f "$PID_FILE" ]; then
       PID=$(cat "$PID_FILE")
       if kill -0 "$PID" 2>/dev/null; then
-        kill "$PID"
+        kill "$PID" && STOPPED=$((STOPPED + 1))
         echo "[crew-daemon] 종료 요청 (PID $PID)"
-      else
-        echo "[crew-daemon] 이미 종료된 프로세스 (PID $PID)"
-        rm -f "$PID_FILE"
       fi
-    else
-      echo "[crew-daemon] 실행 중인 데몬 없음"
+      rm -f "$PID_FILE"
     fi
+    # 동일 스크립트로 기동된 좀비 프로세스 추가 정리
+    EXTRA=$(pgrep -f "crew-daemon.sh start" 2>/dev/null | grep -v "^$$" || true)
+    for ZPID in $EXTRA; do
+      kill "$ZPID" 2>/dev/null && STOPPED=$((STOPPED + 1)) && echo "[crew-daemon] 추가 프로세스 종료 (PID $ZPID)"
+    done
+    # grace period 후 SIGKILL
+    sleep 2
+    STILL=$(pgrep -f "crew-daemon.sh start" 2>/dev/null | grep -v "^$$" || true)
+    for ZPID in $STILL; do
+      kill -9 "$ZPID" 2>/dev/null && echo "[crew-daemon] 강제 종료 (PID $ZPID)"
+    done
+    [ "$STOPPED" -eq 0 ] && echo "[crew-daemon] 실행 중인 데몬 없음"
     exit 0
     ;;
   status)
@@ -82,6 +92,14 @@ task_status() {
   local pipeline="$1/pipeline.json"
   [ -f "$pipeline" ] || { echo "PENDING"; return; }
   python3 -c "import json; print(json.load(open('$pipeline')).get('status','PENDING'))" 2>/dev/null || echo "PENDING"
+}
+
+task_pipeline_start() {
+  local task_dir="$1"
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" start \
+    "${task_dir}/pipeline.json" \
+    "${task_dir}/phase.txt" \
+    "${task_dir}/agent_signal" || echo "START_ERROR"
 }
 
 task_pipeline_advance() {
@@ -156,6 +174,15 @@ process_event() {
   echo "[crew-daemon] task=${task_id} event=${event} agent=${agent}"
 
   case "$event" in
+    PIPELINE_START)
+      local start_result
+      start_result=$(task_pipeline_start "$task_dir")
+      echo "[crew-daemon] task=${task_id} $start_result"
+      if [[ "$start_result" == "START_ERROR" ]]; then
+        task_pipeline_abort "$task_dir" "pipeline start failed"
+        echo "[crew-daemon] task=${task_id} ABORTED (start error)"
+      fi
+      ;;
     PHASE_COMPLETE)
       local result
       result=$(task_pipeline_advance "$task_dir")
