@@ -18,11 +18,17 @@
 
 ### requirements 단계
 1. 사용자 요청 분석
-2. PRD 작성 (`~/.claude/agent-crew/{PROJECT_NAME}/context/prd.md`)
-3. 필요 에이전트 결정 → `pipeline.json` 저장
-4. `phase.txt` → 현재 에이전트 작업 완료 표시
+2. PRD 작성 (`{STATE_DIR}/context/prd.md`)
+3. 필요 에이전트 결정 → `{STATE_DIR}/handoff.md` 저장
+4. 완료 시 **오직** 아래 이벤트만 emit (pipeline.json / phase.txt 직접 수정 금지):
+   ```bash
+   echo '{"event":"PHASE_COMPLETE","agent":"planner"}' >> "{STATE_DIR}/events.jsonl"
+   ```
 
 ## 산출물
-- `~/.claude/agent-crew/{PROJECT_NAME}/context/prd.md` — 기능명세서
-- `~/.claude/agent-crew/{PROJECT_NAME}/pipeline.json` — 결정된 파이프라인
-- `~/.claude/agent-crew/{PROJECT_NAME}/handoff.md` — 다음 에이전트로 인계 내용
+- `{STATE_DIR}/context/prd.md` — 기능명세서
+- `{STATE_DIR}/handoff.md` — 다음 에이전트로 인계 내용
+
+## 절대 규칙
+- `pipeline.json`, `phase.txt`, `active_agent.txt` 직접 수정 금지
+- 단계 완료는 반드시 `events.jsonl`에 `PHASE_COMPLETE` emit으로만 표시

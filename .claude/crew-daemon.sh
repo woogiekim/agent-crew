@@ -84,6 +84,14 @@ task_status() {
   python3 -c "import json; print(json.load(open('$pipeline')).get('status','PENDING'))" 2>/dev/null || echo "PENDING"
 }
 
+task_pipeline_start() {
+  local task_dir="$1"
+  python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" start \
+    "${task_dir}/pipeline.json" \
+    "${task_dir}/phase.txt" \
+    "${task_dir}/agent_signal" || echo "START_ERROR"
+}
+
 task_pipeline_advance() {
   local task_dir="$1"
   python3 "${AGENT_CREW_DIR}/lib/pipeline_update.py" advance \
@@ -156,6 +164,15 @@ process_event() {
   echo "[crew-daemon] task=${task_id} event=${event} agent=${agent}"
 
   case "$event" in
+    PIPELINE_START)
+      local start_result
+      start_result=$(task_pipeline_start "$task_dir")
+      echo "[crew-daemon] task=${task_id} $start_result"
+      if [[ "$start_result" == "START_ERROR" ]]; then
+        task_pipeline_abort "$task_dir" "pipeline start failed"
+        echo "[crew-daemon] task=${task_id} ABORTED (start error)"
+      fi
+      ;;
     PHASE_COMPLETE)
       local result
       result=$(task_pipeline_advance "$task_dir")

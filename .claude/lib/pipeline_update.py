@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pipeline state management for crew-daemon.
 Usage:
+  python3 pipeline_update.py start   <pipeline_file> <phase_file> <signal_dir>
   python3 pipeline_update.py advance <pipeline_file> <phase_file> <signal_dir>
   python3 pipeline_update.py abort   <pipeline_file>
 """
@@ -19,6 +20,23 @@ def atomic_write(path, data):
     with open(tmp, 'w') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     os.replace(tmp, path)
+
+
+def start(pipeline_file, phase_file, signal_dir):
+    with open(pipeline_file) as f:
+        p = json.load(f)
+    p['status'] = 'IN_PROGRESS'
+    p['currentIndex'] = 0
+    first_agent = p['agents'][0]
+    initial_phase = AGENT_INITIAL_PHASE.get(first_agent, 'REQUIREMENTS')
+    with open(phase_file, 'w') as f:
+        f.write(initial_phase)
+    os.makedirs(signal_dir, exist_ok=True)
+    open(os.path.join(signal_dir, f"{first_agent}.ready"), 'w').close()
+    with open(os.path.join(os.path.dirname(pipeline_file), 'active_agent.txt'), 'w') as f:
+        f.write(first_agent)
+    atomic_write(pipeline_file, p)
+    print(f"PIPELINE_STARTED:{first_agent}")
 
 
 def advance(pipeline_file, phase_file, signal_dir):
@@ -57,7 +75,9 @@ def abort(pipeline_file):
 
 if __name__ == '__main__':
     action = sys.argv[1]
-    if action == 'advance':
+    if action == 'start':
+        start(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif action == 'advance':
         advance(sys.argv[2], sys.argv[3], sys.argv[4])
     elif action == 'abort':
         abort(sys.argv[2])
