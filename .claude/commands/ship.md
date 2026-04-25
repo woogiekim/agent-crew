@@ -38,52 +38,20 @@ TASK_DIR     = {STATE_DIR}/tasks/{TASK_ID}
 
 3. 동시 실행 제한 확인
    ```bash
-   CONFIG="${STATE_DIR}/config.json"
-   MAX=$(python3 -c "import json; print(json.load(open('$CONFIG')).get('maxConcurrentTasks',2))" 2>/dev/null || echo 2)
-   ACTIVE=$(python3 -c "
-   import json, glob
-   count = 0
-   for f in glob.glob('${STATE_DIR}/tasks/*/pipeline.json'):
-       try:
-           p = json.load(open(f))
-           if p.get('status') == 'IN_PROGRESS': count += 1
-       except: pass
-   print(count)
-   ")
-   echo "active=$ACTIVE max=$MAX"
+   bash ~/.claude/agent-crew/ship-check.sh "$STATE_DIR"
+   # → active=N max=N 출력
    ```
    - `ACTIVE >= MAX`이면: AskUserQuestion 도구로 안내
+     - 질문: "현재 {ACTIVE}개 task가 실행 중입니다 (최대 {MAX}개). 어떻게 할까요?"
+     - 선택지: "대기 (나중에 실행)" / "강제 시작 (제한 무시)"
+     - "대기" 선택 시 종료
 
-4. TASK_ID 생성 및 브랜치/워크트리 생성
+4. TASK_ID 생성 및 브랜치/워크트리 생성 + daemon 시작
    ```bash
-   TASK_ID=$(date +%Y%m%d-%H%M%S)
-   BRANCH="feature/task-${TASK_ID}"
-   WORKTREE_PATH="${PROJECT_ROOT}/../$(basename ${PROJECT_ROOT})-task-${TASK_ID}"
-
-   git show-ref --verify --quiet refs/heads/feature/main \
-     || git checkout -b feature/main
-
-   git checkout -b "$BRANCH" feature/main
-   git checkout -
-   git worktree add "$WORKTREE_PATH" "$BRANCH"
-
-   TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
-   mkdir -p "${TASK_DIR}/context" "${TASK_DIR}/agent_signal"
-   echo "$WORKTREE_PATH" > "${TASK_DIR}/worktree_path.txt"
-   echo "$BRANCH"        > "${TASK_DIR}/branch.txt"
-   echo "0"              > "${TASK_DIR}/iterations.txt"
-   echo "0"              > "${TASK_DIR}/retry_count.txt"
-   echo "$TASK_ID"       > "${WORKTREE_PATH}/.crew_task_id"
-   echo "task_id=$TASK_ID worktree=$WORKTREE_PATH"
+   bash ~/.claude/agent-crew/ship-init.sh "$PROJECT_ROOT" "$STATE_DIR"
+   # → task_id=... branch=... worktree=... 출력
    ```
-
-5. crew-daemon 상태 확인 및 시작
-   ```bash
-   bash ~/.claude/agent-crew/crew-daemon.sh status | grep -q RUNNING \
-     || nohup bash ~/.claude/agent-crew/crew-daemon.sh start \
-          >> "${STATE_DIR}/daemon.log" 2>&1 &
-   sleep 1  # 데몬 초기화 대기
-   ```
+   출력에서 `task_id`, `branch`, `worktree` 값을 파싱하여 이후 단계에 사용한다.
 
 6. planner로 요청 분석 → 에이전트 목록 결정
    - `~/.claude/agent-crew/agents/planner/AGENT.md` 읽기
@@ -94,9 +62,7 @@ TASK_DIR     = {STATE_DIR}/tasks/{TASK_ID}
    - 선택지: "시작 (Recommended)" / "취소"
    - "취소" 선택 시:
      ```bash
-     git worktree remove --force "$WORKTREE_PATH"
-     git branch -D "$BRANCH"
-     rm -rf "$TASK_DIR"
+     bash ~/.claude/agent-crew/ship-cancel.sh "$PROJECT_ROOT" "$WORKTREE_PATH" "$BRANCH" "$TASK_DIR"
      ```
 
 8. 초기 `pipeline.json` 저장 (status=PENDING) 후 PIPELINE_START emit

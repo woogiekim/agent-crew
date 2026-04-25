@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(bash ~/.claude/agent-crew/ship-check.sh *)",
+      "Bash(bash ~/.claude/agent-crew/ship-init.sh *)",
+      "Bash(bash ~/.claude/agent-crew/ship-cancel.sh *)",
+      "Bash(bash ~/.claude/agent-crew/crew-daemon.sh *)",
+      "Bash(./gradlew test *)",
+      "Bash(npx tsc *)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {
