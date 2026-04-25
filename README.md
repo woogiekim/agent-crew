@@ -1,113 +1,182 @@
 # agent-crew
 
-> Claude Code 글로벌 플러그인 — 모든 프로젝트에서 멀티 에이전트 개발 파이프라인을 `/ship` 한 줄로 실행
+> Claude Code global plugin — run a full multi-agent development pipeline with a single `/ship` command, from any project.
 
 ![License](https://img.shields.io/github/license/woogiekim/agent-crew)
 ![Platform](https://img.shields.io/badge/platform-Claude%20Code-blue)
 
-## 📌 목차
+## Table of Contents
 
-- [프로젝트 소개](#-프로젝트-소개)
-- [핵심 기능](#-핵심-기능)
-- [설치 방법](#-설치-방법)
-- [사용법](#-사용법)
-- [워크플로우](#-워크플로우)
-- [에이전트](#-에이전트)
-- [상태 모니터링](#-상태-모니터링)
-- [기여 방법](#-기여-방법)
-- [라이선스](#-라이선스)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Pipeline Decision Logic](#pipeline-decision-logic)
+- [Agents](#agents)
+- [State & Monitoring](#state--monitoring)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## 💡 프로젝트 소개
+## Overview
 
-- **문제 인식:** Claude Code로 개발할 때 요구사항 분석 → 설계 → 구현 → 검증을 매번 수동으로 지시해야 하며, 여러 에이전트 역할을 일관되게 조율하기 어렵습니다.
-- **해결 방안:** agent-crew는 Claude Code 글로벌 플러그인으로 설치되어 어느 프로젝트에서나 `/ship "요청"` 한 줄로 planner → designer → frontend → backend 파이프라인을 자동 실행합니다.
-- **핵심 목적:** 개발자가 "무엇을 만들지"에만 집중할 수 있도록, 에이전트 간 인계·상태 관리·파이프라인 실행을 완전 자동화합니다.
+When developing with Claude Code, you typically have to manually direct each phase — requirements analysis, design, implementation, verification — and coordinate multiple agent roles consistently. This is tedious and error-prone.
 
-## ✨ 핵심 기능
+**agent-crew** is a Claude Code global plugin that automates this entire workflow. Install it once, and from any project you can run `/ship "what you want to build"` to automatically execute the full `planner → designer → frontend → backend` pipeline.
 
-- **자동 파이프라인:** 요청 유형에 따라 필요한 에이전트만 자동 선택·순차 실행
-- **이벤트 기반 상태 관리:** `events.jsonl` append + `crew-daemon`이 `pipeline.json`을 원자적으로 갱신 (레이스 컨디션 방지)
-- **실시간 상태 패널:** `crew-status --live`로 모든 프로젝트의 파이프라인 진행 상황 모니터링
-- **프로젝트 격리:** 상태는 `~/.claude/agent-crew/{PROJECT_NAME}/`에만 저장, 프로젝트 디렉토리 오염 없음
-- **글로벌 설치:** 한 번 설치로 모든 프로젝트에서 동일한 명령어 사용
+The goal: let developers focus on *what* to build, while agent-crew handles agent handoffs, state management, and pipeline orchestration automatically.
 
-## 🛠️ 설치 방법
+## Key Features
+
+- **Automatic pipeline selection** — planner analyzes your request and picks only the agents needed
+- **Daemon-centric event system** — agents emit events to `events.jsonl`; `crew-daemon` atomically updates `pipeline.json` (no race conditions, no direct state mutation by agents)
+- **Git worktree isolation** — each task runs in its own branch and worktree; merged back to `feature/main` on completion
+- **Real-time status panel** — `crew-status --live` monitors all projects' pipeline progress
+- **Project-clean state** — all state stored under `~/.claude/agent-crew/{PROJECT_NAME}/`, never in your project directory
+- **Global install** — one install works across all your projects
+
+## Installation
 
 ```bash
 curl -s https://raw.githubusercontent.com/woogiekim/agent-crew/main/install.sh | bash
 ```
 
-명령어(`/setup`, `/ship` 등), 에이전트, 훅, 상태 도구가 `~/.claude/`에 자동 설치됩니다.
+This installs commands (`/setup`, `/ship`, etc.), agents, hooks, and status tools into `~/.claude/`.
 
-**설치 후 PATH 반영:**
+**After install, reload your shell:**
 ```bash
 source ~/.zshrc   # zsh
-# 또는
 source ~/.bashrc  # bash
 ```
 
-## 🚀 사용법
+## Quick Start
 
 ```bash
-# 1. 새 프로젝트에서 1회 초기화
+# 1. Initialize workspace once per project
 /setup
 
-# 2. 전체 파이프라인 자동 실행
-/ship "요청 내용"
+# 2. Run the full pipeline
+/ship "implement order domain API with TDD"
 
-# 단계별 수동 실행
+# Manual phase execution
 /requirements
 /design
 /implement
 /verify
 
-# 상태 확인
+# Status
 /status
-crew-status --live   # 실시간 모니터링 (별도 터미널)
+crew-status --live   # real-time monitor in a separate terminal
 ```
 
-## 🔄 워크플로우
+## How It Works
+
+agent-crew uses a **daemon-centric event system**. Agents never mutate pipeline state directly — they only emit events. The `crew-daemon` process is the single source of truth for all state transitions.
 
 ```
-/ship "요청"
-  → planner  : 요구사항 분석 + PRD 작성 + 파이프라인 결정
-  → designer : UI/UX 명세 (필요 시)
-  → frontend : UI 구현 + 검증 (필요 시)
-  → backend  : DDD 설계 + TDD 구현 + 검증
+/ship "request"
+       │
+       ▼
+[Claude Code] sets up worktree + branch, writes pipeline.json (PENDING)
+       │
+       ▼ emit {"event": "PIPELINE_START"}
+[events.jsonl]
+       │
+       ▼ crew-daemon reads event
+[pipeline_update.py start]
+  • status: PENDING → IN_PROGRESS
+  • writes phase.txt, active_agent.txt
+  • creates agent_signal/planner.ready
+       │
+       ▼ Claude Code detects planner.ready → activates as planner
+[planner agent] analyzes request, writes PRD + handoff.md
+       │
+       ▼ emit {"event": "PHASE_COMPLETE", "agent": "planner"}
+[events.jsonl]
+       │
+       ▼ crew-daemon reads event
+[pipeline_update.py advance]
+  • increments currentIndex
+  • writes phase.txt, active_agent.txt
+  • creates agent_signal/backend.ready  (or next agent)
+       │
+       ▼ Claude Code detects backend.ready → activates as backend
+[backend agent] design → implement (TDD) → verify
+       │
+       ▼ emit {"event": "PHASE_COMPLETE", "agent": "backend"}
+       │
+       ▼ crew-daemon: PIPELINE_DONE → git merge → worktree cleanup
 ```
 
-planner가 요청을 분석해 필요한 에이전트만 자동 선택합니다:
+**Key invariant:** `pipeline.json`, `phase.txt`, and `active_agent.txt` are only ever written by `crew-daemon` (via `pipeline_update.py`). Agents write only to `events.jsonl`.
 
-| 요청 유형 | 파이프라인 |
+The one exception: agents may update `phase.txt` for *internal* sub-phase transitions (e.g., backend cycling through DESIGN → IMPLEMENTATION → VERIFICATION within its own lifecycle). Inter-agent transitions always go through the daemon.
+
+### State directory layout
+
+```
+~/.claude/agent-crew/{PROJECT_NAME}/
+├── config.json                 ← {"maxConcurrentTasks": 2}
+├── orchestrator.pid
+└── tasks/{TASK_ID}/
+    ├── pipeline.json           ← managed by crew-daemon only
+    ├── phase.txt               ← managed by crew-daemon (inter-agent)
+    ├── active_agent.txt        ← managed by crew-daemon
+    ├── branch.txt
+    ├── worktree_path.txt
+    ├── events.jsonl            ← append-only; agents write here
+    ├── events.offset           ← daemon read cursor
+    ├── agent_signal/           ← {agent}.ready trigger files
+    └── context/
+        ├── session_handoff.md
+        ├── prd.md
+        └── design-spec.md
+```
+
+## Pipeline Decision Logic
+
+The planner agent automatically selects which agents to run based on your request:
+
+| Request type | Pipeline |
 |---|---|
-| 백엔드 API / 도메인 로직 | planner → backend |
-| 풀스택 앱 | planner → designer → frontend → backend |
-| UI만 | planner → designer → frontend |
+| Backend API / domain logic | planner → backend |
+| Full-stack app | planner → designer → frontend → backend |
+| UI only | planner → designer → frontend |
+| Analysis / docs only | planner |
 
-각 단계 완료 시 에이전트가 `events.jsonl`에 이벤트를 기록하면 `crew-daemon`이 자동으로 다음 에이전트를 활성화합니다.
+After planner completes, you confirm the proposed pipeline before execution begins.
 
-## 🤖 에이전트
+## Agents
 
-| 에이전트 | 역할 |
+| Agent | Role |
 |---|---|
-| planner | 요구사항 분석, PRD 작성, 파이프라인 결정 |
-| designer | UI/UX 명세 설계 |
-| frontend | UI 구현 및 검증 |
-| backend | Kotlin + Spring Boot DDD/TDD 구현 |
+| **planner** | Requirements analysis, PRD writing, pipeline selection |
+| **designer** | UI/UX spec design |
+| **frontend** | UI implementation and verification |
+| **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
+| **resolver** | Automatic merge conflict resolution |
 
-## 📊 상태 모니터링
+### Backend agent workflow (TDD cycle)
+
+```
+DESIGN       → Domain model (Aggregate, Entity, Value Object, Domain Event)
+IMPLEMENTATION → RED: failing test → GREEN: minimal impl → REFACTOR
+VERIFICATION → OOP principles check + all tests GREEN → git commit
+```
+
+## State & Monitoring
 
 ```bash
-crew-status             # 전체 프로젝트 상태 1회 출력
-crew-status --live      # 2초마다 실시간 갱신
-crew-status --live 5    # 5초마다 갱신
-crew-daemon status      # 오케스트레이터 데몬 상태 확인
-crew-daemon stop        # 데몬 수동 종료
+crew-status             # one-shot status for all projects
+crew-status --live      # refresh every 2s
+crew-status --live 5    # refresh every 5s
+crew-daemon status      # check orchestrator daemon
+crew-daemon stop        # stop daemon (kills all instances)
 ```
 
-패널 예시:
+Example panel:
 ```
 ╔════════════════════════════════════════════════════════╗
 ║ agent-crew  projects: 2                                ║
@@ -132,14 +201,14 @@ crew-daemon stop        # 데몬 수동 종료
 ╚════════════════════════════════════════════════════════╝
 ```
 
-## 🤝 기여 방법
+## Contributing
 
-1. 이 저장소를 Fork합니다
-2. 새 브랜치를 생성합니다 (`git checkout -b feat/새기능`)
-3. 변경사항을 커밋합니다 (`git commit -m 'feat: 새기능 추가'`)
-4. 브랜치에 Push합니다 (`git push origin feat/새기능`)
-5. Pull Request를 생성합니다
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feat/your-feature`)
+3. Commit your changes (`git commit -m 'feat: add your feature'`)
+4. Push to the branch (`git push origin feat/your-feature`)
+5. Open a Pull Request
 
-## 📄 라이선스
+## License
 
-MIT License — [LICENSE](LICENSE) 파일을 참조하세요.
+MIT License — see [LICENSE](LICENSE).
