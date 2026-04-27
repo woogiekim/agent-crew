@@ -3,7 +3,7 @@
 # Usage:
 #   crew-status              — 활성(IN_PROGRESS) 프로젝트만 출력
 #   crew-status --all        — 모든 프로젝트 출력
-#   crew-status --live       — 2초마다 실시간 갱신 (Ctrl+C 종료)
+#   crew-status --live       — 2초마다 실시간 갱신 (q:종료 r:즉시갱신 Ctrl+C 종료)
 #   crew-status --live 5     — 5초마다 실시간 갱신
 
 AGENT_CREW_DIR="${HOME}/.claude/agent-crew"
@@ -17,7 +17,12 @@ if [[ "${1:-}" == "--live" ]]; then
   while true; do
     tput cup 0 0
     bash "$0" "${@:3}"
-    sleep "$INTERVAL"
+    key=""
+    read -t "$INTERVAL" -n 1 key 2>/dev/null || true
+    case "$key" in
+      q|Q) tput rmcup 2>/dev/null; tput cnorm 2>/dev/null; exit 0 ;;
+      r|R) continue ;;
+    esac
   done
   exit 0
 fi
