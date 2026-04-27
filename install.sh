@@ -91,7 +91,36 @@ install_global() {
     log_warn "PATH 추가됨 → ${SHELL_RC}  (새 터미널 또는 source ${SHELL_RC} 필요)"
   fi
 
+  # ~/.claude/CLAUDE.md 에 전역 Claude 규칙 병합
+  merge_global_claude "$TEMP_DIR/.claude/global-claude.md" "${GLOBAL_DIR}/CLAUDE.md"
+  log_info "전역 Claude 규칙 적용 완료 → ${GLOBAL_DIR}/CLAUDE.md"
+
   rm -rf "$TEMP_DIR"
+}
+
+# agent-crew 섹션을 마커 기반으로 병합 (기존 내용 유지)
+merge_global_claude() {
+  local src="$1" dest="$2"
+  local start="<!-- agent-crew-start -->" end="<!-- agent-crew-end -->"
+  local new_section
+  new_section=$(printf '%s\n%s\n%s' "$start" "$(cat "$src")" "$end")
+
+  if [ ! -f "$dest" ]; then
+    printf '%s\n' "$new_section" > "$dest"
+    return
+  fi
+
+  python3 - "$dest" "$start" "$end" "$new_section" <<'PYEOF'
+import sys, re
+dest, start, end, new_section = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+content = open(dest).read()
+pattern = re.escape(start) + r'.*?' + re.escape(end)
+if re.search(pattern, content, re.DOTALL):
+    content = re.sub(pattern, new_section, content, flags=re.DOTALL)
+else:
+    content = content.rstrip('\n') + '\n\n' + new_section + '\n'
+open(dest, 'w').write(content)
+PYEOF
 }
 
 install_global
