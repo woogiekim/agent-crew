@@ -10,7 +10,7 @@ AGENT_CREW_DIR="${HOME}/.claude/agent-crew"
 CURRENT_PROJECT=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 
 if [[ "${1:-}" == "--live" ]]; then
-  INTERVAL="${2:-2}"
+  INTERVAL="${2:-1}"
   tput smcup 2>/dev/null
   tput civis 2>/dev/null
   _restore() { stty "$_STTY_SAVE" 2>/dev/null; tput rmcup 2>/dev/null; tput cnorm 2>/dev/null; }
