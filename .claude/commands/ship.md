@@ -78,41 +78,30 @@ TASK_DIR     = {STATE_DIR}/tasks/{TASK_ID}
    EOF
 
    # 데몬에게 파이프라인 시작 신호
-   echo '{"event":"PIPELINE_START"}' >> "${TASK_DIR}/events.jsonl"
+   bash ~/.claude/agent-crew/crew-emit.sh "$TASK_DIR" PIPELINE_START
    ```
 
 9. planner.ready 감지 대기 (daemon이 생성)
    ```bash
-   SIGNAL="${TASK_DIR}/agent_signal/planner.ready"
-   for i in $(seq 1 15); do
-     [ -f "$SIGNAL" ] && break
-     sleep 2
-   done
-   [ -f "$SIGNAL" ] || { echo "ERROR: planner.ready 신호 없음"; exit 1; }
-   rm -f "$SIGNAL"
+   bash ~/.claude/agent-crew/crew-wait-signal.sh "$TASK_DIR" planner 30
    ```
 
 10. planner 에이전트 작업 수행 (requirements)
     - `{WORKTREE_PATH}` 기준으로 작업
     - 완료 시 **오직** 아래만 수행:
       ```bash
-      echo '{"event":"PHASE_COMPLETE","agent":"planner"}' >> "${TASK_DIR}/events.jsonl"
+      bash ~/.claude/agent-crew/crew-emit.sh "$TASK_DIR" PHASE_COMPLETE planner
       ```
     - pipeline.json / phase.txt / active_agent.txt **직접 수정 금지**
 
 11. 다음 에이전트 감지 루프 (각 에이전트 완료 후 반복)
     ```bash
     # daemon이 다음 에이전트의 .ready 신호를 생성할 때까지 대기
-    NEXT_AGENT=""
-    for i in $(seq 1 15); do
-      for sig in "${TASK_DIR}/agent_signal/"*.ready; do
-        [ -f "$sig" ] && NEXT_AGENT=$(basename "$sig" .ready) && break 2
-      done
-      sleep 2
-    done
+    # crew-wait-signal.sh는 "signal:{agent}" 출력 후 exit 0, timeout 시 exit 1
+    NEXT_SIGNAL=$(bash ~/.claude/agent-crew/crew-wait-signal.sh "$TASK_DIR" "*" 30 2>/dev/null) || true
+    NEXT_AGENT=$(echo "$NEXT_SIGNAL" | sed 's/signal://')
 
     if [ -n "$NEXT_AGENT" ]; then
-      rm -f "${TASK_DIR}/agent_signal/${NEXT_AGENT}.ready"
       # NEXT_AGENT의 AGENT.md 읽고 에이전트 전환
     fi
     ```

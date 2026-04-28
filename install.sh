@@ -61,18 +61,23 @@ install_global() {
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
 
   # crew-daemon, crew-status, ship 스크립트, lib 설치
-  cp "$TEMP_DIR/.claude/crew-daemon.sh"  "${AGENT_CREW_DIR}/crew-daemon.sh"
-  cp "$TEMP_DIR/.claude/crew-status.sh"  "${AGENT_CREW_DIR}/crew-status.sh"
-  cp "$TEMP_DIR/.claude/ship-check.sh"   "${AGENT_CREW_DIR}/ship-check.sh"
-  cp "$TEMP_DIR/.claude/ship-init.sh"    "${AGENT_CREW_DIR}/ship-init.sh"
-  cp "$TEMP_DIR/.claude/ship-cancel.sh"  "${AGENT_CREW_DIR}/ship-cancel.sh"
+  cp "$TEMP_DIR/.claude/crew-daemon.sh"       "${AGENT_CREW_DIR}/crew-daemon.sh"
+  cp "$TEMP_DIR/.claude/crew-status.sh"       "${AGENT_CREW_DIR}/crew-status.sh"
+  cp "$TEMP_DIR/.claude/crew-emit.sh"         "${AGENT_CREW_DIR}/crew-emit.sh"
+  cp "$TEMP_DIR/.claude/crew-wait-signal.sh"  "${AGENT_CREW_DIR}/crew-wait-signal.sh"
+  cp "$TEMP_DIR/.claude/ship-check.sh"        "${AGENT_CREW_DIR}/ship-check.sh"
+  cp "$TEMP_DIR/.claude/ship-init.sh"         "${AGENT_CREW_DIR}/ship-init.sh"
+  cp "$TEMP_DIR/.claude/ship-cancel.sh"       "${AGENT_CREW_DIR}/ship-cancel.sh"
   chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-status.sh" \
+           "${AGENT_CREW_DIR}/crew-emit.sh" "${AGENT_CREW_DIR}/crew-wait-signal.sh" \
            "${AGENT_CREW_DIR}/ship-check.sh" "${AGENT_CREW_DIR}/ship-init.sh" \
            "${AGENT_CREW_DIR}/ship-cancel.sh"
   mkdir -p "${AGENT_CREW_DIR}/lib"
   cp -r "$TEMP_DIR/.claude/lib/"* "${AGENT_CREW_DIR}/lib/"
   log_info "crew-daemon 설치 완료 → ${AGENT_CREW_DIR}/crew-daemon.sh"
   log_info "crew-status 설치 완료 → ${AGENT_CREW_DIR}/crew-status.sh"
+  log_info "crew-emit 설치 완료 → ${AGENT_CREW_DIR}/crew-emit.sh"
+  log_info "crew-wait-signal 설치 완료 → ${AGENT_CREW_DIR}/crew-wait-signal.sh"
   log_info "lib 설치 완료 → ${AGENT_CREW_DIR}/lib/"
 
   # ~/.local/bin 에 PATH 명령어로 설치
