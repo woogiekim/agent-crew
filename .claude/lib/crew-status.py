@@ -70,18 +70,18 @@ def trunc(text, max_w):
     return ''.join(result)
 
 
-# ── Outer box (╔═╗ / ║ / ╚═╝) ───────────────────────────────────
-def otop():     print('╔' + '═' * (W + 2) + '╗')
-def obottom():  print('╚' + '═' * (W + 2) + '╝')
-def odivider(): print('╠' + '═' * (W + 2) + '╣')
-def othin():    print('╟' + '─' * (W + 2) + '╢')
+# ── Outer box (╭─╮ / │ / ╰─╯) ───────────────────────────────────
+def otop():     print('╭' + '─' * (W + 2) + '╮')
+def obottom():  print('╰' + '─' * (W + 2) + '╯')
+def odivider(): print('├' + '─' * (W + 2) + '┤')
+def othin():    print('│' + ' ' * (W + 2) + '│')
 
 def orow(content=''):
-    print(f'║ {pad(content, W)} ║')
+    print(f'│ {pad(content, W)} │')
 
 def orow_lr(left, right):
     gap = max(W - vis(left) - vis(right), 1)
-    print(f'║ {left}{" " * gap}{right} ║')
+    print(f'│ {left}{" " * gap}{right} │')
 
 
 # ── Inner card (╭─╮ / │ / ╰─╯) ──────────────────────────────────
@@ -94,21 +94,21 @@ def itop(label_left='', label_right=''):
     used = 2 + ll + 1 + 1 + lr + 2   # ─ + space + ll + space + filler + space + lr + space + ─
     filler = max(inner - used, 2)
     line = f'╭─ {label_left} {"─" * filler} {label_right} ─╮'
-    print(f'║   {pad(line, W - 2)} ║')
+    print(f'│   {pad(line, W - 2)} │')
 
 def ibottom():
     line = '╰' + '─' * (IW + 2) + '╯'
-    print(f'║   {pad(line, W - 2)} ║')
+    print(f'│   {pad(line, W - 2)} │')
 
 def irow(content=''):
-    print(f'║   │ {pad(content, IW)} │  ║')
+    print(f'│   │ {pad(content, IW)} │  │')
 
 def irow_lr(left, right):
     gap = max(IW - vis(left) - vis(right), 1)
-    print(f'║   │ {left}{" " * gap}{right} │  ║')
+    print(f'│   │ {left}{" " * gap}{right} │  │')
 
 def idivider():
-    print(f'║   ├{"─" * (IW + 2)}┤  ║')
+    print(f'│   ├{"─" * (IW + 2)}┤  │')
 
 
 # ── Data helpers ─────────────────────────────────────────────────
