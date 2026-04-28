@@ -13,14 +13,20 @@ if [[ "${1:-}" == "--live" ]]; then
   INTERVAL="${2:-2}"
   tput smcup 2>/dev/null
   tput civis 2>/dev/null
-  trap 'tput rmcup 2>/dev/null; tput cnorm 2>/dev/null; exit 0' INT TERM
+  _restore() { stty "$_STTY_SAVE" 2>/dev/null; tput rmcup 2>/dev/null; tput cnorm 2>/dev/null; }
+  _STTY_SAVE=$(stty -g 2>/dev/null)
+  trap '_restore; exit 0' INT TERM EXIT
+  stty -echo -icanon min 0 time 0 2>/dev/null
   while true; do
-    tput cup 0 0
+    tput cup 0 0 2>/dev/null
     bash "$0" "${@:3}"
+    tput ed 2>/dev/null
     key=""
-    read -t "$INTERVAL" -n 1 key 2>/dev/null || true
+    IFS= read -r -t "$INTERVAL" -n 1 key 2>/dev/null || true
+    # drain leftover bytes from multi-byte sequences (e.g. arrow keys: ESC [ A)
+    while IFS= read -r -t 0.05 -n 1 2>/dev/null; do :; done
     case "$key" in
-      q|Q) tput rmcup 2>/dev/null; tput cnorm 2>/dev/null; exit 0 ;;
+      q|Q) exit 0 ;;
       r|R) continue ;;
     esac
   done
