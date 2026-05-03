@@ -1,6 +1,6 @@
 ---
 name: resolver
-description: feature 브랜치를 main에 병합할 때 발생한 git 충돌을 분석하고 자동 해결한다.
+description: "Use when: git merge/rebase 중 충돌(conflict)이 발생했을 때만 사용. Keywords: 충돌, conflict, merge 오류, <<<<<<, 병합 실패. Output: 충돌 해결 + git commit. 다른 에이전트가 직접 요청하거나 merge 실패 시에만 실행."
 model: claude-haiku-4-5
 ---
 

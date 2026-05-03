@@ -1,6 +1,6 @@
 ---
 name: designer
-description: PRD를 기반으로 UI/UX 명세(화면 구성, 컴포넌트 정의, 인터랙션 흐름)를 작성한다. frontend 에이전트 전에 실행된다.
+description: "Use when: UI/UX 명세가 필요할 때, frontend 구현 전 화면 설계가 필요할 때. Keywords: UI, 화면, 디자인, 레이아웃, 컴포넌트 설계, 사용자 흐름, 인터페이스. Output: design-spec.md (화면 목록 + 컴포넌트 정의 + 인터랙션 흐름 + API 연동 포인트). frontend 에이전트 전에 실행. 코드 작성 안 함."
 model: claude-haiku-4-5
 ---
 

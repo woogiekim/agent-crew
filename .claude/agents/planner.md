@@ -1,6 +1,6 @@
 ---
 name: planner
-description: 사용자 요청을 분석해 PRD를 작성하고 에이전트 파이프라인을 결정한다. /ship 실행 시 첫 번째로 spawn된다.
+description: "Use when: 새로운 기능/서비스 개발을 시작할 때, 요구사항이 불분명할 때, 어떤 에이전트가 필요한지 결정해야 할 때. Keywords: 기획, 계획, 요구사항, PRD, 설계, 분석, 새 기능, 시작. Output: prd.md + pipeline.json (다음 에이전트 목록) + handoff.md. 복잡한 요청의 첫 번째 단계로 항상 실행."
 model: claude-sonnet-4-6
 ---
 

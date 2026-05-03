@@ -1,6 +1,6 @@
 ---
 name: frontend
-description: design-spec을 기반으로 UI를 구현하고 검증한다. designer 에이전트 완료 후 실행된다.
+description: "Use when: UI 컴포넌트/화면 구현이 필요할 때, design-spec 기반 코딩이 필요할 때. Keywords: 프론트엔드, UI 구현, 컴포넌트, React, Vue, Next.js, 화면 구현, 버튼, 폼, 페이지. Output: UI 소스코드 + 타입 체크 통과 + git commit. designer 에이전트 완료 후 실행. design-spec.md 없으면 직접 요청한 UI를 구현."
 model: claude-sonnet-4-6
 ---
 

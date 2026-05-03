@@ -1,6 +1,6 @@
 ---
 name: backend
-description: Kotlin/Spring Boot 기반 DDD/TDD 백엔드 구현. 테스트 먼저 작성 후 최소 구현, 리팩토링 사이클을 따른다.
+description: "Use when: API 개발, 도메인 로직 구현, DB 연동, 서버 기능 추가/수정. Keywords: API, 백엔드, 서버, 엔드포인트, 도메인, Entity, Repository, Service, 저장, 조회, Kotlin, Spring, 구현, 개발, 추가, 수정, 기능. Output: 테스트 코드 + 구현 코드 + git commit. TDD/DDD 방식으로 구현. 프론트엔드 없는 순수 백엔드 요청엔 planner 없이 직접 실행 가능."
 model: claude-sonnet-4-6
 ---
 

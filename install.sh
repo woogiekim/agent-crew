@@ -62,11 +62,61 @@ install_global() {
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
 
+  # ~/.claude/settings.json 에 UserPromptSubmit 훅 등록 (모든 프로젝트에서 동작)
+  merge_global_settings "${GLOBAL_DIR}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
+  log_info "글로벌 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
+
   # ~/.claude/CLAUDE.md 에 전역 Claude 규칙 병합
   merge_global_claude "$TEMP_DIR/.claude/global-claude.md" "${GLOBAL_DIR}/CLAUDE.md"
   log_info "전역 Claude 규칙 적용 완료 → ${GLOBAL_DIR}/CLAUDE.md"
 
   rm -rf "$TEMP_DIR"
+}
+
+# ~/.claude/settings.json 에 UserPromptSubmit 훅을 안전하게 병합
+merge_global_settings() {
+  local dest="$1" hook_path="$2"
+
+  python3 - "$dest" "$hook_path" <<'PYEOF'
+import sys, json, os
+
+dest, hook_path = sys.argv[1], sys.argv[2]
+
+hook_entry = {
+  "type": "command",
+  "command": f"bash {hook_path}",
+  "timeout": 5
+}
+hook_block = {"hooks": [hook_entry]}
+
+if os.path.exists(dest):
+  with open(dest) as f:
+    try:
+      settings = json.load(f)
+    except json.JSONDecodeError:
+      settings = {}
+else:
+  settings = {}
+
+hooks = settings.setdefault("hooks", {})
+user_prompt_hooks = hooks.setdefault("UserPromptSubmit", [])
+
+# 이미 등록된 경우 업데이트, 없으면 추가
+for block in user_prompt_hooks:
+  for h in block.get("hooks", []):
+    if "auto-route" in h.get("command", ""):
+      h["command"] = hook_entry["command"]
+      break
+  else:
+    continue
+  break
+else:
+  user_prompt_hooks.append(hook_block)
+
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
 }
 
 # agent-crew 섹션을 마커 기반으로 병합 (기존 내용 유지)
