@@ -1,138 +1,139 @@
 # /ship — 전체 파이프라인 자동 실행
 
-## 상태 경로 규칙
-```
-PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
-PROJECT_ROOT = $(git rev-parse --show-toplevel 2>/dev/null || pwd)
-STATE_DIR    = ~/.claude/agent-crew/{PROJECT_NAME}
-TASK_ID      = $(date +%Y%m%d-%H%M%S)
-TASK_DIR     = {STATE_DIR}/tasks/{TASK_ID}
-```
-
 ## 핵심 원칙
 
-**Claude Code(에이전트)는 pipeline.json / phase.txt / active_agent.txt를 직접 수정하지 않는다.**
-모든 파이프라인 상태 전환은 `events.jsonl` 이벤트 emit → crew-daemon 처리를 통해서만 이루어진다.
+**오케스트레이터(Claude)가 Agent 도구로 각 에이전트를 직접 spawn한다.**
+파일 폴링, daemon 프로세스, .ready 신호 파일 불필요.
 
 ```
-[Claude Code] 작업 완료
+[오케스트레이터] /ship "요청"
       │
-      ▼ emit {"event": "PHASE_COMPLETE", "agent": "..."}
-[events.jsonl]
+      ▼ Agent 도구로 spawn
+[planner 서브에이전트] → prd.md + pipeline.json + handoff.md 작성
       │
-      ▼ crew-daemon reads
-[pipeline_update.py advance]
+      ▼ pipeline.json 읽어 다음 에이전트 결정
+[오케스트레이터] 사용자 확인 후
       │
-      ▼ updates pipeline.json + phase.txt + active_agent.txt
-      ▼ creates agent_signal/{next_agent}.ready
-[Claude Code] {next_agent}.ready 감지 → 다음 에이전트로 전환
+      ▼ Agent 도구로 spawn (순서대로)
+[backend / frontend / designer 서브에이전트] → 코드 작성 + commit
+      │
+      ▼ 모든 에이전트 완료
+[오케스트레이터] 완료 보고
 ```
 
 ## 실행 순서
 
-1. `/ship "[요청]"` 형태로 입력 받음
-   - 인자 없으면: AskUserQuestion 도구로 작업 내용 입력 받기
+### 1. 요청 파싱
+인자 없으면 AskUserQuestion 도구로 입력받기:
+- 질문: "어떤 작업을 진행할까요?"
 
-2. `{STATE_DIR}` 존재 확인
-   - 없으면: "워크스페이스가 초기화되지 않았습니다. /setup을 먼저 실행하세요."
-
-3. 동시 실행 제한 확인
-   ```bash
-   bash ~/.claude/agent-crew/ship-check.sh "$STATE_DIR"
-   # → active=N max=N 출력
-   ```
-   - `ACTIVE >= MAX`이면: AskUserQuestion 도구로 안내
-     - 질문: "현재 {ACTIVE}개 task가 실행 중입니다 (최대 {MAX}개). 어떻게 할까요?"
-     - 선택지: "대기 (나중에 실행)" / "강제 시작 (제한 무시)"
-     - "대기" 선택 시 종료
-
-4. TASK_ID 생성 및 브랜치/워크트리 생성 + daemon 시작
-   ```bash
-   bash ~/.claude/agent-crew/ship-init.sh "$PROJECT_ROOT" "$STATE_DIR"
-   # → task_id=... branch=... worktree=... 출력
-   ```
-   출력에서 `task_id`, `branch`, `worktree` 값을 파싱하여 이후 단계에 사용한다.
-
-6. planner로 요청 분석 → 에이전트 목록 결정
-   - `~/.claude/agent-crew/agents/planner/AGENT.md` 읽기
-   - 요청 유형에 따라 파이프라인 결정 (planner AGENT.md의 기준 참조)
-
-7. 사용자 확인 (AskUserQuestion 도구 사용)
-   - 질문: "다음 순서로 진행합니다: [에이전트 목록]. 시작할까요?\n브랜치: {BRANCH}"
-   - 선택지: "시작 (Recommended)" / "취소"
-   - "취소" 선택 시:
-     ```bash
-     bash ~/.claude/agent-crew/ship-cancel.sh "$PROJECT_ROOT" "$WORKTREE_PATH" "$BRANCH" "$TASK_DIR"
-     ```
-
-8. 초기 `pipeline.json` 저장 (status=PENDING) 후 PIPELINE_START emit
-   ```bash
-   # pipeline.json 저장 — status는 PENDING (daemon이 IN_PROGRESS로 전환)
-   cat > "${TASK_DIR}/pipeline.json" <<EOF
-   {
-     "task": "[요청 원문]",
-     "agents": ["planner", ...],
-     "currentIndex": 0,
-     "status": "PENDING"
-   }
-   EOF
-
-   # 데몬에게 파이프라인 시작 신호
-   bash ~/.claude/agent-crew/crew-emit.sh "$TASK_DIR" PIPELINE_START
-   ```
-
-9. planner.ready 감지 대기 (daemon이 생성)
-   ```bash
-   bash ~/.claude/agent-crew/crew-wait-signal.sh "$TASK_DIR" planner 30
-   ```
-
-10. planner 에이전트 작업 수행 (requirements)
-    - `{WORKTREE_PATH}` 기준으로 작업
-    - 완료 시 **오직** 아래만 수행:
-      ```bash
-      bash ~/.claude/agent-crew/crew-emit.sh "$TASK_DIR" PHASE_COMPLETE planner
-      ```
-    - pipeline.json / phase.txt / active_agent.txt **직접 수정 금지**
-
-11. 다음 에이전트 감지 루프 (각 에이전트 완료 후 반복)
-    ```bash
-    # daemon이 다음 에이전트의 .ready 신호를 생성할 때까지 대기
-    # crew-wait-signal.sh는 "signal:{agent}" 출력 후 exit 0, timeout 시 exit 1
-    NEXT_SIGNAL=$(bash ~/.claude/agent-crew/crew-wait-signal.sh "$TASK_DIR" "*" 30 2>/dev/null) || true
-    NEXT_AGENT=$(echo "$NEXT_SIGNAL" | sed 's/signal://')
-
-    if [ -n "$NEXT_AGENT" ]; then
-      # NEXT_AGENT의 AGENT.md 읽고 에이전트 전환
-    fi
-    ```
-
-12. 모든 에이전트 완료 → daemon이 자동으로 merge 처리
-    - 충돌 없음: worktree 정리 후 task 디렉토리 삭제
-    - 충돌 있음: resolver.ready 생성 → resolver 에이전트 활성화
-
-## 에이전트별 담당 단계 및 완료 이벤트
-
-| 에이전트 | 담당 단계 | 완료 emit |
-|---------|---------|---------|
-| planner | requirements | `PHASE_COMPLETE` |
-| designer | design | `PHASE_COMPLETE` |
-| frontend | implement → verify | `PHASE_COMPLETE` |
-| backend | design → implement → verify | `PHASE_COMPLETE` |
-| resolver | merge-resolve | `PHASE_COMPLETE` |
-
-**모든 에이전트 공통 규칙:**
-- 단계 완료 시 `events.jsonl`에 `PHASE_COMPLETE` emit만 수행
-- `phase.txt`, `active_agent.txt`, `pipeline.json` 직접 수정 금지
-- 다음 에이전트 활성화는 daemon이 자동 처리
-
-## STATE_DIR 규칙 (에이전트 공통)
+### 2. 상태 경로 초기화
 ```bash
 PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-TASK_ID=$(cat "${PROJECT_ROOT}/.crew_task_id" 2>/dev/null || echo "")
-if [ -n "$TASK_ID" ]; then
-  STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}/tasks/${TASK_ID}"
-else
-  STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
-fi
+STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
+TASK_ID=$(date +%Y%m%d-%H%M%S)
+TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
+mkdir -p "${TASK_DIR}/context"
+echo "task_dir=${TASK_DIR}"
 ```
+
+`{STATE_DIR}` 없으면: "워크스페이스가 초기화되지 않았습니다. /setup을 먼저 실행하세요." 출력 후 종료.
+
+### 3. 피처 브랜치 생성
+```bash
+BRANCH="feature/task-${TASK_ID}"
+git checkout -b "${BRANCH}"
+echo "branch=${BRANCH}"
+```
+
+### 4. planner 에이전트 spawn
+**Agent 도구**를 사용해 planner 에이전트를 spawn한다:
+- description: "PRD 작성 및 파이프라인 결정"
+- subagent_type: "planner"
+- prompt: 아래 형식
+  ```
+  REQUEST: {사용자 요청 원문}
+  TASK_DIR: {TASK_DIR}
+  PROJECT_ROOT: {PROJECT_ROOT}
+
+  위 요청을 분석하여 PRD를 작성하고 파이프라인을 결정하라.
+  결과물: {TASK_DIR}/context/prd.md, {TASK_DIR}/pipeline.json, {TASK_DIR}/handoff.md
+  ```
+- **완료될 때까지 대기** (blocking)
+
+planner 완료 후:
+```bash
+cat "${TASK_DIR}/pipeline.json"
+cat "${TASK_DIR}/handoff.md"
+```
+
+### 5. 파이프라인 파싱 및 사용자 확인
+`{TASK_DIR}/pipeline.json`에서 `agents` 배열 읽기.
+
+AskUserQuestion 도구로 확인:
+- 질문: "다음 순서로 진행합니다:\n{에이전트 목록}\n\n브랜치: {BRANCH}"
+- 선택지:
+  - "시작 (Recommended)"
+  - "취소"
+
+"취소" 선택 시:
+```bash
+git checkout -
+git branch -D "${BRANCH}"
+rm -rf "${TASK_DIR}"
+```
+종료.
+
+`agents` 배열이 비어있으면 (설계/분석만): 결과 요약 후 종료.
+
+### 6. 파이프라인 실행
+
+`agents` 배열을 순서대로 실행. 각 에이전트마다:
+
+1. `{TASK_DIR}/handoff.md` 읽기
+2. **Agent 도구**로 해당 에이전트 spawn:
+   - description: "{에이전트명} 실행"
+   - subagent_type: "{에이전트명}"  ← planner / designer / frontend / backend / resolver
+   - prompt: 아래 형식
+     ```
+     TASK_DIR: {TASK_DIR}
+     PROJECT_ROOT: {PROJECT_ROOT}
+
+     --- 이전 에이전트 인계 내용 ---
+     {handoff.md 전체 내용}
+     ---
+
+     위 인계 내용을 바탕으로 담당 작업을 수행하라.
+     ```
+   - **완료될 때까지 대기** (blocking)
+
+3. 완료 후 다음 에이전트를 위해 `{TASK_DIR}/handoff.md` 다시 읽기
+
+### 7. 완료 보고
+모든 에이전트 완료 후:
+```bash
+git log --oneline feature/main..HEAD 2>/dev/null || git log --oneline -5
+```
+
+출력 형식:
+```
+✅ 파이프라인 완료!
+   브랜치: {BRANCH}
+   실행된 에이전트: {에이전트 목록}
+   커밋 목록: {git log 결과}
+
+다음 단계:
+  git merge {BRANCH}    # main에 병합
+  /ship "다음 작업"     # 새 작업 시작
+```
+
+## 에이전트별 산출물 요약
+
+| 에이전트 | 필수 산출물 |
+|---------|---------|
+| planner | prd.md, pipeline.json, handoff.md |
+| designer | design-spec.md, handoff.md 갱신 |
+| frontend | UI 소스코드, git commit, handoff.md 갱신 |
+| backend | 도메인 코드 + 테스트, git commit |
+| resolver | 충돌 해결, git commit |

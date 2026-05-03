@@ -2,42 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 세션 시작 시 필수 수행
-
-매 세션 시작마다 반드시 다음 순서로 상태를 복원한다. 파일이 없으면 초기 상태로 간주한다:
-
-```
-PROJECT_NAME = basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
-STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
-```
-
-1. `{STATE_DIR}/context/session_handoff.md` 읽기
-2. `{STATE_DIR}/pipeline.json` 확인
-3. `{STATE_DIR}/phase.txt` 확인
-4. `{STATE_DIR}/active_agent.txt` 확인
-5. 활성 에이전트의 `~/.claude/agent-crew/agents/[에이전트]/AGENT.md` 읽기
-
 ## 에이전트 워크플로 명령어
 
 ```
 /setup          # 현재 프로젝트 워크스페이스 초기화 (최초 1회)
 /ship "요청"    # 전체 파이프라인 자동 실행 (권장)
-
-/requirements   # 요구사항 단계 수동 실행
-/design         # 설계 단계 수동 실행
-/implement      # 구현 단계 수동 실행
-/verify         # 검증 단계 수동 실행
 ```
 
-명령어는 `{STATE_DIR}/pipeline.json`의 `agents[currentIndex]`를 읽어 자동 라우팅된다.
+`/ship`은 오케스트레이터가 Agent 도구로 각 서브에이전트를 직접 spawn한다.
+planner → (designer →) (frontend →) (backend →) 순서로 실제 Claude 서브에이전트 실행.
 
 ## 절대 규칙
 
 - 구현 코드 작성 전 반드시 실패하는 테스트 먼저 작성 (backend 에이전트)
 - 테스트 없는 소스 코드 커밋 금지
-- 페이즈 전환 시 반드시 `{STATE_DIR}/phase.txt` 갱신
 - 컨텍스트 60% 도달 시 즉시 `/compact` 실행
-- 태스크 완료 시 반드시 `{STATE_DIR}/context/session_handoff.md` 갱신 후 git commit
 
 ## 빌드 및 테스트 명령어 (Kotlin/Spring Boot 프로젝트)
 
@@ -58,34 +37,24 @@ STATE_DIR = ~/.claude/agent-crew/{PROJECT_NAME}
 ~/.claude/
 ├── commands/                    ← 글로벌 명령어 (모든 프로젝트에서 사용)
 │   ├── setup.md
-│   ├── start.md
-│   ├── requirements.md
-│   ├── design.md
-│   ├── implement.md
-│   └── verify.md
+│   └── ship.md
 └── agent-crew/
-    ├── agents/                  ← 에이전트 정의 (글로벌)
-    │   ├── planner/
-    │   ├── designer/
-    │   ├── frontend/
-    │   └── backend/
+    ├── agents/                  ← 서브에이전트 정의 (flat .md, frontmatter 포함)
+    │   ├── planner.md           ← claude-sonnet-4-6
+    │   ├── designer.md          ← claude-haiku-4-5
+    │   ├── frontend.md          ← claude-sonnet-4-6
+    │   ├── backend.md           ← claude-sonnet-4-6
+    │   ├── resolver.md          ← claude-haiku-4-5
+    │   └── skills/              ← 온디맨드 참조 스킬
+    │       ├── tdd.md
+    │       ├── ddd.md
+    │       └── oop-principles.md
     └── {PROJECT_NAME}/          ← 프로젝트별 상태 (자동 생성)
-        ├── config.json          ← {"maxConcurrentTasks": 2}
-        ├── orchestrator.pid     ← 데몬 PID
         └── tasks/
             └── {TASK_ID}/       ← task별 상태 (TASK_ID = YYYYmmdd-HHMMSS)
-                ├── pipeline.json
-                ├── phase.txt
-                ├── active_agent.txt
-                ├── branch.txt       ← feature/task-{id}
-                ├── worktree_path.txt
-                ├── retry_count.txt
-                ├── events.jsonl
-                ├── events.offset
-                ├── agent_signal/    ← {agent}.ready 신호 파일
-                ├── handoff.md
+                ├── pipeline.json    ← {"task": "...", "agents": [...]}
+                ├── handoff.md       ← 에이전트 간 인계 문서
                 └── context/
-                    ├── session_handoff.md
                     ├── prd.md
                     ├── design-spec.md
                     └── ...

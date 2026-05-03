@@ -49,52 +49,18 @@ install_global() {
   cp -r "$TEMP_DIR/.claude/commands/"* "${GLOBAL_DIR}/commands/"
   log_info "명령어 설치 완료 → ${GLOBAL_DIR}/commands/"
 
-  # ~/.claude/agent-crew/agents/ 에 에이전트 설치 (resolver 포함)
-  mkdir -p "${AGENT_CREW_DIR}/agents"
-  cp -r "$TEMP_DIR/.claude/agents/"* "${AGENT_CREW_DIR}/agents/"
+  # ~/.claude/agent-crew/agents/ 에 에이전트 정의 설치 (flat .md 구조)
+  mkdir -p "${AGENT_CREW_DIR}/agents/skills"
+  cp "$TEMP_DIR/.claude/agents/"*.md "${AGENT_CREW_DIR}/agents/" 2>/dev/null || true
+  cp "$TEMP_DIR/.claude/agents/skills/"*.md "${AGENT_CREW_DIR}/agents/skills/" 2>/dev/null || true
   log_info "에이전트 설치 완료 → ${AGENT_CREW_DIR}/agents/"
+  log_info "스킬 설치 완료 → ${AGENT_CREW_DIR}/agents/skills/"
 
   # hooks 설치
   mkdir -p "${AGENT_CREW_DIR}/hooks"
   cp -r "$TEMP_DIR/.claude/hooks/"* "${AGENT_CREW_DIR}/hooks/"
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
-
-  # crew-daemon, crew-status, ship 스크립트, lib 설치
-  cp "$TEMP_DIR/.claude/crew-daemon.sh"       "${AGENT_CREW_DIR}/crew-daemon.sh"
-  cp "$TEMP_DIR/.claude/crew-status.sh"       "${AGENT_CREW_DIR}/crew-status.sh"
-  cp "$TEMP_DIR/.claude/crew-emit.sh"         "${AGENT_CREW_DIR}/crew-emit.sh"
-  cp "$TEMP_DIR/.claude/crew-wait-signal.sh"  "${AGENT_CREW_DIR}/crew-wait-signal.sh"
-  cp "$TEMP_DIR/.claude/ship-check.sh"        "${AGENT_CREW_DIR}/ship-check.sh"
-  cp "$TEMP_DIR/.claude/ship-init.sh"         "${AGENT_CREW_DIR}/ship-init.sh"
-  cp "$TEMP_DIR/.claude/ship-cancel.sh"       "${AGENT_CREW_DIR}/ship-cancel.sh"
-  chmod +x "${AGENT_CREW_DIR}/crew-daemon.sh" "${AGENT_CREW_DIR}/crew-status.sh" \
-           "${AGENT_CREW_DIR}/crew-emit.sh" "${AGENT_CREW_DIR}/crew-wait-signal.sh" \
-           "${AGENT_CREW_DIR}/ship-check.sh" "${AGENT_CREW_DIR}/ship-init.sh" \
-           "${AGENT_CREW_DIR}/ship-cancel.sh"
-  mkdir -p "${AGENT_CREW_DIR}/lib"
-  cp -r "$TEMP_DIR/.claude/lib/"* "${AGENT_CREW_DIR}/lib/"
-  log_info "crew-daemon 설치 완료 → ${AGENT_CREW_DIR}/crew-daemon.sh"
-  log_info "crew-status 설치 완료 → ${AGENT_CREW_DIR}/crew-status.sh"
-  log_info "crew-emit 설치 완료 → ${AGENT_CREW_DIR}/crew-emit.sh"
-  log_info "crew-wait-signal 설치 완료 → ${AGENT_CREW_DIR}/crew-wait-signal.sh"
-  log_info "lib 설치 완료 → ${AGENT_CREW_DIR}/lib/"
-
-  # ~/.local/bin 에 PATH 명령어로 설치
-  BIN_DIR="${HOME}/.local/bin"
-  mkdir -p "$BIN_DIR"
-  ln -sf "${AGENT_CREW_DIR}/crew-status.sh" "${BIN_DIR}/crew-status"
-  ln -sf "${AGENT_CREW_DIR}/crew-daemon.sh" "${BIN_DIR}/crew-daemon"
-  chmod +x "${BIN_DIR}/crew-status" "${BIN_DIR}/crew-daemon"
-  log_info "명령어 설치 완료 → ${BIN_DIR}/crew-status, crew-daemon"
-
-  # PATH에 없으면 셸 설정에 추가
-  if ! echo "$PATH" | grep -q "${BIN_DIR}"; then
-    SHELL_RC="${HOME}/.zshrc"
-    [[ "$SHELL" == *bash* ]] && SHELL_RC="${HOME}/.bashrc"
-    echo "export PATH=\"${BIN_DIR}:\$PATH\"" >> "$SHELL_RC"
-    log_warn "PATH 추가됨 → ${SHELL_RC}  (새 터미널 또는 source ${SHELL_RC} 필요)"
-  fi
 
   # ~/.claude/CLAUDE.md 에 전역 Claude 규칙 병합
   merge_global_claude "$TEMP_DIR/.claude/global-claude.md" "${GLOBAL_DIR}/CLAUDE.md"
@@ -141,10 +107,6 @@ echo ""
 echo "  사용 방법 (모든 프로젝트에서 사용 가능):"
 echo "    /setup               # 현재 프로젝트 워크스페이스 초기화"
 echo "    /ship \"요청 내용\"    # 전체 파이프라인 자동 실행"
-echo "    /requirements        # 요구사항 단계"
-echo "    /design              # 설계 단계"
-echo "    /implement           # 구현 단계"
-echo "    /verify              # 검증 단계"
 echo ""
 echo -e "${GREEN}  새 프로젝트에서 /setup 으로 시작하세요.${NC}"
 echo ""
