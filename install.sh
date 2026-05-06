@@ -62,9 +62,13 @@ install_global() {
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
 
+  # auto-route.sh 설치 확인
+  [ -f "${AGENT_CREW_DIR}/hooks/auto-route.sh" ] \
+    || log_error "auto-route.sh 설치 실패 — .claude/hooks/auto-route.sh 가 레포에 없습니다"
+
   # ~/.claude/settings.json 에 UserPromptSubmit 훅 등록 (모든 프로젝트에서 동작)
   merge_global_settings "${GLOBAL_DIR}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
-  log_info "글로벌 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
+  log_info "자연어 라우팅 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
 
   # ~/.claude/CLAUDE.md 에 전역 Claude 규칙 병합
   merge_global_claude "$TEMP_DIR/.claude/global-claude.md" "${GLOBAL_DIR}/CLAUDE.md"
