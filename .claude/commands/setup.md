@@ -35,5 +35,4 @@ STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
 
 사용 방법:
   /ship "요청 내용"    — 전체 파이프라인 자동 실행
-  /status              — 파이프라인 상태 확인
 ```

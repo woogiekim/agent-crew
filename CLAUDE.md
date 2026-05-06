@@ -70,13 +70,25 @@ planner → (designer →) (frontend →) (backend →) 순서로 실제 Claude 
 | backend | Kotlin+Spring Boot DDD/TDD 구현 |
 | resolver | 병합 충돌 자동 해결 |
 
-### 파이프라인 자동 결정 (planner 기준)
+### 파이프라인 자동 결정
 
-| 요청 유형 | 파이프라인 |
+`UserPromptSubmit` 훅(`auto-route.sh`)이 자연어 키워드를 감지해 라우팅 힌트를 자동 주입한다.
+슬래시 커맨드(`/ship` 등)나 질문/설명 요청은 라우팅 스킵.
+
+| 감지 조건 | 파이프라인 |
 |---------|---------|
-| 백엔드 API / 도메인 로직 | planner → backend |
-| 풀스택 | planner → designer → frontend → backend |
-| UI만 | planner → designer → frontend |
+| 풀스택 키워드 (`풀스택`, `full-stack`, `시스템 개발` 등) | planner → designer → frontend → backend |
+| 프론트엔드 + 백엔드 키워드 동시 포함 | planner → designer → frontend → backend |
+| UI 설계 키워드 (`UX`, `와이어프레임`, `화면 설계` 등) | designer (→ frontend) |
+| 프론트엔드 키워드만 (`UI`, `컴포넌트`, `React` 등) | designer → frontend |
+| 백엔드 키워드만 (`API`, `도메인`, `Entity`, `Spring` 등) | backend |
+
+**키워드 패턴 (auto-route.sh 기준)**
+- 백엔드: `API`, `백엔드`, `서버`, `도메인`, `Entity`, `Repository`, `Service`, `Kotlin`, `Spring`, `Controller`, `UseCase`
+- 프론트엔드: `UI`, `화면`, `컴포넌트`, `React`, `Vue`, `Next`, `페이지`, `버튼`, `폼`, `CSS`
+- 풀스택: `풀스택`, `전체 개발`, `서비스 개발`, `앱 개발`
+- UI 설계: `UI 설계`, `화면 설계`, `UX`, `와이어프레임`
+- 액션 동사 없으면 라우팅 스킵: `만들어`, `구현해`, `개발해`, `추가해` 등 필요
 
 ### 자동화 훅
 

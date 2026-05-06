@@ -14,7 +14,7 @@
 - [How It Works](#how-it-works)
 - [Pipeline Decision Logic](#pipeline-decision-logic)
 - [Agents](#agents)
-- [State & Monitoring](#state--monitoring)
+- [State Layout](#state-layout)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -31,9 +31,8 @@ The goal: let developers focus on *what* to build, while agent-crew handles agen
 ## Key Features
 
 - **Automatic pipeline selection** — planner analyzes your request and picks only the agents needed
-- **Daemon-centric event system** — agents emit events to `events.jsonl`; `crew-daemon` atomically updates `pipeline.json` (no race conditions, no direct state mutation by agents)
+- **Native sub-agent spawning** — orchestrator uses Claude's Agent tool to spawn each sub-agent directly; no polling or signal files
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back to `feature/main` on completion
-- **Real-time status panel** — `crew-status --live` monitors all projects' pipeline progress
 - **Project-clean state** — all state stored under `~/.claude/agent-crew/{PROJECT_NAME}/`, never in your project directory
 - **Global install** — one install works across all your projects
 
@@ -65,70 +64,38 @@ source ~/.bashrc  # bash
 /design
 /implement
 /verify
-
-# Status
-/status
-crew-status --live   # real-time monitor in a separate terminal
 ```
 
 ## How It Works
 
-agent-crew uses a **daemon-centric event system**. Agents never mutate pipeline state directly — they only emit events. The `crew-daemon` process is the single source of truth for all state transitions.
+The orchestrator (Claude) spawns each sub-agent directly using the Agent tool. No daemon processes, no file polling, no signal files.
 
 ```
 /ship "request"
        │
-       ▼
-[Claude Code] sets up worktree + branch, writes pipeline.json (PENDING)
+       ▼ Agent tool spawn
+[planner sub-agent] → prd.md + pipeline.json + handoff.md
        │
-       ▼ emit {"event": "PIPELINE_START"}
-[events.jsonl]
+       ▼ reads pipeline.json → determines next agents
+[orchestrator] confirms with user
        │
-       ▼ crew-daemon reads event
-[pipeline_update.py start]
-  • status: PENDING → IN_PROGRESS
-  • writes phase.txt, active_agent.txt
-  • creates agent_signal/planner.ready
+       ▼ Agent tool spawn (in order)
+[backend / frontend / designer sub-agents] → code + commit
        │
-       ▼ Claude Code detects planner.ready → activates as planner
-[planner agent] analyzes request, writes PRD + handoff.md
-       │
-       ▼ emit {"event": "PHASE_COMPLETE", "agent": "planner"}
-[events.jsonl]
-       │
-       ▼ crew-daemon reads event
-[pipeline_update.py advance]
-  • increments currentIndex
-  • writes phase.txt, active_agent.txt
-  • creates agent_signal/backend.ready  (or next agent)
-       │
-       ▼ Claude Code detects backend.ready → activates as backend
-[backend agent] design → implement (TDD) → verify
-       │
-       ▼ emit {"event": "PHASE_COMPLETE", "agent": "backend"}
-       │
-       ▼ crew-daemon: PIPELINE_DONE → git merge → worktree cleanup
+       ▼ all agents complete
+[orchestrator] final report
 ```
-
-**Key invariant:** `pipeline.json`, `phase.txt`, and `active_agent.txt` are only ever written by `crew-daemon` (via `pipeline_update.py`). Agents write only to `events.jsonl`.
-
-The one exception: agents may update `phase.txt` for *internal* sub-phase transitions (e.g., backend cycling through DESIGN → IMPLEMENTATION → VERIFICATION within its own lifecycle). Inter-agent transitions always go through the daemon.
 
 ### State directory layout
 
 ```
 ~/.claude/agent-crew/{PROJECT_NAME}/
-├── config.json                 ← {"maxConcurrentTasks": 2}
-├── orchestrator.pid
 └── tasks/{TASK_ID}/
-    ├── pipeline.json           ← managed by crew-daemon only
-    ├── phase.txt               ← managed by crew-daemon (inter-agent)
-    ├── active_agent.txt        ← managed by crew-daemon
+    ├── pipeline.json
+    ├── phase.txt
+    ├── active_agent.txt
     ├── branch.txt
     ├── worktree_path.txt
-    ├── events.jsonl            ← append-only; agents write here
-    ├── events.offset           ← daemon read cursor
-    ├── agent_signal/           ← {agent}.ready trigger files
     └── context/
         ├── session_handoff.md
         ├── prd.md
@@ -166,40 +133,15 @@ IMPLEMENTATION → RED: failing test → GREEN: minimal impl → REFACTOR
 VERIFICATION → OOP principles check + all tests GREEN → git commit
 ```
 
-## State & Monitoring
+## State Layout
 
-```bash
-crew-status             # one-shot status for all projects
-crew-status --live      # refresh every 2s
-crew-status --live 5    # refresh every 5s
-crew-daemon status      # check orchestrator daemon
-crew-daemon stop        # stop daemon (kills all instances)
+All state is stored outside your project directory:
+
+```
+~/.claude/agent-crew/{PROJECT_NAME}/tasks/{TASK_ID}/
 ```
 
-Example panel:
-```
-╔════════════════════════════════════════════════════════╗
-║ agent-crew  projects: 2                                ║
-╠════════════════════════════════════════════════════════╣
-║   updated: 14:32:01                                    ║
-╠════════════════════════════════════════════════════════╣
-║ ▶ my-project                                           ║
-║   Task   Implement order domain API with TDD           ║
-║   Status IN_PROGRESS  phase: IMPLEMENTATION            ║
-║   Agent  backend                                       ║
-║   ✓planner → ▶backend                                  ║
-║   Daemon ● RUNNING  pid:12345  events:3                ║
-╠════════════════════════════════════════════════════════╣
-║   other-project                                        ║
-║   Task   -                                             ║
-║   Status DONE  phase: DONE                             ║
-║   Agent  planner                                       ║
-║   ✓planner → ✓backend                                  ║
-║   Daemon ● STOPPED  pid:-  events:5                    ║
-╠════════════════════════════════════════════════════════╣
-║   crew-status --live                                   ║
-╚════════════════════════════════════════════════════════╝
-```
+Your project directory only gains a `.crew_task_id` file during an active task (removed on completion).
 
 ## Contributing
 
