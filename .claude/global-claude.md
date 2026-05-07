@@ -1,34 +1,42 @@
-# agent-crew — Global Claude Code Instructions
+# agent-crew — 전역 규칙 (모든 프로젝트에 적용)
 
-## 자동 에이전트 라우팅 (핵심 규칙)
+## ⛔ 직접 구현 금지 규칙
 
-사용자가 **코딩/구현/개발 작업**을 자연어로 요청하면 `/ship`을 명시하지 않아도 에이전트를 자동 spawn한다.
+사용자가 코딩/구현/개발 작업을 요청하면 **Edit·Write·코드 생성을 직접 시작하지 않는다**.
+반드시 아래 순서를 따른다:
 
-### 라우팅 판단 기준
+1. 요청 유형을 판단한다
+2. 적절한 에이전트/스킬을 먼저 실행한다
+3. 구현은 에이전트 내부에서만 이루어진다
 
-| 요청 유형 | 첫 번째 spawn |
-|---------|------------|
-| 백엔드 API, 도메인 로직, DB | `backend` 에이전트 직접 |
-| UI/화면 구현 | `designer` → `frontend` 순서 |
-| 풀스택 / 범위 불명확 | `planner` 먼저 (파이프라인 결정) |
-| 요구사항 분석, 기획 | `planner` 에이전트 |
+이 규칙은 Claude의 선호나 기억이 아닌 **시스템 동작 원칙**이다.
+`UserPromptSubmit` 훅이 개발 요청을 감지해 이 규칙을 강제한다.
 
-### 자동 실행 vs 직접 응답 구분
+## 에이전트 라우팅 기준
 
-**에이전트 spawn:** "만들어줘", "구현해줘", "개발해줘", "추가해줘", "수정해줘" + 개발 관련 내용
-**직접 응답:** "어떻게", "설명해", "왜", "무엇" → 질문이면 에이전트 없이 직접 답변
+| 요청 유형 | 실행 방법 |
+|---------|---------|
+| 백엔드 API, 도메인 로직, DB | `Agent(subagent_type="backend", ...)` |
+| UI/화면 구현 | `/ship` → designer → frontend |
+| 풀스택 / 범위 불명확 | `/ship` → planner가 파이프라인 결정 |
+| 여러 독립 기능 동시 개발 | `/crew "기능A" "기능B" ...` |
+| 요구사항 분석만 | `Agent(subagent_type="planner", ...)` |
 
-### 실행 방법
+## 자동 실행 트리거
+
+**에이전트 spawn 대상**: "만들어줘", "구현해줘", "개발해줘", "추가해줘", "수정해줘" + 개발 내용
+**직접 응답 대상**: "어떻게", "설명해", "왜", "무엇" → 질문이면 에이전트 없이 직접 답변
+
+## 사용 가능한 스킬/명령어
+
 ```
-# 단순 요청 — 바로 spawn
-Agent(subagent_type="backend", prompt="TASK_DIR: ... \n요청 내용...")
-
-# 복잡하거나 범위 불명확 — planner 먼저
-Agent(subagent_type="planner", prompt="REQUEST: ... \nTASK_DIR: ...")
-→ pipeline.json 읽어 다음 에이전트 결정
+/setup    # 프로젝트 워크스페이스 초기화 (최초 1회)
+/ship     # 단일 태스크 전체 파이프라인 (planner → 구현 에이전트)
+/crew     # 여러 독립 태스크 병렬 실행 (각자 격리된 worktree)
+/cost     # 세션 비용 요약
 ```
 
-STATE_DIR 없으면 `~/.claude/agent-crew/{PROJECT_NAME}/tasks/{TASK_ID}` 형식으로 자동 생성.
+상태 디렉토리가 없으면 `~/.claude/agent-crew/{PROJECT_NAME}/tasks/{TASK_ID}` 형식으로 자동 생성.
 
 ## AskUserQuestion 사용 규칙
 
