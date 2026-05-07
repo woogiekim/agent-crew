@@ -66,9 +66,12 @@ install_global() {
   [ -f "${AGENT_CREW_DIR}/hooks/auto-route.sh" ] \
     || log_error "auto-route.sh 설치 실패 — .claude/hooks/auto-route.sh 가 레포에 없습니다"
 
-  # ~/.claude/settings.json 에 UserPromptSubmit 훅 등록 (모든 프로젝트에서 동작)
+  # ~/.claude/settings.json 에 훅 등록 (모든 프로젝트에서 동작)
   merge_global_settings "${GLOBAL_DIR}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
   log_info "자연어 라우팅 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
+
+  merge_global_pretooluse "${GLOBAL_DIR}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/context-guard.sh"
+  log_info "context-guard 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
 
   # ~/.claude/CLAUDE.md 에 전역 Claude 규칙 병합
   merge_global_claude "$TEMP_DIR/.claude/global-claude.md" "${GLOBAL_DIR}/CLAUDE.md"
@@ -116,6 +119,53 @@ for block in user_prompt_hooks:
   break
 else:
   user_prompt_hooks.append(hook_block)
+
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+}
+
+# ~/.claude/settings.json 에 PreToolUse 훅을 안전하게 병합
+merge_global_pretooluse() {
+  local dest="$1" matcher="$2" hook_path="$3"
+
+  python3 - "$dest" "$matcher" "$hook_path" <<'PYEOF'
+import sys, json, os
+
+dest, matcher, hook_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+hook_entry = {
+  "type": "command",
+  "command": f"bash {hook_path}",
+  "timeout": 5
+}
+
+if os.path.exists(dest):
+  with open(dest) as f:
+    try:
+      settings = json.load(f)
+    except json.JSONDecodeError:
+      settings = {}
+else:
+  settings = {}
+
+hooks = settings.setdefault("hooks", {})
+pretooluse_hooks = hooks.setdefault("PreToolUse", [])
+
+# 같은 matcher + hook_path 가 이미 있으면 업데이트, 없으면 추가
+hook_path_base = os.path.basename(hook_path)
+for block in pretooluse_hooks:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  pretooluse_hooks.append({"matcher": matcher, "hooks": [hook_entry]})
 
 with open(dest, "w") as f:
   json.dump(settings, f, indent=2, ensure_ascii=False)
