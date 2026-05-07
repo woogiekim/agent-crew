@@ -56,35 +56,56 @@ source ~/.bashrc  # bash
 # 1. Initialize workspace once per project
 /setup
 
-# 2. Run the full pipeline
+# 2. Run a single task
 /ship "implement order domain API with TDD"
 
-# Manual phase execution
-/requirements
-/design
-/implement
-/verify
+# 3. Run multiple independent tasks in parallel
+/crew "implement order API" "implement product API" "implement user API"
+
+# 4. Check cost summary
+/cost
 ```
 
 ## How It Works
 
 The orchestrator (Claude) spawns each sub-agent directly using the Agent tool. No daemon processes, no file polling, no signal files.
 
+### Single task (`/ship`)
+
 ```
 /ship "request"
        │
-       ▼ Agent tool spawn
-[planner sub-agent] → prd.md + pipeline.json + handoff.md
+       ▼ Agent spawn
+[planner] → prd.md + pipeline.json (stages) + handoff.md
        │
-       ▼ reads pipeline.json → determines next agents
-[orchestrator] confirms with user
+       ▼ stage 0: parallel spawn (single response, multiple Agent calls)
+[designer] ‖ [backend] → independent result files
        │
-       ▼ Agent tool spawn (in order)
-[backend / frontend / designer sub-agents] → code + commit
+       ▼ stage 1: spawn
+[frontend] → UI implementation
        │
-       ▼ all agents complete
+       ▼ complete
 [orchestrator] final report
 ```
+
+### Multiple tasks (`/crew`)
+
+```
+/crew "task A" "task B" "task C"
+       │
+       ▼ create git worktree + branch for each task
+       │
+       ▼ single response: spawn all task-runners simultaneously
+[task-runner A]   ‖   [task-runner B]   ‖   [task-runner C]
+  own worktree         own worktree         own worktree
+  own context          own context          own context
+  full pipeline        full pipeline        full pipeline
+       │
+       ▼ all complete
+[orchestrator] merge guide
+```
+
+Each `task-runner` autonomously handles its full pipeline (planner → stages → commit), isolated in its own git worktree with a separate context window.
 
 ### State directory layout
 
@@ -124,6 +145,7 @@ After planner completes, you confirm the proposed pipeline before execution begi
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
 | **resolver** | Automatic merge conflict resolution |
+| **task-runner** | Autonomous full-pipeline executor — spawned by `/crew` for each task |
 
 ### Backend agent workflow (TDD cycle)
 

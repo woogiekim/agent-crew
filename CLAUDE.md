@@ -5,14 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 에이전트 워크플로 명령어
 
 ```
-/setup          # 현재 프로젝트 워크스페이스 초기화 (최초 1회)
-/ship "요청"    # 전체 파이프라인 자동 실행 (권장)
+/setup                           # 현재 프로젝트 워크스페이스 초기화 (최초 1회)
+/ship "요청"                     # 단일 태스크 전체 파이프라인 자동 실행
+/crew "태스크A" "태스크B" ...    # 여러 독립 태스크 병렬 실행
+/cost                            # 세션 비용 요약
 ```
 
-`/ship`은 오케스트레이터가 Agent 도구로 각 서브에이전트를 직접 spawn한다.
-같은 stage의 에이전트는 단일 응답에서 여러 Agent 도구를 동시에 호출해 **병렬 실행**한다.
+**`/ship`** — 오케스트레이터가 Agent 도구로 서브에이전트를 직접 spawn.
+같은 stage의 에이전트는 단일 응답에서 동시에 호출해 **stage 내 병렬 실행**.
+예: 풀스택 → planner → [designer ‖ backend] → frontend
 
-예: 풀스택 → planner → [designer ‖ backend] (병렬) → frontend (순차)
+**`/crew`** — 여러 독립 태스크를 각자 git worktree에서 격리 실행.
+각 task-runner가 자신의 전체 파이프라인을 자율 실행하며 완전히 독립된 context.
+예: "로그인 API" ‖ "상품 API" ‖ "주문 API" → 동시 처리
 
 ## 절대 규칙
 
@@ -39,7 +44,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ~/.claude/
 ├── commands/                    ← 글로벌 명령어 (모든 프로젝트에서 사용)
 │   ├── setup.md
-│   └── ship.md
+│   ├── ship.md
+│   ├── crew.md
+│   └── cost.md
 └── agent-crew/
     ├── agents/                  ← 서브에이전트 정의 (flat .md, frontmatter 포함)
     │   ├── planner.md           ← claude-sonnet-4-6
@@ -47,19 +54,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     │   ├── frontend.md          ← claude-sonnet-4-6
     │   ├── backend.md           ← claude-sonnet-4-6
     │   ├── resolver.md          ← claude-haiku-4-5
+    │   ├── task-runner.md       ← claude-sonnet-4-6  (/crew가 spawn)
     │   └── skills/              ← 온디맨드 참조 스킬
     │       ├── tdd.md
     │       ├── ddd.md
     │       └── oop-principles.md
     └── {PROJECT_NAME}/          ← 프로젝트별 상태 (자동 생성)
         └── tasks/
-            └── {TASK_ID}/       ← task별 상태 (TASK_ID = YYYYmmdd-HHMMSS)
+            └── {TASK_ID}/       ← task별 상태 (TASK_ID = YYYYmmdd-HHMMSS[-index])
                 ├── pipeline.json    ← {"task": "...", "stages": [[...], [...]], "completed_stages": 0}
                 ├── handoff.md       ← 에이전트 간 인계 문서
+                ├── result.md        ← task-runner 완료 보고 (/crew 전용)
                 └── context/
                     ├── prd.md
                     ├── design-spec.md
                     └── ...
+
+{PROJECT_ROOT}/
+└── .crew-worktrees/             ← 병렬 태스크 작업 디렉토리 (gitignore, 태스크 완료 후 자동 삭제)
+    ├── {TASK_ID_0}/             ← git worktree
+    └── {TASK_ID_1}/
 ```
 
 ### 에이전트 구성
@@ -71,6 +85,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | frontend | UI 구현 및 검증 |
 | backend | Kotlin+Spring Boot DDD/TDD 구현 |
 | resolver | 병합 충돌 자동 해결 |
+| task-runner | 단일 태스크 전체 파이프라인 자율 실행 (`/crew`가 spawn) |
 
 ### 파이프라인 자동 결정
 

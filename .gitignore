@@ -2,6 +2,9 @@
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 
+# crew worktree 작업 디렉토리
+.crew-worktrees/
+
 # 빌드 산출물
 build/
 .gradle/
