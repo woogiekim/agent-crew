@@ -107,12 +107,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - UI 설계: `UI 설계`, `화면 설계`, `UX`, `와이어프레임`
 - 액션 동사 없으면 라우팅 스킵: `만들어`, `구현해`, `개발해`, `추가해` 등 필요
 
+### Context 관리 원칙
+
+**파일 내용 인라인 금지** — 에이전트 프롬프트에 파일 내용을 직접 삽입하면 부모 context가 매 stage마다 누적된다.
+경로(path)만 전달하고 서브에이전트가 직접 읽는다.
+
+```
+# 금지 패턴 (context 폭발)
+prompt: "--- 인계 내용 ---\n{handoff.md 전체 내용}\n---"
+
+# 올바른 패턴 (context 보존)
+prompt: "HANDOFF_PATH: {TASK_DIR}/handoff.md\n인계 내용은 위 파일을 직접 읽어라."
+```
+
+**context 흐름 (이상적 상태)**:
+
+| 레벨 | 보유 정보 | 크기 |
+|------|----------|------|
+| 오케스트레이터 (`/ship`) | 경로, 상태, stage 완료 여부 | 소 |
+| task-runner (`/crew`) | 경로, pipeline.json 상태 | 소 |
+| 각 서브에이전트 | 자신이 읽은 파일 + 구현 | 중 (격리) |
+
+**context-guard 훅** — Agent 도구 호출 시 프롬프트가 2000자 이상이거나 500자+ 코드블록을 포함하면 경고를 주입한다.
+
 ### 자동화 훅
 
 | 훅 | 트리거 | 역할 |
 |----|--------|------|
-| `verify-rules.sh` | PostToolUse (Edit/Write, `.kt`/`.ts`/`.tsx`/`.js` 파일) | Kotlin: else·getter 과다·테스트 누락 / TS: any 타입·console·테스트 누락 |
+| `verify-rules.sh` | PostToolUse (Edit/Write, `.kt`/`.ts`/`.tsx`/`.js`) | Kotlin: else·getter 과다·테스트 누락 / TS: any·console·테스트 누락 |
 | `guard-dangerous-commands.sh` | PreToolUse (Bash) | 위험 명령어 차단 |
+| `context-guard.sh` | PreToolUse (Agent) | 에이전트 프롬프트 비대화 감지 (2000자+ 또는 코드블록 500자+) |
 
 ## 플러그인 설치
 

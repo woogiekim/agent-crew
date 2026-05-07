@@ -47,7 +47,15 @@ git add -p  # 관련 파일만 선택적 추가
 git commit -m "feat: [기능명] frontend 구현"
 ```
 
+완료 보고 형식 (부모에게 반환, 3줄 이내):
+```
+STATUS: completed
+COMMIT: {commit hash}
+COMPONENTS: {구현된 컴포넌트 수}개
+```
+
 ## 절대 규칙
 - 타입 에러 있는 상태로 완료 처리 금지
 - design-spec에 없는 기능 임의 추가 금지
 - handoff.md 갱신 없이 완료 처리 금지
+- 완료 보고는 3줄 이내 — 코드 내용 재인용 금지

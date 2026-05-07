@@ -51,6 +51,14 @@ UI/UX 디자이너. PRD를 분석해 frontend 에이전트가 바로 구현할 �
      - 기술 스택 권장사항
      - 우선 구현 순서
 
+완료 보고 형식 (부모에게 반환, 3줄 이내):
+```
+STATUS: completed
+DESIGN_SPEC: {TASK_DIR}/context/design-spec.md
+SCREENS: {화면 수}개
+```
+
 ## 절대 규칙
 - design-spec.md 작성 없이 완료 처리 금지
 - 구현 불가능한 추상적 명세 금지 — frontend가 바로 코딩할 수 있어야 함
+- 완료 보고는 3줄 이내 — design-spec.md 내용 재인용 금지

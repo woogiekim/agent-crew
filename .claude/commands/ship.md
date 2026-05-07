@@ -5,21 +5,20 @@
 오케스트레이터(Claude)가 Agent 도구로 각 에이전트를 직접 spawn한다.
 파일 폴링, daemon 프로세스, .ready 신호 파일 불필요.
 
-같은 stage의 에이전트는 **단일 응답에서 여러 Agent 도구를 동시에 호출**해 병렬 실행한다.
+**context 관리 원칙**: 에이전트에게 파일 내용을 인라인으로 넘기지 않는다.
+경로(path)만 전달하고, 서브에이전트가 직접 읽는다. 오케스트레이터의 context는 좌표(경로, 상태)만 보유한다.
 
 ```
 [오케스트레이터] /ship "요청"
+      │  context: 좌표(경로, 상태)만 보유
+      ▼
+[planner] → prd.md + pipeline.json + handoff.md  (격리 context)
       │
-      ▼ planner spawn
-[planner] → prd.md + pipeline.json (stages) + handoff.md
+      ▼ stage 0: 병렬 spawn — 경로만 전달
+[designer] ‖ [backend]  (각자 격리 context, 파일은 직접 읽음)
       │
-      ▼ stage 0: 병렬 spawn (단일 응답에서 두 Agent 동시 호출)
-[designer] ‖ [backend] → 각자 결과 파일 작성
-      │
-      ▼ 오케스트레이터가 handoff.md 갱신 (결과 파일 경로 기록)
-      │
-      ▼ stage 1: spawn
-[frontend] → UI 구현
+      ▼ stage 1: spawn — 경로만 전달
+[frontend]  (격리 context)
 ```
 
 ## 실행 순서
@@ -39,7 +38,6 @@ STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
 
 ### 3. 재개 확인
 ```bash
-# 완료되지 않은 최근 태스크 찾기
 RESUME_PIPELINE=$(find "${STATE_DIR}/tasks" -name "pipeline.json" 2>/dev/null \
   | xargs grep -l '"completed_stages"' 2>/dev/null \
   | while read f; do
@@ -51,8 +49,8 @@ RESUME_PIPELINE=$(find "${STATE_DIR}/tasks" -name "pipeline.json" 2>/dev/null \
 `RESUME_PIPELINE`이 존재하면 AskUserQuestion:
 - 질문: "완료되지 않은 태스크가 있습니다. 어떻게 할까요?"
 - 선택지:
-  - "이어서 진행 (Recommended)" — 마지막 완료 stage부터 재개
-  - "새 태스크 시작" — 새 TASK_ID로 시작
+  - "이어서 진행 (Recommended)"
+  - "새 태스크 시작"
 
 "이어서 진행" 선택 시:
 ```bash
@@ -60,7 +58,7 @@ TASK_DIR=$(dirname "$RESUME_PIPELINE")
 TASK_ID=$(basename "$TASK_DIR")
 BRANCH="feature/task-${TASK_ID}"
 git checkout "${BRANCH}" 2>/dev/null || true
-# pipeline.json 읽어 completed_stages 파악 후 해당 stage부터 실행 (5단계 스킵 → 6단계로)
+# pipeline.json의 completed_stages 확인 후 해당 stage부터 실행 (5단계 스킵 → 6단계로)
 ```
 
 "새 태스크 시작" 선택 시:
@@ -87,7 +85,7 @@ PROJECT_ROOT: {PROJECT_ROOT}
 결과물: {TASK_DIR}/context/prd.md, {TASK_DIR}/pipeline.json, {TASK_DIR}/handoff.md
 ```
 
-완료 후:
+완료 후 pipeline.json만 읽는다 (handoff.md 내용은 오케스트레이터가 읽지 않는다):
 ```bash
 cat "${TASK_DIR}/pipeline.json"
 ```
@@ -95,67 +93,49 @@ cat "${TASK_DIR}/pipeline.json"
 ### 6. 파이프라인 확인 및 사용자 승인
 `pipeline.json`에서 `stages` 배열 읽기.
 
-stages 표시 형식:
-- 단일 에이전트: `backend`
-- 병렬 에이전트: `designer ‖ backend`
-
 AskUserQuestion:
-- 질문: "다음 순서로 진행합니다:\n{stages 목록}\n\n브랜치: {BRANCH}"
+- 질문: "다음 순서로 진행합니다:\n{stages 목록 (병렬은 ‖ 표시)}\n\n브랜치: {BRANCH}"
 - 선택지: "시작 (Recommended)", "취소"
 
-취소 시:
-```bash
-git checkout -
-git branch -D "${BRANCH}"
-rm -rf "${TASK_DIR}"
-```
-종료.
-
-`stages`가 비어있으면 (설계/분석만): 결과 요약 후 종료.
+취소 시 정리 후 종료.
+`stages`가 비어있으면: 결과 요약 후 종료.
 
 ### 7. 파이프라인 실행
 
 `stages`를 순서대로 실행. `completed_stages` 이전 index는 스킵.
 
-각 stage `i`마다:
+각 stage `i`마다 에이전트 프롬프트 형식:
 
-**stage 내 에이전트가 1개** — 단독 blocking spawn:
 ```
-Agent 도구 1개 호출:
-  TASK_DIR: {TASK_DIR}
-  PROJECT_ROOT: {PROJECT_ROOT}
+TASK_DIR: {TASK_DIR}
+PROJECT_ROOT: {PROJECT_ROOT}
+HANDOFF_PATH: {TASK_DIR}/handoff.md
 
-  --- 인계 내용 ---
-  {handoff.md 전체 내용}
-  ---
-
-  담당 작업을 수행하라.
+인계 내용은 HANDOFF_PATH 파일을 직접 읽어라. (인라인으로 전달하지 않음)
+PRD는 {TASK_DIR}/context/prd.md 를 직접 읽어라.
+담당 작업을 수행하라.
 ```
 
-**stage 내 에이전트가 2개 이상** — **단일 응답에서 여러 Agent 도구를 동시에 호출** (병렬):
-- 각 에이전트에 동일한 프롬프트 구조 사용
-- 프롬프트에 명시: "handoff.md는 수정하지 않는다. 자신의 결과 파일(design-spec.md, design.md 등)에만 저장하라."
-- **모든 Agent 완료 대기**
+병렬 stage (에이전트 2개 이상)는 단일 응답에서 여러 Agent 도구를 동시에 호출.
+- "handoff.md는 수정하지 않는다. 자신의 결과 파일에만 저장하라." 명시
+- 모든 Agent 완료 대기
 
-stage 완료 후:
-1. `pipeline.json`의 `completed_stages` 갱신 (재개 포인트 저장):
-   ```bash
-   python3 -c "
-   import json
-   p = json.load(open('${TASK_DIR}/pipeline.json'))
-   p['completed_stages'] = $((i+1))
-   json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
-   "
-   ```
+stage 완료 후 `completed_stages` 갱신:
+```bash
+python3 -c "
+import json
+p = json.load(open('${TASK_DIR}/pipeline.json'))
+p['completed_stages'] = $((i+1))
+json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
+"
+```
 
-2. 병렬 stage였다면 오케스트레이터가 handoff.md에 결과 포인터 추가:
-   ```
-   ## stage {i} 완료 — {에이전트 목록}
-   - designer 결과: {TASK_DIR}/context/design-spec.md
-   - backend 결과: 최신 git commit 참조
-   ```
-
-3. 다음 stage 에이전트에게는 갱신된 handoff.md 전달.
+병렬 stage였다면 오케스트레이터가 handoff.md에 결과 포인터만 append (내용 전체 읽기 금지):
+```bash
+# 결과 파일 경로만 확인
+ls "${TASK_DIR}/context/"
+# handoff.md에 경로 포인터 추가 (cat 금지)
+```
 
 ### 8. 완료 보고
 ```bash

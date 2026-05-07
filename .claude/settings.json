@@ -43,6 +43,16 @@
             "command": "bash .claude/hooks/guard-dangerous-commands.sh"
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/context-guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

@@ -60,8 +60,14 @@ AskUserQuestion 도구로 핵심 정보를 수집한다 (최대 2회).
 - PRD 경로: `{TASK_DIR}/context/prd.md`
 
 ### 5단계: 완료 보고
-결정된 파이프라인과 이유를 명확하게 보고한다.
+아래 형식으로만 반환한다 (긴 설명, 파일 내용 재인용 금지):
+```
+PIPELINE: {stages 요약 ex) [designer‖backend] → [frontend]}
+HANDOFF: {TASK_DIR}/handoff.md
+PRD: {TASK_DIR}/context/prd.md
+```
 
 ## 절대 규칙
 - 사용자 확인은 반드시 AskUserQuestion 도구 사용 (텍스트 프롬프트 금지)
 - `pipeline.json`과 `handoff.md`는 반드시 저장해야 완료로 인정
+- 완료 보고는 3줄 이내 — 파일 내용 재인용 금지
