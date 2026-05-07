@@ -107,6 +107,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - UI 설계: `UI 설계`, `화면 설계`, `UX`, `와이어프레임`
 - 액션 동사 없으면 라우팅 스킵: `만들어`, `구현해`, `개발해`, `추가해` 등 필요
 
+### 스킬 강제 실행 메커니즘
+
+Claude Code는 스킬이 매칭될 때 스킬을 먼저 호출해야 한다는 시스템 규칙을 갖고 있다.
+그러나 Claude의 판단에만 의존하면 이 규칙이 지켜지지 않을 수 있다.
+
+**`auto-route.sh` 훅이 이를 강제한다**:
+- 개발 요청 키워드 감지 시 `hookSpecificOutput.additionalContext`로 directive를 주입
+- plain text 출력이 아닌 JSON 형식 → Claude의 system context에 확실하게 삽입됨
+- 메시지: "⛔ 직접 구현 금지 — 반드시 스킬/에이전트를 먼저 실행할 것"
+
+```
+# Claude의 기억(memory/preferences)으로는 보장 불가
+# settings.json hooks만이 동작을 보장한다
+```
+
+슬래시 명령어(`/ship`, `/crew` 등)나 질문/설명 요청은 스킵.
+
 ### Context 관리 원칙
 
 **파일 내용 인라인 금지** — 에이전트 프롬프트에 파일 내용을 직접 삽입하면 부모 context가 매 stage마다 누적된다.
