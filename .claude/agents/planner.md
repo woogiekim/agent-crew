@@ -31,19 +31,22 @@ AskUserQuestion 도구로 핵심 정보를 수집한다 (최대 2회).
 - 구현 범위 및 제외 항목
 
 ### 3단계: 파이프라인 결정
-아래 기준으로 결정 후 `{TASK_DIR}/pipeline.json` 저장:
+아래 기준으로 결정 후 `{TASK_DIR}/pipeline.json` 저장.
 
-| 요청 유형 | agents 배열 |
+`stages`는 2차원 배열: 같은 배열 내 에이전트는 **병렬** 실행, 배열 간은 **순차** 실행.
+
+| 요청 유형 | stages |
 |---------|---------|
-| 백엔드 API / 도메인 로직 | `["backend"]` |
-| UI 포함 풀스택 | `["designer", "frontend", "backend"]` |
-| UI만 (정적 페이지 등) | `["designer", "frontend"]` |
+| 백엔드 API / 도메인 로직 | `[["backend"]]` |
+| UI 포함 풀스택 | `[["designer", "backend"], ["frontend"]]` |
+| UI만 (정적 페이지 등) | `[["designer"], ["frontend"]]` |
 | 설계/분석만 | `[]` |
 
 ```json
 {
   "task": "요청 원문",
-  "agents": ["backend"]
+  "stages": [["designer", "backend"], ["frontend"]],
+  "completed_stages": 0
 }
 ```
 

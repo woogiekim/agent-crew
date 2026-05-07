@@ -10,7 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 
 `/ship`은 오케스트레이터가 Agent 도구로 각 서브에이전트를 직접 spawn한다.
-planner → (designer →) (frontend →) (backend →) 순서로 실제 Claude 서브에이전트 실행.
+같은 stage의 에이전트는 단일 응답에서 여러 Agent 도구를 동시에 호출해 **병렬 실행**한다.
+
+예: 풀스택 → planner → [designer ‖ backend] (병렬) → frontend (순차)
 
 ## 절대 규칙
 
@@ -52,7 +54,7 @@ planner → (designer →) (frontend →) (backend →) 순서로 실제 Claude 
     └── {PROJECT_NAME}/          ← 프로젝트별 상태 (자동 생성)
         └── tasks/
             └── {TASK_ID}/       ← task별 상태 (TASK_ID = YYYYmmdd-HHMMSS)
-                ├── pipeline.json    ← {"task": "...", "agents": [...]}
+                ├── pipeline.json    ← {"task": "...", "stages": [[...], [...]], "completed_stages": 0}
                 ├── handoff.md       ← 에이전트 간 인계 문서
                 └── context/
                     ├── prd.md
@@ -77,8 +79,8 @@ planner → (designer →) (frontend →) (backend →) 순서로 실제 Claude 
 
 | 감지 조건 | 파이프라인 |
 |---------|---------|
-| 풀스택 키워드 (`풀스택`, `full-stack`, `시스템 개발` 등) | planner → designer → frontend → backend |
-| 프론트엔드 + 백엔드 키워드 동시 포함 | planner → designer → frontend → backend |
+| 풀스택 키워드 (`풀스택`, `full-stack`, `시스템 개발` 등) | planner → [designer ‖ backend] → frontend |
+| 프론트엔드 + 백엔드 키워드 동시 포함 | planner → [designer ‖ backend] → frontend |
 | UI 설계 키워드 (`UX`, `와이어프레임`, `화면 설계` 등) | designer (→ frontend) |
 | 프론트엔드 키워드만 (`UI`, `컴포넌트`, `React` 등) | designer → frontend |
 | 백엔드 키워드만 (`API`, `도메인`, `Entity`, `Spring` 등) | backend |
@@ -94,7 +96,7 @@ planner → (designer →) (frontend →) (backend →) 순서로 실제 Claude 
 
 | 훅 | 트리거 | 역할 |
 |----|--------|------|
-| `verify-rules.sh` | PostToolUse (Edit/Write, `.kt` 파일) | else 사용, getter 과다, 테스트 파일 누락 감지 |
+| `verify-rules.sh` | PostToolUse (Edit/Write, `.kt`/`.ts`/`.tsx`/`.js` 파일) | Kotlin: else·getter 과다·테스트 누락 / TS: any 타입·console·테스트 누락 |
 | `guard-dangerous-commands.sh` | PreToolUse (Bash) | 위험 명령어 차단 |
 
 ## 플러그인 설치

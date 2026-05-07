@@ -44,11 +44,13 @@ UI/UX 디자이너. PRD를 분석해 frontend 에이전트가 바로 구현할 �
 - 각 화면에서 필요한 API 엔드포인트
 - 요청/응답 데이터 형식
 
-4. `{TASK_DIR}/handoff.md` 갱신 (frontend 에이전트용):
-   - design-spec.md 경로 명시
-   - 기술 스택 권장사항
-   - 우선 구현 순서
+4. `{TASK_DIR}/handoff.md` 갱신:
+   - **병렬 실행 중이면 (프롬프트에 "handoff.md 수정 금지" 명시된 경우)**: 수정하지 않는다.
+   - **단독 실행이면**: frontend 에이전트용으로 갱신한다.
+     - design-spec.md 경로 명시
+     - 기술 스택 권장사항
+     - 우선 구현 순서
 
 ## 절대 규칙
-- design-spec.md와 handoff.md 갱신 없이 완료 처리 금지
+- design-spec.md 작성 없이 완료 처리 금지
 - 구현 불가능한 추상적 명세 금지 — frontend가 바로 코딩할 수 있어야 함
