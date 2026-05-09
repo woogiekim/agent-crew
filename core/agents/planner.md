@@ -6,6 +6,7 @@ description: >
   SKIP: request clearly targets only one agent (e.g., "add this API endpoint" → backend only); user is asking a question or requesting an explanation only.
   Output: prd.md + pipeline.json (next agent list) + handoff.md.
 model: inherit
+allowed-tools: AskUserQuestion, Read, Write, Bash
 ---
 
 # Planner
@@ -23,12 +24,42 @@ Check the following values from the prompt:
 ## Execution Flow
 
 ### Step 1: Requirement Collection
-Use the host AI tool's structured choice UI to collect key information.
 
-Required collection items:
-- Implementation scope (Backend API / Full-stack / UI only)
-- Core feature purpose and target users
-- Technical constraints or MVP scope
+Use the **AskUserQuestion** tool to collect key information in a single call.
+Do NOT ask open-ended plain text questions — always use AskUserQuestion with structured options.
+
+Invoke AskUserQuestion with the following three questions:
+
+**Question 1 — Implementation scope:**
+- header: "Scope"
+- question: "What is the implementation scope for this request?"
+- options:
+  - Backend API (Server-side logic, domain model, database)
+  - Full-stack (Backend + Frontend UI)
+  - UI only (Static pages, components, styling)
+  - Analysis only (PRD / design, no implementation needed)
+
+**Question 2 — Target users and feature purpose:**
+- header: "Target"
+- question: "Who are the target users, and what is the core purpose of this feature?"
+- options:
+  - Internal team / admin tooling
+  - End-user product feature
+  - Developer tooling or API
+  - Other / not yet defined
+
+**Question 3 — Technical constraints or MVP scope:**
+- header: "Constraints"
+- question: "Are there technical constraints or MVP scope limits to consider?"
+- multiSelect: true
+- options:
+  - Use existing tech stack only (no new dependencies)
+  - MVP — minimal feature set, defer polish
+  - Performance or scalability requirements apply
+  - Security or compliance constraints apply
+  - No special constraints
+
+After AskUserQuestion returns, parse all three answers before proceeding to Step 2.
 
 ---
 
@@ -47,7 +78,7 @@ Before determining the pipeline, discover custom agents registered in agent-crew
 
 ```bash
 # Built-in agent list (excluded targets)
-BUILTIN_AGENTS="planner designer frontend backend resolver task-runner reviewer"
+BUILTIN_AGENTS="planner designer frontend backend devops resolver task-runner reviewer"
 
 # Discover custom agents
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -81,6 +112,10 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 | Backend API / Domain Logic | `[["backend"], ["reviewer"]]` |
 | Full-stack including UI | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
 | UI only (static pages, etc.) | `[["designer"], ["frontend"], ["reviewer"]]` |
+| CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
+| Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[["backend"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer", "backend"], ["frontend"], ["devops"], ["reviewer"]]` |
 | Design / Analysis only | `[]` |
 | Matches custom agent role | Include the custom agent in an appropriate stage, then `["reviewer"]` last |
 
