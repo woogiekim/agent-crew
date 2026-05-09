@@ -102,7 +102,9 @@ same in both modes.
 
 ### 5. Collect Requirements Per Task
 
-Before confirming execution, collect requirements for each task using **AskUserQuestion**.
+Before confirming execution, collect requirements for each task using a **two-round deep interview** via **AskUserQuestion**.
+
+#### Round 1 — Base Context
 
 For each task `i`, invoke AskUserQuestion with three questions:
 
@@ -135,14 +137,98 @@ For each task `i`, invoke AskUserQuestion with three questions:
   - Security or compliance constraints apply
   - No special constraints
 
-After AskUserQuestion returns, record the collected answers as a REQUIREMENTS object for this task:
+Record the Round 1 answers: `scope`, `target`, `constraints`.
+
+#### Round 2 — Domain-Specific Follow-up
+
+Analyze the `scope` answer from Round 1 and ask 1–2 additional domain-specific questions.
+Skip Round 2 entirely if scope is **"Analysis only"**.
+
+**If scope is "Backend API":**
+
+Question A — Database:
+- header: "Task {i+1} — Database"
+- question: "Which database or storage solution will this API use?"
+- options:
+  - PostgreSQL / MySQL (relational)
+  - MongoDB / DynamoDB (document / NoSQL)
+  - Redis (cache / key-value)
+  - Existing DB — match the current stack
+  - Not yet decided
+
+Question B — Authentication:
+- header: "Task {i+1} — Auth"
+- question: "What authentication method will this API use?"
+- options:
+  - JWT (stateless token)
+  - Session-based (server-side)
+  - OAuth 2.0 / OpenID Connect
+  - API key
+  - No authentication required
+
+**If scope is "Full-stack":**
+
+Question A — State management:
+- header: "Task {i+1} — State Management"
+- question: "How should client-side state be managed?"
+- options:
+  - Local component state only (useState / hooks)
+  - Global store (Redux, Zustand, Pinia, etc.)
+  - Server state library (React Query, SWR, etc.)
+  - Match the existing project pattern
+
+Question B — Database:
+- header: "Task {i+1} — Database"
+- question: "Which database or storage solution will the backend use?"
+- options:
+  - PostgreSQL / MySQL (relational)
+  - MongoDB / DynamoDB (document / NoSQL)
+  - Redis (cache / key-value)
+  - Existing DB — match the current stack
+  - Not yet decided
+
+**If scope is "UI only":**
+
+Question A — State management:
+- header: "Task {i+1} — State Management"
+- question: "How should client-side state be managed?"
+- options:
+  - Local component state only (useState / hooks)
+  - Global store (Redux, Zustand, Pinia, etc.)
+  - Server state library (React Query, SWR, etc.)
+  - Match the existing project pattern
+
+Question B — Design system:
+- header: "Task {i+1} — Design System"
+- question: "Which design system or component library should be used?"
+- options:
+  - Follow the existing project design system
+  - Tailwind CSS (utility-first)
+  - Material UI / Ant Design / shadcn/ui
+  - Plain CSS / CSS Modules
+  - No design system — custom only
+
+After Round 2 AskUserQuestion calls return, record the additional answers as `followup` fields.
+
+#### Merge into REQUIREMENTS
+
+Combine all Round 1 and Round 2 answers into a single REQUIREMENTS object for this task:
 
 ```text
 REQUIREMENTS:
   scope: {answer to Question 1}
   target: {answer to Question 2}
   constraints: {answer(s) to Question 3}
+  followup:
+    {field_name}: {Round 2 answer A}
+    {field_name}: {Round 2 answer B}
 ```
+
+Where `{field_name}` matches the domain:
+- Backend API: `database`, `auth`
+- Full-stack: `state_management`, `database`
+- UI only: `state_management`, `design_system`
+- Analysis only: _(no followup fields)_
 
 Repeat for each task. If `N > 1`, collect requirements for all tasks before proceeding.
 
@@ -186,6 +272,9 @@ REQUIREMENTS: |
   scope: {scope answer}
   target: {target answer}
   constraints: {constraints answer(s)}
+  followup:
+    {field_name}: {Round 2 answer A, if collected}
+    {field_name}: {Round 2 answer B, if collected}
 
 Complete this task autonomously through the full pipeline.
 Write the completion report to {TASK_DIR}/result.md.
