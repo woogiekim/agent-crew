@@ -234,9 +234,9 @@ merge_global_agents() {
 import sys, re
 dest, start, end, new_section = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 content = open(dest).read()
-pattern = re.escape(start) + r'.*?' + re.escape(end)
+pattern = re.escape(start) + r'.*' + re.escape(end)
 if re.search(pattern, content, re.DOTALL):
-    content = re.sub(pattern, new_section, content, flags=re.DOTALL)
+    content = re.sub(pattern, new_section, content, count=1, flags=re.DOTALL)
 else:
     content = content.rstrip('\n') + '\n\n' + new_section + '\n'
 open(dest, 'w').write(content)
