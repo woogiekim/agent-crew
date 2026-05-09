@@ -1,77 +1,78 @@
-# agent-crew — 전역 규칙 (모든 프로젝트에 적용)
+# agent-crew — Global Rules (Applied to All Projects)
 
-## ⛔ 직접 구현 금지 규칙
+## ⛔ No Direct Implementation
 
-사용자가 코딩/구현/개발 작업을 요청하면 **Edit·Write·코드 생성을 직접 시작하지 않는다**.
-반드시 아래 순서를 따른다:
+When a user requests coding, implementation, or development work, **do not start Edit·Write·code generation directly**.
+Always follow the sequence below:
 
-1. 요청 유형을 판단한다
-2. 적절한 에이전트/스킬을 먼저 실행한다
-3. 구현은 에이전트 내부에서만 이루어진다
+1. Determine the request type
+2. Execute the appropriate agent or skill first
+3. Implementation happens only inside agents
 
-이 규칙은 Claude의 선호나 기억이 아닌 **시스템 동작 원칙**이다.
-`UserPromptSubmit` 훅이 개발 요청을 감지해 이 규칙을 강제한다.
+This is a **system behavior principle**, not a Claude preference or memory setting.
+The `UserPromptSubmit` hook detects development requests and enforces this rule.
 
-## 에이전트 라우팅 기준
+## Agent Routing Criteria
 
-| 요청 유형 | 실행 방법 |
+| Request Type | Execution Method |
 |---------|---------|
-| 백엔드 API, 도메인 로직, DB | `Agent(subagent_type="backend", ...)` |
-| UI/화면 구현 | `/task` → designer → frontend |
-| 풀스택 / 범위 불명확 | `/task` → planner가 파이프라인 결정 |
-| 여러 독립 기능 동시 개발 | `/crew "기능A" "기능B" ...` |
-| 요구사항 분석만 | `Agent(subagent_type="planner", ...)` |
+| Backend API, domain logic, DB | `Agent(subagent_type="backend", ...)` |
+| UI/screen implementation | `/task` → designer → frontend |
+| Full-stack / unclear scope | `/task` → planner determines pipeline |
+| Multiple independent features | `/crew "featureA" "featureB" ...` |
+| Requirements analysis only | `Agent(subagent_type="planner", ...)` |
 
-## 자동 실행 트리거
+## Auto-Execution Triggers
 
-**에이전트 spawn 대상**:
-- 한국어: "만들어줘", "구현해줘", "개발해줘", "추가해줘", "수정해줘" + 개발 내용
-- 영어: "rename", "refactor", "update", "fix", "add", "remove", "move", "change", "migrate", "modify", "replace", "extend", "integrate" 등 + 개발 내용
-**직접 응답 대상**: "어떻게", "설명해", "왜", "무엇", "why", "what", "how", "explain" → 질문이면 에이전트 없이 직접 답변
-- **단순 확인 단어**: "go", "yes", "진행", "확인", "ㅇㅇ", "ok", "응", "그래", "해줘", "계속" 등 → 이전 대화 맥락이 구현/개발 작업이면 반드시 /task 파이프라인으로 처리. 단순 확인 단어를 질문/설명으로 분류해 직접 응답하는 것을 금지.
+**Spawn an agent when**:
+- Korean action verbs: "만들어줘", "구현해줘", "개발해줘", "추가해줘", "수정해줘" + development content
+- English action verbs: "rename", "refactor", "update", "fix", "add", "remove", "move", "change", "migrate", "modify", "replace", "extend", "integrate" + development content
+- **Simple confirmation words**: "go", "yes", "ok", "진행", "확인", "ㅇㅇ", "응", "그래", "해줘", "계속", etc. → If the prior conversation context was about implementation or development work, always process through the /task pipeline. It is forbidden to classify simple confirmation words as questions/explanations and respond directly.
 
-## 사용 가능한 스킬/명령어
+**Respond directly (no agent)**: "how", "explain", "why", "what", "어떻게", "설명해", "왜", "무엇" → direct answer if it is a question
+
+## Available Skills / Commands
 
 ```
-/setup    # 프로젝트 워크스페이스 초기화 (최초 1회)
-/task     # 단일 태스크 전체 파이프라인 (planner → 구현 에이전트)
-/crew     # 여러 독립 태스크 병렬 실행 (각자 격리된 worktree)
-/cost     # 세션 비용 요약
+/setup    # Initialize project workspace (run once)
+/task     # Full pipeline for a single task (planner → implementation agents)
+/crew     # Parallel execution of multiple independent tasks (each in isolated worktree)
+/cost     # Session cost summary
 ```
 
-상태 디렉토리가 없으면 `~/.claude/agent-crew/{PROJECT_NAME}/tasks/{TASK_ID}` 형식으로 자동 생성.
+State directory is auto-created in `~/.claude/agent-crew/{PROJECT_NAME}/tasks/{TASK_ID}` format if it does not exist.
 
-## AskUserQuestion 사용 규칙
+## AskUserQuestion Rules
 
-- 선택지에 "직접 입력", "기타 입력", "텍스트로 입력" 등의 자유 입력 옵션을 추가하지 않는다.
-- AskUserQuestion은 항상 "Other" 자유 입력 필드를 자동 제공하므로 중복이다.
+- Do not add "직접 입력", "기타 입력", "텍스트로 입력" or similar free-text options to the choices list.
+- AskUserQuestion always provides an "Other" free-text field automatically — adding one is redundant.
 
-## 서브에이전트 구현 전 계획 승인 규칙
+## Subagent Plan Approval Rule
 
-모든 서브에이전트(backend, frontend, designer 등)는 구현 착수 전에 반드시 다음을 수행한다.
-planner는 계획 수립 자체가 역할이므로 이 규칙을 적용하지 않는다.
+All subagents (backend, frontend, designer, etc.) must do the following before starting implementation.
+The planner is exempt since planning itself is its role.
 
-1. **계획 요약 작성** — 아래 항목을 포함한다:
-   - 구현 대상 (무엇을, 왜)
-   - 접근 방법 (패턴/방법론)
-   - 변경/생성할 파일 목록
-   - 예상 구현 단계 수
+1. **Write a plan summary** — include the following:
+   - What to implement and why
+   - Approach (pattern/methodology)
+   - List of files to create/modify
+   - Estimated number of implementation steps
 
-2. **AskUserQuestion으로 승인 요청** — 선택지:
-   - "승인 — 이대로 진행" → 즉시 구현 착수
-   - "수정 요청 — 계획 변경 후 재승인" → Other 입력 내용을 반영해 수정된 계획을 재제시 (루프)
-   - "취소 — 구현 중단" → 부모에게 `STATUS: cancelled` 보고 후 즉시 종료
+2. **Request approval via AskUserQuestion** — options:
+   - "Approve — proceed as planned" → start implementation immediately
+   - "Request changes — revise plan and re-approve" → reflect the Other input and re-present the revised plan (loop)
+   - "Cancel — stop implementation" → report `STATUS: cancelled` to parent and exit immediately
 
-**계획 요약 표준 형식**:
+**Standard plan summary format**:
 ```
-[에이전트명] 작업 계획
+[agent-name] Work Plan
 
-구현 대상: {기능명}
-접근 방법: {패턴/방법론 요약}
-변경 파일:
-  - {파일 경로 1} ({신규/수정})
-  - {파일 경로 2} ({신규/수정})
-예상 단계: {단계 수 또는 TDD 사이클 수}
+Target: {feature name}
+Approach: {pattern/methodology summary}
+Files:
+  - {file path 1} (new/modified)
+  - {file path 2} (new/modified)
+Estimated steps: {number of steps or TDD cycles}
 
-위 계획으로 진행할까요?
+Proceed with this plan?
 ```

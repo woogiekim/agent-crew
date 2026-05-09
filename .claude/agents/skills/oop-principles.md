@@ -1,6 +1,7 @@
-# 객체지향 생활체조 원칙
+# Object Calisthenics Principles
 
-## 1. 한 메서드에 오직 한 단계의 들여쓰기
+## 1. Only One Level of Indentation per Method
+
 ```kotlin
 // BAD
 fun process(orders: List<Order>) {
@@ -14,10 +15,15 @@ fun process(orders: List<Order>) {
 }
 
 // GOOD
-fun process(orders: List<Order>) = orders.filter { it.isValid() }.forEach { it.apply() }
+fun process(orders: List<Order>) =
+    orders.filter { it.isValid() }
+        .forEach { it.apply() }
 ```
 
-## 2. else 키워드 사용 금지
+---
+
+## 2. Do Not Use the `else` Keyword
+
 ```kotlin
 // BAD
 fun getStatus(order: Order): String {
@@ -31,57 +37,84 @@ fun getStatus(order: Order): String {
 }
 ```
 
-## 3. 원시값과 문자열 포장
+---
+
+## 3. Wrap Primitive Types and Strings
+
 ```kotlin
 // BAD
 class Order(val amount: Int)
 
 // GOOD
 @JvmInline value class Money(val amount: Int) {
-    init { require(amount >= 0) { "금액은 0 이상이어야 합니다" } }
+    init { require(amount >= 0) { "Amount must be greater than or equal to zero" } }
 }
 class Order(val amount: Money)
 ```
 
-## 4. 일급 컬렉션 사용
+---
+
+## 4. Use First-Class Collections
+
 ```kotlin
 // BAD
 class Order(val items: List<Item>)
 
 // GOOD
 class OrderItems(private val items: List<Item>) {
-    init { require(items.isNotEmpty()) { "주문 항목은 비어있을 수 없습니다" } }
-    fun totalPrice(): Money = items.sumOf { it.price.amount }.let { Money(it) }
+    init { require(items.isNotEmpty()) { "Order items cannot be empty" } }
+
+    fun totalPrice(): Money =
+        items.sumOf { it.price.amount }
+            .let { Money(it) }
 }
+
 class Order(val items: OrderItems)
 ```
 
-## 5. 한 줄에 점 하나만
+---
+
+## 5. Use Only One Dot per Line
+
 ```kotlin
 // BAD
 order.customer.address.city
 
-// GOOD — 디미터 법칙 준수
+// GOOD — Follows the Law of Demeter
 order.shippingCity()
 ```
 
-## 6. 축약 금지
+---
+
+## 6. Do Not Abbreviate
+
 - `ord` → `order`
 - `mgr` → `manager`
 - `calc` → `calculate`
 
-## 7. 모든 엔티티를 작게 유지
-- 클래스: 50줄 이하 권장
-- 패키지: 10개 파일 이하 권장
+---
 
-## 8. 2개 이상의 인스턴스 변수를 가진 클래스 사용 금지
-- 관련 필드는 Value Object로 묶기
+## 7. Keep All Entities Small
 
-## 9. getter/setter/property 사용 금지 (Tell, Don't Ask)
+- Classes: recommended to stay under 50 lines
+- Packages: recommended to stay under 10 files
+
+---
+
+## 8. Do Not Use Classes with More Than Two Instance Variables
+
+- Group related fields into a Value Object
+
+---
+
+## 9. Do Not Use Getter/Setter/Property Access (Tell, Don't Ask)
+
 ```kotlin
-// BAD — 꺼내서 판단
-if (order.status == OrderStatus.PAID) { order.status = OrderStatus.SHIPPED }
+// BAD — Extracting state and making decisions externally
+if (order.status == OrderStatus.PAID) {
+    order.status = OrderStatus.SHIPPED
+}
 
-// GOOD — 객체에게 명령
+// GOOD — Tell the object what to do
 order.ship()
 ```
