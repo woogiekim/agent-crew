@@ -316,7 +316,7 @@ cp ~/.claude/agents/my-agent.md ~/.claude/agent-crew/agents/my-agent.md
 
 이렇게 등록된 에이전트는:
 - planner가 파이프라인 결정 시 자동으로 탐색하여 stages에 포함 가능
-- `/task`, `/crew` 오케스트레이터가 `subagent_type: "my-agent"`로 spawn 가능
+- `/ship`, `/crew` 오케스트레이터가 `subagent_type: "my-agent"`로 spawn 가능
 - 다른 프로젝트에서도 agent-crew 파이프라인에 동일하게 사용 가능
 
 > **사용자에게 질문**: 생성 중인 Subagent를 agent-crew 파이프라인에서도 사용할 것인지 확인한다.
