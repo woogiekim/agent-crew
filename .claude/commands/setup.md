@@ -34,5 +34,5 @@ STATE_DIR="${HOME}/.claude/agent-crew/${PROJECT_NAME}"
    상태 경로: ~/.claude/agent-crew/{PROJECT_NAME}/
 
 사용 방법:
-  /ship "요청 내용"    — 전체 파이프라인 자동 실행
+  /task "요청 내용"    — 전체 파이프라인 자동 실행
 ```

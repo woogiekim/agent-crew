@@ -1,4 +1,4 @@
-# /ship — 전체 파이프라인 자동 실행
+# /task — 전체 파이프라인 자동 실행
 
 ## 핵심 원칙
 
@@ -9,7 +9,7 @@
 경로(path)만 전달하고, 서브에이전트가 직접 읽는다. 오케스트레이터의 context는 좌표(경로, 상태)만 보유한다.
 
 ```
-[오케스트레이터] /ship "요청"
+[오케스트레이터] /task "요청"
       │  context: 좌표(경로, 상태)만 보유
       ▼
 [planner] → prd.md + pipeline.json + handoff.md  (격리 context)
@@ -151,7 +151,7 @@ git log --oneline feature/main..HEAD 2>/dev/null || git log --oneline -5
 
 다음 단계:
   git merge {BRANCH}    # main에 병합
-  /ship "다음 작업"     # 새 작업 시작
+  /task "다음 작업"     # 새 작업 시작
 ```
 
 ## 에이전트별 산출물

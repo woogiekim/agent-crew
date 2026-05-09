@@ -117,12 +117,12 @@ RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "결과 없음")
   git merge feature/task-{ID1}
   git merge feature/task-{ID2}
   ...
-  # 충돌 발생 시: /ship "resolve merge conflicts"
+  # 충돌 발생 시: /task "resolve merge conflicts"
 ```
 
 ## 주의사항
 
-- 태스크 간 의존성이 있는 경우 `/crew` 대신 `/ship`을 사용하라.
-  예) "A를 구현하고, A를 사용하는 B를 구현" → `/ship` (순차 필요)
+- 태스크 간 의존성이 있는 경우 `/crew` 대신 `/task`을 사용하라.
+  예) "A를 구현하고, A를 사용하는 B를 구현" → `/task` (순차 필요)
 - 완전히 독립적인 기능들을 병렬 처리하는 데 최적화되어 있다.
   예) "로그인 API", "상품 목록 API", "주문 API" → `/crew` (독립적)

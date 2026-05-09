@@ -17,8 +17,8 @@
 | 요청 유형 | 실행 방법 |
 |---------|---------|
 | 백엔드 API, 도메인 로직, DB | `Agent(subagent_type="backend", ...)` |
-| UI/화면 구현 | `/ship` → designer → frontend |
-| 풀스택 / 범위 불명확 | `/ship` → planner가 파이프라인 결정 |
+| UI/화면 구현 | `/task` → designer → frontend |
+| 풀스택 / 범위 불명확 | `/task` → planner가 파이프라인 결정 |
 | 여러 독립 기능 동시 개발 | `/crew "기능A" "기능B" ...` |
 | 요구사항 분석만 | `Agent(subagent_type="planner", ...)` |
 
@@ -31,7 +31,7 @@
 
 ```
 /setup    # 프로젝트 워크스페이스 초기화 (최초 1회)
-/ship     # 단일 태스크 전체 파이프라인 (planner → 구현 에이전트)
+/task     # 단일 태스크 전체 파이프라인 (planner → 구현 에이전트)
 /crew     # 여러 독립 태스크 병렬 실행 (각자 격리된 worktree)
 /cost     # 세션 비용 요약
 ```

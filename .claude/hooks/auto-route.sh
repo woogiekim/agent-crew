@@ -77,7 +77,7 @@ directive = f"""[agent-crew] 개발 요청 감지: {detected_type}
 ⛔ 직접 구현 금지 — Edit/Write/Bash 도구로 코드를 직접 작성하지 말 것.
 ✅ 반드시 아래 중 하나를 먼저 실행할 것:
    단일 태스크 → Agent 도구: subagent_type="{suggested_agent}"
-   복잡한 태스크 → /ship 스킬
+   복잡한 태스크 → /task 스킬
    다중 병렬 태스크 → /crew 스킬
 
 스킬/에이전트 실행 없이 Edit·Write·코드 생성을 시작하는 것은 이 규칙 위반이다."""

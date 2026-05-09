@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 /setup                           # 현재 프로젝트 워크스페이스 초기화 (최초 1회)
-/ship "요청"                     # 단일 태스크 전체 파이프라인 자동 실행
+/task "요청"                     # 단일 태스크 전체 파이프라인 자동 실행
 /crew "태스크A" "태스크B" ...    # 여러 독립 태스크 병렬 실행
 /cost                            # 세션 비용 요약
 ```
 
-**`/ship`** — 오케스트레이터가 Agent 도구로 서브에이전트를 직접 spawn.
+**`/task`** — 오케스트레이터가 Agent 도구로 서브에이전트를 직접 spawn.
 같은 stage의 에이전트는 단일 응답에서 동시에 호출해 **stage 내 병렬 실행**.
 예: 풀스택 → planner → [designer ‖ backend] → frontend
 
@@ -90,7 +90,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 파이프라인 자동 결정
 
 `UserPromptSubmit` 훅(`auto-route.sh`)이 자연어 키워드를 감지해 라우팅 힌트를 자동 주입한다.
-슬래시 커맨드(`/ship` 등)나 질문/설명 요청은 라우팅 스킵.
+슬래시 커맨드(`/task` 등)나 질문/설명 요청은 라우팅 스킵.
 
 | 감지 조건 | 파이프라인 |
 |---------|---------|
@@ -122,7 +122,7 @@ Claude Code는 스킬이 매칭될 때 스킬을 먼저 호출해야 한다는 �
 # settings.json hooks만이 동작을 보장한다
 ```
 
-슬래시 명령어(`/ship`, `/crew` 등)나 질문/설명 요청은 스킵.
+슬래시 명령어(`/task`, `/crew` 등)나 질문/설명 요청은 스킵.
 
 ### Context 관리 원칙
 
@@ -141,7 +141,7 @@ prompt: "HANDOFF_PATH: {TASK_DIR}/handoff.md\n인계 내용은 위 파일을 직
 
 | 레벨 | 보유 정보 | 크기 |
 |------|----------|------|
-| 오케스트레이터 (`/ship`) | 경로, 상태, stage 완료 여부 | 소 |
+| 오케스트레이터 (`/task`) | 경로, 상태, stage 완료 여부 | 소 |
 | task-runner (`/crew`) | 경로, pipeline.json 상태 | 소 |
 | 각 서브에이전트 | 자신이 읽은 파일 + 구현 | 중 (격리) |
 
@@ -164,5 +164,5 @@ prompt: "HANDOFF_PATH: {TASK_DIR}/handoff.md\n인계 내용은 위 파일을 직
 
 # 새 프로젝트 시작 시
 /setup
-/ship "요청 내용"
+/task "요청 내용"
 ```
