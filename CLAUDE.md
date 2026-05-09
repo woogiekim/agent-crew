@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 /ship "요청"                     # 단일 태스크 전체 파이프라인 자동 실행
 /crew "태스크A" "태스크B" ...    # 여러 독립 태스크 병렬 실행
 /cost                            # 세션 비용 요약
+/agent-maker                     # 새 에이전트 설계 및 생성
 ```
 
 **`/ship`** — 오케스트레이터가 Agent 도구로 서브에이전트를 직접 spawn.
@@ -46,7 +47,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 │   ├── setup.md
 │   ├── ship.md
 │   ├── crew.md
-│   └── cost.md
+│   ├── cost.md
+│   └── agent-maker.md           ← 새 에이전트 설계·생성
 └── agent-crew/
     ├── agents/                  ← 서브에이전트 정의 (flat .md, frontmatter 포함)
     │   ├── planner.md           ← claude-sonnet-4-6
@@ -55,6 +57,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     │   ├── backend.md           ← claude-sonnet-4-6
     │   ├── resolver.md          ← claude-haiku-4-5
     │   ├── task-runner.md       ← claude-sonnet-4-6  (/crew가 spawn)
+    │   ├── {custom-agent}.md    ← /agent-maker로 생성한 커스텀 에이전트
     │   └── skills/              ← 온디맨드 참조 스킬
     │       ├── tdd.md
     │       ├── ddd.md
@@ -78,6 +81,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 에이전트 구성
 
+**빌트인 에이전트** (`~/.claude/agent-crew/agents/`):
+
 | 에이전트 | 역할 |
 |---------|------|
 | planner | 요구사항 분석, PRD 작성, 파이프라인 결정 |
@@ -86,6 +91,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | backend | Kotlin+Spring Boot DDD/TDD 구현 |
 | resolver | 병합 충돌 자동 해결 |
 | task-runner | 단일 태스크 전체 파이프라인 자율 실행 (`/crew`가 spawn) |
+
+**커스텀 에이전트** (`/agent-maker`로 생성):
+
+`/agent-maker`로 Subagent를 생성하고 `~/.claude/agent-crew/agents/<name>.md`에 등록하면:
+- planner가 파이프라인 결정 시 자동으로 탐색하여 stages에 포함 가능
+- `/ship`, `/crew` 오케스트레이터가 동일한 방식으로 spawn 가능
+- 커스텀 에이전트는 빌트인 에이전트와 동일하게 파이프라인의 stage로 동작
 
 ### 파이프라인 자동 결정
 
