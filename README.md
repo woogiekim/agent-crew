@@ -1,9 +1,9 @@
 # agent-crew
 
-> Claude Code global plugin — run a full multi-agent development pipeline with a single `/ship` command, from any project.
+> AI assistant global toolkit — run a full multi-agent development pipeline from any project.
 
 ![License](https://img.shields.io/github/license/woogiekim/agent-crew)
-![Platform](https://img.shields.io/badge/platform-Claude%20Code-blue)
+![Platform](https://img.shields.io/badge/platform-AI%20Assistants-blue)
 
 ## Table of Contents
 
@@ -22,18 +22,18 @@
 
 ## Overview
 
-When developing with Claude Code, you typically have to manually direct each phase — requirements analysis, design, implementation, verification — and coordinate multiple agent roles consistently. This is tedious and error-prone.
+When developing with an AI coding assistant, you typically have to manually direct each phase — requirements analysis, design, implementation, verification — and coordinate multiple agent roles consistently. This is tedious and error-prone.
 
-**agent-crew** is a Claude Code global plugin that automates this entire workflow. Install it once, and from any project you can run `/ship "what you want to build"` to automatically execute the full `planner → designer → frontend → backend` pipeline.
+**agent-crew** is an AI-assistant-agnostic workflow toolkit that automates this entire workflow. Install it once, and from any project you can invoke the `crew` workflow to automatically execute the full `planner → designer → frontend → backend` pipeline.
 
 The goal: let developers focus on *what* to build, while agent-crew handles agent handoffs, state management, and pipeline orchestration automatically.
 
 ## Key Features
 
 - **Automatic pipeline selection** — planner analyzes your request and picks only the agents needed
-- **Native sub-agent spawning** — orchestrator uses Claude's Agent tool to spawn each sub-agent directly; no polling or signal files
+- **Native sub-agent delegation** — orchestrator uses the host assistant's agent/delegation capability; no polling or signal files
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back to `feature/main` on completion
-- **Project-clean state** — all state stored under `~/.claude/agent-crew/{PROJECT_NAME}/`, never in your project directory
+- **Project-clean state** — all state stored under `~/.agent-crew/state/{PROJECT_NAME}/`, never in your project directory
 - **Global install** — one install works across all your projects
 
 ## Installation
@@ -42,7 +42,22 @@ The goal: let developers focus on *what* to build, while agent-crew handles agen
 curl -s https://raw.githubusercontent.com/woogiekim/agent-crew/main/install.sh | bash
 ```
 
-This installs commands (`/setup`, `/ship`, etc.), agents, hooks, and status tools into `~/.claude/`.
+This installs the canonical workflow definitions, agents, hooks, and status tools into `~/.agent-crew/`.
+For Claude Code compatibility, the installer also places host-discoverable copies under `~/.claude/` by default. Set `AGENT_CREW_INSTALL_CLAUDE_COMPAT=0` to skip that compatibility layer.
+
+Repository sources are organized by dependency direction:
+
+| Path | Purpose |
+|---|---|
+| `core/commands`, `core/agents`, `core/hooks`, `core/global-agents.md` | Provider-neutral canonical source |
+| `core/setup/setup-host.sh` | Provider-neutral dispatcher that only detects the host and calls an adapter |
+| `adapters/claude/setup.sh`, `adapters/codex/setup.sh`, `adapters/generic/setup.sh` | Host-specific installation outputs |
+| Host-generated project artifacts | Generated compatibility outputs; not source of truth |
+
+This repository does not track generated host output directories. They are created
+by `ac:setup` and should remain uncommitted. Project-local generated artifacts are
+registered in `.git/info/exclude` during setup so repository-level `.gitignore`
+does not need host-specific directory names.
 
 **After install, reload your shell:**
 ```bash
@@ -54,48 +69,58 @@ source ~/.bashrc  # bash
 
 ```bash
 # 1. Initialize workspace once per project
-/setup
+ac:setup
 
 # 2. Run a single task
-/ship "implement order domain API with TDD"
+ac:crew "implement order domain API with TDD"
 
 # 3. Run multiple independent tasks in parallel
-/crew "implement order API" "implement product API" "implement user API"
+ac:crew "implement order API" | "implement product API" | "implement user API"
+
+# Compatibility alias
+ac:task "implement order domain API with TDD"
 
 # 4. Check cost summary
-/cost
+ac:cost
 ```
+
+`ac:setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
+provider-neutral: it calls adapter-owned `detect.sh` scripts and delegates to the
+matching `setup.sh`. Host-specific detection, paths, and file formats live only
+inside adapter implementations.
+
+Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
+
+Adapters may expose more convenient syntax. For example, the Claude adapter can
+also expose slash aliases, while the Codex adapter uses `ac:<intent>` text commands.
 
 ## How It Works
 
-The orchestrator (Claude) spawns each sub-agent directly using the Agent tool. No daemon processes, no file polling, no signal files.
+The orchestrator spawns or delegates to each sub-agent directly using the host AI tool's native mechanism. No daemon processes, no file polling, no signal files.
 
-### Single task (`/ship`)
+### Single Task
 
 ```
-/ship "request"
+ac:crew "request"
        │
-       ▼ Agent spawn
-[planner] → prd.md + pipeline.json (stages) + handoff.md
+       ▼ delegate one task-runner
+[task-runner]
        │
-       ▼ stage 0: parallel spawn (single response, multiple Agent calls)
-[designer] ‖ [backend] → independent result files
-       │
-       ▼ stage 1: spawn
-[frontend] → UI implementation
+       ▼ planner + stage execution
+[planner] → [designer ‖ backend] → [frontend]
        │
        ▼ complete
 [orchestrator] final report
 ```
 
-### Multiple tasks (`/crew`)
+### Multiple Tasks
 
 ```
-/crew "task A" "task B" "task C"
+ac:crew "task A" | "task B" | "task C"
        │
        ▼ create git worktree + branch for each task
        │
-       ▼ single response: spawn all task-runners simultaneously
+       ▼ single response: delegate all task-runners simultaneously where supported
 [task-runner A]   ‖   [task-runner B]   ‖   [task-runner C]
   own worktree         own worktree         own worktree
   own context          own context          own context
@@ -105,12 +130,12 @@ The orchestrator (Claude) spawns each sub-agent directly using the Agent tool. N
 [orchestrator] merge guide
 ```
 
-Each `task-runner` autonomously handles its full pipeline (planner → stages → commit), isolated in its own git worktree with a separate context window.
+Each `task-runner` autonomously handles its full pipeline (planner → stages → commit). A single task uses one task-runner; multiple tasks use one task-runner per task.
 
 ### State directory layout
 
 ```
-~/.claude/agent-crew/{PROJECT_NAME}/
+~/.agent-crew/state/{PROJECT_NAME}/
 └── tasks/{TASK_ID}/
     ├── pipeline.json
     ├── phase.txt
@@ -145,7 +170,7 @@ After planner completes, you confirm the proposed pipeline before execution begi
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
 | **resolver** | Automatic merge conflict resolution |
-| **task-runner** | Autonomous full-pipeline executor — spawned by `/crew` for each task |
+| **task-runner** | Autonomous full-pipeline executor — the single execution engine behind `ac:crew` |
 
 ### Backend agent workflow (TDD cycle)
 
@@ -160,7 +185,7 @@ VERIFICATION → OOP principles check + all tests GREEN → git commit
 All state is stored outside your project directory:
 
 ```
-~/.claude/agent-crew/{PROJECT_NAME}/tasks/{TASK_ID}/
+~/.agent-crew/state/{PROJECT_NAME}/tasks/{TASK_ID}/
 ```
 
 Your project directory only gains a `.crew_task_id` file during an active task (removed on completion).

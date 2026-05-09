@@ -1,7 +1,7 @@
 {
   "name": "agent-crew",
   "version": "1.0.0",
-  "description": "Multi-agent development workspace for Claude Code — planner, designer, frontend, backend agents with full pipeline orchestration",
+  "description": "AI-assistant-agnostic multi-agent development workspace — planner, designer, frontend, backend agents with full pipeline orchestration",
   "author": {
     "name": "woogiekim",
     "email": "mdir2kor@gmail.com"

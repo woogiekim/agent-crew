@@ -8,8 +8,9 @@
 set -e
 
 REPO_URL="https://github.com/woogiekim/agent-crew"
-GLOBAL_DIR="${HOME}/.claude"
-AGENT_CREW_DIR="${GLOBAL_DIR}/agent-crew"
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+AGENT_CREW_DIR="${AGENT_CREW_HOME}"
+CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -21,71 +22,110 @@ log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 log_section() { echo -e "\n${GREEN}▶ $1${NC}"; }
 
-# 이미 설치된 경우 확인
+# Check for an existing installation.
 if [ -d "${AGENT_CREW_DIR}/agents" ]; then
-  log_warn "agent-crew가 이미 설치되어 있습니다 (${AGENT_CREW_DIR})"
-  read -p "재설치할까요? [y/N] " confirm
+  log_warn "agent-crew is already installed (${AGENT_CREW_DIR})"
+  read -p "Reinstall? [Y/N] " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-    echo "설치를 취소합니다."
+    echo "Installation cancelled."
     exit 0
   fi
 fi
 
-# ── 글로벌 설치 ──────────────────────────────────────────────
 install_global() {
-  log_section "글로벌 설치를 시작합니다"
+  log_section "Starting global installation"
 
-  TEMP_DIR=$(mktemp -d)
+  TEMP_DIR=""
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd 2>/dev/null || pwd)"
 
-  if command -v git &>/dev/null; then
-    log_info "레포 클론 중..."
+  if [ -n "${AGENT_CREW_SOURCE_DIR:-}" ]; then
+    SOURCE_ROOT="${AGENT_CREW_SOURCE_DIR}"
+    log_info "Using source directory from AGENT_CREW_SOURCE_DIR → ${SOURCE_ROOT}"
+  elif [ -d "${SCRIPT_DIR}/core" ] && [ -d "${SCRIPT_DIR}/adapters" ]; then
+    SOURCE_ROOT="${SCRIPT_DIR}"
+    log_info "Using local source directory → ${SOURCE_ROOT}"
+  elif [ -d "$(pwd)/core" ] && [ -d "$(pwd)/adapters" ]; then
+    SOURCE_ROOT="$(pwd)"
+    log_info "Using current working tree as source → ${SOURCE_ROOT}"
+  elif command -v git &>/dev/null; then
+    TEMP_DIR=$(mktemp -d)
+    log_info "Cloning repository..."
     git clone --depth 1 "$REPO_URL" "$TEMP_DIR" 2>/dev/null
+    SOURCE_ROOT="${TEMP_DIR}"
   else
-    log_error "git이 설치되어 있지 않습니다."
+    log_error "git is not installed."
   fi
 
-  # ~/.claude/commands/ 에 명령어 설치 (글로벌)
-  mkdir -p "${GLOBAL_DIR}/commands"
-  cp -r "$TEMP_DIR/.claude/commands/"* "${GLOBAL_DIR}/commands/"
-  log_info "명령어 설치 완료 → ${GLOBAL_DIR}/commands/"
+  SOURCE_DIR="${SOURCE_ROOT}/core"
+  ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
-  # agent-maker.md 설치 확인
-  [ -f "${GLOBAL_DIR}/commands/agent-maker.md" ] \
-    || log_error "agent-maker.md 설치 실패 — .claude/commands/agent-maker.md 가 레포에 없습니다"
-  log_info "agent-maker 명령어 설치 확인 완료"
+  [ -d "${SOURCE_DIR}" ] \
+    || log_error "core source directory not found — expected ${SOURCE_DIR}"
+  [ -d "${ADAPTERS_DIR}" ] \
+    || log_error "adapter directory not found — expected ${ADAPTERS_DIR}"
 
-  # ~/.claude/agent-crew/agents/ 에 에이전트 정의 설치 (flat .md 구조)
+  mkdir -p "${AGENT_CREW_HOME}/commands"
+  cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_HOME}/commands/"
+  log_info "Commands installed → ${AGENT_CREW_HOME}/commands/"
+
+  [ -f "${AGENT_CREW_HOME}/commands/agent-maker.md" ] \
+    || log_error "agent-maker.md install failed — commands/agent-maker.md not found"
+  log_info "agent-maker command verified"
+
   mkdir -p "${AGENT_CREW_DIR}/agents/skills"
-  cp "$TEMP_DIR/.claude/agents/"*.md "${AGENT_CREW_DIR}/agents/" 2>/dev/null || true
-  cp "$TEMP_DIR/.claude/agents/skills/"*.md "${AGENT_CREW_DIR}/agents/skills/" 2>/dev/null || true
-  log_info "에이전트 설치 완료 → ${AGENT_CREW_DIR}/agents/"
-  log_info "스킬 설치 완료 → ${AGENT_CREW_DIR}/agents/skills/"
+  cp "${SOURCE_DIR}/agents/"*.md "${AGENT_CREW_DIR}/agents/" 2>/dev/null || true
+  cp "${SOURCE_DIR}/agents/skills/"*.md "${AGENT_CREW_DIR}/agents/skills/" 2>/dev/null || true
+  log_info "Agents installed → ${AGENT_CREW_DIR}/agents/"
+  log_info "Skills installed → ${AGENT_CREW_DIR}/agents/skills/"
 
-  # hooks 설치
   mkdir -p "${AGENT_CREW_DIR}/hooks"
-  cp -r "$TEMP_DIR/.claude/hooks/"* "${AGENT_CREW_DIR}/hooks/"
+  cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/hooks/"
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
-  log_info "훅 설치 완료 → ${AGENT_CREW_DIR}/hooks/"
+  log_info "Hooks installed → ${AGENT_CREW_DIR}/hooks/"
 
-  # auto-route.sh 설치 확인
+  mkdir -p "${AGENT_CREW_DIR}/setup"
+  cp -r "${SOURCE_DIR}/setup/"* "${AGENT_CREW_DIR}/setup/"
+  chmod +x "${AGENT_CREW_DIR}/setup/"*.sh 2>/dev/null || true
+  log_info "Setup dispatcher installed → ${AGENT_CREW_DIR}/setup/"
+
+  mkdir -p "${AGENT_CREW_DIR}/adapters"
+  cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/adapters/"
+  chmod +x "${AGENT_CREW_DIR}/adapters/"*/*.sh 2>/dev/null || true
+  find "${AGENT_CREW_DIR}" -name ".DS_Store" -delete 2>/dev/null || true
+  log_info "Host adapters installed → ${AGENT_CREW_DIR}/adapters/"
+
   [ -f "${AGENT_CREW_DIR}/hooks/auto-route.sh" ] \
-    || log_error "auto-route.sh 설치 실패 — .claude/hooks/auto-route.sh 가 레포에 없습니다"
+    || log_error "auto-route.sh install failed — hooks/auto-route.sh not found"
 
-  # ~/.claude/settings.json 에 훅 등록 (모든 프로젝트에서 동작)
-  merge_global_settings "${GLOBAL_DIR}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
-  log_info "자연어 라우팅 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
+  merge_global_settings "${AGENT_CREW_HOME}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
+  log_info "Natural-language routing hook registered → ${AGENT_CREW_HOME}/settings.json"
 
-  merge_global_pretooluse "${GLOBAL_DIR}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/context-guard.sh"
-  log_info "context-guard 훅 등록 완료 → ${GLOBAL_DIR}/settings.json"
+  merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Agent|Task|Delegate" "${AGENT_CREW_DIR}/hooks/context-guard.sh"
+  log_info "context-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
 
-  # ~/.claude/CLAUDE.md 에 전역 Claude 규칙 병합
-  merge_global_claude "$TEMP_DIR/.claude/global-claude.md" "${GLOBAL_DIR}/CLAUDE.md"
-  log_info "전역 Claude 규칙 적용 완료 → ${GLOBAL_DIR}/CLAUDE.md"
+  merge_global_agents "${SOURCE_DIR}/global-agents.md" "${AGENT_CREW_HOME}/AGENTS.md"
+  log_info "Global agent guidance applied → ${AGENT_CREW_HOME}/AGENTS.md"
 
-  rm -rf "$TEMP_DIR"
+  install_claude_compat
+
+  if [ -n "${TEMP_DIR}" ]; then
+    rm -rf "$TEMP_DIR"
+  fi
 }
 
-# ~/.claude/settings.json 에 UserPromptSubmit 훅을 안전하게 병합
+install_claude_compat() {
+  if [ "${AGENT_CREW_INSTALL_CLAUDE_COMPAT:-1}" = "0" ]; then
+    log_info "Skipping Claude compatibility install"
+    return
+  fi
+
+  AGENT_CREW_HOST=claude "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
+  merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
+  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
+  log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
+}
+
+# Safely merge UserPromptSubmit hook into a settings.json file.
 merge_global_settings() {
   local dest="$1" hook_path="$2"
 
@@ -113,7 +153,7 @@ else:
 hooks = settings.setdefault("hooks", {})
 user_prompt_hooks = hooks.setdefault("UserPromptSubmit", [])
 
-# 이미 등록된 경우 업데이트, 없으면 추가
+# Update an existing auto-route hook, or add it when missing.
 for block in user_prompt_hooks:
   for h in block.get("hooks", []):
     if "auto-route" in h.get("command", ""):
@@ -131,7 +171,7 @@ with open(dest, "w") as f:
 PYEOF
 }
 
-# ~/.claude/settings.json 에 PreToolUse 훅을 안전하게 병합
+# Safely merge PreToolUse hook into a settings.json file.
 merge_global_pretooluse() {
   local dest="$1" matcher="$2" hook_path="$3"
 
@@ -158,7 +198,7 @@ else:
 hooks = settings.setdefault("hooks", {})
 pretooluse_hooks = hooks.setdefault("PreToolUse", [])
 
-# 같은 matcher + hook_path 가 이미 있으면 업데이트, 없으면 추가
+# Update an existing matcher + hook path, or append it when missing.
 hook_path_base = os.path.basename(hook_path)
 for block in pretooluse_hooks:
   if block.get("matcher") == matcher:
@@ -178,8 +218,8 @@ with open(dest, "w") as f:
 PYEOF
 }
 
-# agent-crew 섹션을 마커 기반으로 병합 (기존 내용 유지)
-merge_global_claude() {
+# Merge the agent-crew section by marker while preserving existing content.
+merge_global_agents() {
   local src="$1" dest="$2"
   local start="<!-- agent-crew-start -->" end="<!-- agent-crew-end -->"
   local new_section
@@ -205,26 +245,26 @@ PYEOF
 
 install_global
 
-# ── 완료 메시지 ──────────────────────────────────────────────
-CMD_COUNT=$(ls "${GLOBAL_DIR}/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
+CMD_COUNT=$(ls "${AGENT_CREW_HOME}/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  agent-crew 글로벌 설치 완료!${NC}"
+echo -e "${GREEN}  agent-crew global install complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "  설치 위치: ${AGENT_CREW_DIR}"
-echo "  설치된 명령어: ${CMD_COUNT}개 / 에이전트: ${AGENT_COUNT}개"
+echo "  Install path: ${AGENT_CREW_DIR}"
+echo "  Installed commands: ${CMD_COUNT} / agents: ${AGENT_COUNT}"
 echo ""
-echo "  사용 방법 (모든 프로젝트에서 사용 가능):"
-echo "    /setup                           # 현재 프로젝트 워크스페이스 초기화"
-echo "    /task \"요청 내용\"               # 단일 태스크 전체 파이프라인"
-echo "    /crew \"태스크A\" \"태스크B\" ...  # 여러 태스크 병렬 실행"
-echo "    /cost                            # 세션 비용 요약"
+echo "  Provider-neutral usage from any project:"
+echo "    ac:setup                         # host adapter install + workspace init"
+echo "    ac:crew \"request\"               # run one task through task-runner"
+echo "    ac:crew \"TaskA\" | \"TaskB\"       # run independent tasks in parallel"
+echo "    ac:cost                          # show session cost summary"
 echo ""
-echo "  에이전트 제작:"
-echo "    /agent-maker                     # CLAUDE.md / Skill / Subagent / Hook 파일 설계 및 생성"
+echo "  Agent creation:"
+echo "    ac:agent-maker                   # design and create AGENTS.md / Skill / Subagent / Hook files"
 echo ""
-echo -e "${GREEN}  새 프로젝트에서 /setup 으로 시작하세요.${NC}"
+echo "  Host adapters may expose native aliases such as slash commands."
+echo -e "${GREEN}  Start in a project with ac:setup.${NC}"
 echo ""
