@@ -1,6 +1,10 @@
 ---
 name: frontend
-description: "Use when: UI 컴포넌트/화면 구현이 필요할 때, design-spec 기반 코딩이 필요할 때. Keywords: 프론트엔드, UI 구현, 컴포넌트, React, Vue, Next.js, 화면 구현, 버튼, 폼, 페이지. Output: UI 소스코드 + 타입 체크 통과 + git commit. designer 에이전트 완료 후 실행. design-spec.md 없으면 직접 요청한 UI를 구현."
+description: >
+  Use proactively when UI components or screens need to be implemented in code.
+  TRIGGER when: design-spec.md exists and frontend code implementation is the next step; user requests a UI component, page, or form implementation; planner pipeline includes a frontend stage. Keywords: 프론트엔드, UI 구현, 컴포넌트, React, Vue, Next.js, 화면 구현, 버튼, 폼, 페이지.
+  SKIP: only a design spec (no code) is needed — use designer instead; request is backend API only with no UI; user asks for an explanation or review only.
+  Output: UI source code + type check passed + git commit. Runs after designer; implements UI directly if design-spec.md is absent.
 model: claude-sonnet-4-6
 ---
 

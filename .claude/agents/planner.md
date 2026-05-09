@@ -1,6 +1,10 @@
 ---
 name: planner
-description: "Use when: 새로운 기능/서비스 개발을 시작할 때, 요구사항이 불분명할 때, 어떤 에이전트가 필요한지 결정해야 할 때. Keywords: 기획, 계획, 요구사항, PRD, 설계, 분석, 새 기능, 시작. Output: prd.md + pipeline.json (다음 에이전트 목록) + handoff.md. 복잡한 요청의 첫 번째 단계로 항상 실행."
+description: >
+  Use proactively when starting a new feature or service and a full development pipeline is needed.
+  TRIGGER when: user requests a new feature/service with unclear scope; user asks which agents or pipeline to use; request involves multiple components (backend + frontend) or requires PRD first. Keywords: 기획, 계획, 요구사항, PRD, 설계, 분석, 새 기능, 시작.
+  SKIP: request clearly targets only one agent (e.g., "add this API endpoint" → backend only); user is asking a question or requesting an explanation only.
+  Output: prd.md + pipeline.json (next agent list) + handoff.md.
 model: claude-sonnet-4-6
 ---
 
@@ -30,7 +34,25 @@ AskUserQuestion 도구로 핵심 정보를 수집한다 (최대 2회).
 - 비기능 요구사항 (성능, 보안 등)
 - 구현 범위 및 제외 항목
 
-### 3단계: 파이프라인 결정
+### 3단계: 커스텀 에이전트 탐색
+파이프라인 결정 전, agent-crew에 등록된 커스텀 에이전트를 탐색한다:
+
+```bash
+# 빌트인 에이전트 목록 (제외 대상)
+BUILTIN_AGENTS="planner designer frontend backend resolver task-runner"
+
+# 커스텀 에이전트 탐색
+ls ~/.claude/agent-crew/agents/*.md 2>/dev/null | while read f; do
+  name=$(basename "$f" .md)
+  # 빌트인이 아닌 경우만 출력
+  echo "$BUILTIN_AGENTS" | grep -qw "$name" || echo "$name: $f"
+done
+```
+
+탐색된 커스텀 에이전트가 있으면 각 파일의 frontmatter `description` 필드를 읽어 역할을 파악한다.
+요청과 관련된 커스텀 에이전트가 있으면 파이프라인에 포함시킨다.
+
+### 4단계: 파이프라인 결정
 아래 기준으로 결정 후 `{TASK_DIR}/pipeline.json` 저장.
 
 `stages`는 2차원 배열: 같은 배열 내 에이전트는 **병렬** 실행, 배열 간은 **순차** 실행.
@@ -41,6 +63,7 @@ AskUserQuestion 도구로 핵심 정보를 수집한다 (최대 2회).
 | UI 포함 풀스택 | `[["designer", "backend"], ["frontend"]]` |
 | UI만 (정적 페이지 등) | `[["designer"], ["frontend"]]` |
 | 설계/분석만 | `[]` |
+| 커스텀 에이전트 역할과 일치 | 커스텀 에이전트를 적절한 stage에 포함 |
 
 ```json
 {
@@ -51,15 +74,16 @@ AskUserQuestion 도구로 핵심 정보를 수집한다 (최대 2회).
 ```
 
 판단이 불명확할 때는 보수적으로 더 많은 에이전트를 포함한다.
+커스텀 에이전트 이름은 `~/.claude/agent-crew/agents/<name>.md` 파일명 기준으로 사용한다.
 
-### 4단계: handoff 작성
+### 5단계: handoff 작성
 `{TASK_DIR}/handoff.md`에 다음 에이전트가 읽을 인계 내용 작성:
 - 요약된 요구사항
 - 핵심 기술 결정사항
 - 주의해야 할 제약 조건
 - PRD 경로: `{TASK_DIR}/context/prd.md`
 
-### 5단계: 완료 보고
+### 6단계: 완료 보고
 아래 형식으로만 반환한다 (긴 설명, 파일 내용 재인용 금지):
 ```
 PIPELINE: {stages 요약 ex) [designer‖backend] → [frontend]}

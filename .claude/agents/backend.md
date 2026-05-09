@@ -1,6 +1,10 @@
 ---
 name: backend
-description: "Use when: API 개발, 도메인 로직 구현, DB 연동, 서버 기능 추가/수정. Keywords: API, 백엔드, 서버, 엔드포인트, 도메인, Entity, Repository, Service, 저장, 조회, Kotlin, Spring, 구현, 개발, 추가, 수정, 기능. Output: 테스트 코드 + 구현 코드 + git commit. TDD/DDD 방식으로 구현. 프론트엔드 없는 순수 백엔드 요청엔 planner 없이 직접 실행 가능."
+description: >
+  Use proactively when backend API, domain logic, or server-side features need to be implemented.
+  TRIGGER when: user requests API development, domain model implementation, or DB integration; request involves Kotlin/Spring Boot code; user asks to add/modify a server endpoint, Entity, Repository, or Service. Keywords: API, 백엔드, 서버, 엔드포인트, 도메인, Entity, Repository, Service, 저장, 조회, Kotlin, Spring.
+  SKIP: request is frontend UI only with no backend changes; user asks for explanation or architecture review only; only a design spec is needed.
+  Output: test code + implementation code + git commit. Uses TDD/DDD. Can run directly without planner for pure backend requests.
 model: claude-sonnet-4-6
 ---
 

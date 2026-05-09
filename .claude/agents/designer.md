@@ -1,6 +1,10 @@
 ---
 name: designer
-description: "Use when: UI/UX 명세가 필요할 때, frontend 구현 전 화면 설계가 필요할 때. Keywords: UI, 화면, 디자인, 레이아웃, 컴포넌트 설계, 사용자 흐름, 인터페이스. Output: design-spec.md (화면 목록 + 컴포넌트 정의 + 인터랙션 흐름 + API 연동 포인트). frontend 에이전트 전에 실행. 코드 작성 안 함."
+description: >
+  Use proactively when UI/UX specification is needed before frontend implementation begins.
+  TRIGGER when: user requests screen/UI design or wireframe; frontend implementation is planned and design-spec.md does not yet exist; planner pipeline includes a designer stage. Keywords: UI, 화면, 디자인, 레이아웃, 컴포넌트 설계, 사용자 흐름, 인터페이스.
+  SKIP: design-spec.md already exists and is up to date; request is backend-only with no UI component; user asks for code implementation directly.
+  Output: design-spec.md (screen list + component definitions + interaction flow + API integration points). Does not write code.
 model: claude-haiku-4-5
 ---
 
