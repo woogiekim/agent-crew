@@ -78,6 +78,50 @@ cat "${TASK_DIR}/pipeline.json"
 
 ---
 
+### Phase 1.5: Pre-execution Agent Creation
+
+Read the `needs_creation` list from `pipeline.json`:
+
+```bash
+python3 -c "
+import json
+p = json.load(open('${TASK_DIR}/pipeline.json'))
+for item in p.get('needs_creation', []):
+    print(item['name'] + '|' + item['reason'] + '|' + item['role'])
+"
+```
+
+If the list is empty or the field is absent, skip this phase entirely and proceed to Phase 2.
+
+For each entry in `needs_creation`, invoke `crew:agent-maker` with full context (blocking):
+
+```text
+crew:agent-maker
+
+Create an agent named "{name}" for this task.
+
+Reason a new agent is required:
+{reason}
+
+Role and responsibilities for this task:
+{role}
+
+Install the finished agent definition to:
+{AGENT_CREW_HOME}/agents/{name}.md
+```
+
+After each invocation, verify the file exists before continuing:
+
+```bash
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+ls "${AGENT_CREW_HOME}/agents/{name}.md"
+```
+
+If a required agent file still does not exist after `crew:agent-maker` completes, write the failure to
+`{TASK_DIR}/result.md` and return `STATUS: BLOCKED` to the orchestrator — do not proceed.
+
+---
+
 ### Phase 2: Execute stages
 
 Execute the `stages` from `pipeline.json` sequentially.
@@ -101,33 +145,6 @@ After each stage returns, check its `STATUS` field:
   orchestrator.
 
 Do **not** silently skip a BLOCKED stage or proceed as if it completed.
-
-#### Agent Existence Check (before each stage)
-
-Before spawning any agent in a stage, verify the agent definition exists:
-
-```bash
-AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-for agent_name in {agent names in this stage}; do
-  if [ ! -f "${AGENT_CREW_HOME}/agents/${agent_name}.md" ]; then
-    echo "MISSING: ${agent_name}"
-  fi
-done
-```
-
-If any agent is missing, invoke `crew:agent-maker` to create it before proceeding (blocking):
-
-```text
-crew:agent-maker
-
-Create a missing agent named "{agent_name}" for this project.
-Context: it appears in the pipeline as a stage after {previous stage}.
-Based on the name and context, design an appropriate agent definition
-and install it to {AGENT_CREW_HOME}/agents/{agent_name}.md.
-```
-
-Wait for `crew:agent-maker` to complete, then verify the file exists before continuing.
-Repeat for each missing agent in the stage.
 
 #### Agent prompt format (never inline file contents)
 

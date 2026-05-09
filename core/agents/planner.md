@@ -73,29 +73,47 @@ Based on the collected information, save the following to `{TASK_DIR}/context/pr
 
 ---
 
-### Step 3: Custom Agent Discovery
-Before determining the pipeline, discover custom agents registered in agent-crew:
+### Step 3: Agent Capability Analysis
+
+Before determining the pipeline, enumerate all available agents and evaluate whether they are sufficient for this task.
+
+#### 3a: Discover existing agents
 
 ```bash
-# Built-in agent list (excluded targets)
+# Built-in agent list
 BUILTIN_AGENTS="planner designer frontend backend devops resolver task-runner reviewer"
 
 # Discover custom agents
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 ls "${AGENT_CREW_HOME}/agents/"*.md 2>/dev/null | while read f; do
   name=$(basename "$f" .md)
-  # Output only non-built-in agents
   echo "$BUILTIN_AGENTS" | grep -qw "$name" || echo "$name: $f"
 done
 ```
 
-If custom agents are discovered, read the `description` field from each file’s frontmatter to identify its role.
+If custom agents are discovered, read the `description` field from each file’s frontmatter to understand its role.
 
-If a custom agent is relevant to the request, include it in the pipeline.
+#### 3b: Evaluate agent sufficiency
 
-If the request would benefit from an agent that does not exist yet (e.g., a security auditor,
-a test writer, a data migration specialist), include that agent name in the pipeline anyway.
-The task-runner will detect the missing agent and invoke `crew:agent-maker` to create it before execution.
+Analyze the request deeply and answer the following for each role required by the task:
+
+1. **What specialized expertise or roles does this task require?**
+2. **Can an existing agent (built-in or custom) adequately fulfill each role?**
+3. **For any role that existing agents cannot adequately fulfill → it needs a purpose-built agent.**
+
+Decision criteria:
+- If an existing agent is general-purpose and this task requires deep domain-specific knowledge that the generic agent cannot reliably provide → a new agent is needed.
+- If an existing agent can handle the role with reasonable quality → use the existing agent.
+
+#### 3c: Populate `needs_creation`
+
+For each role that requires a new agent, add an entry to the `needs_creation` array in `pipeline.json` (see Step 4).
+Each entry must include:
+- `name`: The agent filename (no `.md` extension) — must match the name used in `stages`.
+- `reason`: Why no existing agent can adequately fill this role.
+- `role`: A precise description of what the agent must do for this specific task.
+
+If all roles are covered by existing agents, set `needs_creation` to an empty array `[]`.
 
 ---
 
@@ -123,6 +141,13 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 {
   "task": "Original request",
   "stages": [["designer", "backend"], ["frontend"], ["reviewer"]],
+  "needs_creation": [
+    {
+      "name": "example-specialist",
+      "reason": "The generic backend agent cannot handle the domain-specific logic this task requires.",
+      "role": "Performs X, handles Y edge cases, integrates with Z system."
+    }
+  ],
   "completed_stages": 0
 }
 ```
