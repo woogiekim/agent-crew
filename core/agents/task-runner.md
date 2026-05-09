@@ -37,7 +37,9 @@ The task-runner itself should only maintain coordinates (paths, state, completio
   target: {target answer}
   constraints: {constraints answer(s)}
   ```
-  When present, pass this to the planner to skip the interactive requirement collection step.
+  When present, skip Phase 1a (requirement collection) and pass directly to the planner.
+  When absent, the task-runner collects requirements via AskUserQuestion in Phase 1a before
+  invoking the planner.
 
 ## Execution Flow
 
@@ -54,6 +56,86 @@ Resume rules:
 
 ### Phase 1: Spawn planner
 
+#### Phase 1a: Requirement Collection Gate
+
+**Check whether `REQUIREMENTS` was provided in the task-runner's own input.**
+
+##### Case A — `REQUIREMENTS` is present
+
+Skip both rounds below. Use the received `REQUIREMENTS` value as-is and proceed
+directly to Phase 1b.
+
+##### Case B — `REQUIREMENTS` is absent
+
+Collect requirements in two structured rounds using `AskUserQuestion` before
+spawning the planner.
+
+**Round 1 — Scope / Target / Constraints**
+
+Call `AskUserQuestion` with the following three questions:
+
+**Question 1 — Implementation scope:**
+- header: "Scope"
+- question: "What is the implementation scope for this request?"
+- options:
+  - Backend API (Server-side logic, domain model, database)
+  - Full-stack (Backend + Frontend UI)
+  - UI only (Static pages, components, styling)
+  - Analysis only (PRD / design, no implementation needed)
+
+**Question 2 — Target users and feature purpose:**
+- header: "Target"
+- question: "Who are the target users, and what is the core purpose of this feature?"
+- options:
+  - Internal team / admin tooling
+  - End-user product feature
+  - Developer tooling or API
+  - Other / not yet defined
+
+**Question 3 — Technical constraints or MVP scope:**
+- header: "Constraints"
+- question: "Are there technical constraints or MVP scope limits to consider?"
+- multiSelect: true
+- options:
+  - Use existing tech stack only (no new dependencies)
+  - MVP — minimal feature set, defer polish
+  - Performance or scalability requirements apply
+  - Security or compliance constraints apply
+  - No special constraints
+
+After Round 1 returns, record the three answers as `r1_scope`, `r1_target`,
+and `r1_constraints`.
+
+**Round 2 — Domain-specific follow-up (based on `r1_scope`)**
+
+Call `AskUserQuestion` again with questions tailored to the scope selected in Round 1:
+
+| `r1_scope` | Questions to ask |
+|---|---|
+| Backend API | Q1: Data model approach? (Greenfield / Extend existing / Unknown) • Q2: API style? (REST / GraphQL / RPC / Unknown) • Q3: Auth required? (Yes / No / Unknown) |
+| Full-stack | Q1: UI framework? (React / Vue / Other / Match existing) • Q2: API contract style? (OpenAPI spec / Auto-generated / Informal) |
+| UI only | Q1: Component library? (Existing design system / Tailwind / Plain CSS / Unknown) • Q2: Responsive layout required? (Yes / No / Unknown) |
+| Analysis only | Q1: Output format? (Markdown PRD / Slides / Diagram / Flexible) • Q2: Primary audience? (Engineering / PM / Exec / Mixed) |
+
+After Round 2 returns, record the answers as `r2_*` fields.
+
+**Compose the `REQUIREMENTS` block**
+
+Combine all collected answers into the standard format:
+
+```text
+scope: {r1_scope}
+target: {r1_target}
+constraints: {r1_constraints}
+details: {r2 answers as key: value pairs}
+```
+
+This composed `REQUIREMENTS` block is passed to the planner in Phase 1b.
+
+---
+
+#### Phase 1b: Spawn planner
+
 Write the active task marker so the `direct-edit-guard` hook allows edits
 within this pipeline:
 
@@ -69,7 +151,7 @@ Delegate to the planner agent using the host AI tool's native mechanism (blockin
 REQUEST: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
-REQUIREMENTS: {REQUIREMENTS if provided, otherwise omit this line}
+REQUIREMENTS: {REQUIREMENTS — always present at this point, either received or collected in Phase 1a}
 
 Analyze the request, create the PRD, and determine the pipeline.
 Outputs:
@@ -78,7 +160,10 @@ Outputs:
 - {TASK_DIR}/handoff.md
 ```
 
-If `REQUIREMENTS` was received by the task-runner, include it verbatim in the planner prompt so the planner can skip interactive requirement collection.
+`REQUIREMENTS` is always included in the planner prompt at this point — either
+it was provided as input to the task-runner (Case A) or was collected via
+AskUserQuestion in Phase 1a (Case B). The planner will always follow its Case A
+path (no interactive re-collection).
 
 After completion, read only `pipeline.json` (never read `handoff.md` contents):
 
