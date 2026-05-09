@@ -59,6 +59,13 @@ QUESTION_PAT = (
     r"어떻게|뭐야|무엇|설명|"
     r"알려|이해"
 )
+MEMORY_PAT = (
+    r"memory|MEMORY\.md|remember|recall|"
+    r"기억|피드백|메모리"
+)
+MEMORY_PATH_PAT = (
+    r"~/\.claude/projects/|memory/"
+)
 # Matches filenames with common code/config extensions
 FILE_EXT_PAT = (
     r"\b[\w][\w\-\.]*\.(md|sh|ts|tsx|kt|py|json|yaml|yml|js|jsx)\b"
@@ -77,6 +84,25 @@ def match(pattern):
 
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     sys.exit(0)
+
+# Memory/feedback meta-operations: skip routing unless combined with ACTION_PAT
+if re.search(MEMORY_PATH_PAT, prompt, re.IGNORECASE):
+    if not match(ACTION_PAT):
+        sys.exit(0)
+if match(MEMORY_PAT) and not match(ACTION_PAT):
+    sys.exit(0)
+
+# 저장/기록 without code/file/system target: skip routing
+SAVE_PAT = r"저장|기록"
+CODE_TARGET_PAT = (
+    r"\b[\w][\w\-\.]*\.(md|sh|ts|tsx|kt|py|json|yaml|yml|js|jsx)\b|"
+    r"코드|파일|시스템|데이터베이스|DB|서버|API|"
+    r"harness|hook|pipeline|task.?runner|planner|workflow|"
+    r"하네스|에이전트|훅|파이프라인|플래너|워크플로우"
+)
+if re.search(SAVE_PAT, prompt, re.IGNORECASE):
+    if not re.search(CODE_TARGET_PAT, prompt, re.IGNORECASE):
+        sys.exit(0)
 
 detected_type = ""
 suggested_pipeline = ""
@@ -116,8 +142,10 @@ if not detected_type:
     has_project_kw = match(PROJECT_KEYWORD_PAT)
     # General implementation verb paired with file reference or project keyword
     has_action = match(ACTION_PAT)
+    # Memory keyword + action verb = memory file manipulation (still an implementation task)
+    has_memory_action = match(MEMORY_PAT) and has_action
 
-    if has_file_ref or has_project_kw or (has_action and (has_file_ref or has_project_kw)):
+    if has_file_ref or has_project_kw or has_memory_action or (has_action and (has_file_ref or has_project_kw)):
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'
 
