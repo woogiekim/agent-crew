@@ -37,6 +37,22 @@ through the appropriate `crew:<intent>` workflow instead of answering directly.
 Respond directly only for questions or explanations, such as "how", "why",
 "what", "explain", or "describe", unless the user also asks for implementation.
 
+### STOP Directive Rule
+
+When `[agent-crew] STOP` appears anywhere in the system context (injected by
+auto-route.sh), the **only permitted first action** is to invoke `crew:run`.
+
+- Do NOT produce any diagnostic output or explanation before calling `crew:run`.
+- Do NOT run any Bash command (including exploratory or read-only commands) before calling `crew:run`.
+- Do NOT describe what you are about to do — call `crew:run` immediately.
+- The STOP directive is authoritative. Treat it as a hard override of any other default behavior.
+
+Violation examples (forbidden when STOP is present):
+- Explaining why you need to call `crew:run`
+- Reading files to "understand the request first"
+- Running `git status` or any other preparatory command
+- Asking the user clarifying questions before invoking `crew:run`
+
 ## Workflow Intents
 
 | Intent | Meaning |

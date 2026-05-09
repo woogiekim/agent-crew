@@ -155,20 +155,25 @@ if not detected_type:
 if detected_type == "project implementation":
     directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
-You are PROHIBITED from editing files or writing code directly.
-Proceeding without crew:run is a system violation.
+IMMEDIATE ACTION REQUIRED: Call crew:run RIGHT NOW as your very first action.
+Do NOT explain, diagnose, read files, or run any Bash before calling crew:run.
+Any action other than crew:run is a system violation.
 
 REQUIRED action:
   {suggested_pipeline}
 
-Do NOT answer the request by implementing directly.
-Do NOT call Edit, Write, or Bash for implementation purposes.
-Invoke crew:run FIRST. The task-runner pipeline will handle implementation."""
+Rules enforced by this directive:
+- Do NOT produce any output before calling crew:run.
+- Do NOT run exploratory Bash (git status, ls, cat, etc.) before crew:run.
+- Do NOT ask clarifying questions before crew:run.
+- Do NOT edit or write files directly — the task-runner pipeline handles implementation.
+Call crew:run NOW."""
 else:
     directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
-You are PROHIBITED from editing files or writing code directly.
-Proceeding without crew:run is a system violation.
+IMMEDIATE ACTION REQUIRED: Call crew:run RIGHT NOW as your very first action.
+Do NOT explain, diagnose, read files, or run any Bash before calling crew:run.
+Any action other than crew:run is a system violation.
 
 REQUIRED action — choose one:
   crew:run "{suggested_agent} task"        (single task)
@@ -176,9 +181,12 @@ REQUIRED action — choose one:
 
 Suggested pipeline: {suggested_pipeline}
 
-Do NOT answer the request by implementing directly.
-Do NOT call Edit, Write, or Bash for implementation purposes.
-Invoke crew:run FIRST. The task-runner pipeline will handle implementation."""
+Rules enforced by this directive:
+- Do NOT produce any output before calling crew:run.
+- Do NOT run exploratory Bash (git status, ls, cat, etc.) before crew:run.
+- Do NOT ask clarifying questions before crew:run.
+- Do NOT edit or write files directly — the task-runner pipeline handles implementation.
+Call crew:run NOW."""
 
 output = {
     "hookSpecificOutput": {
