@@ -18,12 +18,33 @@ Check the following values from the prompt:
 - `REQUEST`: Original user request
 - `TASK_DIR`: State storage path (example: `~/.agent-crew/state/{PROJECT}/tasks/{TASK_ID}`)
 - `PROJECT_ROOT`: Project root path
+- `REQUIREMENTS` _(optional)_: Pre-collected requirements passed from the orchestrator, in the format:
+  ```text
+  scope: {scope answer}
+  target: {target answer}
+  constraints: {constraints answer(s)}
+  ```
+  When this parameter is present, skip the AskUserQuestion step and use these values directly.
 
 ---
 
 ## Execution Flow
 
 ### Step 1: Requirement Collection
+
+**Check if `REQUIREMENTS` was provided in the input.**
+
+#### Case A — `REQUIREMENTS` is present (passed from the orchestrator):
+
+Use the values directly without calling AskUserQuestion:
+
+- `scope`: taken from `REQUIREMENTS.scope`
+- `target`: taken from `REQUIREMENTS.target`
+- `constraints`: taken from `REQUIREMENTS.constraints`
+
+Proceed immediately to Step 2.
+
+#### Case B — `REQUIREMENTS` is absent (planner invoked directly):
 
 Use the **AskUserQuestion** tool to collect key information in a single call.
 Do NOT ask open-ended plain text questions — always use AskUserQuestion with structured options.

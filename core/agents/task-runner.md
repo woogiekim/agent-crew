@@ -31,6 +31,13 @@ The task-runner itself should only maintain coordinates (paths, state, completio
 - `PROJECT_ROOT`: Execution root for this task
 - `BRANCH`: Working branch name
 - `EXECUTION_MODE`: `single` or `parallel`
+- `REQUIREMENTS` _(optional)_: Pre-collected requirements from the orchestrator, in the format:
+  ```text
+  scope: {scope answer}
+  target: {target answer}
+  constraints: {constraints answer(s)}
+  ```
+  When present, pass this to the planner to skip the interactive requirement collection step.
 
 ## Execution Flow
 
@@ -62,6 +69,7 @@ Delegate to the planner agent using the host AI tool's native mechanism (blockin
 REQUEST: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
+REQUIREMENTS: {REQUIREMENTS if provided, otherwise omit this line}
 
 Analyze the request, create the PRD, and determine the pipeline.
 Outputs:
@@ -69,6 +77,8 @@ Outputs:
 - {TASK_DIR}/pipeline.json
 - {TASK_DIR}/handoff.md
 ```
+
+If `REQUIREMENTS` was received by the task-runner, include it verbatim in the planner prompt so the planner can skip interactive requirement collection.
 
 After completion, read only `pipeline.json` (never read `handoff.md` contents):
 

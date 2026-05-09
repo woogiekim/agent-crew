@@ -100,7 +100,53 @@ git worktree add -b "${BRANCH}" "${WORKTREE_PATH}" HEAD
 The orchestrator owns context preparation only. The execution engine remains the
 same in both modes.
 
-### 5. Confirm Execution
+### 5. Collect Requirements Per Task
+
+Before confirming execution, collect requirements for each task using **AskUserQuestion**.
+
+For each task `i`, invoke AskUserQuestion with three questions:
+
+**Question 1 — Implementation scope:**
+- header: "Task {i+1} — Scope"
+- question: "What is the implementation scope for: {task description}?"
+- options:
+  - Backend API (Server-side logic, domain model, database)
+  - Full-stack (Backend + Frontend UI)
+  - UI only (Static pages, components, styling)
+  - Analysis only (PRD / design, no implementation needed)
+
+**Question 2 — Target users and feature purpose:**
+- header: "Task {i+1} — Target"
+- question: "Who are the target users, and what is the core purpose of this feature?"
+- options:
+  - Internal team / admin tooling
+  - End-user product feature
+  - Developer tooling or API
+  - Other / not yet defined
+
+**Question 3 — Technical constraints or MVP scope:**
+- header: "Task {i+1} — Constraints"
+- question: "Are there technical constraints or MVP scope limits to consider?"
+- multiSelect: true
+- options:
+  - Use existing tech stack only (no new dependencies)
+  - MVP — minimal feature set, defer polish
+  - Performance or scalability requirements apply
+  - Security or compliance constraints apply
+  - No special constraints
+
+After AskUserQuestion returns, record the collected answers as a REQUIREMENTS object for this task:
+
+```text
+REQUIREMENTS:
+  scope: {answer to Question 1}
+  target: {answer to Question 2}
+  constraints: {answer(s) to Question 3}
+```
+
+Repeat for each task. If `N > 1`, collect requirements for all tasks before proceeding.
+
+### 6. Confirm Execution
 
 Ask for structured approval and show:
 
@@ -120,7 +166,7 @@ Options:
 
 If cancelled, clean up any worktrees or task directories created for the run.
 
-### 6. Run Task Runners
+### 7. Run Task Runners
 
 Delegate one `task-runner` per task.
 
@@ -136,6 +182,10 @@ TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {execution root for this task}
 BRANCH: {BRANCH}
 EXECUTION_MODE: single or parallel
+REQUIREMENTS: |
+  scope: {scope answer}
+  target: {target answer}
+  constraints: {constraints answer(s)}
 
 Complete this task autonomously through the full pipeline.
 Write the completion report to {TASK_DIR}/result.md.
@@ -143,7 +193,7 @@ Write the completion report to {TASK_DIR}/result.md.
 
 Wait for all task-runners to finish.
 
-### 7. Collect Results & Show Per-Task Summary
+### 8. Collect Results & Show Per-Task Summary
 
 For each task, read only the result file path — do not inline contents:
 
@@ -175,7 +225,7 @@ Report the blocker and stop.
 
 ---
 
-### 8. Deployment Plan
+### 9. Deployment Plan
 
 Before asking for approval, compose and display the full deployment plan:
 
@@ -199,7 +249,7 @@ Risk notes:
 
 ---
 
-### 9. Deployment Approval
+### 10. Deployment Approval
 
 Use **AskUserQuestion** to request approval. Do not proceed without it.
 
@@ -211,7 +261,7 @@ Question:
   - Cancel — hold, do not push (branches remain local)
 
 If **Approve**:
-  - Proceed to Step 10.
+  - Proceed to Step 11.
 
 If **Cancel**:
   - Print the branch names so the user can push manually later.
@@ -219,7 +269,7 @@ If **Cancel**:
 
 ---
 
-### 10. Execute Deployment
+### 11. Execute Deployment
 
 Push each task branch to origin:
 
@@ -251,4 +301,4 @@ crew:run "resolve merge conflicts"
 - Task dependencies still matter. If tasks depend on each other, pass them as a
   single request so one `task-runner` can sequence the work inside one pipeline.
 - **task-runner never pushes to remote.** All remote operations happen here in
-  Step 10, only after explicit user approval in Step 9.
+  Step 11, only after explicit user approval in Step 10.
