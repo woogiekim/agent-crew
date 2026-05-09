@@ -78,6 +78,10 @@ install_global() {
   log_info "Agents installed → ${AGENT_CREW_DIR}/agents/"
   log_info "Skills installed → ${AGENT_CREW_DIR}/agents/skills/"
 
+  mkdir -p "${AGENT_CREW_DIR}/rules"
+  cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
+  log_info "Rules installed → ${AGENT_CREW_DIR}/rules/"
+
   mkdir -p "${AGENT_CREW_DIR}/hooks"
   cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/hooks/"
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true

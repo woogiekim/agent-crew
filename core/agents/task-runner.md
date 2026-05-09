@@ -74,6 +74,25 @@ cat "${TASK_DIR}/pipeline.json"
 Execute the `stages` from `pipeline.json` sequentially.
 Skip stages already included in `completed_stages`.
 
+#### Quality Loop Rule (load once, apply to every stage)
+
+Before executing any stage, read the quality loop rule path:
+
+```bash
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+QUALITY_RULE_PATH="${AGENT_CREW_HOME}/rules/quality-loop.md"
+```
+
+Pass `QUALITY_RULE_PATH` to every stage agent prompt (see format below).
+After each stage returns, check its `STATUS` field:
+
+- `STATUS: completed` → mark stage done and continue.
+- `STATUS: BLOCKED` → halt the pipeline immediately. Write the blocker
+  detail to `{TASK_DIR}/result.md` and return `STATUS: blocked` to the
+  orchestrator.
+
+Do **not** silently skip a BLOCKED stage or proceed as if it completed.
+
 #### Agent Existence Check (before each stage)
 
 Before spawning any agent in a stage, verify the agent definition exists:
@@ -107,9 +126,11 @@ Repeat for each missing agent in the stage.
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
 HANDOFF_PATH: {TASK_DIR}/handoff.md
+QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
 
 Read the handoff content directly from HANDOFF_PATH.
 Read the PRD directly from {TASK_DIR}/context/prd.md.
+Read and apply the quality loop rule from QUALITY_RULE_PATH before reporting completion.
 Perform the assigned work.
 All file operations must be performed relative to {PROJECT_ROOT}.
 ```
