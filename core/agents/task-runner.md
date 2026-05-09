@@ -222,3 +222,5 @@ Do not include file contents, code, or long explanations.
 - Never inline file contents in sub-agent prompts — pass only paths
 - Never complete without writing `{TASK_DIR}/result.md`
 - Final return value must remain within 5 lines and concise
+- **Never push to remote** — `git push` is strictly forbidden. Local commits only.
+  The crew orchestrator handles all remote operations after explicit user approval.

@@ -143,35 +143,106 @@ Write the completion report to {TASK_DIR}/result.md.
 
 Wait for all task-runners to finish.
 
-### 7. Collect Results
+### 7. Collect Results & Show Per-Task Summary
 
-For each task:
+For each task, read only the result file path — do not inline contents:
 
 ```bash
 RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "No result report found.")
+COMMITS=$(git -C "${PROJECT_ROOT_FOR_TASK}" log --oneline HEAD ^main 2>/dev/null || echo "N/A")
 ```
 
-Report:
+Display a summary for every task:
 
 ```text
-Run complete.
-
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Run Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task 1: {description}
-Branch: {branch}
-Status: {status}
-Commits: {git log summary}
+  Status : {completed | blocked}
+  Branch : {branch}
+  Commits: {N}
+  Log    : {git log --oneline, up to 5 lines}
+  Review : {APPROVED | NEEDS_CHANGES | N/A}
 
 Task 2: {description}
-Branch: {branch}
-Status: {status}
-Commits: {git log summary}
+  ...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-If a merge conflict occurs, run:
+If any task has `STATUS: blocked`, do not proceed to deployment.
+Report the blocker and stop.
+
+---
+
+### 8. Deployment Plan
+
+Before asking for approval, compose and display the full deployment plan:
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Deployment Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branches to push:
+  - {BRANCH_1}  ({N} commits)
+  - {BRANCH_2}  ({N} commits)
+
+Commits to be published:
+  {git log --oneline for each branch}
+
+Target remote: origin
+Risk notes:
+  - {any merge conflicts detected?}
+  - {any blocked tasks?}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+---
+
+### 9. Deployment Approval
+
+Use **AskUserQuestion** to request approval. Do not proceed without it.
+
+Question:
+- header: "Deploy"
+- question: "Review the deployment plan above. Approve to push to remote, or cancel to hold."
+- options:
+  - Approve — push all branches to origin now
+  - Cancel — hold, do not push (branches remain local)
+
+If **Approve**:
+  - Proceed to Step 10.
+
+If **Cancel**:
+  - Print the branch names so the user can push manually later.
+  - Stop here. Do not push anything.
+
+---
+
+### 10. Execute Deployment
+
+Push each task branch to origin:
+
+```bash
+for BRANCH in {all task branches}; do
+  git push origin "${BRANCH}"
+done
+```
+
+Report result:
+
+```text
+Deployment complete.
+Pushed: {branch list}
+```
+
+If a merge conflict occurs during push, run:
 
 ```text
 crew:run "resolve merge conflicts"
 ```
+
+---
 
 ## Notes
 
@@ -179,3 +250,5 @@ crew:run "resolve merge conflicts"
 - Use plain `crew:<intent>` syntax in user-facing guidance.
 - Task dependencies still matter. If tasks depend on each other, pass them as a
   single request so one `task-runner` can sequence the work inside one pipeline.
+- **task-runner never pushes to remote.** All remote operations happen here in
+  Step 10, only after explicit user approval in Step 9.

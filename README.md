@@ -103,11 +103,17 @@ crew:run "request"
        ▼ delegate one task-runner
 [task-runner]
        │
-       ▼ planner + stage execution
+       ▼ planner + stage execution (local commits only — no push)
 [planner] → [designer ‖ backend] → [frontend] → [reviewer]
        │
        ▼ complete
-[orchestrator] final report
+[orchestrator] per-task summary
+       │
+       ▼ deployment plan displayed
+[orchestrator] AskUserQuestion → Approve / Cancel
+       │ (Approve)
+       ▼
+[orchestrator] git push origin {branch}
 ```
 
 ### Multiple Tasks
@@ -122,12 +128,19 @@ crew:run "task A" | "task B" | "task C"
   own worktree               own worktree               own worktree
   own context                own context                own context
   planner→stages→reviewer    planner→stages→reviewer    planner→stages→reviewer
+  local commits only         local commits only         local commits only
        │
        ▼ all complete
-[orchestrator] merge guide
+[orchestrator] per-task summary (description, branch, commits, review status)
+       │
+       ▼ deployment plan displayed (branches + commits to be pushed)
+[orchestrator] AskUserQuestion → Approve / Cancel
+       │ (Approve)
+       ▼
+[orchestrator] git push origin for each branch
 ```
 
-Each `task-runner` autonomously handles its full pipeline (planner → stages → commit). A single task uses one task-runner; multiple tasks use one task-runner per task.
+Each `task-runner` handles its full pipeline (planner → stages → local commit). **Remote push never happens inside task-runner** — the orchestrator pushes only after the user approves the deployment plan.
 
 ### State directory layout
 
