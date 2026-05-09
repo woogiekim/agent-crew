@@ -20,8 +20,8 @@ remains provider-neutral.
 | Request Type | Execution Method |
 |---|---|
 | Backend API, domain logic, database work | Delegate to `backend` |
-| UI, full-stack, or implementation workflows | `ac:crew` -> task-runner -> pipeline agents |
-| Multiple independent features | `ac:crew` with one task-runner per task |
+| UI, full-stack, or implementation workflows | `crew:run` -> task-runner -> pipeline agents |
+| Multiple independent features | `crew:run` with one task-runner per task |
 | Requirements analysis only | Delegate to `planner` |
 
 ## Auto-Execution Triggers
@@ -32,7 +32,7 @@ integrate development work.
 
 If the user gives a short confirmation such as "go", "yes", "ok", "continue",
 or "proceed" and the prior context is about implementation work, continue
-through the appropriate `ac:<intent>` workflow instead of answering directly.
+through the appropriate `crew:<intent>` workflow instead of answering directly.
 
 Respond directly only for questions or explanations, such as "how", "why",
 "what", "explain", or "describe", unless the user also asks for implementation.
@@ -41,14 +41,13 @@ Respond directly only for questions or explanations, such as "how", "why",
 
 | Intent | Meaning |
 |---|---|
-| `ac:setup` | Install the current host adapter and initialize the project workspace |
-| `ac:crew` | Canonical workflow entry point for one or more tasks |
-| `ac:task` | Compatibility alias for `ac:crew` with one task |
-| `ac:cost` | Show the session cost summary |
-| `ac:agent-maker` | Design and register a custom agent |
+| `crew:setup` | Install the current host adapter and initialize the project workspace |
+| `crew:run` | Canonical workflow entry point for one or more tasks |
+| `crew:cost` | Show the session cost summary |
+| `crew:agent-maker` | Design and register a custom agent |
 
-Use `ac:<intent>` as the default invocation style. Host adapters may provide
-aliases, but slash commands are not assumed.
+Use `crew:<intent>` as the default invocation style. Hosts that support aliases
+may additionally expose `@crew:*` commands, but they are not required.
 
 Project state is stored under:
 

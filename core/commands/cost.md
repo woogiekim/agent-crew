@@ -1,4 +1,4 @@
-# ac:cost - Session Cost Summary
+# crew:cost - Session Cost Summary
 
 Read `~/.agent-crew/metrics/costs.jsonl` and summarize recorded session cost.
 

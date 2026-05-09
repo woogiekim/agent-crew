@@ -104,11 +104,11 @@ Suggested pipeline: {suggested_pipeline}
 Direct implementation is prohibited before the required agent or skill step.
 Choose one of the following first:
   Single focused task -> host AI delegation target="{suggested_agent}"
-  Workflow run -> ac:crew "request"
-  Multiple independent tasks -> ac:crew "TaskA" | "TaskB"
+  Workflow run -> crew:run "request"
+  Multiple independent tasks -> crew:run "TaskA" | "TaskB"
 
-Use provider-neutral `ac:<intent>` syntax by default. Do not assume custom slash
-commands are available on every host."""
+Use provider-neutral `crew:<intent>` syntax by default. `@crew:*` aliases may be
+available on some hosts, but do not assume they exist everywhere."""
 
 output = {
     "hookSpecificOutput": {

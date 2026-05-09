@@ -1,4 +1,4 @@
-# ac:agent-maker — AI-Agnostic Agent Asset Designer
+# crew:agent-maker - AI-Agnostic Agent Asset Designer
 
 Design and create reusable agent-crew assets without binding them to one AI vendor.
 

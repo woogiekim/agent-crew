@@ -1,13 +1,13 @@
-# ac:crew - Unified Task Orchestration
+# crew:run - Unified Task Orchestration
 
 Run one or more tasks through the same execution engine.
 Every task is executed by a `task-runner`. A single request spawns one
 `task-runner`; multiple requests spawn multiple `task-runner` agents.
 
-`ac:crew` is the canonical workflow entry point.
+`crew:run` is the canonical workflow entry point.
 
 ```text
-[orchestrator] ac:crew "Task A" | "Task B" | "Task C"
+[orchestrator] crew:run "Task A" | "Task B" | "Task C"
       |
       v
 normalize the input into one or more task entries
@@ -41,8 +41,8 @@ the host AI tool's structured input UI.
 
 Accept:
 
-- One task: `ac:crew "implement order API"`
-- Multiple tasks: `ac:crew "Order API" | "Product API" | "User API"`
+- One task: `crew:run "implement order API"`
+- Multiple tasks: `crew:run "Order API" | "Product API" | "User API"`
 
 Normalize the input into a task list with cardinality `N >= 1`.
 
@@ -58,7 +58,7 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 If `STATE_DIR` does not exist, stop with:
 
 ```text
-Run ac:setup first.
+Run crew:setup first.
 ```
 
 ### 3. Resume Detection
@@ -154,7 +154,7 @@ RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "No result report found
 Report:
 
 ```text
-Crew run complete.
+Run complete.
 
 Task 1: {description}
 Branch: {branch}
@@ -170,13 +170,12 @@ Commits: {git log summary}
 If a merge conflict occurs, run:
 
 ```text
-ac:crew "resolve merge conflicts"
+crew:run "resolve merge conflicts"
 ```
 
 ## Notes
 
-- `ac:crew` is the canonical workflow entry point.
-- `ac:task` may remain as a compatibility alias that forwards a single request
-  to `ac:crew`.
+- `crew:run` is the canonical workflow entry point.
+- `@crew:run` may be exposed as a compatibility alias on hosts that support it.
 - Task dependencies still matter. If tasks depend on each other, pass them as a
   single request so one `task-runner` can sequence the work inside one pipeline.

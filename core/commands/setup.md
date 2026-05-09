@@ -1,8 +1,8 @@
-# ac:setup — Host Adapter Installation And Workspace Init
+# crew:setup - Host Adapter Installation And Workspace Init
 
 ## Purpose
 
-`ac:setup` initializes the current project for agent-crew and asks the neutral
+`crew:setup` initializes the current project for agent-crew and asks the neutral
 host dispatcher to install the correct host adapter output.
 
 This command intentionally does not know host-specific paths or formats. It
@@ -58,5 +58,5 @@ State path: ~/.agent-crew/state/{PROJECT_NAME}/
 Host adapter: {adapter name}
 
 Usage:
-  ac:crew "request"    # run one task through the unified engine
+  crew:run "request"    # run one task through the unified engine
 ```

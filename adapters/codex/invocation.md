@@ -1,24 +1,25 @@
 # Codex Invocation Guide
 
-Codex does not currently expose project-defined slash commands as user commands.
-Use the provider-neutral `ac:<intent>` text form instead:
+Use the canonical `crew:<intent>` text form:
 
 ```text
-ac:setup
-ac:crew "request"
-ac:crew "TaskA" | "TaskB"
-ac:cost
-ac:agent-maker
+crew:setup
+crew:run "request"
+crew:run "TaskA" | "TaskB"
+crew:cost
+crew:agent-maker
 ```
 
 Recommended prompts:
 
 ```text
-ac:setup
-ac:crew "implement order domain API with TDD"
-ac:crew "Order API" | "Product API"
+crew:setup
+crew:run "implement order domain API with TDD"
+crew:run "Order API" | "Product API"
+@crew:run "implement order domain API with TDD"
 ```
 
 The Codex adapter installs `.codex/` agent and hook configuration plus
 `AGENTS.md` guidance. Do not rely on custom slash command registration in Codex.
-`ac:task` may still be accepted as a compatibility alias for a single-item crew run.
+Prefer `crew:<intent>` in documentation. `@crew:*` should be treated as an
+optional compatibility alias only when the host supports it.

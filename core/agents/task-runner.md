@@ -2,7 +2,7 @@
 name: task-runner
 description: >
   Autonomously executes the full pipeline for one task.
-  Spawned by `ac:crew` for every task, including single-task runs.
+  Spawned by `crew:run` for every task, including single-task runs.
   Runs planner → all pipeline stages independently.
   SKIP: do not invoke directly; always spawned by the crew orchestrator only.
 model: inherit
@@ -11,7 +11,7 @@ model: inherit
 # Task Runner
 
 Autonomously completes the entire pipeline for one assigned task.
-It is the single execution engine behind `ac:crew`.
+It is the single execution engine behind `crew:run`.
 
 ## Context Management Principles (Highest Priority)
 

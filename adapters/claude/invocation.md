@@ -1,31 +1,23 @@
 # Claude Invocation Guide
 
-Claude Code supports project and global slash commands. Use these invocations:
+Use the canonical `crew:<intent>` text form:
 
 ```text
-/setup
-/crew "TaskA" "TaskB"
-/cost
-/agent-maker
+crew:setup
+crew:run "request"
+crew:run "TaskA" | "TaskB"
+crew:cost
+crew:agent-maker
 ```
 
-For a single task, prefer:
+Compatible alias form:
 
 ```text
-/crew "request"
+@crew:run "request"
+@crew:setup
+@crew:cost
 ```
 
-Provider-neutral aliases are:
-
-```text
-ac:setup
-ac:crew "request"
-ac:crew "TaskA" | "TaskB"
-ac:cost
-ac:agent-maker
-```
-
-The command names are a Claude adapter concern. Core workflow documents should
-refer to workflow intents instead of requiring slash command syntax.
-`/task` and `ac:task` may still be supported as compatibility aliases for a
-single-item crew run.
+If the host exposes slash commands or alias registration, they should map back to
+the same `crew:<intent>` semantics. Documentation should still prefer
+`crew:<intent>`.

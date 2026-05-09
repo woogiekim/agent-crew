@@ -24,7 +24,7 @@
 
 When developing with an AI coding assistant, you typically have to manually direct each phase — requirements analysis, design, implementation, verification — and coordinate multiple agent roles consistently. This is tedious and error-prone.
 
-**agent-crew** is an AI-assistant-agnostic workflow toolkit that automates this entire workflow. Install it once, and from any project you can invoke the `crew` workflow to automatically execute the full `planner → designer → frontend → backend` pipeline.
+**agent-crew** is an AI-assistant-agnostic workflow toolkit that automates this entire workflow. Install it once, and from any project you can invoke the `run` workflow to automatically execute the full `planner -> designer -> frontend -> backend` pipeline.
 
 The goal: let developers focus on *what* to build, while agent-crew handles agent handoffs, state management, and pipeline orchestration automatically.
 
@@ -55,7 +55,7 @@ Repository sources are organized by dependency direction:
 | Host-generated project artifacts | Generated compatibility outputs; not source of truth |
 
 This repository does not track generated host output directories. They are created
-by `ac:setup` and should remain uncommitted. Project-local generated artifacts are
+by `crew:setup` and should remain uncommitted. Project-local generated artifacts are
 registered in `.git/info/exclude` during setup so repository-level `.gitignore`
 does not need host-specific directory names.
 
@@ -69,30 +69,30 @@ source ~/.bashrc  # bash
 
 ```bash
 # 1. Initialize workspace once per project
-ac:setup
+crew:setup
 
 # 2. Run a single task
-ac:crew "implement order domain API with TDD"
+crew:run "implement order domain API with TDD"
 
 # 3. Run multiple independent tasks in parallel
-ac:crew "implement order API" | "implement product API" | "implement user API"
+crew:run "implement order API" | "implement product API" | "implement user API"
 
-# Compatibility alias
-ac:task "implement order domain API with TDD"
+# Optional host alias
+@crew:run "implement order domain API with TDD"
 
 # 4. Check cost summary
-ac:cost
+crew:cost
 ```
 
-`ac:setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
+`crew:setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
 provider-neutral: it calls adapter-owned `detect.sh` scripts and delegates to the
 matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
 
-Adapters may expose more convenient syntax. For example, the Claude adapter can
-also expose slash aliases, while the Codex adapter uses `ac:<intent>` text commands.
+Hosts may expose more convenient aliases. For example, a host can map
+`@crew:run` to `crew:run`, but the canonical documentation uses `crew:<intent>`.
 
 ## How It Works
 
@@ -101,7 +101,7 @@ The orchestrator spawns or delegates to each sub-agent directly using the host A
 ### Single Task
 
 ```
-ac:crew "request"
+crew:run "request"
        │
        ▼ delegate one task-runner
 [task-runner]
@@ -116,7 +116,7 @@ ac:crew "request"
 ### Multiple Tasks
 
 ```
-ac:crew "task A" | "task B" | "task C"
+crew:run "task A" | "task B" | "task C"
        │
        ▼ create git worktree + branch for each task
        │
@@ -170,7 +170,7 @@ After planner completes, you confirm the proposed pipeline before execution begi
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
 | **resolver** | Automatic merge conflict resolution |
-| **task-runner** | Autonomous full-pipeline executor — the single execution engine behind `ac:crew` |
+| **task-runner** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 
 ### Backend agent workflow (TDD cycle)
 
