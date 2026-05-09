@@ -49,6 +49,11 @@ install_global() {
   cp -r "$TEMP_DIR/.claude/commands/"* "${GLOBAL_DIR}/commands/"
   log_info "명령어 설치 완료 → ${GLOBAL_DIR}/commands/"
 
+  # agent-maker.md 설치 확인
+  [ -f "${GLOBAL_DIR}/commands/agent-maker.md" ] \
+    || log_error "agent-maker.md 설치 실패 — .claude/commands/agent-maker.md 가 레포에 없습니다"
+  log_info "agent-maker 명령어 설치 확인 완료"
+
   # ~/.claude/agent-crew/agents/ 에 에이전트 정의 설치 (flat .md 구조)
   mkdir -p "${AGENT_CREW_DIR}/agents/skills"
   cp "$TEMP_DIR/.claude/agents/"*.md "${AGENT_CREW_DIR}/agents/" 2>/dev/null || true
@@ -201,18 +206,25 @@ PYEOF
 install_global
 
 # ── 완료 메시지 ──────────────────────────────────────────────
+CMD_COUNT=$(ls "${GLOBAL_DIR}/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
+AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  agent-crew 글로벌 설치 완료!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "  설치 위치: ${AGENT_CREW_DIR}"
+echo "  설치된 명령어: ${CMD_COUNT}개 / 에이전트: ${AGENT_COUNT}개"
 echo ""
 echo "  사용 방법 (모든 프로젝트에서 사용 가능):"
 echo "    /setup                           # 현재 프로젝트 워크스페이스 초기화"
 echo "    /ship \"요청 내용\"               # 단일 태스크 전체 파이프라인"
 echo "    /crew \"태스크A\" \"태스크B\" ...  # 여러 태스크 병렬 실행"
 echo "    /cost                            # 세션 비용 요약"
+echo ""
+echo "  에이전트 제작:"
+echo "    /agent-maker                     # CLAUDE.md / Skill / Subagent / Hook 파일 설계 및 생성"
 echo ""
 echo -e "${GREEN}  새 프로젝트에서 /setup 으로 시작하세요.${NC}"
 echo ""
