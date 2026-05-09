@@ -82,10 +82,16 @@ install_global() {
   cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
   log_info "Rules installed → ${AGENT_CREW_DIR}/rules/"
 
+  [ -f "${AGENT_CREW_DIR}/rules/quality-loop.md" ] \
+    || log_error "quality-loop.md install failed — rules/quality-loop.md not found"
+
   mkdir -p "${AGENT_CREW_DIR}/hooks"
   cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/hooks/"
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
   log_info "Hooks installed → ${AGENT_CREW_DIR}/hooks/"
+
+  [ -f "${AGENT_CREW_DIR}/hooks/direct-edit-guard.sh" ] \
+    || log_error "direct-edit-guard.sh install failed — hooks/direct-edit-guard.sh not found"
 
   mkdir -p "${AGENT_CREW_DIR}/setup"
   cp -r "${SOURCE_DIR}/setup/"* "${AGENT_CREW_DIR}/setup/"
@@ -128,7 +134,7 @@ install_claude_compat() {
 
   AGENT_CREW_HOST=claude "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
-  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
+  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
   log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
 }
