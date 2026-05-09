@@ -74,7 +74,34 @@ cat "${TASK_DIR}/pipeline.json"
 Execute the `stages` from `pipeline.json` sequentially.
 Skip stages already included in `completed_stages`.
 
-Agent prompt format (never inline file contents):
+#### Agent Existence Check (before each stage)
+
+Before spawning any agent in a stage, verify the agent definition exists:
+
+```bash
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+for agent_name in {agent names in this stage}; do
+  if [ ! -f "${AGENT_CREW_HOME}/agents/${agent_name}.md" ]; then
+    echo "MISSING: ${agent_name}"
+  fi
+done
+```
+
+If any agent is missing, invoke `crew:agent-maker` to create it before proceeding (blocking):
+
+```text
+crew:agent-maker
+
+Create a missing agent named "{agent_name}" for this project.
+Context: it appears in the pipeline as a stage after {previous stage}.
+Based on the name and context, design an appropriate agent definition
+and install it to {AGENT_CREW_HOME}/agents/{agent_name}.md.
+```
+
+Wait for `crew:agent-maker` to complete, then verify the file exists before continuing.
+Repeat for each missing agent in the stage.
+
+#### Agent prompt format (never inline file contents)
 
 ```text
 TASK_DIR: {TASK_DIR}

@@ -47,7 +47,7 @@ Before determining the pipeline, discover custom agents registered in agent-crew
 
 ```bash
 # Built-in agent list (excluded targets)
-BUILTIN_AGENTS="planner designer frontend backend resolver task-runner"
+BUILTIN_AGENTS="planner designer frontend backend resolver task-runner reviewer"
 
 # Discover custom agents
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -62,6 +62,10 @@ If custom agents are discovered, read the `description` field from each file’s
 
 If a custom agent is relevant to the request, include it in the pipeline.
 
+If the request would benefit from an agent that does not exist yet (e.g., a security auditor,
+a test writer, a data migration specialist), include that agent name in the pipeline anyway.
+The task-runner will detect the missing agent and invoke `crew:agent-maker` to create it before execution.
+
 ---
 
 ### Step 4: Pipeline Determination
@@ -70,19 +74,20 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 `stages` is a 2D array:
 - Agents inside the same array are executed **in parallel**
 - Arrays themselves are executed **sequentially**
+- `reviewer` is always the final stage for any pipeline that produces implementation output
 
 | Request Type | stages |
 |---|---|
-| Backend API / Domain Logic | `[["backend"]]` |
-| Full-stack including UI | `[["designer", "backend"], ["frontend"]]` |
-| UI only (static pages, etc.) | `[["designer"], ["frontend"]]` |
+| Backend API / Domain Logic | `[["backend"], ["reviewer"]]` |
+| Full-stack including UI | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], ["frontend"], ["reviewer"]]` |
 | Design / Analysis only | `[]` |
-| Matches custom agent role | Include the custom agent in an appropriate stage |
+| Matches custom agent role | Include the custom agent in an appropriate stage, then `["reviewer"]` last |
 
 ```json
 {
   "task": "Original request",
-  "stages": [["designer", "backend"], ["frontend"]],
+  "stages": [["designer", "backend"], ["frontend"], ["reviewer"]],
   "completed_stages": 0
 }
 ```
