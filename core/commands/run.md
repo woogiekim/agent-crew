@@ -176,6 +176,6 @@ crew:run "resolve merge conflicts"
 ## Notes
 
 - `crew:run` is the canonical workflow entry point.
-- `@crew:run` may be exposed as a compatibility alias on hosts that support it.
+- Use plain `crew:<intent>` syntax in user-facing guidance.
 - Task dependencies still matter. If tasks depend on each other, pass them as a
   single request so one `task-runner` can sequence the work inside one pipeline.

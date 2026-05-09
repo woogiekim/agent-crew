@@ -107,8 +107,7 @@ Choose one of the following first:
   Workflow run -> crew:run "request"
   Multiple independent tasks -> crew:run "TaskA" | "TaskB"
 
-Use provider-neutral `crew:<intent>` syntax by default. `@crew:*` aliases may be
-available on some hosts, but do not assume they exist everywhere."""
+Use provider-neutral `crew:<intent>` syntax by default."""
 
 output = {
     "hookSpecificOutput": {

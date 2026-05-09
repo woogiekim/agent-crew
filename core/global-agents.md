@@ -46,8 +46,7 @@ Respond directly only for questions or explanations, such as "how", "why",
 | `crew:cost` | Show the session cost summary |
 | `crew:agent-maker` | Design and register a custom agent |
 
-Use `crew:<intent>` as the default invocation style. Hosts that support aliases
-may additionally expose `@crew:*` commands, but they are not required.
+Use `crew:<intent>` as the default invocation style.
 
 Project state is stored under:
 

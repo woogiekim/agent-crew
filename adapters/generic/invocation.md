@@ -12,5 +12,4 @@ crew:agent-maker
 
 The generic adapter installs project-local `.agent-crew/` assets and `AGENTS.md`
 so the assistant can follow the workflow from repository guidance.
-`@crew:*` may be supported as an optional compatibility alias on hosts that allow
-custom command mapping.
+Use plain `crew:<intent>` text as the portable form.

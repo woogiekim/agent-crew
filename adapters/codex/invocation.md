@@ -16,10 +16,9 @@ Recommended prompts:
 crew:setup
 crew:run "implement order domain API with TDD"
 crew:run "Order API" | "Product API"
-@crew:run "implement order domain API with TDD"
 ```
 
 The Codex adapter installs `.codex/` agent and hook configuration plus
 `AGENTS.md` guidance. Do not rely on custom slash command registration in Codex.
-Prefer `crew:<intent>` in documentation. `@crew:*` should be treated as an
-optional compatibility alias only when the host supports it.
+Use plain `crew:<intent>` text. In Codex, `@` is interpreted as mention input,
+not as a custom command prefix.

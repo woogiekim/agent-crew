@@ -77,9 +77,6 @@ crew:run "implement order domain API with TDD"
 # 3. Run multiple independent tasks in parallel
 crew:run "implement order API" | "implement product API" | "implement user API"
 
-# Optional host alias
-@crew:run "implement order domain API with TDD"
-
 # 4. Check cost summary
 crew:cost
 ```
@@ -91,8 +88,8 @@ inside adapter implementations.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
 
-Hosts may expose more convenient aliases. For example, a host can map
-`@crew:run` to `crew:run`, but the canonical documentation uses `crew:<intent>`.
+Use plain `crew:<intent>` text in host UIs. In Codex, `@` is interpreted as
+mention input rather than a custom command prefix.
 
 ## How It Works
 
