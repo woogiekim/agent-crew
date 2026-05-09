@@ -27,7 +27,7 @@ BACKEND_PAT   = r"API|백엔드|서버|엔드포인트|도메인|Entity|Reposito
 FRONTEND_PAT  = r"프론트엔드|UI|화면|컴포넌트|React|Vue|Next|페이지|버튼|폼|모달|레이아웃|스타일|CSS|HTML"
 FULLSTACK_PAT = r"풀스택|전체 개발|full.?stack|서비스 개발|앱 개발|시스템 개발"
 DESIGN_PAT    = r"UI 설계|화면 설계|UX|디자인 명세|와이어프레임|wireframe"
-ACTION_PAT    = r"만들어|구현해|개발해|추가해|작성해|생성해|build|implement|create|add|develop|만들고|구현하고"
+ACTION_PAT    = r"만들어|구현해|개발해|추가해|수정해|작성해|생성해|만들고|구현하고|build|implement|create|add|develop|rename|refactor|update|fix|remove|delete|move|change|migrate|modify|replace|extend|integrate"
 QUESTION_PAT  = r"어떻게|뭐야|무엇|설명|알려|이해|why|what|how|explain|describe"
 
 def match(pat):
