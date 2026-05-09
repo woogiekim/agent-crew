@@ -31,12 +31,12 @@ if input_tokens > 0 or output_tokens > 0:
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
     row = {
-        "timestamp":          datetime.now(timezone.utc).isoformat(),
-        "session_id":         session_id,
-        "model":              model,
-        "input_tokens":       input_tokens,
-        "output_tokens":      output_tokens,
-        "estimated_cost_usd": round(cost, 6),
+        "timestamp":    datetime.now(timezone.utc).isoformat(),
+        "session_id":   session_id,
+        "model":        model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_usd":     round(cost, 6),
     }
     with open(metrics_dir / "costs.jsonl", "a") as f:
         f.write(json.dumps(row) + "\n")

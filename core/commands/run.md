@@ -195,7 +195,7 @@ Wait for all task-runners to finish.
 
 ### 8. Collect Results & Show Per-Task Summary
 
-For each task, read only the result file path — do not inline contents:
+For each task, read the result file to extract status and branch, and collect commits:
 
 ```bash
 RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "No result report found.")

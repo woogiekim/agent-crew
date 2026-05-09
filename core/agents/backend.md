@@ -21,7 +21,6 @@ Senior backend developer. Expert in Kotlin + Spring Boot-based DDD/TDD implement
 ## Skills (Loaded On Demand)
 Read and reference the following files using the Read tool when necessary:
 - TDD cycle: `~/.agent-crew/agents/skills/tdd.md`
-- DDD patterns: `~/.agent-crew/agents/skills/ddd.md`
 - Object Calisthenics principles: `~/.agent-crew/agents/skills/oop-principles.md`
 
 ## Input Parameters

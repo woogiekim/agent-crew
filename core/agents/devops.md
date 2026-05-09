@@ -176,6 +176,9 @@ Automatically detect the project build tool and execute commands:
 
 ## Deploy Step 3: Git Tagging & Release
 
+Note: Tag pushing for releases is permitted for the devops agent. The prohibition
+on `git push` in task-runner applies to feature branches only, not release tags.
+
 ```bash
 # Detect current version (package.json, build.gradle, VERSION file, etc.)
 # Create tag
