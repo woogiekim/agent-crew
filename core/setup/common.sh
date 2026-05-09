@@ -70,9 +70,9 @@ end = sys.argv[4]
 new_section = f"{start}\n{src.read_text()}\n{end}\n"
 
 content = dest.read_text() if dest.exists() else ""
-pattern = re.escape(start) + r".*?" + re.escape(end)
+pattern = re.escape(start) + r".*" + re.escape(end)
 if re.search(pattern, content, re.DOTALL):
-    content = re.sub(pattern, new_section.rstrip("\n"), content, flags=re.DOTALL)
+    content = re.sub(pattern, new_section.rstrip("\n"), content, count=1, flags=re.DOTALL)
 else:
     content = content.rstrip("\n")
     content = f"{content}\n\n{new_section}" if content else new_section
