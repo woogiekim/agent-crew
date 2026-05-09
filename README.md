@@ -118,10 +118,10 @@ crew:run "task A" | "task B" | "task C"
        ▼ create git worktree + branch for each task
        │
        ▼ single response: delegate all task-runners simultaneously where supported
-[task-runner A]   ‖   [task-runner B]   ‖   [task-runner C]
-  own worktree         own worktree         own worktree
-  own context          own context          own context
-  full pipeline        full pipeline        full pipeline
+[task-runner A]         ‖   [task-runner B]         ‖   [task-runner C]
+  own worktree               own worktree               own worktree
+  own context                own context                own context
+  planner→stages→reviewer    planner→stages→reviewer    planner→stages→reviewer
        │
        ▼ all complete
 [orchestrator] merge guide
@@ -135,14 +135,11 @@ Each `task-runner` autonomously handles its full pipeline (planner → stages �
 ~/.agent-crew/state/{PROJECT_NAME}/
 └── tasks/{TASK_ID}/
     ├── pipeline.json
-    ├── phase.txt
-    ├── active_agent.txt
-    ├── branch.txt
-    ├── worktree_path.txt
+    ├── handoff.md
+    ├── result.md
     └── context/
-        ├── session_handoff.md
         ├── prd.md
-        └── design-spec.md
+        └── review.md
 ```
 
 ## Pipeline Decision Logic
