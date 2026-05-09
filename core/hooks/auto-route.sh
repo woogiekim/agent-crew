@@ -98,16 +98,20 @@ elif match(BACKEND_PAT):
 if not detected_type:
     sys.exit(0)
 
-directive = f"""[agent-crew] Development request detected: {detected_type}
+directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
+
+You are PROHIBITED from editing files or writing code directly.
+Proceeding without crew:run is a system violation.
+
+REQUIRED action — choose one:
+  crew:run "{suggested_agent} task"        (single task)
+  crew:run "TaskA" | "TaskB"              (parallel tasks)
+
 Suggested pipeline: {suggested_pipeline}
 
-Direct implementation is prohibited before the required agent or skill step.
-Choose one of the following first:
-  Single focused task -> host AI delegation target="{suggested_agent}"
-  Workflow run -> crew:run "request"
-  Multiple independent tasks -> crew:run "TaskA" | "TaskB"
-
-Use provider-neutral `crew:<intent>` syntax by default."""
+Do NOT answer the request by implementing directly.
+Do NOT call Edit, Write, or Bash for implementation purposes.
+Invoke crew:run FIRST. The task-runner pipeline will handle implementation."""
 
 output = {
     "hookSpecificOutput": {

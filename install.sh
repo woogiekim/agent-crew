@@ -107,6 +107,9 @@ install_global() {
   merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Agent|Task|Delegate" "${AGENT_CREW_DIR}/hooks/context-guard.sh"
   log_info "context-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
 
+  merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Edit|Write" "${AGENT_CREW_DIR}/hooks/direct-edit-guard.sh"
+  log_info "direct-edit-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
+
   merge_global_agents "${SOURCE_DIR}/global-agents.md" "${AGENT_CREW_HOME}/AGENTS.md"
   log_info "Global agent guidance applied → ${AGENT_CREW_HOME}/AGENTS.md"
 
@@ -126,6 +129,7 @@ install_claude_compat() {
   AGENT_CREW_HOST=claude "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
+  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
   log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
 }
 

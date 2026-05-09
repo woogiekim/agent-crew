@@ -47,6 +47,15 @@ Resume rules:
 
 ### Phase 1: Spawn planner
 
+Write the active task marker so the `direct-edit-guard` hook allows edits
+within this pipeline:
+
+```bash
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+touch "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+```
+
 Delegate to the planner agent using the host AI tool's native mechanism (blocking):
 
 ```text
@@ -194,7 +203,15 @@ COMMITS: {commit count}
 LOG: {git log --oneline -5 output}
 ```
 
-#### 3. Remove isolated worktree when applicable
+#### 3. Clear active task marker
+
+```bash
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+rm -f "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+```
+
+#### 4. Remove isolated worktree when applicable
 
 ```bash
 if [ "${EXECUTION_MODE}" = "parallel" ] && [ "${PROJECT_ROOT}" != "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" ]; then
