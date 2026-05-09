@@ -104,7 +104,7 @@ crew:run "request"
 [task-runner]
        │
        ▼ planner + stage execution
-[planner] → [designer ‖ backend] → [frontend]
+[planner] → [designer ‖ backend] → [frontend] → [reviewer]
        │
        ▼ complete
 [orchestrator] final report
@@ -151,10 +151,12 @@ The planner agent automatically selects which agents to run based on your reques
 
 | Request type | Pipeline |
 |---|---|
-| Backend API / domain logic | planner → backend |
-| Full-stack app | planner → designer → frontend → backend |
-| UI only | planner → designer → frontend |
+| Backend API / domain logic | planner → backend → reviewer |
+| Full-stack app | planner → [designer ‖ backend] → frontend → reviewer |
+| UI only | planner → designer → frontend → reviewer |
 | Analysis / docs only | planner |
+
+`reviewer` is always the final stage for any pipeline that produces implementation output. It verifies completeness against the PRD and writes a report to `{TASK_DIR}/context/review.md`.
 
 After planner completes, you confirm the proposed pipeline before execution begins.
 
@@ -166,6 +168,7 @@ After planner completes, you confirm the proposed pipeline before execution begi
 | **designer** | UI/UX spec design |
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
+| **reviewer** | Final stage — verifies implementation completeness against the PRD (read-only) |
 | **resolver** | Automatic merge conflict resolution |
 | **task-runner** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 
