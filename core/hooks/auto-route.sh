@@ -25,38 +25,49 @@ if not prompt.strip():
 BACKEND_PAT = (
     r"API|backend|server|endpoint|domain|Entity|Repository|Service|Kotlin|"
     r"Spring|DB|database|storage|query|table|controller|Controller|UseCase|"
-    r"Command|Event|\ubc31\uc5d4\ub4dc|\uc11c\ubc84|\uc5d4\ub4dc\ud3ec\uc778\ud2b8|"
-    r"\ub3c4\uba54\uc778|\ub370\uc774\ud130\ubca0\uc774\uc2a4|\uc800\uc7a5\uc18c|"
-    r"\ucffc\ub9ac|\ud14c\uc774\ube14|\ucee8\ud2b8\ub864\ub7ec"
+    r"Command|Event|백엔드|서버|엔드포인트|"
+    r"도메인|데이터베이스|저장소|"
+    r"쿼리|테이블|컨트롤러"
 )
 FRONTEND_PAT = (
     r"frontend|UI|screen|component|React|Vue|Next|page|button|form|modal|"
-    r"layout|style|CSS|HTML|\ud504\ub860\ud2b8\uc5d4\ub4dc|\ud654\uba74|"
-    r"\ucef4\ud3ec\ub10c\ud2b8|\ud398\uc774\uc9c0|\ubc84\ud2bc|\ud3fc|"
-    r"\ubaa8\ub2ec|\ub808\uc774\uc544\uc6c3|\uc2a4\ud0c0\uc77c"
+    r"layout|style|CSS|HTML|프론트엔드|화면|"
+    r"컴포넌트|페이지|버튼|폼|"
+    r"모달|레이아웃|스타일"
 )
 FULLSTACK_PAT = (
     r"full.?stack|full development|service development|app development|"
-    r"system development|\ud480\uc2a4\ud0dd|\uc804\uccb4\s*\uac1c\ubc1c|"
-    r"\uc11c\ube44\uc2a4\s*\uac1c\ubc1c|\uc571\s*\uac1c\ubc1c|"
-    r"\uc2dc\uc2a4\ud15c\s*\uac1c\ubc1c"
+    r"system development|풀스택|전체\s*개발|"
+    r"서비스\s*개발|앱\s*개발|"
+    r"시스템\s*개발"
 )
 DESIGN_PAT = (
     r"UI design|screen design|UX|design spec|wireframe|"
-    r"UI\s*\uc124\uacc4|\ud654\uba74\s*\uc124\uacc4|"
-    r"\ub514\uc790\uc778\s*\uba85\uc138|\uc640\uc774\uc5b4\ud504\ub808\uc784"
+    r"UI\s*설계|화면\s*설계|"
+    r"디자인\s*명세|와이어프레임"
 )
 ACTION_PAT = (
     r"build|implement|create|add|develop|rename|refactor|update|fix|remove|"
     r"delete|move|change|migrate|modify|replace|extend|integrate|"
-    r"\ub9cc\ub4e4\uc5b4|\uad6c\ud604\ud574|\uac1c\ubc1c\ud574|"
-    r"\ucd94\uac00\ud574|\uc218\uc815\ud574|\uc791\uc131\ud574|"
-    r"\uc0dd\uc131\ud574|\ub9cc\ub4e4\uace0|\uad6c\ud604\ud558\uace0"
+    r"만들어|구현해|개발해|"
+    r"추가해|수정해|작성해|"
+    r"생성해|만들고|구현하고|"
+    r"보완|개선|추가|제거|변경|수정|업데이트"
 )
 QUESTION_PAT = (
     r"why|what|how|explain|describe|"
-    r"\uc5b4\ub5bb\uac8c|\ubb50\uc57c|\ubb34\uc5c7|\uc124\uba85|"
-    r"\uc54c\ub824|\uc774\ud574"
+    r"어떻게|뭐야|무엇|설명|"
+    r"알려|이해"
+)
+# Matches filenames with common code/config extensions
+FILE_EXT_PAT = (
+    r"\b[\w][\w\-\.]*\.(md|sh|ts|tsx|kt|py|json|yaml|yml|js|jsx)\b"
+)
+# Matches agent-crew system keywords (Korean and English)
+PROJECT_KEYWORD_PAT = (
+    r"harness|hook|pipeline|task.?runner|planner|workflow|"
+    r"하네스|에이전트|훅|파이프라인|"
+    r"플래너|워크플로우"
 )
 
 
@@ -67,38 +78,66 @@ def match(pattern):
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     sys.exit(0)
 
-if not match(ACTION_PAT):
-    sys.exit(0)
-
 detected_type = ""
 suggested_pipeline = ""
 suggested_agent = ""
 
-if match(FULLSTACK_PAT):
-    detected_type = "full-stack development"
-    suggested_pipeline = "planner -> [designer || backend] -> frontend"
-    suggested_agent = "planner"
-elif match(DESIGN_PAT):
-    detected_type = "UI design"
-    suggested_pipeline = "designer -> frontend"
-    suggested_agent = "designer"
-elif match(FRONTEND_PAT) and match(BACKEND_PAT):
-    detected_type = "full-stack development"
-    suggested_pipeline = "planner -> [designer || backend] -> frontend"
-    suggested_agent = "planner"
-elif match(FRONTEND_PAT):
-    detected_type = "frontend development"
-    suggested_pipeline = "designer -> frontend"
-    suggested_agent = "designer"
-elif match(BACKEND_PAT):
-    detected_type = "backend development"
-    suggested_pipeline = "backend"
-    suggested_agent = "backend"
+# --- Existing domain-specific routing ---
+
+if match(ACTION_PAT):
+    if match(FULLSTACK_PAT):
+        detected_type = "full-stack development"
+        suggested_pipeline = "planner -> [designer || backend] -> frontend"
+        suggested_agent = "planner"
+    elif match(DESIGN_PAT):
+        detected_type = "UI design"
+        suggested_pipeline = "designer -> frontend"
+        suggested_agent = "designer"
+    elif match(FRONTEND_PAT) and match(BACKEND_PAT):
+        detected_type = "full-stack development"
+        suggested_pipeline = "planner -> [designer || backend] -> frontend"
+        suggested_agent = "planner"
+    elif match(FRONTEND_PAT):
+        detected_type = "frontend development"
+        suggested_pipeline = "designer -> frontend"
+        suggested_agent = "designer"
+    elif match(BACKEND_PAT):
+        detected_type = "backend development"
+        suggested_pipeline = "backend"
+        suggested_agent = "backend"
+
+# --- Extended pattern detection ---
+# Triggers when no specific domain matched yet.
+
+if not detected_type:
+    # File extension mention implies direct file manipulation request
+    has_file_ref = match(FILE_EXT_PAT)
+    # agent-crew system keyword implies project-level implementation
+    has_project_kw = match(PROJECT_KEYWORD_PAT)
+    # General implementation verb paired with file reference or project keyword
+    has_action = match(ACTION_PAT)
+
+    if has_file_ref or has_project_kw or (has_action and (has_file_ref or has_project_kw)):
+        detected_type = "project implementation"
+        suggested_pipeline = 'crew:run "your request"'
 
 if not detected_type:
     sys.exit(0)
 
-directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
+if detected_type == "project implementation":
+    directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
+
+You are PROHIBITED from editing files or writing code directly.
+Proceeding without crew:run is a system violation.
+
+REQUIRED action:
+  {suggested_pipeline}
+
+Do NOT answer the request by implementing directly.
+Do NOT call Edit, Write, or Bash for implementation purposes.
+Invoke crew:run FIRST. The task-runner pipeline will handle implementation."""
+else:
+    directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
 You are PROHIBITED from editing files or writing code directly.
 Proceeding without crew:run is a system violation.
