@@ -232,10 +232,15 @@ LOG: {git log --oneline -5 output}
 
 #### 3. Clear active task marker
 
+Only clear the active marker when running in `single` mode. In `parallel` mode,
+the crew orchestrator is responsible for clearing it after all task-runners finish.
+
 ```bash
-PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-rm -f "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+if [ "${EXECUTION_MODE}" != "parallel" ]; then
+  PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+  AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+  rm -f "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+fi
 ```
 
 #### 4. Remove isolated worktree when applicable
@@ -246,7 +251,7 @@ if [ "${EXECUTION_MODE}" = "parallel" ] && [ "${PROJECT_ROOT}" != "$(git rev-par
 fi
 ```
 
-#### 4. Final return value (to parent crew orchestrator)
+#### 5. Final return value (to parent crew orchestrator)
 
 ```text
 TASK_ID: {TASK_ID}

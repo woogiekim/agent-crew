@@ -42,9 +42,8 @@ If verification fails:
 
 ### Phase 3: Complete
 Update `{TASK_DIR}/handoff.md` (if needed for the backend agent):
-- Implemented API integration point specifications
-- Expected request/response formats
-- List of completed components
+- **If running in parallel execution mode (prompt explicitly states "do not modify handoff.md")**: do not modify it.
+- **If running standalone**: record implemented API integration point specifications, expected request/response formats, and list of completed components.
 
 Stage changes and commit:
 ```bash

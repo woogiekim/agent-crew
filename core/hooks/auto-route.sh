@@ -56,7 +56,7 @@ ACTION_PAT = (
 )
 QUESTION_PAT = (
     r"why|what|how|explain|describe|"
-    r"어떻게|뭐야|무엇|설명|"
+    r"어떻게|뭐야|무엇|왜|어떤|설명|"
     r"알려|이해"
 )
 MEMORY_PAT = (
@@ -145,7 +145,7 @@ if not detected_type:
     # Memory keyword + action verb = memory file manipulation (still an implementation task)
     has_memory_action = match(MEMORY_PAT) and has_action
 
-    if has_file_ref or has_project_kw or has_memory_action or (has_action and (has_file_ref or has_project_kw)):
+    if has_file_ref or has_project_kw or has_memory_action:
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'
 

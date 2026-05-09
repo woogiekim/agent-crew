@@ -26,17 +26,17 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 
 1. Resolve `PROJECT_NAME` and `PROJECT_ROOT` from the current directory.
 
-2. Run the neutral host dispatcher:
+2. If `{STATE_DIR}` already exists, ask for confirmation before resetting state:
+   - "Cancel (Recommended)" exits setup without making any changes.
+   - "Reset" removes existing task state and continues with a clean slate.
+
+3. Run the neutral host dispatcher (idempotent — safe to re-run):
 
    ```bash
    AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
    PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
    bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
    ```
-
-3. If `{STATE_DIR}` already exists, ask for confirmation before resetting state:
-   - "Cancel (Recommended)" exits setup.
-   - "Reset" removes existing state and continues.
 
 4. Initialize the state directory:
 
