@@ -314,9 +314,37 @@ Report the blocker and stop.
 
 ---
 
-### 9. Deployment Plan
+### 9. Implementation Summary
 
-Before asking for approval, compose and display the full deployment plan:
+Always display the implementation summary for every completed run, regardless of
+whether a devops stage was included in the pipeline:
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Implementation Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branches with local commits:
+  - {BRANCH_1}  ({N} commits)
+  - {BRANCH_2}  ({N} commits)
+
+Commits ready for review:
+  {git log --oneline for each branch}
+
+Note: No remote push has occurred yet.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+---
+
+### 10. Deployment Approval
+
+**Only execute this step when the pipeline included a `devops` stage that will
+run CI/CD (i.e., a stage whose agent is `devops`).**
+
+If no `devops` stage was in the pipeline, skip this step entirely and stop after
+Step 9. Branches remain local; the user can push manually.
+
+When a `devops` stage is present, first compose and display the deployment plan:
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -336,11 +364,7 @@ Risk notes:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
----
-
-### 10. Deployment Approval
-
-Use **AskUserQuestion** to request approval. Do not proceed without it.
+Then use **AskUserQuestion** to request approval. Do not proceed without it.
 
 Question:
 - header: "Deploy"
