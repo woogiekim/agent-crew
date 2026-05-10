@@ -24,6 +24,28 @@ remains provider-neutral.
 | Multiple independent features | `crew:run` with one task-runner per task |
 | Requirements analysis only | `crew:run` → task-runner → planner (no implementation stages) |
 
+## Parallel-First Execution Rule
+
+**Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
+
+When a request contains multiple independent sub-tasks — even if they touch the
+same files — run them as parallel task-runners:
+
+```
+crew:run "Sub-task A" | "Sub-task B" | "Sub-task C"
+```
+
+Merge conflicts that arise after parallel completion are resolved by the
+**resolver agent**. That is its explicit purpose. Choosing sequential execution
+to avoid conflicts is an incorrect optimization that sacrifices throughput for a
+problem the resolver already solves.
+
+**Sequential execution is only correct when:**
+- Task B cannot start until Task A's output exists (true dependency)
+- The tasks are logically a single atomic unit
+
+File overlap alone is never a reason to serialize.
+
 ## Auto-Execution Triggers
 
 > Requirements collection (Step 5 of `crew:run`) is always mandatory and must

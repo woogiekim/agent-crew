@@ -32,6 +32,26 @@ This gives single-task and multi-task execution the same engine:
 - Single request -> one `task-runner`
 - Multiple requests -> multiple `task-runner` agents
 
+## Parallel-First Rule
+
+**Always prefer parallel fan-out over sequential execution.**
+
+File overlap between parallel tasks is not a reason to serialize. If parallel
+task-runners modify the same file, merge conflicts are resolved by the
+**resolver agent** after all runners complete — that is its explicit purpose.
+
+Sequential execution (`N == 1`) is only correct when tasks have a true
+dependency (Task B cannot start until Task A's output exists).
+
+```
+# Correct — parallel even if tasks touch the same files
+crew:run "Fix bug A" | "Fix bug B"
+
+# Wrong — serializing to avoid a conflict the resolver handles
+crew:run "Fix bug A"   # then wait...
+crew:run "Fix bug B"
+```
+
 ## Execution Steps
 
 ### 1. Collect Tasks
