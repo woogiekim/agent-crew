@@ -33,6 +33,18 @@ git diff HEAD~{n}..HEAD -- {file}
 ```
 
 Focus review effort on changed files. Do not re-review stable, unchanged code.
+If the base branch is known, prefer `git merge-base` to avoid guessing commit
+counts:
+
+```bash
+BASE=$(git merge-base HEAD main 2>/dev/null || git rev-parse HEAD~1)
+git diff "$BASE"..HEAD --stat
+git diff "$BASE"..HEAD -- {file}
+```
+
+When reporting a finding, include the narrowest useful file and line reference.
+If a finding is inferred from omitted behavior rather than a line, name the
+missing file, test, or artifact instead of inventing a line number.
 
 ### Non-Functional Requirements Checklist
 After feature coverage, check non-functional requirements from the PRD:
@@ -55,6 +67,10 @@ Verify that tests exist for the implementation:
 - At least one test per new endpoint or component
 - Failing paths (error cases) are tested, not just happy paths
 - No commented-out test assertions
+- For documentation-only, prompt-only, or configuration-only changes, verify the
+  most relevant lightweight checks instead of demanding product tests. Examples:
+  markdown lint/format checks when available, repository search for broken
+  references, or command/schema validation for generated JSON.
 
 ### Review Report Format
 Write findings to `{TASK_DIR}/context/review.md` using this template:
@@ -84,10 +100,10 @@ When listing issues, classify by severity to help the caller prioritize:
 
 ## Checklist
 - [ ] `{TASK_DIR}/context/prd.md` read before starting review
-- [ ] Git diff analyzed to scope review to changed files only
+- [ ] Git diff analyzed from merge-base or the task commit range
 - [ ] PRD coverage matrix completed for all Core Features
 - [ ] Non-functional requirements checked (security, performance, maintainability)
-- [ ] Test coverage verified (tests exist, error paths covered)
+- [ ] Tests or risk-appropriate validation checks verified
 - [ ] `{TASK_DIR}/context/review.md` written with status, coverage, issues, and recommendation
 - [ ] No implementation files modified
 - [ ] Return value within 4 lines

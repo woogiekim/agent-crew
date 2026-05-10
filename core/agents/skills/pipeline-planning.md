@@ -13,6 +13,8 @@ Enables the planner agent to translate a structured requirements block into a co
 
 ### PRD Authoring from Requirements
 Translate scope/target/constraints answers into a structured Product Requirements Document. Keep goals declarative and implementation-agnostic.
+For tooling, documentation, prompt, or agent-skill work, frame the PRD around
+workflow reliability and safety rather than product screens or API behavior.
 
 **PRD structure:**
 ```markdown
@@ -50,8 +52,13 @@ Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
 | Backend API | `[["backend"], ["reviewer"]]` |
 | Full-stack | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
 | UI only | `[["designer"], ["frontend"], ["reviewer"]]` |
+| Tooling / docs / config | `[["backend"], ["reviewer"]]` unless a dedicated custom agent is created |
 | CI/CD / infra | `[["devops"], ["reviewer"]]` |
 | Feature + deploy | `[["backend"], ["devops"], ["reviewer"]]` |
+
+Only place agents in the same inner array when their outputs are independent.
+If an agent consumes another agent's artifact, put it in a later stage even when
+both changes touch different files.
 
 **Example pipeline.json:**
 ```json
@@ -59,7 +66,9 @@ Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
   "task": "User authentication flow",
   "stages": [["designer", "backend"], ["frontend"], ["reviewer"]],
   "needs_creation": [],
-  "completed_stages": 0
+  "completed_stages": 0,
+  "branch": "feature/task-YYYYMMDD-HHMMSS-0",
+  "execution_mode": "single"
 }
 ```
 
@@ -67,6 +76,9 @@ Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
 After writing pipeline.json, cross-check:
 1. Every `needs_creation` entry name appears in at least one stage
 2. Every non-builtin stage agent has a `needs_creation` entry
+3. Every stage name is either a built-in agent or a planned custom agent
+4. `completed_stages` is an integer and starts at `0` for new runs
+5. `execution_mode` matches the orchestrator context (`single` or `parallel`)
 
 ### Handoff Document Authoring
 Write a concise handoff.md that gives downstream agents exactly what they need without repeating the full PRD. Include: summarized requirements, key technical decisions, constraints, and the PRD path.
@@ -77,6 +89,7 @@ Write a concise handoff.md that gives downstream agents exactly what they need w
 - [ ] Agent sufficiency evaluated for each required role
 - [ ] `needs_creation` populated for any role that existing agents cannot fulfill
 - [ ] `stages` follows canonical mapping and ends with `["reviewer"]`
+- [ ] Parallel stages contain only independent agents
 - [ ] Pipeline validation passed (cross-referencing `needs_creation` and `stages`)
 - [ ] `pipeline.json` written to `{TASK_DIR}/pipeline.json`
 - [ ] `handoff.md` written to `{TASK_DIR}/handoff.md`

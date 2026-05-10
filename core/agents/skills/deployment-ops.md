@@ -27,7 +27,22 @@ git branch --show-current
 ls deploy.sh scripts/deploy.sh Makefile docker-compose.yml 2>/dev/null
 ```
 
-Block deployment if: uncommitted changes exist, unmerged PRs are open, or build scripts are missing.
+Block deployment if: uncommitted changes exist, unmerged PRs are open, build
+scripts are missing, or the required approval signal has not been written to
+`{TASK_DIR}/context/approval.md`.
+
+### Approval Ownership
+Do not issue deployment, push, merge, rollback, or branch-cleanup approvals from
+inside the devops agent. Write the planned actions to
+`{TASK_DIR}/context/action-plan.md`, return a `PLAN:` block, and poll
+`{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`. The task-runner
+owns approval for single-task runs; the crew orchestrator owns approval for
+parallel runs.
+
+Never run `git push`, create remote tags, execute deployment scripts, or modify
+production infrastructure before approval is present. In task-runner pipelines,
+remote pushes are still orchestrator-owned: record the intended push or tag push
+in the action plan instead of executing it directly.
 
 ### Build Tool Auto-Detection
 Detect the project build tool and run standardized commands:
@@ -56,16 +71,12 @@ cat VERSION 2>/dev/null || git describe --tags --abbrev=0
 ```
 
 ### Git Tagging and Release
-Create an annotated tag and push it. Optionally create a GitHub Release:
+After approval, create an annotated local tag when the release plan requires it.
+Record remote tag pushes and GitHub Release creation in the action plan for the
+orchestrator-owned deployment step:
 
 ```bash
 git tag -a v{VERSION} -m "Release v{VERSION}: {summary}"
-git push origin v{VERSION}
-
-# GitHub Release (if gh CLI available)
-gh release create v{VERSION} \
-  --title "v{VERSION}" \
-  --notes "{changelog or commit summary}"
 ```
 
 ### Deployment Script Priority
@@ -76,12 +87,10 @@ Execute deployment scripts in this priority order:
 3. `make deploy` (if Makefile has a deploy target)
 4. `docker-compose up -d`
 
-If no script exists, use **AskUserQuestion** to ask for the deployment method before proceeding:
-- header: "Deployment Method"
-- question: "No deployment script was found. How should the deployment proceed?"
-- options:
-  - Provide deployment command — I will specify the command
-  - Cancel — abort deployment
+If no script exists, write the missing deployment method to the action plan and
+return `STATUS: plan_ready` so the task-runner or orchestrator can collect the
+deployment decision. Include the missing command as an explicit blocker in the
+`PLAN:` block; do not prompt the user directly from the devops agent.
 
 ### Health Verification
 After deployment, verify the service is healthy:
@@ -107,12 +116,13 @@ When writing or modifying CI/CD configs:
 - Implement fail-fast: stop the pipeline on first failure
 
 ## Checklist
-- [ ] Plan summary presented and approved via structured choice UI before any changes
+- [ ] Action plan written to `{TASK_DIR}/context/action-plan.md`
+- [ ] Approval observed in `{TASK_DIR}/context/approval.md` before deployment, push, merge, tag push, or release
 - [ ] Pre-flight check completed (clean tree, correct branch, scripts found)
 - [ ] Build executed and all tests pass
 - [ ] Deployment blocked if tests fail
 - [ ] Version detected from project version file
-- [ ] Git tag created and pushed
+- [ ] Local git tag created when required; remote tag push recorded for orchestrator-owned execution
 - [ ] GitHub Release created (if gh CLI available)
 - [ ] Deployment script executed in priority order
 - [ ] Health check verified after deployment
