@@ -169,15 +169,16 @@ PYEOF
 
 TASK_SLUG="$(task_slug_for_branch "${TASK}")"
 BRANCH_PREFIX="$(branch_prefix_for_task "${TASK}")"
-BRANCH="${BRANCH_PREFIX}/${TASK_SLUG}-${TASK_ID}"
+BRANCH="${BRANCH_PREFIX}/${TASK_SLUG}"
 ```
 
 Branch prefixes must describe the work type rather than defaulting to
 `feature/`. Use `fix/` for bug fixes, `docs/` for documentation, `refactor/`
 for restructuring without behavior changes, `test/` for test-only work,
 `chore/` for maintenance, build, dependency, setup, CI, and tooling work, and
-`feature/` for new or improved product behavior. The task slug must come from
-the task description and the task id suffix remains for uniqueness.
+`feat/` for new or improved product behavior. The task slug is derived from the
+task description and provides sufficient uniqueness — no TASK_ID suffix is
+appended. See `core/rules/branch-naming.md` for the full naming spec.
 
 Execution context depends on cardinality:
 
@@ -380,7 +381,7 @@ visible during a pipeline run:
 [crew] 20260510-140000-0 | STAGE_DONE | backend — N/A
 [crew] 20260510-140000-0 | STAGE | 2/2 — reviewer
 [crew] 20260510-140000-0 | STAGE_DONE | reviewer — APPROVED
-[crew] 20260510-140000-0 | COMPLETED | branch=feature/implement-order-api-20260510-140000-0 commits=3
+[crew] 20260510-140000-0 | COMPLETED | branch=feat/implement-order-api commits=3
 ```
 
 In parallel runs (N > 1), each task-runner's TASK_ID prefix makes interleaved
