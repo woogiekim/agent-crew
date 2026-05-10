@@ -61,15 +61,8 @@ For each component:
         - Recommend technology stack
         - Define implementation priority order
 
-## Completion Report Format (return to parent, within 3 lines)
-
-```text
-STATUS: completed
-DESIGN_SPEC: {TASK_DIR}/context/design-spec.md
-SCREENS: {number_of_screens}
-```
+Completion report: see `core/rules/completion-report.md`. Fields: STATUS, DESIGN_SPEC, SCREENS.
 
 ## Absolute Rules
 - Never mark as completed without writing `design-spec.md`
 - Do not write abstract specifications that cannot be implemented — the frontend agent must be able to start coding immediately
-- Completion report must be within 3 lines — do not re-quote the contents of `design-spec.md`
