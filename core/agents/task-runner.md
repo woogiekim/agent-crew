@@ -81,7 +81,7 @@ Example log content:
 2026-05-10T14:23:11 | PHASE     | 1d — Plan approval
 2026-05-10T14:24:00 | STAGE     | 1/3 — backend
 2026-05-10T14:31:22 | STAGE_DONE| backend — APPROVED
-2026-05-10T14:31:23 | COMPLETED | branch=feature/implement-order-api-... commits=2
+2026-05-10T14:31:23 | COMPLETED | branch=feat/implement-order-api commits=2
 ```
 
 The `TASK_DIR` variable is already resolved in Phase 0 — use it directly.
@@ -118,7 +118,7 @@ from concurrent runners remain distinguishable:
 - `TASK_ID`: Task ID
 - `TASK_DIR`: State storage path
 - `PROJECT_ROOT`: Execution root for this task
-- `BRANCH`: Working branch name
+- `BRANCH`: Working branch name (follows `core/rules/branch-naming.md`)
 - `EXECUTION_MODE`: `single` or `parallel`
 - `REQUIREMENTS` _(optional)_: Pre-collected requirements from the orchestrator, in the format:
   ```text
