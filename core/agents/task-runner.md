@@ -294,6 +294,67 @@ Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
 ---
 
+### Phase 2.5: Deploy Gate (after all non-devops stages complete)
+
+After all non-devops stages have completed (and before running the devops stage,
+if any), execute the following two steps unconditionally:
+
+#### Step 1 — Always display the implementation summary
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Implementation Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branch: {BRANCH}
+
+Commits ready for review:
+  {git -C PROJECT_ROOT log --oneline HEAD ^main, up to 10 lines}
+
+Note: No remote push has occurred yet.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Collect the commit log:
+
+```bash
+git -C "${PROJECT_ROOT}" log --oneline HEAD ^main 2>/dev/null | head -10
+```
+
+#### Step 2 — Conditional approval gate (devops only)
+
+Check whether the pipeline contains a `devops` stage:
+
+```bash
+python3 -c "
+import json
+p = json.load(open('${TASK_DIR}/pipeline.json'))
+has_devops = any('devops' in stage for stage in p.get('stages', []))
+print('yes' if has_devops else 'no')
+"
+```
+
+**If no devops stage is present:** skip this gate entirely and proceed to Phase 3.
+Branches remain local; the crew orchestrator or user can push manually.
+
+**If a devops stage is present:** use **AskUserQuestion** to request approval
+before executing the devops stage. Do not run the devops stage without approval.
+
+Question:
+- header: "Deploy"
+- question: "Implementation is complete. Approve to run the devops stage (CI/CD + git push), or cancel to skip deployment and keep commits local."
+- options:
+  - Approve — run devops stage now
+  - Cancel — skip devops, keep commits local
+
+If **Approve**: continue to execute the devops stage as the next pipeline stage.
+
+If **Cancel**:
+  - Mark the devops stage as skipped (do not update `completed_stages` for it).
+  - Print the branch name so the user can push manually later.
+  - Proceed directly to Phase 3 without running the devops stage.
+
+---
+
 ### Phase 3: Completion Handling
 
 #### 1. Collect git log
