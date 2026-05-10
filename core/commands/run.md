@@ -280,16 +280,45 @@ Complete this task autonomously through the full pipeline.
 Write the completion report to {TASK_DIR}/result.md.
 ```
 
-Wait for all task-runners to finish.
+#### Task-Runner Health Check (Persistent Execution)
+
+After each task-runner returns, the orchestrator must verify its output:
+
+- If the task-runner returns **without a STATUS field** (crash, token limit,
+  or interrupt):
+  - Treat as a crash. Do **not** mark the task as failed.
+  - Re-invoke the same task-runner with identical parameters.
+  - The task-runner will resume from `pipeline.json` (Phase 0 resume check).
+  - Retry up to **3 times** before marking the task as blocked.
+
+This "끈질기게 실행" (persistent execution) rule means the orchestrator never
+gives up on a task-runner until it explicitly returns `STATUS: blocked` with a
+real, substantive blocker.
+
+Wait for all task-runners to finish (including any crash-retry cycles).
 
 ### 8. Collect Results & Show Per-Task Summary
 
 For each task, read the result file to extract status and branch, and collect commits:
 
 ```bash
-RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "No result report found.")
+RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "")
 COMMITS=$(git -C "${PROJECT_ROOT_FOR_TASK}" log --oneline HEAD ^main 2>/dev/null || echo "N/A")
 ```
+
+#### Missing or Incomplete Result Handling
+
+If `result.md` is missing or the STATUS field is absent:
+
+- Do **not** report "No result report found."
+- Treat as a task-runner crash. Re-invoke the task-runner for that task.
+- Pass the same `TASK_DIR` so the task-runner resumes from `pipeline.json`.
+- Retry up to **3 times** per task.
+- Only after all retries are exhausted: report the task as `blocked` with the
+  reason "task-runner did not produce a result after 3 restart attempts."
+
+In parallel runs (`N > 1`), apply this retry logic independently per task —
+a crashed task-runner must not block result collection for other tasks.
 
 Display a summary for every task:
 
