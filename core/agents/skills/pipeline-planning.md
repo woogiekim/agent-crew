@@ -67,7 +67,7 @@ both changes touch different files.
   "stages": [["designer", "backend"], ["frontend"], ["reviewer"]],
   "needs_creation": [],
   "completed_stages": 0,
-  "branch": "feature/task-YYYYMMDD-HHMMSS-0",
+  "branch": "feature/user-authentication-flow-YYYYMMDD-HHMMSS-0",
   "execution_mode": "single"
 }
 ```
