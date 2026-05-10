@@ -187,6 +187,30 @@ Wait for all task-runners to finish (including any crash-retry cycles).
 
 ### 7. Collect Results & Show Per-Task Summary
 
+#### Live Progress
+
+Task-runners emit `[crew]`-prefixed lines throughout execution to surface
+real-time lifecycle events. These lines appear inline as each phase and stage
+boundary is crossed — the orchestrator does NOT suppress them. Example output
+visible during a pipeline run:
+
+```
+[crew] 20260510-140000-0 | STARTED | implement order API
+[crew] 20260510-140000-0 | PHASE | 1a — Requirement collection
+[crew] 20260510-140000-0 | PHASE | 1b — Analysis
+[crew] 20260510-140000-0 | PHASE | 1c — Planning
+[crew] 20260510-140000-0 | STAGE | 1/2 — backend
+[crew] 20260510-140000-0 | STAGE_DONE | backend — N/A
+[crew] 20260510-140000-0 | STAGE | 2/2 — reviewer
+[crew] 20260510-140000-0 | STAGE_DONE | reviewer — APPROVED
+[crew] 20260510-140000-0 | COMPLETED | branch=feature/task-20260510-140000-0 commits=3
+```
+
+In parallel runs (N > 1), each task-runner's TASK_ID prefix makes interleaved
+lines from concurrent runners easy to distinguish.
+
+After all task-runners finish, the orchestrator prints the full Run Summary below.
+
 **MANDATORY: Output the Run Summary block below to the user before proceeding to any next step. This cannot be skipped.**
 
 For each task, read the result file to extract status and branch, and collect commits:
