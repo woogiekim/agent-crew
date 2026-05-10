@@ -90,8 +90,9 @@ Violation examples (forbidden when STOP is present):
 ### Explicit Command Invocation Rule
 
 When the user's message begins with a workflow command such as `crew:run`,
-`crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`, treat it as an
-explicit command invocation, not as ordinary natural language.
+`crew:setup`, `crew:status`, `crew:cost`, `crew:agent-maker`, or the portable
+aliases `ac:crew`, `ac:task`, `ac:setup`, `ac:cost`, and `ac:agent-maker`,
+treat it as an explicit command invocation, not as ordinary natural language.
 
 For `crew:run` specifically:
 
@@ -102,6 +103,14 @@ For `crew:run` specifically:
   ask for the task description through the host structured input UI.
 - If task arguments are provided, use them as the task descriptions and continue
   through requirements collection and task-runner delegation.
+
+For `crew:setup` specifically:
+
+- Execute the workflow defined in `~/.agent-crew/commands/setup.md`.
+- Do not reinterpret it as a request to inspect the repository, inspect Gradle or
+  package files, run verification, or infer project setup manually.
+- Run the host adapter setup flow and initialize agent-crew state exactly as the
+  command definition says.
 
 | Intent | Meaning |
 |---|---|
