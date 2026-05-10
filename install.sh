@@ -78,6 +78,10 @@ install_global() {
   log_info "Agents installed → ${AGENT_CREW_DIR}/agents/"
   log_info "Skills installed → ${AGENT_CREW_DIR}/agents/skills/"
 
+  [ -f "${AGENT_CREW_DIR}/agents/reviewer.md" ] \
+    || log_error "reviewer.md install failed — agents/reviewer.md not found"
+  log_info "reviewer agent verified"
+
   mkdir -p "${AGENT_CREW_DIR}/rules"
   cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
   log_info "Rules installed → ${AGENT_CREW_DIR}/rules/"
