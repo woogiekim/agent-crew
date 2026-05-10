@@ -66,6 +66,16 @@ Accept:
 
 Normalize the input into a task list with cardinality `N >= 1`.
 
+#### Input Normalization
+
+If any task description contains Hangul characters, apply the Korean Input
+Normalization rule (`core/rules/korean-input.md`) before proceeding:
+
+1. Interpret the operational intent of the Korean instruction
+2. Rewrite it as a professional English orchestration instruction
+3. Use the rewritten English string as the canonical TASK value for all
+   downstream agents and state files
+
 ### 2. Initialize State Paths
 
 ```bash
