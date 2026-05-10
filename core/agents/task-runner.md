@@ -825,17 +825,9 @@ The task-runner owns all approval decisions for its pipeline. Stage agents
 (devops, reviewer, etc.) MUST NOT issue their own AskUserQuestion for deploy,
 merge, push, or destructive operations. Instead they write a PLAN block and wait.
 
-#### When this gate applies
-
-Execute this gate after all non-devops stages have completed (and before running
-the devops stage, if any), **and** whenever a stage agent returns a `PLAN:` block
-instead of immediately executing a destructive action.
-
-Stages that trigger this gate (any stage involving):
-- `git push` / `git merge`
-- deployment commands (deploy scripts, docker-compose up, rsync, etc.)
-- destructive file operations
-- external service calls
+**This phase runs unconditionally after Phase 2 completes.** Do not treat it as conditional on receiving a PLAN: block — it always runs. Within this phase:
+- **Step 2** (collect PLAN blocks) runs only when at least one stage returned `STATUS: plan_ready`.
+- **Step 3** (devops approval gate) always runs when `EXECUTION_MODE == single`, regardless of whether any stage returned a PLAN: block.
 
 #### Step 1 — Always display the implementation summary
 
