@@ -122,9 +122,13 @@ Analyze the request deeply and answer the following for each role required by th
 2. **Can an existing agent (built-in or custom) adequately fulfill each role?**
 3. **For any role that existing agents cannot adequately fulfill → it needs a purpose-built agent.**
 
-Decision criteria:
-- If an existing agent is general-purpose and this task requires deep domain-specific knowledge that the generic agent cannot reliably provide → a new agent is needed.
-- If an existing agent can handle the role with reasonable quality → use the existing agent.
+Decision criteria — a new agent is needed when ANY of the following is true:
+- The task requires domain-specific knowledge (e.g., a particular external system, protocol, or industry domain) that the generic agent cannot reliably provide without hallucinating.
+- The task requires a workflow or output format that differs significantly from what any built-in agent produces (e.g., a custom report format, specialized testing strategy, or integration-specific steps).
+- The task would require more than two significant prompting caveats or workarounds to coerce a generic agent into producing acceptable results.
+- The task is in a domain not covered by any built-in agent (planner, designer, frontend, backend, devops, resolver, reviewer).
+
+Bias toward creating a new agent. Only reuse an existing agent when it is an unambiguous match for the required role with no meaningful gaps.
 
 #### 3c: Populate `needs_creation`
 

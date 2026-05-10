@@ -188,28 +188,30 @@ for item in p.get('needs_creation', []):
 
 If the list is empty or the field is absent, skip this phase entirely and proceed to Phase 2.
 
-For each entry in `needs_creation`, invoke `crew:agent-maker` with full context (blocking):
+For each entry in `needs_creation`, invoke the `agent-maker` skill using the host AI tool's native Skill mechanism (blocking):
 
 ```text
-crew:agent-maker
+skill: agent-maker
+args: |
+  Create an agent named "{name}" for this task.
 
-Create an agent named "{name}" for this task.
+  Reason a new agent is required:
+  {reason}
 
-Reason a new agent is required:
-{reason}
+  Role and responsibilities for this task:
+  {role}
 
-Role and responsibilities for this task:
-{role}
-
-Install the finished agent definition to:
-{AGENT_CREW_HOME}/agents/{name}.md
+  Install the finished agent definition to:
+  {AGENT_CREW_HOME}/agents/{name}.md
 ```
+
+Where `{name}`, `{reason}`, `{role}`, and `{AGENT_CREW_HOME}` are substituted from the parsed `needs_creation` entry and the resolved `AGENT_CREW_HOME` variable (`${HOME}/.agent-crew` unless overridden).
 
 After each invocation, verify the file exists before continuing:
 
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-ls "${AGENT_CREW_HOME}/agents/{name}.md"
+ls "${AGENT_CREW_HOME}/agents/${name}.md"
 ```
 
 If a required agent file still does not exist after `crew:agent-maker` completes, write the failure to
