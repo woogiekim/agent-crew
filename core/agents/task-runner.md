@@ -41,6 +41,42 @@ exhaustion), save current progress before compacting:
 4. Never lose work due to context limit. The progress checkpoint is the source of
    truth; the re-invoked agent must read it before doing any new work.
 
+## Progress Reporting
+
+Every phase transition and stage boundary MUST emit a progress line as part of the
+agent's response text **before** starting the phase or stage work. Do not use a tool
+call — simply print the line as inline text so the user sees it immediately.
+
+### Emit format
+
+```
+[crew] {TASK_ID} | {EVENT} | {detail}
+```
+
+### Event catalog
+
+| EVENT | When emitted | Detail |
+|---|---|---|
+| `STARTED` | Phase 0 begins | task description truncated to 60 chars |
+| `PHASE` | Each phase transition | phase name + short description |
+| `STAGE` | Each pipeline stage begins | `{i}/{total} — {agent_name}` |
+| `STAGE_DONE` | Each stage completes | `{agent_name} — {APPROVED\|NEEDS_CHANGES\|N/A}` |
+| `BLOCKED` | Any BLOCKED result | blocker summary (1 line) |
+| `RETRY` | Quality loop retry | `attempt {n} — {reason}` |
+| `COMPLETED` | Phase 3 result written | `branch={BRANCH} commits={n}` |
+
+### Parallel run prefix rule
+
+In parallel runs (N > 1), each task-runner prefixes its own TASK_ID so lines
+from concurrent runners remain distinguishable:
+
+```
+[crew] 20260510-140000-0 | STAGE | 2/4 — backend
+[crew] 20260510-140000-1 | STAGE | 1/4 — designer
+```
+
+---
+
 ## Input Parameters
 
 - `TASK`: Task description
@@ -62,6 +98,12 @@ exhaustion), save current progress before compacting:
 ## Execution Flow
 
 ### Phase 0: Resume Check + Context Bootstrap
+
+Emit before any other work:
+
+```
+[crew] {TASK_ID} | STARTED | {TASK truncated to 60 chars}
+```
 
 **Read-once context bootstrap**: Resolve all runtime paths once at startup and
 store them as variables. Do not re-read or re-resolve these paths in later phases.
@@ -108,6 +150,12 @@ This prevents restarting already-finished agents when resuming after an interrup
 
 #### Phase 1a: Requirement Collection Gate
 
+Emit before checking:
+
+```
+[crew] {TASK_ID} | PHASE | 1a — Requirement collection
+```
+
 **Check whether `REQUIREMENTS` was provided in the task-runner's own input.**
 
 ##### Case A — `REQUIREMENTS` is present
@@ -137,6 +185,12 @@ the `REQUIREMENTS` value for Phase 1b.
 
 #### Phase 1b: Analyst
 
+Emit before delegating:
+
+```
+[crew] {TASK_ID} | PHASE | 1b — Analysis
+```
+
 Delegate to the **analyst agent** (blocking):
 
 ```text
@@ -157,6 +211,12 @@ If the analyst returns `readiness: BLOCKED`, write `STATUS: BLOCKED` to
 ---
 
 #### Phase 1c: Spawn planner
+
+Emit before delegating:
+
+```
+[crew] {TASK_ID} | PHASE | 1c — Planning
+```
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
 within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0:
@@ -197,6 +257,12 @@ cat "${PIPELINE_PATH}"
 ---
 
 ### Phase 1.5: Pre-execution Agent Creation
+
+If the `needs_creation` list is non-empty, emit before creating agents (where `{n}` is the count of agents to create):
+
+```
+[crew] {TASK_ID} | PHASE | 1.5 — Creating {n} dynamic agent(s)
+```
 
 Read the `needs_creation` list from `PIPELINE_PATH` (already resolved in Phase 0):
 
@@ -359,6 +425,36 @@ If the custom agent file does not exist at invocation time:
   - Do NOT proceed.
   - Write BLOCKED to result.md: "Custom agent '{name}' was not created in Phase 1.5 — file missing at ${AGENT_CREW_HOME}/agents/{name}.md"
   - Return STATUS: blocked to orchestrator.
+
+#### Stage progress emits
+
+Before spawning each stage agent (where `{i}` is 1-based stage index and `{total}` is the
+total stage count from `pipeline.json`):
+
+```
+[crew] {TASK_ID} | STAGE | {i}/{total} — {agent_name}
+```
+
+After the stage agent returns and its result is recorded:
+
+```
+[crew] {TASK_ID} | STAGE_DONE | {agent_name} — {APPROVED|NEEDS_CHANGES|N/A}
+```
+
+Use `APPROVED` when the reviewer accepted the output, `NEEDS_CHANGES` when the reviewer
+requested changes (quality loop), or `N/A` for non-reviewer stages.
+
+When a BLOCKED result is detected, emit before writing result.md:
+
+```
+[crew] {TASK_ID} | BLOCKED | {one-line blocker summary}
+```
+
+When the Stage Retry Rule triggers a retry (agent crash, no STATUS line), emit:
+
+```
+[crew] {TASK_ID} | RETRY | attempt {n} — {reason}
+```
 
 #### Agent prompt format (never inline file contents)
 
@@ -557,6 +653,12 @@ LOG:
 CHANGES:
   - {file path}: {one-line description of what changed}
   - {file path}: {one-line description of what changed}
+```
+
+After writing result.md, collect the commit count and emit:
+
+```
+[crew] {TASK_ID} | COMPLETED | branch={BRANCH} commits={n}
 ```
 
 #### 3. Clear active task marker
