@@ -32,7 +32,7 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 ## Key Features
 
 - **2-round deep requirements collection** — `crew:run` gathers scope, target, and constraints (Round 1), then domain-specific follow-ups (Round 2) before spawning task-runners; a fallback layer in task-runner Phase 1a repeats this if requirements were not passed in
-- **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; task-runner Phase 1.5 invokes `crew:agent-maker` for each missing specialist before execution starts
+- **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; task-runner Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition directly to `~/.agent-crew/agents/{name}.md` before execution starts
 - **Quality loop enforcement** — every implementation stage runs a validate → fix → re-validate cycle (maximum 3 retries) before reporting completion; a `BLOCKED` result halts the pipeline immediately
 - **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; the AI must call `crew:run` immediately with no preamble, no file reads, no Bash commands, and no clarifying questions
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
@@ -194,7 +194,7 @@ If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned
 | **Phase 0** | Resume check — if `pipeline.json` exists, continue from `completed_stages` |
 | **Phase 1a** | Requirement collection gate — skip if REQUIREMENTS provided; else run 2-round AskUserQuestion |
 | **Phase 1b** | Write active task marker; delegate to planner (REQUIREMENTS always present at this point) |
-| **Phase 1.5** | Read `needs_creation` from `pipeline.json`; invoke `crew:agent-maker` for each missing agent |
+| **Phase 1.5** | Read `needs_creation` from `pipeline.json`; for each entry spawn an inline Agent that writes the agent definition to `~/.agent-crew/agents/{name}.md`; verify file exists before proceeding |
 | **Phase 2** | Execute `stages` sequentially; apply quality loop rule to every stage agent |
 | **Phase 3** | Collect git log; write `result.md`; remove active marker (single mode) or preserve it (parallel mode) |
 
@@ -246,7 +246,23 @@ When the planner determines that no existing agent can adequately fulfill a requ
 }
 ```
 
-task-runner Phase 1.5 reads this list and invokes `crew:agent-maker` for each entry before executing any stage. If an agent file still does not exist after `crew:agent-maker` completes, the pipeline halts with `STATUS: BLOCKED`.
+task-runner Phase 1.5 reads this list and, for each entry, spawns an inline Agent
+that writes the agent definition file directly to `~/.agent-crew/agents/{name}.md`.
+This bypasses the `Skill` tool (which is unavailable inside sub-agents) and produces
+the agent file using a standard template derived from the `name`, `reason`, and `role`
+fields. After each invocation, Phase 1.5 verifies the file exists before continuing.
+If an agent file still does not exist after the creation attempt, the pipeline halts
+with `STATUS: BLOCKED`.
+
+#### Custom Agent Dispatch (Phase 2)
+
+When a `stages` entry contains a non-builtin agent name, task-runner Phase 2 resolves it at runtime:
+
+1. Check if the name is a builtin: `planner`, `designer`, `frontend`, `backend`, `devops`, `resolver`, `reviewer`, `task-runner`
+2. If **not builtin**: read `~/.agent-crew/agents/{name}.md` and prepend its full content to the stage prompt as a system preamble — the spawned Agent receives both the agent definition and the standard stage parameters (`TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH`)
+3. If **builtin**: use the standard stage prompt format (the host already knows builtin agent definitions)
+
+If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was skipped or failed silently), Phase 2 reports `STATUS: BLOCKED` with the file path that was missing.
 
 ## Agents
 
@@ -281,6 +297,9 @@ Step 3: Agent capability analysis
         ├─ Evaluate agent sufficiency per required role
         └─ Populate needs_creation for any role without an adequate agent
 Step 4: Determine pipeline and write pipeline.json
+        └─ Pipeline Validation: enforce bidirectional needs_creation↔stages
+           consistency (every needs_creation name must appear in stages; every
+           non-builtin stage agent must have a needs_creation entry)
 Step 5: Write handoff.md
 Step 6: Return concise completion report
 ```
