@@ -23,6 +23,24 @@ The task-runner itself should only maintain coordinates (paths, state, completio
 - Do not read file contents from agent completion responses — verify only by path
 - Read only `pipeline.json` state; never directly read `handoff.md` contents
 
+### Token-Limit Recovery Rule
+
+If the task-runner is approaching its own token limit mid-stage (context nearing
+exhaustion), save current progress before compacting:
+
+1. Write a checkpoint to `{TASK_DIR}/context/stage_{i}_progress.md` capturing which
+   agents have completed and what work remains.
+2. Compact context — keep only paths and state coordinates, never inline content.
+3. Re-invoke any remaining stage agents with:
+   ```text
+   Resume from: {TASK_DIR}/context/stage_{i}_progress.md — continue from where you left off.
+   TASK_DIR: {TASK_DIR}
+   HANDOFF_PATH: {TASK_DIR}/handoff.md
+   QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+   ```
+4. Never lose work due to context limit. The progress checkpoint is the source of
+   truth; the re-invoked agent must read it before doing any new work.
+
 ## Input Parameters
 
 - `TASK`: Task description
@@ -50,9 +68,26 @@ creating a new plan from scratch.
 
 Resume rules:
 
-- If `pipeline.json` exists, read `completed_stages` and continue.
+- If `pipeline.json` exists, read `completed_stages` and `stage_agent_status` and continue.
 - If `pipeline.json` does not exist, start with planner.
 - Never duplicate the planner step for an already initialized task.
+- For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
+  agents already completed. On resume, skip only those agents — do not re-run them.
+  Only agents missing from the map (or with status other than `"completed"`) are retried.
+
+`pipeline.json` tracks per-agent completion with this structure:
+
+```json
+{
+  "completed_stages": 2,
+  "stage_agent_status": {
+    "1": {"designer": "completed", "backend": "completed"},
+    "2": {"frontend": "completed"}
+  }
+}
+```
+
+This prevents restarting already-finished agents when resuming after an interrupt.
 
 ### Phase 1: Spawn planner
 
@@ -243,6 +278,35 @@ After each stage returns, check its `STATUS` field:
 
 Do **not** silently skip a BLOCKED stage or proceed as if it completed.
 
+#### Stage Retry Rule
+
+Every stage invocation (single or parallel) is wrapped in a retry loop with a
+maximum of **3 attempts**.
+
+**Crash detection:** Any agent invocation that returns without a `STATUS:` line
+in its response is treated as a crash — not a clean BLOCKED state.
+
+Retry logic per agent:
+
+```
+attempt = 1
+while attempt <= 3:
+    invoke agent
+    if response contains "STATUS: completed":
+        break  # success
+    elif response contains "STATUS: BLOCKED":
+        halt pipeline — write blocker to result.md and return STATUS: blocked
+    else:  # no STATUS line — treat as crash
+        if attempt == 3:
+            write crash details to {TASK_DIR}/result.md
+            return STATUS: blocked (reason: agent crashed after 3 attempts)
+        attempt += 1
+        re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only — no inline content)
+```
+
+Do not silently swallow a crash. After 3 failures on the same agent, report BLOCKED
+with the agent name and stage index.
+
 #### Agent prompt format (never inline file contents)
 
 ```text
@@ -275,14 +339,37 @@ Do not modify handoff.md.
 Save outputs only to your own result files.
 ```
 
-After stage completion, update `completed_stages`:
+**Per-agent completion tracking:** After each agent in a parallel stage responds,
+immediately record its result in `pipeline.json` under `stage_agent_status`:
 
 ```bash
 python3 -c "
 import json
 p = json.load(open('${TASK_DIR}/pipeline.json'))
-p['completed_stages'] = $((i+1))
+p.setdefault('stage_agent_status', {}).setdefault('${i}', {})['${agent_name}'] = '${status}'
 json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
+"
+```
+
+Where `${status}` is `completed`, `crashed`, or `blocked` based on the agent response.
+
+**Selective retry for crashed parallel agents:** If one or more agents in a parallel
+stage crash (no `STATUS:` line), do not restart the entire stage. Only retry the
+failed agents using the Stage Retry Rule (up to 3 attempts each). Agents that
+returned `STATUS: completed` are not re-invoked.
+
+After all agents in the stage have reached a terminal state (`completed` or exhausted
+retries), update `completed_stages` only if **all** agents completed successfully:
+
+```bash
+python3 -c "
+import json
+p = json.load(open('${TASK_DIR}/pipeline.json'))
+stage_status = p.get('stage_agent_status', {}).get('${i}', {})
+all_done = all(v == 'completed' for v in stage_status.values())
+if all_done:
+    p['completed_stages'] = $((i+1))
+    json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
 "
 ```
 
@@ -421,3 +508,7 @@ Do not include file contents, code, or long explanations.
 - Final return value must remain within 5 lines and concise
 - **Never push to remote** — `git push` is strictly forbidden. Local commits only.
   The crew orchestrator handles all remote operations after explicit user approval.
+- **Never stop mid-pipeline** — if a sub-agent returns without a `STATUS:` line,
+  treat it as a crash and apply the Stage Retry Rule (up to 3 attempts). Only
+  after 3 consecutive failures may the task-runner halt with `STATUS: blocked`.
+  A task-runner that silently stops without writing `result.md` violates this rule.
