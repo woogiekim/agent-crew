@@ -14,6 +14,8 @@
 - [How It Works](#how-it-works)
 - [Pipeline Decision Logic](#pipeline-decision-logic)
 - [Agents](#agents)
+- [Specialized Skills](#specialized-skills)
+- [crew:run Optimizations](#crewrun-optimizations)
 - [Rules and Hooks](#rules-and-hooks)
 - [State Layout](#state-layout)
 - [Contributing](#contributing)
@@ -111,11 +113,12 @@ crew:run "request"
        │
        ▼ delegate one task-runner (with REQUIREMENTS)
 [task-runner]
-       │ Phase 1a: REQUIREMENTS present → skip; absent → 2-round fallback collection
-       │ Phase 1b: planner (REQUIREMENTS always passed → Case A path, skips AskUserQuestion)
+       │ Phase 1a: REQUIREMENTS present → skip; absent → delegate to requirements agent
+       │ Phase 1b: analyst (distill intent, identify risks, recommend pipeline)
+       │ Phase 1c: planner (REQUIREMENTS + ANALYSIS passed → Case A path, skips AskUserQuestion)
        │ Phase 1.5: agent creation (needs_creation from pipeline.json)
        ▼ Phase 2: stage execution with quality loop
-[planner] → [stage agents...] → [reviewer]
+[requirements] → [analyst] → [planner] → [stage agents...] → [reviewer]
        │
        ▼ complete
 [orchestrator] per-task summary (always shown)
@@ -141,7 +144,7 @@ crew:run "task A" | "task B" | "task C"
 [task-runner A]         ‖   [task-runner B]         ‖   [task-runner C]
   own worktree               own worktree               own worktree
   own context                own context                own context
-  planner→stages→reviewer    planner→stages→reviewer    planner→stages→reviewer
+  req→analyst→planner→stages→reviewer   req→analyst→planner→stages→reviewer   req→analyst→planner→stages→reviewer
   local commits only         local commits only         local commits only
        │
        ▼ all complete
@@ -155,7 +158,7 @@ crew:run "task A" | "task B" | "task C"
 [orchestrator] git push origin for each branch
 ```
 
-Each `task-runner` handles its full pipeline (planner → agent creation → stages → local commit). **Remote push never happens inside task-runner** — the orchestrator pushes only after the user approves the deployment plan via `AskUserQuestion`.
+Each `task-runner` handles its full pipeline (requirements → analyst → planner → agent creation → stages → local commit). **Remote push never happens inside task-runner** — the orchestrator pushes only after the user approves the deployment plan via `AskUserQuestion`.
 
 ### Requirements Collection: 2-Round, 2-Layer Architecture
 
@@ -185,17 +188,19 @@ All answers are merged into a single `REQUIREMENTS` block passed to each task-ru
 
 #### Layer 2 — task-runner Phase 1a (fallback)
 
-If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it runs the same 2-round AskUserQuestion sequence itself before invoking the planner. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
+If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it delegates to the **requirements agent** to run the same 2-round interview before invoking the analyst and planner. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
 
 ### Task-Runner Execution Phases
 
 | Phase | What happens |
 |---|---|
 | **Phase 0** | Resume check — if `pipeline.json` exists, continue from `completed_stages` |
-| **Phase 1a** | Requirement collection gate — skip if REQUIREMENTS provided; else run 2-round AskUserQuestion |
-| **Phase 1b** | Write active task marker; delegate to planner (REQUIREMENTS always present at this point) |
+| **Phase 1a** | Requirement collection gate — skip if REQUIREMENTS provided; else delegate to requirements agent (2-round AskUserQuestion interview) |
+| **Phase 1b** | Analyst — distill intent, identify ambiguities and risks, recommend agent pipeline; writes `{TASK_DIR}/context/analysis.md` and returns ANALYSIS block |
+| **Phase 1c** | Write active task marker; delegate to planner (REQUIREMENTS + ANALYSIS always present at this point → Case A path, skips AskUserQuestion) |
 | **Phase 1.5** | Read `needs_creation` from `pipeline.json`; for each entry spawn an inline Agent that writes the agent definition to `~/.agent-crew/agents/{name}.md`; verify file exists before proceeding |
 | **Phase 2** | Execute `stages` sequentially; apply quality loop rule to every stage agent |
+| **Phase 2.5** | Display implementation summary; if pipeline includes `devops` stage, use AskUserQuestion for deployment approval before running devops |
 | **Phase 3** | Collect git log; write `result.md`; remove active marker (single mode) or preserve it (parallel mode) |
 
 ### State Directory Layout
@@ -209,6 +214,8 @@ If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned
         ├── handoff.md          ← inter-agent context (written by planner)
         ├── result.md           ← final status written by task-runner
         └── context/
+            ├── requirements.md ← collected requirements (written by requirements agent)
+            ├── analysis.md     ← distilled intent, risks, recommended pipeline (written by analyst)
             ├── prd.md          ← PRD written by planner
             └── review.md       ← review report written by reviewer
 ```
@@ -268,7 +275,9 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 
 | Agent | Role |
 |---|---|
-| **planner** | Requirements analysis, PRD writing, agent sufficiency evaluation, pipeline selection |
+| **requirements** | Dedicated requirements collection — runs 2-round AskUserQuestion interview, validates scope, detects ambiguities, writes `requirements.md` |
+| **analyst** | Reasoning and coordination layer — distills user intent, identifies risks, recommends agent pipeline; writes `analysis.md` |
+| **planner** | PRD authoring, agent sufficiency evaluation, pipeline selection; writes `prd.md`, `pipeline.json`, `handoff.md` |
 | **designer** | UI/UX spec design |
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
@@ -289,14 +298,16 @@ VERIFICATION    → OOP principles check + all tests GREEN → git commit
 
 ```
 Step 1: Requirement collection
-        ├─ Case A: REQUIREMENTS provided by orchestrator → use directly, skip AskUserQuestion
-        └─ Case B: REQUIREMENTS absent → call AskUserQuestion (scope / target / constraints)
+        ├─ Case A: REQUIREMENTS provided → use directly, skip AskUserQuestion
+        └─ Case B: REQUIREMENTS absent → delegate to requirements agent
 Step 2: Write PRD to {TASK_DIR}/context/prd.md
+        └─ When ANALYSIS provided: use analysis.md risk table to populate PRD Risk section
 Step 3: Agent capability analysis
         ├─ Discover built-in + custom agents
         ├─ Evaluate agent sufficiency per required role
         └─ Populate needs_creation for any role without an adequate agent
 Step 4: Determine pipeline and write pipeline.json
+        ├─ When ANALYSIS provided: use ANALYSIS.pipeline as starting point for stage composition
         └─ Pipeline Validation: enforce bidirectional needs_creation↔stages
            consistency (every needs_creation name must appear in stages; every
            non-builtin stage agent must have a needs_creation entry)
@@ -304,7 +315,35 @@ Step 5: Write handoff.md
 Step 6: Return concise completion report
 ```
 
-The planner always follows Case A when invoked through the standard `crew:run` pipeline, because task-runner always includes `REQUIREMENTS` in the planner prompt (either received from the orchestrator or collected in Phase 1a).
+The planner always follows Case A when invoked through the standard `crew:run` pipeline, because task-runner always includes both `REQUIREMENTS` and `ANALYSIS` in the planner prompt (Phase 1c).
+
+## Specialized Skills
+
+Each agent loads a dedicated skill file on demand using the `Read` tool. Skills are never loaded at agent startup — only when the specific technique is needed during execution.
+
+| Skill file | Loaded by |
+|---|---|
+| `core/agents/skills/requirement-gathering.md` | requirements, analyst |
+| `core/agents/skills/pipeline-planning.md` | planner |
+| `core/agents/skills/code-review.md` | reviewer |
+| `core/agents/skills/conflict-resolution.md` | resolver |
+| `core/agents/skills/tdd.md` | backend |
+| `core/agents/skills/oop-principles.md` | backend |
+| `core/agents/skills/api-design.md` | backend |
+| `core/agents/skills/ui-component-design.md` | frontend |
+| `core/agents/skills/ux-design.md` | designer |
+| `core/agents/skills/deployment-ops.md` | devops |
+
+## crew:run Optimizations
+
+Several optimizations reduce latency and context overhead across the pipeline:
+
+- **Single-task worktree bypass** — when `N == 1`, `crew:run` skips `git worktree add` entirely and uses the current worktree directly with a plain `git checkout -b`. This eliminates worktree setup latency for the common single-task case.
+- **Pre-created worktrees for parallel runs** — when `N > 1`, all worktrees are created before requirements collection begins so I/O-bound setup overlaps with user-facing interviews.
+- **Context-loading discipline** — task-runner resolves all runtime paths once at startup (Phase 0) and passes only paths (never file contents) to sub-agents. Sub-agents read files directly. This keeps the task-runner's context slim throughout the pipeline.
+- **pipeline.json batching** — sequential (single-agent) stages use one combined `json.dump` call to update both `stage_agent_status` and `completed_stages`, halving write overhead versus parallel stages.
+- **Slim agent creation templates** — Phase 1.5 uses a minimal agent template to reduce spawn latency when creating custom agents.
+- **Skip-if-exists guard in Phase 1.5** — before spawning an agent creation sub-agent, Phase 1.5 checks whether the agent file already exists on disk and skips creation if it does.
 
 ## Rules and Hooks
 

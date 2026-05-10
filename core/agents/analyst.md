@@ -19,8 +19,9 @@ planner begins.
 
 ## Skills (Loaded On Demand)
 
-- `~/.agent-crew/agents/skills/requirement-gathering.md` — ambiguity detection
-  techniques when reviewing the requirements block
+Read the following skill files using the Read tool **only when needed** — do not
+load them at agent startup:
+- Ambiguity detection and requirements review: `core/agents/skills/requirement-gathering.md`
 
 ## Inputs
 
