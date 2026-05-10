@@ -12,9 +12,10 @@ model: inherit
 
 UI/UX designer. Analyzes the PRD and writes detailed screen specifications that the frontend agent can implement immediately.
 
-## Skills
+## Skills (Loaded On Demand)
 
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when the specific
+technique is needed** during execution — do not load all skills upfront:
 - UX design and screen specification: `core/agents/skills/ux-design.md`
 
 ## Input Parameters

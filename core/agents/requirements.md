@@ -16,9 +16,10 @@ Dedicated agent for requirement collection. Owns all AskUserQuestion interaction
 scope validation, and ambiguity detection. Returns a structured REQUIREMENTS block
 to the caller and writes `requirements.md` to the task state directory.
 
-## Skills
+## Skills (Loaded On Demand)
 
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when needed** — do not
+load them at agent startup:
 - Requirement gathering techniques: `core/agents/skills/requirement-gathering.md`
 
 ## Input Parameters

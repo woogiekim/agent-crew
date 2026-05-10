@@ -63,8 +63,21 @@ Run crew:setup first.
 
 ### 3. Resume Detection
 
+If `N > 1`, skip this step entirely — always start a new fan-out run and
+proceed directly to Step 4.
+
 If `N == 1`, check for the newest incomplete task under `STATE_DIR/tasks`.
-If one exists, ask whether to resume it or start a new run.
+An incomplete task is one that has a `pipeline.json` file but no `result.md`
+with `STATUS: completed`.
+
+```bash
+# Fast check: find the most recent task directory without a completed result
+RESUME_CANDIDATE=$(find "${STATE_DIR}/tasks" -maxdepth 1 -mindepth 1 -type d \
+  -exec sh -c '[ -f "$1/pipeline.json" ] && ! grep -q "STATUS: completed" "$1/result.md" 2>/dev/null && echo "$1"' _ {} \; \
+  | sort | tail -1)
+```
+
+If `RESUME_CANDIDATE` is non-empty, ask whether to resume it or start a new run.
 
 If resuming:
 
@@ -72,8 +85,6 @@ If resuming:
 - reuse the existing `TASK_DIR`
 - reuse the recorded branch or worktree metadata if present
 - continue through the same `task-runner`
-
-If `N > 1`, always start a new fan-out run.
 
 ### 4. Prepare Each Task Context
 
@@ -87,11 +98,16 @@ BRANCH="feature/task-${TASK_ID}"
 
 Execution context depends on cardinality:
 
-- If `N == 1`, the orchestrator may use the current project worktree or a
-  dedicated worktree, but it still delegates to exactly one `task-runner`.
-- If `N > 1`, create one isolated git worktree per task:
+- If `N == 1`, **do not create a worktree**. Use the current project worktree
+  directly. Create the branch with a regular `git checkout -b ${BRANCH}` only
+  (no `git worktree add`). This avoids `git worktree add` latency entirely for
+  single-task runs.
+- If `N > 1`, create one isolated git worktree per task. **Pre-create all
+  worktrees before starting requirements collection** so that I/O-bound worktree
+  setup overlaps with the user-facing requirement interview:
 
 ```bash
+# Pre-create worktrees for all tasks up-front (before Step 5)
 WORKTREE_PATH="${PROJECT_ROOT}/.crew-worktrees/${TASK_ID}"
 mkdir -p "${TASK_DIR}/context"
 git worktree add -b "${BRANCH}" "${WORKTREE_PATH}" HEAD

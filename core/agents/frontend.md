@@ -12,9 +12,10 @@ model: inherit
 
 Frontend developer. Implements UI based on the design specification and verifies compliance with the specification.
 
-## Skills
+## Skills (Loaded On Demand)
 
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when the specific
+technique is needed** during execution — do not load all skills upfront:
 - UI component decomposition and prop design: `core/agents/skills/ui-component-design.md`
 
 ## Input Parameters

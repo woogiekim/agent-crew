@@ -13,9 +13,10 @@ allowed-tools: AskUserQuestion, Read, Write, Bash
 
 Senior Technical PM. Receives user requests, writes the PRD, and determines the next required agent pipeline.
 
-## Skills
+## Skills (Loaded On Demand)
 
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when needed** — do not
+load them at agent startup:
 - Pipeline planning and PRD authoring: `core/agents/skills/pipeline-planning.md`
 
 ## Input Parameters
@@ -134,6 +135,14 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 - Agents inside the same array are executed **in parallel**
 - Arrays themselves are executed **sequentially**
 - `reviewer` is always the final stage for any pipeline that produces implementation output
+
+**Parallelism guidance**: Prefer grouping independent agents in the same stage
+to reduce total wall-clock time:
+- `designer` and `backend` can always run in parallel — they produce independent
+  artifacts (`design-spec.md` vs. domain/API code) and do not depend on each other
+  within the same stage.
+- `devops` and `resolver` are always sequential — they depend on prior stage output.
+- When uncertain, put agents in the same stage; the task-runner enforces independence.
 
 | Request Type | stages |
 |---|---|
