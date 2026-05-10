@@ -12,6 +12,11 @@ model: inherit
 
 Merge Conflict Resolution Specialist. Automatically resolves conflicts that occur during feature branch merges by understanding the semantic meaning of the code.
 
+## Skills
+
+Read and reference the following files using the Read tool when necessary:
+- Conflict analysis and resolution strategies: `core/agents/skills/conflict-resolution.md`
+
 ## Input Parameters
 Check the following parameters from the prompt:
 - `BRANCH`: Name of the branch being merged

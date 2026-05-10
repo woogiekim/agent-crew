@@ -23,6 +23,24 @@ The task-runner itself should only maintain coordinates (paths, state, completio
 - Do not read file contents from agent completion responses — verify only by path
 - Read only `pipeline.json` state; never directly read `handoff.md` contents
 
+### Token-Limit Recovery Rule
+
+If the task-runner is approaching its own token limit mid-stage (context nearing
+exhaustion), save current progress before compacting:
+
+1. Write a checkpoint to `{TASK_DIR}/context/stage_{i}_progress.md` capturing which
+   agents have completed and what work remains.
+2. Compact context — keep only paths and state coordinates, never inline content.
+3. Re-invoke any remaining stage agents with:
+   ```text
+   Resume from: {TASK_DIR}/context/stage_{i}_progress.md — continue from where you left off.
+   TASK_DIR: {TASK_DIR}
+   HANDOFF_PATH: {TASK_DIR}/handoff.md
+   QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+   ```
+4. Never lose work due to context limit. The progress checkpoint is the source of
+   truth; the re-invoked agent must read it before doing any new work.
+
 ## Input Parameters
 
 - `TASK`: Task description
@@ -50,9 +68,26 @@ creating a new plan from scratch.
 
 Resume rules:
 
-- If `pipeline.json` exists, read `completed_stages` and continue.
+- If `pipeline.json` exists, read `completed_stages` and `stage_agent_status` and continue.
 - If `pipeline.json` does not exist, start with planner.
 - Never duplicate the planner step for an already initialized task.
+- For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
+  agents already completed. On resume, skip only those agents — do not re-run them.
+  Only agents missing from the map (or with status other than `"completed"`) are retried.
+
+`pipeline.json` tracks per-agent completion with this structure:
+
+```json
+{
+  "completed_stages": 2,
+  "stage_agent_status": {
+    "1": {"designer": "completed", "backend": "completed"},
+    "2": {"frontend": "completed"}
+  }
+}
+```
+
+This prevents restarting already-finished agents when resuming after an interrupt.
 
 ### Phase 1: Spawn planner
 
@@ -67,70 +102,21 @@ directly to Phase 1b.
 
 ##### Case B — `REQUIREMENTS` is absent
 
-Collect requirements in two structured rounds using `AskUserQuestion` before
-spawning the planner.
+> **NEVER-SKIP**: When REQUIREMENTS is absent, requirement collection is mandatory.
+> Do not infer requirements from TASK or proceed without delegating to the requirements agent.
 
-**Round 1 — Scope / Target / Constraints**
-
-Call `AskUserQuestion` with the following three questions:
-
-**Question 1 — Implementation scope:**
-- header: "Scope"
-- question: "What is the implementation scope for this request?"
-- options:
-  - Backend API (Server-side logic, domain model, database)
-  - Full-stack (Backend + Frontend UI)
-  - UI only (Static pages, components, styling)
-  - Analysis only (PRD / design, no implementation needed)
-
-**Question 2 — Target users and feature purpose:**
-- header: "Target"
-- question: "Who are the target users, and what is the core purpose of this feature?"
-- options:
-  - Internal team / admin tooling
-  - End-user product feature
-  - Developer tooling or API
-  - Other / not yet defined
-
-**Question 3 — Technical constraints or MVP scope:**
-- header: "Constraints"
-- question: "Are there technical constraints or MVP scope limits to consider?"
-- multiSelect: true
-- options:
-  - Use existing tech stack only (no new dependencies)
-  - MVP — minimal feature set, defer polish
-  - Performance or scalability requirements apply
-  - Security or compliance constraints apply
-  - No special constraints
-
-After Round 1 returns, record the three answers as `r1_scope`, `r1_target`,
-and `r1_constraints`.
-
-**Round 2 — Domain-specific follow-up (based on `r1_scope`)**
-
-Call `AskUserQuestion` again with questions tailored to the scope selected in Round 1:
-
-| `r1_scope` | Questions to ask |
-|---|---|
-| Backend API | Q1: Data model approach? (Greenfield / Extend existing / Unknown) • Q2: API style? (REST / GraphQL / RPC / Unknown) • Q3: Auth required? (Yes / No / Unknown) |
-| Full-stack | Q1: UI framework? (React / Vue / Other / Match existing) • Q2: API contract style? (OpenAPI spec / Auto-generated / Informal) |
-| UI only | Q1: Component library? (Existing design system / Tailwind / Plain CSS / Unknown) • Q2: Responsive layout required? (Yes / No / Unknown) |
-| Analysis only | Q1: Output format? (Markdown PRD / Slides / Diagram / Flexible) • Q2: Primary audience? (Engineering / PM / Exec / Mixed) |
-
-After Round 2 returns, record the answers as `r2_*` fields.
-
-**Compose the `REQUIREMENTS` block**
-
-Combine all collected answers into the standard format:
+Delegate to the **requirements agent** (blocking):
 
 ```text
-scope: {r1_scope}
-target: {r1_target}
-constraints: {r1_constraints}
-details: {r2 answers as key: value pairs}
+TASK: {TASK}
+TASK_INDEX: 0
+TASK_DIR: {TASK_DIR}
+
+Run the 2-round AskUserQuestion interview, write requirements.md, and return the REQUIREMENTS block.
 ```
 
-This composed `REQUIREMENTS` block is passed to the planner in Phase 1b.
+Extract the `REQUIREMENTS` block from the requirements agent's response and use it as
+the `REQUIREMENTS` value for Phase 1b.
 
 ---
 
@@ -188,33 +174,61 @@ for item in p.get('needs_creation', []):
 
 If the list is empty or the field is absent, skip this phase entirely and proceed to Phase 2.
 
-For each entry in `needs_creation`, invoke the `agent-maker` skill using the host AI tool's native Skill mechanism (blocking):
+For each entry in `needs_creation`, spawn an Agent with the following prompt to create the new agent (blocking):
 
 ```text
-skill: agent-maker
-args: |
-  Create an agent named "{name}" for this task.
+You are acting as the agent-maker. Your job is to create a new agent definition file.
 
-  Reason a new agent is required:
-  {reason}
+Agent to create:
+  Name: {name}
+  Reason: {reason}
+  Role: {role}
 
-  Role and responsibilities for this task:
-  {role}
+Write the agent definition following this template:
+---
+name: {name}
+description: >
+  {role summary as TRIGGER/SKIP/Output format}
+model: inherit
+---
 
-  Install the finished agent definition to:
-  {AGENT_CREW_HOME}/agents/{name}.md
+# {Name} Agent
+
+## Role
+{role}
+
+## Inputs
+- TASK_DIR
+- PROJECT_ROOT
+- HANDOFF_PATH
+- QUALITY_RULE_PATH
+
+## Workflow
+1. Read required files by path (never inline contents).
+2. Perform the assigned work.
+3. Read and apply the quality loop rule from QUALITY_RULE_PATH.
+4. Report STATUS, ARTIFACTS, ITERATIONS.
+
+## Rules
+- Do not modify handoff.md if running in parallel mode.
+- All file operations relative to PROJECT_ROOT.
+- Never push to remote.
+
+Save to: {AGENT_CREW_HOME}/agents/{name}.md
+
+Return: STATUS: completed / FILES: {path}
 ```
 
 Where `{name}`, `{reason}`, `{role}`, and `{AGENT_CREW_HOME}` are substituted from the parsed `needs_creation` entry and the resolved `AGENT_CREW_HOME` variable (`${HOME}/.agent-crew` unless overridden).
 
-After each invocation, verify the file exists before continuing:
+After each Agent returns, verify the file exists before continuing:
 
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 ls "${AGENT_CREW_HOME}/agents/${name}.md"
 ```
 
-If a required agent file still does not exist after `crew:agent-maker` completes, write the failure to
+If a required agent file still does not exist after the Agent call completes, write the failure to
 `{TASK_DIR}/result.md` and return `STATUS: BLOCKED` to the orchestrator — do not proceed.
 
 ---
@@ -242,6 +256,63 @@ After each stage returns, check its `STATUS` field:
   orchestrator.
 
 Do **not** silently skip a BLOCKED stage or proceed as if it completed.
+
+#### Stage Retry Rule
+
+Every stage invocation (single or parallel) is wrapped in a retry loop with a
+maximum of **3 attempts**.
+
+**Crash detection:** Any agent invocation that returns without a `STATUS:` line
+in its response is treated as a crash — not a clean BLOCKED state.
+
+Retry logic per agent:
+
+```
+attempt = 1
+while attempt <= 3:
+    invoke agent
+    if response contains "STATUS: completed":
+        break  # success
+    elif response contains "STATUS: BLOCKED":
+        halt pipeline — write blocker to result.md and return STATUS: blocked
+    else:  # no STATUS line — treat as crash
+        if attempt == 3:
+            write crash details to {TASK_DIR}/result.md
+            return STATUS: blocked (reason: agent crashed after 3 attempts)
+        attempt += 1
+        re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only — no inline content)
+```
+
+Do not silently swallow a crash. After 3 failures on the same agent, report BLOCKED
+with the agent name and stage index.
+
+#### Custom Agent Dispatch
+
+Before spawning any stage agent, determine whether it is a builtin or custom agent:
+
+BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, task-runner]
+
+If the agent name is NOT in BUILTIN_AGENTS:
+  1. Read its definition from `${AGENT_CREW_HOME}/agents/{name}.md`
+  2. Prepend the full file content to the agent prompt as a system preamble:
+
+     ```
+     You are the {name} agent. Your definition and instructions follow:
+
+     {full content of ~/.agent-crew/agents/{name}.md}
+
+     ---
+     Now execute your assigned work with the parameters below.
+     ```
+
+  3. Append the standard stage prompt (TASK_DIR, PROJECT_ROOT, HANDOFF_PATH, QUALITY_RULE_PATH).
+
+If the agent name IS a builtin: use the standard stage prompt format as-is (the host already knows the builtin agent definitions).
+
+If the custom agent file does not exist at invocation time:
+  - Do NOT proceed.
+  - Write BLOCKED to result.md: "Custom agent '{name}' was not created in Phase 1.5 — file missing at ${AGENT_CREW_HOME}/agents/{name}.md"
+  - Return STATUS: blocked to orchestrator.
 
 #### Agent prompt format (never inline file contents)
 
@@ -275,14 +346,37 @@ Do not modify handoff.md.
 Save outputs only to your own result files.
 ```
 
-After stage completion, update `completed_stages`:
+**Per-agent completion tracking:** After each agent in a parallel stage responds,
+immediately record its result in `pipeline.json` under `stage_agent_status`:
 
 ```bash
 python3 -c "
 import json
 p = json.load(open('${TASK_DIR}/pipeline.json'))
-p['completed_stages'] = $((i+1))
+p.setdefault('stage_agent_status', {}).setdefault('${i}', {})['${agent_name}'] = '${status}'
 json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
+"
+```
+
+Where `${status}` is `completed`, `crashed`, or `blocked` based on the agent response.
+
+**Selective retry for crashed parallel agents:** If one or more agents in a parallel
+stage crash (no `STATUS:` line), do not restart the entire stage. Only retry the
+failed agents using the Stage Retry Rule (up to 3 attempts each). Agents that
+returned `STATUS: completed` are not re-invoked.
+
+After all agents in the stage have reached a terminal state (`completed` or exhausted
+retries), update `completed_stages` only if **all** agents completed successfully:
+
+```bash
+python3 -c "
+import json
+p = json.load(open('${TASK_DIR}/pipeline.json'))
+stage_status = p.get('stage_agent_status', {}).get('${i}', {})
+all_done = all(v == 'completed' for v in stage_status.values())
+if all_done:
+    p['completed_stages'] = $((i+1))
+    json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
 "
 ```
 
@@ -369,13 +463,35 @@ git -C "${PROJECT_ROOT}" log --oneline -5
 
 (Do not re-quote contents)
 
+All fields below are required. The orchestrator reads these fields to build
+the Step 7 Run Summary — missing fields will cause the summary to be incomplete
+or skipped.
+
+Collect the list of changed files and write a one-line description of what changed
+for each:
+
+```bash
+git -C "${PROJECT_ROOT}" diff --name-only main...HEAD
+```
+
+For each changed file, describe the change semantically (not just a filename):
+- Newly created file → `(did not exist) → {brief description of purpose}`
+- Deleted file → `{brief description} → (removed)`
+- Modified file → describe the key behavioral or structural change
+
 ```markdown
 # {TASK}
 
+DESCRIPTION: {TASK}
 BRANCH: {BRANCH}
 STATUS: completed
 COMMITS: {commit count}
-LOG: {git log --oneline -5 output}
+LOG:
+{git log --oneline -5 output}
+
+CHANGES:
+  - {file path}: {one-line description of what changed}
+  - {file path}: {one-line description of what changed}
 ```
 
 #### 3. Clear active task marker
@@ -420,4 +536,12 @@ Do not include file contents, code, or long explanations.
 - Never complete without writing `{TASK_DIR}/result.md`
 - Final return value must remain within 5 lines and concise
 - **Never push to remote** — `git push` is strictly forbidden. Local commits only.
-  The crew orchestrator handles all remote operations after explicit user approval.
+  The task-runner commits exclusively to its own feature branch (`{BRANCH}`).
+  The crew orchestrator handles all remote operations: for parallel runs (N > 1),
+  it merges all task feature branches into `main` in Step 9 of `run.md` before
+  pushing; for single-task runs (N == 1), it pushes the feature branch directly.
+  Both paths require explicit user approval (Step 11 of `run.md`) before any push.
+- **Never stop mid-pipeline** — if a sub-agent returns without a `STATUS:` line,
+  treat it as a crash and apply the Stage Retry Rule (up to 3 attempts). Only
+  after 3 consecutive failures may the task-runner halt with `STATUS: blocked`.
+  A task-runner that silently stops without writing `result.md` violates this rule.

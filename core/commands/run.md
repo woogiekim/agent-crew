@@ -102,157 +102,29 @@ same in both modes.
 
 ### 5. Collect Requirements Per Task
 
-Before confirming execution, collect requirements for each task using a **two-round deep interview** via **AskUserQuestion**.
+> **NEVER-SKIP RULE**: Step 5 is mandatory for every `crew:run` invocation without
+> exception. Do NOT skip or abbreviate this step regardless of how obvious the task seems.
+> The task argument is a description, not requirements.
 
-#### Round 1 — Base Context
-
-For each task `i`, invoke AskUserQuestion with three questions:
-
-**Question 1 — Implementation scope:**
-- header: "Task {i+1} — Scope"
-- question: "What is the implementation scope for: {task description}?"
-- options:
-  - Backend API (Server-side logic, domain model, database)
-  - Full-stack (Backend + Frontend UI)
-  - UI only (Static pages, components, styling)
-  - Analysis only (PRD / design, no implementation needed)
-
-**Question 2 — Target users and feature purpose:**
-- header: "Task {i+1} — Target"
-- question: "Who are the target users, and what is the core purpose of this feature?"
-- options:
-  - Internal team / admin tooling
-  - End-user product feature
-  - Developer tooling or API
-  - Other / not yet defined
-
-**Question 3 — Technical constraints or MVP scope:**
-- header: "Task {i+1} — Constraints"
-- question: "Are there technical constraints or MVP scope limits to consider?"
-- multiSelect: true
-- options:
-  - Use existing tech stack only (no new dependencies)
-  - MVP — minimal feature set, defer polish
-  - Performance or scalability requirements apply
-  - Security or compliance constraints apply
-  - No special constraints
-
-Record the Round 1 answers: `scope`, `target`, `constraints`.
-
-#### Round 2 — Domain-Specific Follow-up
-
-Analyze the `scope` answer from Round 1 and ask 1–2 additional domain-specific questions.
-Skip Round 2 entirely if scope is **"Analysis only"**.
-
-**If scope is "Backend API":**
-
-Question A — Database:
-- header: "Task {i+1} — Database"
-- question: "Which database or storage solution will this API use?"
-- options:
-  - PostgreSQL / MySQL (relational)
-  - MongoDB / DynamoDB (document / NoSQL)
-  - Redis (cache / key-value)
-  - Existing DB — match the current stack
-  - Not yet decided
-
-Question B — Authentication:
-- header: "Task {i+1} — Auth"
-- question: "What authentication method will this API use?"
-- options:
-  - JWT (stateless token)
-  - Session-based (server-side)
-  - OAuth 2.0 / OpenID Connect
-  - API key
-  - No authentication required
-
-**If scope is "Full-stack":**
-
-Question A — State management:
-- header: "Task {i+1} — State Management"
-- question: "How should client-side state be managed?"
-- options:
-  - Local component state only (useState / hooks)
-  - Global store (Redux, Zustand, Pinia, etc.)
-  - Server state library (React Query, SWR, etc.)
-  - Match the existing project pattern
-
-Question B — Database:
-- header: "Task {i+1} — Database"
-- question: "Which database or storage solution will the backend use?"
-- options:
-  - PostgreSQL / MySQL (relational)
-  - MongoDB / DynamoDB (document / NoSQL)
-  - Redis (cache / key-value)
-  - Existing DB — match the current stack
-  - Not yet decided
-
-**If scope is "UI only":**
-
-Question A — State management:
-- header: "Task {i+1} — State Management"
-- question: "How should client-side state be managed?"
-- options:
-  - Local component state only (useState / hooks)
-  - Global store (Redux, Zustand, Pinia, etc.)
-  - Server state library (React Query, SWR, etc.)
-  - Match the existing project pattern
-
-Question B — Design system:
-- header: "Task {i+1} — Design System"
-- question: "Which design system or component library should be used?"
-- options:
-  - Follow the existing project design system
-  - Tailwind CSS (utility-first)
-  - Material UI / Ant Design / shadcn/ui
-  - Plain CSS / CSS Modules
-  - No design system — custom only
-
-After Round 2 AskUserQuestion calls return, record the additional answers as `followup` fields.
-
-#### Merge into REQUIREMENTS
-
-Combine all Round 1 and Round 2 answers into a single REQUIREMENTS object for this task:
+For each task `i`, delegate to the **requirements agent** (blocking):
 
 ```text
-REQUIREMENTS:
-  scope: {answer to Question 1}
-  target: {answer to Question 2}
-  constraints: {answer(s) to Question 3}
-  followup:
-    {field_name}: {Round 2 answer A}
-    {field_name}: {Round 2 answer B}
+TASK: {task description}
+TASK_INDEX: {i}
+TASK_DIR: {TASK_DIR}
+
+Run the 2-round AskUserQuestion interview, validate scope, detect ambiguities,
+write {TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
 ```
 
-Where `{field_name}` matches the domain:
-- Backend API: `database`, `auth`
-- Full-stack: `state_management`, `database`
-- UI only: `state_management`, `design_system`
-- Analysis only: _(no followup fields)_
+Wait for the requirements agent to return. Extract the `REQUIREMENTS` block from its
+response and record it for this task.
 
-Repeat for each task. If `N > 1`, collect requirements for all tasks before proceeding.
+Repeat for each task. If `N > 1`, collect requirements for all tasks **before** proceeding
+to Step 6 (run task-runners). Do not run task-runners while requirements collection is
+still in progress for any task.
 
-### 6. Confirm Execution
-
-Ask for structured approval and show:
-
-```text
-Tasks: {N}
-Mode: single-run or parallel fan-out
-Execution engine: task-runner
-```
-
-Options:
-
-```text
-[A] Start
-[B] Cancel
-[C] Custom input
-```
-
-If cancelled, clean up any worktrees or task directories created for the run.
-
-### 7. Run Task Runners
+### 6. Run Task Runners
 
 Delegate one `task-runner` per task.
 
@@ -280,29 +152,85 @@ Complete this task autonomously through the full pipeline.
 Write the completion report to {TASK_DIR}/result.md.
 ```
 
-Wait for all task-runners to finish.
+#### Task-Runner Health Check (Persistent Execution)
 
-### 8. Collect Results & Show Per-Task Summary
+After each task-runner returns, the orchestrator must verify its output:
+
+- If the task-runner returns **without a STATUS field** (crash, token limit,
+  or interrupt):
+  - Treat as a crash. Do **not** mark the task as failed.
+  - Re-invoke the same task-runner with identical parameters.
+  - The task-runner will resume from `pipeline.json` (Phase 0 resume check).
+  - Retry up to **3 times** before marking the task as blocked.
+
+This "끈질기게 실행" (persistent execution) rule means the orchestrator never
+gives up on a task-runner until it explicitly returns `STATUS: blocked` with a
+real, substantive blocker.
+
+Wait for all task-runners to finish (including any crash-retry cycles).
+
+### 7. Collect Results & Show Per-Task Summary
+
+**MANDATORY: Output the Run Summary block below to the user before proceeding to any next step. This cannot be skipped.**
 
 For each task, read the result file to extract status and branch, and collect commits:
 
 ```bash
-RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "No result report found.")
+RESULT=$(cat "${TASK_DIR}/result.md" 2>/dev/null || echo "")
 COMMITS=$(git -C "${PROJECT_ROOT_FOR_TASK}" log --oneline HEAD ^main 2>/dev/null || echo "N/A")
 ```
 
-Display a summary for every task:
+#### Missing or Incomplete Result Handling
+
+If `result.md` is missing or the STATUS field is absent:
+
+- Do **not** report "No result report found."
+- Treat as a task-runner crash. Re-invoke the task-runner for that task.
+- Pass the same `TASK_DIR` so the task-runner resumes from `pipeline.json`.
+- Retry up to **3 times** per task.
+- Only after all retries are exhausted: report the task as `blocked` with the
+  reason "task-runner did not produce a result after 3 restart attempts."
+
+In parallel runs (`N > 1`), apply this retry logic independently per task —
+a crashed task-runner must not block result collection for other tasks.
+
+Display a summary for every task. Do not proceed to Step 8 until the Run Summary has been printed to the user.
+
+For each task, collect the per-file changes by reading the CHANGES section from
+`result.md`. If CHANGES is absent, fall back to running git diff:
+
+```bash
+# List changed files for this task branch
+git -C "${PROJECT_ROOT_FOR_TASK}" diff --name-only main...HEAD
+
+# For each changed file, inspect the diff to write a Before/After description
+git -C "${PROJECT_ROOT_FOR_TASK}" diff main...HEAD -- {file_path}
+```
+
+Write a one-line Before/After description for each changed file:
+- Newly created file → Before: `(did not exist)`, After: brief description of purpose
+- Deleted file → Before: brief description, After: `(removed)`
+- Modified file → Before/After describe the key behavioral or structural change
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Run Summary
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task 1: {description}
-  Status : {completed | blocked}
+  Status : completed | blocked
   Branch : {branch}
-  Commits: {N}
-  Log    : {git log --oneline, up to 5 lines}
-  Review : {APPROVED | NEEDS_CHANGES | N/A}
+
+  Changes:
+    {file path 1}
+      Before: {one-line description of what the file/section did before}
+      After : {one-line description of what it does now}
+
+    {file path 2}
+      Before: {as-is}
+      After : {to-be}
+
+  Commits ({N}):
+    {git log --oneline, up to 5 lines}
 
 Task 2: {description}
   ...
@@ -314,21 +242,71 @@ Report the blocker and stop.
 
 ---
 
+### 8. Merge Branches (N > 1 only)
+
+> **Skip this step entirely when N == 1.** For single-task runs, proceed directly
+> to Step 9. The feature branch will be pushed as-is in Step 10.
+
+When `N > 1`, merge all task feature branches into `main` locally before
+showing the deployment plan:
+
+```bash
+git checkout main
+for BRANCH in {all task branches}; do
+  git merge --no-ff "${BRANCH}" -m "merge: ${BRANCH} into main"
+done
+```
+
+If a merge conflict occurs during any merge, invoke the conflict resolver before
+continuing:
+
+```text
+crew:run "resolve merge conflicts"
+```
+
+Do not proceed to Step 9 until all merges complete cleanly.
+
+After all merges succeed, collect the combined commit log for the deployment plan:
+
+```bash
+git log --oneline HEAD ^origin/main | head -10
+```
+
+---
+
 ### 9. Implementation Summary
 
 Always display the implementation summary for every completed run, regardless of
 whether a devops stage was included in the pipeline:
 
+**When N > 1 (after merge):**
+
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Implementation Summary
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branches with local commits:
+Merged branches into main (local):
   - {BRANCH_1}  ({N} commits)
   - {BRANCH_2}  ({N} commits)
 
+Commits ready for push (origin/main..HEAD):
+  {git log --oneline origin/main..HEAD, up to 10 lines}
+
+Note: No remote push has occurred yet.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**When N == 1:**
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Implementation Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branch with local commits:
+  - {BRANCH}  ({N} commits)
+
 Commits ready for review:
-  {git log --oneline for each branch}
+  {git log --oneline HEAD ^main, up to 5 lines}
 
 Note: No remote push has occurred yet.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -346,16 +324,35 @@ Step 9. Branches remain local; the user can push manually.
 
 When a `devops` stage is present, first compose and display the deployment plan:
 
+**When N > 1:**
+
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Deployment Plan
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branches to push:
-  - {BRANCH_1}  ({N} commits)
-  - {BRANCH_2}  ({N} commits)
+Action: push main to origin (all task branches merged)
+
+Commits to be published (origin/main..HEAD):
+  {git log --oneline origin/main..HEAD}
+
+Target remote: origin
+Risk notes:
+  - {any merge conflicts detected?}
+  - {any blocked tasks?}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**When N == 1:**
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Deployment Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branch to push:
+  - {BRANCH}  ({N} commits)
 
 Commits to be published:
-  {git log --oneline for each branch}
+  {git log --oneline HEAD ^main}
 
 Target remote: origin
 Risk notes:
@@ -366,40 +363,55 @@ Risk notes:
 
 Then use **AskUserQuestion** to request approval. Do not proceed without it.
 
+**When N > 1:**
+
+Question:
+- header: "Deploy"
+- question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
+- options:
+  - Approve — push main to origin now
+  - Cancel — hold, do not push (branches remain local)
+
+**When N == 1:**
+
 Question:
 - header: "Deploy"
 - question: "Review the deployment plan above. Approve to push to remote, or cancel to hold."
 - options:
-  - Approve — push all branches to origin now
-  - Cancel — hold, do not push (branches remain local)
+  - Approve — push the feature branch to origin now
+  - Cancel — hold, do not push (branch remains local)
 
 If **Approve**:
   - Proceed to Step 11.
 
 If **Cancel**:
-  - Print the branch names so the user can push manually later.
+  - Print the branch name(s) so the user can push manually later.
   - Stop here. Do not push anything.
 
 ---
 
 ### 11. Execute Deployment
 
-Push each task branch to origin:
+**When N > 1 (merged into main):**
 
 ```bash
-for BRANCH in {all task branches}; do
-  git push origin "${BRANCH}"
-done
+git push origin main
+```
+
+**When N == 1 (feature branch only):**
+
+```bash
+git push origin "${BRANCH}"
 ```
 
 Report result:
 
 ```text
 Deployment complete.
-Pushed: {branch list}
+Pushed: {main | branch name}
 ```
 
-If a merge conflict occurs during push, run:
+If a push conflict occurs, run:
 
 ```text
 crew:run "resolve merge conflicts"
@@ -415,3 +427,5 @@ crew:run "resolve merge conflicts"
   single request so one `task-runner` can sequence the work inside one pipeline.
 - **task-runner never pushes to remote.** All remote operations happen here in
   Step 11, only after explicit user approval in Step 10.
+- **Step 8 (merge) applies only to parallel runs (N > 1).** For single-task runs,
+  the feature branch is pushed directly without merging to main.

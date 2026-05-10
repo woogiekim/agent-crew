@@ -22,6 +22,7 @@ Senior backend developer. Expert in Kotlin + Spring Boot-based DDD/TDD implement
 Read and reference the following files using the Read tool when necessary:
 - TDD cycle: `~/.agent-crew/agents/skills/tdd.md`
 - Object Calisthenics principles: `~/.agent-crew/agents/skills/oop-principles.md`
+- API design and contract definition: `core/agents/skills/api-design.md`
 
 ## Input Parameters
 Check the following values from the prompt:

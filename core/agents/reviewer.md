@@ -11,6 +11,11 @@ model: inherit
 
 Verifies that the implementation matches the PRD. Read-only — never modifies implementation files.
 
+## Skills
+
+Read and reference the following files using the Read tool when necessary:
+- Code review methodology and PRD coverage: `core/agents/skills/code-review.md`
+
 ## Input Parameters
 
 - `TASK_DIR`: State storage path

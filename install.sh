@@ -77,10 +77,20 @@ install_global() {
   cp "${SOURCE_DIR}/agents/skills/"*.md "${AGENT_CREW_DIR}/agents/skills/" 2>/dev/null || true
   log_info "Agents installed → ${AGENT_CREW_DIR}/agents/"
   log_info "Skills installed → ${AGENT_CREW_DIR}/agents/skills/"
+  # ~/.agent-crew/agents/ is also the runtime destination for dynamically created agents.
+  # Reinstalling only copies built-in agent files — existing custom agent files are preserved.
 
   [ -f "${AGENT_CREW_DIR}/agents/reviewer.md" ] \
     || log_error "reviewer.md install failed — agents/reviewer.md not found"
   log_info "reviewer agent verified"
+
+  [ -f "${AGENT_CREW_DIR}/agents/task-runner.md" ] \
+    || log_error "task-runner.md install failed — agents/task-runner.md not found"
+  log_info "task-runner agent verified"
+
+  [ -f "${AGENT_CREW_DIR}/agents/planner.md" ] \
+    || log_error "planner.md install failed — agents/planner.md not found"
+  log_info "planner agent verified"
 
   mkdir -p "${AGENT_CREW_DIR}/rules"
   cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
@@ -282,6 +292,8 @@ echo "    crew:cost                        # show session cost summary"
 echo ""
 echo "  Agent creation:"
 echo "    crew:agent-maker                 # design and create AGENTS.md / Skill / Subagent / Hook files"
+echo "  Dynamic agents (auto-created by planner):"
+echo "    ~/.agent-crew/agents/        # runtime destination for task-specific agents"
 echo ""
 echo "  Host adapters may expose native aliases such as slash commands."
 echo -e "${GREEN}  Start in a project with crew:setup.${NC}"
