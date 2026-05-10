@@ -66,7 +66,24 @@ except:
 BRANCH=$(grep "^BRANCH:" "${RESULT}" 2>/dev/null | head -1 | sed 's/^BRANCH: //' || echo "feature/task-${ACTIVE_TASK}")
 ```
 
-### 5. Build the stage list
+### 5. Read recent progress events
+
+Read the last 20 lines from `{TASK_DIR}/progress.log` (if it exists) to show
+real-time progress events that may not yet be reflected in `pipeline.json`:
+
+```bash
+PROGRESS_LOG="${TASK_DIR}/progress.log"
+if [ -f "${PROGRESS_LOG}" ]; then
+  RECENT_PROGRESS=$(tail -20 "${PROGRESS_LOG}" 2>/dev/null)
+else
+  RECENT_PROGRESS=""
+fi
+```
+
+This log is written by the task-runner at every phase and stage boundary, so it
+reflects the current live state even while a sub-agent is still running.
+
+### 6. Build the stage list
 
 Read `pipeline.json` to determine stages, `completed_stages`, and `stage_agent_status`:
 
@@ -121,9 +138,39 @@ print(f'Completed: {completed} / {total} stages')
 " 2>/dev/null
 ```
 
-### 6. Print the snapshot
+### 7. Print the snapshot
 
-Assemble and print the snapshot in this format:
+Assemble and print the snapshot in this format. When `RECENT_PROGRESS` is
+non-empty, include the "Recent events" section above the pipeline stages list:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Task Status: {ACTIVE_TASK}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Task   : {TASK_DESC}
+Branch : {BRANCH}
+Status : {in-progress | completed | blocked}
+
+Recent events (from progress.log):
+  2026-05-10T14:22:01 | STARTED    | Implement order management API
+  2026-05-10T14:22:03 | PHASE      | 1a — Requirement collection
+  2026-05-10T14:22:45 | PHASE      | 1b — Analysis
+  2026-05-10T14:23:10 | PHASE      | 1c — Planning
+  2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
+  2026-05-10T14:24:00 | STAGE      | 1/3 — backend
+
+Pipeline stages:
+  [✓] requirements
+  [✓] analyst
+  [✓] planner
+  [▶] backend        ← current
+  [ ] reviewer
+
+Completed: 3 / 5 stages
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+When `RECENT_PROGRESS` is empty (no log file yet), omit the "Recent events" section:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -154,6 +201,9 @@ Task   : {TASK_DESC or "(pending)"}
 Branch : {BRANCH}
 Status : in-progress
 
+Recent events (from progress.log):
+  {RECENT_PROGRESS lines, or "(no progress log yet)" if empty}
+
 Pipeline stages:
   (pipeline not yet created — still in planning phase)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -168,5 +218,7 @@ Pipeline stages:
   (using `ls -t … | head -1`). To inspect an older task, pass the TASK_ID
   directly as an argument (future extension — not required for v1).
 - Stage markers reflect `completed_stages` from `pipeline.json`, not live
-  agent output. For live event streaming, watch for `[crew]` prefixed lines
-  emitted by the task-runner during execution.
+  agent output. For live event streaming, the "Recent events" section reads
+  `{TASK_DIR}/progress.log` (tail -20), which is written by the task-runner
+  at every phase and stage boundary. This log is the most up-to-date source
+  of pipeline state even while a sub-agent is still running.

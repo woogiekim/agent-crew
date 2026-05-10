@@ -47,11 +47,46 @@ Every phase transition and stage boundary MUST emit a progress line as part of t
 agent's response text **before** starting the phase or stage work. Do not use a tool
 call — simply print the line as inline text so the user sees it immediately.
 
-### Emit format
+In addition to emitting inline text, **every progress event must also be appended
+to a log file** so that `crew:status` and the orchestrator can read it at any point
+during execution.
+
+### Emit format (inline text)
 
 ```
 [crew] {TASK_ID} | {EVENT} | {detail}
 ```
+
+### Progress log file
+
+Write every progress event to:
+
+```
+{TASK_DIR}/progress.log
+```
+
+Append each event as a timestamped line immediately after emitting the inline text:
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | {EVENT} | {detail}" >> "${TASK_DIR}/progress.log"
+```
+
+Example log content:
+
+```
+2026-05-10T14:22:01 | STARTED   | Implement order management API
+2026-05-10T14:22:03 | PHASE     | 1a — Requirement collection
+2026-05-10T14:22:45 | PHASE     | 1b — Analysis
+2026-05-10T14:23:10 | PHASE     | 1c — Planning
+2026-05-10T14:23:11 | PHASE     | 1d — Plan approval
+2026-05-10T14:24:00 | STAGE     | 1/3 — backend
+2026-05-10T14:31:22 | STAGE_DONE| backend — APPROVED
+2026-05-10T14:31:23 | COMPLETED | branch=feature/task-... commits=2
+```
+
+The `TASK_DIR` variable is already resolved in Phase 0 — use it directly.
+Do not re-derive the path. The log file is created automatically on first append
+if it does not exist.
 
 ### Event catalog
 
@@ -103,6 +138,12 @@ Emit before any other work:
 
 ```
 [crew] {TASK_ID} | STARTED | {TASK truncated to 60 chars}
+```
+
+Then append to the progress log (created here for the first time):
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STARTED | {TASK truncated to 60 chars}" >> "${TASK_DIR}/progress.log"
 ```
 
 **Read-once context bootstrap**: Resolve all runtime paths once at startup and
@@ -162,6 +203,10 @@ Emit before checking:
 [crew] {TASK_ID} | PHASE | 1a — Requirement collection
 ```
 
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1a — Requirement collection" >> "${TASK_DIR}/progress.log"
+```
+
 **Check whether `REQUIREMENTS` was provided in the task-runner's own input.**
 
 ##### Case A — `REQUIREMENTS` is present
@@ -197,6 +242,10 @@ Emit before delegating:
 [crew] {TASK_ID} | PHASE | 1b — Analysis
 ```
 
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1b — Analysis" >> "${TASK_DIR}/progress.log"
+```
+
 Delegate to the **analyst agent** (blocking):
 
 ```text
@@ -222,6 +271,10 @@ Emit before delegating:
 
 ```
 [crew] {TASK_ID} | PHASE | 1c — Planning
+```
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1c — Planning" >> "${TASK_DIR}/progress.log"
 ```
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
@@ -262,12 +315,137 @@ cat "${PIPELINE_PATH}"
 
 ---
 
+### Phase 1d: Plan Approval Gate
+
+> **Skip this phase when resuming** (i.e., `PIPELINE_PATH` already existed at
+> Phase 0). The plan was approved in the prior run; jump directly to Phase 1.5.
+
+Emit before displaying the plan:
+
+```
+[crew] {TASK_ID} | PHASE | 1d — Plan approval
+```
+
+Also append to the progress log:
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1d — Plan approval" >> "${TASK_DIR}/progress.log"
+```
+
+Read `pipeline.json` (via `PIPELINE_PATH`) and `{TASK_DIR}/context/analysis.md`:
+
+```bash
+python3 -c "
+import json, sys
+p = json.load(open('${PIPELINE_PATH}'))
+stages = p.get('stages', [])
+needs_creation = p.get('needs_creation', [])
+print('STAGES:')
+for i, stage in enumerate(stages, 1):
+    agents = stage if isinstance(stage, list) else [stage]
+    print(f'  Stage {i}: {', '.join(agents)}')
+print('NEEDS_CREATION:')
+for item in needs_creation:
+    print(f'  {item[\"name\"]}')
+if not needs_creation:
+    print('  none')
+" 2>/dev/null
+```
+
+Also extract from `analysis.md`:
+- `intent:` line → intent summary
+- Count of `risk` entries → risk count
+
+Display the plan summary as inline text:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Implementation Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Task   : {TASK}
+Intent : {intent from analysis.md}
+Risks  : {risk count} identified
+
+Pipeline:
+  Stage 1: {agent_name}
+  Stage 2: {agent_name}
+  ...
+
+Dynamic agents to create: {needs_creation list or "none"}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Then fire **AskUserQuestion**:
+- header: "Implementation Plan"
+- question: "Review the implementation plan above. Approve to begin execution."
+- options:
+  - Approve — begin stage execution
+  - Request changes — describe what to change (planner will revise)
+  - Cancel — stop execution
+
+**If Approve:** proceed to Phase 1.5.
+
+**If Request changes:** collect the change description from the user's response,
+then re-invoke the planner with the change request appended to the original
+`ANALYSIS` block:
+
+```text
+REQUEST: {TASK}
+TASK_DIR: {TASK_DIR}
+PROJECT_ROOT: {PROJECT_ROOT}
+REQUIREMENTS: {REQUIREMENTS}
+ANALYSIS: {ANALYSIS block from Phase 1b}
+
+CHANGE REQUEST: {user's change description}
+
+Re-plan the pipeline based on the change request above.
+Update {TASK_DIR}/pipeline.json and {TASK_DIR}/handoff.md accordingly.
+```
+
+After the planner returns, return to Phase 1d (re-display the updated plan and
+ask again). Do not proceed to Phase 1.5 until the user selects Approve.
+
+**If Cancel:**
+
+```bash
+echo "# {TASK}
+
+DESCRIPTION: {TASK}
+BRANCH: {BRANCH}
+STATUS: CANCELLED
+COMMITS: 0
+LOG: (cancelled before execution)
+
+CHANGES: none — cancelled at plan approval gate
+" > "${TASK_DIR}/result.md"
+```
+
+Emit:
+
+```
+[crew] {TASK_ID} | COMPLETED | STATUS=CANCELLED
+```
+
+And append to progress log:
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | COMPLETED | STATUS=CANCELLED" >> "${TASK_DIR}/progress.log"
+```
+
+Then return to the orchestrator without executing any pipeline stages.
+
+---
+
 ### Phase 1.5: Pre-execution Agent Creation
 
 If the `needs_creation` list is non-empty, emit before creating agents (where `{n}` is the count of agents to create):
 
 ```
 [crew] {TASK_ID} | PHASE | 1.5 — Creating {n} dynamic agent(s)
+```
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1.5 — Creating {n} dynamic agent(s)" >> "${TASK_DIR}/progress.log"
 ```
 
 Read the `needs_creation` list from `PIPELINE_PATH` (already resolved in Phase 0):
@@ -444,10 +622,18 @@ total stage count from `pipeline.json`):
 [crew] {TASK_ID} | STAGE | {i}/{total} — {agent_name}
 ```
 
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE | {i}/{total} — {agent_name}" >> "${TASK_DIR}/progress.log"
+```
+
 After the stage agent returns and its result is recorded:
 
 ```
 [crew] {TASK_ID} | STAGE_DONE | {agent_name} — {APPROVED|NEEDS_CHANGES|N/A}
+```
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE_DONE | {agent_name} — {APPROVED|NEEDS_CHANGES|N/A}" >> "${TASK_DIR}/progress.log"
 ```
 
 Use `APPROVED` when the reviewer accepted the output, `NEEDS_CHANGES` when the reviewer
@@ -459,10 +645,18 @@ When a BLOCKED result is detected, emit before writing result.md:
 [crew] {TASK_ID} | BLOCKED | {one-line blocker summary}
 ```
 
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | BLOCKED | {one-line blocker summary}" >> "${TASK_DIR}/progress.log"
+```
+
 When the Stage Retry Rule triggers a retry (agent crash, no STATUS line), emit:
 
 ```
 [crew] {TASK_ID} | RETRY | attempt {n} — {reason}
+```
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | RETRY | attempt {n} — {reason}" >> "${TASK_DIR}/progress.log"
 ```
 
 #### Agent prompt format (never inline file contents)
@@ -733,6 +927,10 @@ After writing result.md, collect the commit count and emit:
 
 ```
 [crew] {TASK_ID} | COMPLETED | branch={BRANCH} commits={n}
+```
+
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | COMPLETED | branch={BRANCH} commits={n}" >> "${TASK_DIR}/progress.log"
 ```
 
 #### 3. Clear active task marker

@@ -142,6 +142,17 @@ still in progress for any task.
 
 ### 6. Run Task Runners
 
+> **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
+> handled **inside** the task-runner at Phase 1d. The task-runner reads `pipeline.json`
+> and `analysis.md` after planning, displays the full implementation plan, and fires
+> AskUserQuestion before any stage agent executes. Do NOT add a separate plan approval
+> gate here in the orchestrator for N == 1.
+>
+> **Plan Approval Gate (N > 1):** For parallel runs, each task-runner independently
+> handles Phase 1d for its own pipeline. After all task-runners have finished Phase 1c
+> (planning), each will pause at Phase 1d awaiting user approval. The orchestrator does
+> not consolidate these approvals — each task-runner's Phase 1d is independent.
+
 Delegate one `task-runner` per task.
 
 - If `N == 1`, invoke one `task-runner`.
@@ -281,6 +292,7 @@ visible during a pipeline run:
 [crew] 20260510-140000-0 | PHASE | 1a — Requirement collection
 [crew] 20260510-140000-0 | PHASE | 1b — Analysis
 [crew] 20260510-140000-0 | PHASE | 1c — Planning
+[crew] 20260510-140000-0 | PHASE | 1d — Plan approval
 [crew] 20260510-140000-0 | STAGE | 1/2 — backend
 [crew] 20260510-140000-0 | STAGE_DONE | backend — N/A
 [crew] 20260510-140000-0 | STAGE | 2/2 — reviewer
@@ -290,6 +302,13 @@ visible during a pipeline run:
 
 In parallel runs (N > 1), each task-runner's TASK_ID prefix makes interleaved
 lines from concurrent runners easy to distinguish.
+
+**File-based progress log:** In addition to inline `[crew]` lines, every progress
+event is written to `{TASK_DIR}/progress.log` as a timestamped line. Because
+sub-agent inline output may be buffered until the agent completes, the progress
+log provides a reliable source of truth for current pipeline state at any point
+during execution. Run `crew:status` at any time to see the current pipeline state
+read from this log. For N > 1, `crew:status` shows the most recently active task.
 
 After all task-runners finish, the orchestrator prints the full Run Summary below.
 
