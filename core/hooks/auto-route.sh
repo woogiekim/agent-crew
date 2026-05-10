@@ -22,30 +22,61 @@ if prompt.startswith("/"):
 if not prompt.strip():
     sys.exit(0)
 
-COMMAND_PAT = r"^\s*(crew:run|ac:crew)(?:\s+(.*))?$"
+COMMAND_PAT = r"^\s*((?:crew|ac):(setup|run|crew|task|status|cost|agent-maker))(?:\s+(.*))?$"
 command_match = re.match(COMMAND_PAT, prompt, re.IGNORECASE | re.DOTALL)
 if command_match:
-    args = (command_match.group(2) or "").strip()
-    args_note = (
-        f"Command arguments detected: {args}"
-        if args
-        else "No command arguments were provided. Follow Step 1 of the command definition and ask for the task description through the host structured input UI."
-    )
-    directive = f"""[agent-crew] COMMAND — explicit crew:run invocation detected.
+    command = command_match.group(1).lower()
+    intent = command_match.group(2).lower()
+    args = (command_match.group(3) or "").strip()
+
+    command_file_by_intent = {
+        "setup": "setup.md",
+        "run": "run.md",
+        "crew": "run.md",
+        "task": "run.md",
+        "status": "status.md",
+        "cost": "cost.md",
+        "agent-maker": "agent-maker.md",
+    }
+    command_file = command_file_by_intent.get(intent, "run.md")
+
+    if intent in ("run", "crew", "task"):
+        args_note = (
+            f"Command arguments detected: {args}"
+            if args
+            else "No command arguments were provided. Follow Step 1 of the command definition and ask for the task description through the host structured input UI."
+        )
+        intent_rules = """- Follow the command definition step-by-step, including mandatory requirements collection.
+- Delegate execution to task-runner as defined by the command.
+- Do NOT replace the workflow with "standard verification", CI, linting, or a direct shell command."""
+    elif intent == "setup":
+        args_note = "No task description is needed. Initialize the current project exactly as the setup command defines."
+        intent_rules = """- Follow the setup command definition step-by-step.
+- Do NOT inspect repository build files, Gradle/Kotlin configuration, package manifests, or CI files before executing setup.
+- Run the host adapter setup flow and initialize agent-crew state as defined by the command."""
+    else:
+        args_note = (
+            f"Command arguments detected: {args}"
+            if args
+            else "No command arguments were provided."
+        )
+        intent_rules = """- Follow the referenced command definition step-by-step.
+- Do NOT substitute a host-default action or generic project inspection."""
+
+    directive = f"""[agent-crew] COMMAND — explicit {command} invocation detected.
 
 The user is invoking the agent-crew workflow command. Do NOT reinterpret this as
-a request to run generic project verification, CI, linting, or any host-default task.
+a request to inspect the repository, run generic verification, CI, linting, or
+any host-default task.
 
 Immediate action:
-  Execute the workflow defined in ~/.agent-crew/commands/run.md.
+  Execute the workflow defined in ~/.agent-crew/commands/{command_file}.
 
 {args_note}
 
 Execution rules:
-- Treat `crew:run` / `ac:crew` as a command invocation, not natural language.
-- Follow the command definition step-by-step, including mandatory requirements collection.
-- Delegate execution to task-runner as defined by the command.
-- Do NOT replace the workflow with "standard verification" or a direct shell command."""
+- Treat `{command}` as a command invocation, not natural language.
+{intent_rules}"""
 
     output = {
         "hookSpecificOutput": {
