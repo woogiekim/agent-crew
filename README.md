@@ -31,13 +31,13 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 
 ## Key Features
 
-- **Requirements collection at the orchestrator level** — `crew:run` uses AskUserQuestion to gather scope, target users, and constraints before delegating to task-runners; answers are passed as a `REQUIREMENTS` block so the planner skips interactive prompts
-- **Automatic subagent creation** — planner analyzes the request and populates `needs_creation` in `pipeline.json`; task-runner Phase 1.5 invokes `crew:agent-maker` for each missing specialist before execution starts
+- **2-round deep requirements collection** — `crew:run` gathers scope, target, and constraints (Round 1), then domain-specific follow-ups (Round 2) before spawning task-runners; a fallback layer in task-runner Phase 1a repeats this if requirements were not passed in
+- **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; task-runner Phase 1.5 invokes `crew:agent-maker` for each missing specialist before execution starts
 - **Quality loop enforcement** — every implementation stage runs a validate → fix → re-validate cycle (maximum 3 retries) before reporting completion; a `BLOCKED` result halts the pipeline immediately
-- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; the AI must call `crew:run` immediately with no preamble or diagnostic output
+- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; the AI must call `crew:run` immediately with no preamble, no file reads, no Bash commands, and no clarifying questions
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
 - **Reviewer always last** — every pipeline that produces implementation output ends with the `reviewer` agent, which verifies completeness against the PRD
-- **Deployment gate** — after all task-runners complete, `crew:run` displays a per-task summary and a full deployment plan, then requires `AskUserQuestion` approval before any `git push`
+- **Conditional deployment gate** — after all task-runners complete, `crew:run` always displays a per-task summary; deployment approval via `AskUserQuestion` fires only when the pipeline included a `devops` stage
 - **Native sub-agent delegation** — orchestrator uses the host assistant's agent/delegation capability; no polling or signal files
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back after completion
 - **Project-clean state** — all state stored under `~/.agent-crew/state/{PROJECT_NAME}/`, never in your project directory
@@ -78,7 +78,7 @@ source ~/.bashrc  # bash
 # 1. Initialize workspace once per project
 crew:setup
 
-# 2. Run a single task (crew:run collects requirements via AskUserQuestion first)
+# 2. Run a single task (crew:run collects requirements via 2-round AskUserQuestion first)
 crew:run "implement order domain API with TDD"
 
 # 3. Run multiple independent tasks in parallel
@@ -104,21 +104,25 @@ The orchestrator spawns or delegates to each sub-agent directly using the host A
 ```
 crew:run "request"
        │
-       ▼ AskUserQuestion: scope / target / constraints → REQUIREMENTS block
+       ▼ Round 1 AskUserQuestion: scope / target / constraints
+       ▼ Round 2 AskUserQuestion: domain-specific follow-up (database, auth, etc.)
+       │   → merged into REQUIREMENTS block
 [orchestrator]
        │
        ▼ delegate one task-runner (with REQUIREMENTS)
 [task-runner]
-       │ Phase 1: planner (REQUIREMENTS passed → skips AskUserQuestion)
+       │ Phase 1a: REQUIREMENTS present → skip; absent → 2-round fallback collection
+       │ Phase 1b: planner (REQUIREMENTS always passed → Case A path, skips AskUserQuestion)
        │ Phase 1.5: agent creation (needs_creation from pipeline.json)
        ▼ Phase 2: stage execution with quality loop
 [planner] → [stage agents...] → [reviewer]
        │
        ▼ complete
-[orchestrator] per-task summary
+[orchestrator] per-task summary (always shown)
        │
-       ▼ deployment plan displayed
-[orchestrator] AskUserQuestion → Approve / Cancel
+       ▼ if pipeline included devops stage:
+[orchestrator]   deployment plan displayed
+[orchestrator]   AskUserQuestion → Approve / Cancel
        │ (Approve)
        ▼
 [orchestrator] git push origin {branch}
@@ -129,7 +133,7 @@ crew:run "request"
 ```
 crew:run "task A" | "task B" | "task C"
        │
-       ▼ AskUserQuestion for each task: scope / target / constraints
+       ▼ Round 1 + Round 2 AskUserQuestion for each task
        │
        ▼ create git worktree + branch for each task
        │
@@ -141,10 +145,11 @@ crew:run "task A" | "task B" | "task C"
   local commits only         local commits only         local commits only
        │
        ▼ all complete
-[orchestrator] per-task summary (description, branch, commits, review status)
+[orchestrator] per-task summary (always shown)
        │
-       ▼ deployment plan displayed (branches + commits to be pushed)
-[orchestrator] AskUserQuestion → Approve / Cancel
+       ▼ if any pipeline included devops stage:
+[orchestrator]   deployment plan (branches + commits to be pushed)
+[orchestrator]   AskUserQuestion → Approve / Cancel
        │ (Approve)
        ▼
 [orchestrator] git push origin for each branch
@@ -152,12 +157,43 @@ crew:run "task A" | "task B" | "task C"
 
 Each `task-runner` handles its full pipeline (planner → agent creation → stages → local commit). **Remote push never happens inside task-runner** — the orchestrator pushes only after the user approves the deployment plan via `AskUserQuestion`.
 
+### Requirements Collection: 2-Round, 2-Layer Architecture
+
+Requirements are collected in two layers to ensure the planner always receives structured input.
+
+#### Layer 1 — Orchestrator (crew:run Steps 5)
+
+`crew:run` always collects requirements before spawning task-runners:
+
+**Round 1 — Base context (3 questions):**
+
+| Question | Options |
+|---|---|
+| Scope | Backend API / Full-stack / UI only / Analysis only |
+| Target | Internal tooling / End-user product / Developer tooling / Other |
+| Constraints | Existing stack only / MVP / Performance / Security / No special constraints |
+
+**Round 2 — Domain-specific follow-up (skipped for Analysis only):**
+
+| Scope | Additional questions |
+|---|---|
+| Backend API | Database choice · Authentication method |
+| Full-stack | State management approach · Database choice |
+| UI only | State management approach · Design system |
+
+All answers are merged into a single `REQUIREMENTS` block passed to each task-runner.
+
+#### Layer 2 — task-runner Phase 1a (fallback)
+
+If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it runs the same 2-round AskUserQuestion sequence itself before invoking the planner. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
+
 ### Task-Runner Execution Phases
 
 | Phase | What happens |
 |---|---|
 | **Phase 0** | Resume check — if `pipeline.json` exists, continue from `completed_stages` |
-| **Phase 1** | Write active task marker; delegate to planner (with REQUIREMENTS if present) |
+| **Phase 1a** | Requirement collection gate — skip if REQUIREMENTS provided; else run 2-round AskUserQuestion |
+| **Phase 1b** | Write active task marker; delegate to planner (REQUIREMENTS always present at this point) |
 | **Phase 1.5** | Read `needs_creation` from `pipeline.json`; invoke `crew:agent-maker` for each missing agent |
 | **Phase 2** | Execute `stages` sequentially; apply quality loop rule to every stage agent |
 | **Phase 3** | Collect git log; write `result.md`; remove active marker (single mode) or preserve it (parallel mode) |
@@ -237,8 +273,8 @@ VERIFICATION    → OOP principles check + all tests GREEN → git commit
 
 ```
 Step 1: Requirement collection
-        ├─ REQUIREMENTS provided by orchestrator → use directly, skip AskUserQuestion
-        └─ no REQUIREMENTS → call AskUserQuestion (scope / target / constraints)
+        ├─ Case A: REQUIREMENTS provided by orchestrator → use directly, skip AskUserQuestion
+        └─ Case B: REQUIREMENTS absent → call AskUserQuestion (scope / target / constraints)
 Step 2: Write PRD to {TASK_DIR}/context/prd.md
 Step 3: Agent capability analysis
         ├─ Discover built-in + custom agents
@@ -249,24 +285,43 @@ Step 5: Write handoff.md
 Step 6: Return concise completion report
 ```
 
+The planner always follows Case A when invoked through the standard `crew:run` pipeline, because task-runner always includes `REQUIREMENTS` in the planner prompt (either received from the orchestrator or collected in Phase 1a).
+
 ## Rules and Hooks
 
 ### Quality Loop (`core/rules/quality-loop.md`)
 
-Every implementation stage must run a validate → fix → re-validate cycle. The loop retries up to 3 times. A stage is complete only when all acceptance criteria pass:
+Every implementation stage must run a validate → fix → re-validate cycle before it may report completion. The loop retries up to **3 times**. A stage is complete only when all acceptance criteria pass:
 
 - All PRD items for the stage are present in the output
-- No obvious regressions
+- No obvious regressions introduced
 - Expected artifact files exist at their specified paths
 - No TODOs, placeholders, or stubs in implementation output
 
-If all 3 retries fail, the stage reports `STATUS: BLOCKED` with a `BLOCKER` detail, and the task-runner halts the pipeline.
+The loop protocol for each stage:
+
+```
+1. Implement (or review) the assigned work.
+2. Verify against all acceptance criteria.
+3. If any criterion fails → fix the issue, return to step 2.
+4. If all criteria pass → report STATUS: completed.
+5. If retry limit reached without passing → report STATUS: BLOCKED with BLOCKER detail.
+```
+
+If a stage reports `STATUS: BLOCKED`, the task-runner halts the pipeline immediately and writes the blocker detail to `{TASK_DIR}/result.md`. A blocked stage is never silently skipped.
 
 ### STOP Directive (`core/hooks/auto-route.sh`)
 
 `auto-route.sh` is a `UserPromptSubmit` hook. When it detects a development request (backend, frontend, full-stack, file-level edits, project keywords), it injects `[agent-crew] STOP` into the system context.
 
-When `[agent-crew] STOP` is present, the only permitted first action is to invoke `crew:run`. No explanation, no file reads, no Bash commands, no clarifying questions — call `crew:run` immediately.
+When `[agent-crew] STOP` is present, the **only permitted first action** is to invoke `crew:run`. All of the following are forbidden before `crew:run` is called:
+
+- Producing any explanatory output
+- Running Bash commands (including read-only or exploratory commands like `git status`, `ls`, `cat`)
+- Reading files to understand the request
+- Asking clarifying questions
+
+The STOP directive is a hard override enforced both by `auto-route.sh` and by `core/global-agents.md`.
 
 ### Direct-Edit Guard (`core/hooks/direct-edit-guard.sh`)
 
@@ -277,16 +332,37 @@ A `PreToolUse` hook that intercepts `Edit` and `Write` tool calls. If the target
 All implementation work must go through the crew pipeline: crew:run "your request"
 ```
 
-Edits to `~/.agent-crew` and `~/.claude` paths are always allowed.
+Edits to `~/.agent-crew` and `~/.claude` paths are always allowed (agent definitions and harness configuration).
 
 ### Deployment Gate
 
-After all task-runners finish, `crew:run` shows a per-task summary followed by a full deployment plan (branches, commit counts, commit log, risk notes). It then calls `AskUserQuestion` with two options:
+After all task-runners finish, `crew:run` always displays a per-task summary showing status, branch, commit count, and review result for each task.
+
+Deployment approval via `AskUserQuestion` is triggered **only when the pipeline included a `devops` stage** (e.g., request type was Backend + deployment, CI/CD, or Full-stack + deployment). The full deployment plan is displayed first:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Deployment Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branches to push:
+  - {BRANCH}  ({N} commits)
+
+Commits to be published:
+  {git log --oneline}
+
+Target remote: origin
+Risk notes:
+  - {merge conflicts detected?}
+  - {blocked tasks?}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Two approval options are offered:
 
 - **Approve** — push all branches to origin now
 - **Cancel** — hold; branches remain local for manual push later
 
-`task-runner` never runs `git push`. All remote operations are owned exclusively by the `crew:run` orchestrator after explicit approval.
+Pipelines that do not include a `devops` stage (e.g., Backend API only, UI only) show the summary but skip the approval prompt entirely. `task-runner` never runs `git push` regardless — all remote operations are owned exclusively by the `crew:run` orchestrator.
 
 ## State Layout
 
