@@ -46,41 +46,21 @@ Proceed immediately to Step 2.
 
 #### Case B — `REQUIREMENTS` is absent (planner invoked directly):
 
-Use the **AskUserQuestion** tool to collect key information in a single call.
-Do NOT ask open-ended plain text questions — always use AskUserQuestion with structured options.
+The `requirements` agent owns all AskUserQuestion interactions. The planner does not
+call AskUserQuestion directly.
 
-Invoke AskUserQuestion with the following three questions:
+Delegate to the **requirements agent** (blocking):
 
-**Question 1 — Implementation scope:**
-- header: "Scope"
-- question: "What is the implementation scope for this request?"
-- options:
-  - Backend API (Server-side logic, domain model, database)
-  - Full-stack (Backend + Frontend UI)
-  - UI only (Static pages, components, styling)
-  - Analysis only (PRD / design, no implementation needed)
+```text
+TASK: {REQUEST}
+TASK_INDEX: 0
+TASK_DIR: {TASK_DIR}
 
-**Question 2 — Target users and feature purpose:**
-- header: "Target"
-- question: "Who are the target users, and what is the core purpose of this feature?"
-- options:
-  - Internal team / admin tooling
-  - End-user product feature
-  - Developer tooling or API
-  - Other / not yet defined
+Run the 2-round AskUserQuestion interview, write requirements.md, and return the REQUIREMENTS block.
+```
 
-**Question 3 — Technical constraints or MVP scope:**
-- header: "Constraints"
-- question: "Are there technical constraints or MVP scope limits to consider?"
-- multiSelect: true
-- options:
-  - Use existing tech stack only (no new dependencies)
-  - MVP — minimal feature set, defer polish
-  - Performance or scalability requirements apply
-  - Security or compliance constraints apply
-  - No special constraints
-
-After AskUserQuestion returns, parse all three answers before proceeding to Step 2.
+Extract the `REQUIREMENTS` block from the response. Parse `scope`, `target`, `constraints`
+from it and proceed to Step 2.
 
 ---
 

@@ -102,74 +102,21 @@ directly to Phase 1b.
 
 ##### Case B — `REQUIREMENTS` is absent
 
-> **NEVER-SKIP**: When REQUIREMENTS is absent, AskUserQuestion collection is
-> mandatory. Do not infer requirements from the TASK description or proceed
-> without running both rounds.
+> **NEVER-SKIP**: When REQUIREMENTS is absent, requirement collection is mandatory.
+> Do not infer requirements from TASK or proceed without delegating to the requirements agent.
 
-Collect requirements in two structured rounds using `AskUserQuestion` before
-spawning the planner.
-
-**Round 1 — Scope / Target / Constraints**
-
-Call `AskUserQuestion` with the following three questions:
-
-**Question 1 — Implementation scope:**
-- header: "Scope"
-- question: "What is the implementation scope for this request?"
-- options:
-  - Backend API (Server-side logic, domain model, database)
-  - Full-stack (Backend + Frontend UI)
-  - UI only (Static pages, components, styling)
-  - Analysis only (PRD / design, no implementation needed)
-
-**Question 2 — Target users and feature purpose:**
-- header: "Target"
-- question: "Who are the target users, and what is the core purpose of this feature?"
-- options:
-  - Internal team / admin tooling
-  - End-user product feature
-  - Developer tooling or API
-  - Other / not yet defined
-
-**Question 3 — Technical constraints or MVP scope:**
-- header: "Constraints"
-- question: "Are there technical constraints or MVP scope limits to consider?"
-- multiSelect: true
-- options:
-  - Use existing tech stack only (no new dependencies)
-  - MVP — minimal feature set, defer polish
-  - Performance or scalability requirements apply
-  - Security or compliance constraints apply
-  - No special constraints
-
-After Round 1 returns, record the three answers as `r1_scope`, `r1_target`,
-and `r1_constraints`.
-
-**Round 2 — Domain-specific follow-up (based on `r1_scope`)**
-
-Call `AskUserQuestion` again with questions tailored to the scope selected in Round 1:
-
-| `r1_scope` | Questions to ask |
-|---|---|
-| Backend API | Q1: Data model approach? (Greenfield / Extend existing / Unknown) • Q2: API style? (REST / GraphQL / RPC / Unknown) • Q3: Auth required? (Yes / No / Unknown) |
-| Full-stack | Q1: UI framework? (React / Vue / Other / Match existing) • Q2: API contract style? (OpenAPI spec / Auto-generated / Informal) |
-| UI only | Q1: Component library? (Existing design system / Tailwind / Plain CSS / Unknown) • Q2: Responsive layout required? (Yes / No / Unknown) |
-| Analysis only | Q1: Output format? (Markdown PRD / Slides / Diagram / Flexible) • Q2: Primary audience? (Engineering / PM / Exec / Mixed) |
-
-After Round 2 returns, record the answers as `r2_*` fields.
-
-**Compose the `REQUIREMENTS` block**
-
-Combine all collected answers into the standard format:
+Delegate to the **requirements agent** (blocking):
 
 ```text
-scope: {r1_scope}
-target: {r1_target}
-constraints: {r1_constraints}
-details: {r2 answers as key: value pairs}
+TASK: {TASK}
+TASK_INDEX: 0
+TASK_DIR: {TASK_DIR}
+
+Run the 2-round AskUserQuestion interview, write requirements.md, and return the REQUIREMENTS block.
 ```
 
-This composed `REQUIREMENTS` block is passed to the planner in Phase 1b.
+Extract the `REQUIREMENTS` block from the requirements agent's response and use it as
+the `REQUIREMENTS` value for Phase 1b.
 
 ---
 

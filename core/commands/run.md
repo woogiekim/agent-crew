@@ -103,145 +103,26 @@ same in both modes.
 ### 5. Collect Requirements Per Task
 
 > **NEVER-SKIP RULE**: Step 5 is mandatory for every `crew:run` invocation without
-> exception. Do NOT skip or abbreviate this step regardless of:
-> - How obvious or self-contained the task description seems
-> - Whether requirements appear implicit in the task argument
-> - Whether the task is a bugfix, documentation update, or framework-internal change
->
-> The task argument provided to `crew:run` is a task **description**, not requirements.
-> Requirements must always be explicitly collected and confirmed via AskUserQuestion
-> before any task-runner is spawned.
+> exception. Do NOT skip or abbreviate this step regardless of how obvious the task seems.
+> The task argument is a description, not requirements.
 
-Before confirming execution, collect requirements for each task using a **two-round deep interview** via **AskUserQuestion**.
-
-#### Round 1 — Base Context
-
-For each task `i`, invoke AskUserQuestion with three questions:
-
-**Question 1 — Implementation scope:**
-- header: "Task {i+1} — Scope"
-- question: "What is the implementation scope for: {task description}?"
-- options:
-  - Backend API (Server-side logic, domain model, database)
-  - Full-stack (Backend + Frontend UI)
-  - UI only (Static pages, components, styling)
-  - Tooling / docs / config (Framework internals, markdown, scripts, config files, analysis)
-
-**Question 2 — Target users and feature purpose:**
-- header: "Task {i+1} — Target"
-- question: "Who are the target users, and what is the core purpose of this feature?"
-- options:
-  - Internal team / admin tooling
-  - End-user product feature
-  - Developer tooling or API
-  - Other / not yet defined
-
-**Question 3 — Technical constraints or MVP scope:**
-- header: "Task {i+1} — Constraints"
-- question: "Are there technical constraints or MVP scope limits to consider?"
-- multiSelect: true
-- options:
-  - Use existing tech stack only (no new dependencies)
-  - MVP — minimal feature set, defer polish
-  - Performance or scalability requirements apply
-  - Security or compliance constraints apply
-  - No special constraints
-
-Record the Round 1 answers: `scope`, `target`, `constraints`.
-
-#### Round 2 — Domain-Specific Follow-up
-
-Analyze the `scope` answer from Round 1 and ask 1–2 additional domain-specific questions.
-Skip Round 2 entirely if scope is **"Tooling / docs / config"** or **"Analysis only"**.
-
-**If scope is "Backend API":**
-
-Question A — Database:
-- header: "Task {i+1} — Database"
-- question: "Which database or storage solution will this API use?"
-- options:
-  - PostgreSQL / MySQL (relational)
-  - MongoDB / DynamoDB (document / NoSQL)
-  - Redis (cache / key-value)
-  - Existing DB — match the current stack
-  - Not yet decided
-
-Question B — Authentication:
-- header: "Task {i+1} — Auth"
-- question: "What authentication method will this API use?"
-- options:
-  - JWT (stateless token)
-  - Session-based (server-side)
-  - OAuth 2.0 / OpenID Connect
-  - API key
-  - No authentication required
-
-**If scope is "Full-stack":**
-
-Question A — State management:
-- header: "Task {i+1} — State Management"
-- question: "How should client-side state be managed?"
-- options:
-  - Local component state only (useState / hooks)
-  - Global store (Redux, Zustand, Pinia, etc.)
-  - Server state library (React Query, SWR, etc.)
-  - Match the existing project pattern
-
-Question B — Database:
-- header: "Task {i+1} — Database"
-- question: "Which database or storage solution will the backend use?"
-- options:
-  - PostgreSQL / MySQL (relational)
-  - MongoDB / DynamoDB (document / NoSQL)
-  - Redis (cache / key-value)
-  - Existing DB — match the current stack
-  - Not yet decided
-
-**If scope is "UI only":**
-
-Question A — State management:
-- header: "Task {i+1} — State Management"
-- question: "How should client-side state be managed?"
-- options:
-  - Local component state only (useState / hooks)
-  - Global store (Redux, Zustand, Pinia, etc.)
-  - Server state library (React Query, SWR, etc.)
-  - Match the existing project pattern
-
-Question B — Design system:
-- header: "Task {i+1} — Design System"
-- question: "Which design system or component library should be used?"
-- options:
-  - Follow the existing project design system
-  - Tailwind CSS (utility-first)
-  - Material UI / Ant Design / shadcn/ui
-  - Plain CSS / CSS Modules
-  - No design system — custom only
-
-After Round 2 AskUserQuestion calls return, record the additional answers as `followup` fields.
-
-#### Merge into REQUIREMENTS
-
-Combine all Round 1 and Round 2 answers into a single REQUIREMENTS object for this task:
+For each task `i`, delegate to the **requirements agent** (blocking):
 
 ```text
-REQUIREMENTS:
-  scope: {answer to Question 1}
-  target: {answer to Question 2}
-  constraints: {answer(s) to Question 3}
-  followup:
-    {field_name}: {Round 2 answer A}
-    {field_name}: {Round 2 answer B}
+TASK: {task description}
+TASK_INDEX: {i}
+TASK_DIR: {TASK_DIR}
+
+Run the 2-round AskUserQuestion interview, validate scope, detect ambiguities,
+write {TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
 ```
 
-Where `{field_name}` matches the domain:
-- Backend API: `database`, `auth`
-- Full-stack: `state_management`, `database`
-- UI only: `state_management`, `design_system`
-- Tooling / docs / config: _(no followup fields)_
-- Analysis only: _(no followup fields)_
+Wait for the requirements agent to return. Extract the `REQUIREMENTS` block from its
+response and record it for this task.
 
-Repeat for each task. If `N > 1`, collect requirements for all tasks before proceeding.
+Repeat for each task. If `N > 1`, collect requirements for all tasks **before** proceeding
+to Step 6 (run task-runners). Do not run task-runners while requirements collection is
+still in progress for any task.
 
 ### 6. Run Task Runners
 
