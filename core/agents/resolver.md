@@ -12,9 +12,10 @@ model: inherit
 
 Merge Conflict Resolution Specialist. Automatically resolves conflicts that occur during feature branch merges by understanding the semantic meaning of the code.
 
-## Skills
+## Skills (Loaded On Demand)
 
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when needed** — do not
+load them at agent startup:
 - Conflict analysis and resolution strategies: `core/agents/skills/conflict-resolution.md`
 
 ## Input Parameters

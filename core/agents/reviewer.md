@@ -11,9 +11,10 @@ model: inherit
 
 Verifies that the implementation matches the PRD. Read-only — never modifies implementation files.
 
-## Skills
+## Skills (Loaded On Demand)
 
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when needed** — do not
+load them at agent startup:
 - Code review methodology and PRD coverage: `core/agents/skills/code-review.md`
 
 ## Input Parameters
