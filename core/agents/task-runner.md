@@ -592,6 +592,11 @@ If a required agent file still does not exist after the Agent call completes, wr
 Execute the `stages` from `pipeline.json` sequentially.
 Skip stages already included in `completed_stages`.
 
+**Devops skip rule**: When iterating stages, if the stage agent is `devops`
+(or a stage list that contains `devops`), **do not spawn it here**. Skip it
+and let Phase 2.5 handle the devops stage exclusively. This ensures the
+approval gate in Phase 2.5 is always reached before devops runs.
+
 #### Quality Loop Rule (resolved once in Phase 0, reused here)
 
 `QUALITY_RULE_PATH` was already resolved in Phase 0. Use the variable as-is.
@@ -601,6 +606,9 @@ Pass `QUALITY_RULE_PATH` to every stage agent prompt (see format below).
 After each stage returns, check its `STATUS` field:
 
 - `STATUS: completed` → mark stage done and continue.
+- `STATUS: plan_ready` → the agent has written a PLAN block instead of
+  executing. Stop Phase 2 iteration immediately and proceed to Phase 2.5
+  to collect the plan and run the approval gate.
 - `STATUS: BLOCKED` → halt the pipeline immediately. Write the blocker
   detail to `{TASK_DIR}/result.md` and return `STATUS: blocked` to the
   orchestrator.
@@ -626,6 +634,8 @@ while crash_attempts <= 5:
     invoke agent
     if response contains "STATUS: completed":
         break  # success
+    elif response contains "STATUS: plan_ready":
+        break  # agent submitted a plan — Phase 2.5 will handle approval
     elif response contains "STATUS: BLOCKED":
         halt pipeline — write blocker to result.md and return STATUS: blocked
     else:  # no STATUS line — treat as crash
@@ -924,7 +934,18 @@ Question:
 
 If **Approve**:
   - Write `APPROVED` to `{TASK_DIR}/context/approval.md`
-  - Continue to execute the devops stage as the next pipeline stage.
+  - Spawn the devops stage agent now using the standard agent prompt format.
+  - After the devops agent returns, check its `STATUS` field:
+    - `STATUS: completed` → devops stage succeeded. Proceed to Phase 3.
+    - `STATUS: plan_ready` → the devops agent submitted a secondary plan
+      (e.g. it needs further confirmation for a specific destructive sub-step).
+      Collect its PLAN block, write it to `{TASK_DIR}/context/action-plan.md`
+      (appending under a new `## Sub-plan` section), and repeat the
+      AskUserQuestion loop (Step 3) for the sub-plan before continuing.
+    - `STATUS: BLOCKED` → write the blocker to `{TASK_DIR}/result.md` and
+      return `STATUS: blocked` to the orchestrator.
+    - No STATUS line → treat as a crash; apply the Stage Retry Rule (up to 5
+      crash attempts). After 5 failures, write BLOCKED to result.md and stop.
 
 If **Cancel**:
   - Write `CANCELLED` to `{TASK_DIR}/context/approval.md`
