@@ -22,6 +22,41 @@ if prompt.startswith("/"):
 if not prompt.strip():
     sys.exit(0)
 
+COMMAND_PAT = r"^\s*(crew:run|ac:crew)(?:\s+(.*))?$"
+command_match = re.match(COMMAND_PAT, prompt, re.IGNORECASE | re.DOTALL)
+if command_match:
+    args = (command_match.group(2) or "").strip()
+    args_note = (
+        f"Command arguments detected: {args}"
+        if args
+        else "No command arguments were provided. Follow Step 1 of the command definition and ask for the task description through the host structured input UI."
+    )
+    directive = f"""[agent-crew] COMMAND — explicit crew:run invocation detected.
+
+The user is invoking the agent-crew workflow command. Do NOT reinterpret this as
+a request to run generic project verification, CI, linting, or any host-default task.
+
+Immediate action:
+  Execute the workflow defined in ~/.agent-crew/commands/run.md.
+
+{args_note}
+
+Execution rules:
+- Treat `crew:run` / `ac:crew` as a command invocation, not natural language.
+- Follow the command definition step-by-step, including mandatory requirements collection.
+- Delegate execution to task-runner as defined by the command.
+- Do NOT replace the workflow with "standard verification" or a direct shell command."""
+
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": directive,
+        }
+    }
+
+    print(json.dumps(output, ensure_ascii=True))
+    sys.exit(0)
+
 BACKEND_PAT = (
     r"API|backend|server|endpoint|domain|Entity|Repository|Service|Kotlin|"
     r"Spring|DB|database|storage|query|table|controller|Controller|UseCase|"
@@ -52,7 +87,8 @@ ACTION_PAT = (
     r"만들어|구현해|개발해|"
     r"추가해|수정해|작성해|"
     r"생성해|만들고|구현하고|"
-    r"보완|개선|추가|제거|변경|수정|업데이트"
+    r"보완|개선|추가|제거|변경|수정|업데이트|"
+    r"반영|정리|배포|테스트|리뷰|머지|롤백|시도"
 )
 QUESTION_PAT = (
     r"why|what|how|explain|describe|"
@@ -68,6 +104,7 @@ MEMORY_PATH_PAT = (
 )
 # Matches filenames with common code/config extensions
 FILE_EXT_PAT = (
+    r"\b(?:README|AGENTS|CLAUDE)(?:\.md)?\b|"
     r"\b[\w][\w\-\.]*\.(md|sh|ts|tsx|kt|py|json|yaml|yml|js|jsx)\b"
 )
 # Matches agent-crew system keywords (Korean and English)
@@ -75,6 +112,11 @@ PROJECT_KEYWORD_PAT = (
     r"harness|hook|pipeline|task.?runner|planner|workflow|"
     r"하네스|에이전트|훅|파이프라인|"
     r"플래너|워크플로우"
+)
+WORKFLOW_ACTION_PAT = (
+    r"deploy|deployment|CI|test suite|run tests|merge|rollback|retry|"
+    r"배포해?|테스트\s*돌려|리뷰어?\s*붙여|"
+    r"병렬로\s*실행|머지해?|롤백|다시\s*시도|요구사항\s*정리"
 )
 
 
@@ -95,6 +137,7 @@ if match(MEMORY_PAT) and not match(ACTION_PAT):
 # 저장/기록 without code/file/system target: skip routing
 SAVE_PAT = r"저장|기록"
 CODE_TARGET_PAT = (
+    r"\b(?:README|AGENTS|CLAUDE)(?:\.md)?\b|"
     r"\b[\w][\w\-\.]*\.(md|sh|ts|tsx|kt|py|json|yaml|yml|js|jsx)\b|"
     r"코드|파일|시스템|데이터베이스|DB|서버|API|"
     r"harness|hook|pipeline|task.?runner|planner|workflow|"
@@ -142,10 +185,13 @@ if not detected_type:
     has_project_kw = match(PROJECT_KEYWORD_PAT)
     # General implementation verb paired with file reference or project keyword
     has_action = match(ACTION_PAT)
+    # Short operational workflow commands can imply project-level execution
+    # even when no specific file or subsystem is named.
+    has_workflow_action = match(WORKFLOW_ACTION_PAT)
     # Memory keyword + action verb = memory file manipulation (still an implementation task)
     has_memory_action = match(MEMORY_PAT) and has_action
 
-    if has_file_ref or has_project_kw or has_memory_action:
+    if has_file_ref or has_project_kw or has_workflow_action or has_memory_action:
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'
 

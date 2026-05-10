@@ -246,29 +246,17 @@ with open(dest, "w") as f:
 PYEOF
 }
 
-# Merge the agent-crew section by marker while preserving existing content.
+# Install canonical global agent guidance.
+#
+# ~/.agent-crew/AGENTS.md is owned by agent-crew and is later embedded into
+# host/project AGENTS files by adapters. Do not marker-merge this file: if an
+# older install left stale guidance outside the marker block, preserving that
+# prefix causes Codex to read contradictory command rules before the current
+# section.
 merge_global_agents() {
   local src="$1" dest="$2"
-  local start="<!-- agent-crew-start -->" end="<!-- agent-crew-end -->"
-  local new_section
-  new_section=$(printf '%s\n%s\n%s' "$start" "$(cat "$src")" "$end")
-
-  if [ ! -f "$dest" ]; then
-    printf '%s\n' "$new_section" > "$dest"
-    return
-  fi
-
-  python3 - "$dest" "$start" "$end" "$new_section" <<'PYEOF'
-import sys, re
-dest, start, end, new_section = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-content = open(dest).read()
-pattern = re.escape(start) + r'.*' + re.escape(end)
-if re.search(pattern, content, re.DOTALL):
-    content = re.sub(pattern, new_section, content, count=1, flags=re.DOTALL)
-else:
-    content = content.rstrip('\n') + '\n\n' + new_section + '\n'
-open(dest, 'w').write(content)
-PYEOF
+  mkdir -p "$(dirname "$dest")"
+  cp "$src" "$dest"
 }
 
 install_global

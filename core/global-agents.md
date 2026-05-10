@@ -87,6 +87,22 @@ Violation examples (forbidden when STOP is present):
 
 ## Workflow Intents
 
+### Explicit Command Invocation Rule
+
+When the user's message begins with a workflow command such as `crew:run`,
+`crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`, treat it as an
+explicit command invocation, not as ordinary natural language.
+
+For `crew:run` specifically:
+
+- Execute the workflow defined in `~/.agent-crew/commands/run.md`.
+- Do not reinterpret bare `crew:run` as "run standard verification", "run CI",
+  "summarize the project", or any other host-default task.
+- If no task argument is provided, follow Step 1 of the command definition and
+  ask for the task description through the host structured input UI.
+- If task arguments are provided, use them as the task descriptions and continue
+  through requirements collection and task-runner delegation.
+
 | Intent | Meaning |
 |---|---|
 | `crew:setup` | Install the current host adapter and initialize the project workspace |
