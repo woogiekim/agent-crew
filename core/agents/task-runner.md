@@ -456,9 +456,21 @@ git -C "${PROJECT_ROOT}" log --oneline -5
 
 (Do not re-quote contents)
 
-All five fields below are required. The orchestrator reads these fields to build
+All fields below are required. The orchestrator reads these fields to build
 the Step 7 Run Summary — missing fields will cause the summary to be incomplete
 or skipped.
+
+Collect the list of changed files and write a one-line description of what changed
+for each:
+
+```bash
+git -C "${PROJECT_ROOT}" diff --name-only main...HEAD
+```
+
+For each changed file, describe the change semantically (not just a filename):
+- Newly created file → `(did not exist) → {brief description of purpose}`
+- Deleted file → `{brief description} → (removed)`
+- Modified file → describe the key behavioral or structural change
 
 ```markdown
 # {TASK}
@@ -467,7 +479,12 @@ DESCRIPTION: {TASK}
 BRANCH: {BRANCH}
 STATUS: completed
 COMMITS: {commit count}
-LOG: {git log --oneline -5 output}
+LOG:
+{git log --oneline -5 output}
+
+CHANGES:
+  - {file path}: {one-line description of what changed}
+  - {file path}: {one-line description of what changed}
 ```
 
 #### 3. Clear active task marker

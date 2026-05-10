@@ -304,16 +304,41 @@ a crashed task-runner must not block result collection for other tasks.
 
 Display a summary for every task. Do not proceed to Step 8 until the Run Summary has been printed to the user.
 
+For each task, collect the per-file changes by reading the CHANGES section from
+`result.md`. If CHANGES is absent, fall back to running git diff:
+
+```bash
+# List changed files for this task branch
+git -C "${PROJECT_ROOT_FOR_TASK}" diff --name-only main...HEAD
+
+# For each changed file, inspect the diff to write a Before/After description
+git -C "${PROJECT_ROOT_FOR_TASK}" diff main...HEAD -- {file_path}
+```
+
+Write a one-line Before/After description for each changed file:
+- Newly created file → Before: `(did not exist)`, After: brief description of purpose
+- Deleted file → Before: brief description, After: `(removed)`
+- Modified file → Before/After describe the key behavioral or structural change
+
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Run Summary
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task 1: {description}
-  Status : {completed | blocked}
+  Status : completed | blocked
   Branch : {branch}
-  Commits: {N}
-  Log    : {git log --oneline, up to 5 lines}
-  Review : {APPROVED | NEEDS_CHANGES | N/A}
+
+  Changes:
+    {file path 1}
+      Before: {one-line description of what the file/section did before}
+      After : {one-line description of what it does now}
+
+    {file path 2}
+      Before: {as-is}
+      After : {to-be}
+
+  Commits ({N}):
+    {git log --oneline, up to 5 lines}
 
 Task 2: {description}
   ...
