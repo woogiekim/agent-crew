@@ -232,27 +232,7 @@ Where `{field_name}` matches the domain:
 
 Repeat for each task. If `N > 1`, collect requirements for all tasks before proceeding.
 
-### 6. Confirm Execution
-
-Ask for structured approval and show:
-
-```text
-Tasks: {N}
-Mode: single-run or parallel fan-out
-Execution engine: task-runner
-```
-
-Options:
-
-```text
-[A] Start
-[B] Cancel
-[C] Custom input
-```
-
-If cancelled, clean up any worktrees or task directories created for the run.
-
-### 7. Run Task Runners
+### 6. Run Task Runners
 
 Delegate one `task-runner` per task.
 
@@ -297,7 +277,9 @@ real, substantive blocker.
 
 Wait for all task-runners to finish (including any crash-retry cycles).
 
-### 8. Collect Results & Show Per-Task Summary
+### 7. Collect Results & Show Per-Task Summary
+
+**MANDATORY: Output the Run Summary block below to the user before proceeding to any next step. This cannot be skipped.**
 
 For each task, read the result file to extract status and branch, and collect commits:
 
@@ -320,7 +302,7 @@ If `result.md` is missing or the STATUS field is absent:
 In parallel runs (`N > 1`), apply this retry logic independently per task —
 a crashed task-runner must not block result collection for other tasks.
 
-Display a summary for every task:
+Display a summary for every task. Do not proceed to Step 8 until the Run Summary has been printed to the user.
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -343,10 +325,10 @@ Report the blocker and stop.
 
 ---
 
-### 9. Merge Branches (N > 1 only)
+### 8. Merge Branches (N > 1 only)
 
 > **Skip this step entirely when N == 1.** For single-task runs, proceed directly
-> to Step 10. The feature branch will be pushed as-is in Step 12.
+> to Step 9. The feature branch will be pushed as-is in Step 10.
 
 When `N > 1`, merge all task feature branches into `main` locally before
 showing the deployment plan:
@@ -365,7 +347,7 @@ continuing:
 crew:run "resolve merge conflicts"
 ```
 
-Do not proceed to Step 10 until all merges complete cleanly.
+Do not proceed to Step 9 until all merges complete cleanly.
 
 After all merges succeed, collect the combined commit log for the deployment plan:
 
@@ -375,7 +357,7 @@ git log --oneline HEAD ^origin/main | head -10
 
 ---
 
-### 10. Implementation Summary
+### 9. Implementation Summary
 
 Always display the implementation summary for every completed run, regardless of
 whether a devops stage was included in the pipeline:
@@ -415,13 +397,13 @@ Note: No remote push has occurred yet.
 
 ---
 
-### 11. Deployment Approval
+### 10. Deployment Approval
 
 **Only execute this step when the pipeline included a `devops` stage that will
 run CI/CD (i.e., a stage whose agent is `devops`).**
 
 If no `devops` stage was in the pipeline, skip this step entirely and stop after
-Step 10. Branches remain local; the user can push manually.
+Step 9. Branches remain local; the user can push manually.
 
 When a `devops` stage is present, first compose and display the deployment plan:
 
@@ -483,7 +465,7 @@ Question:
   - Cancel — hold, do not push (branch remains local)
 
 If **Approve**:
-  - Proceed to Step 12.
+  - Proceed to Step 11.
 
 If **Cancel**:
   - Print the branch name(s) so the user can push manually later.
@@ -491,7 +473,7 @@ If **Cancel**:
 
 ---
 
-### 12. Execute Deployment
+### 11. Execute Deployment
 
 **When N > 1 (merged into main):**
 
@@ -527,6 +509,6 @@ crew:run "resolve merge conflicts"
 - Task dependencies still matter. If tasks depend on each other, pass them as a
   single request so one `task-runner` can sequence the work inside one pipeline.
 - **task-runner never pushes to remote.** All remote operations happen here in
-  Step 12, only after explicit user approval in Step 11.
-- **Step 9 (merge) applies only to parallel runs (N > 1).** For single-task runs,
+  Step 11, only after explicit user approval in Step 10.
+- **Step 8 (merge) applies only to parallel runs (N > 1).** For single-task runs,
   the feature branch is pushed directly without merging to main.

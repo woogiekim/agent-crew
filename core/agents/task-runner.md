@@ -456,9 +456,14 @@ git -C "${PROJECT_ROOT}" log --oneline -5
 
 (Do not re-quote contents)
 
+All five fields below are required. The orchestrator reads these fields to build
+the Step 7 Run Summary — missing fields will cause the summary to be incomplete
+or skipped.
+
 ```markdown
 # {TASK}
 
+DESCRIPTION: {TASK}
 BRANCH: {BRANCH}
 STATUS: completed
 COMMITS: {commit count}
