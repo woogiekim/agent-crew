@@ -223,33 +223,61 @@ for item in p.get('needs_creation', []):
 
 If the list is empty or the field is absent, skip this phase entirely and proceed to Phase 2.
 
-For each entry in `needs_creation`, invoke the `agent-maker` skill using the host AI tool's native Skill mechanism (blocking):
+For each entry in `needs_creation`, spawn an Agent with the following prompt to create the new agent (blocking):
 
 ```text
-skill: agent-maker
-args: |
-  Create an agent named "{name}" for this task.
+You are acting as the agent-maker. Your job is to create a new agent definition file.
 
-  Reason a new agent is required:
-  {reason}
+Agent to create:
+  Name: {name}
+  Reason: {reason}
+  Role: {role}
 
-  Role and responsibilities for this task:
-  {role}
+Write the agent definition following this template:
+---
+name: {name}
+description: >
+  {role summary as TRIGGER/SKIP/Output format}
+model: inherit
+---
 
-  Install the finished agent definition to:
-  {AGENT_CREW_HOME}/agents/{name}.md
+# {Name} Agent
+
+## Role
+{role}
+
+## Inputs
+- TASK_DIR
+- PROJECT_ROOT
+- HANDOFF_PATH
+- QUALITY_RULE_PATH
+
+## Workflow
+1. Read required files by path (never inline contents).
+2. Perform the assigned work.
+3. Read and apply the quality loop rule from QUALITY_RULE_PATH.
+4. Report STATUS, ARTIFACTS, ITERATIONS.
+
+## Rules
+- Do not modify handoff.md if running in parallel mode.
+- All file operations relative to PROJECT_ROOT.
+- Never push to remote.
+
+Save to: {AGENT_CREW_HOME}/agents/{name}.md
+
+Return: STATUS: completed / FILES: {path}
 ```
 
 Where `{name}`, `{reason}`, `{role}`, and `{AGENT_CREW_HOME}` are substituted from the parsed `needs_creation` entry and the resolved `AGENT_CREW_HOME` variable (`${HOME}/.agent-crew` unless overridden).
 
-After each invocation, verify the file exists before continuing:
+After each Agent returns, verify the file exists before continuing:
 
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 ls "${AGENT_CREW_HOME}/agents/${name}.md"
 ```
 
-If a required agent file still does not exist after `crew:agent-maker` completes, write the failure to
+If a required agent file still does not exist after the Agent call completes, write the failure to
 `{TASK_DIR}/result.md` and return `STATUS: BLOCKED` to the orchestrator — do not proceed.
 
 ---
@@ -306,6 +334,34 @@ while attempt <= 3:
 
 Do not silently swallow a crash. After 3 failures on the same agent, report BLOCKED
 with the agent name and stage index.
+
+#### Custom Agent Dispatch
+
+Before spawning any stage agent, determine whether it is a builtin or custom agent:
+
+BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, task-runner]
+
+If the agent name is NOT in BUILTIN_AGENTS:
+  1. Read its definition from `${AGENT_CREW_HOME}/agents/{name}.md`
+  2. Prepend the full file content to the agent prompt as a system preamble:
+
+     ```
+     You are the {name} agent. Your definition and instructions follow:
+
+     {full content of ~/.agent-crew/agents/{name}.md}
+
+     ---
+     Now execute your assigned work with the parameters below.
+     ```
+
+  3. Append the standard stage prompt (TASK_DIR, PROJECT_ROOT, HANDOFF_PATH, QUALITY_RULE_PATH).
+
+If the agent name IS a builtin: use the standard stage prompt format as-is (the host already knows the builtin agent definitions).
+
+If the custom agent file does not exist at invocation time:
+  - Do NOT proceed.
+  - Write BLOCKED to result.md: "Custom agent '{name}' was not created in Phase 1.5 — file missing at ${AGENT_CREW_HOME}/agents/{name}.md"
+  - Return STATUS: blocked to orchestrator.
 
 #### Agent prompt format (never inline file contents)
 

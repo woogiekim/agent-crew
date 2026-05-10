@@ -182,6 +182,17 @@ If the decision is unclear, conservatively include more agents.
 Custom agent names must match the filename format:
 `~/.agent-crew/agents/<name>.md`
 
+#### Pipeline Validation (after writing pipeline.json)
+
+Run the following validation before returning:
+
+1. For every entry in `needs_creation`, verify its `name` appears in at least one stage in `stages`. If not, add it to the appropriate stage (or create a new stage for it before `["reviewer"]`).
+
+2. For every non-builtin agent name in `stages`, verify it has a corresponding entry in `needs_creation`. If missing, add a `needs_creation` entry with a best-effort `reason` and `role` derived from the stage context.
+
+Builtin agents that do NOT need `needs_creation` entries:
+  planner, designer, frontend, backend, devops, resolver, reviewer, task-runner
+
 ---
 
 ### Step 5: Handoff Creation
