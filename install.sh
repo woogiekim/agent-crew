@@ -121,6 +121,8 @@ install_global() {
   [ -f "${AGENT_CREW_DIR}/hooks/auto-route.sh" ] \
     || log_error "auto-route.sh install failed — hooks/auto-route.sh not found"
 
+  install_codex_bootstrap_skill "${ADAPTERS_DIR}/codex/skill/agent-crew"
+
   merge_global_settings "${AGENT_CREW_HOME}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
   log_info "Natural-language routing hook registered → ${AGENT_CREW_HOME}/settings.json"
 
@@ -151,6 +153,21 @@ install_claude_compat() {
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
   log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
+}
+
+install_codex_bootstrap_skill() {
+  local source_skill_dir="$1"
+  local codex_home="${CODEX_HOME:-${HOME}/.codex}"
+  local dest_skill_dir="${codex_home}/skills/agent-crew"
+
+  if [ ! -d "${source_skill_dir}" ]; then
+    log_warn "Skipping Codex bootstrap skill — source not found (${source_skill_dir})"
+    return
+  fi
+
+  mkdir -p "${dest_skill_dir}"
+  cp -R "${source_skill_dir}/." "${dest_skill_dir}/"
+  log_info "Codex bootstrap skill installed → ${dest_skill_dir}"
 }
 
 # Safely merge UserPromptSubmit hook into a settings.json file.
