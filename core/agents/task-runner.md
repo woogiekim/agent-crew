@@ -337,7 +337,7 @@ Read `pipeline.json` (via `PIPELINE_PATH`), `{TASK_DIR}/context/analysis.md`, an
 
 ```bash
 python3 -c "
-import json, re, os, sys
+import json, re, sys
 
 # Read pipeline.json
 p = json.load(open('${PIPELINE_PATH}'))
