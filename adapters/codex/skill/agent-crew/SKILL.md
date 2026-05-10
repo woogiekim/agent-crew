@@ -1,6 +1,6 @@
 ---
 name: agent-crew
-description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, crew:agent-maker, ac:setup, ac:crew, ac:task, ac:cost, or ac:agent-maker. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, or lint requests.
+description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, or crew:agent-maker. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, or lint requests.
 ---
 
 # Agent Crew Command Bootstrap
@@ -18,11 +18,6 @@ explicit command invocation, not ordinary natural language:
 - `crew:status`
 - `crew:cost`
 - `crew:agent-maker`
-- `ac:setup`
-- `ac:crew`
-- `ac:task`
-- `ac:cost`
-- `ac:agent-maker`
 
 Do not reinterpret these commands as requests to inspect the repository, run
 Gradle, run npm, run CI, lint, test, or perform a host-default validation pass.
@@ -33,11 +28,11 @@ Load and follow the matching command definition:
 
 | User command | Command definition |
 |---|---|
-| `crew:setup`, `ac:setup` | `~/.agent-crew/commands/setup.md` |
-| `crew:run`, `ac:crew`, `ac:task` | `~/.agent-crew/commands/run.md` |
+| `crew:setup` | `~/.agent-crew/commands/setup.md` |
+| `crew:run` | `~/.agent-crew/commands/run.md` |
 | `crew:status` | `~/.agent-crew/commands/status.md` |
-| `crew:cost`, `ac:cost` | `~/.agent-crew/commands/cost.md` |
-| `crew:agent-maker`, `ac:agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
+| `crew:cost` | `~/.agent-crew/commands/cost.md` |
+| `crew:agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
 
 If the command definition file is missing, tell the user to install agent-crew
 globally first.
