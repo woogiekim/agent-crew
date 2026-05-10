@@ -135,7 +135,28 @@ the `REQUIREMENTS` value for Phase 1b.
 
 ---
 
-#### Phase 1b: Spawn planner
+#### Phase 1b: Analyst
+
+Delegate to the **analyst agent** (blocking):
+
+```text
+TASK: {TASK}
+TASK_DIR: {TASK_DIR}
+PROJECT_ROOT: {PROJECT_ROOT}
+REQUIREMENTS: {REQUIREMENTS — always present at this point}
+
+Distill intent, identify ambiguities and risks, recommend agent pipeline,
+and write {TASK_DIR}/context/analysis.md. Return the ANALYSIS block.
+```
+
+Extract the `ANALYSIS` block from the analyst's response.
+
+If the analyst returns `readiness: BLOCKED`, write `STATUS: BLOCKED` to
+`{TASK_DIR}/result.md` with the analyst's blocker explanation and stop.
+
+---
+
+#### Phase 1c: Spawn planner
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
 within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0:
@@ -151,19 +172,20 @@ Delegate to the planner agent using the host AI tool's native mechanism (blockin
 REQUEST: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
-REQUIREMENTS: {REQUIREMENTS — always present at this point, either received or collected in Phase 1a}
+REQUIREMENTS: {REQUIREMENTS}
+ANALYSIS: {ANALYSIS block from Phase 1b}
 
 Analyze the request, create the PRD, and determine the pipeline.
+Use the ANALYSIS recommended pipeline as the starting point for stage composition.
 Outputs:
 - {TASK_DIR}/context/prd.md
 - {TASK_DIR}/pipeline.json
 - {TASK_DIR}/handoff.md
 ```
 
-`REQUIREMENTS` is always included in the planner prompt at this point — either
-it was provided as input to the task-runner (Case A) or was collected via
-AskUserQuestion in Phase 1a (Case B). The planner will always follow its Case A
-path (no interactive re-collection).
+`REQUIREMENTS` and `ANALYSIS` are always included in the planner prompt at this
+point. The planner will always follow its Case A path (no interactive
+re-collection).
 
 After completion, read only `pipeline.json` (never read `handoff.md` contents).
 Use the `PIPELINE_PATH` variable resolved in Phase 0:

@@ -31,6 +31,16 @@ Check the following values from the prompt:
   constraints: {constraints answer(s)}
   ```
   When this parameter is present, skip the AskUserQuestion step and use these values directly.
+- `ANALYSIS` _(optional)_: Pre-computed analysis block from the analyst agent:
+  ```text
+  intent: {one-line intent summary}
+  risks: {count} identified ({high_count} high)
+  pipeline: {recommended stage sequence}
+  readiness: READY
+  ```
+  When present, use `pipeline` as the starting point for stage composition and
+  `intent` to inform the PRD objective. Also read `{TASK_DIR}/context/analysis.md`
+  for the full risk table to populate the PRD's Risk section.
 
 ---
 
