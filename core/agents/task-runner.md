@@ -125,8 +125,10 @@ instead of creating a new plan from scratch.
 
 Resume rules:
 
-- If `PIPELINE_PATH` exists, read `completed_stages` and `stage_agent_status` and continue.
-- If `PIPELINE_PATH` does not exist, start with planner.
+- If `PIPELINE_PATH` exists: read `completed_stages` and `stage_agent_status`, then
+  **skip Phases 1a, 1b, 1c, and 1.5 entirely and jump directly to Phase 2**.
+  Planning and analysis were already completed in the prior run.
+- If `PIPELINE_PATH` does not exist: proceed normally through Phases 1a → 1b → 1c → 1.5 → 2.
 - Never duplicate the planner step for an already initialized task.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
@@ -147,6 +149,10 @@ Resume rules:
 This prevents restarting already-finished agents when resuming after an interrupt.
 
 ### Phase 1: Spawn planner
+
+> **Skip this entire Phase 1 (1a, 1b, 1c) and Phase 1.5 when resuming** (i.e., when
+> `PIPELINE_PATH` already existed at Phase 0). Jump directly to Phase 2 using the
+> `completed_stages` and `stage_agent_status` read in Phase 0.
 
 #### Phase 1a: Requirement Collection Gate
 
@@ -371,8 +377,11 @@ Do **not** silently skip a BLOCKED stage or proceed as if it completed.
 
 #### Stage Retry Rule
 
-Every stage invocation (single or parallel) is wrapped in a retry loop with a
-maximum of **3 attempts**.
+Every stage invocation (single or parallel) is wrapped in a retry loop.
+Retry limits follow the quality-loop rule (`QUALITY_RULE_PATH`):
+
+- **Validation failure** (STATUS returned but criteria not met): up to **3 retries**.
+- **Crash** (no STATUS line returned at all): up to **5 retries**.
 
 **Crash detection:** Any agent invocation that returns without a `STATUS:` line
 in its response is treated as a crash — not a clean BLOCKED state.
@@ -380,22 +389,22 @@ in its response is treated as a crash — not a clean BLOCKED state.
 Retry logic per agent:
 
 ```
-attempt = 1
-while attempt <= 3:
+crash_attempts = 0
+while crash_attempts <= 5:
     invoke agent
     if response contains "STATUS: completed":
         break  # success
     elif response contains "STATUS: BLOCKED":
         halt pipeline — write blocker to result.md and return STATUS: blocked
     else:  # no STATUS line — treat as crash
-        if attempt == 3:
+        crash_attempts += 1
+        if crash_attempts > 5:
             write crash details to {TASK_DIR}/result.md
-            return STATUS: blocked (reason: agent crashed after 3 attempts)
-        attempt += 1
+            return STATUS: blocked (reason: agent crashed after 5 attempts)
         re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only — no inline content)
 ```
 
-Do not silently swallow a crash. After 3 failures on the same agent, report BLOCKED
+Do not silently swallow a crash. After 5 crash failures on the same agent, report BLOCKED
 with the agent name and stage index.
 
 #### Custom Agent Dispatch
@@ -521,7 +530,7 @@ writes for typical sequential pipelines.
 
 **Selective retry for crashed parallel agents:** If one or more agents in a parallel
 stage crash (no `STATUS:` line), do not restart the entire stage. Only retry the
-failed agents using the Stage Retry Rule (up to 3 attempts each). Agents that
+failed agents using the Stage Retry Rule (up to 5 crash attempts each). Agents that
 returned `STATUS: completed` are not re-invoked.
 
 After all agents in the stage have reached a terminal state (`completed` or exhausted
@@ -775,6 +784,6 @@ Do not include file contents, code, or long explanations.
   pushing; for single-task runs (N == 1), it pushes the feature branch directly.
   Both paths require explicit user approval (Step 11 of `run.md`) before any push.
 - **Never stop mid-pipeline** — if a sub-agent returns without a `STATUS:` line,
-  treat it as a crash and apply the Stage Retry Rule (up to 3 attempts). Only
-  after 3 consecutive failures may the task-runner halt with `STATUS: blocked`.
+  treat it as a crash and apply the Stage Retry Rule (up to 5 crash attempts). Only
+  after 5 consecutive crash failures may the task-runner halt with `STATUS: blocked`.
   A task-runner that silently stops without writing `result.md` violates this rule.
