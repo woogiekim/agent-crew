@@ -815,6 +815,8 @@ ls "${TASK_DIR}/context/"
 
 Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
+**After the stage loop completes (all non-devops stages done), proceed to Phase 2.5 — do NOT skip to Phase 3.** Phase 2.5 is always entered after Phase 2, whether or not any stage returned `STATUS: plan_ready`.
+
 ---
 
 ### Phase 2.5: Stage Action Gate
