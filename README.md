@@ -420,7 +420,7 @@ Example output during a pipeline run:
 [crew] 20260510-140000-0 | STAGE_DONE| backend — N/A
 [crew] 20260510-140000-0 | STAGE     | 2/2 — reviewer
 [crew] 20260510-140000-0 | STAGE_DONE| reviewer — APPROVED
-[crew] 20260510-140000-0 | COMPLETED | branch=feature/task-20260510-140000-0 commits=3
+[crew] 20260510-140000-0 | COMPLETED | branch=feature/implement-order-api-20260510-140000-0 commits=3
 ```
 
 In parallel runs (N > 1), each task-runner's `TASK_ID` prefix makes interleaved lines from concurrent runners distinguishable.
@@ -443,7 +443,7 @@ Each entry is a timestamped line:
 2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
 2026-05-10T14:24:00 | STAGE      | 1/3 — backend
 2026-05-10T14:31:22 | STAGE_DONE | backend — N/A
-2026-05-10T14:31:23 | COMPLETED  | branch=feature/task-... commits=2
+2026-05-10T14:31:23 | COMPLETED  | branch=feature/implement-order-api-... commits=2
 ```
 
 Because sub-agent inline output may be buffered until the agent completes, `progress.log` is the reliable source of truth for current pipeline state at any point during execution. `crew:status` reads this log to show a live snapshot.
@@ -614,7 +614,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
  Task Status: 20260510-140000-0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task   : implement order management API
-Branch : feature/task-20260510-140000-0
+Branch : feature/implement-order-api-20260510-140000-0
 Status : in-progress
 
 Recent events (from progress.log):

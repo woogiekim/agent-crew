@@ -76,13 +76,7 @@ Update `handoff.md`:
 - **If running in parallel execution mode (prompt explicitly states "do not modify handoff.md")**: do not modify it.
 - **If running standalone**: record implemented API endpoints and commit hash.
 
-Completion report format (returned to parent, within 3 lines):
-
-```text
-STATUS: completed
-COMMIT: {commit hash}
-APIS: {one-line summary of implemented endpoints}
-```
+Completion report: see `core/rules/completion-report.md`. Fields: STATUS, COMMIT, APIS.
 
 ## Absolute Rules
 - A failing test must always be written before implementation code

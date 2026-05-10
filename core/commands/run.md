@@ -123,8 +123,61 @@ For each task index `i`:
 ```bash
 TASK_ID="$(date +%Y%m%d-%H%M%S)-${i}"
 TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
-BRANCH="feature/task-${TASK_ID}"
+
+branch_prefix_for_task() {
+  python3 - "$1" <<'PYEOF'
+import re
+import sys
+
+text = sys.argv[1].lower()
+words = set(re.findall(r"[a-z0-9]+", text))
+
+rules = [
+    ("fix", {"fix", "fixes", "fixed", "bug", "bugs", "repair", "repairs", "broken", "error", "errors", "failing", "failure", "failures", "regression", "regressions"}, ()),
+    ("docs", {"doc", "docs", "documentation", "readme", "guide", "guides", "instruction", "instructions", "manual"}, ()),
+    ("refactor", {"refactor", "refactors", "refactoring", "restructure", "cleanup", "simplify", "reorganize"}, ("clean up",)),
+    ("test", {"test", "tests", "testing", "spec", "specs", "coverage", "qa"}, ()),
+    ("chore", {"chore", "chores", "build", "dependency", "dependencies", "deps", "config", "configuration", "setup", "tooling", "maintenance"}, ("continuous integration",)),
+]
+
+for prefix, tokens, phrases in rules:
+    if words & tokens or any(phrase in text for phrase in phrases):
+        print(prefix)
+        break
+else:
+    print("feature")
+PYEOF
+}
+
+task_slug_for_branch() {
+  python3 - "$1" <<'PYEOF'
+import re
+import sys
+
+text = sys.argv[1].lower()
+words = re.findall(r"[a-z0-9]+", text)
+stopwords = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+    "in", "into", "is", "it", "of", "on", "or", "so", "that", "the",
+    "to", "with", "instead", "only", "than", "rather"
+}
+slug_words = [word for word in words if word not in stopwords]
+slug = "-".join(slug_words)[:48].strip("-")
+print(slug or "task")
+PYEOF
+}
+
+TASK_SLUG="$(task_slug_for_branch "${TASK}")"
+BRANCH_PREFIX="$(branch_prefix_for_task "${TASK}")"
+BRANCH="${BRANCH_PREFIX}/${TASK_SLUG}-${TASK_ID}"
 ```
+
+Branch prefixes must describe the work type rather than defaulting to
+`feature/`. Use `fix/` for bug fixes, `docs/` for documentation, `refactor/`
+for restructuring without behavior changes, `test/` for test-only work,
+`chore/` for maintenance, build, dependency, setup, CI, and tooling work, and
+`feature/` for new or improved product behavior. The task slug must come from
+the task description and the task id suffix remains for uniqueness.
 
 Execution context depends on cardinality:
 
@@ -327,7 +380,7 @@ visible during a pipeline run:
 [crew] 20260510-140000-0 | STAGE_DONE | backend — N/A
 [crew] 20260510-140000-0 | STAGE | 2/2 — reviewer
 [crew] 20260510-140000-0 | STAGE_DONE | reviewer — APPROVED
-[crew] 20260510-140000-0 | COMPLETED | branch=feature/task-20260510-140000-0 commits=3
+[crew] 20260510-140000-0 | COMPLETED | branch=feature/implement-order-api-20260510-140000-0 commits=3
 ```
 
 In parallel runs (N > 1), each task-runner's TASK_ID prefix makes interleaved

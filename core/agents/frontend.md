@@ -57,15 +57,9 @@ git add -p  # Selectively stage only related files
 git commit -m "feat: implement frontend for [feature name]"
 ```
 
-Completion report format (return to parent, within 3 lines):
-```text
-STATUS: completed
-COMMIT: {commit hash}
-COMPONENTS: {number of implemented components}
-```
+Completion report: see `core/rules/completion-report.md`. Fields: STATUS, COMMIT, COMPONENTS.
 
 ## Absolute Rules
 - Never mark as complete while type errors still exist
 - Never add features not defined in the design specification
 - Never complete without updating `handoff.md`
-- Completion report must be within 3 lines — do not re-quote code contents

@@ -62,8 +62,47 @@ except:
     print('(unknown)')
 " 2>/dev/null)
 
-# Branch: read from result.md BRANCH field or derive from ACTIVE_TASK
-BRANCH=$(grep "^BRANCH:" "${RESULT}" 2>/dev/null | head -1 | sed 's/^BRANCH: //' || echo "feature/task-${ACTIVE_TASK}")
+# Branch: read from result.md BRANCH field or derive from pipeline.json and ACTIVE_TASK
+BRANCH=$(grep "^BRANCH:" "${RESULT}" 2>/dev/null | head -1 | sed 's/^BRANCH: //' || true)
+if [ -z "${BRANCH}" ]; then
+  BRANCH=$(python3 - "${PIPELINE}" "${ACTIVE_TASK}" <<'PYEOF'
+import json
+import re
+import sys
+
+pipeline, task_id = sys.argv[1], sys.argv[2]
+
+try:
+    task = json.load(open(pipeline)).get("task", "")
+except Exception:
+    task = ""
+
+task_lc = task.lower()
+words = set(re.findall(r"[a-z0-9]+", task_lc))
+prefix_rules = [
+    ("fix", {"fix", "fixes", "fixed", "bug", "bugs", "repair", "repairs", "broken", "error", "errors", "failing", "failure", "failures", "regression", "regressions"}, ()),
+    ("docs", {"doc", "docs", "documentation", "readme", "guide", "guides", "instruction", "instructions", "manual"}, ()),
+    ("refactor", {"refactor", "refactors", "refactoring", "restructure", "cleanup", "simplify", "reorganize"}, ("clean up",)),
+    ("test", {"test", "tests", "testing", "spec", "specs", "coverage", "qa"}, ()),
+    ("chore", {"chore", "chores", "build", "dependency", "dependencies", "deps", "config", "configuration", "setup", "tooling", "maintenance"}, ("continuous integration",)),
+]
+prefix = "feature"
+for candidate, tokens, phrases in prefix_rules:
+    if words & tokens or any(phrase in task_lc for phrase in phrases):
+        prefix = candidate
+        break
+
+words = re.findall(r"[a-z0-9]+", task_lc)
+stopwords = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+    "in", "into", "is", "it", "of", "on", "or", "so", "that", "the",
+    "to", "with", "instead", "only", "than", "rather"
+}
+slug = "-".join(word for word in words if word not in stopwords)[:48].strip("-") or "task"
+print(f"{prefix}/{slug}-{task_id}")
+PYEOF
+)
+fi
 ```
 
 ### 5. Read recent progress events
