@@ -167,9 +167,9 @@ instead of creating a new plan from scratch.
 Resume rules:
 
 - If `PIPELINE_PATH` exists: read `completed_stages` and `stage_agent_status`, then
-  **skip Phases 1a, 1b, 1c, and 1.5 entirely and jump directly to Phase 2**.
-  Planning and analysis were already completed in the prior run.
-- If `PIPELINE_PATH` does not exist: proceed normally through Phases 1a → 1b → 1c → 1.5 → 2.
+  **skip Phases 1a, 1b, 1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
+  Planning, analysis, and plan approval were already completed in the prior run.
+- If `PIPELINE_PATH` does not exist: proceed normally through Phases 1a → 1b → 1c → 1d → 1.5 → 2.
 - Never duplicate the planner step for an already initialized task.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
@@ -191,9 +191,9 @@ This prevents restarting already-finished agents when resuming after an interrup
 
 ### Phase 1: Spawn planner
 
-> **Skip this entire Phase 1 (1a, 1b, 1c) and Phase 1.5 when resuming** (i.e., when
-> `PIPELINE_PATH` already existed at Phase 0). Jump directly to Phase 2 using the
-> `completed_stages` and `stage_agent_status` read in Phase 0.
+> **Skip this entire Phase 1 (1a, 1b, 1c, 1d) and Phase 1.5 when resuming** (i.e.,
+> when `PIPELINE_PATH` already existed at Phase 0). Jump directly to Phase 2 using
+> the `completed_stages` and `stage_agent_status` read in Phase 0.
 
 #### Phase 1a: Requirement Collection Gate
 
