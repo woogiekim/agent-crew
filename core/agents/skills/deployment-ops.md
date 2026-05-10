@@ -76,7 +76,12 @@ Execute deployment scripts in this priority order:
 3. `make deploy` (if Makefile has a deploy target)
 4. `docker-compose up -d`
 
-If no script exists, ask the user for the deployment method before proceeding.
+If no script exists, use **AskUserQuestion** to ask for the deployment method before proceeding:
+- header: "Deployment Method"
+- question: "No deployment script was found. How should the deployment proceed?"
+- options:
+  - Provide deployment command — I will specify the command
+  - Cancel — abort deployment
 
 ### Health Verification
 After deployment, verify the service is healthy:

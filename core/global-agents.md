@@ -78,6 +78,23 @@ Project state is stored under:
 Use the host AI tool's structured choice UI when confirmation is required.
 Do not add duplicate free-form options if the host UI already provides one.
 
+## Approval Rule (Framework-Level)
+
+All approval requests for the following actions MUST use AskUserQuestion:
+- Merge (git merge)
+- Push to remote (git push)
+- Deployment (any deploy script or command)
+- Destructive operations (delete, reset, overwrite)
+- Branch cleanup (git branch -d / -D)
+
+Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
+are FORBIDDEN for these actions. Violating this rule is a workflow consistency error.
+
+Every AskUserQuestion for these actions must include at minimum:
+- header: action type (e.g., "Deploy", "Merge", "Push", "Rollback")
+- question: describing the specific action with relevant details
+- options: at minimum "Approve — proceed" and "Cancel — hold"
+
 ## Subagent Plan Approval Rule
 
 Before implementation, every implementation-capable subagent must present a plan
