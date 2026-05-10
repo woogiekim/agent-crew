@@ -4,8 +4,8 @@ description: >
   TRIGGER when: always invoked by task-runner in Phase 1b, after requirements
   collection and before planner; serves as the reasoning and coordination layer
   that distills intent, surfaces risks, and recommends the agent pipeline.
-  SKIP when: pipeline.json already exists (resume path — analysis was completed
-  in a prior run).
+  SKIP when: task-runner is resuming a prior run (pipeline.json already exists at
+  Phase 0 — the task-runner jumps directly to Phase 2 and does not invoke analyst).
   Output: {TASK_DIR}/context/analysis.md and an ANALYSIS block returned inline.
 model: inherit
 ---

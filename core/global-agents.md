@@ -19,10 +19,10 @@ remains provider-neutral.
 
 | Request Type | Execution Method |
 |---|---|
-| Backend API, domain logic, database work | Delegate to `backend` |
-| UI, full-stack, or implementation workflows | `crew:run` -> task-runner -> pipeline agents |
+| Backend API, domain logic, database work | `crew:run` → task-runner → backend |
+| UI, full-stack, or implementation workflows | `crew:run` → task-runner → pipeline agents |
 | Multiple independent features | `crew:run` with one task-runner per task |
-| Requirements analysis only | Delegate to `planner` |
+| Requirements analysis only | `crew:run` → task-runner → planner (no implementation stages) |
 
 ## Auto-Execution Triggers
 
@@ -91,8 +91,8 @@ orchestrator (crew:run for N > 1, task-runner for N == 1):
 - Destructive operations (delete, reset, overwrite)
 - Branch cleanup (git branch -d / -D)
 
-**Stage agents (devops, reviewer, etc.) MUST NOT issue AskUserQuestion for any
-of the above actions.** Instead, stage agents must:
+**Stage agents (devops, and any agent that performs destructive operations) MUST NOT
+issue AskUserQuestion for any of the above actions.** Instead, those agents must:
 
 1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
 2. Return a `PLAN:` block to the task-runner with the following fields:
@@ -104,7 +104,7 @@ of the above actions.** Instead, stage agents must:
    STATUS: plan_ready
    ```
 3. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
-   (up to 30s timeout before reporting BLOCKED)
+   (up to 60s timeout before reporting BLOCKED)
 4. Execute only after receiving `APPROVED`; halt with STATUS: BLOCKED on
    `CANCELLED` or timeout
 
@@ -127,14 +127,16 @@ consistency error.
 
 ## Subagent Plan Approval Rule
 
-Before implementation, every implementation-capable subagent must present a plan
-for approval. The planner is exempt because planning is its primary role.
+Stage agents that perform **destructive operations** (deploy, push, merge, overwrite,
+or branch cleanup) must present a PLAN block for approval before executing. The planner,
+backend, frontend, and designer agents are exempt — they commit code and return STATUS
+directly without a PLAN gate.
 
 **How plans flow depends on the agent type:**
 
-### Stage agents (devops, reviewer, and any pipeline agent)
+### Destructive-action stage agents (devops, and any agent that deploys or pushes)
 
-Stage agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
+These agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
 a `PLAN:` block to the task-runner. They do NOT issue AskUserQuestion directly.
 The task-runner (or crew orchestrator for parallel runs) owns the approval gate.
 

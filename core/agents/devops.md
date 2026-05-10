@@ -78,11 +78,11 @@ planned actions and wait.
    ```
 
 4. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
-   (up to 30s timeout, 5s interval):
+   (up to 60s timeout, 5s interval):
 
    ```bash
    ELAPSED=0
-   while [ $ELAPSED -lt 30 ]; do
+   while [ $ELAPSED -lt 60 ]; do
      RESULT=$(cat "${TASK_DIR}/context/approval.md" 2>/dev/null)
      if echo "$RESULT" | grep -q "^APPROVED$\|^CANCELLED$"; then
        break
@@ -94,7 +94,7 @@ planned actions and wait.
 
    - If `APPROVED`: proceed to Step 1 (Project Analysis) and execute.
    - If `CANCELLED` or timeout: stop and record `BLOCKED` in result — reason:
-     "Cancelled by approval gate" or "Approval timeout (30s)". Do not execute any commands.
+     "Cancelled by approval gate" or "Approval timeout (60s)". Do not execute any commands.
 
 ---
 
@@ -327,6 +327,6 @@ Record the following in `handoff.md`:
 - Use `--force` or `--no-verify`
 - Automatically attempt rollback on deployment failure (report to the user and wait)
 - Output environment variables or secrets in logs
-- Ask approval for deploy, push, merge, rollback, or destructive operations as plain text
-  ("Shall I merge and push?", "Should I deploy?", "Do you want me to continue?" etc.)
-  — all such approvals MUST use AskUserQuestion with structured options
+- Issue AskUserQuestion directly for deploy, push, merge, rollback, or destructive
+  operations — approval is owned by the task-runner (N == 1) or crew orchestrator
+  (N > 1). The devops agent must write a PLAN block and poll approval.md instead.
