@@ -332,18 +332,64 @@ Also append to the progress log:
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1d — Plan approval" >> "${TASK_DIR}/progress.log"
 ```
 
-Read `pipeline.json` (via `PIPELINE_PATH`) and `{TASK_DIR}/context/analysis.md`:
+Read `pipeline.json` (via `PIPELINE_PATH`), `{TASK_DIR}/context/analysis.md`, and
+`{TASK_DIR}/context/prd.md` (via `PRD_PATH`):
 
 ```bash
 python3 -c "
-import json, sys
+import json, re, os, sys
+
+# Read pipeline.json
 p = json.load(open('${PIPELINE_PATH}'))
 stages = p.get('stages', [])
 needs_creation = p.get('needs_creation', [])
+
+# Read prd.md for per-agent detail (tolerant — skip if absent or unparseable)
+prd_agent_detail = {}  # {agent_name: {'work': str, 'files': [str]}}
+try:
+    prd_text = open('${PRD_PATH}').read()
+    # Match '### Stage N: agent_name' sections
+    section_pat = re.compile(r'###\s+Stage\s+\d+:\s+(\S+)', re.IGNORECASE)
+    sections = list(section_pat.finditer(prd_text))
+    for idx, m in enumerate(sections):
+        agent_name = m.group(1).rstrip(':').lower()
+        start = m.end()
+        end = sections[idx + 1].start() if idx + 1 < len(sections) else len(prd_text)
+        body = prd_text[start:end]
+        # Extract **Work**: description (first non-empty line after the marker, max 120 chars)
+        work = ''
+        work_m = re.search(r'\*\*Work\*\*\s*:?\s*(.+)', body)
+        if work_m:
+            work = work_m.group(1).strip()[:120]
+        # Extract **Files**: bullet lines
+        files = []
+        in_files = False
+        for line in body.splitlines():
+            if re.match(r'\*\*Files\*\*', line):
+                in_files = True
+                continue
+            if in_files:
+                bullet = re.match(r'\s*[-*]\s+(.+)', line)
+                if bullet:
+                    files.append(bullet.group(1).strip())
+                elif line.strip() == '' or re.match(r'##', line):
+                    break
+        prd_agent_detail[agent_name] = {'work': work, 'files': files}
+except Exception:
+    pass  # prd.md absent or unparseable — fall back to stage names only
+
 print('STAGES:')
 for i, stage in enumerate(stages, 1):
     agents = stage if isinstance(stage, list) else [stage]
-    print(f'  Stage {i}: {', '.join(agents)}')
+    print(f'  Stage {i}: {chr(44).join(agents)}')
+    for agent in agents:
+        detail = prd_agent_detail.get(agent.lower(), {})
+        if detail.get('work'):
+            print(f'    Work: {detail[\"work\"]}')
+        if detail.get('files'):
+            print(f'    Files:')
+            for f in detail['files']:
+                print(f'      - {f}')
 print('NEEDS_CREATION:')
 for item in needs_creation:
     print(f'  {item[\"name\"]}')
@@ -368,12 +414,20 @@ Risks  : {risk count} identified
 
 Pipeline:
   Stage 1: {agent_name}
+    Work: {work description from prd.md, if available}
+    Files:
+      - {file path} ({new|modified|removed}, if available)
   Stage 2: {agent_name}
-  ...
+    Work: {work description from prd.md, if available}
+    ...
 
 Dynamic agents to create: {needs_creation list or "none"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+The `Work:` and `Files:` lines appear only when `prd.md` contains per-agent sections.
+If `prd.md` is absent or the relevant sections are missing, the display falls back to
+showing stage names only (no error).
 
 Then fire **AskUserQuestion**:
 - header: "Implementation Plan"
