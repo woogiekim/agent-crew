@@ -537,9 +537,19 @@ Note: No remote push has occurred yet.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+> **Stop here.** Do not suggest any follow-up action (merge, push, PR creation,
+> test runs, or anything else). The run is complete. If the user wants to deploy
+> or push, they will request it explicitly — do not volunteer it.
+
 ---
 
 ### 10. Deployment Approval
+
+> **Explicit deploy requests only.** Steps 10–11 execute only when the user
+> explicitly requests deployment after Step 9 — never proactively. When
+> deployment is requested, delegate to the **devops agent**. The orchestrator
+> must not run `git push` directly. The devops agent owns the approval gate
+> (AskUserQuestion) and execution.
 
 **Only execute this step when the pipeline included a `devops` stage that will
 run CI/CD (i.e., a stage whose agent is `devops`).**
