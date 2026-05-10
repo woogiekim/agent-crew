@@ -90,8 +90,7 @@ Violation examples (forbidden when STOP is present):
 ### Explicit Command Invocation Rule
 
 When the user's message begins with a workflow command such as `crew:run`,
-`crew:setup`, `crew:status`, `crew:cost`, `crew:agent-maker`, or the portable
-aliases `ac:crew`, `ac:task`, `ac:setup`, `ac:cost`, and `ac:agent-maker`,
+`crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
 treat it as an explicit command invocation, not as ordinary natural language.
 
 For `crew:run` specifically:
