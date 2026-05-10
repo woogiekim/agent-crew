@@ -61,21 +61,36 @@ exhaustion), save current progress before compacting:
 
 ## Execution Flow
 
-### Phase 0: Resume Check
+### Phase 0: Resume Check + Context Bootstrap
 
-If `pipeline.json` already exists in `TASK_DIR`, resume from that state instead of
-creating a new plan from scratch.
+**Read-once context bootstrap**: Resolve all runtime paths once at startup and
+store them as variables. Do not re-read or re-resolve these paths in later phases.
+
+```bash
+# Resolve paths once — reuse these variables throughout all phases
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+QUALITY_RULE_PATH="${AGENT_CREW_HOME}/rules/quality-loop.md"
+PIPELINE_PATH="${TASK_DIR}/pipeline.json"
+HANDOFF_PATH="${TASK_DIR}/handoff.md"
+PRD_PATH="${TASK_DIR}/context/prd.md"
+```
+
+These four variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
+`PRD_PATH`) must be passed as-is to all sub-agents. Never re-derive them inline.
+
+**Resume check**: If `PIPELINE_PATH` already exists, resume from that state
+instead of creating a new plan from scratch.
 
 Resume rules:
 
-- If `pipeline.json` exists, read `completed_stages` and `stage_agent_status` and continue.
-- If `pipeline.json` does not exist, start with planner.
+- If `PIPELINE_PATH` exists, read `completed_stages` and `stage_agent_status` and continue.
+- If `PIPELINE_PATH` does not exist, start with planner.
 - Never duplicate the planner step for an already initialized task.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
   Only agents missing from the map (or with status other than `"completed"`) are retried.
 
-`pipeline.json` tracks per-agent completion with this structure:
+`PIPELINE_PATH` tracks per-agent completion with this structure:
 
 ```json
 {
@@ -123,11 +138,10 @@ the `REQUIREMENTS` value for Phase 1b.
 #### Phase 1b: Spawn planner
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
-within this pipeline:
+within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0:
 
 ```bash
 PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 touch "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
 ```
 
@@ -151,30 +165,44 @@ it was provided as input to the task-runner (Case A) or was collected via
 AskUserQuestion in Phase 1a (Case B). The planner will always follow its Case A
 path (no interactive re-collection).
 
-After completion, read only `pipeline.json` (never read `handoff.md` contents):
+After completion, read only `pipeline.json` (never read `handoff.md` contents).
+Use the `PIPELINE_PATH` variable resolved in Phase 0:
 
 ```bash
-cat "${TASK_DIR}/pipeline.json"
+cat "${PIPELINE_PATH}"
 ```
 
 ---
 
 ### Phase 1.5: Pre-execution Agent Creation
 
-Read the `needs_creation` list from `pipeline.json`:
+Read the `needs_creation` list from `PIPELINE_PATH` (already resolved in Phase 0):
 
 ```bash
 python3 -c "
-import json
-p = json.load(open('${TASK_DIR}/pipeline.json'))
+import json, os
+agent_home = os.environ.get('AGENT_CREW_HOME', os.path.expanduser('~/.agent-crew'))
+p = json.load(open('${PIPELINE_PATH}'))
 for item in p.get('needs_creation', []):
-    print(item['name'] + '|' + item['reason'] + '|' + item['role'])
+    agent_file = os.path.join(agent_home, 'agents', item['name'] + '.md')
+    # Skip creation if the agent file already exists on disk
+    if not os.path.exists(agent_file):
+        print(item['name'] + '|' + item['reason'] + '|' + item['role'])
+    else:
+        print('SKIP:' + item['name'])  # already exists, skip Phase 1.5 for this agent
 "
 ```
 
 If the list is empty or the field is absent, skip this phase entirely and proceed to Phase 2.
 
-For each entry in `needs_creation`, spawn an Agent with the following prompt to create the new agent (blocking):
+For each entry that is **not** prefixed with `SKIP:`, spawn an Agent with the
+following prompt to create the new agent (blocking). Entries prefixed `SKIP:`
+already have an agent file — do not re-spawn them, proceed directly to Phase 2.
+
+**Slim template**: Use only the essential fields below. Do not add boilerplate
+sections that the agent-maker would pad. Smaller prompts reduce spawn latency.
+
+For each entry in `needs_creation` (that is not already on disk), spawn an Agent with the following prompt to create the new agent (blocking):
 
 ```text
 You are acting as the agent-maker. Your job is to create a new agent definition file.
@@ -221,10 +249,10 @@ Return: STATUS: completed / FILES: {path}
 
 Where `{name}`, `{reason}`, `{role}`, and `{AGENT_CREW_HOME}` are substituted from the parsed `needs_creation` entry and the resolved `AGENT_CREW_HOME` variable (`${HOME}/.agent-crew` unless overridden).
 
-After each Agent returns, verify the file exists before continuing:
+After each Agent returns, verify the file exists before continuing.
+Use the `AGENT_CREW_HOME` variable resolved in Phase 0:
 
 ```bash
-AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 ls "${AGENT_CREW_HOME}/agents/${name}.md"
 ```
 
@@ -238,14 +266,10 @@ If a required agent file still does not exist after the Agent call completes, wr
 Execute the `stages` from `pipeline.json` sequentially.
 Skip stages already included in `completed_stages`.
 
-#### Quality Loop Rule (load once, apply to every stage)
+#### Quality Loop Rule (resolved once in Phase 0, reused here)
 
-Before executing any stage, read the quality loop rule path:
-
-```bash
-AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-QUALITY_RULE_PATH="${AGENT_CREW_HOME}/rules/quality-loop.md"
-```
+`QUALITY_RULE_PATH` was already resolved in Phase 0. Use the variable as-is.
+Do not re-derive `AGENT_CREW_HOME` or re-construct this path.
 
 Pass `QUALITY_RULE_PATH` to every stage agent prompt (see format below).
 After each stage returns, check its `STATUS` field:
@@ -339,6 +363,15 @@ Spawn using the format above in blocking mode.
 
 Invoke multiple agent/delegation calls simultaneously in a single response when the host AI tool supports it.
 
+**Parallelism opportunities**: The following stage compositions are safe to run
+concurrently (they write to independent output files and do not share handoff.md):
+- `["designer", "backend"]` — designer writes `design-spec.md`; backend writes
+  domain model and API code. Neither depends on the other's output within the stage.
+- Any stage where all agents are annotated with `do not modify handoff.md`.
+
+The `reviewer` stage is always sequential (runs after all prior stages complete).
+The `devops` stage is always sequential (requires prior stage artifacts).
+
 Additional instruction:
 
 ```text
@@ -346,19 +379,27 @@ Do not modify handoff.md.
 Save outputs only to your own result files.
 ```
 
-**Per-agent completion tracking:** After each agent in a parallel stage responds,
-immediately record its result in `pipeline.json` under `stage_agent_status`:
+**Per-agent completion tracking (parallel stages only):** After each agent in a
+parallel stage responds, immediately record its result in `PIPELINE_PATH` under
+`stage_agent_status`. For parallel stages this intermediate write is necessary
+because multiple agents may crash independently:
 
 ```bash
 python3 -c "
 import json
-p = json.load(open('${TASK_DIR}/pipeline.json'))
+p = json.load(open('${PIPELINE_PATH}'))
 p.setdefault('stage_agent_status', {}).setdefault('${i}', {})['${agent_name}'] = '${status}'
-json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
+json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
 "
 ```
 
 Where `${status}` is `completed`, `crashed`, or `blocked` based on the agent response.
+
+**Sequential stage batching**: For stages that contain only a single agent,
+skip the intermediate per-agent write above. Instead, write a single combined
+update that sets both `stage_agent_status` and `completed_stages` in one
+`json.dump` call after the agent returns. This halves the number of pipeline.json
+writes for typical sequential pipelines.
 
 **Selective retry for crashed parallel agents:** If one or more agents in a parallel
 stage crash (no `STATUS:` line), do not restart the entire stage. Only retry the
@@ -366,17 +407,18 @@ failed agents using the Stage Retry Rule (up to 3 attempts each). Agents that
 returned `STATUS: completed` are not re-invoked.
 
 After all agents in the stage have reached a terminal state (`completed` or exhausted
-retries), update `completed_stages` only if **all** agents completed successfully:
+retries), update `completed_stages` only if **all** agents completed successfully.
+For parallel stages, use a single combined write (not two separate reads/writes):
 
 ```bash
 python3 -c "
 import json
-p = json.load(open('${TASK_DIR}/pipeline.json'))
+p = json.load(open('${PIPELINE_PATH}'))
 stage_status = p.get('stage_agent_status', {}).get('${i}', {})
 all_done = all(v == 'completed' for v in stage_status.values())
 if all_done:
     p['completed_stages'] = $((i+1))
-    json.dump(p, open('${TASK_DIR}/pipeline.json', 'w'), ensure_ascii=False, indent=2)
+    json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
 "
 ```
 
@@ -418,12 +460,13 @@ git -C "${PROJECT_ROOT}" log --oneline HEAD ^main 2>/dev/null | head -10
 
 #### Step 2 — Conditional approval gate (devops only)
 
-Check whether the pipeline contains a `devops` stage:
+Check whether the pipeline contains a `devops` stage (use the cached
+`PIPELINE_PATH` variable resolved in Phase 0 — do not re-derive the path):
 
 ```bash
 python3 -c "
 import json
-p = json.load(open('${TASK_DIR}/pipeline.json'))
+p = json.load(open('${PIPELINE_PATH}'))
 has_devops = any('devops' in stage for stage in p.get('stages', []))
 print('yes' if has_devops else 'no')
 "
@@ -499,10 +542,11 @@ CHANGES:
 Only clear the active marker when running in `single` mode. In `parallel` mode,
 the crew orchestrator is responsible for clearing it after all task-runners finish.
 
+Use the `AGENT_CREW_HOME` variable resolved in Phase 0 — do not re-derive it:
+
 ```bash
 if [ "${EXECUTION_MODE}" != "parallel" ]; then
   PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-  AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
   rm -f "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
 fi
 ```
