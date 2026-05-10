@@ -26,6 +26,9 @@ remains provider-neutral.
 
 ## Auto-Execution Triggers
 
+> Requirements collection (Step 5 of `crew:run`) is always mandatory and must
+> never be skipped, even when the request seems self-evident.
+
 Spawn an agent or workflow when the user asks to build, implement, create, add,
 update, fix, remove, move, change, migrate, refactor, replace, extend, or
 integrate development work.

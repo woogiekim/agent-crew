@@ -102,6 +102,10 @@ directly to Phase 1b.
 
 ##### Case B — `REQUIREMENTS` is absent
 
+> **NEVER-SKIP**: When REQUIREMENTS is absent, AskUserQuestion collection is
+> mandatory. Do not infer requirements from the TASK description or proceed
+> without running both rounds.
+
 Collect requirements in two structured rounds using `AskUserQuestion` before
 spawning the planner.
 

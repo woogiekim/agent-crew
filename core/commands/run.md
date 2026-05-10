@@ -102,6 +102,16 @@ same in both modes.
 
 ### 5. Collect Requirements Per Task
 
+> **NEVER-SKIP RULE**: Step 5 is mandatory for every `crew:run` invocation without
+> exception. Do NOT skip or abbreviate this step regardless of:
+> - How obvious or self-contained the task description seems
+> - Whether requirements appear implicit in the task argument
+> - Whether the task is a bugfix, documentation update, or framework-internal change
+>
+> The task argument provided to `crew:run` is a task **description**, not requirements.
+> Requirements must always be explicitly collected and confirmed via AskUserQuestion
+> before any task-runner is spawned.
+
 Before confirming execution, collect requirements for each task using a **two-round deep interview** via **AskUserQuestion**.
 
 #### Round 1 — Base Context
@@ -115,7 +125,7 @@ For each task `i`, invoke AskUserQuestion with three questions:
   - Backend API (Server-side logic, domain model, database)
   - Full-stack (Backend + Frontend UI)
   - UI only (Static pages, components, styling)
-  - Analysis only (PRD / design, no implementation needed)
+  - Tooling / docs / config (Framework internals, markdown, scripts, config files, analysis)
 
 **Question 2 — Target users and feature purpose:**
 - header: "Task {i+1} — Target"
@@ -142,7 +152,7 @@ Record the Round 1 answers: `scope`, `target`, `constraints`.
 #### Round 2 — Domain-Specific Follow-up
 
 Analyze the `scope` answer from Round 1 and ask 1–2 additional domain-specific questions.
-Skip Round 2 entirely if scope is **"Analysis only"**.
+Skip Round 2 entirely if scope is **"Tooling / docs / config"** or **"Analysis only"**.
 
 **If scope is "Backend API":**
 
@@ -228,6 +238,7 @@ Where `{field_name}` matches the domain:
 - Backend API: `database`, `auth`
 - Full-stack: `state_management`, `database`
 - UI only: `state_management`, `design_system`
+- Tooling / docs / config: _(no followup fields)_
 - Analysis only: _(no followup fields)_
 
 Repeat for each task. If `N > 1`, collect requirements for all tasks before proceeding.
