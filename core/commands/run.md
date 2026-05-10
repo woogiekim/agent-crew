@@ -343,21 +343,71 @@ Report the blocker and stop.
 
 ---
 
-### 9. Implementation Summary
+### 9. Merge Branches (N > 1 only)
+
+> **Skip this step entirely when N == 1.** For single-task runs, proceed directly
+> to Step 10. The feature branch will be pushed as-is in Step 12.
+
+When `N > 1`, merge all task feature branches into `main` locally before
+showing the deployment plan:
+
+```bash
+git checkout main
+for BRANCH in {all task branches}; do
+  git merge --no-ff "${BRANCH}" -m "merge: ${BRANCH} into main"
+done
+```
+
+If a merge conflict occurs during any merge, invoke the conflict resolver before
+continuing:
+
+```text
+crew:run "resolve merge conflicts"
+```
+
+Do not proceed to Step 10 until all merges complete cleanly.
+
+After all merges succeed, collect the combined commit log for the deployment plan:
+
+```bash
+git log --oneline HEAD ^origin/main | head -10
+```
+
+---
+
+### 10. Implementation Summary
 
 Always display the implementation summary for every completed run, regardless of
 whether a devops stage was included in the pipeline:
+
+**When N > 1 (after merge):**
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Implementation Summary
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branches with local commits:
+Merged branches into main (local):
   - {BRANCH_1}  ({N} commits)
   - {BRANCH_2}  ({N} commits)
 
+Commits ready for push (origin/main..HEAD):
+  {git log --oneline origin/main..HEAD, up to 10 lines}
+
+Note: No remote push has occurred yet.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**When N == 1:**
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Implementation Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branch with local commits:
+  - {BRANCH}  ({N} commits)
+
 Commits ready for review:
-  {git log --oneline for each branch}
+  {git log --oneline HEAD ^main, up to 5 lines}
 
 Note: No remote push has occurred yet.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -365,26 +415,45 @@ Note: No remote push has occurred yet.
 
 ---
 
-### 10. Deployment Approval
+### 11. Deployment Approval
 
 **Only execute this step when the pipeline included a `devops` stage that will
 run CI/CD (i.e., a stage whose agent is `devops`).**
 
 If no `devops` stage was in the pipeline, skip this step entirely and stop after
-Step 9. Branches remain local; the user can push manually.
+Step 10. Branches remain local; the user can push manually.
 
 When a `devops` stage is present, first compose and display the deployment plan:
+
+**When N > 1:**
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Deployment Plan
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branches to push:
-  - {BRANCH_1}  ({N} commits)
-  - {BRANCH_2}  ({N} commits)
+Action: push main to origin (all task branches merged)
+
+Commits to be published (origin/main..HEAD):
+  {git log --oneline origin/main..HEAD}
+
+Target remote: origin
+Risk notes:
+  - {any merge conflicts detected?}
+  - {any blocked tasks?}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**When N == 1:**
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Deployment Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Branch to push:
+  - {BRANCH}  ({N} commits)
 
 Commits to be published:
-  {git log --oneline for each branch}
+  {git log --oneline HEAD ^main}
 
 Target remote: origin
 Risk notes:
@@ -395,40 +464,55 @@ Risk notes:
 
 Then use **AskUserQuestion** to request approval. Do not proceed without it.
 
+**When N > 1:**
+
+Question:
+- header: "Deploy"
+- question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
+- options:
+  - Approve — push main to origin now
+  - Cancel — hold, do not push (branches remain local)
+
+**When N == 1:**
+
 Question:
 - header: "Deploy"
 - question: "Review the deployment plan above. Approve to push to remote, or cancel to hold."
 - options:
-  - Approve — push all branches to origin now
-  - Cancel — hold, do not push (branches remain local)
+  - Approve — push the feature branch to origin now
+  - Cancel — hold, do not push (branch remains local)
 
 If **Approve**:
-  - Proceed to Step 11.
+  - Proceed to Step 12.
 
 If **Cancel**:
-  - Print the branch names so the user can push manually later.
+  - Print the branch name(s) so the user can push manually later.
   - Stop here. Do not push anything.
 
 ---
 
-### 11. Execute Deployment
+### 12. Execute Deployment
 
-Push each task branch to origin:
+**When N > 1 (merged into main):**
 
 ```bash
-for BRANCH in {all task branches}; do
-  git push origin "${BRANCH}"
-done
+git push origin main
+```
+
+**When N == 1 (feature branch only):**
+
+```bash
+git push origin "${BRANCH}"
 ```
 
 Report result:
 
 ```text
 Deployment complete.
-Pushed: {branch list}
+Pushed: {main | branch name}
 ```
 
-If a merge conflict occurs during push, run:
+If a push conflict occurs, run:
 
 ```text
 crew:run "resolve merge conflicts"
@@ -443,4 +527,6 @@ crew:run "resolve merge conflicts"
 - Task dependencies still matter. If tasks depend on each other, pass them as a
   single request so one `task-runner` can sequence the work inside one pipeline.
 - **task-runner never pushes to remote.** All remote operations happen here in
-  Step 11, only after explicit user approval in Step 10.
+  Step 12, only after explicit user approval in Step 11.
+- **Step 9 (merge) applies only to parallel runs (N > 1).** For single-task runs,
+  the feature branch is pushed directly without merging to main.

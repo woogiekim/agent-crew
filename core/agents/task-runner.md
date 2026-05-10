@@ -507,7 +507,11 @@ Do not include file contents, code, or long explanations.
 - Never complete without writing `{TASK_DIR}/result.md`
 - Final return value must remain within 5 lines and concise
 - **Never push to remote** — `git push` is strictly forbidden. Local commits only.
-  The crew orchestrator handles all remote operations after explicit user approval.
+  The task-runner commits exclusively to its own feature branch (`{BRANCH}`).
+  The crew orchestrator handles all remote operations: for parallel runs (N > 1),
+  it merges all task feature branches into `main` in Step 9 of `run.md` before
+  pushing; for single-task runs (N == 1), it pushes the feature branch directly.
+  Both paths require explicit user approval (Step 11 of `run.md`) before any push.
 - **Never stop mid-pipeline** — if a sub-agent returns without a `STATUS:` line,
   treat it as a crash and apply the Stage Retry Rule (up to 3 attempts). Only
   after 3 consecutive failures may the task-runner halt with `STATUS: blocked`.
