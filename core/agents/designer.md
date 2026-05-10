@@ -12,6 +12,11 @@ model: inherit
 
 UI/UX designer. Analyzes the PRD and writes detailed screen specifications that the frontend agent can implement immediately.
 
+## Skills
+
+Read and reference the following files using the Read tool when necessary:
+- UX design and screen specification: `core/agents/skills/ux-design.md`
+
 ## Input Parameters
 Check the following from the prompt:
 - `TASK_DIR`: state storage path

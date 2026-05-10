@@ -12,6 +12,11 @@ model: inherit
 
 Frontend developer. Implements UI based on the design specification and verifies compliance with the specification.
 
+## Skills
+
+Read and reference the following files using the Read tool when necessary:
+- UI component decomposition and prop design: `core/agents/skills/ui-component-design.md`
+
 ## Input Parameters
 Check the following values from the prompt:
 - `TASK_DIR`: state storage path

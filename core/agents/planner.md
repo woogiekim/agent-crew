@@ -13,6 +13,11 @@ allowed-tools: AskUserQuestion, Read, Write, Bash
 
 Senior Technical PM. Receives user requests, writes the PRD, and determines the next required agent pipeline.
 
+## Skills
+
+Read and reference the following files using the Read tool when necessary:
+- Pipeline planning and PRD authoring: `core/agents/skills/pipeline-planning.md`
+
 ## Input Parameters
 Check the following values from the prompt:
 - `REQUEST`: Original user request
