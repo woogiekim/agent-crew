@@ -185,6 +185,88 @@ real, substantive blocker.
 
 Wait for all task-runners to finish (including any crash-retry cycles).
 
+### 7.5. Parallel Action Gate (N > 1 only)
+
+> **Skip this step entirely when N == 1.** For single-task runs, the task-runner
+> itself acts as the local orchestrator for its own stage agents and issues the
+> consolidated AskUserQuestion via its Phase 2.5 Stage Action Gate. Proceed
+> directly to Step 7 (Collect Results).
+
+When `N > 1`, all task-runners execute concurrently. Before any stage agent
+executes a deploy, merge, push, or other destructive action, the orchestrator
+must consolidate their plans and issue a **single** approval gate.
+
+#### Protocol
+
+**Phase A — Plan collection (task-runners block, waiting for approval.md)**
+
+Each stage agent (devops, etc.) that would previously ask for approval must instead:
+1. Write its planned actions to `{TASK_DIR}/context/action-plan.md`
+2. Return a `PLAN:` block to its parent task-runner — do not execute yet
+3. The task-runner writes `PLAN_READY` to `{TASK_DIR}/context/approval.md`
+4. The task-runner polls `{TASK_DIR}/context/approval.md` for `APPROVED` or
+   `CANCELLED` (up to 60s, 5s interval) before releasing execution
+
+**Phase B — Centralized approval (orchestrator)**
+
+After all task-runners have written `PLAN_READY` to their `approval.md`, the
+orchestrator:
+
+1. Reads `action-plan.md` from every `TASK_DIR`
+2. Composes a consolidated approval summary:
+
+   ```text
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Consolidated Action Plan
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Task 1 [{BRANCH_1}]:
+     - deploy: push to staging via docker-compose up -d
+     - merge: git merge --no-ff {BRANCH_1} into main
+
+   Task 2 [{BRANCH_2}]:
+     - deploy: run npm run build && rsync dist/ to server
+     - merge: git merge --no-ff {BRANCH_2} into main
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ```
+
+3. Issues a **single** AskUserQuestion:
+   - header: "Approve All Actions"
+   - question: "Review the consolidated action plan above. Approve to release all tasks, or cancel to hold."
+   - options:
+     - Approve all — release all task pipelines to execute
+     - Cancel all — hold all tasks, no actions taken
+     - Custom input (to approve selectively by task ID)
+
+4. On **Approve all**: write `APPROVED` to `{TASK_DIR}/context/approval.md` for each task
+5. On **Cancel all**: write `CANCELLED` to `{TASK_DIR}/context/approval.md` for each task, then stop
+
+```bash
+# Detect when all task-runners have reached PLAN_READY
+for TASK_DIR in {all task dirs}; do
+  until grep -q "PLAN_READY\|APPROVED\|CANCELLED" "${TASK_DIR}/context/approval.md" 2>/dev/null; do
+    sleep 5
+  done
+done
+
+# Read and consolidate all action plans
+for TASK_DIR in {all task dirs}; do
+  cat "${TASK_DIR}/context/action-plan.md"
+done
+
+# After AskUserQuestion decision, write result to each task
+RESULT="APPROVED"  # or CANCELLED
+for TASK_DIR in {all task dirs}; do
+  echo "${RESULT}" > "${TASK_DIR}/context/approval.md"
+done
+```
+
+> **Orchestrator rule**: The orchestrator MUST NOT proceed to Step 7 until all
+> task-runners have received their approval signal and resumed (or halted on
+> CANCELLED). Task-runners that received CANCELLED must report STATUS: blocked
+> with reason "Cancelled by consolidated approval gate."
+
+---
+
 ### 7. Collect Results & Show Per-Task Summary
 
 #### Live Progress

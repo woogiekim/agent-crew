@@ -550,10 +550,23 @@ Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
 ---
 
-### Phase 2.5: Deploy Gate (after all non-devops stages complete)
+### Phase 2.5: Stage Action Gate
 
-After all non-devops stages have completed (and before running the devops stage,
-if any), execute the following two steps unconditionally:
+The task-runner owns all approval decisions for its pipeline. Stage agents
+(devops, reviewer, etc.) MUST NOT issue their own AskUserQuestion for deploy,
+merge, push, or destructive operations. Instead they write a PLAN block and wait.
+
+#### When this gate applies
+
+Execute this gate after all non-devops stages have completed (and before running
+the devops stage, if any), **and** whenever a stage agent returns a `PLAN:` block
+instead of immediately executing a destructive action.
+
+Stages that trigger this gate (any stage involving):
+- `git push` / `git merge`
+- deployment commands (deploy scripts, docker-compose up, rsync, etc.)
+- destructive file operations
+- external service calls
 
 #### Step 1 — Always display the implementation summary
 
@@ -576,7 +589,54 @@ Collect the commit log:
 git -C "${PROJECT_ROOT}" log --oneline HEAD ^main 2>/dev/null | head -10
 ```
 
-#### Step 2 — Conditional approval gate (devops only)
+#### Step 2 — Collect PLAN blocks from stage agents
+
+When a stage agent returns a `PLAN:` block (instead of executing), the task-runner:
+
+1. Collects PLAN blocks from all stage agents in the current execution group
+2. Writes a consolidated plan to `{TASK_DIR}/context/action-plan.md`:
+
+   ```markdown
+   # Action Plan
+
+   ## Stage: {stage_name}
+
+   ### Planned Actions
+   {list of planned commands from PLAN block}
+
+   ### Risk
+   {none | low | medium | high}
+
+   ### Reversible
+   {yes | no}
+   ```
+
+3. If `EXECUTION_MODE == parallel`: writes `PLAN_READY` to
+   `{TASK_DIR}/context/approval.md` and polls until the orchestrator writes
+   `APPROVED` or `CANCELLED` (up to 60s, 5s interval):
+
+   ```bash
+   echo "PLAN_READY" > "${TASK_DIR}/context/approval.md"
+   ELAPSED=0
+   while [ $ELAPSED -lt 60 ]; do
+     RESULT=$(cat "${TASK_DIR}/context/approval.md" 2>/dev/null)
+     if echo "$RESULT" | grep -q "^APPROVED$\|^CANCELLED$"; then
+       break
+     fi
+     sleep 5
+     ELAPSED=$((ELAPSED + 5))
+   done
+   if ! echo "$RESULT" | grep -q "^APPROVED$"; then
+     echo "CANCELLED" > "${TASK_DIR}/context/approval.md"
+   fi
+   ```
+
+4. If `EXECUTION_MODE == single`: the task-runner issues the AskUserQuestion
+   directly (see Step 3 below) and writes the result to `approval.md` itself.
+
+#### Step 3 — Conditional approval gate (N == 1, devops stage only)
+
+This step applies only when `EXECUTION_MODE == single`.
 
 Check whether the pipeline contains a `devops` stage (use the cached
 `PIPELINE_PATH` variable resolved in Phase 0 — do not re-derive the path):
@@ -595,17 +655,22 @@ Branches remain local; the crew orchestrator or user can push manually.
 
 **If a devops stage is present:** use **AskUserQuestion** to request approval
 before executing the devops stage. Do not run the devops stage without approval.
+This is the single consolidated approval gate for this pipeline — do not delegate
+it to the devops agent.
 
 Question:
 - header: "Deploy"
-- question: "Implementation is complete. Approve to run the devops stage (CI/CD + git push), or cancel to skip deployment and keep commits local."
+- question: "Implementation is complete. Review the action plan above. Approve to run the devops stage (CI/CD + git push), or cancel to skip deployment and keep commits local."
 - options:
   - Approve — run devops stage now
   - Cancel — skip devops, keep commits local
 
-If **Approve**: continue to execute the devops stage as the next pipeline stage.
+If **Approve**:
+  - Write `APPROVED` to `{TASK_DIR}/context/approval.md`
+  - Continue to execute the devops stage as the next pipeline stage.
 
 If **Cancel**:
+  - Write `CANCELLED` to `{TASK_DIR}/context/approval.md`
   - Mark the devops stage as skipped (do not update `completed_stages` for it).
   - Print the branch name so the user can push manually later.
   - Proceed directly to Phase 3 without running the devops stage.

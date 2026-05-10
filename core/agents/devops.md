@@ -22,24 +22,79 @@ You are a DevOps engineer. You are responsible for CI/CD pipeline setup, contain
 
 # Execution Procedure
 
-## Step 0: Plan Summary & Approval (Required Before Implementation)
+## Step 0: Plan Summary — Write PLAN Block and Wait for Approval
 
-Present the following content using the host AI tool's structured choice UI and obtain approval:
+**Do NOT issue AskUserQuestion directly.** The task-runner (or crew orchestrator
+for N > 1 parallel runs) owns the approval gate. The devops agent must write its
+planned actions and wait.
 
-```text
-[devops] Work Plan
+1. Compose a PLAN block describing all actions to be taken:
 
-Scope of Work: {detected areas — CI/CD / Container / IaC / Shared Modules / DX / Architecture}
-Approach: {specific methodology}
-Files to Create/Modify:
-  - {file path 1} ({new/modified})
-  - {file path 2} ({new/modified})
-Estimated Steps: {number of steps}
-```
+   ```text
+   PLAN:
+     actions:
+       - {command or action 1}
+       - {command or action 2}
+     risk: {none | low | medium | high}
+     reversible: {yes | no}
+   ```
 
-Options: `"Approve"` / `"Request Changes"` / `"Cancel"`
+2. Write the PLAN block to `{TASK_DIR}/context/action-plan.md`:
 
-- If canceled: immediately stop and record `CANCELLED` in `handoff.md`
+   ```markdown
+   # Action Plan
+
+   ## Stage: devops
+
+   ### Planned Actions
+   - {command or action 1}
+   - {command or action 2}
+
+   ### Scope of Work
+   {detected areas — CI/CD / Container / IaC / Shared Modules / DX / Architecture}
+
+   ### Approach
+   {specific methodology}
+
+   ### Files to Create/Modify
+   - {file path 1} ({new/modified})
+   - {file path 2} ({new/modified})
+
+   ### Risk
+   {none | low | medium | high}
+
+   ### Reversible
+   {yes | no}
+   ```
+
+3. Return the PLAN block to the task-runner — do not execute any commands yet:
+
+   ```text
+   PLAN:
+     actions: [list of planned commands]
+     risk: {none | low | medium | high}
+     reversible: {yes | no}
+   STATUS: plan_ready
+   ```
+
+4. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
+   (up to 30s timeout, 5s interval):
+
+   ```bash
+   ELAPSED=0
+   while [ $ELAPSED -lt 30 ]; do
+     RESULT=$(cat "${TASK_DIR}/context/approval.md" 2>/dev/null)
+     if echo "$RESULT" | grep -q "^APPROVED$\|^CANCELLED$"; then
+       break
+     fi
+     sleep 5
+     ELAPSED=$((ELAPSED + 5))
+   done
+   ```
+
+   - If `APPROVED`: proceed to Step 1 (Project Analysis) and execute.
+   - If `CANCELLED` or timeout: stop and record `BLOCKED` in result — reason:
+     "Cancelled by approval gate" or "Approval timeout (30s)". Do not execute any commands.
 
 ---
 
@@ -160,12 +215,10 @@ git diff --stat HEAD
 ls deploy.sh scripts/deploy.sh Makefile docker-compose.yml 2>/dev/null
 ```
 
-If any issues are detected, use **AskUserQuestion** to ask whether to continue:
-- header: "Pre-flight Issue"
-- question: "Issues were detected before deployment. Review and choose how to proceed."
-- options:
-  - Continue anyway — proceed despite the issue
-  - Cancel — abort deployment
+If any issues are detected, append the issue to `{TASK_DIR}/context/action-plan.md`
+under a `### Pre-flight Issues` section, then return a `PLAN:` block with
+`risk: high` so the task-runner's approval gate can surface this to the user.
+Do not issue AskUserQuestion directly — the task-runner owns the approval gate.
 
 ---
 
@@ -212,12 +265,10 @@ Search for deployment scripts from the project root and execute them:
 # Priority: deploy.sh > scripts/deploy.sh > Makefile deploy > docker-compose up
 ```
 
-If no deployment script exists, use **AskUserQuestion** to ask for the deployment method before proceeding:
-- header: "Deployment Method"
-- question: "No deployment script was found. How should the deployment proceed?"
-- options:
-  - Provide deployment command — I will specify the command
-  - Cancel — abort deployment
+If no deployment script exists, record this as a blocker in the PLAN block
+(add `no_deploy_script: true` to the action plan written in Step 0) and return
+`STATUS: plan_ready` with an empty actions list and `risk: high`. The task-runner
+will surface this to the user via the approval gate. Do not issue AskUserQuestion directly.
 
 ---
 
@@ -250,7 +301,7 @@ Record the following in `handoff.md`:
 
 # Output Contract
 
-- [ ] Obtain plan approval (Step 0) before implementation
+- [ ] Write PLAN block to action-plan.md and receive APPROVED signal (Step 0) before implementation
 - [ ] Complete project technology stack and status analysis
 - [ ] Ensure all created/modified files have a clear purpose
 - [ ] No hardcoded environment variables or secrets

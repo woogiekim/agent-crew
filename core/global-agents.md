@@ -80,33 +80,79 @@ Do not add duplicate free-form options if the host UI already provides one.
 
 ## Approval Rule (Framework-Level)
 
-All approval requests for the following actions MUST use AskUserQuestion:
+### Centralized Approval Gate
+
+All approval decisions for the following actions are owned exclusively by the
+orchestrator (crew:run for N > 1, task-runner for N == 1):
+
 - Merge (git merge)
 - Push to remote (git push)
 - Deployment (any deploy script or command)
 - Destructive operations (delete, reset, overwrite)
 - Branch cleanup (git branch -d / -D)
 
-Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
-are FORBIDDEN for these actions. Violating this rule is a workflow consistency error.
+**Stage agents (devops, reviewer, etc.) MUST NOT issue AskUserQuestion for any
+of the above actions.** Instead, stage agents must:
 
-Every AskUserQuestion for these actions must include at minimum:
-- header: action type (e.g., "Deploy", "Merge", "Push", "Rollback")
-- question: describing the specific action with relevant details
+1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
+2. Return a `PLAN:` block to the task-runner with the following fields:
+   ```text
+   PLAN:
+     actions: {list of planned commands}
+     risk: {none | low | medium | high}
+     reversible: {yes | no}
+   STATUS: plan_ready
+   ```
+3. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
+   (up to 30s timeout before reporting BLOCKED)
+4. Execute only after receiving `APPROVED`; halt with STATUS: BLOCKED on
+   `CANCELLED` or timeout
+
+### Orchestrator Approval Gate
+
+The orchestrator (crew:run or task-runner) issues the consolidated AskUserQuestion
+after collecting all PLAN blocks. This ensures:
+- A single approval prompt regardless of how many stage agents need approval
+- A consolidated view of all planned actions across all tasks (for N > 1)
+- No duplicate or out-of-order approval dialogs
+
+All AskUserQuestion calls for these actions must include at minimum:
+- header: action type (e.g., "Deploy", "Approve All Actions", "Merge", "Push", "Rollback")
+- question: describing the specific action(s) with relevant details
 - options: at minimum "Approve — proceed" and "Cancel — hold"
+
+Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
+are FORBIDDEN at every level of the system. Violating this rule is a workflow
+consistency error.
 
 ## Subagent Plan Approval Rule
 
 Before implementation, every implementation-capable subagent must present a plan
-and request approval through the host AI tool's structured choice UI. The planner
-is exempt because planning is its primary role.
+for approval. The planner is exempt because planning is its primary role.
 
-The plan must include:
+**How plans flow depends on the agent type:**
 
-1. What will be implemented and why.
-2. The approach or methodology.
-3. Files expected to be created or modified.
-4. Estimated implementation steps or TDD cycles.
+### Stage agents (devops, reviewer, and any pipeline agent)
+
+Stage agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
+a `PLAN:` block to the task-runner. They do NOT issue AskUserQuestion directly.
+The task-runner (or crew orchestrator for parallel runs) owns the approval gate.
+
+PLAN block format:
+```text
+PLAN:
+  actions:
+    - {action 1}
+    - {action 2}
+  risk: {none | low | medium | high}
+  reversible: {yes | no}
+STATUS: plan_ready
+```
+
+### Orchestrator-level approval (task-runner for N == 1, crew:run for N > 1)
+
+After collecting all PLAN blocks, the orchestrator issues a single AskUserQuestion
+with a consolidated summary of all planned actions.
 
 Standard approval options:
 
@@ -117,7 +163,7 @@ Standard approval options:
 [D] Custom input
 ```
 
-Standard plan summary:
+Standard plan summary (presented by orchestrator, not stage agents):
 
 ```text
 [agent-name] Work Plan
@@ -127,7 +173,10 @@ Approach: {pattern or methodology summary}
 Files:
   - {file path 1} (new or modified)
   - {file path 2} (new or modified)
-Estimated steps: {number of steps or TDD cycles}
+Planned Actions:
+  - {action 1}
+  - {action 2}
+Risk: {none | low | medium | high}
 
 Proceed with this plan?
 ```
