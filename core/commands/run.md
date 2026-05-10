@@ -68,13 +68,21 @@ Normalize the input into a task list with cardinality `N >= 1`.
 
 #### Input Normalization
 
-If any task description contains Hangul characters, apply the Korean Input
-Normalization rule (`core/rules/korean-input.md`) before proceeding:
+If any task description contains Hangul characters, delegate to the
+**korean-normalizer agent** before proceeding:
 
-1. Interpret the operational intent of the Korean instruction
-2. Rewrite it as a professional English orchestration instruction
-3. Use the rewritten English string as the canonical TASK value for all
-   downstream agents and state files
+```text
+RAW_TASK: {original Korean string}
+Apply core/rules/korean-input.md normalization and return NORMALIZED_TASK.
+```
+
+Use the returned `NORMALIZED_TASK` as the canonical TASK for all downstream
+agents and state files. See `core/rules/normalization-adapter.md` for the full
+adapter contract.
+
+> **Hard gate**: If Hangul is detected, do not proceed to Step 2 until
+> `NORMALIZED_TASK` is confirmed. The original Korean string must not appear
+> in any agent prompt, `pipeline.json`, or `result.md`.
 
 ### 2. Initialize State Paths
 
