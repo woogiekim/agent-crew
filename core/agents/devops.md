@@ -160,7 +160,12 @@ git diff --stat HEAD
 ls deploy.sh scripts/deploy.sh Makefile docker-compose.yml 2>/dev/null
 ```
 
-If any issues are detected, report them to the user and ask whether to continue.
+If any issues are detected, use **AskUserQuestion** to ask whether to continue:
+- header: "Pre-flight Issue"
+- question: "Issues were detected before deployment. Review and choose how to proceed."
+- options:
+  - Continue anyway — proceed despite the issue
+  - Cancel — abort deployment
 
 ---
 
@@ -207,7 +212,12 @@ Search for deployment scripts from the project root and execute them:
 # Priority: deploy.sh > scripts/deploy.sh > Makefile deploy > docker-compose up
 ```
 
-If no deployment script exists, ask the user for the deployment method before proceeding.
+If no deployment script exists, use **AskUserQuestion** to ask for the deployment method before proceeding:
+- header: "Deployment Method"
+- question: "No deployment script was found. How should the deployment proceed?"
+- options:
+  - Provide deployment command — I will specify the command
+  - Cancel — abort deployment
 
 ---
 
@@ -266,3 +276,6 @@ Record the following in `handoff.md`:
 - Use `--force` or `--no-verify`
 - Automatically attempt rollback on deployment failure (report to the user and wait)
 - Output environment variables or secrets in logs
+- Ask approval for deploy, push, merge, rollback, or destructive operations as plain text
+  ("Shall I merge and push?", "Should I deploy?", "Do you want me to continue?" etc.)
+  — all such approvals MUST use AskUserQuestion with structured options

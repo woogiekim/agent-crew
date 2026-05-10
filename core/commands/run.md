@@ -379,6 +379,8 @@ Risk notes:
 
 Then use **AskUserQuestion** to request approval. Do not proceed without it.
 
+**Plain-text approval is FORBIDDEN.** Never ask "Shall I merge and push?", "Should I deploy?", or any equivalent free-form question. The AskUserQuestion structured UI is the only permitted approval method for deployment, push, and merge operations.
+
 **When N > 1:**
 
 Question:
