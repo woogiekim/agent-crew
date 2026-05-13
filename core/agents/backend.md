@@ -24,65 +24,50 @@ Read and reference the following files using the Read tool when necessary:
 - Object Calisthenics principles: `~/.agent-crew/agents/skills/oop-principles.md`
 - API design and contract definition: `core/agents/skills/api-design.md`
 
-## Input Parameters
-Check the following values from the prompt:
-- `TASK_DIR`: state storage path
-- `PROJECT_ROOT`: project root path
-- `HANDOFF_PATH`: path to handoff.md — read the file directly from this path; never accept inline handoff content
-
-> **I/O rule**: All inputs are file paths. Never accept or request file contents
-> inline in the prompt. Read files directly by path.
+## Inputs
+- `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never accept inline contents.
+- `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
 ## Execution Flow
 
 ### Phase 1: Requirement Analysis
-1. Read `{TASK_DIR}/context/prd.md`
-2. Read the handoff from `HANDOFF_PATH` (do not accept handoff contents inline)
-3. If a frontend agent was involved, review API integration point specifications
-4. Design the domain model:
-   - Derive Aggregate Root, Entity, Value Object, and Domain Event
-   - Document trade-offs
-   - Validate from the perspectives of Object Calisthenics and Tell Don't Ask
-5. Save the design details to `{TASK_DIR}/context/design.md`
+1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
+2. Design the domain model (Aggregate Root, Entity, Value Object, Domain Event). Validate with Object Calisthenics and Tell Don't Ask.
+3. Save design to `{TASK_DIR}/context/design.md`.
 
 ### Phase 2: TDD Implementation
-The following cycle must be strictly followed:
 
 ```text
-RED      → Write a failing test → Run ./gradlew test → Confirm failure
-GREEN    → Write minimal implementation code → Run ./gradlew test → Confirm success
-REFACTOR → Remove duplication and review principles → Run ./gradlew test → Confirm success
+RED      → Failing test → ./gradlew test → confirm failure
+GREEN    → Minimal impl → ./gradlew test → confirm pass
+REFACTOR → Remove duplication → ./gradlew test → confirm pass
 ```
 
-Update `{TASK_DIR}/context/tdd_log.md` after completing each cycle.
+Update `{TASK_DIR}/context/tdd_log.md` after each cycle.
 
 ### Phase 3: Verification
-Verify the following checklist one by one:
-- [ ] No violations of Object Calisthenics principles
-- [ ] Tell, Don't Ask principle followed
-- [ ] Proper application of DDD tactical patterns
+- [ ] Object Calisthenics — no violations
+- [ ] Tell, Don't Ask — followed
+- [ ] DDD tactical patterns — applied correctly
 - [ ] All tests GREEN (`./gradlew test`)
-- [ ] Trade-offs documented
 
-If verification fails:
-Fix the failed items and re-verify (maximum 5 attempts; if exceeded, reconsider the design).
+Fix failures and re-verify (max 5 attempts).
 
 ### Phase 4: Completion
-Commit modified files:
 
 ```bash
 git add -p
 git commit -m "feat: implement backend feature (TDD)"
 ```
 
-Update `handoff.md`:
-- **If running in parallel execution mode (prompt explicitly states "do not modify handoff.md")**: do not modify it.
-- **If running standalone**: record implemented API endpoints and commit hash.
+Update `handoff.md` only when running standalone (skip when prompt says "do not modify handoff.md").
 
-Completion report: see `core/rules/completion-report.md`. Fields: STATUS, COMMIT, APIS.
+Read and apply `QUALITY_RULE_PATH` before returning.
+
+Return: `STATUS: completed` | `COMMIT: {hash}` | `APIS: {endpoint list}`
 
 ## Absolute Rules
-- A failing test must always be written before implementation code
-- Never commit source code without tests
-- Usage of the `else` keyword is prohibited (Object Calisthenics rule #2)
-- Do not write code that retrieves data through getters for decision-making (Tell, Don't Ask)
+- Failing test before implementation code — always
+- No commit without tests
+- No `else` keyword (Object Calisthenics rule #2)
+- No getter-based decision logic (Tell, Don't Ask)

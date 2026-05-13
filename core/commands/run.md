@@ -214,23 +214,43 @@ same in both modes.
 > exception. Do NOT skip or abbreviate this step regardless of how obvious the task seems.
 > The task argument is a description, not requirements.
 
-For each task `i`, delegate to the **requirements agent** (blocking):
+**When `N == 1`:** Delegate to the requirements agent (blocking):
 
 ```text
 TASK: {task description}
-TASK_INDEX: {i}
+TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
 
 Run the 2-round AskUserQuestion interview, validate scope, detect ambiguities,
 write {TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
 ```
 
-Wait for the requirements agent to return. Extract the `REQUIREMENTS` block from its
-response and record it for this task.
+Wait for the agent to return. Extract the `REQUIREMENTS` block and record it.
 
-Repeat for each task. If `N > 1`, collect requirements for all tasks **before** proceeding
-to Step 6 (run task-runners). Do not run task-runners while requirements collection is
-still in progress for any task.
+**When `N > 1`:** Spawn all N requirements agents **simultaneously in a single
+response** (one Agent tool call per task, all issued together). Do NOT send them
+one at a time — parallel spawn is mandatory for N > 1:
+
+```text
+# Issue all N Agent calls in the same response (parallel fan-out):
+For task 0:
+  TASK: {task 0 description}
+  TASK_INDEX: 0
+  TASK_DIR: {TASK_DIR_0}
+  Run the 2-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
+
+For task 1:
+  TASK: {task 1 description}
+  TASK_INDEX: 1
+  TASK_DIR: {TASK_DIR_1}
+  Run the 2-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
+
+... (one call per task, all in the same response)
+```
+
+Wait for **all** N requirements agents to complete before proceeding to Step 6.
+Extract each task's `REQUIREMENTS` block from its agent's response and record it.
+Do not run task-runners while requirements collection is still in progress for any task.
 
 ### 6. Run Task Runners
 

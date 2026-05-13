@@ -109,11 +109,26 @@ If no ambiguities or risks are found, write the table with a single row:
 Based on scope, complexity, and the intent summary from Step 2, determine the
 full pipeline. Use the stage composition table below.
 
-**Parallelism guidance** — prefer grouping independent agents in the same stage:
-- `designer` and `backend` can always run in parallel — they write independent
-  artifacts (`design-spec.md` vs. domain/API code) with no intra-stage dependency.
-- `devops` and `resolver` are always sequential (depend on prior stage output).
-- When uncertain, put agents in the same stage; the task-runner enforces independence.
+**Parallelism guidance** — **default to parallel. Always group independent agents
+in the same stage unless a true data dependency exists.**
+
+Rule: If agent B does not read any file that agent A writes within the same stage,
+they MUST be grouped as a parallel stage — do not serialize them.
+
+Default parallel groupings (always apply unless overridden by a dependency):
+- `["designer", "backend"]` — designer writes `design-spec.md`; backend writes
+  domain/API code. Neither reads the other's output within the stage.
+- Any two agents that write to different output files and do not consume each other's
+  output within the same stage round.
+
+Always sequential (never group with others in the same stage):
+- `devops` — depends on prior stage artifacts; always its own sequential stage.
+- `resolver` — depends on prior stage artifacts; always its own sequential stage.
+- `reviewer` — always the final sequential stage; never grouped with others.
+
+When uncertain: **prefer parallel**. File-level merge conflicts, if any arise from
+parallel writes, are resolved by the resolver agent — that is its purpose.
+Choosing sequential to avoid conflicts is the wrong trade-off.
 
 | Request Type | stages |
 |---|---|

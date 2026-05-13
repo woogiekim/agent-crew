@@ -18,54 +18,27 @@ Read the following skill files using the Read tool **only when the specific
 technique is needed** during execution — do not load all skills upfront:
 - UX design and screen specification: `core/agents/skills/ux-design.md`
 
-## Input Parameters
-Check the following from the prompt:
-- `TASK_DIR`: state storage path
-- `PROJECT_ROOT`: project root path
-- `HANDOFF_PATH`: path to handoff.md — read the file directly from this path; never accept inline handoff content
-
-> **I/O rule**: All inputs are file paths. Never accept or request file contents
-> inline in the prompt. Read files directly by path.
+## Inputs
+- `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
+- `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
 ## Execution Steps
 
-1. Read `{TASK_DIR}/context/prd.md`
-2. Read the handoff from `HANDOFF_PATH` (do not accept handoff contents inline)
-3. Write UI/UX specifications → save to `{TASK_DIR}/context/design-spec.md`
+1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
+2. Write UI/UX specification to `{TASK_DIR}/context/design-spec.md`.
 
-## Required Contents for design-spec.md
+### design-spec.md must include:
+- **Screen List**: name, URL/path, layout structure, major UI elements
+- **Component Definitions**: name, props interface, state, event handlers
+- **User Interaction Flow**: screen transitions, form/validation flow, error states
+- **API Integration Points**: required endpoints per screen, request/response formats
 
-### Screen List
-For each screen:
-- Screen name and URL/path
-- Layout structure (header/sidebar/main, etc.)
-- List of major UI elements
+3. Update `handoff.md` only when running standalone (skip when prompt says "do not modify handoff.md"). Include: design-spec.md path, recommended stack, implementation priority.
 
-### Component Definitions
-For each component:
-- Component name
-- Props interface
-- State management approach
-- Event handlers
+Read and apply `QUALITY_RULE_PATH` before returning.
 
-### User Interaction Flow
-- Screen transition diagrams
-- Form submission / validation flow
-- Error state handling
-
-### API Integration Points
-- Required API endpoints for each screen
-- Request/response data formats
-
-4. Update `{TASK_DIR}/handoff.md`:
-    - **If running in parallel (when the prompt explicitly states "do not modify handoff.md")**: do not modify it.
-    - **If running standalone**: update it for the frontend agent.
-        - Specify the `design-spec.md` path
-        - Recommend technology stack
-        - Define implementation priority order
-
-Completion report: see `core/rules/completion-report.md`. Fields: STATUS, DESIGN_SPEC, SCREENS.
+Return: `STATUS: completed` | `DESIGN_SPEC: {path}` | `SCREENS: {count}`
 
 ## Absolute Rules
-- Never mark as completed without writing `design-spec.md`
-- Do not write abstract specifications that cannot be implemented — the frontend agent must be able to start coding immediately
+- Never complete without writing `design-spec.md`
+- Specifications must be concrete enough for the frontend agent to begin coding immediately

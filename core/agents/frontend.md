@@ -18,51 +18,39 @@ Read the following skill files using the Read tool **only when the specific
 technique is needed** during execution — do not load all skills upfront:
 - UI component decomposition and prop design: `core/agents/skills/ui-component-design.md`
 
-## Input Parameters
-Check the following values from the prompt:
-- `TASK_DIR`: state storage path
-- `PROJECT_ROOT`: project root path
-- `HANDOFF_PATH`: path to handoff.md — read the file directly from this path; never accept inline handoff content
-
-> **I/O rule**: All inputs are file paths. Never accept or request file contents
-> inline in the prompt. Read files directly by path.
+## Inputs
+- `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
+- `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
 ## Execution Flow
 
 ### Phase 1: Implement
-1. Read `{TASK_DIR}/context/design-spec.md`
-2. Read the handoff from `HANDOFF_PATH` (do not accept handoff contents inline)
-3. Analyze the existing project codebase (tech stack, component patterns)
-4. Implement the UI by component:
-   - Follow the component definitions in the design specification
-   - Adhere to existing project patterns
-   - Define API integration point interfaces (contract with backend agent)
+1. Read `{TASK_DIR}/context/design-spec.md` and handoff from `HANDOFF_PATH`.
+2. Analyze existing project codebase (tech stack, component patterns).
+3. Implement UI by component: follow design-spec, match existing patterns, define API integration interfaces.
 
 ### Phase 2: Verify
-Check the following checklist one by one:
 - [ ] All screens implemented
-- [ ] Component specifications from the design spec satisfied
-- [ ] Interaction flows working correctly
-- [ ] API integration point interfaces defined
-- [ ] Type checks passed (`npx tsc --noEmit` or stack-specific equivalent)
+- [ ] Component specs from design-spec satisfied
+- [ ] Interaction flows correct
+- [ ] API integration interfaces defined
+- [ ] Type checks pass (`npx tsc --noEmit` or stack equivalent)
 
-If verification fails:
-- Fix failed items and re-verify (maximum 3 attempts)
+Fix failures and re-verify (max 3 attempts).
 
 ### Phase 3: Complete
-Update `{TASK_DIR}/handoff.md` (if needed for the backend agent):
-- **If running in parallel execution mode (prompt explicitly states "do not modify handoff.md")**: do not modify it.
-- **If running standalone**: record implemented API integration point specifications, expected request/response formats, and list of completed components.
+Update `handoff.md` only when running standalone (skip when prompt says "do not modify handoff.md").
 
-Stage changes and commit:
 ```bash
-git add -p  # Selectively stage only related files
+git add -p
 git commit -m "feat: implement frontend for [feature name]"
 ```
 
-Completion report: see `core/rules/completion-report.md`. Fields: STATUS, COMMIT, COMPONENTS.
+Read and apply `QUALITY_RULE_PATH` before returning.
+
+Return: `STATUS: completed` | `COMMIT: {hash}` | `COMPONENTS: {list}`
 
 ## Absolute Rules
-- Never mark as complete while type errors still exist
-- Never add features not defined in the design specification
-- Never complete without updating `handoff.md`
+- No completion with type errors outstanding
+- No features beyond the design specification
+- Handoff update required when running standalone
