@@ -77,8 +77,28 @@ planned actions and wait.
    STATUS: plan_ready
    ```
 
-4. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
-   (up to 60s timeout, 5s interval):
+4. Wait for `APPROVED` or `CANCELLED`. Two paths converge on the same artifact
+   — `{TASK_DIR}/context/approval.md` is the canonical record in both cases.
+
+   **Preferred path (capability-gated, P1):** When the host adapter advertises
+   `task_tools=true` in `capabilities.json` AND
+   `${TASK_DIR}/host-task-id.txt` exists, the task-runner's approval gate also
+   transitions the parent host task. The devops agent can long-poll on that
+   transition instead of waking every 5 seconds:
+
+   ```text
+   ELAPSED=0
+   while [ $ELAPSED -lt 60 ]; do
+     # Read host task status; treat any error as "fall back to file poll below"
+     HOST_STATUS=$(TaskGet(taskId=$(cat "${TASK_DIR}/host-task-id.txt")).status)
+     if [ "$HOST_STATUS" = "in_progress" ]; then break; fi
+     if [ "$HOST_STATUS" = "cancelled" ]; then break; fi
+     sleep 1
+     ELAPSED=$((ELAPSED + 1))
+   done
+   ```
+
+   **Fallback (always available, `task_tools=false` or any TaskGet error):**
 
    ```bash
    ELAPSED=0
@@ -90,6 +110,14 @@ planned actions and wait.
      sleep 5
      ELAPSED=$((ELAPSED + 5))
    done
+   ```
+
+   After either path resolves, **always re-read** `approval.md` for the final
+   verdict — it is the contractual artifact regardless of which wakeup
+   mechanism fired:
+
+   ```bash
+   RESULT=$(cat "${TASK_DIR}/context/approval.md" 2>/dev/null)
    ```
 
    - If `APPROVED`: proceed to Step 1 (Project Analysis) and execute.

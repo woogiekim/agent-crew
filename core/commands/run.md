@@ -376,8 +376,48 @@ orchestrator:
 4. On **Approve all**: write `APPROVED` to `{TASK_DIR}/context/approval.md` for each task
 5. On **Cancel all**: write `CANCELLED` to `{TASK_DIR}/context/approval.md` for each task, then stop
 
-```bash
-# Detect when all task-runners have reached PLAN_READY
+#### P2 — TaskList-based PLAN_READY detector (capability-gated)
+
+The orchestrator reads
+`${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json` once and caches
+`HAS_TASK_TOOLS`. When `HAS_TASK_TOOLS == 1` the preferred fan-in path is a
+single `TaskList()` round-trip filtered by `metadata.stage == "plan_ready"`
+matching the run's task IDs. The file write is still the contract — the
+`TaskList` call is only the fast convergence signal:
+
+```text
+HAS_TASK_TOOLS=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
+
+if [ "${HAS_TASK_TOOLS}" = "1" ]; then
+  # Preferred path: deterministic readiness check, one round-trip (no sleep).
+  # P1 wrote TaskUpdate(status="blocked", metadata.stage="plan_ready") on each
+  # task-runner's parent host task. We poll TaskList every 1s (long-poll if the
+  # host supports wake-on-change) until every expected task is present.
+  EXPECTED_TASK_IDS="{comma-separated list of TASK_IDs from this run}"
+  ELAPSED=0
+  while [ $ELAPSED -lt 120 ]; do
+    READY=$(TaskList()
+      | jq -r '.[] | select(.metadata.stage=="plan_ready") | .metadata.task_id'
+      | sort -u)
+    MISSING=$(comm -23 <(echo "$EXPECTED_TASK_IDS" | tr ',' '\n' | sort -u) \
+                       <(echo "$READY"))
+    if [ -z "$MISSING" ]; then
+      break
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+  done
+fi
+
+# File-based fallback (always runs when HAS_TASK_TOOLS == 0, and as a safety
+# backstop after the TaskList path when capability is enabled — the file is the
+# source of truth, the host call is only the convergence signal).
 for TASK_DIR in {all task dirs}; do
   until grep -q "PLAN_READY\|APPROVED\|CANCELLED" "${TASK_DIR}/context/approval.md" 2>/dev/null; do
     sleep 5
@@ -389,12 +429,30 @@ for TASK_DIR in {all task dirs}; do
   cat "${TASK_DIR}/context/action-plan.md"
 done
 
-# After AskUserQuestion decision, write result to each task
+# After AskUserQuestion decision, write result to each task. When the
+# capability is enabled, ALSO transition each task-runner's parent host task —
+# the TaskGet waiters inside P1 will wake on the next event without paying the
+# 5-second file-poll cadence.
 RESULT="APPROVED"  # or CANCELLED
 for TASK_DIR in {all task dirs}; do
   echo "${RESULT}" > "${TASK_DIR}/context/approval.md"
+  if [ "${HAS_TASK_TOOLS}" = "1" ]; then
+    HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt" 2>/dev/null)
+    if [ -n "$HOST_TASK_ID" ]; then
+      # APPROVED → in_progress, CANCELLED → cancelled
+      if [ "$RESULT" = "APPROVED" ]; then
+        TaskUpdate(taskId=$HOST_TASK_ID, status="in_progress")
+      else
+        TaskUpdate(taskId=$HOST_TASK_ID, status="cancelled")
+      fi
+    fi
+  fi
 done
 ```
+
+When `HAS_TASK_TOOLS == 0` the orchestrator runs only the legacy file-poll
+loop above — identical behavior to pre-P2. The capability flag opts into a
+faster wakeup; it never removes the file contract.
 
 > **Orchestrator rule**: The orchestrator MUST NOT proceed to Step 7 until all
 > task-runners have received their approval signal and resumed (or halted on
