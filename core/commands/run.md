@@ -315,6 +315,27 @@ After each task-runner returns, the orchestrator must verify its output:
   - The task-runner will resume from `pipeline.json` (Phase 0 resume check).
   - Retry up to **3 times** before marking the task as blocked.
 
+**P7 — capability-gated crash classification (when `HAS_TASK_TOOLS == 1`).**
+When the parent host task id is available at `${TASK_DIR}/host-task-id.txt`,
+the orchestrator should consult `TaskGet(parent_taskId).status` to classify
+the "no STATUS field" outcome before retrying:
+
+```text
+HOST_STATUS=$(TaskGet(taskId=$(cat "${TASK_DIR}/host-task-id.txt")).status)
+```
+
+| `TaskGet` status | Classification | Orchestrator action |
+|---|---|---|
+| `error` | True crash | Re-invoke (counts against 3-retry budget) |
+| `completed` | Token-truncation tail | Re-invoke with resume hint pointing at `${TASK_DIR}/progress.log` and `pipeline.json`; this resume does **not** count against the 3-retry budget (one free token-truncation resume per task) |
+| `blocked` | Task-runner reached BLOCKED but failed to write STATUS | Read `${TASK_DIR}/result.md`; if STATUS present treat as blocked, else re-invoke as crash |
+| `in_progress` / `pending` | Host did not yet observe completion — likely runtime interrupt | Re-invoke (counts as crash) |
+| `cancelled` | User cancelled at gate | Mark task blocked with reason "Cancelled by approval gate" — do not retry |
+
+When `HAS_TASK_TOOLS == 0` or the parent host task id is absent: skip the
+classification entirely and apply the legacy "every no-STATUS outcome is a
+crash, retry up to 3 times" rule. Behavior is identical to pre-P7.
+
 This "끈질기게 실행" (persistent execution) rule means the orchestrator never
 gives up on a task-runner until it explicitly returns `STATUS: blocked` with a
 real, substantive blocker.

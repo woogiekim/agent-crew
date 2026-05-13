@@ -791,15 +791,43 @@ Every stage invocation (single or parallel) is wrapped in a retry loop.
 Retry limits follow the quality-loop rule (`QUALITY_RULE_PATH`):
 
 - **Validation failure** (STATUS returned but criteria not met): up to **3 retries**.
-- **Crash** (no STATUS line returned at all): up to **5 retries**.
+- **Crash** (true agent failure, not a token-limit tail): up to **5 retries**.
+- **Token-limit truncation** (run reached the end without a STATUS line but
+  produced substantial output, P7): **1 resume** with a checkpoint hint, then
+  fall through to the crash retry budget if still no STATUS line.
 
-**Crash detection:** Any agent invocation that returns without a `STATUS:` line
-in its response is treated as a crash — not a clean BLOCKED state.
+**Crash detection — two paths converge on the same decision.**
+
+**P7 — preferred path when `HAS_TASK_TOOLS == 1` AND the per-stage host task id
+is present** (populated by Phase 1c-bis under `pipeline.json.host_task_ids`):
+read the host-detected termination status directly:
+
+```text
+STAGE_HOST_STATUS=$(TaskGet(taskId=host_task_ids[i-1][agent_name]).status)
+# error    → real crash (no STATUS line in response AND host detected failure)
+# blocked  → halt pipeline
+# completed → success (re-check response for STATUS:; if absent → token-truncation)
+# cancelled → treat as cancellation (halt with STATUS: blocked)
+```
+
+This distinguishes "agent died on a missing import in 30 s" (`error`) from
+"agent ran 90 % of the way and ran out of tokens" (host says `completed`, but
+no `STATUS:` line in the captured response). The latter is **token-limit
+truncation**, not a crash — the response so far is preserved, so re-invoking
+with a resume hint pointing at `${TASK_DIR}/progress.log` and the latest
+`stage_{i}_progress.md` checkpoint usually completes the work in one extra
+spawn instead of burning all 5 crash retries.
+
+**Legacy fallback when `HAS_TASK_TOOLS == 0` or the host-task id is absent**:
+Any agent invocation that returns without a `STATUS:` line in its response is
+treated as a crash. There is no way to distinguish token-limit truncation
+from a true crash on this path, so the full 5-retry budget applies uniformly.
 
 Retry logic per agent:
 
 ```
 crash_attempts = 0
+token_limit_resumes_used = 0
 while crash_attempts <= 5:
     invoke agent
     if response contains "STATUS: completed":
@@ -808,16 +836,37 @@ while crash_attempts <= 5:
         break  # agent submitted a plan — Phase 2.5 will handle approval
     elif response contains "STATUS: BLOCKED":
         halt pipeline — write blocker to result.md and return STATUS: blocked
-    else:  # no STATUS line — treat as crash
-        crash_attempts += 1
-        if crash_attempts > 5:
-            write crash details to {TASK_DIR}/result.md
-            return STATUS: blocked (reason: agent crashed after 5 attempts)
-        re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only — no inline content)
+    else:  # no STATUS line — classify
+        classification = "crash"
+        if HAS_TASK_TOOLS == 1 AND host_task_ids[i-1][agent_name] is set:
+            STAGE_HOST_STATUS = TaskGet(taskId).status
+            if STAGE_HOST_STATUS == "completed":
+                classification = "token_truncation"
+            elif STAGE_HOST_STATUS == "blocked":
+                halt pipeline — write blocker to result.md and return STATUS: blocked
+            elif STAGE_HOST_STATUS == "cancelled":
+                halt pipeline — write CANCELLED to result.md and return STATUS: blocked
+            # else (error / pending / in_progress): treat as crash
+
+        if classification == "token_truncation" AND token_limit_resumes_used < 1:
+            token_limit_resumes_used += 1
+            re-invoke agent with resume hint:
+              "Resume from: {TASK_DIR}/context/stage_{i}_progress.md if present,
+               else from {TASK_DIR}/progress.log tail. Continue prior work."
+            continue  # do not increment crash_attempts
+        else:
+            crash_attempts += 1
+            if crash_attempts > 5:
+                write crash details to {TASK_DIR}/result.md
+                return STATUS: blocked (reason: agent crashed after 5 attempts)
+            re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only)
 ```
 
-Do not silently swallow a crash. After 5 crash failures on the same agent, report BLOCKED
-with the agent name and stage index.
+Do not silently swallow a crash. After 5 crash failures on the same agent (the
+single token-truncation resume does not count against this budget), report
+BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
+host task id is absent, every "no STATUS line" outcome is classified as a
+crash — identical to pre-P7 behavior.
 
 #### Custom Agent Dispatch
 
