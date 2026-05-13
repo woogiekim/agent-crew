@@ -19,7 +19,43 @@ under the active project's state directory.
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+CAPABILITIES_PATH="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json"
 ```
+
+### 1b. Probe host capabilities (Layer 1 progressive adoption)
+
+Read the host capabilities file written by the active adapter's `setup.sh`. Per
+`core/rules/host-capabilities.md`, a missing file or parse error means every
+flag is treated as `false` (legacy behavior).
+
+```bash
+HAS_TASK_TOOLS=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
+```
+
+If `HAS_TASK_TOOLS == 1` AND the host exposes a callable `TaskList` tool, the
+preferred source for "Recent events" is `TaskList` output filtered to the
+crew-managed entry. Use this preference path:
+
+```text
+if HAS_TASK_TOOLS == 1:
+    call TaskList()
+    filter to tasks whose metadata.task_id matches the current ACTIVE_TASK
+      (or whose subject starts with "crew:run —")
+    render the matching task as "Recent events (from host task list)"
+else:
+    fall back to tailing progress.log (Step 5 below)
+```
+
+If the TaskList call is not available at runtime (tool not loaded in this
+session, host unable to respond), silently fall back to the progress.log tail.
+The capability flag opts in; the actual TaskList call must still be guarded by a
+runtime availability check.
 
 ### 2. Find the most recent task
 
@@ -105,8 +141,10 @@ PYEOF
 fi
 ```
 
-### 5. Read recent progress events
+### 5. Read recent progress events (fallback)
 
+This step is the legacy fallback used when `HAS_TASK_TOOLS == 0`, when the host
+TaskList call is not available, or when the capability gate was not opted into.
 Read the last 20 lines from `{TASK_DIR}/progress.log` (if it exists) to show
 real-time progress events that may not yet be reflected in `pipeline.json`:
 
@@ -121,6 +159,17 @@ fi
 
 This log is written by the task-runner at every phase and stage boundary, so it
 reflects the current live state even while a sub-agent is still running.
+
+Source-selection summary:
+
+| `task_tools` flag | TaskList callable | Source used |
+|---|---|---|
+| `true` | yes | host TaskList output (Step 1b) |
+| `true` | no | progress.log tail (this step) |
+| `false` or missing | — | progress.log tail (this step) |
+
+`progress.log` is always written regardless of which source is preferred — it
+remains the single source of truth per `core/rules/host-capabilities.md`.
 
 ### 6. Build the stage list
 
@@ -261,3 +310,9 @@ Pipeline stages:
   `{TASK_DIR}/progress.log` (tail -20), which is written by the task-runner
   at every phase and stage boundary. This log is the most up-to-date source
   of pipeline state even while a sub-agent is still running.
+- When the host adapter has advertised `task_tools: true` in
+  `~/.agent-crew/state/{project}/capabilities.json`, `crew:status` prefers the
+  host's `TaskList` output for "Recent events" because hosts like Claude Code
+  stream that surface live. `progress.log` is still written, so the fallback is
+  always safe. See `core/rules/host-capabilities.md` for the schema and the
+  absence contract.

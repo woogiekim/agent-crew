@@ -21,6 +21,24 @@ chmod +x "${CLAUDE_DIR}/agent-crew/adapters/claude/"*.sh 2>/dev/null || true
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${CLAUDE_DIR}/CLAUDE.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".claude/" "CLAUDE.md" ".claude/settings.local.json" ".claude/CLAUDE.local.md"
 
+# Write host capability flags so the core pipeline can opt into Claude Code's
+# richer task-tracking surface (TaskCreate / TaskList / TaskUpdate / Monitor).
+# Schema documented at core/rules/host-capabilities.md.
+# Absence of this file MUST be treated as legacy behavior (all flags false).
+PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
+mkdir -p "${STATE_DIR}"
+cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
+{
+  "host": "claude",
+  "task_tools": true,
+  "agent_background": true,
+  "monitor_tool": true
+}
+CAPS_EOF
+
 printf 'HOST: claude\n'
 printf 'PROJECT_ROOT: %s\n' "${PROJECT_ROOT}"
 printf 'INSTALLED: %s\n' "${CLAUDE_DIR}"
+printf 'CAPABILITIES: %s\n' "${CAPABILITIES_FILE}"
