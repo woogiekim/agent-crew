@@ -34,10 +34,26 @@ scripts are missing, or the required approval signal has not been written to
 ### Approval Ownership
 Do not issue deployment, push, merge, rollback, or branch-cleanup approvals from
 inside the devops agent. Write the planned actions to
-`{TASK_DIR}/context/action-plan.md`, return a `PLAN:` block, and poll
-`{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`. The task-runner
-owns approval for single-task runs; the crew orchestrator owns approval for
-parallel runs.
+`{TASK_DIR}/context/action-plan.md`, return a `PLAN:` block, and wait for the
+approval signal. The task-runner owns approval for single-task runs; the crew
+orchestrator owns approval for parallel runs.
+
+The approval signal is delivered through **two paths that converge on the same
+artifact** — `{TASK_DIR}/context/approval.md` is the contractual record:
+
+1. **File-based primary (always available).** Poll `approval.md` for `APPROVED`
+   or `CANCELLED` every 5 seconds up to 60 seconds. This is the canonical path
+   for adapters without host task tools (codex, generic) and the fallback for
+   any failure of the host-tool path below.
+2. **Capability-gated wakeup (P1, when `capabilities.json` advertises
+   `task_tools=true`).** When `${TASK_DIR}/host-task-id.txt` exists, the
+   task-runner's approval gate ALSO calls
+   `TaskUpdate(taskId, status="in_progress")` on APPROVED or
+   `TaskUpdate(taskId, status="cancelled")` on CANCELLED. The agent can
+   long-poll `TaskGet(taskId).status` for an immediate wakeup instead of
+   sleeping 5 seconds at a time. After either path resolves, **always re-read
+   `approval.md` for the final verdict** — the host call is the wakeup signal,
+   the file is the contract.
 
 Never run `git push`, create remote tags, execute deployment scripts, or modify
 production infrastructure before approval is present. In task-runner pipelines,

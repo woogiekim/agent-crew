@@ -164,9 +164,10 @@ These five variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
 `PRD_PATH`, `CAPABILITIES_PATH`) must be passed as-is to all sub-agents. Never
 re-derive them inline.
 
-**Host capability bootstrap**: Read host capabilities (Layer 1 of progressive
+**Host capability bootstrap**: Read host capabilities (Layers 1–3 of progressive
 adoption — see `core/rules/host-capabilities.md`). Treat missing file or parse
-errors as all-false flags.
+errors as all-false flags. Three flags are loaded once in Phase 0 and reused
+through every later phase — never re-read the file inline.
 
 ```bash
 HAS_TASK_TOOLS=$(python3 -c "
@@ -176,13 +177,53 @@ try:
 except Exception:
     print('0')
 " 2>/dev/null)
+
+HAS_AGENT_BACKGROUND=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('agent_background') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
+
+HAS_MONITOR_TOOL=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('monitor_tool') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
 ```
+
+`HAS_TASK_TOOLS` gates every `TaskCreate` / `TaskList` / `TaskGet` /
+`TaskUpdate` call. `HAS_AGENT_BACKGROUND` gates the background fan-out path in
+`run.md` Step 6. `HAS_MONITOR_TOOL` gates the `TaskOutput` consumption in
+`crew:status`. Every call site MUST check the relevant flag and fall back to the
+file-based primary (`progress.log`, `approval.md`, `pipeline.json`) when the
+flag is `0`.
 
 If `HAS_TASK_TOOLS == 1`, the task-runner registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
 
-1. Call `TaskCreate` once at the very start of Phase 0 (right after the
-   `STARTED` log line):
+1. **Check whether the orchestrator already pre-created a parent host task.**
+   When the runner is spawned via P4 background fan-out (`agent_background=1`),
+   the orchestrator pre-creates the parent host task and passes its id as
+   `HOST_TASK_ID` in the runner's input. In that case, skip the `TaskCreate`
+   call below and reuse the provided id:
+
+   ```bash
+   if [ -n "${HOST_TASK_ID:-}" ]; then
+     # Background fan-out path — parent task pre-created by orchestrator
+     echo "${HOST_TASK_ID}" > "${TASK_DIR}/host-task-id.txt"
+   else
+     # Inline path — runner creates its own parent task
+     # (call TaskCreate as documented below, capture id, persist)
+     :
+   fi
+   ```
+
+2. **Otherwise, call `TaskCreate` once at the very start of Phase 0** (right
+   after the `STARTED` log line):
 
    ```text
    TaskCreate(
@@ -199,11 +240,17 @@ surface so users can see live pipeline progress in the host UI:
    `${TASK_DIR}/host-task-id.txt` so other phases can update it without re-issuing
    TaskCreate.
 
-2. At Phase 3 completion (after `result.md` is written), call
+3. At Phase 3 completion (after `result.md` is written), call
    `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`. On `STATUS: blocked` or
    `STATUS: CANCELLED`, leave the host task as `in_progress` and append a final
    progress event — the host task list itself remains the responsibility of the
    human operator to clean up, so the runner does not delete it.
+
+   Under background fan-out (P4), the orchestrator's Step 7 result collection
+   reads `TaskGet(HOST_TASK_ID).status` as the primary signal that the runner
+   has finished, so this final `TaskUpdate` is what unblocks the
+   orchestrator's collection loop. The status transition is observable
+   instantly without polling `result.md`.
 
 If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
 `TaskUpdate` call. The file-based pipeline state remains the single source of
@@ -373,9 +420,22 @@ within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0.
 
 ```bash
 PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-mkdir -p "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
-touch "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
-ls "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active" >/dev/null \
+TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+mkdir -p "${TASKS_DIR}"
+
+# Legacy singleton marker — preserved for backward compatibility with codex
+# / generic adapters and any tooling that has not learned the per-task layout.
+touch "${TASKS_DIR}/active"
+
+# Per-task marker — required by P4 background fan-out so concurrent
+# task-runners owning independent host sessions do not strand each other's
+# edits when one teardown removes the singleton early. The
+# direct-edit-guard hook accepts EITHER marker, so this dual write costs
+# nothing in single-mode workflows and is required in parallel/background
+# workflows.
+touch "${TASKS_DIR}/active.${TASK_ID}"
+
+ls "${TASKS_DIR}/active" >/dev/null \
   || { echo "FATAL: active marker not created — direct-edit-guard will block stage agents"; exit 1; }
 ```
 
@@ -406,6 +466,58 @@ Use the `PIPELINE_PATH` variable resolved in Phase 0:
 ```bash
 cat "${PIPELINE_PATH}"
 ```
+
+#### Phase 1c-bis: Per-stage host task DAG mirror (P3 — capability-gated)
+
+If `HAS_TASK_TOOLS == 1`, after the planner has written `pipeline.json`, create
+one child host task per stage and persist the `blockedBy` DAG so operators can
+see the pipeline structure in the host UI. The per-stage task ids are written
+back to `pipeline.json.host_task_ids` as a parallel array to `stages`. Each
+entry is itself a map `{agent_name: host_task_id}` so parallel stages with
+multiple agents all get individual host tasks.
+
+The DAG rule is straightforward:
+
+- Stage 0 agents: `blockedBy = [parent task id]` (the parent task created in
+  Phase 0 — read from `${TASK_DIR}/host-task-id.txt`).
+- Stage `i` agents (i > 0): `blockedBy = [every host task id from stage i-1]`.
+
+Pseudocode (host tool calls are issued by the runtime; the runner persists ids
+only):
+
+```text
+HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
+stages = pipeline.json["stages"]
+host_task_ids = []  # parallel to stages
+for i, stage in enumerate(stages):
+    agents = stage if isinstance(stage, list) else [stage]
+    parents = [HOST_TASK_ID] if i == 0 else list(host_task_ids[i-1].values())
+    stage_map = {}
+    for agent_name in agents:
+        new_id = TaskCreate(
+            subject=f"stage {i+1}/{len(stages)} — {agent_name}",
+            description=f"Pipeline stage child for TASK_ID={TASK_ID}. "
+                        f"File source of truth: {TASK_DIR}/pipeline.json "
+                        f"stage_agent_status[\"{i}\"][\"{agent_name}\"]",
+            activeForm=f"Waiting on stage {i+1} ({agent_name})",
+            metadata={"task_id": TASK_ID, "stage_index": i,
+                      "agent_name": agent_name, "parent_task_id": HOST_TASK_ID},
+            blockedBy=parents,
+        )
+        stage_map[agent_name] = new_id
+    host_task_ids.append(stage_map)
+write host_task_ids back into pipeline.json under key "host_task_ids"
+```
+
+The single source of truth for stage status remains
+`pipeline.json.stage_agent_status` and the file-based `progress.log`. Host
+tasks are an observability mirror only — if any `TaskCreate` call fails or is
+unavailable, silently fall back to running without the DAG mirror (the rest of
+the pipeline must not depend on `host_task_ids` being populated).
+
+If `HAS_TASK_TOOLS == 0`: skip this entire sub-phase. `pipeline.json` will not
+contain a `host_task_ids` key and every later phase MUST treat its absence as
+equivalent to "DAG mirror disabled".
 
 ---
 
@@ -715,15 +827,43 @@ Every stage invocation (single or parallel) is wrapped in a retry loop.
 Retry limits follow the quality-loop rule (`QUALITY_RULE_PATH`):
 
 - **Validation failure** (STATUS returned but criteria not met): up to **3 retries**.
-- **Crash** (no STATUS line returned at all): up to **5 retries**.
+- **Crash** (true agent failure, not a token-limit tail): up to **5 retries**.
+- **Token-limit truncation** (run reached the end without a STATUS line but
+  produced substantial output, P7): **1 resume** with a checkpoint hint, then
+  fall through to the crash retry budget if still no STATUS line.
 
-**Crash detection:** Any agent invocation that returns without a `STATUS:` line
-in its response is treated as a crash — not a clean BLOCKED state.
+**Crash detection — two paths converge on the same decision.**
+
+**P7 — preferred path when `HAS_TASK_TOOLS == 1` AND the per-stage host task id
+is present** (populated by Phase 1c-bis under `pipeline.json.host_task_ids`):
+read the host-detected termination status directly:
+
+```text
+STAGE_HOST_STATUS=$(TaskGet(taskId=host_task_ids[i-1][agent_name]).status)
+# error    → real crash (no STATUS line in response AND host detected failure)
+# blocked  → halt pipeline
+# completed → success (re-check response for STATUS:; if absent → token-truncation)
+# cancelled → treat as cancellation (halt with STATUS: blocked)
+```
+
+This distinguishes "agent died on a missing import in 30 s" (`error`) from
+"agent ran 90 % of the way and ran out of tokens" (host says `completed`, but
+no `STATUS:` line in the captured response). The latter is **token-limit
+truncation**, not a crash — the response so far is preserved, so re-invoking
+with a resume hint pointing at `${TASK_DIR}/progress.log` and the latest
+`stage_{i}_progress.md` checkpoint usually completes the work in one extra
+spawn instead of burning all 5 crash retries.
+
+**Legacy fallback when `HAS_TASK_TOOLS == 0` or the host-task id is absent**:
+Any agent invocation that returns without a `STATUS:` line in its response is
+treated as a crash. There is no way to distinguish token-limit truncation
+from a true crash on this path, so the full 5-retry budget applies uniformly.
 
 Retry logic per agent:
 
 ```
 crash_attempts = 0
+token_limit_resumes_used = 0
 while crash_attempts <= 5:
     invoke agent
     if response contains "STATUS: completed":
@@ -732,16 +872,37 @@ while crash_attempts <= 5:
         break  # agent submitted a plan — Phase 2.5 will handle approval
     elif response contains "STATUS: BLOCKED":
         halt pipeline — write blocker to result.md and return STATUS: blocked
-    else:  # no STATUS line — treat as crash
-        crash_attempts += 1
-        if crash_attempts > 5:
-            write crash details to {TASK_DIR}/result.md
-            return STATUS: blocked (reason: agent crashed after 5 attempts)
-        re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only — no inline content)
+    else:  # no STATUS line — classify
+        classification = "crash"
+        if HAS_TASK_TOOLS == 1 AND host_task_ids[i-1][agent_name] is set:
+            STAGE_HOST_STATUS = TaskGet(taskId).status
+            if STAGE_HOST_STATUS == "completed":
+                classification = "token_truncation"
+            elif STAGE_HOST_STATUS == "blocked":
+                halt pipeline — write blocker to result.md and return STATUS: blocked
+            elif STAGE_HOST_STATUS == "cancelled":
+                halt pipeline — write CANCELLED to result.md and return STATUS: blocked
+            # else (error / pending / in_progress): treat as crash
+
+        if classification == "token_truncation" AND token_limit_resumes_used < 1:
+            token_limit_resumes_used += 1
+            re-invoke agent with resume hint:
+              "Resume from: {TASK_DIR}/context/stage_{i}_progress.md if present,
+               else from {TASK_DIR}/progress.log tail. Continue prior work."
+            continue  # do not increment crash_attempts
+        else:
+            crash_attempts += 1
+            if crash_attempts > 5:
+                write crash details to {TASK_DIR}/result.md
+                return STATUS: blocked (reason: agent crashed after 5 attempts)
+            re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only)
 ```
 
-Do not silently swallow a crash. After 5 crash failures on the same agent, report BLOCKED
-with the agent name and stage index.
+Do not silently swallow a crash. After 5 crash failures on the same agent (the
+single token-truncation resume does not count against this budget), report
+BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
+host task id is absent, every "no STATUS line" outcome is classified as a
+crash — identical to pre-P7 behavior.
 
 #### Custom Agent Dispatch
 
@@ -784,6 +945,18 @@ total stage count from `pipeline.json`):
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE | {i}/{total} — {agent_name}" >> "${TASK_DIR}/progress.log"
 ```
 
+If `HAS_TASK_TOOLS == 1` AND `pipeline.json` contains `host_task_ids[i-1][agent_name]`
+(populated by Phase 1c-bis), also transition the per-stage host task to
+`in_progress` so the DAG mirror reflects live state:
+
+```text
+TaskUpdate(taskId=host_task_ids[i-1][agent_name], status="in_progress")
+```
+
+If the key is absent (DAG mirror disabled, `task_tools=false`, or earlier
+`TaskCreate` failed silently): skip the call. The file-based `STAGE` emit above
+is always the canonical record.
+
 After the stage agent returns and its result is recorded:
 
 ```
@@ -793,6 +966,20 @@ After the stage agent returns and its result is recorded:
 ```bash
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE_DONE | {agent_name} — {APPROVED|NEEDS_CHANGES|N/A}" >> "${TASK_DIR}/progress.log"
 ```
+
+If `HAS_TASK_TOOLS == 1` AND the per-stage host task id is present, mirror the
+terminal state:
+
+```text
+# On successful completion:
+TaskUpdate(taskId=host_task_ids[i-1][agent_name], status="completed")
+# On crash exhaustion or BLOCKED:
+TaskUpdate(taskId=host_task_ids[i-1][agent_name], status="blocked")
+```
+
+Skip silently when the id is absent. `pipeline.json.stage_agent_status` remains
+the single source of truth that other consumers (resume logic, `crew:status`
+fallback) read.
 
 Use `APPROVED` when the reviewer accepted the output, `NEEDS_CHANGES` when the reviewer
 requested changes (quality loop), or `N/A` for non-reviewer stages.
@@ -967,8 +1154,55 @@ When a stage agent returns a `PLAN:` block (instead of executing), the task-runn
    ```
 
 3. If `EXECUTION_MODE == parallel`: writes `PLAN_READY` to
-   `{TASK_DIR}/context/approval.md` and polls until the orchestrator writes
-   `APPROVED` or `CANCELLED` (up to 60s, 5s interval):
+   `{TASK_DIR}/context/approval.md`. The file is the canonical artifact the
+   orchestrator's fan-in reads; it MUST always be written even when host tasks
+   are also used.
+
+   **P1 — capability-gated event wait (preferred path when `HAS_TASK_TOOLS == 1`).**
+   When the parent host task exists (its id was written to
+   `${TASK_DIR}/host-task-id.txt` in Phase 0), the task-runner additionally
+   signals plan-readiness via the host task surface and waits on event
+   transition instead of polling the file every 5 seconds:
+
+   ```text
+   # Carry the action plan and the readiness marker on the parent host task so
+   # the orchestrator's TaskList fan-in (P2) can detect "all PLAN_READY" in one
+   # round-trip. metadata.action_plan_path keeps the plan body file-based.
+   TaskUpdate(
+     taskId=$(cat "${TASK_DIR}/host-task-id.txt"),
+     status="blocked",
+     metadata={
+       "task_id": TASK_ID,
+       "stage": "plan_ready",
+       "action_plan_path": "${TASK_DIR}/context/action-plan.md"
+     }
+   )
+
+   # Wait on host event transition. TaskGet returns instantly on state change
+   # (no polling cadence to choose). Loop with a short fallback sleep so the
+   # path remains correct even if TaskGet returns immediately.
+   ELAPSED=0
+   while [ $ELAPSED -lt 60 ]; do
+     HOST_STATUS=$(TaskGet(taskId).status)
+     # in_progress = APPROVED, cancelled = CANCELLED, anything else keep waiting
+     if [ "$HOST_STATUS" = "in_progress" ]; then
+       echo "APPROVED" > "${TASK_DIR}/context/approval.md"
+       break
+     fi
+     if [ "$HOST_STATUS" = "cancelled" ]; then
+       echo "CANCELLED" > "${TASK_DIR}/context/approval.md"
+       break
+     fi
+     # Long-poll: TaskGet wake-on-change is preferred but a 1-second guard
+     # bounds the busy-wait if the host returns synchronously.
+     sleep 1
+     ELAPSED=$((ELAPSED + 1))
+   done
+   ```
+
+   **Fallback when `HAS_TASK_TOOLS == 0`** (or any TaskGet/TaskUpdate call
+   raises): the legacy file-poll loop is the primary path, unchanged from
+   pre-P1 behavior:
 
    ```bash
    echo "PLAN_READY" > "${TASK_DIR}/context/approval.md"
@@ -985,6 +1219,11 @@ When a stage agent returns a `PLAN:` block (instead of executing), the task-runn
      echo "CANCELLED" > "${TASK_DIR}/context/approval.md"
    fi
    ```
+
+   Both paths converge on the same `approval.md` artifact, so any consumer that
+   reads the file after the wait sees identical content regardless of which
+   wakeup mechanism fired. The file write is the contract; the host call is
+   only the wakeup signal.
 
 4. If `EXECUTION_MODE == single`: the task-runner issues the AskUserQuestion
    directly (see Step 3 below) and writes the result to `approval.md` itself.
@@ -1021,7 +1260,17 @@ Question:
   - Cancel — skip devops, keep commits local
 
 If **Approve**:
-  - Write `APPROVED` to `{TASK_DIR}/context/approval.md`
+  - Write `APPROVED` to `{TASK_DIR}/context/approval.md` (canonical artifact).
+  - If `HAS_TASK_TOOLS == 1` and `${TASK_DIR}/host-task-id.txt` exists, also
+    transition the parent host task to `in_progress` so any devops-poll-loop
+    based on `TaskGet` (P1) wakes up immediately:
+
+    ```text
+    TaskUpdate(taskId=$(cat "${TASK_DIR}/host-task-id.txt"), status="in_progress")
+    ```
+
+    The file write remains the contract — the host call is only a wakeup
+    signal. Skip silently when the capability flag is `0`.
   - Spawn the devops stage agent now using the standard agent prompt format.
   - After the devops agent returns, check its `STATUS` field:
     - `STATUS: completed` → devops stage succeeded. Proceed to Phase 3.
@@ -1036,7 +1285,14 @@ If **Approve**:
       crash attempts). After 5 failures, write BLOCKED to result.md and stop.
 
 If **Cancel**:
-  - Write `CANCELLED` to `{TASK_DIR}/context/approval.md`
+  - Write `CANCELLED` to `{TASK_DIR}/context/approval.md`.
+  - If `HAS_TASK_TOOLS == 1` and `${TASK_DIR}/host-task-id.txt` exists, also
+    transition the parent host task to `cancelled` so a `TaskGet` waiter wakes
+    immediately and stops blocking:
+
+    ```text
+    TaskUpdate(taskId=$(cat "${TASK_DIR}/host-task-id.txt"), status="cancelled")
+    ```
   - Mark the devops stage as skipped (do not update `completed_stages` for it).
   - Print the branch name so the user can push manually later.
   - Proceed directly to Phase 3 without running the devops stage.
@@ -1119,17 +1375,55 @@ If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
 #### 3. Clear active task marker
 
-Only clear the active marker when running in `single` mode. In `parallel` mode,
-the crew orchestrator is responsible for clearing it after all task-runners finish.
+Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see P4
+in `core/rules/host-capabilities.md`):
 
-Use the `AGENT_CREW_HOME` variable resolved in Phase 0 — do not re-derive it:
+1. **Legacy singleton** `tasks/active` — used by single-task workflows and by
+   adapters that have not adopted background fan-out.
+2. **Per-task markers** `tasks/active.<TASK_ID>` — used when the orchestrator
+   spawns task-runners as background host agents (`agent_background=true`)
+   because each runner must own its own marker so concurrent teardown is safe.
+
+Each task-runner removes only the marker it owns:
 
 ```bash
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+
+# Per-task marker: always safe to remove our own
+rm -f "${TASKS_DIR}/active.${TASK_ID}"
+
+# Legacy singleton: only clear when running in single mode AND no other
+# per-task markers remain (otherwise a concurrent run would be stranded).
 if [ "${EXECUTION_MODE}" != "parallel" ]; then
-  PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-  rm -f "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+  # Count remaining per-task markers (active.* but not "active" itself)
+  REMAINING=$(ls "${TASKS_DIR}"/active.* 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${REMAINING}" = "0" ]; then
+    rm -f "${TASKS_DIR}/active"
+  fi
 fi
 ```
+
+The Phase 1c create step (`touch ${TASKS_DIR}/active`) must also write the
+per-task variant when running under background fan-out:
+
+```bash
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+mkdir -p "${TASKS_DIR}"
+
+# Always write the per-task marker — it is the canonical marker under P4.
+touch "${TASKS_DIR}/active.${TASK_ID}"
+
+# Legacy singleton: write it too for backward compatibility with hosts /
+# tooling that has not yet learned the per-task layout. The cleanup step
+# above only removes it when no per-task markers remain.
+touch "${TASKS_DIR}/active"
+```
+
+The Phase 1c block earlier in this document writes the singleton marker
+unconditionally; the per-task marker is created here as an additional layer
+for adapters that have opted into background fan-out.
 
 #### 4. Remove isolated worktree when applicable
 

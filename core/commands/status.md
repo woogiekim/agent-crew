@@ -22,7 +22,7 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
 CAPABILITIES_PATH="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json"
 ```
 
-### 1b. Probe host capabilities (Layer 1 progressive adoption)
+### 1b. Probe host capabilities (Layers 1–2 progressive adoption)
 
 Read the host capabilities file written by the active adapter's `setup.sh`. Per
 `core/rules/host-capabilities.md`, a missing file or parse error means every
@@ -36,26 +36,49 @@ try:
 except Exception:
     print('0')
 " 2>/dev/null)
+
+HAS_MONITOR_TOOL=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('monitor_tool') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
 ```
 
-If `HAS_TASK_TOOLS == 1` AND the host exposes a callable `TaskList` tool, the
-preferred source for "Recent events" is `TaskList` output filtered to the
-crew-managed entry. Use this preference path:
+Two preferences are derived from the flags:
 
-```text
-if HAS_TASK_TOOLS == 1:
-    call TaskList()
-    filter to tasks whose metadata.task_id matches the current ACTIVE_TASK
-      (or whose subject starts with "crew:run —")
-    render the matching task as "Recent events (from host task list)"
-else:
-    fall back to tailing progress.log (Step 5 below)
-```
+1. **`HAS_TASK_TOOLS == 1` AND `TaskList` callable** — preferred source for the
+   pipeline stage list and the current parent-task state. Filter `TaskList()`
+   output to entries with `metadata.task_id == ACTIVE_TASK` (or
+   `subject` starting with `"crew:run —"`) and render the matching task.
+2. **`HAS_MONITOR_TOOL == 1` AND `TaskOutput` callable** — preferred source for
+   the "Recent events" stream (P5). Instead of tailing
+   `{TASK_DIR}/progress.log`, read `TaskOutput(taskId=<parent host task>)` and
+   render the last 20 lines that start with `[crew]`. This eliminates the
+   buffering caveat — task-runners mirror every progress event to stderr in
+   real time, and the host surfaces stderr through `TaskOutput` without the
+   sub-agent having to flush.
 
-If the TaskList call is not available at runtime (tool not loaded in this
-session, host unable to respond), silently fall back to the progress.log tail.
-The capability flag opts in; the actual TaskList call must still be guarded by a
-runtime availability check.
+Both preferences are independent: a host may advertise `task_tools=true` but
+`monitor_tool=false`, in which case `crew:status` uses `TaskList` for stage
+state but `tail -20 progress.log` for the event stream. Source-selection
+matrix:
+
+| `task_tools` | `monitor_tool` | Stage state source | Event stream source |
+|---|---|---|---|
+| true | true | `TaskList` (Step 6 fallback otherwise) | `TaskOutput` (Step 5 below) |
+| true | false | `TaskList` (Step 6 fallback otherwise) | `tail -20 progress.log` |
+| false | * | `pipeline.json` (Step 6) | `tail -20 progress.log` |
+
+If either tool call is not available at runtime (tool not loaded in this
+session, host unable to respond), silently fall back to the file-based path.
+The capability flag opts in; the actual `TaskList` / `TaskOutput` call must
+still be guarded by a runtime availability check.
+
+`progress.log` is always written by the task-runner regardless of which source
+is preferred — it remains the single source of truth per
+`core/rules/host-capabilities.md`.
 
 ### 2. Find the most recent task
 
@@ -141,32 +164,49 @@ PYEOF
 fi
 ```
 
-### 5. Read recent progress events (fallback)
+### 5. Read recent progress events
 
-This step is the legacy fallback used when `HAS_TASK_TOOLS == 0`, when the host
-TaskList call is not available, or when the capability gate was not opted into.
-Read the last 20 lines from `{TASK_DIR}/progress.log` (if it exists) to show
-real-time progress events that may not yet be reflected in `pipeline.json`:
+Resolve `RECENT_PROGRESS` using the preference matrix from Step 1b:
 
-```bash
-PROGRESS_LOG="${TASK_DIR}/progress.log"
-if [ -f "${PROGRESS_LOG}" ]; then
-  RECENT_PROGRESS=$(tail -20 "${PROGRESS_LOG}" 2>/dev/null)
-else
-  RECENT_PROGRESS=""
-fi
+```text
+if HAS_MONITOR_TOOL == 1 AND TaskOutput is callable:
+    # P5 — preferred source. The task-runner mirrors every progress event to
+    # stderr (host-agnostic), which Claude Code captures as TaskOutput. This
+    # avoids the buffering caveat described in core/commands/run.md.
+    HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt" 2>/dev/null)
+    if [ -n "$HOST_TASK_ID" ]:
+        RECENT_PROGRESS=$(TaskOutput(taskId=$HOST_TASK_ID)
+            | grep '^\[crew\]'
+            | tail -20)
+    else:
+        # Parent host task id not recorded — fall back to file tail
+        RECENT_PROGRESS=$(tail -20 "${TASK_DIR}/progress.log" 2>/dev/null || echo "")
+else:
+    # Legacy fallback: tail the canonical progress.log artifact.
+    PROGRESS_LOG="${TASK_DIR}/progress.log"
+    if [ -f "${PROGRESS_LOG}" ]:
+        RECENT_PROGRESS=$(tail -20 "${PROGRESS_LOG}" 2>/dev/null)
+    else:
+        RECENT_PROGRESS=""
 ```
 
-This log is written by the task-runner at every phase and stage boundary, so it
-reflects the current live state even while a sub-agent is still running.
+When the `TaskOutput` call fails at runtime (tool not loaded, host returns an
+error), silently fall back to tailing `progress.log`. The capability flag opts
+in; the actual call must still be guarded by a runtime availability check.
 
-Source-selection summary:
+The file is written by the task-runner at every phase and stage boundary, so it
+always reflects the current live state even while a sub-agent is still
+running. The host-task event stream is the same data path with lower latency.
 
-| `task_tools` flag | TaskList callable | Source used |
-|---|---|---|
-| `true` | yes | host TaskList output (Step 1b) |
-| `true` | no | progress.log tail (this step) |
-| `false` or missing | — | progress.log tail (this step) |
+Source-selection summary (full matrix from Step 1b):
+
+| `task_tools` flag | `monitor_tool` flag | TaskList callable | TaskOutput callable | Stage state | Event stream |
+|---|---|---|---|---|---|
+| `true` | `true` | yes | yes | host TaskList | host TaskOutput (P5) |
+| `true` | `true` | yes | no | host TaskList | progress.log tail |
+| `true` | `false` | yes | — | host TaskList | progress.log tail |
+| `true` | * | no | — | pipeline.json (Step 6) | progress.log tail |
+| `false` or missing | — | — | — | pipeline.json (Step 6) | progress.log tail |
 
 `progress.log` is always written regardless of which source is preferred — it
 remains the single source of truth per `core/rules/host-capabilities.md`.
@@ -312,7 +352,13 @@ Pipeline stages:
   of pipeline state even while a sub-agent is still running.
 - When the host adapter has advertised `task_tools: true` in
   `~/.agent-crew/state/{project}/capabilities.json`, `crew:status` prefers the
-  host's `TaskList` output for "Recent events" because hosts like Claude Code
-  stream that surface live. `progress.log` is still written, so the fallback is
-  always safe. See `core/rules/host-capabilities.md` for the schema and the
-  absence contract.
+  host's `TaskList` output for the parent-task stage state because hosts like
+  Claude Code stream that surface live.
+- When the host adapter has advertised `monitor_tool: true`, `crew:status`
+  prefers `TaskOutput(taskId)` for the "Recent events" stream (P5). The
+  stderr-mirror rule in `core/agents/task-runner.md` ensures every progress
+  event is written to stderr (which Claude Code captures as `TaskOutput`),
+  eliminating the file-buffering caveat. `progress.log` is still written, so
+  the fallback is always safe.
+- See `core/rules/host-capabilities.md` for the schema and the absence
+  contract.
