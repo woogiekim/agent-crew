@@ -276,12 +276,80 @@ still in progress for any task.
 > (planning), each will pause at Phase 1d awaiting user approval. The orchestrator does
 > not consolidate these approvals — each task-runner's Phase 1d is independent.
 
-Delegate one `task-runner` per task.
+Delegate one `task-runner` per task. The orchestrator chooses between two
+delegation surfaces based on the `agent_background` capability flag:
+
+```bash
+HAS_AGENT_BACKGROUND=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('agent_background') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
+```
+
+**P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1` AND `N > 1`).**
+Spawn each task-runner as a host background agent pinned to a pre-created
+parent host task. The orchestrator returns from the spawn step immediately and
+collects results via `TaskList` / `TaskGet` / `TaskOutput` instead of waiting
+for inline Agent calls to return:
+
+```text
+HAS_TASK_TOOLS=$(python3 -c "...task_tools...")  # already cached, see Step 7.5
+
+for each task i:
+    # Pre-create the parent host task that the runner will adopt in Phase 0
+    # (the runner reads its HOST_TASK_ID from metadata instead of issuing
+    # its own TaskCreate when this path is taken).
+    HOST_TASK_ID = TaskCreate(
+        subject=f"crew:run — {TASK truncated to 60 chars}",
+        description=f"agent-crew task-runner pipeline for TASK_ID={TASK_ID}. "
+                    f"File source of truth: {TASK_DIR}/progress.log",
+        activeForm="Running crew:run pipeline (background)",
+        metadata={
+            "task_id": TASK_ID,
+            "branch": BRANCH,
+            "task_dir": TASK_DIR,
+            "spawn_mode": "background",
+        },
+        status="in_progress",
+    )
+    write HOST_TASK_ID to ${TASK_DIR}/host-task-id.txt
+
+    # Spawn the runner as a host background agent. Implementation depends on
+    # the host's background-agent surface — for Claude Code this maps to the
+    # background task-creation flow that captures stdout/stderr into
+    # TaskOutput so crew:status can read it live (P5).
+    spawn task-runner as background agent with:
+        TASK, TASK_ID, TASK_DIR, PROJECT_ROOT, BRANCH,
+        EXECUTION_MODE=parallel,
+        HOST_TASK_ID=$HOST_TASK_ID,
+        REQUIREMENTS=$REQUIREMENTS
+```
+
+Under this path, **each task-runner owns a per-task `direct-edit-guard`
+marker** (`tasks/active.<TASK_ID>`) so concurrent teardown by one runner does
+not strand another runner's edits. The hook accepts either layout — see
+`core/hooks/direct-edit-guard.sh` and `core/rules/host-capabilities.md`
+Layer 2.
+
+**Legacy inline parallel fan-out** is used when `HAS_AGENT_BACKGROUND == 0`,
+OR when `N == 1` (background mode has no benefit for a single task — keep the
+inline path so the user sees the runner's response stream in the same
+session):
 
 - If `N == 1`, invoke one `task-runner` via the host's Agent/Task tool. Do not
   execute the pipeline inline.
-- If `N > 1`, invoke all `task-runner` agents concurrently when supported (a
-  single response containing N parallel Agent tool calls).
+- If `N > 1` AND `HAS_AGENT_BACKGROUND == 0`, invoke all `task-runner` agents
+  concurrently in a single response containing N parallel Agent tool calls.
+
+Both paths use the same task-runner agent definition. The runner detects
+which surface spawned it by checking whether `HOST_TASK_ID` was passed in its
+prompt (background) vs absent (inline) and adapts Phase 0 accordingly: when
+`HOST_TASK_ID` is provided, skip the in-runner `TaskCreate` and use the
+pre-created id; when absent, fall back to the legacy in-runner `TaskCreate`
+path.
 
 Each task-runner receives:
 
@@ -483,6 +551,41 @@ faster wakeup; it never removes the file contract.
 ---
 
 ### 7. Collect Results & Show Per-Task Summary
+
+#### P4 — Background fan-out result collection
+
+When task-runners were spawned as background host agents (Step 6 background
+path, `HAS_AGENT_BACKGROUND == 1`), the orchestrator does NOT block on inline
+Agent return values. Instead it polls each task's parent host task for
+terminal status:
+
+```text
+# For every TASK_DIR in the run:
+HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
+
+# Wait for terminal status. TaskGet returns instantly on state change;
+# the 2-second guard sleep bounds the busy-wait if the host returns
+# synchronously. The total timeout matches the runner's worst-case
+# pipeline duration (the orchestrator has no separate budget).
+while true:
+    STATUS = TaskGet(HOST_TASK_ID).status
+    if STATUS in ("completed", "blocked", "cancelled"):
+        break
+    sleep 2
+```
+
+After all task-runners reach a terminal status, the orchestrator reads each
+runner's `${TASK_DIR}/result.md` (canonical artifact) AND `TaskOutput` (live
+event stream, when `HAS_MONITOR_TOOL == 1`) to assemble the Run Summary. When
+both sources are available, `result.md` takes precedence — the host stream is
+diagnostic only.
+
+The crash-retry rule below applies identically: a runner whose
+`TaskGet().status == "error"` (or whose `result.md` is missing after status
+reached `completed`) is treated as a crash and re-spawned, up to 3 attempts.
+
+When `HAS_AGENT_BACKGROUND == 0`: the orchestrator simply waits for the inline
+Agent calls from Step 6 to return, as before. Behavior is identical to pre-P4.
 
 #### Live Progress
 

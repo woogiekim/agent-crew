@@ -205,8 +205,25 @@ flag is `0`.
 If `HAS_TASK_TOOLS == 1`, the task-runner registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
 
-1. Call `TaskCreate` once at the very start of Phase 0 (right after the
-   `STARTED` log line):
+1. **Check whether the orchestrator already pre-created a parent host task.**
+   When the runner is spawned via P4 background fan-out (`agent_background=1`),
+   the orchestrator pre-creates the parent host task and passes its id as
+   `HOST_TASK_ID` in the runner's input. In that case, skip the `TaskCreate`
+   call below and reuse the provided id:
+
+   ```bash
+   if [ -n "${HOST_TASK_ID:-}" ]; then
+     # Background fan-out path — parent task pre-created by orchestrator
+     echo "${HOST_TASK_ID}" > "${TASK_DIR}/host-task-id.txt"
+   else
+     # Inline path — runner creates its own parent task
+     # (call TaskCreate as documented below, capture id, persist)
+     :
+   fi
+   ```
+
+2. **Otherwise, call `TaskCreate` once at the very start of Phase 0** (right
+   after the `STARTED` log line):
 
    ```text
    TaskCreate(
@@ -223,11 +240,17 @@ surface so users can see live pipeline progress in the host UI:
    `${TASK_DIR}/host-task-id.txt` so other phases can update it without re-issuing
    TaskCreate.
 
-2. At Phase 3 completion (after `result.md` is written), call
+3. At Phase 3 completion (after `result.md` is written), call
    `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`. On `STATUS: blocked` or
    `STATUS: CANCELLED`, leave the host task as `in_progress` and append a final
    progress event — the host task list itself remains the responsibility of the
    human operator to clean up, so the runner does not delete it.
+
+   Under background fan-out (P4), the orchestrator's Step 7 result collection
+   reads `TaskGet(HOST_TASK_ID).status` as the primary signal that the runner
+   has finished, so this final `TaskUpdate` is what unblocks the
+   orchestrator's collection loop. The status transition is observable
+   instantly without polling `result.md`.
 
 If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
 `TaskUpdate` call. The file-based pipeline state remains the single source of
@@ -397,9 +420,22 @@ within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0.
 
 ```bash
 PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-mkdir -p "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
-touch "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
-ls "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active" >/dev/null \
+TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+mkdir -p "${TASKS_DIR}"
+
+# Legacy singleton marker — preserved for backward compatibility with codex
+# / generic adapters and any tooling that has not learned the per-task layout.
+touch "${TASKS_DIR}/active"
+
+# Per-task marker — required by P4 background fan-out so concurrent
+# task-runners owning independent host sessions do not strand each other's
+# edits when one teardown removes the singleton early. The
+# direct-edit-guard hook accepts EITHER marker, so this dual write costs
+# nothing in single-mode workflows and is required in parallel/background
+# workflows.
+touch "${TASKS_DIR}/active.${TASK_ID}"
+
+ls "${TASKS_DIR}/active" >/dev/null \
   || { echo "FATAL: active marker not created — direct-edit-guard will block stage agents"; exit 1; }
 ```
 
@@ -1339,17 +1375,55 @@ If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
 #### 3. Clear active task marker
 
-Only clear the active marker when running in `single` mode. In `parallel` mode,
-the crew orchestrator is responsible for clearing it after all task-runners finish.
+Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see P4
+in `core/rules/host-capabilities.md`):
 
-Use the `AGENT_CREW_HOME` variable resolved in Phase 0 — do not re-derive it:
+1. **Legacy singleton** `tasks/active` — used by single-task workflows and by
+   adapters that have not adopted background fan-out.
+2. **Per-task markers** `tasks/active.<TASK_ID>` — used when the orchestrator
+   spawns task-runners as background host agents (`agent_background=true`)
+   because each runner must own its own marker so concurrent teardown is safe.
+
+Each task-runner removes only the marker it owns:
 
 ```bash
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+
+# Per-task marker: always safe to remove our own
+rm -f "${TASKS_DIR}/active.${TASK_ID}"
+
+# Legacy singleton: only clear when running in single mode AND no other
+# per-task markers remain (otherwise a concurrent run would be stranded).
 if [ "${EXECUTION_MODE}" != "parallel" ]; then
-  PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-  rm -f "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+  # Count remaining per-task markers (active.* but not "active" itself)
+  REMAINING=$(ls "${TASKS_DIR}"/active.* 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${REMAINING}" = "0" ]; then
+    rm -f "${TASKS_DIR}/active"
+  fi
 fi
 ```
+
+The Phase 1c create step (`touch ${TASKS_DIR}/active`) must also write the
+per-task variant when running under background fan-out:
+
+```bash
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+mkdir -p "${TASKS_DIR}"
+
+# Always write the per-task marker — it is the canonical marker under P4.
+touch "${TASKS_DIR}/active.${TASK_ID}"
+
+# Legacy singleton: write it too for backward compatibility with hosts /
+# tooling that has not yet learned the per-task layout. The cleanup step
+# above only removes it when no per-task markers remain.
+touch "${TASKS_DIR}/active"
+```
+
+The Phase 1c block earlier in this document writes the singleton marker
+unconditionally; the per-task marker is created here as an additional layer
+for adapters that have opted into background fan-out.
 
 #### 4. Remove isolated worktree when applicable
 
