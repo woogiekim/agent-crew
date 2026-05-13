@@ -278,11 +278,31 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1c — Planning" >> "${TASK_DIR}/p
 ```
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
-within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0:
+within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0.
+
+> **CRITICAL — non-skippable.** The `direct-edit-guard` PreToolUse hook
+> (`${AGENT_CREW_HOME}/hooks/direct-edit-guard.sh`) blocks every Edit and
+> Write tool call to project source files when this marker is absent. If
+> this step is skipped, every stage agent in Phase 2 will be unable to
+> write to the codebase. The orchestrator (`crew:run`) MUST NOT create this
+> marker on its own — only the task-runner subagent creates it here, which
+> is why the orchestrator must always delegate to a task-runner subagent
+> rather than executing the pipeline inline. See
+> `core/commands/run.md` Step 6 "Mandatory Delegation Rule" for the
+> companion rule on the orchestrator side.
+>
+> The three commands below MUST all run, in this order. `mkdir -p` ensures
+> the parent state directory exists (it may not exist yet on a fresh
+> project), so `touch` cannot silently fail. The final `ls` is a guard that
+> halts the pipeline immediately if the marker was not created, instead of
+> letting stage agents hit cryptic hook-blocked errors later.
 
 ```bash
 PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+mkdir -p "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
 touch "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active"
+ls "${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active" >/dev/null \
+  || { echo "FATAL: active marker not created — direct-edit-guard will block stage agents"; exit 1; }
 ```
 
 Delegate to the planner agent using the host AI tool's native mechanism (blocking):
