@@ -22,12 +22,15 @@ technique is needed** during execution — do not load all skills upfront:
 Check the following from the prompt:
 - `TASK_DIR`: state storage path
 - `PROJECT_ROOT`: project root path
-- handoff.md content (planner handoff details)
+- `HANDOFF_PATH`: path to handoff.md — read the file directly from this path; never accept inline handoff content
+
+> **I/O rule**: All inputs are file paths. Never accept or request file contents
+> inline in the prompt. Read files directly by path.
 
 ## Execution Steps
 
 1. Read `{TASK_DIR}/context/prd.md`
-2. Read `{TASK_DIR}/handoff.md` (planner handoff details)
+2. Read the handoff from `HANDOFF_PATH` (do not accept handoff contents inline)
 3. Write UI/UX specifications → save to `{TASK_DIR}/context/design-spec.md`
 
 ## Required Contents for design-spec.md

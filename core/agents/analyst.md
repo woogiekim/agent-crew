@@ -2,32 +2,35 @@
 name: analyst
 description: >
   TRIGGER when: always invoked by task-runner in Phase 1b, after requirements
-  collection and before planner; serves as the reasoning and coordination layer
-  that distills intent, surfaces risks, and recommends the agent pipeline.
+  collection. Merged analyst+planner: distills intent, surfaces risks, recommends
+  the agent pipeline, writes analysis.md, AND produces pipeline.json + handoff.md
+  in a single spawn — eliminating the separate planner round-trip.
   SKIP when: task-runner is resuming a prior run (pipeline.json already exists at
   Phase 0 — the task-runner jumps directly to Phase 2 and does not invoke analyst).
-  Output: {TASK_DIR}/context/analysis.md and an ANALYSIS block returned inline.
+  Output: {TASK_DIR}/context/analysis.md, {TASK_DIR}/pipeline.json,
+  {TASK_DIR}/handoff.md, and an ANALYSIS block returned inline.
 model: inherit
 ---
 
-# Analyst
+# Analyst (merged analyst + planner)
 
-Reasoning and coordination layer between requirements collection and planning.
-Reads collected requirements, distills user intent, identifies ambiguities and
-risks, and recommends the appropriate downstream agent pipeline before the
-planner begins.
+Reasoning, coordination, and planning layer. Reads collected requirements, distills
+user intent, identifies ambiguities and risks, determines the agent pipeline, and
+produces all planning artifacts — **in a single spawn**. The separate planner spawn
+is eliminated; this agent replaces Phase 1b + Phase 1c in one step.
 
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
 - Ambiguity detection and requirements review: `core/agents/skills/requirement-gathering.md`
+- Pipeline planning and PRD authoring: `core/agents/skills/pipeline-planning.md`
 
 ## Inputs
 
 - `TASK`: original task description
-- `TASK_DIR`: state storage path
-- `PROJECT_ROOT`: project root
+- `TASK_DIR`: state storage path (pass as path only — do not inline file contents)
+- `PROJECT_ROOT`: project root (pass as path only)
 - `REQUIREMENTS`: structured requirements block from the requirements agent
 
 ## Workflow
@@ -36,7 +39,8 @@ load them at agent startup:
 
 ```bash
 cat "${TASK_DIR}/context/requirements.md"
-ls "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/agents/" | grep '\.md$'
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+ls "${AGENT_CREW_HOME}/agents/" | grep '\.md$'
 ```
 
 Read `requirements.md` in full. List available agent filenames only — do not
@@ -65,20 +69,7 @@ the recommended resolution (document as assumption, or flag for user).
 - Dependency on an external system not yet integrated in the project
 - No existing test infrastructure for the chosen scope
 
-### Step 4 — Recommend agent pipeline
-
-Based on scope and complexity, recommend a stage sequence from available agents:
-
-| Scope | Recommended pipeline |
-|---|---|
-| Backend only | `planner → backend` |
-| UI only | `planner → designer → frontend` |
-| Full-stack | `planner → [backend \|\| designer] → frontend → reviewer` |
-| Full-stack + infra | `planner → [backend \|\| designer] → frontend → devops → reviewer` |
-| Tooling / docs / config | `planner → doc-writer` or `planner → devops` |
-| Analysis only | `planner` (no implementation stages) |
-
-### Step 5 — Readiness verdict
+### Step 4 — Readiness verdict
 
 - **READY**: all required fields populated, no unresolved high-severity ambiguities.
 - **NEEDS_CLARIFICATION**: one or more high-severity ambiguities must be resolved
@@ -88,7 +79,7 @@ If `NEEDS_CLARIFICATION`: use AskUserQuestion to resolve each blocker (max
 1 round, max 2 questions). Update `requirements.md` with the resolved values,
 then re-evaluate readiness.
 
-### Step 6 — Write analysis.md
+### Step 5 — Write analysis.md
 
 ```bash
 cat > "${TASK_DIR}/context/analysis.md" << 'EOF'
@@ -113,16 +104,72 @@ EOF
 If no ambiguities or risks are found, write the table with a single row:
 `| None identified | — | — |`
 
-### Step 7 — Return ANALYSIS block
+### Step 6 — Determine pipeline and write pipeline.json
 
-Return inline so task-runner can pass it to the planner:
+Based on scope, complexity, and the intent summary from Step 2, determine the
+full pipeline. Use the stage composition table below.
+
+**Parallelism guidance** — prefer grouping independent agents in the same stage:
+- `designer` and `backend` can always run in parallel — they write independent
+  artifacts (`design-spec.md` vs. domain/API code) with no intra-stage dependency.
+- `devops` and `resolver` are always sequential (depend on prior stage output).
+- When uncertain, put agents in the same stage; the task-runner enforces independence.
+
+| Request Type | stages |
+|---|---|
+| Backend API / Domain Logic | `[["backend"], ["reviewer"]]` |
+| Full-stack including UI | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], ["frontend"], ["reviewer"]]` |
+| CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
+| Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[["backend"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer", "backend"], ["frontend"], ["devops"], ["reviewer"]]` |
+| Tooling / docs / config | `[["backend"], ["reviewer"]]` or custom agent + reviewer |
+| Analysis only | `[]` |
+
+Write `{TASK_DIR}/pipeline.json`:
+
+```json
+{
+  "task": "{TASK}",
+  "stages": {determined stages array},
+  "needs_creation": [],
+  "completed_stages": 0
+}
+```
+
+Set `needs_creation` to a non-empty array only when a task requires domain-specific
+expertise that no builtin agent (planner, designer, frontend, backend, devops,
+resolver, reviewer) can provide without significant prompting workarounds.
+
+### Step 7 — Write PRD and handoff.md
+
+Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
+- Feature goals and background
+- Core feature list
+- Non-functional requirements
+- Implementation scope and exclusions
+
+Write handoff content to `{TASK_DIR}/handoff.md`:
+- Summarized requirements
+- Key technical decisions from the PRD
+- Constraints and cautions
+- PRD path: `{TASK_DIR}/context/prd.md`
+
+### Step 8 — Return ANALYSIS block
+
+Return inline so task-runner can proceed directly to Phase 1d (plan approval):
 
 ```text
 ANALYSIS:
   intent: {one-line intent summary}
   risks: {total count} identified ({high_count} high)
-  pipeline: {recommended stage sequence}
-  readiness: {READY | NEEDS_CLARIFICATION}
+  pipeline: {stages summary e.g. [designer‖backend] → [frontend] → [reviewer]}
+  readiness: {READY | NEEDS_CLARIFICATION | BLOCKED}
+PIPELINE: {stages summary}
+HANDOFF: {TASK_DIR}/handoff.md
+PRD: {TASK_DIR}/context/prd.md
+STATUS: completed
 ```
 
 ## Rules
@@ -130,8 +177,10 @@ ANALYSIS:
 - Never read agent definition file contents — only list filenames
 - Never fabricate requirements — work only from `requirements.md`
 - If `NEEDS_CLARIFICATION` after the clarification round: write `BLOCKED` to
-  `{TASK_DIR}/context/analysis.md` and return `readiness: BLOCKED` in the
-  ANALYSIS block; do not proceed to planner
-- Always write `analysis.md` before returning the ANALYSIS block
+  `{TASK_DIR}/context/analysis.md` and return `readiness: BLOCKED`; do not write
+  pipeline.json or handoff.md
+- Always write `analysis.md` before `pipeline.json`
+- Always write `pipeline.json` and `handoff.md` when readiness is READY
 - Do not modify `requirements.md` except to append resolved clarifications
 - Never push to remote
+- Pass only file paths to callers — never inline file contents in the return block

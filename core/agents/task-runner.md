@@ -76,8 +76,7 @@ Example log content:
 ```
 2026-05-10T14:22:01 | STARTED   | Implement order management API
 2026-05-10T14:22:03 | PHASE     | 1a — Requirement collection
-2026-05-10T14:22:45 | PHASE     | 1b — Analysis
-2026-05-10T14:23:10 | PHASE     | 1c — Planning
+2026-05-10T14:22:45 | PHASE     | 1b — Analysis + Planning (merged)
 2026-05-10T14:23:11 | PHASE     | 1d — Plan approval
 2026-05-10T14:24:00 | STAGE     | 1/3 — backend
 2026-05-10T14:31:22 | STAGE_DONE| backend — APPROVED
@@ -273,7 +272,7 @@ log_progress() {
   echo "${line}" >> "${TASK_DIR}/progress.log"
   echo "[crew] ${line}" >&2
 }
-# Usage: log_progress "PHASE" "1b — Analysis"
+# Usage: log_progress "PHASE" "1b — Analysis + Planning (merged)"
 ```
 
 Every example in the rest of this document that appears as
@@ -288,9 +287,9 @@ instead of creating a new plan from scratch.
 Resume rules:
 
 - If `PIPELINE_PATH` exists: read `completed_stages` and `stage_agent_status`, then
-  **skip Phases 1a, 1b, 1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
+  **skip Phases 1a, 1b+1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
   Planning, analysis, and plan approval were already completed in the prior run.
-- If `PIPELINE_PATH` does not exist: proceed normally through Phases 1a → 1b → 1c → 1d → 1.5 → 2.
+- If `PIPELINE_PATH` does not exist: proceed normally through Phases 1a → 1b+1c → 1d → 1.5 → 2.
 - Never duplicate the planner step for an already initialized task.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
@@ -310,9 +309,9 @@ Resume rules:
 
 This prevents restarting already-finished agents when resuming after an interrupt.
 
-### Phase 1: Spawn planner
+### Phase 1: Analysis + Planning
 
-> **Skip this entire Phase 1 (1a, 1b, 1c, 1d) and Phase 1.5 when resuming** (i.e.,
+> **Skip this entire Phase 1 (1a, 1b+1c, 1d) and Phase 1.5 when resuming** (i.e.,
 > when `PIPELINE_PATH` already existed at Phase 0). Jump directly to Phase 2 using
 > the `completed_stages` and `stage_agent_status` read in Phase 0.
 
@@ -355,47 +354,20 @@ the `REQUIREMENTS` value for Phase 1b.
 
 ---
 
-#### Phase 1b: Analyst
+#### Phase 1b+1c: Analyst (merged analyst + planner — single spawn)
+
+> **Optimization**: Phases 1b and 1c are merged into a single analyst spawn.
+> The analyst now produces `analysis.md`, `pipeline.json`, `prd.md`, and
+> `handoff.md` in one step — eliminating the separate planner round-trip.
 
 Emit before delegating:
 
 ```
-[crew] {TASK_ID} | PHASE | 1b — Analysis
+[crew] {TASK_ID} | PHASE | 1b — Analysis + Planning (merged)
 ```
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1b — Analysis" >> "${TASK_DIR}/progress.log"
-```
-
-Delegate to the **analyst agent** (blocking):
-
-```text
-TASK: {TASK}
-TASK_DIR: {TASK_DIR}
-PROJECT_ROOT: {PROJECT_ROOT}
-REQUIREMENTS: {REQUIREMENTS — always present at this point}
-
-Distill intent, identify ambiguities and risks, recommend agent pipeline,
-and write {TASK_DIR}/context/analysis.md. Return the ANALYSIS block.
-```
-
-Extract the `ANALYSIS` block from the analyst's response.
-
-If the analyst returns `readiness: BLOCKED`, write `STATUS: BLOCKED` to
-`{TASK_DIR}/result.md` with the analyst's blocker explanation and stop.
-
----
-
-#### Phase 1c: Spawn planner
-
-Emit before delegating:
-
-```
-[crew] {TASK_ID} | PHASE | 1c — Planning
-```
-
-```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1c — Planning" >> "${TASK_DIR}/progress.log"
+echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1b — Analysis + Planning (merged)" >> "${TASK_DIR}/progress.log"
 ```
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
@@ -439,26 +411,27 @@ ls "${TASKS_DIR}/active" >/dev/null \
   || { echo "FATAL: active marker not created — direct-edit-guard will block stage agents"; exit 1; }
 ```
 
-Delegate to the planner agent using the host AI tool's native mechanism (blocking):
+Delegate to the **analyst agent** (blocking). The analyst is the merged
+analyst+planner — it produces all planning artifacts in one spawn:
 
 ```text
-REQUEST: {TASK}
+TASK: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
-REQUIREMENTS: {REQUIREMENTS}
-ANALYSIS: {ANALYSIS block from Phase 1b}
+REQUIREMENTS: {REQUIREMENTS — always present at this point}
 
-Analyze the request, create the PRD, and determine the pipeline.
-Use the ANALYSIS recommended pipeline as the starting point for stage composition.
-Outputs:
-- {TASK_DIR}/context/prd.md
-- {TASK_DIR}/pipeline.json
-- {TASK_DIR}/handoff.md
+Distill intent, identify ambiguities and risks, determine the agent pipeline,
+write {TASK_DIR}/context/analysis.md, {TASK_DIR}/context/prd.md,
+{TASK_DIR}/pipeline.json, and {TASK_DIR}/handoff.md.
+Return the ANALYSIS block.
 ```
 
-`REQUIREMENTS` and `ANALYSIS` are always included in the planner prompt at this
-point. The planner will always follow its Case A path (no interactive
-re-collection).
+Pass only paths in the prompt — never inline file contents.
+
+Extract the `ANALYSIS` block from the analyst's response.
+
+If the analyst returns `readiness: BLOCKED`, write `STATUS: BLOCKED` to
+`{TASK_DIR}/result.md` with the analyst's blocker explanation and stop.
 
 After completion, read only `pipeline.json` (never read `handoff.md` contents).
 Use the `PIPELINE_PATH` variable resolved in Phase 0:
@@ -469,7 +442,7 @@ cat "${PIPELINE_PATH}"
 
 #### Phase 1c-bis: Per-stage host task DAG mirror (P3 — capability-gated)
 
-If `HAS_TASK_TOOLS == 1`, after the planner has written `pipeline.json`, create
+If `HAS_TASK_TOOLS == 1`, after the analyst (merged analyst+planner) has written `pipeline.json`, create
 one child host task per stage and persist the `blockedBy` DAG so operators can
 see the pipeline structure in the host UI. The per-stage task ids are written
 back to `pipeline.json.host_task_ids` as a parallel array to `stages`. Each
@@ -640,29 +613,29 @@ Then fire **AskUserQuestion**:
 - question: "Review the implementation plan above. Approve to begin execution."
 - options:
   - Approve — begin stage execution
-  - Request changes — describe what to change (planner will revise)
+  - Request changes — describe what to change (analyst will revise)
   - Cancel — stop execution
 
 **If Approve:** proceed to Phase 1.5.
 
 **If Request changes:** collect the change description from the user's response,
-then re-invoke the planner with the change request appended to the original
-`ANALYSIS` block:
+then re-invoke the **analyst** (merged analyst+planner) with the change request.
+Pass only paths — never inline file contents:
 
 ```text
-REQUEST: {TASK}
+TASK: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
 REQUIREMENTS: {REQUIREMENTS}
-ANALYSIS: {ANALYSIS block from Phase 1b}
 
 CHANGE REQUEST: {user's change description}
 
 Re-plan the pipeline based on the change request above.
 Update {TASK_DIR}/pipeline.json and {TASK_DIR}/handoff.md accordingly.
+Keep {TASK_DIR}/context/analysis.md consistent with the new plan.
 ```
 
-After the planner returns, return to Phase 1d (re-display the updated plan and
+After the analyst returns, return to Phase 1d (re-display the updated plan and
 ask again). Do not proceed to Phase 1.5 until the user selects Approve.
 
 **If Cancel:**

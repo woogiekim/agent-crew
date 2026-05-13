@@ -28,13 +28,16 @@ Read and reference the following files using the Read tool when necessary:
 Check the following values from the prompt:
 - `TASK_DIR`: state storage path
 - `PROJECT_ROOT`: project root path
-- Contents of `handoff.md` (handoff from planner or frontend)
+- `HANDOFF_PATH`: path to handoff.md — read the file directly from this path; never accept inline handoff content
+
+> **I/O rule**: All inputs are file paths. Never accept or request file contents
+> inline in the prompt. Read files directly by path.
 
 ## Execution Flow
 
 ### Phase 1: Requirement Analysis
 1. Read `{TASK_DIR}/context/prd.md`
-2. Read `{TASK_DIR}/handoff.md`
+2. Read the handoff from `HANDOFF_PATH` (do not accept handoff contents inline)
 3. If a frontend agent was involved, review API integration point specifications
 4. Design the domain model:
    - Derive Aggregate Root, Entity, Value Object, and Domain Event

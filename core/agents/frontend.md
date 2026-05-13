@@ -22,13 +22,16 @@ technique is needed** during execution — do not load all skills upfront:
 Check the following values from the prompt:
 - `TASK_DIR`: state storage path
 - `PROJECT_ROOT`: project root path
-- Contents of `handoff.md` (handoff from the designer)
+- `HANDOFF_PATH`: path to handoff.md — read the file directly from this path; never accept inline handoff content
+
+> **I/O rule**: All inputs are file paths. Never accept or request file contents
+> inline in the prompt. Read files directly by path.
 
 ## Execution Flow
 
 ### Phase 1: Implement
 1. Read `{TASK_DIR}/context/design-spec.md`
-2. Read `{TASK_DIR}/handoff.md`
+2. Read the handoff from `HANDOFF_PATH` (do not accept handoff contents inline)
 3. Analyze the existing project codebase (tech stack, component patterns)
 4. Implement the UI by component:
    - Follow the component definitions in the design specification

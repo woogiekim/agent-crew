@@ -258,23 +258,24 @@ still in progress for any task.
 > - Editing project source files from the orchestrator. The orchestrator only
 >   writes to `${TASK_DIR}` (state files) and to remotes during Step 11.
 >
-> Why this matters: `task-runner.md` Phase 1c is the only place that creates the
-> active task marker the `direct-edit-guard` PreToolUse hook checks for. If the
-> orchestrator skips delegation, Phase 1c never executes, the marker is never
-> created, and every subsequent Edit/Write to project source is blocked by the
-> hook. Every observed "hook blocked my edit" symptom in this repo traces back
+> Why this matters: `task-runner.md` Phase 1b+1c is the only place that creates
+> the active task marker the `direct-edit-guard` PreToolUse hook checks for. If
+> the orchestrator skips delegation, Phase 1b+1c never executes, the marker is
+> never created, and every subsequent Edit/Write to project source is blocked by
+> the hook. Every observed "hook blocked my edit" symptom in this repo traces back
 > to a missing delegation here.
 
 > **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
 > handled **inside** the task-runner at Phase 1d. The task-runner reads `pipeline.json`
-> and `analysis.md` after planning, displays the full implementation plan, and fires
-> AskUserQuestion before any stage agent executes. Do NOT add a separate plan approval
-> gate here in the orchestrator for N == 1.
+> and `analysis.md` after the merged analyst spawn, displays the full implementation
+> plan, and fires AskUserQuestion before any stage agent executes. Do NOT add a
+> separate plan approval gate here in the orchestrator for N == 1.
 >
 > **Plan Approval Gate (N > 1):** For parallel runs, each task-runner independently
-> handles Phase 1d for its own pipeline. After all task-runners have finished Phase 1c
-> (planning), each will pause at Phase 1d awaiting user approval. The orchestrator does
-> not consolidate these approvals — each task-runner's Phase 1d is independent.
+> handles Phase 1d for its own pipeline. After all task-runners have finished Phase
+> 1b+1c (merged analysis+planning), each will pause at Phase 1d awaiting user
+> approval. The orchestrator does not consolidate these approvals — each
+> task-runner's Phase 1d is independent.
 
 Delegate one `task-runner` per task. The orchestrator chooses between two
 delegation surfaces based on the `agent_background` capability flag:
