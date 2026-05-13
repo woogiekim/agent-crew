@@ -11,6 +11,12 @@ REPO_URL="https://github.com/woogiekim/agent-crew"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 AGENT_CREW_DIR="${AGENT_CREW_HOME}"
 CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
+# AGENT_CREW_MODE: "install" (default) or "update".
+# Update mode is intended for `crew:update` — it auto-confirms the
+# "Reinstall? [Y/N]" prompt and emits a "MODE: update" marker line so the
+# caller can detect non-interactive refresh runs in logs.
+AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
+export AGENT_CREW_MODE
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -24,11 +30,15 @@ log_section() { echo -e "\n${GREEN}▶ $1${NC}"; }
 
 # Check for an existing installation.
 if [ -d "${AGENT_CREW_DIR}/agents" ]; then
-  log_warn "agent-crew is already installed (${AGENT_CREW_DIR})"
-  read -p "Reinstall? [Y/N] " confirm
-  if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-    echo "Installation cancelled."
-    exit 0
+  if [ "${AGENT_CREW_MODE}" = "update" ]; then
+    log_info "MODE: update — refreshing existing install at ${AGENT_CREW_DIR} (auto-confirmed)"
+  else
+    log_warn "agent-crew is already installed (${AGENT_CREW_DIR})"
+    read -p "Reinstall? [Y/N] " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+      echo "Installation cancelled."
+      exit 0
+    fi
   fi
 fi
 
@@ -148,7 +158,8 @@ install_claude_compat() {
     return
   fi
 
-  AGENT_CREW_HOST=claude "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
+  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" \
+    "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
