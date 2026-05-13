@@ -234,6 +234,37 @@ still in progress for any task.
 
 ### 6. Run Task Runners
 
+> **MANDATORY DELEGATION RULE — non-negotiable.** The orchestrator (the Claude
+> instance loaded with this `run.md`) MUST spawn a `task-runner` subagent for
+> every task via the host's Agent/Task tool. The orchestrator MUST NOT run
+> planner, designer, backend, frontend, devops, or any other stage agent
+> directly, and MUST NOT execute pipeline phases (Phase 0 through Phase 3)
+> inline as itself. Doing so is what this section calls **inline execution**,
+> and it is a workflow violation.
+>
+> Required behavior:
+> - Call the host's Agent tool **once per task** with `subagent_type: task-runner`
+>   (or the host's equivalent) and the input block defined below.
+> - Wait for each `task-runner` to return its STATUS report. The orchestrator's
+>   job is dispatch, health check (Task-Runner Health Check below), and result
+>   collection — not implementation.
+>
+> Forbidden behaviors (each one is a bug):
+> - Reading `task-runner.md` and "playing the role" of task-runner inline.
+> - Invoking the planner agent directly from this orchestrator step.
+> - Performing `touch ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active`
+>   from the orchestrator — that marker is created by `task-runner` Phase 1c,
+>   and creating it elsewhere masks the underlying delegation failure.
+> - Editing project source files from the orchestrator. The orchestrator only
+>   writes to `${TASK_DIR}` (state files) and to remotes during Step 11.
+>
+> Why this matters: `task-runner.md` Phase 1c is the only place that creates the
+> active task marker the `direct-edit-guard` PreToolUse hook checks for. If the
+> orchestrator skips delegation, Phase 1c never executes, the marker is never
+> created, and every subsequent Edit/Write to project source is blocked by the
+> hook. Every observed "hook blocked my edit" symptom in this repo traces back
+> to a missing delegation here.
+
 > **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
 > handled **inside** the task-runner at Phase 1d. The task-runner reads `pipeline.json`
 > and `analysis.md` after planning, displays the full implementation plan, and fires
@@ -247,8 +278,10 @@ still in progress for any task.
 
 Delegate one `task-runner` per task.
 
-- If `N == 1`, invoke one `task-runner`.
-- If `N > 1`, invoke all `task-runner` agents concurrently when supported.
+- If `N == 1`, invoke one `task-runner` via the host's Agent/Task tool. Do not
+  execute the pipeline inline.
+- If `N > 1`, invoke all `task-runner` agents concurrently when supported (a
+  single response containing N parallel Agent tool calls).
 
 Each task-runner receives:
 
