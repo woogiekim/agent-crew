@@ -52,14 +52,45 @@ allowed_prefixes = [
 if any(file_path.startswith(p) for p in allowed_prefixes):
     sys.exit(0)
 
-# Check for active crew task marker
+# Check for an active crew task marker.
+#
+# Two marker layouts are supported (backward compatibility for codex / generic
+# adapters that have not adopted the per-task marker):
+#
+#   1. Legacy singleton:   tasks/active
+#      Used by single task-runner workflows and by hosts that have not opted
+#      into background fan-out. Existing installations rely on this path; it
+#      must continue to work without any change.
+#
+#   2. Per-task markers:   tasks/active.<TASK_ID>
+#      Required by P4 background fan-out — when multiple task-runners run in
+#      independent host sessions, each owns its own marker so concurrent
+#      teardown by one runner does not strand edits made by another. The
+#      Phase 1c create / Phase 3 teardown logic in
+#      core/agents/task-runner.md must write its own per-task marker when
+#      EXECUTION_MODE == parallel.
+#
+# Either layout grants permission. The presence of ANY file matching
+#   tasks/active*
+# is treated as "an active crew task is in progress".
 project_name = os.path.basename(project_root)
-active_marker = os.path.join(
-    agent_crew_home, "state", project_name, "tasks", "active"
-)
+tasks_dir = os.path.join(agent_crew_home, "state", project_name, "tasks")
+legacy_marker = os.path.join(tasks_dir, "active")
 
-if os.path.exists(active_marker):
-    sys.exit(0)  # Inside a crew task — allow
+if os.path.exists(legacy_marker):
+    sys.exit(0)  # Inside a crew task (legacy singleton marker) — allow
+
+# Per-task markers: any file in the tasks dir whose name starts with "active."
+# satisfies the gate. We avoid a full glob to keep the hot path fast.
+try:
+    if os.path.isdir(tasks_dir):
+        for entry in os.listdir(tasks_dir):
+            if entry.startswith("active.") and os.path.isfile(
+                os.path.join(tasks_dir, entry)
+            ):
+                sys.exit(0)  # Inside a crew task (per-task marker) — allow
+except Exception:
+    pass  # Fall through to block decision below
 
 # No active crew task found — block
 block_output = {
