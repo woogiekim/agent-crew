@@ -156,10 +156,84 @@ QUALITY_RULE_PATH="${AGENT_CREW_HOME}/rules/quality-loop.md"
 PIPELINE_PATH="${TASK_DIR}/pipeline.json"
 HANDOFF_PATH="${TASK_DIR}/handoff.md"
 PRD_PATH="${TASK_DIR}/context/prd.md"
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+CAPABILITIES_PATH="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json"
 ```
 
-These four variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
-`PRD_PATH`) must be passed as-is to all sub-agents. Never re-derive them inline.
+These five variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
+`PRD_PATH`, `CAPABILITIES_PATH`) must be passed as-is to all sub-agents. Never
+re-derive them inline.
+
+**Host capability bootstrap**: Read host capabilities (Layer 1 of progressive
+adoption — see `core/rules/host-capabilities.md`). Treat missing file or parse
+errors as all-false flags.
+
+```bash
+HAS_TASK_TOOLS=$(python3 -c "
+import json
+try:
+    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
+```
+
+If `HAS_TASK_TOOLS == 1`, the task-runner registers itself with the host's task
+surface so users can see live pipeline progress in the host UI:
+
+1. Call `TaskCreate` once at the very start of Phase 0 (right after the
+   `STARTED` log line):
+
+   ```text
+   TaskCreate(
+     subject="crew:run — {TASK truncated to 60 chars}",
+     description="agent-crew task-runner pipeline for TASK_ID={TASK_ID}. "
+                 "File source of truth: {TASK_DIR}/progress.log",
+     activeForm="Running crew:run pipeline",
+     metadata={"task_id": "{TASK_ID}", "branch": "{BRANCH}",
+               "task_dir": "{TASK_DIR}"}
+   )
+   ```
+
+   Capture the returned task id as `HOST_TASK_ID` and write it once to
+   `${TASK_DIR}/host-task-id.txt` so other phases can update it without re-issuing
+   TaskCreate.
+
+2. At Phase 3 completion (after `result.md` is written), call
+   `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`. On `STATUS: blocked` or
+   `STATUS: CANCELLED`, leave the host task as `in_progress` and append a final
+   progress event — the host task list itself remains the responsibility of the
+   human operator to clean up, so the runner does not delete it.
+
+If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
+`TaskUpdate` call. The file-based pipeline state remains the single source of
+truth in both modes. **Never call `TaskCreate` outside this gated block.**
+
+### Progress Mirroring to Stderr (host-agnostic)
+
+In addition to the file-based progress log, every progress event MUST also be
+written to `stderr`. Hosts that surface stderr (Claude Code's `TaskOutput`,
+plain terminals) will see the same stream of events without any host-specific
+plumbing. This is independent of `task_tools` — it always runs.
+
+Use the helper pattern below in place of every `echo … >> progress.log` line in
+this document. Reading the file path (`progress.log`) and printing to stderr
+are paired so a single line in the doc maps to a single emit at runtime:
+
+```bash
+log_progress() {
+  local line="$(date -u +%Y-%m-%dT%H:%M:%S) | $1 | $2"
+  echo "${line}" >> "${TASK_DIR}/progress.log"
+  echo "[crew] ${line}" >&2
+}
+# Usage: log_progress "PHASE" "1b — Analysis"
+```
+
+Every example in the rest of this document that appears as
+`echo "... | EVENT | detail" >> "${TASK_DIR}/progress.log"` is equivalent to
+calling `log_progress "EVENT" "detail"`. Both writes happen on every event.
+Stdout remains reserved for the orchestrator's final return value — never write
+progress events to stdout.
 
 **Resume check**: If `PIPELINE_PATH` already exists, resume from that state
 instead of creating a new plan from scratch.
@@ -1021,6 +1095,27 @@ After writing result.md, collect the commit count and emit:
 ```bash
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | COMPLETED | branch={BRANCH} commits={n}" >> "${TASK_DIR}/progress.log"
 ```
+
+The completion event must also be mirrored to stderr per the stderr-mirror rule
+in Phase 0 (use `log_progress "COMPLETED" "branch=${BRANCH} commits=${n}"`).
+
+#### 2b. Close out the host task (capability-gated)
+
+If `HAS_TASK_TOOLS == 1` from Phase 0 and `${TASK_DIR}/host-task-id.txt` exists,
+mark the host-side task complete:
+
+```text
+HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
+TaskUpdate(taskId=HOST_TASK_ID, status="completed")
+```
+
+For a `STATUS: blocked` exit, call `TaskUpdate(taskId=HOST_TASK_ID,
+status="in_progress")` instead and let the operator decide whether to close it.
+For a `STATUS: CANCELLED` exit (plan-approval gate cancel), call
+`TaskUpdate(taskId=HOST_TASK_ID, status="completed")` so the host task list does
+not accumulate stale tasks.
+
+If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
 #### 3. Clear active task marker
 
