@@ -4,8 +4,16 @@ set -euo pipefail
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 PROJECT_ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
+# AGENT_CREW_MODE: "install" (default) or "update". Update mode never prompts
+# and never resets state; the copy operations below are idempotent in both
+# modes (cp -R overwrites but does not delete extraneous files).
+AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
 
 . "${AGENT_CREW_HOME}/setup/common.sh"
+
+if [ "${AGENT_CREW_MODE}" = "update" ]; then
+  printf 'MODE: update (host=claude)\n'
+fi
 
 copy_dir_contents "${AGENT_CREW_HOME}/commands" "${CLAUDE_DIR}/commands"
 copy_dir_contents "${AGENT_CREW_HOME}/agents" "${CLAUDE_DIR}/agent-crew/agents"
