@@ -214,23 +214,43 @@ same in both modes.
 > exception. Do NOT skip or abbreviate this step regardless of how obvious the task seems.
 > The task argument is a description, not requirements.
 
-For each task `i`, delegate to the **requirements agent** (blocking):
+**When `N == 1`:** Delegate to the requirements agent (blocking):
 
 ```text
 TASK: {task description}
-TASK_INDEX: {i}
+TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
 
 Run the 2-round AskUserQuestion interview, validate scope, detect ambiguities,
 write {TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
 ```
 
-Wait for the requirements agent to return. Extract the `REQUIREMENTS` block from its
-response and record it for this task.
+Wait for the agent to return. Extract the `REQUIREMENTS` block and record it.
 
-Repeat for each task. If `N > 1`, collect requirements for all tasks **before** proceeding
-to Step 6 (run task-runners). Do not run task-runners while requirements collection is
-still in progress for any task.
+**When `N > 1`:** Spawn all N requirements agents **simultaneously in a single
+response** (one Agent tool call per task, all issued together). Do NOT send them
+one at a time — parallel spawn is mandatory for N > 1:
+
+```text
+# Issue all N Agent calls in the same response (parallel fan-out):
+For task 0:
+  TASK: {task 0 description}
+  TASK_INDEX: 0
+  TASK_DIR: {TASK_DIR_0}
+  Run the 2-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
+
+For task 1:
+  TASK: {task 1 description}
+  TASK_INDEX: 1
+  TASK_DIR: {TASK_DIR_1}
+  Run the 2-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
+
+... (one call per task, all in the same response)
+```
+
+Wait for **all** N requirements agents to complete before proceeding to Step 6.
+Extract each task's `REQUIREMENTS` block from its agent's response and record it.
+Do not run task-runners while requirements collection is still in progress for any task.
 
 ### 6. Run Task Runners
 
@@ -258,34 +278,44 @@ still in progress for any task.
 > - Editing project source files from the orchestrator. The orchestrator only
 >   writes to `${TASK_DIR}` (state files) and to remotes during Step 11.
 >
-> Why this matters: `task-runner.md` Phase 1c is the only place that creates the
-> active task marker the `direct-edit-guard` PreToolUse hook checks for. If the
-> orchestrator skips delegation, Phase 1c never executes, the marker is never
-> created, and every subsequent Edit/Write to project source is blocked by the
-> hook. Every observed "hook blocked my edit" symptom in this repo traces back
+> Why this matters: `task-runner.md` Phase 1b+1c is the only place that creates
+> the active task marker the `direct-edit-guard` PreToolUse hook checks for. If
+> the orchestrator skips delegation, Phase 1b+1c never executes, the marker is
+> never created, and every subsequent Edit/Write to project source is blocked by
+> the hook. Every observed "hook blocked my edit" symptom in this repo traces back
 > to a missing delegation here.
 
 > **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
 > handled **inside** the task-runner at Phase 1d. The task-runner reads `pipeline.json`
-> and `analysis.md` after planning, displays the full implementation plan, and fires
-> AskUserQuestion before any stage agent executes. Do NOT add a separate plan approval
-> gate here in the orchestrator for N == 1.
+> and `analysis.md` after the merged analyst spawn, displays the full implementation
+> plan, and fires AskUserQuestion before any stage agent executes. Do NOT add a
+> separate plan approval gate here in the orchestrator for N == 1.
 >
 > **Plan Approval Gate (N > 1):** For parallel runs, each task-runner independently
-> handles Phase 1d for its own pipeline. After all task-runners have finished Phase 1c
-> (planning), each will pause at Phase 1d awaiting user approval. The orchestrator does
-> not consolidate these approvals — each task-runner's Phase 1d is independent.
+> handles Phase 1d for its own pipeline. After all task-runners have finished Phase
+> 1b+1c (merged analysis+planning), each will pause at Phase 1d awaiting user
+> approval. The orchestrator does not consolidate these approvals — each
+> task-runner's Phase 1d is independent.
 
 Delegate one `task-runner` per task. The orchestrator chooses between two
-delegation surfaces based on the `agent_background` capability flag:
+delegation surfaces based on the `agent_background` capability flag.
+
+Read both `agent_background` and `task_tools` in a single Python process so
+the file is opened only once and both Step 6 and Step 7.5 reuse the cached
+values without a second process startup:
 
 ```bash
-HAS_AGENT_BACKGROUND=$(python3 -c "
+# Single read — both flags cached here and reused in Steps 6 and 7.5.
+read -r HAS_AGENT_BACKGROUND HAS_TASK_TOOLS < <(python3 -c "
 import json
 try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('agent_background') else '0')
+    c = json.load(open('${CAPABILITIES_PATH}'))
+    print(
+        '1' if c.get('agent_background') else '0',
+        '1' if c.get('task_tools') else '0',
+    )
 except Exception:
-    print('0')
+    print('0 0')
 " 2>/dev/null)
 ```
 
@@ -475,13 +505,7 @@ matching the run's task IDs. The file write is still the contract — the
 `TaskList` call is only the fast convergence signal:
 
 ```text
-HAS_TASK_TOOLS=$(python3 -c "
-import json
-try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
-except Exception:
-    print('0')
-" 2>/dev/null)
+# HAS_TASK_TOOLS already set in Step 6 combined-read above — no re-read needed.
 
 if [ "${HAS_TASK_TOOLS}" = "1" ]; then
   # Preferred path: deterministic readiness check, one round-trip (no sleep).

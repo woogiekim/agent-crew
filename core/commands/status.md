@@ -29,20 +29,18 @@ Read the host capabilities file written by the active adapter's `setup.sh`. Per
 flag is treated as `false` (legacy behavior).
 
 ```bash
-HAS_TASK_TOOLS=$(python3 -c "
+# Single Python process reads capabilities.json once and emits both flags,
+# eliminating one extra python3 process startup per crew:status call.
+read -r HAS_TASK_TOOLS HAS_MONITOR_TOOL < <(python3 -c "
 import json
 try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
+    c = json.load(open('${CAPABILITIES_PATH}'))
+    print(
+        '1' if c.get('task_tools') else '0',
+        '1' if c.get('monitor_tool') else '0',
+    )
 except Exception:
-    print('0')
-" 2>/dev/null)
-
-HAS_MONITOR_TOOL=$(python3 -c "
-import json
-try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('monitor_tool') else '0')
-except Exception:
-    print('0')
+    print('0 0')
 " 2>/dev/null)
 ```
 
@@ -111,57 +109,50 @@ fi
 ### 4. Extract task metadata
 
 ```bash
-# Task description: prefer pipeline.json "task" field, fall back to result.md DESCRIPTION
-TASK_DESC=$(python3 -c "
-import json, sys
-try:
-    p = json.load(open('${PIPELINE}'))
-    print(p.get('task', '(unknown)'))
-except:
-    print('(unknown)')
-" 2>/dev/null)
-
-# Branch: read from result.md BRANCH field or derive from pipeline.json and ACTIVE_TASK
+# BRANCH fast path: prefer result.md BRANCH field (simple grep — no Python needed).
 BRANCH=$(grep "^BRANCH:" "${RESULT}" 2>/dev/null | head -1 | sed 's/^BRANCH: //' || true)
-if [ -z "${BRANCH}" ]; then
-  BRANCH=$(python3 - "${PIPELINE}" "${ACTIVE_TASK}" <<'PYEOF'
-import json
-import re
-import sys
+
+# Single Python process reads pipeline.json once and emits TASK_DESC and
+# (when BRANCH is still empty) the derived branch slug.
+# Output format: two lines — line 1 is task description, line 2 is branch slug.
+_PY_OUT=$(python3 - "${PIPELINE}" "${ACTIVE_TASK}" <<'PYEOF'
+import json, re, sys
 
 pipeline, task_id = sys.argv[1], sys.argv[2]
-
 try:
     task = json.load(open(pipeline)).get("task", "")
 except Exception:
     task = ""
 
+# Line 1: task description
+print(task or "(unknown)")
+
+# Line 2: derived branch slug (used only when result.md BRANCH field is absent)
 task_lc = task.lower()
-words = set(re.findall(r"[a-z0-9]+", task_lc))
+words_set = set(re.findall(r"[a-z0-9]+", task_lc))
 prefix_rules = [
-    ("fix", {"fix", "fixes", "fixed", "bug", "bugs", "repair", "repairs", "broken", "error", "errors", "failing", "failure", "failures", "regression", "regressions"}, ()),
-    ("docs", {"doc", "docs", "documentation", "readme", "guide", "guides", "instruction", "instructions", "manual"}, ()),
-    ("refactor", {"refactor", "refactors", "refactoring", "restructure", "cleanup", "simplify", "reorganize"}, ("clean up",)),
-    ("test", {"test", "tests", "testing", "spec", "specs", "coverage", "qa"}, ()),
-    ("chore", {"chore", "chores", "build", "dependency", "dependencies", "deps", "config", "configuration", "setup", "tooling", "maintenance"}, ("continuous integration",)),
+    ("fix",      {"fix","fixes","fixed","bug","bugs","repair","repairs","broken","error","errors","failing","failure","failures","regression","regressions"}, ()),
+    ("docs",     {"doc","docs","documentation","readme","guide","guides","instruction","instructions","manual"}, ()),
+    ("refactor", {"refactor","refactors","refactoring","restructure","cleanup","simplify","reorganize"}, ("clean up",)),
+    ("test",     {"test","tests","testing","spec","specs","coverage","qa"}, ()),
+    ("chore",    {"chore","chores","build","dependency","dependencies","deps","config","configuration","setup","tooling","maintenance"}, ("continuous integration",)),
 ]
 prefix = "feature"
 for candidate, tokens, phrases in prefix_rules:
-    if words & tokens or any(phrase in task_lc for phrase in phrases):
+    if words_set & tokens or any(p in task_lc for p in phrases):
         prefix = candidate
         break
 
-words = re.findall(r"[a-z0-9]+", task_lc)
-stopwords = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-    "in", "into", "is", "it", "of", "on", "or", "so", "that", "the",
-    "to", "with", "instead", "only", "than", "rather"
-}
-slug = "-".join(word for word in words if word not in stopwords)[:48].strip("-") or "task"
+stopwords = {"a","an","and","are","as","at","be","by","for","from","in","into","is","it","of","on","or","so","that","the","to","with","instead","only","than","rather"}
+slug = "-".join(w for w in re.findall(r"[a-z0-9]+", task_lc) if w not in stopwords)[:48].strip("-") or "task"
 print(f"{prefix}/{slug}-{task_id}")
 PYEOF
 )
+TASK_DESC=$(printf '%s' "${_PY_OUT}" | head -1)
+if [ -z "${BRANCH}" ]; then
+  BRANCH=$(printf '%s' "${_PY_OUT}" | tail -1)
 fi
+unset _PY_OUT
 ```
 
 ### 5. Read recent progress events

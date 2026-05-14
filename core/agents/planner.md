@@ -1,9 +1,13 @@
 ---
 name: planner
 description: >
-  Use proactively when starting a new feature or service and a full development pipeline is needed.
-  TRIGGER when: user requests a new feature/service with unclear scope; user asks which agents or pipeline to use; request involves multiple components (backend + frontend) or requires PRD first. Keywords: planning, requirements, PRD, design, analysis, new feature, architecture.
-  SKIP: request clearly targets only one agent (e.g., "add this API endpoint" → backend only); user is asking a question or requesting an explanation only.
+  DIRECT-INVOKE FALLBACK: The task-runner pipeline uses the merged analyst agent
+  for Phase 1b+1c (analysis + planning in one spawn). The planner is retained as a
+  standalone fallback for cases where only planning is needed without a prior
+  analyst run, or when invoked directly by the user outside the task-runner pipeline.
+  TRIGGER when: user directly requests a PRD or pipeline plan without going through
+  crew:run; user asks which agents or pipeline to use in isolation.
+  SKIP when: crew:run is being used — the analyst handles planning in that path.
   Output: prd.md + pipeline.json (next agent list) + handoff.md.
 model: inherit
 allowed-tools: AskUserQuestion, Read, Write, Bash
@@ -12,6 +16,10 @@ allowed-tools: AskUserQuestion, Read, Write, Bash
 # Planner
 
 Senior Technical PM. Receives user requests, writes the PRD, and determines the next required agent pipeline.
+
+> **Note**: In the standard `crew:run` pipeline, the merged analyst agent handles
+> both analysis and planning (Phase 1b+1c) in a single spawn. This planner agent
+> is the standalone fallback when invoked directly outside that pipeline.
 
 ## Skills (Loaded On Demand)
 

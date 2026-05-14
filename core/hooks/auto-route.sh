@@ -210,53 +210,39 @@ if match(ACTION_PAT):
 # Triggers when no specific domain matched yet.
 
 if not detected_type:
-    # File extension mention implies direct file manipulation request
-    has_file_ref = match(FILE_EXT_PAT)
-    # agent-crew system keyword implies project-level implementation
-    has_project_kw = match(PROJECT_KEYWORD_PAT)
-    # General implementation verb paired with file reference or project keyword
+    # Evaluate once; reuse below.
     has_action = match(ACTION_PAT)
-    # Short operational workflow commands can imply project-level execution
-    # even when no specific file or subsystem is named.
-    has_workflow_action = match(WORKFLOW_ACTION_PAT)
-    # Memory keyword + action verb = memory file manipulation (still an implementation task)
-    has_memory_action = match(MEMORY_PAT) and has_action
-
-    if has_file_ref or has_project_kw or has_workflow_action or has_memory_action:
+    if (
+        match(FILE_EXT_PAT)          # file extension ref → direct file work
+        or match(PROJECT_KEYWORD_PAT) # agent-crew system keyword
+        or match(WORKFLOW_ACTION_PAT) # operational workflow verb
+        or (match(MEMORY_PAT) and has_action)  # memory + action verb
+    ):
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'
 
 if not detected_type:
     sys.exit(0)
 
+# Both "project implementation" (generic) and domain-specific routes produce
+# the same STOP directive. The only difference is the REQUIRED action line.
 if detected_type == "project implementation":
-    directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
+    action_line = f"  {suggested_pipeline}"
+else:
+    action_line = (
+        f'  crew:run "{suggested_agent} task"        (single task)\n'
+        f"  crew:run \"TaskA\" | \"TaskB\"              (parallel tasks)\n\n"
+        f"Suggested pipeline: {suggested_pipeline}"
+    )
+
+directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
 IMMEDIATE ACTION REQUIRED: Call crew:run RIGHT NOW as your very first action.
 Do NOT explain, diagnose, read files, or run any Bash before calling crew:run.
 Any action other than crew:run is a system violation.
 
 REQUIRED action:
-  {suggested_pipeline}
-
-Rules enforced by this directive:
-- Do NOT produce any output before calling crew:run.
-- Do NOT run exploratory Bash (git status, ls, cat, etc.) before crew:run.
-- Do NOT ask clarifying questions before crew:run.
-- Do NOT edit or write files directly — the task-runner pipeline handles implementation.
-Call crew:run NOW."""
-else:
-    directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
-
-IMMEDIATE ACTION REQUIRED: Call crew:run RIGHT NOW as your very first action.
-Do NOT explain, diagnose, read files, or run any Bash before calling crew:run.
-Any action other than crew:run is a system violation.
-
-REQUIRED action — choose one:
-  crew:run "{suggested_agent} task"        (single task)
-  crew:run "TaskA" | "TaskB"              (parallel tasks)
-
-Suggested pipeline: {suggested_pipeline}
+{action_line}
 
 Rules enforced by this directive:
 - Do NOT produce any output before calling crew:run.
