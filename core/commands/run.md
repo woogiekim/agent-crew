@@ -298,15 +298,24 @@ Do not run task-runners while requirements collection is still in progress for a
 > task-runner's Phase 1d is independent.
 
 Delegate one `task-runner` per task. The orchestrator chooses between two
-delegation surfaces based on the `agent_background` capability flag:
+delegation surfaces based on the `agent_background` capability flag.
+
+Read both `agent_background` and `task_tools` in a single Python process so
+the file is opened only once and both Step 6 and Step 7.5 reuse the cached
+values without a second process startup:
 
 ```bash
-HAS_AGENT_BACKGROUND=$(python3 -c "
+# Single read — both flags cached here and reused in Steps 6 and 7.5.
+read -r HAS_AGENT_BACKGROUND HAS_TASK_TOOLS < <(python3 -c "
 import json
 try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('agent_background') else '0')
+    c = json.load(open('${CAPABILITIES_PATH}'))
+    print(
+        '1' if c.get('agent_background') else '0',
+        '1' if c.get('task_tools') else '0',
+    )
 except Exception:
-    print('0')
+    print('0 0')
 " 2>/dev/null)
 ```
 
@@ -496,13 +505,7 @@ matching the run's task IDs. The file write is still the contract — the
 `TaskList` call is only the fast convergence signal:
 
 ```text
-HAS_TASK_TOOLS=$(python3 -c "
-import json
-try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
-except Exception:
-    print('0')
-" 2>/dev/null)
+# HAS_TASK_TOOLS already set in Step 6 combined-read above — no re-read needed.
 
 if [ "${HAS_TASK_TOOLS}" = "1" ]; then
   # Preferred path: deterministic readiness check, one round-trip (no sleep).

@@ -169,28 +169,19 @@ errors as all-false flags. Three flags are loaded once in Phase 0 and reused
 through every later phase — never re-read the file inline.
 
 ```bash
-HAS_TASK_TOOLS=$(python3 -c "
+# Single Python process reads capabilities.json once and emits all three flags,
+# eliminating two extra python3 process startups compared to three separate calls.
+read -r HAS_TASK_TOOLS HAS_AGENT_BACKGROUND HAS_MONITOR_TOOL < <(python3 -c "
 import json
 try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('task_tools') else '0')
+    c = json.load(open('${CAPABILITIES_PATH}'))
+    print(
+        '1' if c.get('task_tools') else '0',
+        '1' if c.get('agent_background') else '0',
+        '1' if c.get('monitor_tool') else '0',
+    )
 except Exception:
-    print('0')
-" 2>/dev/null)
-
-HAS_AGENT_BACKGROUND=$(python3 -c "
-import json
-try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('agent_background') else '0')
-except Exception:
-    print('0')
-" 2>/dev/null)
-
-HAS_MONITOR_TOOL=$(python3 -c "
-import json
-try:
-    print('1' if json.load(open('${CAPABILITIES_PATH}')).get('monitor_tool') else '0')
-except Exception:
-    print('0')
+    print('0 0 0')
 " 2>/dev/null)
 ```
 
