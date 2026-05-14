@@ -19,10 +19,12 @@ except Exception:
 tool_name = data.get("tool_name", "")
 tool_input = data.get("tool_input", {})
 
-if tool_name != "Bash":
+if tool_name not in ("Bash", "shell", "exec_command"):
     sys.exit(0)
 
-command = tool_input.get("command", "") if isinstance(tool_input, dict) else ""
+command = ""
+if isinstance(tool_input, dict):
+    command = tool_input.get("command") or tool_input.get("cmd") or ""
 if not command:
     sys.exit(0)
 

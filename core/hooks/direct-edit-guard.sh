@@ -5,31 +5,40 @@
 # is in progress. Enforces the rule: all implementation work must go through
 # crew:run -> task-runner pipeline.
 
-python3 - <<'PYEOF'
+INPUT=$(cat)
+
+python3 - "$INPUT" <<'PYEOF'
 import json
 import os
 import subprocess
 import sys
 
+raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+
 try:
-    data = json.loads(sys.stdin.read())
+    data = json.loads(raw_input)
 except Exception:
     sys.exit(0)
 
 tool_name = data.get("tool_name", "")
-if tool_name not in ("Edit", "Write"):
+tool_input = data.get("tool_input", {})
+
+if tool_name not in ("Edit", "Write", "MultiEdit", "apply_patch"):
     sys.exit(0)
 
-file_path = data.get("tool_input", {}).get("file_path", "")
+file_path = ""
+if isinstance(tool_input, dict):
+    file_path = tool_input.get("file_path") or tool_input.get("path") or ""
 if not file_path:
     sys.exit(0)
 
 # Resolve project root
 try:
-    project_root = subprocess.run(
+    result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True, text=True
-    ).stdout.strip()
+    )
+    project_root = result.stdout.strip()
 except Exception:
     sys.exit(0)
 
@@ -38,7 +47,11 @@ if not project_root or not file_path.startswith(project_root):
 
 # Allow edits to crew state, agent definitions, and harness config itself
 agent_crew_home = os.environ.get("AGENT_CREW_HOME", os.path.expanduser("~/.agent-crew"))
-if file_path.startswith(agent_crew_home) or file_path.startswith(os.path.expanduser("~/.claude")):
+allowed_prefixes = [
+    agent_crew_home,
+    os.path.expanduser("~/.claude"),
+]
+if any(file_path.startswith(p) for p in allowed_prefixes):
     sys.exit(0)
 
 # Check for an active crew task marker.
@@ -52,17 +65,16 @@ if file_path.startswith(agent_crew_home) or file_path.startswith(os.path.expandu
 #      must continue to work without any change.
 #
 #   2. Per-task markers:   tasks/active.<TASK_ID>
-#      Required by P4 background fan-out — when multiple task-runners run in
+#      Required by background fan-out. When multiple task-runners run in
 #      independent host sessions, each owns its own marker so concurrent
 #      teardown by one runner does not strand edits made by another.
 #
-# Either layout grants permission. Exit on first match — no need to scan all.
+# Either layout grants permission. Exit on first match.
 tasks_dir = os.path.join(agent_crew_home, "state", os.path.basename(project_root), "tasks")
 
 if os.path.exists(os.path.join(tasks_dir, "active")):
     sys.exit(0)  # Inside a crew task (legacy singleton marker) — allow
 
-# Per-task markers: exit on the first active.<TASK_ID> file found.
 try:
     if os.path.isdir(tasks_dir):
         with os.scandir(tasks_dir) as it:
@@ -70,10 +82,10 @@ try:
                 if entry.name.startswith("active.") and entry.is_file():
                     sys.exit(0)  # Inside a crew task (per-task marker) — allow
 except Exception:
-    pass  # Fall through to block decision below
+    pass
 
 # No active crew task found — block
-print(json.dumps({
+block_output = {
     "decision": "block",
     "reason": (
         "[agent-crew] Direct edit blocked — no active crew task.\n\n"
@@ -83,6 +95,7 @@ print(json.dumps({
         "typo fix with no design implications), start a crew task first "
         "to create the active task marker, then proceed."
     )
-}))
+}
+print(json.dumps(block_output))
 sys.exit(0)
 PYEOF

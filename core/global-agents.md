@@ -69,6 +69,23 @@ through the appropriate `crew:<intent>` workflow instead of answering directly.
 Respond directly only for questions or explanations, such as "how", "why",
 "what", "explain", or "describe", unless the user also asks for implementation.
 
+### Codex Routing Fallback
+
+Codex lifecycle hooks can require trust review and may inject only advisory
+context. Therefore, the Codex adapter also installs an `agent-crew` skill as a
+host-specific routing adapter.
+
+When running in Codex, if a natural-language implementation request matches the
+Auto-Execution Triggers above, treat it exactly like:
+
+```text
+crew:run "{original request}"
+```
+
+This fallback must depend on the provider-neutral command definitions under
+`~/.agent-crew/commands/`. Do not embed task-runner, planner, backend, frontend,
+resolver, or approval behavior in Codex-specific hooks or skills.
+
 ### STOP Directive Rule
 
 When `[agent-crew] STOP` appears anywhere in the system context (injected by
