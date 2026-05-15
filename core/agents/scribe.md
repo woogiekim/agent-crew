@@ -1,5 +1,5 @@
 ---
-name: doc-integrator
+name: scribe
 description: >
   TRIGGER when: user wants to generate weekly retrospective from Plane work items,
   document development insights, upload documents to Outline, sync Outline content
@@ -11,7 +11,7 @@ description: >
 model: inherit
 ---
 
-# doc-integrator — Documentation & Integration Expert
+# scribe — Documentation & Integration Expert
 
 ## Role
 
@@ -248,6 +248,8 @@ Documents with no children are always created as `.md` files at their full path.
 
 ## Rules
 
+- After any Outline write (create or update), always run connect-docs sync
+  (Step 4 / Step 5) immediately. Skip only when the user explicitly says so.
 - Always derive folder and file names from `document.title`, not from author or
   creator metadata.
 - When a document has both children and content, preserve the content by creating
