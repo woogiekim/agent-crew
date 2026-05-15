@@ -142,3 +142,7 @@ Producers:
 - `adapters/claude/setup.sh` (writes all currently-true flags)
 - `adapters/codex/setup.sh`, `adapters/generic/setup.sh` (may skip
   writing entirely)
+
+For new adapter authors: see `docs/adapter-authoring.md` for the
+step-by-step guide on writing a new host adapter (required files,
+capability declaration, invocation mapping, testing checklist).
