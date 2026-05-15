@@ -18,15 +18,12 @@ Unlike `crew:setup`, this command:
 
 - Never prompts to reset per-project state under `~/.agent-crew/state/`.
 - Never deletes extraneous files at the install destination.
-- Reports a per-file diff summary of what was updated vs unchanged.
-- Is idempotent: re-running with no source changes reports 0 updated files.
+- Uses Claude Code's native Edit and Write tools for all file content updates,
+  so every changed file shows a native diff in the Claude Code UI automatically.
+- Is idempotent: re-running with no source changes produces no edits.
 - Does not alter `~/.claude/settings.json` hook configuration beyond what
   the original `install.sh` already does (it reuses the same marker-merge
   logic).
-
-The convention `AGENT_CREW_MODE=update` is set in the environment so that
-the dispatcher (`~/.agent-crew/setup/setup-host.sh`) and each adapter
-`setup.sh` know they are running in update mode.
 
 ## State Paths
 
@@ -83,29 +80,72 @@ resolve_source_dir() {
 
    and stop. Do NOT touch any installed files.
 
-2. Snapshot the install destination(s) BEFORE update:
+2. Establish path variables:
 
    ```bash
+   SOURCE_DIR="${SOURCE_ROOT}/core"
+   ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
    CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
-   TMP_DIR=$(mktemp -d)
-   bash "${AGENT_CREW_HOME}/setup/update-diff.sh" "${AGENT_CREW_HOME}" \
-     > "${TMP_DIR}/before-agent-crew.snap" 2>/dev/null || true
-   if [ -d "${CLAUDE_DIR}/agent-crew" ]; then
-     bash "${AGENT_CREW_HOME}/setup/update-diff.sh" "${CLAUDE_DIR}/agent-crew" \
-       > "${TMP_DIR}/before-claude.snap" 2>/dev/null || true
-   fi
    ```
 
-   The snapshot file lists every regular file at the destination, hashed
-   with SHA256, sorted deterministically by path.
+3. For each file category below, enumerate source files with `find` (Bash),
+   then use the **Read** tool to read each source file and the **Write** or
+   **Edit** tool to write it to the destination. This gives every changed file
+   a native diff display in the Claude Code UI — no custom diff code needed.
 
-3. Run the installer in update mode (auto-confirms reinstall, preserves
-   state, runs the host adapter again with `AGENT_CREW_MODE=update`):
+   Bash is used only for:
+   - `mkdir -p` (create destination directories)
+   - `chmod +x` (make shell scripts executable)
+   - `find` (enumerate files to copy)
+   - `settings.json` hook registration (python3 merge helpers from `install.sh`)
+
+   **File categories and their source → destination mappings:**
+
+   | Category | Source | Destination (primary) | Destination (compat alias) |
+   |---|---|---|---|
+   | commands | `${SOURCE_DIR}/commands/` | `${AGENT_CREW_HOME}/system/commands/` | `${AGENT_CREW_HOME}/commands/` |
+   | rules | `${SOURCE_DIR}/rules/` | `${AGENT_CREW_HOME}/system/rules/` | `${AGENT_CREW_HOME}/rules/` |
+   | hooks | `${SOURCE_DIR}/hooks/` | `${AGENT_CREW_HOME}/system/hooks/` | `${AGENT_CREW_HOME}/hooks/` |
+   | setup | `${SOURCE_DIR}/setup/` | `${AGENT_CREW_HOME}/system/setup/` | `${AGENT_CREW_HOME}/setup/` |
+   | adapters | `${ADAPTERS_DIR}/` | `${AGENT_CREW_HOME}/system/adapters/` | `${AGENT_CREW_HOME}/adapters/` |
+   | agents | `${SOURCE_DIR}/agents/` | `${AGENT_CREW_HOME}/system/agents/` | (via sync_system_agents) |
+   | claude hooks | `${AGENT_CREW_HOME}/hooks/` | `${CLAUDE_DIR}/agent-crew/hooks/` | — |
+   | claude rules | `${AGENT_CREW_HOME}/rules/` | `${CLAUDE_DIR}/agent-crew/rules/` | — |
+   | claude setup | `${AGENT_CREW_HOME}/setup/` | `${CLAUDE_DIR}/agent-crew/setup/` | — |
+   | claude commands | `${AGENT_CREW_HOME}/commands/` | `${CLAUDE_DIR}/commands/` | — |
+   | claude agents | `${AGENT_CREW_HOME}/system/agents/` | `${CLAUDE_DIR}/agent-crew/agents/` | — |
+
+   For each file in a category:
+
+   ```
+   1. Read the file at source path using the Read tool.
+   2. If destination file exists: use Edit to update it (shows diff in UI).
+      If destination file does not exist: use Write to create it.
+   3. After writing all files in a category, run:
+      chmod +x "${DEST_DIR}/"*.sh 2>/dev/null || true
+   ```
+
+   **Agent layer enforcement** (use Bash, not Read/Write):
+
+   After writing agents, run `sync_system_agents` to prune stale agents that
+   were removed from the source repo:
 
    ```bash
-   AGENT_CREW_MODE=update AGENT_CREW_SOURCE_DIR="${SOURCE_DIR}" \
-     bash "${SOURCE_DIR}/install.sh"
+   . "${SOURCE_DIR}/setup/common.sh"
+   sync_system_agents \
+     "${SOURCE_DIR}/agents" \
+     "${AGENT_CREW_HOME}/system/agents" \
+     "mcp-manager.md"
+   ```
+
+   Then merge system + user agents into the discovery destination:
+
+   ```bash
+   merge_agents_to_discovery \
+     "${AGENT_CREW_HOME}/system/agents" \
+     "${AGENT_CREW_HOME}/user/agents" \
+     "${CLAUDE_DIR}/agents"
    ```
 
 4. Re-run the host adapter against the current project so any project-local
@@ -118,43 +158,34 @@ resolve_source_dir() {
    ```
 
 5. Record the resolved source path so future invocations of `crew:update`
-   can find it without `AGENT_CREW_SOURCE_DIR`:
+   and the auto-sync step in `crew:run` can find it without `AGENT_CREW_SOURCE_DIR`.
+   Always record `SOURCE_ROOT` (the repo root containing `core/` and `adapters/`),
+   not `SOURCE_DIR` (the `core/` subdirectory):
 
    ```bash
-   printf '%s\n' "${SOURCE_DIR}" > "${AGENT_CREW_HOME}/source.path"
+   printf '%s\n' "${SOURCE_ROOT}" > "${AGENT_CREW_HOME}/source.path"
    ```
 
-6. Snapshot the install destination(s) AFTER update and diff:
+6. Update settings.json hook registrations (idempotent):
 
    ```bash
-   bash "${AGENT_CREW_HOME}/setup/update-diff.sh" "${AGENT_CREW_HOME}" \
-     > "${TMP_DIR}/after-agent-crew.snap"
-   bash "${AGENT_CREW_HOME}/setup/update-diff.sh" diff \
-     "${TMP_DIR}/before-agent-crew.snap" "${TMP_DIR}/after-agent-crew.snap"
-   if [ -f "${TMP_DIR}/before-claude.snap" ]; then
-     bash "${AGENT_CREW_HOME}/setup/update-diff.sh" "${CLAUDE_DIR}/agent-crew" \
-       > "${TMP_DIR}/after-claude.snap"
-     printf '\n[claude install location]\n'
-     bash "${AGENT_CREW_HOME}/setup/update-diff.sh" diff \
-       "${TMP_DIR}/before-claude.snap" "${TMP_DIR}/after-claude.snap"
-   fi
-   rm -rf "${TMP_DIR}"
+   AGENT_CREW_MODE=update AGENT_CREW_SOURCE_DIR="${SOURCE_DIR}" \
+     bash "${SOURCE_DIR}/install.sh"
    ```
 
-7. Print the completion message.
+   This re-runs the marker-merge helpers so any newly added hooks are
+   registered without duplicating existing entries.
 
 ## Safety Guarantees
 
-- `${AGENT_CREW_HOME}/state/` is NEVER touched by `install.sh` or any adapter
-  `setup.sh`. The diff snapshot intentionally includes the state path so
-  the report will surface any accidental write — under normal operation it
-  always reports 0 changes for state files.
+- `${AGENT_CREW_HOME}/state/` is NEVER touched. The Read/Write approach
+  targets only the categories listed above, which never overlap with state.
 - The state directory marker file `${STATE_DIR}/tasks/active` (if present
   from an in-flight crew task) is preserved.
-- `${CLAUDE_DIR}/settings.json` hook configuration is reached only via the
-  same marker-merge helpers used by `install.sh` — idempotent.
-- `cp -R` overwrites destination files but does not delete extraneous files.
-  Any locally-created custom agents at `~/.agent-crew/agents/` are preserved.
+- Write/Edit operations are idempotent: unchanged files produce no diff.
+- Any locally-created custom agents at `~/.agent-crew/user/agents/` are
+  preserved — `sync_system_agents` and `merge_agents_to_discovery` only
+  operate on the `system/agents/` layer.
 
 ## Completion Message
 
@@ -162,13 +193,6 @@ resolve_source_dir() {
 agent-crew updated.
 Source : {SOURCE_DIR}
 Install: ~/.agent-crew  (and ~/.claude/agent-crew when claude adapter active)
-
-Diff summary:
-  total: {N}
-  updated: {U}
-  added: {A}
-  removed: {R}
-  unchanged: {C}
 
 Usage:
   crew:run "request"    # business as usual
