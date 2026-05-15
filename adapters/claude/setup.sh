@@ -26,6 +26,20 @@ chmod +x "${CLAUDE_DIR}/agent-crew/hooks/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/setup/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/adapters/claude/"*.sh 2>/dev/null || true
 
+# Enforce system/agents/ classification before copying to mirror path.
+# In update mode: re-sync system/agents/ from the installed system source to
+# ensure stale agents (removed from the repo) are pruned, while preserving
+# system-exception agents (mcp-manager.md).
+# The SOURCE_ROOT environment variable is set by install.sh when this script
+# is called from install_claude_compat(); in standalone crew:setup runs it
+# falls back to the installed system copy (which is already up-to-date).
+if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents" ]; then
+  sync_system_agents \
+    "${SOURCE_ROOT}/core/agents" \
+    "${AGENT_CREW_HOME}/system/agents" \
+    "mcp-manager.md"
+fi
+
 # Copy system agents to the agent-crew mirror path
 copy_dir_contents "${AGENT_CREW_HOME}/system/agents" "${CLAUDE_DIR}/agent-crew/agents"
 
@@ -57,12 +71,24 @@ merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/user/agents" \
   "${CLAUDE_DIR}/agents"
 
-# Detect old flat layout and warn
+# Auto-migrate legacy flat layout (pre-system/ era):
+# - Non-repo, non-exception agents → user/agents/
+# - Repo agents and system-exception agents → already in system/agents/ (skip)
+# - Remove the legacy directory when fully classified
 if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
-  printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"
-  printf 'This directory is no longer used by crew. Files installed by crew have moved to system/.\n'
-  printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
-  printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+  printf '\n[agent-crew] Legacy layout detected at %s/agents/ — migrating...\n' "${AGENT_CREW_HOME}"
+  mkdir -p "${AGENT_CREW_HOME}/user/agents"
+  # Determine source for repo membership check: prefer SOURCE_ROOT if set
+  _LEGACY_SOURCE_AGENTS="${AGENT_CREW_HOME}/system/agents"
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents" ]; then
+    _LEGACY_SOURCE_AGENTS="${SOURCE_ROOT}/core/agents"
+  fi
+  migrate_legacy_agents \
+    "${AGENT_CREW_HOME}/agents" \
+    "${_LEGACY_SOURCE_AGENTS}" \
+    "${AGENT_CREW_HOME}/system/agents" \
+    "${AGENT_CREW_HOME}/user/agents" \
+    "mcp-manager.md"
 fi
 
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${CLAUDE_DIR}/CLAUDE.md"
