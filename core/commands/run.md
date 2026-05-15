@@ -99,6 +99,12 @@ If `STATE_DIR` does not exist, stop with:
 Run crew:setup first.
 ```
 
+Before spawning any task-runner agents, capture the current HEAD:
+
+```bash
+PRE_RUN_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+```
+
 ### 3. Resume Detection
 
 If `N > 1`, skip this step entirely — always start a new fan-out run and
@@ -488,9 +494,10 @@ orchestrator:
    - header: "Approve All Actions"
    - question: "Review the consolidated action plan above. Approve to release all tasks, or cancel to hold."
    - options:
-     - Approve all — release all task pipelines to execute
-     - Cancel all — hold all tasks, no actions taken
-     - Custom input (to approve selectively by task ID)
+     - label: "Approve all"
+       description: "Release all task pipelines to execute"
+     - label: "Cancel all"
+       description: "Hold all tasks, no actions taken"
 
 4. On **Approve all**: write `APPROVED` to `{TASK_DIR}/context/approval.md` for each task
 5. On **Cancel all**: write `CANCELLED` to `{TASK_DIR}/context/approval.md` for each task, then stop
@@ -668,21 +675,22 @@ a crashed task-runner must not block result collection for other tasks.
 
 Display a summary for every task. Do not proceed to Step 8 until the Run Summary has been printed to the user.
 
-For each task, collect the per-file changes by reading the CHANGES section from
-`result.md`. If CHANGES is absent, fall back to running git diff:
+For each task, collect the diff relative to the pre-run HEAD:
 
 ```bash
-# List changed files for this task branch
-git -C "${PROJECT_ROOT_FOR_TASK}" diff --name-only main...HEAD
+# Show changed files with stats
+git -C "${PROJECT_ROOT_FOR_TASK}" diff --stat ${PRE_RUN_HEAD}..HEAD
 
-# For each changed file, inspect the diff to write a Before/After description
-git -C "${PROJECT_ROOT_FOR_TASK}" diff main...HEAD -- {file_path}
+# Show diff preview (cap at 200 lines)
+DIFF_OUTPUT=$(git -C "${PROJECT_ROOT_FOR_TASK}" diff ${PRE_RUN_HEAD}..HEAD 2>/dev/null)
+DIFF_LINES=$(echo "$DIFF_OUTPUT" | wc -l | tr -d ' ')
+if [ "$DIFF_LINES" -le 200 ]; then
+  echo "$DIFF_OUTPUT"
+else
+  echo "$DIFF_OUTPUT" | head -200
+  echo "… $((DIFF_LINES - 200)) more lines. Run: git diff ${PRE_RUN_HEAD}..HEAD"
+fi
 ```
-
-Write a one-line Before/After description for each changed file:
-- Newly created file → Before: `(did not exist)`, After: brief description of purpose
-- Deleted file → Before: brief description, After: `(removed)`
-- Modified file → Before/After describe the key behavioral or structural change
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -693,13 +701,11 @@ Task 1: {description}
   Branch : {branch}
 
   Changes:
-    {file path 1}
-      Before: {one-line description of what the file/section did before}
-      After : {one-line description of what it does now}
+    {git diff --stat {PRE_RUN_HEAD}..HEAD output}
 
-    {file path 2}
-      Before: {as-is}
-      After : {to-be}
+  Diff:
+    {git diff {PRE_RUN_HEAD}..HEAD | head -200 output}
+    (If over 200 lines: "… {N} more lines. Run: git diff {PRE_RUN_HEAD}..HEAD")
 
   Commits ({N}):
     {git log --oneline, up to 5 lines}
@@ -853,8 +859,10 @@ Question:
 - header: "Deploy"
 - question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
 - options:
-  - Approve — push main to origin now
-  - Cancel — hold, do not push (branches remain local)
+  - label: "Approve"
+    description: "Push main to origin now"
+  - label: "Cancel"
+    description: "Hold, do not push (branches remain local)"
 
 **When N == 1:**
 
@@ -862,8 +870,10 @@ Question:
 - header: "Deploy"
 - question: "Review the deployment plan above. Approve to push to remote, or cancel to hold."
 - options:
-  - Approve — push the feature branch to origin now
-  - Cancel — hold, do not push (branch remains local)
+  - label: "Approve"
+    description: "Push the feature branch to origin now"
+  - label: "Cancel"
+    description: "Hold, do not push (branch remains local)"
 
 If **Approve**:
   - Proceed to Step 11.
