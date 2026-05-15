@@ -46,6 +46,65 @@ cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
 }
 CAPS_EOF
 
+# Register Agent diff PreToolUse/PostToolUse hooks into Claude settings.json
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-pre.sh" "Agent" "PreToolUse" <<'PYEOF'
+import sys, json, os
+dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 5}
+if os.path.exists(dest):
+  with open(dest) as f:
+    try: settings = json.load(f)
+    except json.JSONDecodeError: settings = {}
+else:
+  settings = {}
+hooks = settings.setdefault("hooks", {})
+hook_list = hooks.setdefault(hook_type, [])
+hook_path_base = os.path.basename(hook_path)
+for block in hook_list:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-post.sh" "Agent" "PostToolUse" <<'PYEOF'
+import sys, json, os
+dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 10}
+if os.path.exists(dest):
+  with open(dest) as f:
+    try: settings = json.load(f)
+    except json.JSONDecodeError: settings = {}
+else:
+  settings = {}
+hooks = settings.setdefault("hooks", {})
+hook_list = hooks.setdefault(hook_type, [])
+hook_path_base = os.path.basename(hook_path)
+for block in hook_list:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+
 printf 'HOST: claude\n'
 printf 'PROJECT_ROOT: %s\n' "${PROJECT_ROOT}"
 printf 'INSTALLED: %s\n' "${CLAUDE_DIR}"

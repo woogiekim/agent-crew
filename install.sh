@@ -142,6 +142,10 @@ install_global() {
   merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Edit|Write" "${AGENT_CREW_DIR}/hooks/direct-edit-guard.sh"
   log_info "direct-edit-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
 
+  merge_global_pretooluse  "${AGENT_CREW_HOME}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/agent-diff-pre.sh"
+  merge_global_posttooluse "${AGENT_CREW_HOME}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/agent-diff-post.sh"
+  log_info "Agent diff hooks registered → ${AGENT_CREW_HOME}/settings.json"
+
   merge_global_agents "${SOURCE_DIR}/global-agents.md" "${AGENT_CREW_HOME}/AGENTS.md"
   log_info "Global agent guidance applied → ${AGENT_CREW_HOME}/AGENTS.md"
 
@@ -163,6 +167,9 @@ install_claude_compat() {
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
+  merge_global_pretooluse  "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-pre.sh"
+  merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-post.sh"
+  log_info "Agent diff hooks registered → ${CLAUDE_DIR}/settings.json"
   log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
 }
 
@@ -267,6 +274,52 @@ for block in pretooluse_hooks:
     break
 else:
   pretooluse_hooks.append({"matcher": matcher, "hooks": [hook_entry]})
+
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+}
+
+# Safely merge PostToolUse hook into a settings.json file.
+merge_global_posttooluse() {
+  local dest="$1" matcher="$2" hook_path="$3"
+
+  python3 - "$dest" "$matcher" "$hook_path" <<'PYEOF'
+import sys, json, os
+
+dest, matcher, hook_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+hook_entry = {
+  "type": "command",
+  "command": f"bash {hook_path}",
+  "timeout": 10
+}
+
+if os.path.exists(dest):
+  with open(dest) as f:
+    try:
+      settings = json.load(f)
+    except json.JSONDecodeError:
+      settings = {}
+else:
+  settings = {}
+
+hooks = settings.setdefault("hooks", {})
+posttooluse_hooks = hooks.setdefault("PostToolUse", [])
+
+hook_path_base = os.path.basename(hook_path)
+for block in posttooluse_hooks:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  posttooluse_hooks.append({"matcher": matcher, "hooks": [hook_entry]})
 
 with open(dest, "w") as f:
   json.dump(settings, f, indent=2, ensure_ascii=False)

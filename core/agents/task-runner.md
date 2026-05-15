@@ -402,6 +402,13 @@ ls "${TASKS_DIR}/active" >/dev/null \
   || { echo "FATAL: active marker not created — direct-edit-guard will block stage agents"; exit 1; }
 ```
 
+Record the current HEAD before any implementation begins:
+
+```bash
+TASK_START_HEAD=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo "")
+echo "${TASK_START_HEAD}" > "${TASK_DIR}/context/start-head.txt"
+```
+
 Delegate to the **analyst agent** (blocking). The analyst is the merged
 analyst+planner — it produces all planning artifacts in one spawn:
 
@@ -1279,6 +1286,12 @@ All fields below are required. The orchestrator reads these fields to build
 the Step 7 Run Summary — missing fields will cause the summary to be incomplete
 or skipped.
 
+Read `TASK_START_HEAD` from `${TASK_DIR}/context/start-head.txt` when writing the result:
+
+```bash
+TASK_START_HEAD=$(cat "${TASK_DIR}/context/start-head.txt" 2>/dev/null || echo "")
+```
+
 Collect the list of changed files and write a one-line description of what changed
 for each:
 
@@ -1304,6 +1317,12 @@ LOG:
 CHANGES:
   - {file path}: {one-line description of what changed}
   - {file path}: {one-line description of what changed}
+
+DIFF_STAT:
+{git diff $TASK_START_HEAD..HEAD --stat 2>/dev/null output}
+
+DIFF_PREVIEW:
+{git diff $TASK_START_HEAD..HEAD 2>/dev/null | head -200 output}
 ```
 
 After writing result.md, collect the commit count and emit:
