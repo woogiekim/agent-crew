@@ -35,6 +35,7 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/session.json
       "task_dir": "/path/to/task/dir",
       "branch": "feat/implement-order-api",
       "task": "implement order API",
+      "task_hash": "implement order api",
       "status": "running",
       "injected": false
     },
@@ -43,12 +44,59 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/session.json
       "task_dir": "/path/to/injected/task/dir",
       "branch": "feat/implement-product-api",
       "task": "implement product API",
+      "task_hash": "implement product api",
       "status": "running",
       "injected": true
     }
   ]
 }
 ```
+
+### `task_hash` field
+
+Added in Phase B0 to support Step 1.6 (Duplicate Task Detection) in
+`core/commands/run.md`. The value is the **normalized form** of the task
+description string — not a cryptographic hash, just a deterministic
+canonicalization. Equality of `task_hash` is the duplicate signal.
+
+Normalization algorithm (must match the producer in `run.md` Step 1.6):
+
+1. Convert the task description to lowercase.
+2. Collapse internal whitespace (any run of spaces / tabs / newlines → one
+   space).
+3. Strip leading and trailing whitespace.
+4. Strip trailing ASCII punctuation `. , ; : ! ?` (any number of repeats).
+
+Concretely:
+
+```python
+def task_hash(task: str) -> str:
+    import re
+    h = re.sub(r"\s+", " ", task).strip().lower()
+    h = re.sub(r"[.,;:!?]+$", "", h)
+    return h
+```
+
+Examples:
+
+| Raw task | task_hash |
+|---|---|
+| `"Implement order API"` | `"implement order api"` |
+| `"implement order API."` | `"implement order api"` |
+| `"  implement   order API!  "` | `"implement order api"` |
+
+### Backward compatibility
+
+Pre-B0 `session.json` files do not have `task_hash`. Step 1.6 consumers MUST
+treat a missing `task_hash` on any tasks[] entry as "cannot dedupe; assume
+unique" — never as an empty-string match. The new field is additive; the
+rest of the schema is unchanged and tolerant of mixed pre/post-B0 entries
+within the same array.
+
+> **Note**: `task_hash` is NOT mirrored to the per-task
+> `{TASK_DIR}/register.json` because `register.json` does not exist yet
+> (planned in Phase F4). For Phase B0 the session.json entry is the sole
+> source of truth for the dedup check.
 
 ### Status values
 
@@ -72,6 +120,7 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/session.json
 crew:run "Task A" | "Task B"
     └─► Step 4: create TASK_DIR, worktree per task
     └─► Step 4 session init: write session.json {status: running, tasks: [A, B]}
+                              (each task gets a task_hash field — see Schema above)
     └─► Step 6: spawn task-runners for A and B
     └─► Step 7: collection loop polls session.json; marks each task completed
     └─► Step 7 session close: write session.json {status: completed}
@@ -99,9 +148,16 @@ The injection path is entered when **all** of these conditions hold:
 2. `session.json.status == "running"`.
 3. `session.json` file mtime is less than 24 hours ago (not abandoned).
 4. Either `--inject` flag was passed, OR the user confirms injection when
-   prompted (N > 1 without `--inject`).
+   prompted.
 
 If any condition fails, `crew:run` starts a fresh session normally.
+
+> **Related: duplicate-task disambiguation.** When the live session
+> detector finds a running session, `run.md` Step 1.6 additionally
+> compares the new task's `task_hash` against the `task_hash` of every
+> running tasks[] entry. A match routes through
+> `core/rules/disambiguation.md` for a user choice; it does NOT bypass
+> these detection rules. See `run.md` Step 1.6 for the full flow.
 
 ## Injection Guard
 

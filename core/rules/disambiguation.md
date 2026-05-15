@@ -38,11 +38,11 @@ arises. Concrete trigger conditions:
 
 | Trigger | Where | Resolution options |
 |---|---|---|
-| Intent classifier returns `ambiguous` | `core/commands/run.md` Step 2 (trivial-intent classifier) | (a) treat as trivial X, (b) treat as full dev task, (c) cancel and rephrase |
+| Intent classifier returns `ambiguous` | `core/commands/run.md` Step 1.7 (trivial-intent classifier) → resolved by Step 1.7.5 | (a) treat as trivial X, (b) treat as full dev task, (c) cancel and rephrase |
 | Inject-phrase detector returns `maybe-inject` (false-positive risk) | `core/hooks/auto-route.sh` + the planned `core/scripts/detect-inject-intent.sh` | (a) inject into live session, (b) start independent task, (c) cancel |
 | State file shape unexpected (migration scenarios) | `core/commands/update.md`, supervisor Phase 0 bootstrap | (a) attempt resume, (b) archive and start fresh, (c) abort |
 | Multiple resume candidates | planned `crew:replay` command | (a) replay stage N, (b) replay stage M, (c) cancel |
-| Duplicate task detection on injection | `core/rules/task-injection.md` Step 1.5 | (a) merge into the in-flight task, (b) queue as a separate task, (c) cancel |
+| Duplicate task detection | `core/commands/run.md` Step 1.6 (dedup against live session, post-Step-1.5 injection detection) | (a) show in-flight status, (b) start as a new task anyway, (c) cancel |
 | Concurrent session detected | `core/commands/run.md` Step 1.5 | (a) join the live session, (b) start a new session, (c) cancel |
 
 Any future trigger MUST be added to this table when introduced.
@@ -153,8 +153,8 @@ imports or references a specific tool name.
 - `core/rules/host-capabilities.md` — the Three Invariants
   (especially Invariant 3, which this rule operationalizes)
 - `core/commands/run.md` — primary consumer (Step 1.5 injection
-  detection, Step 2 trivial-intent classifier, future Step 2.5
-  ambiguous-input handler)
+  detection, Step 1.6 duplicate-task detection, Step 1.7 trivial-intent
+  classifier, Step 1.7.5 ambiguous-input handler)
 - `core/rules/task-injection.md` — consumer (duplicate-task
   disambiguation, concurrent-session disambiguation)
 - `core/commands/update.md` — consumer (state migration scenarios)

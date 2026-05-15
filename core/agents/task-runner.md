@@ -198,10 +198,11 @@ If `HAS_TASK_TOOLS == 1`, the task-runner registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
 
 1. **Check whether the orchestrator already pre-created a parent host task.**
-   When the runner is spawned via P4 background fan-out (`agent_background=1`),
-   the orchestrator pre-creates the parent host task and passes its id as
-   `HOST_TASK_ID` in the runner's input. In that case, skip the `TaskCreate`
-   call below and reuse the provided id:
+   When the runner is spawned via P4 background fan-out (`agent_background=1`,
+   for any task count including `N == 1`), the orchestrator pre-creates the
+   parent host task and passes its id as `HOST_TASK_ID` in the runner's
+   input. In that case, skip the `TaskCreate` call below and reuse the
+   provided id:
 
    ```bash
    if [ -n "${HOST_TASK_ID:-}" ]; then

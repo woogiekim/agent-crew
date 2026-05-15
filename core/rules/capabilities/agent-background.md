@@ -32,23 +32,37 @@ Requirements:
 Concrete call sites:
 
 - **`core/commands/run.md` Step 6 (P4 background fan-out)** — when the
-  flag is true AND `N > 1`, spawn `N` task-runners as background agents.
-  When the flag is false OR `N == 1`, fall back to the inline parallel
-  path (legacy branch). (Note: a future refactor phase removes the
-  `N == 1` exception so that all real development tasks go background.)
+  flag is true, spawn every task-runner as a background agent,
+  **regardless of `N`**. This includes single-task runs (`N == 1`): on a
+  host with `agent_background = true`, a one-shot
+  `crew:run "implement X"` spawns one background task-runner and ends
+  the orchestrator turn so the user can immediately inject additional
+  tasks. Only trivial intents (`crew:run` Step 1.7: status /
+  commit_only / merge / push / deploy / tag / rollback) are still
+  dispatched inline — they do not spawn a task-runner at all. When the
+  flag is false, the orchestrator uses the inline parallel path (legacy
+  branch) for all `N`.
 - **`core/hooks/direct-edit-guard.sh`** — supports both marker layouts;
   the per-task layout is the precondition when this flag is true.
 
-Input: boolean flag + task count. Output: a list of `backgroundId`
-values for the orchestrator to poll or await asynchronously.
+Input: boolean flag. Output: a list of `backgroundId` values for the
+orchestrator to poll or await asynchronously. Task count is no longer
+a routing input — the routing is purely the flag plus the
+trivial-intent classifier.
 
 ## Absence Behavior (flag=false)
 
-The orchestrator uses the inline-parallel-Agent path (`crew:run` Step 6
-legacy branch). The legacy singleton `tasks/active` marker remains the
-gate. Status tailing reads `progress.log` directly. Task injection
+The orchestrator uses the inline path (`crew:run` Step 6 legacy branch)
+for every task — both `N == 1` and `N > 1`. The legacy singleton
+`tasks/active` marker remains the gate. Status tailing reads
+`progress.log` directly. Task injection
 (`core/rules/task-injection.md`) is effectively unavailable because the
 orchestrator's turn does not end until the inline run completes.
+
+This is the documented best-effort path on Codex, generic, and any
+host that has not advertised `agent_background = true`. Phase B0
+explicitly preserves this path; only the inline-path *N == 1 carve-out
+within the flag-true branch* was removed.
 
 ## Adapter Examples
 

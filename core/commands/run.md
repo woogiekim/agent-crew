@@ -285,13 +285,18 @@ prompt, or the N>1 prompt):
 
    ```bash
    python3 -c "
-   import json
+   import json, re
+   def _task_hash(t):
+       h = re.sub(r'\s+', ' ', t).strip().lower()
+       h = re.sub(r'[.,;:!?]+\$', '', h)
+       return h
    s = json.load(open('${SESSION_FILE}'))
    s['tasks'].append({
        'task_id': '${TASK_ID}',
        'task_dir': '${TASK_DIR}',
        'branch': '${BRANCH}',
        'task': '${TASK}',
+       'task_hash': _task_hash('${TASK}'),
        'status': 'running',
        'injected': True
    })
@@ -339,7 +344,123 @@ except Exception:
 " 2>/dev/null
 ```
 
-If `stale` or `absent`: treat `IS_LIVE_SESSION == 0` and proceed to Step 1.7.
+If `stale` or `absent`: treat `IS_LIVE_SESSION == 0` and proceed to Step 1.6.
+
+### 1.6. Duplicate Task Detection
+
+> **This step runs after Step 1.5 (Injection Detection) and before Step
+> 1.7 (Fast-Path Intent Classification). It only runs when
+> `IS_LIVE_SESSION == 1`. If Step 1.5 already routed into the injection
+> path or determined the session is stale/absent, skip this step
+> entirely.**
+>
+> **Goal**: detect when the user is re-issuing a task that is already in
+> flight in the live session, and route the decision to the user via the
+> host's interactive question mechanism instead of silently spawning a
+> duplicate.
+
+#### When this step runs
+
+The duplicate check runs only when **all** of the following are true:
+
+1. Step 1.5 detected a live session (`IS_LIVE_SESSION == 1`).
+2. Step 1.5 did NOT route to the injection path (the user chose "Run
+   independently" or "Start new separate run", or `--inject` was not
+   used and the user is being prompted for routing).
+3. The normalized session's `tasks[]` array contains at least one entry
+   whose `status` is `"running"` AND whose `task_hash` matches the
+   normalized form of the new task.
+
+The normalization algorithm matches `core/rules/task-injection.md` (see
+the `task_hash` field documentation):
+
+```bash
+NEW_HASH=$(python3 -c "
+import re, sys
+t = sys.argv[1]
+h = re.sub(r'\s+', ' ', t).strip().lower()
+h = re.sub(r'[.,;:!?]+$', '', h)
+print(h)
+" "${TASK}")
+```
+
+#### Detect a duplicate
+
+```bash
+DUPLICATE_TASK_ID=$(python3 -c "
+import json, sys
+try:
+    s = json.load(open('${SESSION_FILE}'))
+    target = '${NEW_HASH}'
+    for t in s.get('tasks', []):
+        if t.get('status') != 'running':
+            continue
+        if not t.get('task_hash'):
+            # Pre-B0 entry with no task_hash — cannot compare, treat as unique.
+            continue
+        if t['task_hash'] == target:
+            print(t['task_id'])
+            break
+except Exception:
+    pass
+" 2>/dev/null)
+```
+
+**If `DUPLICATE_TASK_ID` is empty**, no duplicate. Proceed to Step 1.7.
+
+#### Route through interactive question (per disambiguation rule)
+
+When a duplicate is detected, route via the host's interactive question
+mechanism (see `core/rules/capabilities/interactive-question.md`) per
+the disambiguation rule (see `core/rules/disambiguation.md`). Heuristic
+auto-decision is forbidden — the user must choose.
+
+```text
+# Structured user-choice intent (host-bound — see
+# core/rules/capabilities/interactive-question.md):
+ask_question:
+  header: "Duplicate Task"
+  question: "A task with the same description is already running in session
+             {SESSION_ID} (task id {DUPLICATE_TASK_ID}). What would you like
+             to do?"
+  options:
+    - label: "Show in-flight status"
+      description: "Display the running task's current phase / stage progress;
+                    do not spawn a new task."
+    - label: "Start as a new task anyway"
+      description: "Spawn a new task-runner for this description; the two
+                    will run in parallel under the same session."
+    - label: "Cancel"
+      description: "Abort this crew:run invocation; the running task
+                    continues untouched."
+```
+
+#### Resolution
+
+- **Show in-flight status**: tail the duplicate task's `progress.log`
+  inline (`tail -20 "${SESSION_TASK_DIR}/progress.log"` where
+  `${SESSION_TASK_DIR}` is the duplicate entry's `task_dir`), then **STOP
+  — end the turn**. Do NOT proceed to Step 2.
+
+- **Start as a new task anyway**: cache the decision (write a sentinel
+  file `${STATE_DIR}/dedup-override.txt` containing the new task's hash
+  and the current timestamp), then proceed normally to Step 1.7. If the
+  user re-runs the exact same `crew:run` within 60 seconds, Step 1.6
+  reads the sentinel and skips the prompt — the decision is sticky to
+  avoid double-prompting on retry. The sentinel is purged after first
+  read.
+
+- **Cancel**: print `Cancelled — no task spawned.` and **STOP**. The
+  in-flight task continues running untouched.
+
+#### Backward compatibility
+
+When the live `session.json` was created by a pre-B0 run, none of its
+`tasks[]` entries have a `task_hash` field. In that case the detector
+loop above finds zero matches (each missing field is skipped) and
+execution proceeds to Step 1.7 — the user is never prompted spuriously.
+This is intentional: dedup is best-effort, and a pre-B0 session simply
+lacks the metadata to support it.
 
 ### 1.7. Fast-Path Intent Classification
 
@@ -412,9 +533,27 @@ classify_trivial_intent() {
   esac
 
   # --- Negative-match disambiguation ---
-  # If any implementation keyword appears ANYWHERE in the message AND the
-  # message did not match an explicit operational prefix above, the fast path
-  # is disqualified and we return 'none' so the request falls through to Step 2.
+  # The classifier must distinguish three compound cases when an
+  # implementation keyword is present:
+  #
+  #   (a) impl keyword + NO trivial verb anywhere   → 'none'
+  #       Example: "refactor authentication module" → 'none'
+  #
+  #   (b) impl keyword + trivial verb in the SAME phrase → 'ambiguous'
+  #       Example: "push and refactor auth"          → 'ambiguous'
+  #       Example: "commit and merge feature X"      → 'ambiguous'
+  #       Example: "merge two designs"               → 'ambiguous'
+  #
+  #   (c) impl keyword + zero compound coordinator   → 'none'
+  #       (same as (a); the impl keyword wins.)
+  #
+  # The 'ambiguous' return is consumed by Step 1.7.5 below, which routes
+  # the user through a structured user-choice intent (see
+  # `core/rules/disambiguation.md`).
+
+  local has_impl=0
+  local has_trivial_verb=0
+
   case "$task_lc" in
     *" add "*|"add "*|*" implement "*|"implement "*|\
     *" create "*|"create "*|*" build "*|"build "*|\
@@ -423,9 +562,27 @@ classify_trivial_intent() {
     *" change "*|"change "*|*" migrate "*|"migrate "*|\
     *" extend "*|"extend "*|*" integrate "*|"integrate "*|\
     *" replace "*|"replace "*|*" move "*|"move "*)
-      printf "none\n"; return
+      has_impl=1
       ;;
   esac
+
+  case "$task_lc" in
+    *"merge"*|*"push"*|*"deploy"*|*"release"*|\
+    *"tag"*|*"rollback"*|*"revert"*|*"commit"*|*"stage"*)
+      has_trivial_verb=1
+      ;;
+  esac
+
+  if [ "$has_impl" = "1" ] && [ "$has_trivial_verb" = "1" ]; then
+    # Compound input — trivial verb mixed with implementation keyword.
+    # Cannot decide unilaterally; defer to user choice.
+    printf "ambiguous\n"; return
+  fi
+
+  if [ "$has_impl" = "1" ]; then
+    # Plain implementation request — full pipeline.
+    printf "none\n"; return
+  fi
 
   # --- Per-intent classification (only reached after negative-match passes) ---
 
@@ -510,6 +667,7 @@ The function returns one of:
 | `rollback`     | Revert the last commit or roll back a deploy (destructive — needs approval) |
 | `status`       | Show repo state inline (read-only — no approval) |
 | `commit_only`  | Stage and commit current diff inline (local-only — no approval) |
+| `ambiguous`    | Compound input mixes a trivial verb with implementation phrasing — route to a structured user-choice intent (see Step 1.7.5) |
 | `none`         | Not a trivial intent — fall through to Step 2 |
 
 #### Dispatch table
@@ -638,9 +796,109 @@ Per-intent commands (executed inline only after Approve):
 
 #### Fall-through
 
-When `INTENT == "none"`, this step is silent. Proceed to Step 2 with no
-behavioral change. The classifier overhead is a single shell function call
-with a handful of `case` branches, so the fall-through cost is negligible.
+When `INTENT == "none"`, this step is silent. Proceed to Step 1.7.5 (which
+is also a no-op for `none`) and then Step 2 with no behavioral change. The
+classifier overhead is a single shell function call with a handful of
+`case` branches, so the fall-through cost is negligible.
+
+### 1.7.5. Ambiguous Intent Dispatch
+
+> **This step runs only when `INTENT == "ambiguous"` from Step 1.7.** It
+> routes the user through a structured user-choice intent (see
+> `core/rules/disambiguation.md` and
+> `core/rules/capabilities/interactive-question.md`) to resolve compound
+> phrasings such as `push and refactor auth` or `commit and merge` where
+> a trivial verb is mixed with implementation phrasing.
+
+#### Cache check (avoid re-prompting on retry)
+
+The dispatcher caches the user's choice keyed by the TASK string's
+`task_hash` (same normalization as Step 1.6) under
+`${STATE_DIR}/ambiguous-cache.json`. Each entry maps a hash to the
+chosen interpretation (`"trivial:{intent}"`, `"full"`, or `"cancel"`)
+with a 60-minute TTL.
+
+```bash
+mkdir -p "${STATE_DIR}"
+CACHE_FILE="${STATE_DIR}/ambiguous-cache.json"
+NEW_HASH=$(python3 -c "
+import re, sys
+t = sys.argv[1]
+h = re.sub(r'\s+', ' ', t).strip().lower()
+h = re.sub(r'[.,;:!?]+$', '', h)
+print(h)
+" "${TASK}")
+
+CACHED=$(python3 -c "
+import json, os, time
+try:
+    c = json.load(open('${CACHE_FILE}'))
+    e = c.get('${NEW_HASH}')
+    if e and (time.time() - e.get('ts', 0)) < 3600:
+        print(e['choice'])
+except Exception:
+    pass
+" 2>/dev/null)
+```
+
+If `CACHED` is non-empty, skip the prompt and apply the cached choice.
+
+#### Compose the question
+
+Inspect the matched verbs to populate the option labels. The trivial
+candidate is the *strongest* match (the verb whose unambiguous form is
+closest in the input).
+
+```text
+# Structured user-choice intent (host-bound — see
+# core/rules/capabilities/interactive-question.md):
+ask_question:
+  header: "Ambiguous Intent"
+  question: "Your request mixes a trivial git operation ({trivial_candidate})
+             with implementation phrasing. How should I interpret it?"
+  options:
+    - label: "Treat as trivial: {trivial_candidate}"
+      description: "Dispatch as a fast-path {trivial_candidate} (status,
+                    commit, push, etc.); do not spawn a task-runner."
+    - label: "Treat as a full development task"
+      description: "Run the regular pipeline (analyst → planner → stages →
+                    reviewer)."
+    - label: "Cancel and rephrase"
+      description: "Abort; let me re-issue crew:run with clearer phrasing."
+```
+
+#### Resolution
+
+- **Treat as trivial**: cache `"trivial:{intent}"` and re-enter the Step
+  1.7 dispatch table with `INTENT = {trivial_candidate}`. The
+  destructive-intent approval gate still runs.
+- **Treat as a full development task**: cache `"full"` and proceed to
+  Step 2 with `INTENT = "none"`.
+- **Cancel and rephrase**: cache `"cancel"`, print `Cancelled — please
+  re-issue with clearer phrasing.`, and **STOP — end the turn**.
+
+#### Cache write
+
+After the user resolves the question, persist the decision:
+
+```bash
+python3 -c "
+import json, os, time
+try:
+    c = json.load(open('${CACHE_FILE}'))
+except Exception:
+    c = {}
+c['${NEW_HASH}'] = {'choice': '${CHOICE}', 'ts': time.time()}
+json.dump(c, open('${CACHE_FILE}', 'w'), ensure_ascii=False, indent=2)
+"
+```
+
+The cache TTL is intentionally short (60 minutes) — a phrasing the user
+re-issues hours later may have a different intent.
+
+#### Fall-through
+
+When `INTENT == "none"`, this step is a no-op. Proceed to Step 2.
 
 ### 2. Initialize State Paths
 
@@ -784,7 +1042,12 @@ SESSION_ID="$(date +%Y%m%d-%H%M%S)"
 SESSION_FILE="${STATE_DIR}/session.json"
 
 python3 -c "
-import json, sys
+import json, re, sys
+
+def _task_hash(t):
+    h = re.sub(r'\s+', ' ', t).strip().lower()
+    h = re.sub(r'[.,;:!?]+$', '', h)
+    return h
 
 tasks = []
 # task_list is a list of dicts with task_id, task_dir, branch, task
@@ -794,6 +1057,7 @@ for entry in ${TASK_LIST_JSON}:
         'task_dir': entry['task_dir'],
         'branch': entry['branch'],
         'task': entry['task'],
+        'task_hash': _task_hash(entry['task']),
         'status': 'running',
         'injected': False
     })
@@ -1073,10 +1337,17 @@ except Exception:
 " 2>/dev/null)
 ```
 
-**P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1` AND `N > 1`).**
+**P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
 Spawn each task-runner as a host background agent pinned to a pre-created
 parent host task, print a "Background Session Started" summary, and **RETURN
 immediately** (end the turn). Do NOT enter any poll loop.
+
+This branch runs for **every** nontrivial task — including single-task runs
+(`N == 1`) — when the capability flag is true. The previous `N == 1` carve-out
+to the inline path is gone: unifying single and parallel under the background
+surface is what makes mid-session task injection work for ordinary one-shot
+`crew:run` invocations as well as for parallel fan-outs. Trivial intents
+(Step 1.7) still dispatch inline because they never spawn a task-runner.
 
 ```text
 HAS_TASK_TOOLS=$(python3 -c "...task_tools...")  # already cached, see Step 7.5
@@ -1128,9 +1399,13 @@ Tasks   : {N} task-runner(s) spawned as background agents
   ...
 
 Background agents are running. You can now:
-  - Inject new tasks:  crew:run "new task"
-  - Monitor progress:  crew:status
-  - Collect results:   crew:status --collect
+  - Check pipeline state:  crew:status
+  - Inject another task:   crew:run "new task"
+  - Collect final results: crew:status --collect
+
+Next step suggestion: run `crew:status` shortly to see the live phase /
+stage progression. The orchestrator turn has ended; this terminal is
+free for additional `crew:run` or `crew:status` invocations.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -1147,15 +1422,20 @@ not strand another runner's edits. The hook accepts either layout — see
 `core/hooks/direct-edit-guard.sh` and
 `core/rules/capabilities/agent-background.md`.
 
-**Legacy inline parallel fan-out** is used when `HAS_AGENT_BACKGROUND == 0`,
-OR when `N == 1` (background mode has no benefit for a single task — keep the
-inline path so the user sees the runner's response stream in the same
-session):
+**Legacy inline fan-out** is used only when `HAS_AGENT_BACKGROUND == 0`
+(Codex, generic, and any other host that has not advertised
+`agent_background = true` in `capabilities.json`). It is the best-effort
+fallback for hosts without a background-agent surface; the orchestrator's
+turn stays alive until every task-runner returns, and task injection is
+effectively unavailable.
 
 - If `N == 1`, invoke one `task-runner` via the host's Agent/Task tool. Do not
   execute the pipeline inline.
-- If `N > 1` AND `HAS_AGENT_BACKGROUND == 0`, invoke all `task-runner` agents
-  concurrently in a single response containing N parallel Agent tool calls.
+- If `N > 1`, invoke all `task-runner` agents concurrently in a single
+  response containing N parallel Agent tool calls.
+
+Hosts that advertise `agent_background = true` do not reach this branch —
+they always take the P4 path above, regardless of `N`.
 
 Both paths use the same task-runner agent definition. The runner detects
 which surface spawned it by checking whether `HOST_TASK_ID` was passed in its
@@ -1187,10 +1467,11 @@ Write the completion report to {TASK_DIR}/result.md.
 
 #### Task-Runner Health Check (Persistent Execution — inline path only)
 
-> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1` AND `N > 1`, the
-> orchestrator has already returned at the end of the spawn block above.
-> This health check and the result collection loop below apply only to the
-> **inline path** (`HAS_AGENT_BACKGROUND == 0`, or `N == 1`).
+> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator has
+> already returned at the end of the spawn block above. This health check
+> and the result collection loop below apply only to the **inline path**
+> (`HAS_AGENT_BACKGROUND == 0`). Background-path crash classification and
+> retries are performed by `crew:status --collect`.
 
 After each task-runner returns (inline path), the orchestrator must verify its output:
 
@@ -1230,9 +1511,9 @@ Wait for all task-runners to finish (including any crash-retry cycles).
 
 #### Session-Aware Result Collection (inline path only — N > 1 with injection support)
 
-> **P4 path skip**: On the background fan-out path (`HAS_AGENT_BACKGROUND == 1`,
-> `N > 1`), the orchestrator has already returned early after spawning. This
-> collection loop is only used by the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
+> **P4 path skip**: On the background fan-out path (`HAS_AGENT_BACKGROUND == 1`),
+> the orchestrator has already returned early after spawning. This collection
+> loop is only used by the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
 > For the P4 path, result collection is performed by `crew:status --collect`.
 
 When a session file exists, the orchestrator's result collection loop MUST
@@ -1316,12 +1597,12 @@ json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 
 ### 7.5. Parallel Action Gate (inline path, N > 1 only)
 
-> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1` AND `N > 1`, the
-> orchestrator already returned early at the end of Step 6. This step is
-> **not executed on the P4 path**. On the P4 path, the action gate for
-> each task-runner is handled by the task-runner's own Phase 2.5 Stage
-> Action Gate (using per-task `approval.md`). The consolidated gate here
-> is only for the inline parallel path.
+> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator
+> already returned early at the end of Step 6. This step is **not executed
+> on the P4 path**. On the P4 path, the action gate for each task-runner is
+> handled by the task-runner's own Phase 2.5 Stage Action Gate (using
+> per-task `approval.md`). The consolidated gate here is only for the inline
+> parallel path (`HAS_AGENT_BACKGROUND == 0`, `N > 1`).
 
 > **Skip this step entirely when N == 1.** For single-task runs, the task-runner
 > itself acts as the local orchestrator for its own stage agents and issues the
@@ -1460,11 +1741,11 @@ faster wakeup; it never removes the file contract.
 
 ### 7. Collect Results & Show Per-Task Summary
 
-> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1` AND `N > 1`, the
-> orchestrator already returned early at the end of Step 6. Steps 7–11 are
-> **not executed on the P4 path** — they are performed by `crew:status --collect`
-> when the user is ready to finalize the session. Steps 7–11 below apply only
-> to the **inline path** (`HAS_AGENT_BACKGROUND == 0`, or `N == 1`).
+> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator
+> already returned early at the end of Step 6. Steps 7–11 are **not
+> executed on the P4 path** — they are performed by `crew:status --collect`
+> when the user is ready to finalize the session. Steps 7–11 below apply
+> only to the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
 
 #### Session-Aware Task List
 
@@ -1865,10 +2146,11 @@ crew:run "resolve merge conflicts"
   Step 11, only after explicit user approval in Step 10.
 - **Step 8 (merge) applies only to parallel runs (N > 1).** For single-task runs,
   the feature branch is pushed directly without merging to main.
-- **P4 path (background fan-out)**: When `HAS_AGENT_BACKGROUND == 1` and `N > 1`,
-  the orchestrator returns immediately after spawning all background task-runners.
-  Steps 7–11 are NOT executed in this turn. To wait for results and finalize the
-  session (merge branches, show summary, deploy), run `crew:status --collect`.
+- **P4 path (background fan-out)**: When `HAS_AGENT_BACKGROUND == 1`, the
+  orchestrator returns immediately after spawning all background task-runners
+  (including single-task runs). Steps 7–11 are NOT executed in this turn. To
+  wait for results and finalize the session (merge branches, show summary,
+  deploy), run `crew:status --collect`.
 - **Mid-run task injection**: Because the P4 path returns early, the user may
   immediately run `crew:run "new task"` to inject tasks into the live session.
   The injected tasks join the same `session.json` and are collected together by
