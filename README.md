@@ -309,6 +309,7 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **reviewer** | Final stage — verifies implementation completeness against the PRD (read-only) |
 | **resolver** | Automatic merge conflict resolution after parallel runs |
 | **doc-writer** | Documentation authoring for tooling / docs / config tasks |
+| **learning-mentor** | Pedagogical teaching agent — runs 6-Phase structured tutoring sessions (assessment → concept foundation → application → critical evaluation → deepening → closing) with cognitive-load-controlled output |
 | **task-runner** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 
 ### Backend Agent Workflow (TDD Cycle)
