@@ -82,9 +82,22 @@ install_global() {
     || log_error "agent-maker.md install failed — system/commands/agent-maker.md not found"
   log_info "agent-maker command verified"
 
-  mkdir -p "${AGENT_CREW_DIR}/system/agents/skills"
-  cp "${SOURCE_DIR}/agents/"*.md "${AGENT_CREW_DIR}/system/agents/" 2>/dev/null || true
-  cp "${SOURCE_DIR}/agents/skills/"*.md "${AGENT_CREW_DIR}/system/agents/skills/" 2>/dev/null || true
+  # Load shared functions (sync_system_agents, migrate_legacy_agents, merge_agents_to_discovery)
+  # common.sh is sourced here so the functions are available for agent layer enforcement.
+  # If common.sh is not yet installed (first-time install), fall back to direct cp.
+  if [ -f "${SOURCE_DIR}/setup/common.sh" ]; then
+    . "${SOURCE_DIR}/setup/common.sh"
+    # Enforce agent classification: sync source → system/agents/, pruning stale files
+    # but preserving system-exception agents (mcp-manager.md).
+    sync_system_agents \
+      "${SOURCE_DIR}/agents" \
+      "${AGENT_CREW_DIR}/system/agents" \
+      "mcp-manager.md"
+  else
+    mkdir -p "${AGENT_CREW_DIR}/system/agents/skills"
+    cp "${SOURCE_DIR}/agents/"*.md "${AGENT_CREW_DIR}/system/agents/" 2>/dev/null || true
+    cp "${SOURCE_DIR}/agents/skills/"*.md "${AGENT_CREW_DIR}/system/agents/skills/" 2>/dev/null || true
+  fi
   log_info "Agents installed → ${AGENT_CREW_DIR}/system/agents/"
   log_info "Skills installed → ${AGENT_CREW_DIR}/system/agents/skills/"
 
@@ -150,12 +163,26 @@ install_global() {
   mkdir -p "${AGENT_CREW_DIR}/rules"
   cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
 
-  # Detect old flat layout (pre-system/ era) and warn the user
+  # Auto-migrate legacy flat layout (pre-system/ era):
+  # - Non-repo, non-exception agents → user/agents/
+  # - Repo agents and system-exception agents → already in system/agents/ (skip)
+  # - Remove the legacy directory when fully classified
   if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
-    printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"
-    printf 'This directory is no longer used by crew. Files installed by crew have moved to system/.\n'
-    printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
-    printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+    printf '\n[agent-crew] Legacy layout detected at %s/agents/ — migrating...\n' "${AGENT_CREW_HOME}"
+    mkdir -p "${AGENT_CREW_HOME}/user/agents"
+    if type migrate_legacy_agents &>/dev/null 2>&1; then
+      migrate_legacy_agents \
+        "${AGENT_CREW_HOME}/agents" \
+        "${SOURCE_DIR}/agents" \
+        "${AGENT_CREW_HOME}/system/agents" \
+        "${AGENT_CREW_HOME}/user/agents" \
+        "mcp-manager.md"
+    else
+      # common.sh not loaded — warn and skip auto-migration
+      printf '[agent-crew] NOTE: common.sh not available; skipping auto-migration.\n'
+      printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
+      printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+    fi
   fi
 
   install_codex_bootstrap_skill "${ADAPTERS_DIR}/codex/skill/agent-crew"
@@ -189,7 +216,9 @@ install_claude_compat() {
     return
   fi
 
-  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" \
+  # Export SOURCE_ROOT so adapters/claude/setup.sh can use sync_system_agents
+  # with the correct source reference during install/update runs.
+  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" SOURCE_ROOT="${SOURCE_ROOT}" \
     "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"

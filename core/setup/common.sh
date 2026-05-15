@@ -52,11 +52,144 @@ exclude_path.write_text("\n".join(content).rstrip("\n") + "\n")
 PYEOF
 }
 
+# Sync system agents from source to system/agents/ destination, enforcing that
+# only agents present in the source (or matching the exception list) remain.
+# Files in system/agents/ that are not in source AND not in the exception list
+# are removed to prevent stale agents accumulating over updates.
+#
+# Classification rules:
+#   - Agents in the remote repo source  → system layer (copied from source)
+#   - Agents NOT in remote repo source  → user layer   (should not be in system)
+#   - Exception: mcp-manager            → always system (hard-coded exception)
+#
+# Arguments:
+#   $1  source_agents  — e.g. core/agents/ from the repo
+#   $2  system_agents  — e.g. ~/.agent-crew/system/agents/
+#   $3  exceptions     — space-separated list of agent basenames that are always
+#                        kept in system even if absent from source (e.g. "mcp-manager.md")
+sync_system_agents() {
+  local source_agents="$1"
+  local system_agents="$2"
+  local exceptions="${3:-mcp-manager.md}"
+
+  [ -d "${source_agents}" ] || return 0
+  mkdir -p "${system_agents}/skills"
+
+  # Copy all source agents into system (update existing, add new)
+  cp "${source_agents}/"*.md "${system_agents}/" 2>/dev/null || true
+  if [ -d "${source_agents}/skills" ]; then
+    cp "${source_agents}/skills/"*.md "${system_agents}/skills/" 2>/dev/null || true
+  fi
+
+  # Remove stale system agents: those not in source AND not in exceptions list
+  while IFS= read -r -d '' system_file; do
+    local basename_file
+    basename_file=$(basename "${system_file}")
+
+    # Check if in exceptions list
+    local is_exception=0
+    for exc in ${exceptions}; do
+      [ "${basename_file}" = "${exc}" ] && is_exception=1 && break
+    done
+    [ "${is_exception}" -eq 1 ] && continue
+
+    # Check if in source
+    if [ ! -f "${source_agents}/${basename_file}" ]; then
+      printf '[agent-crew] Removing stale system agent: %s (not in source, not an exception)\n' "${basename_file}"
+      rm -f "${system_file}"
+    fi
+  done < <(find "${system_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+  find "${system_agents}" -name ".DS_Store" -delete 2>/dev/null || true
+}
+
+# Migrate legacy ~/.agent-crew/agents/ flat directory to proper system/user layers.
+# Non-repo files that aren't already in system or user are moved to user/agents/.
+# After migration, if the legacy directory is empty (or contains only subdirs), it
+# can be removed by the caller.
+#
+# Arguments:
+#   $1  legacy_agents  — e.g. ~/.agent-crew/agents/
+#   $2  source_agents  — e.g. core/agents/ from the repo (to determine repo membership)
+#   $3  system_agents  — e.g. ~/.agent-crew/system/agents/
+#   $4  user_agents    — e.g. ~/.agent-crew/user/agents/
+#   $5  exceptions     — space-separated list always kept in system (e.g. "mcp-manager.md")
+migrate_legacy_agents() {
+  local legacy_agents="$1"
+  local source_agents="$2"
+  local system_agents="$3"
+  local user_agents="$4"
+  local exceptions="${5:-mcp-manager.md}"
+
+  [ -d "${legacy_agents}" ] || return 0
+
+  local migrated=0
+  local skipped=0
+
+  while IFS= read -r -d '' legacy_file; do
+    local basename_file
+    basename_file=$(basename "${legacy_file}")
+
+    # Skip README.md
+    [ "${basename_file}" = "README.md" ] && continue
+
+    # Determine classification
+    local in_source=0
+    local is_exception=0
+
+    [ -f "${source_agents}/${basename_file}" ] && in_source=1
+
+    for exc in ${exceptions}; do
+      [ "${basename_file}" = "${exc}" ] && is_exception=1 && break
+    done
+
+    if [ "${in_source}" -eq 1 ] || [ "${is_exception}" -eq 1 ]; then
+      # Repo agent or system exception: already handled by sync_system_agents
+      skipped=$((skipped + 1))
+    else
+      # Non-repo, non-exception: belongs in user/agents/
+      if [ ! -f "${user_agents}/${basename_file}" ]; then
+        mkdir -p "${user_agents}"
+        cp "${legacy_file}" "${user_agents}/${basename_file}"
+        printf '[agent-crew] Migrated %s → user/agents/\n' "${basename_file}"
+        migrated=$((migrated + 1))
+      else
+        printf '[agent-crew] Skipping %s — already present in user/agents/\n' "${basename_file}"
+        skipped=$((skipped + 1))
+      fi
+    fi
+  done < <(find "${legacy_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+  if [ "${migrated}" -gt 0 ] || [ "${skipped}" -gt 0 ]; then
+    printf '[agent-crew] Legacy agents migration: %d moved to user/agents/, %d already classified\n' \
+      "${migrated}" "${skipped}"
+  fi
+
+  # Remove the legacy directory if it only contains auto-migrated or already-handled files
+  # (caller may also do this explicitly after verifying)
+  local remaining_md
+  remaining_md=$(find "${legacy_agents}" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${remaining_md}" -eq 0 ]; then
+    rm -rf "${legacy_agents}"
+    printf '[agent-crew] Removed empty legacy agents directory: %s\n' "${legacy_agents}"
+  else
+    printf '[agent-crew] NOTE: Legacy agents directory still has %d .md files — review manually:\n' "${remaining_md}"
+    find "${legacy_agents}" -maxdepth 1 -name "*.md" 2>/dev/null | while IFS= read -r f; do
+      printf '  %s\n' "${f}"
+    done
+    printf 'Move non-system files to user/agents/, then delete %s\n' "${legacy_agents}"
+  fi
+}
+
 # Merge system and user agents into the discovery destination (~/.claude/agents/).
 #
 # Policy (Option B): if the same filename exists in both system/agents/ and
 # user/agents/, emit a warning and skip copying that file from user/. The
 # system copy is always placed first; only non-conflicting user agents follow.
+#
+# Stale cleanup: any .md file in dest that is not present in system/agents/ AND
+# not present in user/agents/ is removed, preventing old removed agents from
+# lingering in the discovery path across updates.
 #
 # Arguments:
 #   $1  system_agents  — e.g. ~/.agent-crew/system/agents/
@@ -69,6 +202,23 @@ merge_agents_to_discovery() {
 
   mkdir -p "${dest}"
 
+  # Remove stale agents from dest: files not in system OR user
+  while IFS= read -r -d '' dest_file; do
+    local basename_file
+    basename_file=$(basename "${dest_file}")
+    [ "${basename_file}" = "README.md" ] && continue
+
+    local in_system=0
+    local in_user=0
+    [ -f "${system_agents}/${basename_file}" ] && in_system=1
+    [ -f "${user_agents}/${basename_file}" ] && in_user=1
+
+    if [ "${in_system}" -eq 0 ] && [ "${in_user}" -eq 0 ]; then
+      printf '[agent-crew] Removing stale agent from discovery: %s\n' "${basename_file}"
+      rm -f "${dest_file}"
+    fi
+  done < <(find "${dest}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
   # Copy system agents first (idempotent — cp -R overwrites existing files)
   copy_dir_contents "${system_agents}" "${dest}"
 
@@ -78,7 +228,8 @@ merge_agents_to_discovery() {
     while IFS= read -r -d '' user_file; do
       local basename_file
       basename_file=$(basename "${user_file}")
-      if [ -f "${dest}/${basename_file}" ]; then
+      [ "${basename_file}" = "README.md" ] && continue
+      if [ -f "${system_agents}/${basename_file}" ]; then
         conflicts+=("${basename_file}")
       fi
     done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
@@ -94,6 +245,7 @@ merge_agents_to_discovery() {
       while IFS= read -r -d '' user_file; do
         local basename_file
         basename_file=$(basename "${user_file}")
+        [ "${basename_file}" = "README.md" ] && continue
         local is_conflict=0
         for c in "${conflicts[@]}"; do
           [ "${basename_file}" = "${c}" ] && is_conflict=1 && break
@@ -101,8 +253,13 @@ merge_agents_to_discovery() {
         [ "${is_conflict}" -eq 0 ] && cp "${user_file}" "${dest}/"
       done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
     else
-      # No conflicts — copy all user agents
-      copy_dir_contents "${user_agents}" "${dest}"
+      # No conflicts — copy all user agents (excluding README.md)
+      while IFS= read -r -d '' user_file; do
+        local basename_file
+        basename_file=$(basename "${user_file}")
+        [ "${basename_file}" = "README.md" ] && continue
+        cp "${user_file}" "${dest}/"
+      done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
     fi
   fi
 }
