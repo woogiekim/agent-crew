@@ -54,6 +54,75 @@ crew:run "Fix bug B"
 
 ## Execution Steps
 
+### 0. Auto-sync Installed Commands
+
+> **This step runs before all other steps and is silent on success.** It ensures
+> the installed commands under `~/.agent-crew/commands/` and `~/.claude/commands/`
+> are always in sync with the source repository. This prevents stale command
+> definitions (the root cause of injection detection failures when source commands
+> are updated but installed copies are not refreshed).
+
+Resolve the source repository once:
+
+```bash
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
+
+# Prefer the recorded source path written by install.sh / crew:update.
+# source.path may contain either the repo root OR the core/ subdirectory —
+# normalize to the repo root (the directory that contains both core/ and adapters/).
+SOURCE_ROOT=""
+if [ -f "${AGENT_CREW_HOME}/source.path" ]; then
+  _RECORDED=$(head -1 "${AGENT_CREW_HOME}/source.path" 2>/dev/null || echo "")
+  if [ -d "${_RECORDED}/core" ]; then
+    SOURCE_ROOT="${_RECORDED}"         # recorded path is the repo root
+  elif [ -d "${_RECORDED}/../adapters" ]; then
+    SOURCE_ROOT=$(dirname "${_RECORDED}")  # recorded path is core/ — strip one level
+  fi
+fi
+
+# Fall back to the git toplevel of the CWD when it contains core/ and adapters/.
+if [ -z "${SOURCE_ROOT}" ]; then
+  _TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+  if [ -d "${_TOPLEVEL}/core" ] && [ -d "${_TOPLEVEL}/adapters" ]; then
+    SOURCE_ROOT="${_TOPLEVEL}"
+  fi
+fi
+```
+
+If `SOURCE_ROOT` resolves and `${SOURCE_ROOT}/core/commands/` exists, sync all
+command files to the three installed locations:
+
+```bash
+if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
+  # Sync commands: source → system layer (canonical installed copy)
+  cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/system/commands/" 2>/dev/null || true
+  # Sync commands: source → compat alias (backward-compatible path)
+  cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/commands/" 2>/dev/null || true
+  # Sync commands: source → host discovery path (Claude Code reads from here)
+  cp "${SOURCE_ROOT}/core/commands/"*.md "${CLAUDE_DIR}/commands/" 2>/dev/null || true
+fi
+
+# Also sync rules (session protocol references core/rules/task-injection.md).
+# Stale rules do not break execution but may cause agent confusion.
+if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/rules" ]; then
+  cp "${SOURCE_ROOT}/core/rules/"*.md "${AGENT_CREW_HOME}/system/rules/" 2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/rules/"*.md "${AGENT_CREW_HOME}/rules/" 2>/dev/null || true
+fi
+```
+
+**Silent on success**: this step emits nothing when the sync completes normally.
+If `SOURCE_ROOT` cannot be resolved (e.g., the agent-crew source repo is not
+present on this machine), skip this step entirely and proceed to Step 1. The
+absence of a source root is not an error — the installed commands may already
+be current from the last `crew:update` run.
+
+> **Note**: This step only updates the installed command files. It does NOT
+> re-run hooks registration, agent discovery merge, or any other install side-effect.
+> For a full refresh of all assets, run `crew:update` explicitly.
+
+---
+
 ### 1. Collect Tasks
 
 Use provided arguments as task descriptions. If none are provided, ask through

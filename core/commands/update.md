@@ -158,10 +158,12 @@ resolve_source_dir() {
    ```
 
 5. Record the resolved source path so future invocations of `crew:update`
-   can find it without `AGENT_CREW_SOURCE_DIR`:
+   and the auto-sync step in `crew:run` can find it without `AGENT_CREW_SOURCE_DIR`.
+   Always record `SOURCE_ROOT` (the repo root containing `core/` and `adapters/`),
+   not `SOURCE_DIR` (the `core/` subdirectory):
 
    ```bash
-   printf '%s\n' "${SOURCE_DIR}" > "${AGENT_CREW_HOME}/source.path"
+   printf '%s\n' "${SOURCE_ROOT}" > "${AGENT_CREW_HOME}/source.path"
    ```
 
 6. Update settings.json hook registrations (idempotent):
