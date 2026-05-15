@@ -16,6 +16,7 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
 fi
 
 copy_dir_contents "${AGENT_CREW_HOME}/commands" "${CLAUDE_DIR}/commands"
+copy_dir_contents "${AGENT_CREW_HOME}/agents" "${CLAUDE_DIR}/agents"
 copy_dir_contents "${AGENT_CREW_HOME}/agents" "${CLAUDE_DIR}/agent-crew/agents"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${CLAUDE_DIR}/agent-crew/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/rules" "${CLAUDE_DIR}/agent-crew/rules"
