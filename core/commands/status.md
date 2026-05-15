@@ -1,13 +1,20 @@
 # crew:status — Pipeline Snapshot
 
-Print a real-time snapshot of the most recently active task's pipeline state.
+Print a real-time snapshot of the active pipeline state.
 
 ```text
-crew:status
+crew:status           # snapshot — show current state and exit
+crew:status --collect # wait for background session to finish, then finalize
 ```
 
-No arguments required. The command automatically targets the most recent task
-under the active project's state directory.
+When a background session is running (`session.json` exists with `status:
+running`), `crew:status` displays a live session table. Without `--collect`,
+it exits immediately after the snapshot. With `--collect`, it waits for all
+tasks to finish and then runs the equivalent of Steps 7–11 from `crew:run`
+(Run Summary, merge, Implementation Summary, Deploy approval).
+
+When no background session exists (or `session.json` is absent / completed),
+`crew:status` falls back to the existing single-task snapshot behavior.
 
 ---
 
@@ -18,8 +25,10 @@ under the active project's state directory.
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
-CAPABILITIES_PATH="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json"
+STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+TASKS_DIR="${STATE_DIR}/tasks"
+SESSION_FILE="${STATE_DIR}/session.json"
+CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
 ```
 
 ### 1b. Probe host capabilities (Layers 1–2 progressive adoption)
@@ -29,18 +38,19 @@ Read the host capabilities file written by the active adapter's `setup.sh`. Per
 flag is treated as `false` (legacy behavior).
 
 ```bash
-# Single Python process reads capabilities.json once and emits both flags,
-# eliminating one extra python3 process startup per crew:status call.
-read -r HAS_TASK_TOOLS HAS_MONITOR_TOOL < <(python3 -c "
+# Single Python process reads capabilities.json once and emits all three flags,
+# eliminating extra python3 process startups.
+read -r HAS_TASK_TOOLS HAS_MONITOR_TOOL HAS_AGENT_BACKGROUND < <(python3 -c "
 import json
 try:
     c = json.load(open('${CAPABILITIES_PATH}'))
     print(
         '1' if c.get('task_tools') else '0',
         '1' if c.get('monitor_tool') else '0',
+        '1' if c.get('agent_background') else '0',
     )
 except Exception:
-    print('0 0')
+    print('0 0 0')
 " 2>/dev/null)
 ```
 
@@ -78,16 +88,403 @@ still be guarded by a runtime availability check.
 is preferred — it remains the single source of truth per
 `core/rules/host-capabilities.md`.
 
+### 1c. Detect session mode
+
+Check whether a live background session exists:
+
+```bash
+SESSION_MODE=$(python3 -c "
+import json, os, time
+try:
+    path = '${SESSION_FILE}'
+    s = json.load(open(path))
+    age = time.time() - os.path.getmtime(path)
+    if s.get('status') == 'running' and age <= 86400:
+        print('live')
+    elif s.get('status') in ('running', 'completed'):
+        print('session')
+    else:
+        print('none')
+except Exception:
+    print('none')
+" 2>/dev/null)
+```
+
+- `live` — `session.json` exists, `status == running`, and the file is less
+  than 24 hours old. Use **Session-Aware Mode** (Steps 2S–7S below).
+- `session` — `session.json` exists but the session has already completed or
+  the file is older than 24h. Display as completed session (Steps 2S–3S only,
+  no --collect action).
+- `none` — no session file. Use **Single-Task Mode** (Steps 2–7 below).
+
+---
+
+## Session-Aware Mode (Steps 2S–7S)
+
+> These steps run when `SESSION_MODE == "live"` or `SESSION_MODE == "session"`.
+> Skip these steps and proceed to Step 2 (single-task mode) when
+> `SESSION_MODE == "none"`.
+
+### 2S. Read session state
+
+```bash
+python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+print('SESSION_ID:', s.get('session_id', '?'))
+print('STATUS:', s.get('status', '?'))
+for t in s.get('tasks', []):
+    print('TASK', t['task_id'], t['branch'], t['status'],
+          '(injected)' if t.get('injected') else '', sep='|')
+" 2>/dev/null
+```
+
+Extract all task entries: `task_id`, `task_dir`, `branch`, `status`, `injected`.
+
+### 3S. Show live session table
+
+For each task, determine live status:
+
+```bash
+# For each task entry:
+TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
+PROGRESS_LOG="${TASK_DIR}/progress.log"
+
+# Overall task status:
+# 1. Check result.md
+if grep -q "STATUS: completed" "${TASK_DIR}/result.md" 2>/dev/null; then
+  TASK_STATUS="completed"
+elif grep -q "STATUS: blocked\|STATUS: BLOCKED" "${TASK_DIR}/result.md" 2>/dev/null; then
+  TASK_STATUS="blocked"
+else
+  TASK_STATUS="running"
+fi
+
+# 2. Last progress event
+LAST_EVENT=$(tail -1 "${PROGRESS_LOG}" 2>/dev/null | sed 's/^[0-9T:-]* | //' || echo "(no events yet)")
+
+# 3. Current stage (from pipeline.json completed_stages)
+CURRENT_STAGE=$(python3 -c "
+import json
+try:
+    p = json.load(open('${TASK_DIR}/pipeline.json'))
+    stages = p.get('stages', [])
+    done = p.get('completed_stages', 0)
+    if done < len(stages):
+        s = stages[done]
+        agent = s if isinstance(s, str) else '/'.join(s)
+        print(f'{done+1}/{len(stages)} — {agent}')
+    else:
+        print('done')
+except Exception:
+    print('(planning...)')
+" 2>/dev/null)
+```
+
+When `HAS_TASK_TOOLS == 1` and `${TASK_DIR}/host-task-id.txt` exists, also
+read the host task status for the most precise live state:
+
+```text
+HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt" 2>/dev/null)
+if [ -n "$HOST_TASK_ID" ]:
+    HOST_STATUS=$(TaskGet(taskId=$HOST_TASK_ID).status)
+    # Map to display: in_progress → running, completed → completed, etc.
+```
+
+Display the session table:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Background Session: {SESSION_ID}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Session status: {running | completed}
+
+  #  Task ID              Branch                         Status     Stage
+  ─  ────────────────────  ─────────────────────────────  ─────────  ──────────────────
+  1  {TASK_ID_1}           {BRANCH_1}                     running    2/3 — backend
+  2  {TASK_ID_2} (inj)     {BRANCH_2}                     completed  done
+  3  {TASK_ID_3}           {BRANCH_3}                     running    (planning...)
+
+Last event per task:
+  {TASK_ID_1}: {LAST_EVENT_1}
+  {TASK_ID_2}: COMPLETED | branch={BRANCH_2} commits=3
+  {TASK_ID_3}: {LAST_EVENT_3}
+
+  "(inj)" marks tasks injected after session start.
+
+To wait for all tasks and finalize: crew:status --collect
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**If `SESSION_MODE == "session"` (completed session):** append a note:
+
+```
+Session completed. To see full results, read result.md for each task above.
+```
+
+**If `--collect` was NOT passed** (snapshot mode): **STOP here**. Print the
+table above and exit. Do not wait or enter any loop.
+
+### 4S. Collect mode (--collect only)
+
+> Only entered when `--collect` was passed AND `SESSION_MODE == "live"`.
+
+Wait for all running tasks to reach a terminal state. Poll every 5 seconds
+(use TaskGet wake-on-change when `HAS_TASK_TOOLS == 1` to reduce latency):
+
+```bash
+PRE_RUN_HEAD=$(python3 -c "
+import json
+try:
+    s = json.load(open('${SESSION_FILE}'))
+    print(s.get('pre_run_head', ''))
+except Exception:
+    print('')
+" 2>/dev/null)
+
+while true:
+    # Re-read session.json to detect newly injected tasks
+    REMAINING=$(python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+print(sum(1 for t in s['tasks'] if t['status'] not in ('completed', 'blocked')))
+" 2>/dev/null)
+
+    # For each still-running task, check result.md and update session.json
+    python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+changed = False
+for t in s['tasks']:
+    if t['status'] not in ('completed', 'blocked'):
+        result_path = t['task_dir'] + '/result.md'
+        try:
+            content = open(result_path).read()
+            if 'STATUS: completed' in content:
+                t['status'] = 'completed'; changed = True
+            elif 'STATUS: blocked' in content or 'STATUS: BLOCKED' in content:
+                t['status'] = 'blocked'; changed = True
+        except Exception:
+            pass
+if changed:
+    json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
+" 2>/dev/null
+
+    if [ "${REMAINING}" = "0" ]; then
+        break  # All tasks have reached terminal state
+    fi
+
+    # When HAS_TASK_TOOLS == 1: prefer TaskGet wake-on-change over sleep
+    # (poll each task's host task id; sleep is the fallback guard)
+    sleep 5
+done
+```
+
+After all tasks complete, mark `session.json` as done:
+
+```bash
+python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+s['status'] = 'completed'
+json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
+" 2>/dev/null
+```
+
+Apply the same crash-retry rule as `crew:run` Step 7: if a task's `result.md`
+is missing or lacks a STATUS field after the poll loop exits, treat it as a
+crash and re-invoke the task-runner for that task (up to 3 retries, passing
+the same `TASK_DIR` so the task-runner resumes from `pipeline.json`).
+
+### 5S. Run Summary (--collect only)
+
+> This is the equivalent of `crew:run` Step 7's Run Summary. Read
+> `result.md` for each task and display the full diff / commit output.
+
+Read all task results from `session.json`:
+
+```bash
+python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s['tasks']:
+    print(t['task_id'], t['task_dir'], t['branch'], t['status'],
+          '1' if t.get('injected') else '0', sep='|')
+" 2>/dev/null
+```
+
+For each task, collect the diff relative to `pre_run_head`:
+
+```bash
+TASK_PROJECT_ROOT="${TASK_DIR}/../../.."  # worktrees are under PROJECT_ROOT/.crew-worktrees/
+# Or read PROJECT_ROOT from result.md if recorded
+
+git -C "${PROJECT_ROOT_FOR_TASK}" diff --stat ${PRE_RUN_HEAD}..HEAD
+DIFF_OUTPUT=$(git -C "${PROJECT_ROOT_FOR_TASK}" diff ${PRE_RUN_HEAD}..HEAD 2>/dev/null)
+DIFF_LINES=$(echo "$DIFF_OUTPUT" | wc -l | tr -d ' ')
+if [ "$DIFF_LINES" -le 200 ]; then
+  echo "$DIFF_OUTPUT"
+else
+  echo "$DIFF_OUTPUT" | head -200
+  echo "… $((DIFF_LINES - 200)) more lines. Run: git diff ${PRE_RUN_HEAD}..HEAD"
+fi
+```
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Run Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == true
+  Status : completed | blocked
+  Branch : {branch}
+
+  Changes:
+    {git diff --stat {PRE_RUN_HEAD}..HEAD output}
+
+  Diff:
+    {git diff {PRE_RUN_HEAD}..HEAD | head -200 output}
+    (If over 200 lines: "… {N} more lines. Run: git diff {PRE_RUN_HEAD}..HEAD")
+
+  Commits ({N}):
+    {git log --oneline, up to 5 lines}
+
+Task 2: {description}
+  ...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+If any task has `STATUS: blocked`, report the blocker. Do not proceed to merge.
+
+### 6S. Merge Branches (--collect only, N > 1)
+
+> This is the equivalent of `crew:run` Step 8.
+
+Merge all completed task branches into `main` locally:
+
+```bash
+SESSION_FILE="${STATE_DIR}/session.json"
+ALL_BRANCHES=$(python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s['tasks']:
+    if t['status'] == 'completed':
+        print(t['branch'])
+" 2>/dev/null)
+
+git checkout main
+for BRANCH in ${ALL_BRANCHES}; do
+  git merge --no-ff "${BRANCH}" -m "merge: ${BRANCH} into main"
+done
+```
+
+If a merge conflict occurs, invoke the conflict resolver before continuing:
+
+```text
+crew:run "resolve merge conflicts"
+```
+
+After all merges succeed:
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Implementation Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Merged branches into main (local):
+  - {BRANCH_1}  ({N} commits)
+  - {BRANCH_2}  ({N} commits)
+
+Commits ready for push (origin/main..HEAD):
+  {git log --oneline origin/main..HEAD, up to 10 lines}
+
+Note: No remote push has occurred yet.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+> **Stop here by default.** Do not volunteer deployment. If the user wants to
+> deploy or push, they will request it explicitly.
+
+### 7S. Deploy Approval (--collect only, devops stage present)
+
+> This is the equivalent of `crew:run` Steps 10–11. Only runs when at least
+> one pipeline in the session included a `devops` stage.
+
+Check if any pipeline had a devops stage:
+
+```bash
+HAS_DEVOPS=$(python3 -c "
+import json, os
+import json as j
+s = j.load(open('${SESSION_FILE}'))
+for t in s['tasks']:
+    pp = os.path.join(t['task_dir'], 'pipeline.json')
+    try:
+        p = j.load(open(pp))
+        if any('devops' in stage for stage in p.get('stages', [])):
+            print('yes'); exit()
+    except Exception:
+        pass
+print('no')
+" 2>/dev/null)
+```
+
+If `HAS_DEVOPS == "no"`: skip this step entirely.
+
+If `HAS_DEVOPS == "yes"`: display the Deployment Plan and use **AskUserQuestion**:
+
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Deployment Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Action: push main to origin (all task branches merged)
+
+Commits to be published (origin/main..HEAD):
+  {git log --oneline origin/main..HEAD}
+
+Target remote: origin
+Risk notes:
+  - {any merge conflicts detected?}
+  - {any blocked tasks?}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+```text
+AskUserQuestion:
+  header: "Deploy"
+  question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
+  options:
+    - label: "Approve"
+      description: "Push main to origin now"
+    - label: "Cancel"
+      description: "Hold, do not push (branches remain local)"
+```
+
+If **Approve**:
+
+```bash
+git push origin main
+```
+
+Report: `Deployment complete. Pushed: main`
+
+If **Cancel**: Print the branch name(s) so the user can push manually later.
+
+---
+
+## Single-Task Mode (Steps 2–7)
+
+> These steps run when `SESSION_MODE == "none"` (no live or recent session).
+> They are the original `crew:status` behavior, unchanged.
+
 ### 2. Find the most recent task
 
 ```bash
-ACTIVE_TASK=$(ls -t "${STATE_DIR}" | head -1)
-TASK_DIR="${STATE_DIR}/${ACTIVE_TASK}"
+ACTIVE_TASK=$(ls -t "${TASKS_DIR}" | head -1)
+TASK_DIR="${TASKS_DIR}/${ACTIVE_TASK}"
 PIPELINE="${TASK_DIR}/pipeline.json"
 RESULT="${TASK_DIR}/result.md"
 ```
 
-If `STATE_DIR` does not exist or is empty, print:
+If `TASKS_DIR` does not exist or is empty, print:
 
 ```
 No tasks found. Run crew:setup or crew:run first.
@@ -332,15 +729,26 @@ Pipeline stages:
 
 ## Notes
 
-- `crew:status` is read-only. It never modifies any state file.
-- The command always targets the **most recently modified** task directory
+- `crew:status` is read-only in snapshot mode. It never modifies any state file.
+  The `--collect` flag is the only mode that modifies state (merging branches,
+  marking session as completed, writing `approval.md`).
+- **Session-aware mode** is the primary mode when a background session (`session.json`
+  with `status: running`) is detected. It shows all tasks in the session, not just
+  the most recently modified task directory.
+- **Single-task mode** (Steps 2–7, original behavior) is the fallback when no active
+  session is present. It targets the most recently modified task directory
   (using `ls -t … | head -1`). To inspect an older task, pass the TASK_ID
   directly as an argument (future extension — not required for v1).
-- Stage markers reflect `completed_stages` from `pipeline.json`, not live
-  agent output. For live event streaming, the "Recent events" section reads
-  `{TASK_DIR}/progress.log` (tail -20), which is written by the task-runner
-  at every phase and stage boundary. This log is the most up-to-date source
-  of pipeline state even while a sub-agent is still running.
+- **`crew:status --collect`** is the finalization command for background sessions.
+  It waits for all tasks to complete, then runs the equivalent of `crew:run` Steps
+  7–11 (Run Summary, branch merge, Implementation Summary, Deploy approval). Use
+  this after `crew:run` spawns a background parallel session and returns early.
+- Stage markers in single-task mode reflect `completed_stages` from `pipeline.json`,
+  not live agent output. For live event streaming, the "Recent events" section reads
+  `{TASK_DIR}/progress.log` (tail -20), which is written by the task-runner at every
+  phase and stage boundary. This log is the most up-to-date source of pipeline state
+  even while a sub-agent is still running. The host-task event stream is the same
+  data path with lower latency.
 - When the host adapter has advertised `task_tools: true` in
   `~/.agent-crew/state/{project}/capabilities.json`, `crew:status` prefers the
   host's `TaskList` output for the parent-task stage state because hosts like

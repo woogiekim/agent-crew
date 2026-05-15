@@ -202,8 +202,53 @@ except Exception:
 
 **If `IS_LIVE_SESSION == 0`:** No live session. Proceed normally to Step 2.
 
-**If `IS_LIVE_SESSION == 1` AND the `--inject` flag was passed OR N == 1:**
-A live session exists. Route the new task(s) as injections:
+**If `IS_LIVE_SESSION == 1` AND the `--inject` flag was passed:**
+A live session exists. Route the new task(s) as injections (see injection
+execution path below).
+
+**If `IS_LIVE_SESSION == 1` AND N == 1 AND `--inject` was NOT passed:**
+A live session exists but the user did not explicitly request injection.
+Ask via AskUserQuestion before deciding:
+
+```text
+AskUserQuestion:
+  header: "Live Session"
+  question: "A background session ({SESSION_ID}) is running. Join it or start independently?"
+  options:
+    - label: "Inject into session"
+      description: "Add this task to the running pipeline (spawns background runner, returns immediately)"
+    - label: "Run independently"
+      description: "Start a fresh run in this session (inline, not background)"
+```
+
+- **Inject into session**: follow the injection execution path below.
+- **Run independently**: proceed normally to Step 2 as a fresh N=1 run
+  (inline mode — task-runner runs in the current turn, not as a background agent).
+
+**If `IS_LIVE_SESSION == 1` AND N > 1 AND `--inject` was NOT passed:**
+A live session exists, but the user submitted multiple tasks without an explicit
+inject flag. Ask the user to clarify:
+
+```text
+AskUserQuestion:
+  header: "Live Session Detected"
+  question: "A parallel crew:run session (ID: {SESSION_ID}) is already running.
+             Do you want to inject these {N} new tasks into the live session,
+             or start a completely separate new run?"
+  options:
+    - label: "Inject into live session"
+      description: "Add these tasks to the running pipeline"
+    - label: "Start new separate run"
+      description: "Begin an independent parallel run (creates a new session)"
+```
+
+- **Inject**: follow the injection execution path below.
+- **New run**: proceed normally to Step 2 with a new `SESSION_ID`.
+
+#### Injection execution path
+
+When injection is chosen (regardless of whether triggered by `--inject`, the N==1
+prompt, or the N>1 prompt):
 
 1. Read the live `SESSION_ID` from `session.json`:
 
@@ -224,7 +269,7 @@ A live session exists. Route the new task(s) as injections:
 3. For each new task, generate a new `TASK_ID`, `TASK_DIR`, `BRANCH`, and
    worktree — identical to Step 4. Skip Step 2 and Step 3 (no resume
    detection for injected tasks). Proceed directly to Step 5 (requirements)
-   and then Step 6 (task-runner spawn).
+   and then Step 6 (task-runner spawn as background agent).
 
 4. After spawning the injected task-runner(s), register each into
    `session.json` by appending to its `tasks` array:
@@ -245,34 +290,20 @@ A live session exists. Route the new task(s) as injections:
    "
    ```
 
-5. The live orchestrator's Step 7 result collection loop monitors `session.json`
-   continuously. When it detects new entries, it automatically adds those
-   task-runners to its collection pool without requiring restart.
+5. Print the injection summary and **RETURN immediately** (end the turn).
+   Do NOT enter any poll loop. The background task-runner(s) will run
+   autonomously; use `crew:status` to monitor progress or
+   `crew:status --collect` to wait for results.
 
-6. **Do not start a new orchestrator.** The injected tasks are owned by the
-   existing orchestrator's session. This step returns after spawning the
-   runner(s) and registering them in `session.json`. The existing orchestrator
-   will collect the injected results.
+   ```
+   [crew] INJECT | session={SESSION_ID} | {N} task(s) spawned as background agent(s)
+   Task(s) registered: {TASK_ID_1}, {TASK_ID_2}, ...
+   Monitor with: crew:status
+   Collect when done: crew:status --collect
+   ```
 
-**If `IS_LIVE_SESSION == 1` AND N > 1 AND `--inject` was NOT passed:**
-A live session exists, but the user submitted multiple tasks without an explicit
-inject flag. Ask the user to clarify:
-
-```text
-AskUserQuestion:
-  header: "Live Session Detected"
-  question: "A parallel crew:run session (ID: {SESSION_ID}) is already running.
-             Do you want to inject these {N} new tasks into the live session,
-             or start a completely separate new run?"
-  options:
-    - label: "Inject into live session"
-      description: "Add these tasks to the running pipeline"
-    - label: "Start new separate run"
-      description: "Begin an independent parallel run (creates a new session)"
-```
-
-- **Inject**: treat as injection (follow the injection routing above).
-- **New run**: proceed normally to Step 2 with a new `SESSION_ID`.
+6. **Do not start a new orchestrator.** The injected tasks run as independent
+   background agents and are collected by `crew:status --collect`.
 
 #### Injection guard
 
@@ -590,9 +621,8 @@ except Exception:
 
 **P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1` AND `N > 1`).**
 Spawn each task-runner as a host background agent pinned to a pre-created
-parent host task. The orchestrator returns from the spawn step immediately and
-collects results via `TaskList` / `TaskGet` / `TaskOutput` instead of waiting
-for inline Agent calls to return:
+parent host task, print a "Background Session Started" summary, and **RETURN
+immediately** (end the turn). Do NOT enter any poll loop.
 
 ```text
 HAS_TASK_TOOLS=$(python3 -c "...task_tools...")  # already cached, see Step 7.5
@@ -626,6 +656,36 @@ for each task i:
         HOST_TASK_ID=$HOST_TASK_ID,
         REQUIREMENTS=$REQUIREMENTS
 ```
+
+After all N background task-runners are spawned (all `TaskCreate` + spawn calls
+have been issued), print the following summary and **STOP — end the turn**:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Background Session Started
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Session : {SESSION_ID}
+Tasks   : {N} task-runner(s) spawned as background agents
+
+  Task 1: {TASK_1 description truncated to 60 chars}
+          branch={BRANCH_1}  id={TASK_ID_1}
+  Task 2: {TASK_2 description truncated to 60 chars}
+          branch={BRANCH_2}  id={TASK_ID_2}
+  ...
+
+Background agents are running. You can now:
+  - Inject new tasks:  crew:run "new task"
+  - Monitor progress:  crew:status
+  - Collect results:   crew:status --collect
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Do NOT proceed to Steps 7–11 on the P4 path.** Those steps (result
+collection, merge, summary, deploy) are delegated to `crew:status --collect`,
+which the user invokes at any time after the background session finishes.
+Returning early here is what enables true mid-run task injection: because the
+orchestrator's turn has ended, the user can immediately run
+`crew:run "new task"` to inject into the live session.
 
 Under this path, **each task-runner owns a per-task `direct-edit-guard`
 marker** (`tasks/active.<TASK_ID>`) so concurrent teardown by one runner does
@@ -671,9 +731,14 @@ Complete this task autonomously through the full pipeline.
 Write the completion report to {TASK_DIR}/result.md.
 ```
 
-#### Task-Runner Health Check (Persistent Execution)
+#### Task-Runner Health Check (Persistent Execution — inline path only)
 
-After each task-runner returns, the orchestrator must verify its output:
+> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1` AND `N > 1`, the
+> orchestrator has already returned at the end of the spawn block above.
+> This health check and the result collection loop below apply only to the
+> **inline path** (`HAS_AGENT_BACKGROUND == 0`, or `N == 1`).
+
+After each task-runner returns (inline path), the orchestrator must verify its output:
 
 - If the task-runner returns **without a STATUS field** (crash, token limit,
   or interrupt):
@@ -709,7 +774,12 @@ real, substantive blocker.
 
 Wait for all task-runners to finish (including any crash-retry cycles).
 
-#### Session-Aware Result Collection (N > 1 with injection support)
+#### Session-Aware Result Collection (inline path only — N > 1 with injection support)
+
+> **P4 path skip**: On the background fan-out path (`HAS_AGENT_BACKGROUND == 1`,
+> `N > 1`), the orchestrator has already returned early after spawning. This
+> collection loop is only used by the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
+> For the P4 path, result collection is performed by `crew:status --collect`.
 
 When a session file exists, the orchestrator's result collection loop MUST
 monitor `session.json` continuously rather than operating on a fixed task list.
@@ -790,7 +860,14 @@ json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 "
 ```
 
-### 7.5. Parallel Action Gate (N > 1 only)
+### 7.5. Parallel Action Gate (inline path, N > 1 only)
+
+> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1` AND `N > 1`, the
+> orchestrator already returned early at the end of Step 6. This step is
+> **not executed on the P4 path**. On the P4 path, the action gate for
+> each task-runner is handled by the task-runner's own Phase 2.5 Stage
+> Action Gate (using per-task `approval.md`). The consolidated gate here
+> is only for the inline parallel path.
 
 > **Skip this step entirely when N == 1.** For single-task runs, the task-runner
 > itself acts as the local orchestrator for its own stage agents and issues the
@@ -926,6 +1003,12 @@ faster wakeup; it never removes the file contract.
 ---
 
 ### 7. Collect Results & Show Per-Task Summary
+
+> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1` AND `N > 1`, the
+> orchestrator already returned early at the end of Step 6. Steps 7–11 are
+> **not executed on the P4 path** — they are performed by `crew:status --collect`
+> when the user is ready to finalize the session. Steps 7–11 below apply only
+> to the **inline path** (`HAS_AGENT_BACKGROUND == 0`, or `N == 1`).
 
 #### Session-Aware Task List
 
@@ -1094,7 +1177,10 @@ Report the blocker and stop.
 
 ---
 
-### 8. Merge Branches (N > 1 only)
+### 8. Merge Branches (inline path, N > 1 only)
+
+> **P4 path skip**: On the background fan-out path, this step is performed by
+> `crew:status --collect`, not here. See Step 7 header.
 
 > **Skip this step entirely when N == 1.** For single-task runs, proceed directly
 > to Step 9. The feature branch will be pushed as-is in Step 10.
@@ -1136,6 +1222,9 @@ git log --oneline HEAD ^origin/main | head -10
 ---
 
 ### 9. Implementation Summary
+
+> **Inline path only.** On the P4 background fan-out path, this step is performed
+> by `crew:status --collect`. See Step 7 header.
 
 Always display the implementation summary for every completed run, regardless of
 whether a devops stage was included in the pipeline:
@@ -1306,3 +1395,11 @@ crew:run "resolve merge conflicts"
   Step 11, only after explicit user approval in Step 10.
 - **Step 8 (merge) applies only to parallel runs (N > 1).** For single-task runs,
   the feature branch is pushed directly without merging to main.
+- **P4 path (background fan-out)**: When `HAS_AGENT_BACKGROUND == 1` and `N > 1`,
+  the orchestrator returns immediately after spawning all background task-runners.
+  Steps 7–11 are NOT executed in this turn. To wait for results and finalize the
+  session (merge branches, show summary, deploy), run `crew:status --collect`.
+- **Mid-run task injection**: Because the P4 path returns early, the user may
+  immediately run `crew:run "new task"` to inject tasks into the live session.
+  The injected tasks join the same `session.json` and are collected together by
+  `crew:status --collect`.
