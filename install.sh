@@ -114,11 +114,22 @@ install_global() {
   log_info "planner agent verified"
 
   mkdir -p "${AGENT_CREW_DIR}/system/rules"
-  cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/system/rules/" 2>/dev/null || true
+  cp -r "${SOURCE_DIR}/rules/"* "${AGENT_CREW_DIR}/system/rules/" 2>/dev/null || true
   log_info "Rules installed → ${AGENT_CREW_DIR}/system/rules/"
 
   [ -f "${AGENT_CREW_DIR}/system/rules/quality-loop.md" ] \
     || log_error "quality-loop.md install failed — system/rules/quality-loop.md not found"
+
+  [ -d "${AGENT_CREW_DIR}/system/rules/capabilities" ] \
+    || log_error "rules/capabilities/ install failed — directory not found"
+
+  mkdir -p "${AGENT_CREW_DIR}/system/scripts"
+  if [ -d "${SOURCE_DIR}/scripts" ]; then
+    cp -r "${SOURCE_DIR}/scripts/"* "${AGENT_CREW_DIR}/system/scripts/" 2>/dev/null || true
+    chmod +x "${AGENT_CREW_DIR}/system/scripts/"*.sh 2>/dev/null || true
+    chmod +x "${AGENT_CREW_DIR}/system/scripts/"*.py 2>/dev/null || true
+    log_info "Scripts installed → ${AGENT_CREW_DIR}/system/scripts/"
+  fi
 
   mkdir -p "${AGENT_CREW_DIR}/system/hooks"
   cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/system/hooks/"
@@ -161,7 +172,14 @@ install_global() {
   cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_DIR}/commands/"
 
   mkdir -p "${AGENT_CREW_DIR}/rules"
-  cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
+  cp -r "${SOURCE_DIR}/rules/"* "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
+
+  mkdir -p "${AGENT_CREW_DIR}/scripts"
+  if [ -d "${SOURCE_DIR}/scripts" ]; then
+    cp -r "${SOURCE_DIR}/scripts/"* "${AGENT_CREW_DIR}/scripts/" 2>/dev/null || true
+    chmod +x "${AGENT_CREW_DIR}/scripts/"*.sh 2>/dev/null || true
+    chmod +x "${AGENT_CREW_DIR}/scripts/"*.py 2>/dev/null || true
+  fi
 
   # Auto-migrate legacy flat layout (pre-system/ era):
   # - Non-repo, non-exception agents → user/agents/

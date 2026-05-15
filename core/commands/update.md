@@ -107,9 +107,17 @@ resolve_source_dir() {
    | commands | `${SOURCE_DIR}/commands/` | `${AGENT_CREW_HOME}/system/commands/` | `${AGENT_CREW_HOME}/commands/` |
    | rules | `${SOURCE_DIR}/rules/` | `${AGENT_CREW_HOME}/system/rules/` | `${AGENT_CREW_HOME}/rules/` |
    | hooks | `${SOURCE_DIR}/hooks/` | `${AGENT_CREW_HOME}/system/hooks/` | `${AGENT_CREW_HOME}/hooks/` |
+   | scripts | `${SOURCE_DIR}/scripts/` | `${AGENT_CREW_HOME}/system/scripts/` | `${AGENT_CREW_HOME}/scripts/` |
    | setup | `${SOURCE_DIR}/setup/` | `${AGENT_CREW_HOME}/system/setup/` | `${AGENT_CREW_HOME}/setup/` |
    | adapters | `${ADAPTERS_DIR}/` | `${AGENT_CREW_HOME}/system/adapters/` | `${AGENT_CREW_HOME}/adapters/` |
    | agents | `${SOURCE_DIR}/agents/` | `${AGENT_CREW_HOME}/system/agents/` | (via sync_system_agents) |
+
+   **Subdirectory categories:** `rules/` contains a `capabilities/`
+   subdirectory (per-flag detail docs); `scripts/` may be flat or contain
+   subdirectories. Enumeration of files in these categories MUST be
+   recursive (use `find -type f`, not a flat glob). Destination paths
+   MUST preserve the relative path from the source root so subdirectories
+   are recreated under the destination.
    | claude hooks | `${AGENT_CREW_HOME}/hooks/` | `${CLAUDE_DIR}/agent-crew/hooks/` | — |
    | claude rules | `${AGENT_CREW_HOME}/rules/` | `${CLAUDE_DIR}/agent-crew/rules/` | — |
    | claude setup | `${AGENT_CREW_HOME}/setup/` | `${CLAUDE_DIR}/agent-crew/setup/` | — |
