@@ -760,4 +760,5 @@ Pipeline stages:
   eliminating the file-buffering caveat. `progress.log` is still written, so
   the fallback is always safe.
 - See `core/rules/host-capabilities.md` for the schema and the absence
-  contract.
+  contract; `core/rules/capabilities/monitor-tool.md` for the per-flag
+  detail.

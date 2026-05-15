@@ -163,10 +163,11 @@ These five variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
 `PRD_PATH`, `CAPABILITIES_PATH`) must be passed as-is to all sub-agents. Never
 re-derive them inline.
 
-**Host capability bootstrap**: Read host capabilities (Layers 1–3 of progressive
-adoption — see `core/rules/host-capabilities.md`). Treat missing file or parse
-errors as all-false flags. Three flags are loaded once in Phase 0 and reused
-through every later phase — never re-read the file inline.
+**Host capability bootstrap**: Read host capabilities (registry:
+`core/rules/host-capabilities.md`; per-flag detail under
+`core/rules/capabilities/`). Treat missing file or parse errors as all-false
+flags. Three flags are loaded once in Phase 0 and reused through every later
+phase — never re-read the file inline.
 
 ```bash
 # Single Python process reads capabilities.json once and emits all three flags,
@@ -1466,8 +1467,8 @@ If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
 #### 3. Clear active task marker
 
-Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see P4
-in `core/rules/host-capabilities.md`):
+Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see
+`core/rules/capabilities/agent-background.md`):
 
 1. **Legacy singleton** `tasks/active` — used by single-task workflows and by
    adapters that have not adopted background fan-out.

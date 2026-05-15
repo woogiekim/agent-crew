@@ -1128,8 +1128,8 @@ orchestrator's turn has ended, the user can immediately run
 Under this path, **each task-runner owns a per-task `direct-edit-guard`
 marker** (`tasks/active.<TASK_ID>`) so concurrent teardown by one runner does
 not strand another runner's edits. The hook accepts either layout — see
-`core/hooks/direct-edit-guard.sh` and `core/rules/host-capabilities.md`
-Layer 2.
+`core/hooks/direct-edit-guard.sh` and
+`core/rules/capabilities/agent-background.md`.
 
 **Legacy inline parallel fan-out** is used when `HAS_AGENT_BACKGROUND == 0`,
 OR when `N == 1` (background mode has no benefit for a single task — keep the

@@ -174,5 +174,7 @@ original tasks from the task-runner's perspective.
 
 - `core/commands/run.md` — authoritative implementation (Step 1.5, Step 4, Step 7, Step 8)
 - `core/agents/task-runner.md` — unchanged; handles injected tasks the same as original tasks
-- `core/rules/host-capabilities.md` — capability flags used by injection path
-  (`agent_background` for background fan-out, `task_tools` for TaskGet wakeup)
+- `core/rules/capabilities/agent-background.md` — `agent_background` flag
+  for background fan-out used by the injection path
+- `core/rules/capabilities/task-tools.md` — `task_tools` flag for TaskGet
+  wakeup used by the injection path
