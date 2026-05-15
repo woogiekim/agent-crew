@@ -92,6 +92,13 @@ Consumer (planned):
 - `core/rules/task-injection.md` (duplicate-task disambiguation,
   refactor item A4)
 
+Companion rule:
+
+- `core/rules/disambiguation.md` — the system invariant that decides
+  *when* to ask (this capability decides *how*). The two are paired:
+  the rule lists the trigger conditions, this doc specifies the
+  rendering contract.
+
 Cross-flag:
 
 - Independent of `task_tools`, `hook_system`, etc. The user-facing
