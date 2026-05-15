@@ -77,15 +77,24 @@ dest.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
 PYEOF
 }
 
-install_codex_skill() {
+install_codex_skills() {
   local codex_home="${HOME}/.codex"
-  local skill_src="${AGENT_CREW_HOME}/adapters/codex/skill/agent-crew"
-  local skill_dest="${codex_home}/skills/agent-crew"
+  local skill_root="${AGENT_CREW_HOME}/adapters/codex/skill"
+  local skill_src
+  local skill_name
+  local skill_dest
 
-  [ -d "${skill_src}" ] || return 0
-  rm -rf "${skill_dest}"
-  mkdir -p "${skill_dest}"
-  copy_dir_contents "${skill_src}" "${skill_dest}"
+  [ -d "${skill_root}" ] || return 0
+  mkdir -p "${codex_home}/skills"
+
+  for skill_src in "${skill_root}"/*; do
+    [ -d "${skill_src}" ] || continue
+    skill_name="$(basename "${skill_src}")"
+    skill_dest="${codex_home}/skills/${skill_name}"
+    rm -rf "${skill_dest}"
+    mkdir -p "${skill_dest}"
+    copy_dir_contents "${skill_src}" "${skill_dest}"
+  done
 }
 
 copy_dir_contents "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
@@ -95,7 +104,7 @@ copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
 chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
 cp "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md" 2>/dev/null || true
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
-install_codex_skill
+install_codex_skills
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
 
