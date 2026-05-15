@@ -63,6 +63,7 @@ Accept:
 
 - One task: `crew:run "implement order API"`
 - Multiple tasks: `crew:run "Order API" | "Product API" | "User API"`
+- Injecting into a live run: `crew:run --inject "new task"` (see Step 1.5)
 
 Normalize the input into a task list with cardinality `N >= 1`.
 
@@ -83,6 +84,153 @@ adapter contract.
 > **Hard gate**: If Hangul is detected, do not proceed to Step 2 until
 > `NORMALIZED_TASK` is confirmed. The original Korean string must not appear
 > in any agent prompt, `pipeline.json`, or `result.md`.
+
+### 1.5. Injection Detection
+
+> **This step runs after Step 1 input normalization and before Step 2 state
+> initialization.** It detects whether a live parallel session is already
+> running for this project, and if so, routes the new task as an injection
+> into that session instead of starting a fresh run.
+
+#### What is task injection?
+
+Task injection allows a user to submit new tasks while an existing `crew:run`
+parallel fan-out is still in progress. Injected tasks join the live session:
+they get their own TASK_ID, TASK_DIR, git worktree, and task-runner, and they
+participate in the final result collection, resolver, and approval gates
+alongside the original tasks.
+
+The canonical reference for the injection protocol is
+`core/rules/task-injection.md`.
+
+#### Live session detection
+
+Check whether an active parallel session exists by looking for a `session.json`
+file in the project's state directory:
+
+```bash
+PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+SESSION_FILE="${STATE_DIR}/session.json"
+```
+
+A **live session** is one where `session.json` exists AND its `status` field
+is `"running"`:
+
+```bash
+IS_LIVE_SESSION=$(python3 -c "
+import json, sys
+try:
+    s = json.load(open('${SESSION_FILE}'))
+    print('1' if s.get('status') == 'running' else '0')
+except Exception:
+    print('0')
+" 2>/dev/null)
+```
+
+#### Injection routing
+
+**If `IS_LIVE_SESSION == 0`:** No live session. Proceed normally to Step 2.
+
+**If `IS_LIVE_SESSION == 1` AND the `--inject` flag was passed OR N == 1:**
+A live session exists. Route the new task(s) as injections:
+
+1. Read the live `SESSION_ID` from `session.json`:
+
+   ```bash
+   SESSION_ID=$(python3 -c "
+   import json
+   s = json.load(open('${SESSION_FILE}'))
+   print(s['session_id'])
+   " 2>/dev/null)
+   ```
+
+2. Emit an injection notice:
+
+   ```
+   [crew] INJECT | session={SESSION_ID} | {N} new task(s) joining live run
+   ```
+
+3. For each new task, generate a new `TASK_ID`, `TASK_DIR`, `BRANCH`, and
+   worktree — identical to Step 4. Skip Step 2 and Step 3 (no resume
+   detection for injected tasks). Proceed directly to Step 5 (requirements)
+   and then Step 6 (task-runner spawn).
+
+4. After spawning the injected task-runner(s), register each into
+   `session.json` by appending to its `tasks` array:
+
+   ```bash
+   python3 -c "
+   import json
+   s = json.load(open('${SESSION_FILE}'))
+   s['tasks'].append({
+       'task_id': '${TASK_ID}',
+       'task_dir': '${TASK_DIR}',
+       'branch': '${BRANCH}',
+       'task': '${TASK}',
+       'status': 'running',
+       'injected': True
+   })
+   json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
+   "
+   ```
+
+5. The live orchestrator's Step 7 result collection loop monitors `session.json`
+   continuously. When it detects new entries, it automatically adds those
+   task-runners to its collection pool without requiring restart.
+
+6. **Do not start a new orchestrator.** The injected tasks are owned by the
+   existing orchestrator's session. This step returns after spawning the
+   runner(s) and registering them in `session.json`. The existing orchestrator
+   will collect the injected results.
+
+**If `IS_LIVE_SESSION == 1` AND N > 1 AND `--inject` was NOT passed:**
+A live session exists, but the user submitted multiple tasks without an explicit
+inject flag. Ask the user to clarify:
+
+```text
+AskUserQuestion:
+  header: "Live Session Detected"
+  question: "A parallel crew:run session (ID: {SESSION_ID}) is already running.
+             Do you want to inject these {N} new tasks into the live session,
+             or start a completely separate new run?"
+  options:
+    - label: "Inject into live session"
+      description: "Add these tasks to the running pipeline"
+    - label: "Start new separate run"
+      description: "Begin an independent parallel run (creates a new session)"
+```
+
+- **Inject**: treat as injection (follow the injection routing above).
+- **New run**: proceed normally to Step 2 with a new `SESSION_ID`.
+
+#### Injection guard
+
+The injection path MUST NOT be entered when:
+- The detected session's `status` is `"completed"` or `"blocked"` (stale file).
+- The `SESSION_FILE` is older than 24 hours (likely abandoned).
+- The project has no `STATE_DIR` (setup not run).
+
+Stale-session check:
+
+```bash
+python3 -c "
+import json, os, time, sys
+try:
+    path = '${SESSION_FILE}'
+    s = json.load(open(path))
+    age = time.time() - os.path.getmtime(path)
+    if s.get('status') != 'running' or age > 86400:
+        print('stale')
+    else:
+        print('live')
+except Exception:
+    print('absent')
+" 2>/dev/null
+```
+
+If `stale` or `absent`: treat `IS_LIVE_SESSION == 0` and proceed to Step 2.
 
 ### 2. Initialize State Paths
 
@@ -213,6 +361,52 @@ git worktree add -b "${BRANCH}" "${WORKTREE_PATH}" HEAD
 
 The orchestrator owns context preparation only. The execution engine remains the
 same in both modes.
+
+#### Session Registry Initialization (N > 1 only)
+
+For parallel runs, after all task contexts are prepared, create (or overwrite)
+`session.json` in `STATE_DIR`. This file is the canonical registry for all
+tasks in the current execution session — including any tasks injected later
+via Step 1.5.
+
+```bash
+SESSION_ID="$(date +%Y%m%d-%H%M%S)"
+SESSION_FILE="${STATE_DIR}/session.json"
+
+python3 -c "
+import json, sys
+
+tasks = []
+# task_list is a list of dicts with task_id, task_dir, branch, task
+for entry in ${TASK_LIST_JSON}:
+    tasks.append({
+        'task_id': entry['task_id'],
+        'task_dir': entry['task_dir'],
+        'branch': entry['branch'],
+        'task': entry['task'],
+        'status': 'running',
+        'injected': False
+    })
+
+session = {
+    'session_id': '${SESSION_ID}',
+    'status': 'running',
+    'pre_run_head': '${PRE_RUN_HEAD}',
+    'tasks': tasks
+}
+json.dump(session, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
+"
+```
+
+Where `${TASK_LIST_JSON}` is a JSON array of `{task_id, task_dir, branch, task}`
+built from the task contexts created in this step.
+
+The session file is written atomically before any task-runner is spawned, so
+that a concurrent `crew:run --inject` arriving immediately after Step 4 will
+see a valid `session.json` with `status: running`.
+
+For single-task runs (`N == 1`), no session file is written — injection requires
+a live parallel session and is not meaningful for single-task execution.
 
 ### 5. Collect Requirements Per Task
 
@@ -446,6 +640,87 @@ real, substantive blocker.
 
 Wait for all task-runners to finish (including any crash-retry cycles).
 
+#### Session-Aware Result Collection (N > 1 with injection support)
+
+When a session file exists, the orchestrator's result collection loop MUST
+monitor `session.json` continuously rather than operating on a fixed task list.
+New tasks injected after Step 6 via Step 1.5 appear as additional entries in
+the `tasks` array; they must be picked up without restarting the collection
+loop.
+
+```bash
+# Dynamic collection loop — runs until session is done
+COLLECTED=()
+PENDING_TASK_IDS=()  # Start with original tasks
+
+while true:
+    # Re-read session.json to pick up any injected tasks
+    ALL_TASK_IDS=$(python3 -c "
+    import json
+    s = json.load(open('${SESSION_FILE}'))
+    for t in s['tasks']:
+        if t['status'] not in ('completed', 'blocked'):
+            print(t['task_id'])
+    " 2>/dev/null)
+
+    # Check for newly-injected tasks not yet in our monitoring pool
+    for TASK_ID in $ALL_TASK_IDS; do
+        if [[ ! " ${PENDING_TASK_IDS[@]} " =~ " ${TASK_ID} " ]]; then
+            PENDING_TASK_IDS+=("${TASK_ID}")
+            log_progress "INJECT_DETECTED" "task_id=${TASK_ID} added to collection pool"
+        fi
+    done
+
+    # Check which pending tasks have completed
+    for TASK_ID in "${PENDING_TASK_IDS[@]}"; do
+        TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
+        if grep -q "STATUS: completed\|STATUS: blocked" "${TASK_DIR}/result.md" 2>/dev/null; then
+            COLLECTED+=("${TASK_ID}")
+            PENDING_TASK_IDS=("${PENDING_TASK_IDS[@]/$TASK_ID}")  # remove from pending
+            # Update session.json status for this task
+            python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s['tasks']:
+    if t['task_id'] == '${TASK_ID}':
+        t['status'] = 'completed'
+        break
+json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
+"
+        fi
+    done
+
+    # Check if all tasks (original + injected) are done
+    REMAINING=$(python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+print(sum(1 for t in s['tasks'] if t['status'] not in ('completed', 'blocked')))
+" 2>/dev/null)
+
+    if [ "${REMAINING}" = "0" ]; then
+        break  # All tasks have reached terminal state
+    fi
+
+    sleep 2  # Poll interval; TaskGet-based wake-up is preferred when HAS_TASK_TOOLS=1
+done
+```
+
+When `HAS_TASK_TOOLS == 1` and background task IDs are tracked, use
+`TaskList` + `TaskGet` for the wakeup signal instead of polling `result.md`
+directly — the file remains the canonical source.
+
+After all tasks complete, mark `session.json` as done so future `crew:run`
+invocations do not treat it as a live session:
+
+```bash
+python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+s['status'] = 'completed'
+json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
+"
+```
+
 ### 7.5. Parallel Action Gate (N > 1 only)
 
 > **Skip this step entirely when N == 1.** For single-task runs, the task-runner
@@ -583,6 +858,28 @@ faster wakeup; it never removes the file contract.
 
 ### 7. Collect Results & Show Per-Task Summary
 
+#### Session-Aware Task List
+
+When `session.json` exists (all `N > 1` runs), the orchestrator derives its
+task list dynamically from the session file rather than from a static list
+built at Step 4. This ensures that injected tasks (added via Step 1.5 after
+Step 6 runs) are included in result collection, the merger, and the final
+summary without any orchestrator restart.
+
+```bash
+# Read the current task list from the session file
+TASK_ENTRIES=$(python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s['tasks']:
+    print(t['task_id'], t['task_dir'], t['branch'], sep='|')
+" 2>/dev/null)
+```
+
+At every poll iteration, re-read `session.json` to detect newly-registered
+injected tasks before checking their completion status (see the collection loop
+in Step 6's Session-Aware Result Collection section).
+
 #### P4 — Background fan-out result collection
 
 When task-runners were spawned as background host agents (Step 6 background
@@ -591,7 +888,7 @@ Agent return values. Instead it polls each task's parent host task for
 terminal status:
 
 ```text
-# For every TASK_DIR in the run:
+# For every TASK_DIR in the run (from session.json, updated dynamically):
 HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
 
 # Wait for terminal status. TaskGet returns instantly on state change;
@@ -617,6 +914,10 @@ reached `completed`) is treated as a crash and re-spawned, up to 3 attempts.
 
 When `HAS_AGENT_BACKGROUND == 0`: the orchestrator simply waits for the inline
 Agent calls from Step 6 to return, as before. Behavior is identical to pre-P4.
+
+Injected tasks that arrived via the background fan-out path also have their
+`HOST_TASK_ID` registered in `session.json` at injection time; the collection
+loop picks them up on the next `session.json` re-read.
 
 #### Live Progress
 
@@ -696,7 +997,7 @@ fi
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Run Summary
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task 1: {description}
+Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == true
   Status : completed | blocked
   Branch : {branch}
 
@@ -715,6 +1016,10 @@ Task 2: {description}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+The `[injected]` tag appears next to any task whose `session.json` entry has
+`"injected": true`. This gives operators a clear visual distinction between
+original and dynamically-added tasks in the run summary.
+
 If any task has `STATUS: blocked`, do not proceed to deployment.
 Report the blocker and stop.
 
@@ -726,11 +1031,20 @@ Report the blocker and stop.
 > to Step 9. The feature branch will be pushed as-is in Step 10.
 
 When `N > 1`, merge all task feature branches into `main` locally before
-showing the deployment plan:
+showing the deployment plan. The branch list is read from `session.json` so
+that injected tasks (which joined the session after Step 6) are included:
 
 ```bash
+ALL_BRANCHES=$(python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s['tasks']:
+    if t['status'] == 'completed':
+        print(t['branch'])
+" 2>/dev/null)
+
 git checkout main
-for BRANCH in {all task branches}; do
+for BRANCH in ${ALL_BRANCHES}; do
   git merge --no-ff "${BRANCH}" -m "merge: ${BRANCH} into main"
 done
 ```
