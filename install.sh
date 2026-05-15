@@ -29,7 +29,7 @@ log_error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 log_section() { echo -e "\n${GREEN}▶ $1${NC}"; }
 
 # Check for an existing installation.
-if [ -d "${AGENT_CREW_DIR}/agents" ]; then
+if [ -d "${AGENT_CREW_DIR}/system/agents" ] || [ -d "${AGENT_CREW_DIR}/agents" ]; then
   if [ "${AGENT_CREW_MODE}" = "update" ]; then
     log_info "MODE: update — refreshing existing install at ${AGENT_CREW_DIR} (auto-confirmed)"
   else
@@ -74,62 +74,89 @@ install_global() {
   [ -d "${ADAPTERS_DIR}" ] \
     || log_error "adapter directory not found — expected ${ADAPTERS_DIR}"
 
-  mkdir -p "${AGENT_CREW_HOME}/commands"
-  cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_HOME}/commands/"
-  log_info "Commands installed → ${AGENT_CREW_HOME}/commands/"
+  mkdir -p "${AGENT_CREW_HOME}/system/commands"
+  cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_HOME}/system/commands/"
+  log_info "Commands installed → ${AGENT_CREW_HOME}/system/commands/"
 
-  [ -f "${AGENT_CREW_HOME}/commands/agent-maker.md" ] \
-    || log_error "agent-maker.md install failed — commands/agent-maker.md not found"
+  [ -f "${AGENT_CREW_HOME}/system/commands/agent-maker.md" ] \
+    || log_error "agent-maker.md install failed — system/commands/agent-maker.md not found"
   log_info "agent-maker command verified"
 
-  mkdir -p "${AGENT_CREW_DIR}/agents/skills"
-  cp "${SOURCE_DIR}/agents/"*.md "${AGENT_CREW_DIR}/agents/" 2>/dev/null || true
-  cp "${SOURCE_DIR}/agents/skills/"*.md "${AGENT_CREW_DIR}/agents/skills/" 2>/dev/null || true
-  log_info "Agents installed → ${AGENT_CREW_DIR}/agents/"
-  log_info "Skills installed → ${AGENT_CREW_DIR}/agents/skills/"
-  # ~/.agent-crew/agents/ is also the runtime destination for dynamically created agents.
-  # Reinstalling only copies built-in agent files — existing custom agent files are preserved.
+  mkdir -p "${AGENT_CREW_DIR}/system/agents/skills"
+  cp "${SOURCE_DIR}/agents/"*.md "${AGENT_CREW_DIR}/system/agents/" 2>/dev/null || true
+  cp "${SOURCE_DIR}/agents/skills/"*.md "${AGENT_CREW_DIR}/system/agents/skills/" 2>/dev/null || true
+  log_info "Agents installed → ${AGENT_CREW_DIR}/system/agents/"
+  log_info "Skills installed → ${AGENT_CREW_DIR}/system/agents/skills/"
 
-  [ -f "${AGENT_CREW_DIR}/agents/reviewer.md" ] \
-    || log_error "reviewer.md install failed — agents/reviewer.md not found"
+  [ -f "${AGENT_CREW_DIR}/system/agents/reviewer.md" ] \
+    || log_error "reviewer.md install failed — system/agents/reviewer.md not found"
   log_info "reviewer agent verified"
 
-  [ -f "${AGENT_CREW_DIR}/agents/task-runner.md" ] \
-    || log_error "task-runner.md install failed — agents/task-runner.md not found"
+  [ -f "${AGENT_CREW_DIR}/system/agents/task-runner.md" ] \
+    || log_error "task-runner.md install failed — system/agents/task-runner.md not found"
   log_info "task-runner agent verified"
 
-  [ -f "${AGENT_CREW_DIR}/agents/planner.md" ] \
-    || log_error "planner.md install failed — agents/planner.md not found"
+  [ -f "${AGENT_CREW_DIR}/system/agents/planner.md" ] \
+    || log_error "planner.md install failed — system/agents/planner.md not found"
   log_info "planner agent verified"
 
-  mkdir -p "${AGENT_CREW_DIR}/rules"
-  cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
-  log_info "Rules installed → ${AGENT_CREW_DIR}/rules/"
+  mkdir -p "${AGENT_CREW_DIR}/system/rules"
+  cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/system/rules/" 2>/dev/null || true
+  log_info "Rules installed → ${AGENT_CREW_DIR}/system/rules/"
 
-  [ -f "${AGENT_CREW_DIR}/rules/quality-loop.md" ] \
-    || log_error "quality-loop.md install failed — rules/quality-loop.md not found"
+  [ -f "${AGENT_CREW_DIR}/system/rules/quality-loop.md" ] \
+    || log_error "quality-loop.md install failed — system/rules/quality-loop.md not found"
 
+  mkdir -p "${AGENT_CREW_DIR}/system/hooks"
+  cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/system/hooks/"
+  chmod +x "${AGENT_CREW_DIR}/system/hooks/"*.sh 2>/dev/null || true
+  log_info "Hooks installed → ${AGENT_CREW_DIR}/system/hooks/"
+
+  [ -f "${AGENT_CREW_DIR}/system/hooks/direct-edit-guard.sh" ] \
+    || log_error "direct-edit-guard.sh install failed — system/hooks/direct-edit-guard.sh not found"
+
+  mkdir -p "${AGENT_CREW_DIR}/system/setup"
+  cp -r "${SOURCE_DIR}/setup/"* "${AGENT_CREW_DIR}/system/setup/"
+  chmod +x "${AGENT_CREW_DIR}/system/setup/"*.sh 2>/dev/null || true
+  log_info "Setup dispatcher installed → ${AGENT_CREW_DIR}/system/setup/"
+
+  mkdir -p "${AGENT_CREW_DIR}/system/adapters"
+  cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/system/adapters/"
+  chmod +x "${AGENT_CREW_DIR}/system/adapters/"*/*.sh 2>/dev/null || true
+  find "${AGENT_CREW_DIR}/system" -name ".DS_Store" -delete 2>/dev/null || true
+  log_info "Host adapters installed → ${AGENT_CREW_DIR}/system/adapters/"
+
+  [ -f "${AGENT_CREW_DIR}/system/hooks/auto-route.sh" ] \
+    || log_error "auto-route.sh install failed — system/hooks/auto-route.sh not found"
+
+  # Keep top-level symlink-free aliases for backward compatibility with existing
+  # hooks that reference ${AGENT_CREW_HOME}/hooks/ directly.
+  # We write real copies here so existing hook registrations still resolve.
   mkdir -p "${AGENT_CREW_DIR}/hooks"
   cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/hooks/"
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
-  log_info "Hooks installed → ${AGENT_CREW_DIR}/hooks/"
-
-  [ -f "${AGENT_CREW_DIR}/hooks/direct-edit-guard.sh" ] \
-    || log_error "direct-edit-guard.sh install failed — hooks/direct-edit-guard.sh not found"
 
   mkdir -p "${AGENT_CREW_DIR}/setup"
   cp -r "${SOURCE_DIR}/setup/"* "${AGENT_CREW_DIR}/setup/"
   chmod +x "${AGENT_CREW_DIR}/setup/"*.sh 2>/dev/null || true
-  log_info "Setup dispatcher installed → ${AGENT_CREW_DIR}/setup/"
 
   mkdir -p "${AGENT_CREW_DIR}/adapters"
   cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/adapters/"
   chmod +x "${AGENT_CREW_DIR}/adapters/"*/*.sh 2>/dev/null || true
-  find "${AGENT_CREW_DIR}" -name ".DS_Store" -delete 2>/dev/null || true
-  log_info "Host adapters installed → ${AGENT_CREW_DIR}/adapters/"
 
-  [ -f "${AGENT_CREW_DIR}/hooks/auto-route.sh" ] \
-    || log_error "auto-route.sh install failed — hooks/auto-route.sh not found"
+  mkdir -p "${AGENT_CREW_DIR}/commands"
+  cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_DIR}/commands/"
+
+  mkdir -p "${AGENT_CREW_DIR}/rules"
+  cp "${SOURCE_DIR}/rules/"*.md "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
+
+  # Detect old flat layout (pre-system/ era) and warn the user
+  if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
+    printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"
+    printf 'This directory is no longer used by crew. Files installed by crew have moved to system/.\n'
+    printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
+    printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+  fi
 
   install_codex_bootstrap_skill "${ADAPTERS_DIR}/codex/skill/agent-crew"
 
@@ -342,8 +369,8 @@ merge_global_agents() {
 
 install_global
 
-CMD_COUNT=$(ls "${AGENT_CREW_HOME}/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
-AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
+CMD_COUNT=$(ls "${AGENT_CREW_HOME}/system/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
+AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/system/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -361,8 +388,10 @@ echo "    crew:cost                        # show session cost summary"
 echo ""
 echo "  Agent creation:"
 echo "    crew:agent-maker                 # design and create AGENTS.md / Skill / Subagent / Hook files"
-echo "  Dynamic agents (auto-created by planner):"
-echo "    ~/.agent-crew/agents/        # runtime destination for task-specific agents"
+echo "  Agent layers:"
+echo "    ~/.agent-crew/system/agents/  # crew-managed built-in agents (updated by crew:update)"
+echo "    ~/.agent-crew/user/agents/    # user-managed custom agents (never overwritten)"
+echo "    ~/.claude/agents/             # generated merge destination (do not edit directly)"
 echo ""
 echo "  Host adapters may expose native aliases such as slash commands."
 echo -e "${GREEN}  Start in a project with crew:setup.${NC}"
