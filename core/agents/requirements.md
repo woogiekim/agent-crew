@@ -37,30 +37,42 @@ Call `AskUserQuestion` with the following three questions. Use `Task {TASK_INDEX
 **Question 1 — Scope:**
 - header: "Task {TASK_INDEX+1} — Scope"
 - question: "What is the implementation scope for: {TASK}?"
-- options (max 4):
-  - Backend API (Server-side logic, domain model, database)
-  - Full-stack (Backend + Frontend UI)
-  - UI only (Static pages, components, styling)
-  - Tooling / docs / config (Framework internals, markdown, scripts, config files, analysis)
+- options:
+  - label: "Backend API"
+    description: "Server-side logic, domain model, database"
+  - label: "Full-stack"
+    description: "Backend + Frontend UI"
+  - label: "UI only"
+    description: "Static pages, components, styling"
+  - label: "Tooling / docs / config"
+    description: "Framework internals, markdown, scripts, config files, analysis"
 
 **Question 2 — Target:**
 - header: "Task {TASK_INDEX+1} — Target"
 - question: "Who are the target users, and what is the core purpose of this feature?"
 - options:
-  - Internal team / admin tooling
-  - End-user product feature
-  - Developer tooling or API
-  - Other / not yet defined
+  - label: "Internal team / admin tooling"
+    description: "Admin panels, dashboards, and tools used by the team"
+  - label: "End-user product feature"
+    description: "Customer-facing functionality in the product"
+  - label: "Developer tooling or API"
+    description: "APIs, CLIs, SDKs, or build tooling"
+  - label: "Other / not yet defined"
+    description: "Target users not yet determined"
 
 **Question 3 — Constraints:**
 - header: "Task {TASK_INDEX+1} — Constraints"
 - question: "Are there technical constraints or MVP scope limits to consider?"
 - multiSelect: true
-- options (max 4):
-  - Use existing tech stack only (no new dependencies)
-  - MVP — minimal feature set, defer polish
-  - Performance or scalability requirements apply
-  - No special constraints
+- options:
+  - label: "Use existing tech stack only"
+    description: "No new dependencies allowed"
+  - label: "MVP scope"
+    description: "Minimal feature set; defer polish and edge cases"
+  - label: "Performance / scalability"
+    description: "Non-functional performance or scalability requirements apply"
+  - label: "No special constraints"
+    description: "Proceed with standard implementation approach"
 
 After AskUserQuestion returns, record answers as `r1_scope`, `r1_target`, `r1_constraints`.
 
@@ -86,19 +98,27 @@ Question A:
 - header: "Task {TASK_INDEX+1} — Database"
 - question: "Which database or storage solution will this API use?"
 - options:
-  - PostgreSQL / MySQL (relational)
-  - MongoDB / DynamoDB (document / NoSQL)
-  - Redis (cache / key-value)
-  - Existing DB — match the current stack
+  - label: "PostgreSQL / MySQL"
+    description: "Relational database"
+  - label: "MongoDB / DynamoDB"
+    description: "Document or NoSQL database"
+  - label: "Redis"
+    description: "Cache or key-value store"
+  - label: "Existing DB"
+    description: "Match the current project's database stack"
 
 Question B:
 - header: "Task {TASK_INDEX+1} — Auth"
 - question: "What authentication method will this API use?"
 - options:
-  - JWT (stateless token)
-  - Session-based (server-side)
-  - OAuth 2.0 / OpenID Connect
-  - No authentication required
+  - label: "JWT"
+    description: "Stateless token-based authentication"
+  - label: "Session-based"
+    description: "Server-side session management"
+  - label: "OAuth 2.0 / OpenID Connect"
+    description: "Federated identity via OAuth 2.0 or OIDC"
+  - label: "No authentication"
+    description: "This API does not require authentication"
 
 Record answers as `r2_database` and `r2_auth`.
 
@@ -108,19 +128,27 @@ Question A:
 - header: "Task {TASK_INDEX+1} — State Management"
 - question: "How should client-side state be managed?"
 - options:
-  - Local component state only (useState / hooks)
-  - Global store (Redux, Zustand, Pinia, etc.)
-  - Server state library (React Query, SWR, etc.)
-  - Match the existing project pattern
+  - label: "Local component state"
+    description: "useState / hooks; no global store"
+  - label: "Global store"
+    description: "Redux, Zustand, Pinia, or equivalent"
+  - label: "Server state library"
+    description: "React Query, SWR, or equivalent"
+  - label: "Match existing pattern"
+    description: "Follow whatever state management the project already uses"
 
 Question B:
 - header: "Task {TASK_INDEX+1} — Database"
 - question: "Which database or storage solution will the backend use?"
 - options:
-  - PostgreSQL / MySQL (relational)
-  - MongoDB / DynamoDB (document / NoSQL)
-  - Redis (cache / key-value)
-  - Existing DB — match the current stack
+  - label: "PostgreSQL / MySQL"
+    description: "Relational database"
+  - label: "MongoDB / DynamoDB"
+    description: "Document or NoSQL database"
+  - label: "Redis"
+    description: "Cache or key-value store"
+  - label: "Existing DB"
+    description: "Match the current project's database stack"
 
 Record answers as `r2_state_management` and `r2_database`.
 
@@ -130,19 +158,27 @@ Question A:
 - header: "Task {TASK_INDEX+1} — State Management"
 - question: "How should client-side state be managed?"
 - options:
-  - Local component state only (useState / hooks)
-  - Global store (Redux, Zustand, Pinia, etc.)
-  - Server state library (React Query, SWR, etc.)
-  - Match the existing project pattern
+  - label: "Local component state"
+    description: "useState / hooks; no global store"
+  - label: "Global store"
+    description: "Redux, Zustand, Pinia, or equivalent"
+  - label: "Server state library"
+    description: "React Query, SWR, or equivalent"
+  - label: "Match existing pattern"
+    description: "Follow whatever state management the project already uses"
 
 Question B:
 - header: "Task {TASK_INDEX+1} — Design System"
 - question: "Which design system or component library should be used?"
 - options:
-  - Follow the existing project design system
-  - Tailwind CSS (utility-first)
-  - Material UI / Ant Design / shadcn/ui
-  - Plain CSS / CSS Modules
+  - label: "Existing design system"
+    description: "Follow what the project already uses"
+  - label: "Tailwind CSS"
+    description: "Utility-first CSS framework"
+  - label: "Material UI / Ant Design / shadcn/ui"
+    description: "Component library"
+  - label: "Plain CSS / CSS Modules"
+    description: "No component library; vanilla CSS"
 
 Record answers as `r2_state_management` and `r2_design_system`.
 

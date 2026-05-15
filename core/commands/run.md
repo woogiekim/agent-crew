@@ -494,9 +494,10 @@ orchestrator:
    - header: "Approve All Actions"
    - question: "Review the consolidated action plan above. Approve to release all tasks, or cancel to hold."
    - options:
-     - Approve all — release all task pipelines to execute
-     - Cancel all — hold all tasks, no actions taken
-     - Custom input (to approve selectively by task ID)
+     - label: "Approve all"
+       description: "Release all task pipelines to execute"
+     - label: "Cancel all"
+       description: "Hold all tasks, no actions taken"
 
 4. On **Approve all**: write `APPROVED` to `{TASK_DIR}/context/approval.md` for each task
 5. On **Cancel all**: write `CANCELLED` to `{TASK_DIR}/context/approval.md` for each task, then stop
@@ -858,8 +859,10 @@ Question:
 - header: "Deploy"
 - question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
 - options:
-  - Approve — push main to origin now
-  - Cancel — hold, do not push (branches remain local)
+  - label: "Approve"
+    description: "Push main to origin now"
+  - label: "Cancel"
+    description: "Hold, do not push (branches remain local)"
 
 **When N == 1:**
 
@@ -867,8 +870,10 @@ Question:
 - header: "Deploy"
 - question: "Review the deployment plan above. Approve to push to remote, or cancel to hold."
 - options:
-  - Approve — push the feature branch to origin now
-  - Cancel — hold, do not push (branch remains local)
+  - label: "Approve"
+    description: "Push the feature branch to origin now"
+  - label: "Cancel"
+    description: "Hold, do not push (branch remains local)"
 
 If **Approve**:
   - Proceed to Step 11.

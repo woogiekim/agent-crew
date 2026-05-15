@@ -610,9 +610,12 @@ Then fire **AskUserQuestion**:
 - header: "Implementation Plan"
 - question: "Review the implementation plan above. Approve to begin execution."
 - options:
-  - Approve — begin stage execution
-  - Request changes — describe what to change (analyst will revise)
-  - Cancel — stop execution
+  - label: "Approve"
+    description: "Begin stage execution"
+  - label: "Request changes"
+    description: "Describe what to change (analyst will revise)"
+  - label: "Cancel"
+    description: "Stop execution"
 
 **If Approve:** proceed to Phase 1.5.
 
@@ -1227,8 +1230,10 @@ Question:
 - header: "Deploy"
 - question: "Implementation is complete. Review the action plan above. Approve to run the devops stage (CI/CD + git push), or cancel to skip deployment and keep commits local."
 - options:
-  - Approve — run devops stage now
-  - Cancel — skip devops, keep commits local
+  - label: "Approve"
+    description: "Run devops stage now"
+  - label: "Cancel"
+    description: "Skip devops, keep commits local"
 
 If **Approve**:
   - Write `APPROVED` to `{TASK_DIR}/context/approval.md` (canonical artifact).
