@@ -16,8 +16,16 @@ fi
 
 mkdir -p "${PROJECT_ROOT}/.agent-crew"
 copy_dir_contents "${AGENT_CREW_HOME}/commands" "${PROJECT_ROOT}/.agent-crew/commands"
-copy_dir_contents "${AGENT_CREW_HOME}/agents" "${PROJECT_ROOT}/.agent-crew/agents"
+copy_dir_contents "${AGENT_CREW_HOME}/system/agents" "${PROJECT_ROOT}/.agent-crew/agents"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.agent-crew/hooks"
+
+# Detect old flat layout and warn
+if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
+  printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"
+  printf 'This directory is no longer used by crew. Files installed by crew have moved to system/.\n'
+  printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
+  printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+fi
 cp "${AGENT_CREW_HOME}/adapters/generic/invocation.md" "${PROJECT_ROOT}/.agent-crew/invocation.md" 2>/dev/null || true
 chmod +x "${PROJECT_ROOT}/.agent-crew/hooks/"*.sh 2>/dev/null || true
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"

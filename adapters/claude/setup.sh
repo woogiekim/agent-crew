@@ -16,8 +16,6 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
 fi
 
 copy_dir_contents "${AGENT_CREW_HOME}/commands" "${CLAUDE_DIR}/commands"
-copy_dir_contents "${AGENT_CREW_HOME}/agents" "${CLAUDE_DIR}/agents"
-copy_dir_contents "${AGENT_CREW_HOME}/agents" "${CLAUDE_DIR}/agent-crew/agents"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${CLAUDE_DIR}/agent-crew/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/rules" "${CLAUDE_DIR}/agent-crew/rules"
 copy_dir_contents "${AGENT_CREW_HOME}/setup" "${CLAUDE_DIR}/agent-crew/setup"
@@ -27,6 +25,46 @@ cp "${AGENT_CREW_HOME}/adapters/claude/invocation.md" "${CLAUDE_DIR}/agent-crew/
 chmod +x "${CLAUDE_DIR}/agent-crew/hooks/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/setup/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/adapters/claude/"*.sh 2>/dev/null || true
+
+# Copy system agents to the agent-crew mirror path
+copy_dir_contents "${AGENT_CREW_HOME}/system/agents" "${CLAUDE_DIR}/agent-crew/agents"
+
+# Scaffold user/ directories (idempotent — crew:update must never overwrite these)
+mkdir -p "${AGENT_CREW_HOME}/user/agents"
+mkdir -p "${AGENT_CREW_HOME}/user/skills"
+mkdir -p "${AGENT_CREW_HOME}/user/commands"
+mkdir -p "${AGENT_CREW_HOME}/user/rules"
+# Write README placeholder only if not already present
+if [ ! -f "${AGENT_CREW_HOME}/user/agents/README.md" ]; then
+  cat > "${AGENT_CREW_HOME}/user/agents/README.md" << 'UEOF'
+# User Agents
+
+Place your custom agent definitions here.
+Files in this directory are NEVER overwritten by crew:update.
+
+Naming: avoid filenames that match built-in agents (analyst.md, backend.md,
+designer.md, devops.md, frontend.md, planner.md, requirements.md, resolver.md,
+reviewer.md, task-runner.md, korean-normalizer.md). Use a unique prefix, e.g.
+my-agent.md, or an org-prefixed name like acme-deploy.md.
+
+crew:update merges these into ~/.claude/agents/ automatically.
+UEOF
+fi
+
+# Merge system/agents/ + user/agents/ → ~/.claude/agents/ (generated output)
+merge_agents_to_discovery \
+  "${AGENT_CREW_HOME}/system/agents" \
+  "${AGENT_CREW_HOME}/user/agents" \
+  "${CLAUDE_DIR}/agents"
+
+# Detect old flat layout and warn
+if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
+  printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"
+  printf 'This directory is no longer used by crew. Files installed by crew have moved to system/.\n'
+  printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
+  printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+fi
+
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${CLAUDE_DIR}/CLAUDE.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".claude/" "CLAUDE.md" ".claude/settings.local.json" ".claude/CLAUDE.local.md"
 

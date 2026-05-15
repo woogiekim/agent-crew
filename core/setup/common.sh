@@ -52,6 +52,61 @@ exclude_path.write_text("\n".join(content).rstrip("\n") + "\n")
 PYEOF
 }
 
+# Merge system and user agents into the discovery destination (~/.claude/agents/).
+#
+# Policy (Option B): if the same filename exists in both system/agents/ and
+# user/agents/, emit a warning and skip copying that file from user/. The
+# system copy is always placed first; only non-conflicting user agents follow.
+#
+# Arguments:
+#   $1  system_agents  — e.g. ~/.agent-crew/system/agents/
+#   $2  user_agents    — e.g. ~/.agent-crew/user/agents/
+#   $3  dest           — e.g. ~/.claude/agents/
+merge_agents_to_discovery() {
+  local system_agents="$1"
+  local user_agents="$2"
+  local dest="$3"
+
+  mkdir -p "${dest}"
+
+  # Copy system agents first (idempotent — cp -R overwrites existing files)
+  copy_dir_contents "${system_agents}" "${dest}"
+
+  # Merge user agents with conflict detection
+  if [ -d "${user_agents}" ]; then
+    local conflicts=()
+    while IFS= read -r -d '' user_file; do
+      local basename_file
+      basename_file=$(basename "${user_file}")
+      if [ -f "${dest}/${basename_file}" ]; then
+        conflicts+=("${basename_file}")
+      fi
+    done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+    if [ ${#conflicts[@]} -gt 0 ]; then
+      printf '\n[agent-crew] WARNING: Name conflict detected in user agents:\n' >&2
+      for c in "${conflicts[@]}"; do
+        printf '  conflict: %s exists in both system/agents/ and user/agents/\n' "${c}" >&2
+      done
+      printf 'Rename the file in user/agents/ to a unique name, then re-run crew:update.\n' >&2
+      printf 'User agents with conflicts were NOT copied to discovery path.\n\n' >&2
+      # Copy non-conflicting user agents only
+      while IFS= read -r -d '' user_file; do
+        local basename_file
+        basename_file=$(basename "${user_file}")
+        local is_conflict=0
+        for c in "${conflicts[@]}"; do
+          [ "${basename_file}" = "${c}" ] && is_conflict=1 && break
+        done
+        [ "${is_conflict}" -eq 0 ] && cp "${user_file}" "${dest}/"
+      done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+    else
+      # No conflicts — copy all user agents
+      copy_dir_contents "${user_agents}" "${dest}"
+    fi
+  fi
+}
+
 merge_agent_crew_section() {
   local src="$1" dest="$2"
   local start="<!-- agent-crew-start -->"

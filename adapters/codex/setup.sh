@@ -101,6 +101,14 @@ copy_dir_contents "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/
 rm -rf "${PROJECT_ROOT}/.codex/hooks"
 mkdir -p "${PROJECT_ROOT}/.codex/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
+
+# Detect old flat layout and warn
+if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
+  printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"
+  printf 'This directory is no longer used by crew. Files installed by crew have moved to system/.\n'
+  printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
+  printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
+fi
 chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
 cp "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md" 2>/dev/null || true
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
