@@ -13,12 +13,16 @@ Every task is executed by a `task-runner`. A single request spawns one
 normalize the input into one or more task entries
       |
       v
-prepare one execution context per task
-      |
-      v
-delegate one task-runner per task
-      |
-      v
+classify trivial intent (Step 1.7) ──► trivial?
+      |                                   |
+      | no                                | yes
+      v                                   v
+prepare one execution context per task   inline dispatch
+      |                                  (status / commit /
+      v                                   merge / push / deploy /
+delegate one task-runner per task         tag / rollback) with
+      |                                   AskUserQuestion gate
+      v                                   for destructive ops
 collect results and provide merge guidance
 ```
 
@@ -330,7 +334,300 @@ except Exception:
 " 2>/dev/null
 ```
 
-If `stale` or `absent`: treat `IS_LIVE_SESSION == 0` and proceed to Step 2.
+If `stale` or `absent`: treat `IS_LIVE_SESSION == 0` and proceed to Step 1.7.
+
+### 1.7. Fast-Path Intent Classification
+
+> **This step runs after Step 1.5 (Injection Detection) and before Step 2 (State
+> Init). It detects trivial operational intents — merge, push, deploy, tag,
+> rollback, status, commit-only — and dispatches them directly in the
+> orchestrator turn, bypassing requirements / analyst / planner / task-runner /
+> stage agents / reviewer entirely.**
+>
+> **Goal**: reduce a "merge and push" run from 2–5 minutes to under 30 seconds.
+
+#### When the fast path runs
+
+The fast path runs only when **all** of the following are true:
+
+1. `N == 1` (exactly one task — the fast path does not apply to parallel runs).
+2. The Step 1.5 injection detector returned `IS_LIVE_SESSION == 0`. If a live
+   parallel session is running, the user's intent is to inject — that takes
+   precedence over local fast-path dispatch.
+3. The normalized TASK string matches one of the trivial-intent patterns below
+   AND none of the exclusion phrases are present (see "Negative-match
+   disambiguation").
+4. The host AI tool exposes `AskUserQuestion` (required for destructive
+   intents). When `AskUserQuestion` is unavailable, destructive fast-path
+   intents fall through to the regular pipeline; the read-only `status` and
+   non-destructive `commit_only` paths still run inline.
+
+If any of the above is false, **skip this step entirely and proceed to Step 2
+unchanged.** The fast path is purely additive — it never breaks the existing
+pipeline contract.
+
+> **Step 5 Exception (explicit).** The framework's standing "NEVER-SKIP" rule
+> on Step 5 (Collect Requirements) does not apply when the Step 1.7 classifier
+> matches a trivial intent. The whole point of the fast path is to skip
+> requirements collection, the analyst, the planner, the task-runner spawn, and
+> the reviewer for operational requests that have no requirements to collect.
+> Step 5 remains mandatory for every request that falls through to Step 2.
+
+#### Trivial-intent patterns
+
+The classifier inspects the normalized TASK string (lowercased, trimmed). It
+uses simple shell regex — no Python, no ML, no parsing — so it adds at most a
+few milliseconds of overhead even on the fall-through path.
+
+```bash
+classify_trivial_intent() {
+  # $1 = normalized TASK string
+  local task_lc
+  task_lc=$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+
+  # --- Unambiguous operational prefixes (checked first, override negative-match) ---
+  # These start with "git ..." or other explicit operational phrasing that no
+  # implementation request would ever use. They short-circuit before the
+  # negative-match keyword filter below.
+  case "$task_lc" in
+    "git status"|"git push"|"git push "*|"git commit"|"git commit "*|\
+    "git add"|"git add "*|"git tag"|"git tag "*|"git merge"|"git merge "*|\
+    "git revert"|"git revert "*)
+      # Fall through to the per-intent dispatch below — we just want to bypass
+      # the negative-match for these explicit git commands.
+      ;;
+    "create tag"|"create tag "*)
+      printf "tag\n"; return
+      ;;
+    "push to origin"|"push to remote"|*" push to origin"*|*" push to remote"*)
+      printf "push\n"; return
+      ;;
+  esac
+
+  # --- Negative-match disambiguation ---
+  # If any implementation keyword appears ANYWHERE in the message AND the
+  # message did not match an explicit operational prefix above, the fast path
+  # is disqualified and we return 'none' so the request falls through to Step 2.
+  case "$task_lc" in
+    *" add "*|"add "*|*" implement "*|"implement "*|\
+    *" create "*|"create "*|*" build "*|"build "*|\
+    *" fix "*|"fix "*|*" refactor "*|"refactor "*|\
+    *" remove "*|"remove "*|*" update "*|"update "*|\
+    *" change "*|"change "*|*" migrate "*|"migrate "*|\
+    *" extend "*|"extend "*|*" integrate "*|"integrate "*|\
+    *" replace "*|"replace "*|*" move "*|"move "*)
+      printf "none\n"; return
+      ;;
+  esac
+
+  # --- Per-intent classification (only reached after negative-match passes) ---
+
+  # status — "status", "show status", "what changed", "what's changed", "git status"
+  case "$task_lc" in
+    "status"|"show status"|"what changed"|"whats changed"|"what's changed"|\
+    "show me status"|"git status")
+      printf "status\n"; return
+      ;;
+  esac
+
+  # commit-only — bare commit verb with optional message. "stage changes" /
+  # "stage" alone also matches. Implementation phrasing was filtered above.
+  case "$task_lc" in
+    "commit"|"commit "*|"stage"|"stage changes"|"stage "*|\
+    "git commit"|"git commit "*|"git add"|"git add "*)
+      printf "commit_only\n"; return
+      ;;
+  esac
+
+  # rollback — "rollback", "revert", "revert last commit", "git revert ..."
+  case "$task_lc" in
+    "rollback"|"rollback "*|"revert"|"revert "*|*" rollback"|*" revert"|\
+    "git revert"|"git revert "*)
+      printf "rollback\n"; return
+      ;;
+  esac
+
+  # tag — "tag", "tag v1.0.0", "git tag ..." (the "create tag" prefix was
+  # already handled in the operational-prefix block above).
+  case "$task_lc" in
+    "tag"|"tag "*|"git tag"|"git tag "*)
+      printf "tag\n"; return
+      ;;
+  esac
+
+  # push — "push", "push <branch>", "git push ..." (the "push to origin"
+  # phrase was already handled in the operational-prefix block above).
+  case "$task_lc" in
+    "push"|"push "*|"git push"|"git push "*)
+      printf "push\n"; return
+      ;;
+  esac
+
+  # deploy — "deploy", "release", "deploy to {env}", "release v1.0"
+  case "$task_lc" in
+    "deploy"|"deploy "*|"release"|"release "*|*" deploy "*|*" release "*)
+      printf "deploy\n"; return
+      ;;
+  esac
+
+  # merge — requires branch context to disambiguate from "merge two refactors"
+  # or "merge data structures". Must contain "branch", "into main", "into
+  # master", a literal feat/fix/docs/refactor/test/chore/* branch pattern, or
+  # be the explicit "git merge ..." form.
+  case "$task_lc" in
+    "merge"|"merge "*|"git merge"|"git merge "*)
+      case "$task_lc" in
+        *"branch"*|*"into main"*|*"into master"*|\
+        *"feat/"*|*"fix/"*|*"docs/"*|*"refactor/"*|*"test/"*|*"chore/"*|\
+        "git merge "*)
+          printf "merge\n"; return
+          ;;
+      esac
+      ;;
+  esac
+
+  printf "none\n"
+}
+
+INTENT=$(classify_trivial_intent "${TASK}")
+```
+
+The function returns one of:
+
+| Returned token | Meaning |
+|---|---|
+| `merge`        | Merge a feature branch into main (destructive — needs approval) |
+| `push`         | Push current branch / main to origin (destructive — needs approval) |
+| `deploy`       | Run deployment script / release flow (destructive — needs approval) |
+| `tag`          | Create or push a git tag (destructive — needs approval) |
+| `rollback`     | Revert the last commit or roll back a deploy (destructive — needs approval) |
+| `status`       | Show repo state inline (read-only — no approval) |
+| `commit_only`  | Stage and commit current diff inline (local-only — no approval) |
+| `none`         | Not a trivial intent — fall through to Step 2 |
+
+#### Dispatch table
+
+When `INTENT != "none"`, dispatch inline. **No task-runner is spawned. No
+`TASK_DIR` is created. No `pipeline.json`, `progress.log`, `result.md`,
+worktree, or branch is created** (the destructive intents operate on the
+current branch / HEAD only).
+
+##### `status` — inline read-only summary
+
+```bash
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " Repo Status"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+echo
+echo "Working tree:"
+git status --short 2>/dev/null | head -20
+echo
+echo "Recent commits:"
+git log --oneline -5 2>/dev/null
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+```
+
+Then **STOP — end the turn**. Do not proceed to Step 2.
+
+##### `commit_only` — inline stage + commit
+
+Extract the commit message from the portion of TASK after the verb (everything
+after the first space, with surrounding whitespace stripped). When the message
+is empty, prompt via AskUserQuestion for a one-line message before committing.
+
+```bash
+COMMIT_MSG=$(printf "%s" "${TASK}" | sed -E 's/^(commit|stage|git commit|git add)([[:space:]]+(changes))?[[:space:]]*//I')
+if [ -z "${COMMIT_MSG}" ]; then
+  # Ask for the commit message via AskUserQuestion (fallback: prompt inline).
+  COMMIT_MSG="chore: commit local changes"
+fi
+
+git add -A
+git commit -m "${COMMIT_MSG}" || {
+  echo "Nothing to commit (working tree clean)."
+  exit 0
+}
+git log --oneline -1
+```
+
+Then **STOP — end the turn**.
+
+##### Destructive intents (`merge` / `push` / `deploy` / `tag` / `rollback`)
+
+For destructive intents, the orchestrator owns the approval gate per CLAUDE.md
+Approval Rule. The flow is:
+
+1. **Compose a PLAN summary** describing the exact git command that will run.
+   The PLAN is shown inline as text — there is no `action-plan.md` file
+   because no stage agent is waiting on `approval.md`. Example:
+
+   ```text
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Fast-Path Action Plan
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Intent     : push
+   Command    : git push origin {BRANCH}
+   Risk       : medium
+   Reversible : no (remote receives commits)
+
+   Current branch: {BRANCH}
+   Commits to publish:
+     {git log --oneline @{u}..HEAD 2>/dev/null || git log --oneline -3}
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ```
+
+2. **Fire AskUserQuestion** — the single, structured approval gate. Plain-text
+   approval is forbidden per CLAUDE.md.
+
+   - header: short intent label ("Push", "Merge", "Deploy", "Tag", "Rollback")
+   - question: "Review the fast-path action plan above. Approve to run the
+     command now, or cancel to hold."
+   - options:
+     - label: "Approve" — description: "Run the command now"
+     - label: "Cancel"  — description: "Hold, do not run anything"
+
+3. **On Approve**: execute the git command inline (see per-intent commands
+   below). Print the result. Then **STOP — end the turn**.
+
+4. **On Cancel**: print "Cancelled — no action taken." Then **STOP**.
+
+Per-intent commands (executed inline only after Approve):
+
+| Intent | Command |
+|---|---|
+| `merge`    | `git checkout main && git merge --no-ff "${SOURCE_BRANCH}" -m "merge: ${SOURCE_BRANCH} into main"` where `${SOURCE_BRANCH}` is the branch token extracted from TASK (the first `feat/...` / `fix/...` / etc. pattern, or the branch named after "branch" / "into main"). When no branch is identified, prompt via AskUserQuestion for the branch name before composing the PLAN. |
+| `push`     | `git push origin "$(git rev-parse --abbrev-ref HEAD)"` for a feature branch, or `git push origin main` when the current branch is `main`. The PLAN line names the exact branch. |
+| `deploy`   | Defer to the project's deploy script when one is recorded. When none is recorded, fall through to the regular pipeline — the fast path does not invent deploy commands. |
+| `tag`      | `git tag "${TAG_NAME}" && git push origin "${TAG_NAME}"` where `${TAG_NAME}` is extracted from TASK (e.g. `tag v1.0.0` → `v1.0.0`). When the tag name is missing, prompt via AskUserQuestion before composing the PLAN. |
+| `rollback` | `git revert --no-edit HEAD` for "rollback" / "revert last commit". For broader rollback intents (revert deploy, reset to tag), fall through to the regular pipeline. |
+
+#### What the fast path bypasses
+
+- Step 2 (state init) — no `STATE_DIR` / `TASK_DIR` / branch / worktree created
+- Step 3 (resume detection) — no resume state to track for stateless ops
+- Step 4 (task context) — no per-task setup
+- Step 5 (requirements collection) — see Step 5 Exception above
+- Step 6 (task-runner spawn) — no subagent spawned at all
+- Inside the task-runner: analyst, planner, stage agents (designer, backend,
+  frontend, devops, reviewer), Phase 1d plan approval, Phase 2.5 stage action
+  gate — none of these run because no task-runner is spawned
+
+#### What the fast path still honors
+
+- Korean Input Normalization (Step 1)
+- Injection Detection (Step 1.5) — runs first, so trivial intents submitted
+  during a live parallel session inject correctly instead of fast-pathing
+- Centralized Approval Gate (CLAUDE.md Approval Rule) — destructive intents
+  pass through AskUserQuestion exactly as the framework requires
+- "task-runner never pushes" rule — the fast path is the orchestrator, not the
+  task-runner, so it is allowed to push after approval (per Steps 10–11)
+
+#### Fall-through
+
+When `INTENT == "none"`, this step is silent. Proceed to Step 2 with no
+behavioral change. The classifier overhead is a single shell function call
+with a handful of `case` branches, so the fall-through cost is negligible.
 
 ### 2. Initialize State Paths
 
@@ -510,9 +807,14 @@ a live parallel session and is not meaningful for single-task execution.
 
 ### 5. Collect Requirements Per Task
 
-> **NEVER-SKIP RULE**: Step 5 is mandatory for every `crew:run` invocation without
-> exception. Do NOT skip or abbreviate this step regardless of how obvious the task seems.
-> The task argument is a description, not requirements.
+> **NEVER-SKIP RULE**: Step 5 is mandatory for every `crew:run` invocation that
+> reaches it. Do NOT skip or abbreviate this step regardless of how obvious the
+> task seems. The task argument is a description, not requirements.
+>
+> **Single, narrow exception**: When Step 1.7 (Fast-Path Intent Classification)
+> matches a trivial operational intent, the orchestrator has already returned
+> by this point and Step 5 is not reached. Every request that *does* reach
+> Step 5 (i.e., the regular slow-path pipeline) must collect requirements.
 
 **When `N == 1`:** Delegate to the requirements agent (blocking):
 
@@ -1403,3 +1705,11 @@ crew:run "resolve merge conflicts"
   immediately run `crew:run "new task"` to inject tasks into the live session.
   The injected tasks join the same `session.json` and are collected together by
   `crew:status --collect`.
+- **Fast-path (Step 1.7)**: Trivial operational intents (merge, push, deploy,
+  tag, rollback, status, commit-only) are dispatched inline by the orchestrator
+  without spawning a task-runner. They still honor the centralized
+  AskUserQuestion approval gate for destructive operations. The classifier is
+  conservative — anything containing an implementation keyword ("add",
+  "implement", "fix", etc.) falls through to the regular pipeline. See
+  Step 1.7 for the full pattern list, exclusion rules, and per-intent
+  dispatch table.
