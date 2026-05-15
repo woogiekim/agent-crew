@@ -21,7 +21,7 @@ copy_dir_contents "${AGENT_CREW_HOME}/rules" "${CLAUDE_DIR}/agent-crew/rules"
 copy_dir_contents "${AGENT_CREW_HOME}/setup" "${CLAUDE_DIR}/agent-crew/setup"
 copy_dir_contents "${AGENT_CREW_HOME}/adapters/claude" "${CLAUDE_DIR}/agent-crew/adapters/claude"
 mkdir -p "${CLAUDE_DIR}/agent-crew"
-cp "${AGENT_CREW_HOME}/adapters/claude/invocation.md" "${CLAUDE_DIR}/agent-crew/invocation.md" 2>/dev/null || true
+diff_copy "${AGENT_CREW_HOME}/adapters/claude/invocation.md" "${CLAUDE_DIR}/agent-crew/invocation.md" 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/hooks/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/setup/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/adapters/claude/"*.sh 2>/dev/null || true
@@ -169,6 +169,8 @@ with open(dest, "w") as f:
   json.dump(settings, f, indent=2, ensure_ascii=False)
   f.write("\n")
 PYEOF
+
+print_diff_summary
 
 printf 'HOST: claude\n'
 printf 'PROJECT_ROOT: %s\n' "${PROJECT_ROOT}"

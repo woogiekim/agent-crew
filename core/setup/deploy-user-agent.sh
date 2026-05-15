@@ -69,11 +69,13 @@ fi
 CODEX_AGENTS="${HOME}/.codex/agents"
 if [ -d "${CODEX_AGENTS}" ]; then
   printf '[deploy-user-agent] Deploying to Codex: %s\n' "${CODEX_AGENTS}"
-  cp "${AGENT_PATH}" "${CODEX_AGENTS}/${AGENT_BASENAME}"
+  diff_copy "${AGENT_PATH}" "${CODEX_AGENTS}/${AGENT_BASENAME}"
   DEPLOYED=$((DEPLOYED + 1))
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
+print_diff_summary
+
 if [ "${DEPLOYED}" -eq 0 ]; then
   printf '[deploy-user-agent] No installed host adapters detected — agent saved to user/agents/ only.\n'
   printf '[deploy-user-agent] Run crew:setup to install for a specific host.\n'
