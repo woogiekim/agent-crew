@@ -16,8 +16,15 @@ fi
 
 mkdir -p "${PROJECT_ROOT}/.agent-crew"
 copy_dir_contents "${AGENT_CREW_HOME}/commands" "${PROJECT_ROOT}/.agent-crew/commands"
-copy_dir_contents "${AGENT_CREW_HOME}/system/agents" "${PROJECT_ROOT}/.agent-crew/agents"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.agent-crew/hooks"
+
+# Merge system agents + user agents into the project discovery path.
+# System agents are always included. User agents are layered on top with
+# conflict detection (system wins on name collision).
+merge_agents_to_discovery \
+  "${AGENT_CREW_HOME}/system/agents" \
+  "${AGENT_CREW_HOME}/user/agents" \
+  "${PROJECT_ROOT}/.agent-crew/agents"
 
 # Detect old flat layout and warn
 if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then

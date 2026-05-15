@@ -9,7 +9,7 @@ Create one or more of the following assets:
 | Asset | Default path | Purpose |
 |---|---|---|
 | Project guidance | `AGENTS.md` | Always-on repository rules and conventions |
-| Agent definition | `~/.agent-crew/agents/<name>.md` | Specialist worker instructions |
+| Agent definition | `~/.agent-crew/user/agents/<name>.md` | Specialist worker instructions |
 | Skill / command | `~/.agent-crew/commands/<name>.md` | Reusable workflow invoked by name |
 | Hook | `~/.agent-crew/hooks/<name>.sh` | Deterministic automation outside the model |
 | Rule document | `~/.agent-crew/rules/<name>.md` | Conditional guidance for a domain or file type |
@@ -109,14 +109,36 @@ INPUT="$(cat)"
 printf '%s' "$INPUT"
 ```
 
+## Finalization — Deploy to All Hosts
+
+After writing an agent definition to `~/.agent-crew/user/agents/<name>.md`, run the
+deploy helper so the new agent appears in every installed host adapter's discovery path:
+
+```bash
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+bash "${AGENT_CREW_HOME}/setup/deploy-user-agent.sh" "<name>.md"
+```
+
+The helper detects installed adapters by checking sentinel paths:
+
+| Adapter | Sentinel path | Deploy action |
+|---|---|---|
+| Claude Code | `~/.claude/agents/` exists | Merges `user/agents/` + `system/agents/` into `~/.claude/agents/` |
+| Codex | `~/.codex/agents/` exists | Copies the `.md` file to `~/.codex/agents/` |
+| Generic (project) | N/A — project root unknown at creation time | Run `crew:setup` for the project to pick up the new agent |
+
+The script is idempotent and silent when an adapter is not installed. It must
+be called once per agent after the file is written — not once per host.
+
 ## Completion Checklist
 
-- [ ] Uses `~/.agent-crew` canonical paths
+- [ ] Uses `~/.agent-crew/user/agents/` as the canonical write path for agent definitions
 - [ ] Uses `AGENTS.md` for general project guidance
 - [ ] Avoids vendor-specific model names
 - [ ] Uses `model: inherit` when a model field is required
 - [ ] Describes host-specific copies as compatibility only
 - [ ] Includes verification steps
+- [ ] Runs `deploy-user-agent.sh` to propagate the agent to all installed host adapters
 
 ## Completion Report
 
