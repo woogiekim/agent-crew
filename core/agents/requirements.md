@@ -27,10 +27,90 @@ load them at agent startup:
 - `TASK`: Task description string
 - `TASK_INDEX`: Index number for the task (0-based; used in question headers as TASK_INDEX+1)
 - `TASK_DIR`: State storage path (to write requirements output)
+- `MODE` (optional): `single_round` (default for new callers — one
+  AskUserQuestion call with scope + target + constraints) or `two_round`
+  (legacy — preserves the original Round 1 + Round 2 flow). If `MODE` is
+  unset, default to `two_round` for backward compatibility with any caller
+  that has not been updated.
+
+## Mode Selection
+
+The execution flow branches on `MODE` at the top of the agent run:
+
+- **`MODE == "single_round"`** (preferred for `crew:run` Step 5.pre AMBIGUOUS
+  path and task-runner Phase 1a AMBIGUOUS path): run **Step 1S** below, then
+  jump directly to Step 4 (write requirements.md). Round 2 domain-specific
+  follow-up is skipped entirely.
+- **`MODE == "two_round"` or unset**: run the original Step 1 → Step 2 →
+  Step 3 → Step 4 flow exactly as before.
+
+The agent MAY escalate from `single_round` to a one-off domain-specific
+follow-up AskUserQuestion call (e.g., asking for the database choice when
+single-round answers indicate a Backend API scope without a clear stack), but
+this is a rare-case escalation, not the default. Escalation MUST NOT loop —
+at most one extra AskUserQuestion call beyond the single round.
 
 ## Execution Flow
 
-### Step 1 — Round 1 Interview (always runs)
+### Step 1S — Single-Round Interview (runs only when `MODE == "single_round"`)
+
+Call `AskUserQuestion` once with all three questions in the same call. The
+host UI presents them together so the user answers scope + target +
+constraints in a single dialog turn. Use `Task {TASK_INDEX+1} — ` headers
+exactly as the two-round path does:
+
+**Question 1 — Scope:**
+- header: "Task {TASK_INDEX+1} — Scope"
+- question: "What is the implementation scope for: {TASK}?"
+- options:
+  - label: "Backend API"
+    description: "Server-side logic, domain model, database"
+  - label: "Full-stack"
+    description: "Backend + Frontend UI"
+  - label: "UI only"
+    description: "Static pages, components, styling"
+  - label: "Tooling / docs / config"
+    description: "Framework internals, markdown, scripts, config files, analysis"
+
+**Question 2 — Target:**
+- header: "Task {TASK_INDEX+1} — Target"
+- question: "Who are the target users, and what is the core purpose of this feature?"
+- options:
+  - label: "Internal team / admin tooling"
+    description: "Admin panels, dashboards, and tools used by the team"
+  - label: "End-user product feature"
+    description: "Customer-facing functionality in the product"
+  - label: "Developer tooling or API"
+    description: "APIs, CLIs, SDKs, or build tooling"
+  - label: "Other / not yet defined"
+    description: "Target users not yet determined"
+
+**Question 3 — Constraints:**
+- header: "Task {TASK_INDEX+1} — Constraints"
+- question: "Are there technical constraints or MVP scope limits to consider?"
+- multiSelect: true
+- options:
+  - label: "Use existing tech stack only"
+    description: "No new dependencies allowed"
+  - label: "MVP scope"
+    description: "Minimal feature set; defer polish and edge cases"
+  - label: "Performance / scalability"
+    description: "Non-functional performance or scalability requirements apply"
+  - label: "No special constraints"
+    description: "Proceed with standard implementation approach"
+
+After the single AskUserQuestion call returns, record answers as `r1_scope`,
+`r1_target`, and `r1_constraints`. Then **proceed directly to Step 4** —
+Round 2 domain-specific follow-up is skipped on the single-round path.
+
+> **Escalation guard**: If the answers clearly require a domain follow-up
+> (e.g., scope is `"Backend API"` and no database hint exists in the TASK),
+> the agent MAY issue one targeted AskUserQuestion call before Step 4. This
+> escalation MUST be at most one extra call and MUST NOT recurse.
+
+---
+
+### Step 1 — Round 1 Interview (runs only when `MODE == "two_round"` or unset)
 
 Call `AskUserQuestion` with the following three questions. Use `Task {TASK_INDEX+1} — ` headers:
 
@@ -243,9 +323,18 @@ If Round 2 was skipped (scope is "Tooling / docs / config"), omit `followup` ent
 
 ## Agent Rules
 
-- **NEVER skip Round 1** regardless of how obvious the task seems.
+- **NEVER skip the user-facing step** — when this agent is invoked at all, it
+  MUST call AskUserQuestion at least once (Step 1S on `single_round`, Step 1 on
+  `two_round`). The upstream sufficiency check (in `crew:run` Step 5.pre and
+  in `task-runner` Phase 1a) is responsible for deciding *whether* to invoke
+  this agent in the first place; once invoked, the agent does not bypass the
+  user dialog.
 - **NEVER infer requirements** from the TASK description — always ask explicitly.
 - **Always write requirements.md** before returning the REQUIREMENTS block.
 - **Do not modify handoff.md** — this agent only writes `requirements.md`.
-- Round 2 is skipped only when `r1_scope` is `"Tooling / docs / config"`.
+- On `MODE == "single_round"`, Round 2 is skipped entirely (Step 3 does not
+  run). At most one targeted escalation AskUserQuestion is permitted before
+  Step 4, and only when the single-round answers clearly require it.
+- On `MODE == "two_round"` (legacy / unset), Round 2 is skipped only when
+  `r1_scope` is `"Tooling / docs / config"`.
 - All AskUserQuestion calls must use structured options — no open-ended plain text questions.

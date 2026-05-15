@@ -805,16 +805,149 @@ see a valid `session.json` with `status: running`.
 For single-task runs (`N == 1`), no session file is written — injection requires
 a live parallel session and is not meaningful for single-task execution.
 
-### 5. Collect Requirements Per Task
+### 5.pre — Requirements Sufficiency Check
 
-> **NEVER-SKIP RULE**: Step 5 is mandatory for every `crew:run` invocation that
-> reaches it. Do NOT skip or abbreviate this step regardless of how obvious the
-> task seems. The task argument is a description, not requirements.
+> **NEVER-SKIP-WITHOUT-SUFFICIENCY-CHECK**: REQUIREMENTS must always be produced
+> before Step 6 — but the *agent invocation* itself is now optional. The gate is
+> the sufficiency check below, not the agent call. The check returns either
+> `SUFFICIENT` (synthesize REQUIREMENTS inline, skip the agent entirely) or
+> `AMBIGUOUS` (fall through to Step 5 with a single-round agent invocation).
 >
-> **Single, narrow exception**: When Step 1.7 (Fast-Path Intent Classification)
-> matches a trivial operational intent, the orchestrator has already returned
-> by this point and Step 5 is not reached. Every request that *does* reach
-> Step 5 (i.e., the regular slow-path pipeline) must collect requirements.
+> Step 5 is mandatory for every `crew:run` invocation that reaches it, unless
+> (a) Step 1.7 (Fast-Path Intent Classification) classified this as a trivial
+> operational intent — in which case the orchestrator has already returned and
+> Step 5 is not reached at all — or (b) Step 5.pre's sufficiency check
+> synthesized REQUIREMENTS inline, in which case Step 5's agent invocation is
+> bypassed but REQUIREMENTS still exists on disk before Step 6.
+>
+> The principle "REQUIREMENTS must exist before any stage runs" is preserved.
+> What changed: well-specified prompts no longer pay the 22 s agent round-trip
+> when the TASK string already carries scope + target + constraints with high
+> confidence, and trivial operational intents (merge/push/etc.) bypass the
+> pipeline entirely via Step 1.7.
+
+Run the sufficiency check once per task, before Step 5. The check is a
+deterministic Python snippet that scores the TASK string against three signals:
+
+```python
+import re
+
+def sufficiency_check(task: str) -> str:
+    """Return 'SUFFICIENT' if scope, target, and constraints can be inferred
+    with high confidence from TASK alone; otherwise 'AMBIGUOUS'."""
+    t = task.lower()
+
+    # Question-word veto — any question word means we must ask the user.
+    question_markers = ["?", "how should", "what about", "which ", "should i",
+                        "shall i", "do you think"]
+    if any(m in t for m in question_markers):
+        return "AMBIGUOUS"
+
+    # Signal 1: scope inferable
+    backend_kw = ("backend", "api", "server", "endpoint", "database",
+                  "domain model", "schema")
+    ui_kw = ("frontend", "ui ", "component", " page ", "css", "styling",
+             "layout")
+    tooling_kw = ("docs", "documentation", "readme", "markdown", "config",
+                  "script", "refactor", "spec", "tooling", "pipeline",
+                  "agent", "hook")
+    scope_hit = any(k in t for k in backend_kw + ui_kw + tooling_kw)
+
+    # Signal 2: target inferable
+    has_file_path = re.search(
+        r"[a-zA-Z0-9_./-]+\.(md|py|ts|tsx|js|jsx|sh|json|yml|yaml)",
+        task,
+    ) is not None
+    has_branch_ref = re.search(
+        r"\b(feat|fix|docs|chore|refactor|test)/[a-z0-9-]+",
+        task,
+    ) is not None
+    has_quoted_name = '"' in task or "`" in task
+    has_concrete_pointer = re.search(
+        r"\bthe [a-z]+ (agent|hook|command|step|phase|rule|gate|file|module)",
+        t,
+    ) is not None
+    target_hit = (has_file_path or has_branch_ref or has_quoted_name
+                  or has_concrete_pointer)
+
+    # Signal 3: constraints inferable
+    has_perf = re.search(r"\d+\s*(ms|s\b|mb|gb|req/s|qps|rps)", t) is not None
+    has_mvp = any(k in t for k in ("mvp", "minimal", "v1 ", "scope-limit",
+                                   "scope limit"))
+    has_dep = any(k in t for k in ("no new deps", "no new dependencies",
+                                   "existing stack", "existing tech stack",
+                                   "use only"))
+    constraint_hit = has_perf or has_mvp or has_dep
+
+    if scope_hit and target_hit and constraint_hit:
+        return "SUFFICIENT"
+    return "AMBIGUOUS"
+```
+
+Run the check and branch:
+
+```bash
+SUFFICIENCY=$(python3 -c "
+import re, sys
+task = sys.argv[1]
+{sufficiency_check function body inlined verbatim}
+print(sufficiency_check(task))
+" "${TASK}")
+```
+
+**If `SUFFICIENCY == "SUFFICIENT"`:** Synthesize the REQUIREMENTS block inline
+from the matched signals — do NOT spawn the requirements agent. Write the
+synthesized block to `{TASK_DIR}/context/requirements.md` (same path the agent
+would have used) and proceed directly to Step 6.
+
+Inline synthesis rule:
+
+- `scope`: the matched keyword family — `"Backend API"` if backend keywords
+  matched and no UI keywords; `"UI only"` if UI keywords matched and no
+  backend keywords; `"Full-stack"` if both matched; `"Tooling / docs / config"`
+  otherwise.
+- `target`: `"Developer tooling or API"` for the tooling-family scope;
+  `"End-user product feature"` if quoted names or specific component names
+  dominate; `"Internal team / admin tooling"` if admin/dashboard keywords
+  appear; otherwise `"Other / not yet defined"`.
+- `constraints`: the union of matched constraint signal labels:
+  `"Performance / scalability"`, `"MVP scope"`, `"Use existing tech stack only"`.
+  Use `"No special constraints"` if none matched (but this should not happen on
+  the SUFFICIENT path — the check requires at least one constraint signal).
+
+The resulting block has the exact same shape the requirements agent returns:
+
+```text
+REQUIREMENTS: |
+  scope: {synthesized scope}
+  target: {synthesized target}
+  constraints: {comma-separated synthesized constraints}
+  followup: (none)
+  sufficiency: HIGH
+  inline_synthesis: true
+```
+
+**If `SUFFICIENCY == "AMBIGUOUS"`:** Proceed to Step 5 (collect via agent) with
+`MODE: single_round`.
+
+For parallel runs (`N > 1`), run the sufficiency check for each task
+independently. Tasks whose check returns `SUFFICIENT` skip Step 5 entirely;
+tasks whose check returns `AMBIGUOUS` spawn the requirements agent in
+single-round mode in parallel with the others.
+
+### 5. Collect Requirements Per Task (AMBIGUOUS path only)
+
+> **NEVER-SKIP-WITHOUT-SUFFICIENCY-CHECK**: Step 5 runs only when Step 5.pre
+> returned `AMBIGUOUS` for this task. REQUIREMENTS is still mandatory before
+> Step 6 — but if the sufficiency check already synthesized it inline, do not
+> re-collect. The task argument is a description, not requirements; the
+> sufficiency check decides whether the description carries enough signal.
+>
+> Step 5 is also not reached when Step 1.7 (Fast-Path Intent Classification)
+> already short-circuited the pipeline for a trivial operational intent. Every
+> request that *does* reach Step 5 is on the regular slow-path pipeline and
+> has just been told by Step 5.pre that its TASK string is too ambiguous to
+> synthesize from.
 
 **When `N == 1`:** Delegate to the requirements agent (blocking):
 
@@ -822,37 +955,40 @@ a live parallel session and is not meaningful for single-task execution.
 TASK: {task description}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
+MODE: single_round
 
-Run the 2-round AskUserQuestion interview, validate scope, detect ambiguities,
-write {TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
+Run a single-round AskUserQuestion interview (scope + target + constraints in
+one call), validate scope, detect ambiguities, write
+{TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
 ```
 
 Wait for the agent to return. Extract the `REQUIREMENTS` block and record it.
 
-**When `N > 1`:** Spawn all N requirements agents **simultaneously in a single
-response** (one Agent tool call per task, all issued together). Do NOT send them
-one at a time — parallel spawn is mandatory for N > 1:
+> **`MODE: two_round` is a deeper fallback** for rare cases where the
+> single-round answers themselves contain ambiguity the agent decides it
+> cannot resolve without a domain-specific follow-up. The orchestrator does
+> NOT request `two_round` directly; only the agent may escalate.
+
+**When `N > 1`:** Spawn all requirements agents for `AMBIGUOUS` tasks
+**simultaneously in a single response** (one Agent tool call per ambiguous task,
+all issued together). Do NOT send them one at a time — parallel spawn is
+mandatory for N > 1. Tasks whose Step 5.pre returned `SUFFICIENT` are NOT
+spawned here (their REQUIREMENTS was already synthesized inline):
 
 ```text
-# Issue all N Agent calls in the same response (parallel fan-out):
-For task 0:
-  TASK: {task 0 description}
-  TASK_INDEX: 0
-  TASK_DIR: {TASK_DIR_0}
-  Run the 2-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
-
-For task 1:
-  TASK: {task 1 description}
-  TASK_INDEX: 1
-  TASK_DIR: {TASK_DIR_1}
-  Run the 2-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
-
-... (one call per task, all in the same response)
+# Issue all Agent calls for AMBIGUOUS tasks in the same response (parallel fan-out):
+For each AMBIGUOUS task i:
+  TASK: {task i description}
+  TASK_INDEX: i
+  TASK_DIR: {TASK_DIR_i}
+  MODE: single_round
+  Run a single-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
 ```
 
-Wait for **all** N requirements agents to complete before proceeding to Step 6.
-Extract each task's `REQUIREMENTS` block from its agent's response and record it.
-Do not run task-runners while requirements collection is still in progress for any task.
+Wait for **all** spawned requirements agents to complete before proceeding to
+Step 6. Extract each task's `REQUIREMENTS` block from its agent's response and
+record it. Do not run task-runners while requirements collection is still in
+progress for any AMBIGUOUS task.
 
 ### 6. Run Task Runners
 
@@ -1689,6 +1825,16 @@ crew:run "resolve merge conflicts"
 
 ## Notes
 
+- **Well-specified prompts skip requirements entirely.** Step 5.pre is a
+  deterministic sufficiency check that returns `SUFFICIENT` or `AMBIGUOUS`
+  based on signals in the TASK string (scope keyword family, concrete file or
+  branch pointer, performance/MVP/dependency constraint). `SUFFICIENT` means
+  the REQUIREMENTS block is synthesized inline with no agent spawn — cutting
+  requirements overhead from ~22 s to ~2 s on well-formed prompts. `AMBIGUOUS`
+  means the requirements agent runs in single-round mode (one AskUserQuestion
+  call asking scope + target + constraints together). The legacy 2-round
+  interview remains available as a deeper escalation that only the agent
+  itself may request.
 - `crew:run` is the canonical workflow entry point.
 - Use plain `crew:<intent>` syntax in user-facing guidance.
 - Task dependencies still matter. If tasks depend on each other, pass them as a
