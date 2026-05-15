@@ -25,7 +25,7 @@ You are a DevOps engineer. You are responsible for CI/CD pipeline setup, contain
 ## Step 0: Plan Summary — Write PLAN Block and Wait for Approval
 
 **Do NOT issue the host's interactive question mechanism directly** (see
-`core/rules/capabilities/interactive-question.md`). The task-runner (or crew
+`core/rules/capabilities/interactive-question.md`). The supervisor (or crew
 orchestrator for N > 1 parallel runs) owns the approval gate. The devops agent
 must write its planned actions and wait.
 
@@ -68,7 +68,7 @@ must write its planned actions and wait.
    {yes | no}
    ```
 
-3. Return the PLAN block to the task-runner — do not execute any commands yet:
+3. Return the PLAN block to the supervisor — do not execute any commands yet:
 
    ```text
    PLAN:
@@ -83,7 +83,7 @@ must write its planned actions and wait.
 
    **Preferred path (capability-gated, P1):** When the host adapter advertises
    `task_tools=true` in `capabilities.json` AND
-   `${TASK_DIR}/host-task-id.txt` exists, the task-runner's approval gate also
+   `${TASK_DIR}/host-task-id.txt` exists, the supervisor's approval gate also
    transitions the parent host task. The devops agent can long-poll on that
    transition instead of waking every 5 seconds:
 
@@ -246,9 +246,9 @@ ls deploy.sh scripts/deploy.sh Makefile docker-compose.yml 2>/dev/null
 
 If any issues are detected, append the issue to `{TASK_DIR}/context/action-plan.md`
 under a `### Pre-flight Issues` section, then return a `PLAN:` block with
-`risk: high` so the task-runner's approval gate can surface this to the user.
+`risk: high` so the supervisor's approval gate can surface this to the user.
 Do not issue the host's interactive question mechanism directly (see
-`core/rules/capabilities/interactive-question.md`) — the task-runner owns
+`core/rules/capabilities/interactive-question.md`) — the supervisor owns
 the approval gate.
 
 ---
@@ -271,7 +271,7 @@ Automatically detect the project build tool and execute commands:
 ## Deploy Step 3: Git Tagging & Release
 
 Note: Tag pushing for releases is permitted for the devops agent. The prohibition
-on `git push` in task-runner applies to feature branches only, not release tags.
+on `git push` in supervisor applies to feature branches only, not release tags.
 
 ```bash
 # Detect current version (package.json, build.gradle, VERSION file, etc.)
@@ -298,7 +298,7 @@ Search for deployment scripts from the project root and execute them:
 
 If no deployment script exists, record this as a blocker in the PLAN block
 (add `no_deploy_script: true` to the action plan written in Step 0) and return
-`STATUS: plan_ready` with an empty actions list and `risk: high`. The task-runner
+`STATUS: plan_ready` with an empty actions list and `risk: high`. The supervisor
 will surface this to the user via the approval gate. Do not issue the host's
 interactive question mechanism directly (see
 `core/rules/capabilities/interactive-question.md`).
@@ -362,6 +362,6 @@ Record the following in `handoff.md`:
 - Output environment variables or secrets in logs
 - Issue the host's interactive question mechanism directly (see
   `core/rules/capabilities/interactive-question.md`) for deploy, push, merge,
-  rollback, or destructive operations — approval is owned by the task-runner
+  rollback, or destructive operations — approval is owned by the supervisor
   (N == 1) or crew orchestrator (N > 1). The devops agent must write a PLAN
   block and poll approval.md instead.

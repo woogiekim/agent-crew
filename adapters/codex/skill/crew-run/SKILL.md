@@ -16,6 +16,6 @@ crew:run
 1. Load `~/.agent-crew/commands/run.md`.
 2. Treat any user text after `$crew-run` as the task description.
 3. Follow the command definition exactly, including mandatory requirements collection.
-4. Delegate execution to task-runner as defined by the command.
+4. Delegate execution to supervisor as defined by the command.
 
-Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate task-runner logic in this skill.
+Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate supervisor logic in this skill.

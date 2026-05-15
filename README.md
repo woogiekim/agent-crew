@@ -37,18 +37,18 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 
 ## Key Features
 
-- **2-round deep requirements collection** — `crew:run` gathers scope, target, and constraints (Round 1), then domain-specific follow-ups (Round 2) before spawning task-runners; a fallback layer in task-runner Phase 1a repeats this if requirements were not passed in
+- **2-round deep requirements collection** — `crew:run` gathers scope, target, and constraints (Round 1), then domain-specific follow-ups (Round 2) before spawning supervisors; a fallback layer in supervisor Phase 1a repeats this if requirements were not passed in
 - **Analyst reasoning layer** — Phase 1b invokes the analyst agent between requirements collection and planning; the analyst distills intent, identifies risks, and recommends the agent pipeline before the planner begins
-- **Phase 1d plan approval gate** — after planning, task-runner displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval via `AskUserQuestion` before any stage agent executes
-- **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; task-runner Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition directly to `~/.agent-crew/agents/{name}.md` before execution starts
+- **Phase 1d plan approval gate** — after planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval via `AskUserQuestion` before any stage agent executes
+- **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition directly to `~/.agent-crew/agents/{name}.md` before execution starts
 - **Quality loop enforcement** — every implementation stage runs a validate → fix → re-validate cycle (maximum 3 retries) before reporting completion; a `BLOCKED` result halts the pipeline immediately
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; `crew:status` reads this log to show a live pipeline snapshot at any time
-- **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the task-runner (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
+- **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
 - **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; the AI must call `crew:run` immediately with no preamble, no file reads, no Bash commands, and no clarifying questions
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
 - **Reviewer always last** — every pipeline that produces implementation output ends with the `reviewer` agent, which verifies completeness against the PRD
-- **Conditional deployment gate** — after all task-runners complete, `crew:run` always displays a per-task summary; deployment approval via `AskUserQuestion` fires only when the pipeline included a `devops` stage
+- **Conditional deployment gate** — after all supervisors complete, `crew:run` always displays a per-task summary; deployment approval via `AskUserQuestion` fires only when the pipeline included a `devops` stage
 - **Native sub-agent delegation** — orchestrator uses the host assistant's agent/delegation capability; no polling or signal files
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back after completion
 - **Project-clean state** — all state stored under `~/.agent-crew/state/{PROJECT_NAME}/`, never in your project directory
@@ -128,8 +128,8 @@ crew:run "request"
        │   → merged into REQUIREMENTS block
 [orchestrator]
        │
-       ▼ delegate one task-runner per task (with REQUIREMENTS)
-[task-runner]
+       ▼ delegate one supervisor per task (with REQUIREMENTS)
+[supervisor]
        │ Phase 0:  Resume check + context bootstrap
        │ Phase 1a: REQUIREMENTS present → skip; absent → delegate to requirements agent
        │ Phase 1b: analyst (distill intent, identify risks, recommend pipeline)
@@ -161,8 +161,8 @@ crew:run "task A" | "task B" | "task C"
        │
        ▼ create git worktree + branch for each task
        │
-       ▼ delegate all task-runners simultaneously (with per-task REQUIREMENTS)
-[task-runner A]         ‖   [task-runner B]         ‖   [task-runner C]
+       ▼ delegate all supervisors simultaneously (with per-task REQUIREMENTS)
+[supervisor A]         ‖   [supervisor B]         ‖   [supervisor C]
   own worktree               own worktree               own worktree
   req→analyst→plan→[1d]→stages→reviewer   ...same...   ...same...
   local commits only         local commits only         local commits only
@@ -178,9 +178,9 @@ crew:run "task A" | "task B" | "task C"
 [orchestrator] git push origin for each branch
 ```
 
-Each `task-runner` handles its full pipeline independently. **Remote push never happens inside task-runner** — the orchestrator pushes only after the user approves via `AskUserQuestion`.
+Each `supervisor` handles its full pipeline independently. **Remote push never happens inside supervisor** — the orchestrator pushes only after the user approves via `AskUserQuestion`.
 
-### Task-Runner Execution Phases
+### Supervisor Execution Phases
 
 | Phase | Name | Description |
 |---|---|---|
@@ -200,7 +200,7 @@ Requirements are collected in two layers to ensure the planner always receives s
 
 #### Layer 1 — Orchestrator (crew:run Step 5)
 
-`crew:run` delegates to the requirements agent before spawning task-runners:
+`crew:run` delegates to the requirements agent before spawning supervisors:
 
 **Round 1 — Base context (3 questions):**
 
@@ -218,11 +218,11 @@ Requirements are collected in two layers to ensure the planner always receives s
 | Full-stack | State management approach · Database choice |
 | UI only | State management approach · Design system |
 
-All answers are merged into a single `REQUIREMENTS` block passed to each task-runner.
+All answers are merged into a single `REQUIREMENTS` block passed to each supervisor.
 
-#### Layer 2 — task-runner Phase 1a (fallback)
+#### Layer 2 — supervisor Phase 1a (fallback)
 
-If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it delegates to the **requirements agent** to run the same 2-round interview before invoking the analyst and planner. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
+If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it delegates to the **requirements agent** to run the same 2-round interview before invoking the analyst and planner. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
 
 ### State Directory Layout
 
@@ -233,7 +233,7 @@ If a task-runner receives no `REQUIREMENTS` in its input (e.g., directly spawned
     └── {TASK_ID}/
         ├── pipeline.json       ← stages, needs_creation, completed_stages
         ├── handoff.md          ← inter-agent context (written by planner)
-        ├── result.md           ← final status written by task-runner
+        ├── result.md           ← final status written by supervisor
         ├── progress.log        ← real-time timestamped phase/stage events
         └── context/
             ├── requirements.md ← collected requirements (written by requirements agent)
@@ -277,7 +277,7 @@ When the planner determines that no existing agent can adequately fulfill a requ
 }
 ```
 
-task-runner Phase 1.5 reads this list and, for each entry, spawns an inline Agent
+supervisor Phase 1.5 reads this list and, for each entry, spawns an inline Agent
 that writes the agent definition file directly to `~/.agent-crew/agents/{name}.md`.
 This bypasses the `Skill` tool (which is unavailable inside sub-agents) and produces
 the agent file using a standard template derived from the `name`, `reason`, and `role`
@@ -287,9 +287,9 @@ with `STATUS: BLOCKED`.
 
 #### Custom Agent Dispatch (Phase 2)
 
-When a `stages` entry contains a non-builtin agent name, task-runner Phase 2 resolves it at runtime:
+When a `stages` entry contains a non-builtin agent name, supervisor Phase 2 resolves it at runtime:
 
-1. Check if the name is a builtin: `planner`, `designer`, `frontend`, `backend`, `devops`, `resolver`, `reviewer`, `task-runner`
+1. Check if the name is a builtin: `planner`, `designer`, `frontend`, `backend`, `devops`, `resolver`, `reviewer`, `supervisor`
 2. If **not builtin**: read `~/.agent-crew/agents/{name}.md` and prepend its full content to the stage prompt as a system preamble — the spawned Agent receives both the agent definition and the standard stage parameters (`TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH`)
 3. If **builtin**: use the standard stage prompt format (the host already knows builtin agent definitions)
 
@@ -310,7 +310,7 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **resolver** | Automatic merge conflict resolution after parallel runs |
 | **doc-writer** | Documentation authoring for tooling / docs / config tasks |
 | **learning-mentor** | Pedagogical teaching agent — runs 6-Phase structured tutoring sessions (assessment → concept foundation → application → critical evaluation → deepening → closing) with cognitive-load-controlled output |
-| **task-runner** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
+| **supervisor** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 
 ### Backend Agent Workflow (TDD Cycle)
 
@@ -341,7 +341,7 @@ Step 5: Write handoff.md
 Step 6: Return concise completion report
 ```
 
-The planner always follows Case A when invoked through the standard `crew:run` pipeline, because task-runner always includes both `REQUIREMENTS` and `ANALYSIS` in the planner prompt (Phase 1c).
+The planner always follows Case A when invoked through the standard `crew:run` pipeline, because supervisor always includes both `REQUIREMENTS` and `ANALYSIS` in the planner prompt (Phase 1c).
 
 ## Specialized Skills
 
@@ -367,7 +367,7 @@ Skills live under `core/agents/skills/` in the repository and are installed to
 
 **Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
 
-When a request contains multiple independent sub-tasks — even if they touch the same files — run them as parallel task-runners:
+When a request contains multiple independent sub-tasks — even if they touch the same files — run them as parallel supervisors:
 
 ```
 crew:run "Sub-task A" | "Sub-task B" | "Sub-task C"
@@ -375,7 +375,7 @@ crew:run "Sub-task A" | "Sub-task B" | "Sub-task C"
 
 This is enforced at two levels:
 
-- **`core/commands/run.md`** — the `crew:run` orchestrator always fans out to parallel task-runners for multiple tasks
+- **`core/commands/run.md`** — the `crew:run` orchestrator always fans out to parallel supervisors for multiple tasks
 - **`core/global-agents.md`** — the Parallel-First Execution Rule forbids serialization for conflict avoidance
 
 ### Why parallel is always correct for independent tasks
@@ -403,7 +403,7 @@ Every phase transition and stage boundary emits a progress event in two forms si
 
 ### Inline emit format
 
-Every task-runner prints a `[crew]`-prefixed line immediately before starting each phase or stage:
+Every supervisor prints a `[crew]`-prefixed line immediately before starting each phase or stage:
 
 ```
 [crew] {TASK_ID} | {EVENT} | {detail}
@@ -424,7 +424,7 @@ Example output during a pipeline run:
 [crew] 20260510-140000-0 | COMPLETED | branch=feature/implement-order-api-20260510-140000-0 commits=3
 ```
 
-In parallel runs (N > 1), each task-runner's `TASK_ID` prefix makes interleaved lines from concurrent runners distinguishable.
+In parallel runs (N > 1), each supervisor's `TASK_ID` prefix makes interleaved lines from concurrent runners distinguishable.
 
 ### progress.log file
 
@@ -470,7 +470,7 @@ All approval decisions for destructive actions are owned exclusively by the orch
 Stage agents that perform destructive operations (devops, and any agent that deploys, pushes, or merges) **must not issue `AskUserQuestion` directly**. Instead they:
 
 1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
-2. Return a `PLAN:` block to the task-runner:
+2. Return a `PLAN:` block to the supervisor:
    ```text
    PLAN:
      actions:
@@ -487,7 +487,7 @@ Stage agents that perform destructive operations (devops, and any agent that dep
 
 | Mode | Who issues AskUserQuestion |
 |---|---|
-| N == 1 (single task) | task-runner (Phase 2.5) |
+| N == 1 (single task) | supervisor (Phase 2.5) |
 | N > 1 (parallel tasks) | crew:run orchestrator (Step 7.5) |
 
 For N > 1, the orchestrator collects `action-plan.md` from every task and composes a **single consolidated AskUserQuestion** with the combined plan across all tasks.
@@ -495,7 +495,7 @@ For N > 1, the orchestrator collects `action-plan.md` from every task and compos
 ### action-plan.md + approval.md protocol
 
 ```
-stage agent              task-runner / orchestrator
+stage agent              supervisor / orchestrator
 ──────────────────────   ──────────────────────────────────────
 write action-plan.md
 return PLAN: block  →    collect all PLAN blocks
@@ -513,7 +513,7 @@ Several optimizations reduce latency and context overhead across the pipeline:
 
 - **Single-task worktree bypass** — when `N == 1`, `crew:run` skips `git worktree add` entirely and uses the current worktree directly with a plain `git checkout -b`. This eliminates worktree setup latency for the common single-task case.
 - **Pre-created worktrees for parallel runs** — when `N > 1`, all worktrees are created before requirements collection begins so I/O-bound setup overlaps with user-facing interviews.
-- **Context-loading discipline** — task-runner resolves all runtime paths once at startup (Phase 0) and passes only paths (never file contents) to sub-agents. Sub-agents read files directly. This keeps the task-runner's context slim throughout the pipeline.
+- **Context-loading discipline** — supervisor resolves all runtime paths once at startup (Phase 0) and passes only paths (never file contents) to sub-agents. Sub-agents read files directly. This keeps the supervisor's context slim throughout the pipeline.
 - **pipeline.json batching** — sequential (single-agent) stages use one combined `json.dump` call to update both `stage_agent_status` and `completed_stages`, halving write overhead versus parallel stages.
 - **Slim agent creation templates** — Phase 1.5 uses a minimal agent template to reduce spawn latency when creating custom agents.
 - **Skip-if-exists guard in Phase 1.5** — before spawning an agent creation sub-agent, Phase 1.5 checks whether the agent file already exists on disk and skips creation if it does.
@@ -539,7 +539,7 @@ The loop protocol for each stage:
 5. If retry limit reached without passing → report STATUS: BLOCKED with BLOCKER detail.
 ```
 
-If a stage reports `STATUS: BLOCKED`, the task-runner halts the pipeline immediately and writes the blocker detail to `{TASK_DIR}/result.md`. A blocked stage is never silently skipped.
+If a stage reports `STATUS: BLOCKED`, the supervisor halts the pipeline immediately and writes the blocker detail to `{TASK_DIR}/result.md`. A blocked stage is never silently skipped.
 
 ### STOP Directive (`core/hooks/auto-route.sh`)
 
@@ -567,7 +567,7 @@ Edits to `~/.agent-crew` and `~/.claude` paths are always allowed (agent definit
 
 ### Deployment Gate
 
-After all task-runners finish, `crew:run` always displays a per-task Run Summary showing status, branch, commit count, and per-file before/after changes for each task.
+After all supervisors finish, `crew:run` always displays a per-task Run Summary showing status, branch, commit count, and per-file before/after changes for each task.
 
 Deployment approval via `AskUserQuestion` is triggered **only when the pipeline included a `devops` stage**. The full deployment plan is displayed first:
 
@@ -593,7 +593,7 @@ Two approval options are offered:
 - **Approve** — push all branches to origin now
 - **Cancel** — hold; branches remain local for manual push later
 
-Pipelines that do not include a `devops` stage show the summary but skip the approval prompt entirely. `task-runner` never runs `git push` regardless — all remote operations are owned exclusively by the `crew:run` orchestrator.
+Pipelines that do not include a `devops` stage show the summary but skip the approval prompt entirely. `supervisor` never runs `git push` regardless — all remote operations are owned exclusively by the `crew:run` orchestrator.
 
 ## Commands
 

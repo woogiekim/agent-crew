@@ -44,7 +44,7 @@ Before determining the pipeline, discover custom agents registered in agent-crew
 
 ```bash
 # Built-in agent list (excluded targets)
-BUILTIN_AGENTS="planner designer frontend backend resolver task-runner"
+BUILTIN_AGENTS="planner designer frontend backend resolver supervisor"
 
 # Discover custom agents
 ls ~/.agent-crew/agents/*.md 2>/dev/null | while read f; do

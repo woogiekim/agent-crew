@@ -30,7 +30,7 @@ detailed contract for each flag lives at
 | Flag | Status | Purpose (one line) | Detail doc |
 |---|---|---|---|
 | `task_tools`          | implemented | Host task lifecycle tools — observability mirror + approval signal carrier | `capabilities/task-tools.md` |
-| `agent_background`    | implemented | Background subagent fan-out (parallel task-runner spawn) | `capabilities/agent-background.md` |
+| `agent_background`    | implemented | Background subagent fan-out (parallel supervisor spawn) | `capabilities/agent-background.md` |
 | `monitor_tool`        | implemented | Streaming output surface over background processes | `capabilities/monitor-tool.md` |
 | `cost_tracking`       | planned     | Per-task token usage reporting (gates cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
 | `hook_system`         | planned     | Host enforces validators at lifecycle moments (PreToolUse, PostToolUse) | `capabilities/hook-system.md` |
@@ -47,7 +47,7 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json
 ```
 
 - Written by the host adapter's `setup.sh` (e.g., `adapters/claude/setup.sh`).
-- Read by the core pipeline (task-runner, `crew:status`, etc.) at runtime.
+- Read by the core pipeline (supervisor, `crew:status`, etc.) at runtime.
 - Per-project: a `crew:setup` reset wipes the project state directory,
   which removes `capabilities.json` along with it — the next setup
   re-creates it.
@@ -104,7 +104,7 @@ above ensures the pipeline still works.
 
 ## Consumer Contract (core pipeline)
 
-A consumer of the capability surface (task-runner, `crew:status`,
+A consumer of the capability surface (supervisor, `crew:status`,
 future orchestrator code) MUST:
 
 1. Resolve `capabilities.json` via the location above.
@@ -119,11 +119,11 @@ future orchestrator code) MUST:
 
 ## Stderr Mirroring (capability-independent)
 
-The task-runner mirrors every `progress.log` append to `stderr`. This
+The supervisor mirrors every `progress.log` append to `stderr`. This
 behavior is **not** gated by any flag because it is host-agnostic:
 streaming-capable hosts surface stderr automatically, and other hosts
 simply see it on the terminal. Stderr mirroring is described in
-`core/agents/task-runner.md`.
+`core/agents/supervisor.md`.
 
 ## Related Files
 

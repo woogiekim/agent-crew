@@ -3,7 +3,7 @@
 # PreToolUse hook for Edit and Write tools.
 # Blocks direct file edits to project source files when no active crew task
 # is in progress. Enforces the rule: all implementation work must go through
-# crew:run -> task-runner pipeline.
+# crew:run -> supervisor pipeline.
 
 INPUT=$(cat)
 
@@ -60,12 +60,12 @@ if any(file_path.startswith(p) for p in allowed_prefixes):
 # adapters that have not adopted the per-task marker):
 #
 #   1. Legacy singleton:   tasks/active
-#      Used by single task-runner workflows and by hosts that have not opted
+#      Used by single supervisor workflows and by hosts that have not opted
 #      into background fan-out. Existing installations rely on this path; it
 #      must continue to work without any change.
 #
 #   2. Per-task markers:   tasks/active.<TASK_ID>
-#      Required by background fan-out. When multiple task-runners run in
+#      Required by background fan-out. When multiple supervisors run in
 #      independent host sessions, each owns its own marker so concurrent
 #      teardown by one runner does not strand edits made by another.
 #

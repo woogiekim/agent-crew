@@ -1,10 +1,10 @@
 ---
 name: planner
 description: >
-  DIRECT-INVOKE FALLBACK: The task-runner pipeline uses the merged analyst agent
+  DIRECT-INVOKE FALLBACK: The supervisor pipeline uses the merged analyst agent
   for Phase 1b+1c (analysis + planning in one spawn). The planner is retained as a
   standalone fallback for cases where only planning is needed without a prior
-  analyst run, or when invoked directly by the user outside the task-runner pipeline.
+  analyst run, or when invoked directly by the user outside the supervisor pipeline.
   TRIGGER when: user directly requests a PRD or pipeline plan without going through
   crew:run; user asks which agents or pipeline to use in isolation.
   SKIP when: crew:run is being used — the analyst handles planning in that path.
@@ -110,7 +110,7 @@ Before determining the pipeline, enumerate all available agents and evaluate whe
 
 ```bash
 # Built-in agent list
-BUILTIN_AGENTS="planner designer frontend backend devops resolver task-runner reviewer"
+BUILTIN_AGENTS="planner designer frontend backend devops resolver supervisor reviewer"
 
 # Discover custom agents
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -164,7 +164,7 @@ to reduce total wall-clock time:
   artifacts (`design-spec.md` vs. domain/API code) and do not depend on each other
   within the same stage.
 - `devops` and `resolver` are always sequential — they depend on prior stage output.
-- When uncertain, put agents in the same stage; the task-runner enforces independence.
+- When uncertain, put agents in the same stage; the supervisor enforces independence.
 
 | Request Type | stages |
 |---|---|
@@ -207,7 +207,7 @@ Run the following validation before returning:
 2. For every non-builtin agent name in `stages`, verify it has a corresponding entry in `needs_creation`. If missing, add a `needs_creation` entry with a best-effort `reason` and `role` derived from the stage context.
 
 Builtin agents that do NOT need `needs_creation` entries:
-  planner, designer, frontend, backend, devops, resolver, reviewer, task-runner
+  planner, designer, frontend, backend, devops, resolver, reviewer, supervisor
 
 ---
 

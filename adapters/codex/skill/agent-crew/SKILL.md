@@ -53,7 +53,7 @@ question, such as "how", "why", "what", "explain", "describe", `어떻게`, `왜
 Keep workflow decisions dependent on the provider-neutral command definitions
 under `~/.agent-crew/commands/` and global rules under `~/.agent-crew/AGENTS.md`.
 Codex-specific behavior in this skill may only select and invoke those workflow
-intents. Do not duplicate task-runner, planner, backend, frontend, resolver, or
+intents. Do not duplicate supervisor, planner, backend, frontend, resolver, or
 approval logic inside this skill.
 
 ## Execution Map
@@ -93,7 +93,7 @@ For `crew:run`, execute the full orchestration workflow from
 2. If no task description is provided, follow Step 1 of the command definition
    and ask for the task through the host structured input UI.
 3. Perform mandatory requirements collection.
-4. Delegate to task-runner as defined by the command.
+4. Delegate to supervisor as defined by the command.
 5. Show the required run and implementation summaries.
 
 Never replace `crew:run` with `./gradlew check`, `npm test`, linting, generic
@@ -119,7 +119,7 @@ adapter therefore advertises `interactive_question = false` in its
 `core/rules/capabilities/interactive-question.md`).
 
 When core emits an `ask_question(prompt, options[])` intent — for example, at
-the `crew:run` Step 1.5 injection prompt, the task-runner Phase 1d plan
+the `crew:run` Step 1.5 injection prompt, the supervisor Phase 1d plan
 approval gate, or the Phase 2.5 stage action gate — Codex MUST fall back to a
 **structured markdown question** in the chat. The format is:
 

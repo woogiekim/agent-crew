@@ -6,7 +6,7 @@ description: >
   uncertainty to the user via the interactive_question capability with
   structured options. Caches the resolved decision to keep retries
   idempotent.
-applies-to: run.md, task-injection.md, supervisor (task-runner), replay, migration, all classifiers
+applies-to: run.md, task-injection.md, supervisor, replay, migration, all classifiers
 ---
 
 # Disambiguation Rule

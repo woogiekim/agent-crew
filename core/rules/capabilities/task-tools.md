@@ -6,7 +6,7 @@ The host exposes structured task lifecycle tools (TaskCreate, TaskList,
 TaskGet, TaskUpdate). One flag powers two distinct things that share the
 same surface:
 
-- **Observability mirror.** The task-runner registers each pipeline (and
+- **Observability mirror.** The supervisor registers each pipeline (and
   each stage as a child task) so external observers — `crew:status`, the
   host's task UI — can see lifecycle state without parsing `pipeline.json`.
   The per-stage `blockedBy` DAG is the canonical home for stage-dependency
@@ -35,12 +35,12 @@ Notes:
 
 - Status vocabulary: `pending | in_progress | blocked | completed | cancelled`.
 - `blockedBy` is used for the per-stage DAG mirror (pattern P3 — see
-  `core/agents/task-runner.md` Phase 1c-bis).
+  `core/agents/supervisor.md` Phase 1c-bis).
 - `metadata.action_plan_path` is the agreed key used by the
   approval-signal pattern (P1 + P6) to carry the path to a plan that
   needs user approval.
 - `getTask` MUST distinguish token-truncation tails from real crashes
-  (pattern P7 — `core/agents/task-runner.md` Stage Retry Rule). If the
+  (pattern P7 — `core/agents/supervisor.md` Stage Retry Rule). If the
   host cannot make this distinction natively, the adapter wraps the call
   so the contract still holds.
 
@@ -53,16 +53,16 @@ Core reads `${STATE_DIR}/capabilities.json["task_tools"]` once at
 lifecycle entry and passes the boolean to every later check. Concrete
 call sites:
 
-- **task-runner Phase 0** — capability bootstrap; loads the flag.
-- **task-runner Phase 1c-bis** — per-stage `createTask` with `blockedBy`
+- **supervisor Phase 0** — capability bootstrap; loads the flag.
+- **supervisor Phase 1c-bis** — per-stage `createTask` with `blockedBy`
   DAG (P3).
-- **task-runner Phase 2** — `updateTask(in_progress | completed | blocked)`
+- **supervisor Phase 2** — `updateTask(in_progress | completed | blocked)`
   per stage emit.
-- **task-runner Phase 2.5** — `updateTask(blocked)` carries plan-ready;
+- **supervisor Phase 2.5** — `updateTask(blocked)` carries plan-ready;
   `getTask` long-poll wakes the orchestrator on approval (P1 + P6).
-- **task-runner Stage Retry Rule** — `getTask().status` classifies crash
+- **supervisor Stage Retry Rule** — `getTask().status` classifies crash
   vs token-truncation (P7).
-- **`core/commands/run.md` Step 6 Task-Runner Health Check** —
+- **`core/commands/run.md` Step 6 Supervisor Health Check** —
   `getTask`-based crash classification (P7).
 - **`core/commands/run.md` Step 7.5** — `listTasks`-based PLAN_READY
   detector (P2); `updateTask(in_progress | cancelled)` releases waiters
@@ -114,7 +114,7 @@ Producer:
 
 Consumer:
 
-- `core/agents/task-runner.md`
+- `core/agents/supervisor.md`
 - `core/commands/run.md` (Step 6, Step 7.5)
 - `core/commands/status.md` (Step 1b)
 - `core/rules/task-injection.md` (TaskGet wakeup in the injection path)

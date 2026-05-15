@@ -11,7 +11,7 @@ Jamo blocks).
 Hangul characters detected in:
 - Raw task strings passed to `crew:run`
 - TASK values written to `pipeline.json` or `pipeline state`
-- Task descriptions forwarded to any downstream agent (requirements, task-runner,
+- Task descriptions forwarded to any downstream agent (requirements, supervisor,
   planner, backend, frontend, designer, reviewer, devops)
 
 ## Normalization Step
@@ -45,7 +45,7 @@ Use terminology consistent with the agent-crew architecture:
 
 | Term | Meaning |
 |---|---|
-| `task-runner` | The delegated execution agent for a single task |
+| `supervisor` | The delegated execution agent for a single task |
 | `pipeline` | The sequence of stages that execute a task |
 | `stage` | A single agent invocation within a pipeline (e.g., backend, reviewer) |
 | `handoff` | The transfer of output from one stage to the next |
@@ -84,7 +84,7 @@ their canonical English operational equivalents:
   English-language agent prompts. All orchestration concepts must appear in English.
 - **Vague phrasing**: Do not normalize to instructions like "do a review" or
   "update things." Every normalized instruction must be specific enough that a
-  task-runner can derive a concrete pipeline without further clarification.
+  supervisor can derive a concrete pipeline without further clarification.
 - **Loss of implied scope**: Korean instructions often imply end-to-end scope
   (e.g., "배포해" implies build + test + push, not just a `git push`). Preserve that
   full scope in the normalized output.
@@ -96,7 +96,7 @@ This normalization rule is enforced at three points in the execution pipeline:
 | Location | When |
 |---|---|
 | `crew:run` Step 1 — Task collection | Before the raw input is normalized into the task list |
-| `task-runner` Phase 0 — TASK variable | Before writing TASK to `pipeline.json` or any state file |
+| `supervisor` Phase 0 — TASK variable | Before writing TASK to `pipeline.json` or any state file |
 | Requirements agent task description | Before the TASK value is passed to the requirements interview |
 
 ## Examples

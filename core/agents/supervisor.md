@@ -1,5 +1,5 @@
 ---
-name: task-runner
+name: supervisor
 description: >
   Autonomously executes the full pipeline for one task.
   Spawned by `crew:run` for every task, including single-task runs.
@@ -8,7 +8,7 @@ description: >
 model: inherit
 ---
 
-# Task Runner
+# Supervisor
 
 Autonomously completes the entire pipeline for one assigned task.
 It is the single execution engine behind `crew:run`.
@@ -17,7 +17,7 @@ It is the single execution engine behind `crew:run`.
 
 **Do not keep file contents inline in context.**
 Pass only file paths to sub-agents, and let sub-agents read the files directly.
-The task-runner itself should only maintain coordinates (paths, state, completion status).
+The supervisor itself should only maintain coordinates (paths, state, completion status).
 
 - Immediately compact when context usage reaches 60%
 - Do not read file contents from agent completion responses — verify only by path
@@ -25,7 +25,7 @@ The task-runner itself should only maintain coordinates (paths, state, completio
 
 ### Token-Limit Recovery Rule
 
-If the task-runner is approaching its own token limit mid-stage (context nearing
+If the supervisor is approaching its own token limit mid-stage (context nearing
 exhaustion), save current progress before compacting:
 
 1. Write a checkpoint to `{TASK_DIR}/context/stage_{i}_progress.md` capturing which
@@ -101,7 +101,7 @@ if it does not exist.
 
 ### Parallel run prefix rule
 
-In parallel runs (N > 1), each task-runner prefixes its own TASK_ID so lines
+In parallel runs (N > 1), each supervisor prefixes its own TASK_ID so lines
 from concurrent runners remain distinguishable:
 
 ```
@@ -126,7 +126,7 @@ from concurrent runners remain distinguishable:
   constraints: {constraints answer(s)}
   ```
   When present, skip Phase 1a (requirement collection) and pass directly to the planner.
-  When absent, the task-runner collects requirements via the host's interactive
+  When absent, the supervisor collects requirements via the host's interactive
   question mechanism (see `core/rules/capabilities/interactive-question.md`) in
   Phase 1a before invoking the planner.
 
@@ -194,7 +194,7 @@ except Exception:
 file-based primary (`progress.log`, `approval.md`, `pipeline.json`) when the
 flag is `0`.
 
-If `HAS_TASK_TOOLS == 1`, the task-runner registers itself with the host's task
+If `HAS_TASK_TOOLS == 1`, the supervisor registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
 
 1. **Check whether the orchestrator already pre-created a parent host task.**
@@ -221,7 +221,7 @@ surface so users can see live pipeline progress in the host UI:
    ```text
    TaskCreate(
      subject="crew:run — {TASK truncated to 60 chars}",
-     description="agent-crew task-runner pipeline for TASK_ID={TASK_ID}. "
+     description="agent-crew supervisor pipeline for TASK_ID={TASK_ID}. "
                  "File source of truth: {TASK_DIR}/progress.log",
      activeForm="Running crew:run pipeline",
      metadata={"task_id": "{TASK_ID}", "branch": "{BRANCH}",
@@ -321,7 +321,7 @@ Emit before checking:
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1a — Requirement collection" >> "${TASK_DIR}/progress.log"
 ```
 
-**Check whether `REQUIREMENTS` was provided in the task-runner's own input.**
+**Check whether `REQUIREMENTS` was provided in the supervisor's own input.**
 
 ##### Case A — `REQUIREMENTS` is present
 
@@ -447,7 +447,7 @@ the `REQUIREMENTS` value for Phase 1b.
 
 > **`MODE: two_round` is a deeper fallback** for rare cases where the
 > single-round answers themselves contain ambiguity the agent decides it
-> cannot resolve without a domain-specific follow-up. The task-runner does
+> cannot resolve without a domain-specific follow-up. The supervisor does
 > NOT request `two_round` directly; only the agent may escalate.
 
 ---
@@ -476,8 +476,8 @@ within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0.
 > Write tool call to project source files when this marker is absent. If
 > this step is skipped, every stage agent in Phase 2 will be unable to
 > write to the codebase. The orchestrator (`crew:run`) MUST NOT create this
-> marker on its own — only the task-runner subagent creates it here, which
-> is why the orchestrator must always delegate to a task-runner subagent
+> marker on its own — only the supervisor subagent creates it here, which
+> is why the orchestrator must always delegate to a supervisor subagent
 > rather than executing the pipeline inline. See
 > `core/commands/run.md` Step 6 "Mandatory Delegation Rule" for the
 > companion rule on the orchestrator side.
@@ -498,7 +498,7 @@ mkdir -p "${TASKS_DIR}"
 touch "${TASKS_DIR}/active"
 
 # Per-task marker — required by P4 background fan-out so concurrent
-# task-runners owning independent host sessions do not strand each other's
+# supervisors owning independent host sessions do not strand each other's
 # edits when one teardown removes the singleton early. The
 # direct-edit-guard hook accepts EITHER marker, so this dual write costs
 # nothing in single-mode workflows and is required in parallel/background
@@ -990,7 +990,7 @@ crash — identical to pre-P7 behavior.
 
 Before spawning any stage agent, determine whether it is a builtin or custom agent:
 
-BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, task-runner]
+BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, supervisor]
 
 If the agent name is NOT in BUILTIN_AGENTS:
   1. Read its definition from `${AGENT_CREW_HOME}/agents/{name}.md`
@@ -1184,7 +1184,7 @@ Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
 ### Phase 2.5: Stage Action Gate
 
-The task-runner owns all approval decisions for its pipeline. Stage agents
+The supervisor owns all approval decisions for its pipeline. Stage agents
 (devops, reviewer, etc.) MUST NOT issue their own host interactive question
 mechanism (see `core/rules/capabilities/interactive-question.md`) for deploy,
 merge, push, or destructive operations. Instead they write a PLAN block and wait.
@@ -1216,7 +1216,7 @@ git -C "${PROJECT_ROOT}" log --oneline HEAD ^main 2>/dev/null | head -10
 
 #### Step 2 — Collect PLAN blocks from stage agents
 
-When a stage agent returns a `PLAN:` block (instead of executing), the task-runner:
+When a stage agent returns a `PLAN:` block (instead of executing), the supervisor:
 
 1. Collects PLAN blocks from all stage agents in the current execution group
 2. Writes a consolidated plan to `{TASK_DIR}/context/action-plan.md`:
@@ -1243,7 +1243,7 @@ When a stage agent returns a `PLAN:` block (instead of executing), the task-runn
 
    **P1 — capability-gated event wait (preferred path when `HAS_TASK_TOOLS == 1`).**
    When the parent host task exists (its id was written to
-   `${TASK_DIR}/host-task-id.txt` in Phase 0), the task-runner additionally
+   `${TASK_DIR}/host-task-id.txt` in Phase 0), the supervisor additionally
    signals plan-readiness via the host task surface and waits on event
    transition instead of polling the file every 5 seconds:
 
@@ -1308,7 +1308,7 @@ When a stage agent returns a `PLAN:` block (instead of executing), the task-runn
    wakeup mechanism fired. The file write is the contract; the host call is
    only the wakeup signal.
 
-4. If `EXECUTION_MODE == single`: the task-runner issues the structured
+4. If `EXECUTION_MODE == single`: the supervisor issues the structured
    user-choice intent (per `core/rules/capabilities/interactive-question.md`)
    directly (see Step 3 below) and writes the result to `approval.md` itself.
 
@@ -1480,10 +1480,10 @@ Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see
 1. **Legacy singleton** `tasks/active` — used by single-task workflows and by
    adapters that have not adopted background fan-out.
 2. **Per-task markers** `tasks/active.<TASK_ID>` — used when the orchestrator
-   spawns task-runners as background host agents (`agent_background=true`)
+   spawns supervisors as background host agents (`agent_background=true`)
    because each runner must own its own marker so concurrent teardown is safe.
 
-Each task-runner removes only the marker it owns:
+Each supervisor removes only the marker it owns:
 
 ```bash
 PROJECT_NAME=$(basename "${PROJECT_ROOT}")
@@ -1553,12 +1553,12 @@ Do not include file contents, code, or long explanations.
 - Never complete without writing `{TASK_DIR}/result.md`
 - Final return value must remain within 5 lines and concise
 - **Never push to remote** — `git push` is strictly forbidden. Local commits only.
-  The task-runner commits exclusively to its own feature branch (`{BRANCH}`).
+  The supervisor commits exclusively to its own feature branch (`{BRANCH}`).
   The crew orchestrator handles all remote operations: for parallel runs (N > 1),
   it merges all task feature branches into `main` in Step 9 of `run.md` before
   pushing; for single-task runs (N == 1), it pushes the feature branch directly.
   Both paths require explicit user approval (Step 11 of `run.md`) before any push.
 - **Never stop mid-pipeline** — if a sub-agent returns without a `STATUS:` line,
   treat it as a crash and apply the Stage Retry Rule (up to 5 crash attempts). Only
-  after 5 consecutive crash failures may the task-runner halt with `STATUS: blocked`.
-  A task-runner that silently stops without writing `result.md` violates this rule.
+  after 5 consecutive crash failures may the supervisor halt with `STATUS: blocked`.
+  A supervisor that silently stops without writing `result.md` violates this rule.

@@ -1,8 +1,8 @@
 # crew:run - Unified Task Orchestration
 
 Run one or more tasks through the same execution engine.
-Every task is executed by a `task-runner`. A single request spawns one
-`task-runner`; multiple requests spawn multiple `task-runner` agents.
+Every task is executed by a `supervisor`. A single request spawns one
+`supervisor`; multiple requests spawn multiple `supervisor` agents.
 
 `crew:run` is the canonical workflow entry point.
 
@@ -20,7 +20,7 @@ classify trivial intent (Step 1.7) ──► trivial?
 prepare one execution context per task   inline dispatch
       |                                  (status / commit /
       v                                   merge / push / deploy /
-delegate one task-runner per task         tag / rollback) with
+delegate one supervisor per task         tag / rollback) with
       |                                   interactive-question approval gate
       v                                   for destructive ops
 collect results and provide merge guidance
@@ -29,19 +29,19 @@ collect results and provide merge guidance
 ## Core Principle
 
 The orchestration engine should not run planner, designer, backend, or frontend
-stages directly. It should always delegate a full task to `task-runner`.
+stages directly. It should always delegate a full task to `supervisor`.
 
 This gives single-task and multi-task execution the same engine:
 
-- Single request -> one `task-runner`
-- Multiple requests -> multiple `task-runner` agents
+- Single request -> one `supervisor`
+- Multiple requests -> multiple `supervisor` agents
 
 ## Parallel-First Rule
 
 **Always prefer parallel fan-out over sequential execution.**
 
 File overlap between parallel tasks is not a reason to serialize. If parallel
-task-runners modify the same file, merge conflicts are resolved by the
+supervisors modify the same file, merge conflicts are resolved by the
 **resolver agent** after all runners complete — that is its explicit purpose.
 
 Sequential execution (`N == 1`) is only correct when tasks have a true
@@ -169,7 +169,7 @@ adapter contract.
 
 Task injection allows a user to submit new tasks while an existing `crew:run`
 parallel fan-out is still in progress. Injected tasks join the live session:
-they get their own TASK_ID, TASK_DIR, git worktree, and task-runner, and they
+they get their own TASK_ID, TASK_DIR, git worktree, and supervisor, and they
 participate in the final result collection, resolver, and approval gates
 alongside the original tasks.
 
@@ -230,7 +230,7 @@ ask_question:
 
 - **Inject into session**: follow the injection execution path below.
 - **Run independently**: proceed normally to Step 2 as a fresh N=1 run
-  (inline mode — task-runner runs in the current turn, not as a background agent).
+  (inline mode — supervisor runs in the current turn, not as a background agent).
 
 **If `IS_LIVE_SESSION == 1` AND N > 1 AND `--inject` was NOT passed:**
 A live session exists, but the user submitted multiple tasks without an explicit
@@ -278,9 +278,9 @@ prompt, or the N>1 prompt):
 3. For each new task, generate a new `TASK_ID`, `TASK_DIR`, `BRANCH`, and
    worktree — identical to Step 4. Skip Step 2 and Step 3 (no resume
    detection for injected tasks). Proceed directly to Step 5 (requirements)
-   and then Step 6 (task-runner spawn as background agent).
+   and then Step 6 (supervisor spawn as background agent).
 
-4. After spawning the injected task-runner(s), register each into
+4. After spawning the injected supervisor(s), register each into
    `session.json` by appending to its `tasks` array:
 
    ```bash
@@ -305,7 +305,7 @@ prompt, or the N>1 prompt):
    ```
 
 5. Print the injection summary and **RETURN immediately** (end the turn).
-   Do NOT enter any poll loop. The background task-runner(s) will run
+   Do NOT enter any poll loop. The background supervisor(s) will run
    autonomously; use `crew:status` to monitor progress or
    `crew:status --collect` to wait for results.
 
@@ -428,7 +428,7 @@ ask_question:
       description: "Display the running task's current phase / stage progress;
                     do not spawn a new task."
     - label: "Start as a new task anyway"
-      description: "Spawn a new task-runner for this description; the two
+      description: "Spawn a new supervisor for this description; the two
                     will run in parallel under the same session."
     - label: "Cancel"
       description: "Abort this crew:run invocation; the running task
@@ -467,7 +467,7 @@ lacks the metadata to support it.
 > **This step runs after Step 1.5 (Injection Detection) and before Step 2 (State
 > Init). It detects trivial operational intents — merge, push, deploy, tag,
 > rollback, status, commit-only — and dispatches them directly in the
-> orchestrator turn, bypassing requirements / analyst / planner / task-runner /
+> orchestrator turn, bypassing requirements / analyst / planner / supervisor /
 > stage agents / reviewer entirely.**
 >
 > **Goal**: reduce a "merge and push" run from 2–5 minutes to under 30 seconds.
@@ -497,7 +497,7 @@ pipeline contract.
 > **Step 5 Exception (explicit).** The framework's standing "NEVER-SKIP" rule
 > on Step 5 (Collect Requirements) does not apply when the Step 1.7 classifier
 > matches a trivial intent. The whole point of the fast path is to skip
-> requirements collection, the analyst, the planner, the task-runner spawn, and
+> requirements collection, the analyst, the planner, the supervisor spawn, and
 > the reviewer for operational requests that have no requirements to collect.
 > Step 5 remains mandatory for every request that falls through to Step 2.
 
@@ -672,7 +672,7 @@ The function returns one of:
 
 #### Dispatch table
 
-When `INTENT != "none"`, dispatch inline. **No task-runner is spawned. No
+When `INTENT != "none"`, dispatch inline. **No supervisor is spawned. No
 `TASK_DIR` is created. No `pipeline.json`, `progress.log`, `result.md`,
 worktree, or branch is created** (the destructive intents operate on the
 current branch / HEAD only).
@@ -777,10 +777,10 @@ Per-intent commands (executed inline only after Approve):
 - Step 3 (resume detection) — no resume state to track for stateless ops
 - Step 4 (task context) — no per-task setup
 - Step 5 (requirements collection) — see Step 5 Exception above
-- Step 6 (task-runner spawn) — no subagent spawned at all
-- Inside the task-runner: analyst, planner, stage agents (designer, backend,
+- Step 6 (supervisor spawn) — no subagent spawned at all
+- Inside the supervisor: analyst, planner, stage agents (designer, backend,
   frontend, devops, reviewer), Phase 1d plan approval, Phase 2.5 stage action
-  gate — none of these run because no task-runner is spawned
+  gate — none of these run because no supervisor is spawned
 
 #### What the fast path still honors
 
@@ -791,8 +791,8 @@ Per-intent commands (executed inline only after Approve):
   pass through the host's interactive question mechanism (see
   `core/rules/capabilities/interactive-question.md`) exactly as the framework
   requires
-- "task-runner never pushes" rule — the fast path is the orchestrator, not the
-  task-runner, so it is allowed to push after approval (per Steps 10–11)
+- "supervisor never pushes" rule — the fast path is the orchestrator, not the
+  supervisor, so it is allowed to push after approval (per Steps 10–11)
 
 #### Fall-through
 
@@ -859,7 +859,7 @@ ask_question:
   options:
     - label: "Treat as trivial: {trivial_candidate}"
       description: "Dispatch as a fast-path {trivial_candidate} (status,
-                    commit, push, etc.); do not spawn a task-runner."
+                    commit, push, etc.); do not spawn a supervisor."
     - label: "Treat as a full development task"
       description: "Run the regular pipeline (analyst → planner → stages →
                     reviewer)."
@@ -915,7 +915,7 @@ If `STATE_DIR` does not exist, stop with:
 Run crew:setup first.
 ```
 
-Before spawning any task-runner agents, capture the current HEAD:
+Before spawning any supervisor agents, capture the current HEAD:
 
 ```bash
 PRE_RUN_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
@@ -944,7 +944,7 @@ If resuming:
 - reuse the existing `TASK_ID`
 - reuse the existing `TASK_DIR`
 - reuse the recorded branch or worktree metadata if present
-- continue through the same `task-runner`
+- continue through the same `supervisor`
 
 ### 4. Prepare Each Task Context
 
@@ -1075,7 +1075,7 @@ json.dump(session, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 Where `${TASK_LIST_JSON}` is a JSON array of `{task_id, task_dir, branch, task}`
 built from the task contexts created in this step.
 
-The session file is written atomically before any task-runner is spawned, so
+The session file is written atomically before any supervisor is spawned, so
 that a concurrent `crew:run --inject` arriving immediately after Step 4 will
 see a valid `session.json` with `status: running`.
 
@@ -1265,13 +1265,13 @@ For each AMBIGUOUS task i:
 
 Wait for **all** spawned requirements agents to complete before proceeding to
 Step 6. Extract each task's `REQUIREMENTS` block from its agent's response and
-record it. Do not run task-runners while requirements collection is still in
+record it. Do not run supervisors while requirements collection is still in
 progress for any AMBIGUOUS task.
 
-### 6. Run Task Runners
+### 6. Run Supervisors
 
 > **MANDATORY DELEGATION RULE — non-negotiable.** The orchestrator (the Claude
-> instance loaded with this `run.md`) MUST spawn a `task-runner` subagent for
+> instance loaded with this `run.md`) MUST spawn a `supervisor` subagent for
 > every task via the host's Agent/Task tool. The orchestrator MUST NOT run
 > planner, designer, backend, frontend, devops, or any other stage agent
 > directly, and MUST NOT execute pipeline phases (Phase 0 through Phase 3)
@@ -1279,22 +1279,22 @@ progress for any AMBIGUOUS task.
 > and it is a workflow violation.
 >
 > Required behavior:
-> - Call the host's Agent tool **once per task** with `subagent_type: task-runner`
+> - Call the host's Agent tool **once per task** with `subagent_type: supervisor`
 >   (or the host's equivalent) and the input block defined below.
-> - Wait for each `task-runner` to return its STATUS report. The orchestrator's
->   job is dispatch, health check (Task-Runner Health Check below), and result
+> - Wait for each `supervisor` to return its STATUS report. The orchestrator's
+>   job is dispatch, health check (Supervisor Health Check below), and result
 >   collection — not implementation.
 >
 > Forbidden behaviors (each one is a bug):
-> - Reading `task-runner.md` and "playing the role" of task-runner inline.
+> - Reading `supervisor.md` and "playing the role" of supervisor inline.
 > - Invoking the planner agent directly from this orchestrator step.
 > - Performing `touch ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active`
->   from the orchestrator — that marker is created by `task-runner` Phase 1c,
+>   from the orchestrator — that marker is created by `supervisor` Phase 1c,
 >   and creating it elsewhere masks the underlying delegation failure.
 > - Editing project source files from the orchestrator. The orchestrator only
 >   writes to `${TASK_DIR}` (state files) and to remotes during Step 11.
 >
-> Why this matters: `task-runner.md` Phase 1b+1c is the only place that creates
+> Why this matters: `supervisor.md` Phase 1b+1c is the only place that creates
 > the active task marker the `direct-edit-guard` PreToolUse hook checks for. If
 > the orchestrator skips delegation, Phase 1b+1c never executes, the marker is
 > never created, and every subsequent Edit/Write to project source is blocked by
@@ -1302,20 +1302,20 @@ progress for any AMBIGUOUS task.
 > to a missing delegation here.
 
 > **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
-> handled **inside** the task-runner at Phase 1d. The task-runner reads `pipeline.json`
+> handled **inside** the supervisor at Phase 1d. The supervisor reads `pipeline.json`
 > and `analysis.md` after the merged analyst spawn, displays the full implementation
 > plan, and emits a structured user-choice intent (see
 > `core/rules/capabilities/interactive-question.md`) before any stage agent
 > executes. Do NOT add a separate plan approval gate here in the orchestrator
 > for N == 1.
 >
-> **Plan Approval Gate (N > 1):** For parallel runs, each task-runner independently
-> handles Phase 1d for its own pipeline. After all task-runners have finished Phase
+> **Plan Approval Gate (N > 1):** For parallel runs, each supervisor independently
+> handles Phase 1d for its own pipeline. After all supervisors have finished Phase
 > 1b+1c (merged analysis+planning), each will pause at Phase 1d awaiting user
 > approval. The orchestrator does not consolidate these approvals — each
-> task-runner's Phase 1d is independent.
+> supervisor's Phase 1d is independent.
 
-Delegate one `task-runner` per task. The orchestrator chooses between two
+Delegate one `supervisor` per task. The orchestrator chooses between two
 delegation surfaces based on the `agent_background` capability flag.
 
 Read both `agent_background` and `task_tools` in a single Python process so
@@ -1338,7 +1338,7 @@ except Exception:
 ```
 
 **P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
-Spawn each task-runner as a host background agent pinned to a pre-created
+Spawn each supervisor as a host background agent pinned to a pre-created
 parent host task, print a "Background Session Started" summary, and **RETURN
 immediately** (end the turn). Do NOT enter any poll loop.
 
@@ -1347,7 +1347,7 @@ This branch runs for **every** nontrivial task — including single-task runs
 to the inline path is gone: unifying single and parallel under the background
 surface is what makes mid-session task injection work for ordinary one-shot
 `crew:run` invocations as well as for parallel fan-outs. Trivial intents
-(Step 1.7) still dispatch inline because they never spawn a task-runner.
+(Step 1.7) still dispatch inline because they never spawn a supervisor.
 
 ```text
 HAS_TASK_TOOLS=$(python3 -c "...task_tools...")  # already cached, see Step 7.5
@@ -1358,7 +1358,7 @@ for each task i:
     # its own TaskCreate when this path is taken).
     HOST_TASK_ID = TaskCreate(
         subject=f"crew:run — {TASK truncated to 60 chars}",
-        description=f"agent-crew task-runner pipeline for TASK_ID={TASK_ID}. "
+        description=f"agent-crew supervisor pipeline for TASK_ID={TASK_ID}. "
                     f"File source of truth: {TASK_DIR}/progress.log",
         activeForm="Running crew:run pipeline (background)",
         metadata={
@@ -1375,14 +1375,14 @@ for each task i:
     # the host's background-agent surface — for Claude Code this maps to the
     # background task-creation flow that captures stdout/stderr into
     # TaskOutput so crew:status can read it live (P5).
-    spawn task-runner as background agent with:
+    spawn supervisor as background agent with:
         TASK, TASK_ID, TASK_DIR, PROJECT_ROOT, BRANCH,
         EXECUTION_MODE=parallel,
         HOST_TASK_ID=$HOST_TASK_ID,
         REQUIREMENTS=$REQUIREMENTS
 ```
 
-After all N background task-runners are spawned (all `TaskCreate` + spawn calls
+After all N background supervisors are spawned (all `TaskCreate` + spawn calls
 have been issued), print the following summary and **STOP — end the turn**:
 
 ```
@@ -1390,7 +1390,7 @@ have been issued), print the following summary and **STOP — end the turn**:
  Background Session Started
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Session : {SESSION_ID}
-Tasks   : {N} task-runner(s) spawned as background agents
+Tasks   : {N} supervisor(s) spawned as background agents
 
   Task 1: {TASK_1 description truncated to 60 chars}
           branch={BRANCH_1}  id={TASK_ID_1}
@@ -1416,7 +1416,7 @@ Returning early here is what enables true mid-run task injection: because the
 orchestrator's turn has ended, the user can immediately run
 `crew:run "new task"` to inject into the live session.
 
-Under this path, **each task-runner owns a per-task `direct-edit-guard`
+Under this path, **each supervisor owns a per-task `direct-edit-guard`
 marker** (`tasks/active.<TASK_ID>`) so concurrent teardown by one runner does
 not strand another runner's edits. The hook accepts either layout — see
 `core/hooks/direct-edit-guard.sh` and
@@ -1426,25 +1426,25 @@ not strand another runner's edits. The hook accepts either layout — see
 (Codex, generic, and any other host that has not advertised
 `agent_background = true` in `capabilities.json`). It is the best-effort
 fallback for hosts without a background-agent surface; the orchestrator's
-turn stays alive until every task-runner returns, and task injection is
+turn stays alive until every supervisor returns, and task injection is
 effectively unavailable.
 
-- If `N == 1`, invoke one `task-runner` via the host's Agent/Task tool. Do not
+- If `N == 1`, invoke one `supervisor` via the host's Agent/Task tool. Do not
   execute the pipeline inline.
-- If `N > 1`, invoke all `task-runner` agents concurrently in a single
+- If `N > 1`, invoke all `supervisor` agents concurrently in a single
   response containing N parallel Agent tool calls.
 
 Hosts that advertise `agent_background = true` do not reach this branch —
 they always take the P4 path above, regardless of `N`.
 
-Both paths use the same task-runner agent definition. The runner detects
+Both paths use the same supervisor agent definition. The runner detects
 which surface spawned it by checking whether `HOST_TASK_ID` was passed in its
 prompt (background) vs absent (inline) and adapts Phase 0 accordingly: when
 `HOST_TASK_ID` is provided, skip the in-runner `TaskCreate` and use the
 pre-created id; when absent, fall back to the legacy in-runner `TaskCreate`
 path.
 
-Each task-runner receives:
+Each supervisor receives:
 
 ```text
 TASK: {task description}
@@ -1465,7 +1465,7 @@ Complete this task autonomously through the full pipeline.
 Write the completion report to {TASK_DIR}/result.md.
 ```
 
-#### Task-Runner Health Check (Persistent Execution — inline path only)
+#### Supervisor Health Check (Persistent Execution — inline path only)
 
 > **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator has
 > already returned at the end of the spawn block above. This health check
@@ -1473,13 +1473,13 @@ Write the completion report to {TASK_DIR}/result.md.
 > (`HAS_AGENT_BACKGROUND == 0`). Background-path crash classification and
 > retries are performed by `crew:status --collect`.
 
-After each task-runner returns (inline path), the orchestrator must verify its output:
+After each supervisor returns (inline path), the orchestrator must verify its output:
 
-- If the task-runner returns **without a STATUS field** (crash, token limit,
+- If the supervisor returns **without a STATUS field** (crash, token limit,
   or interrupt):
   - Treat as a crash. Do **not** mark the task as failed.
-  - Re-invoke the same task-runner with identical parameters.
-  - The task-runner will resume from `pipeline.json` (Phase 0 resume check).
+  - Re-invoke the same supervisor with identical parameters.
+  - The supervisor will resume from `pipeline.json` (Phase 0 resume check).
   - Retry up to **3 times** before marking the task as blocked.
 
 **P7 — capability-gated crash classification (when `HAS_TASK_TOOLS == 1`).**
@@ -1504,10 +1504,10 @@ classification entirely and apply the legacy "every no-STATUS outcome is a
 crash, retry up to 3 times" rule. Behavior is identical to pre-P7.
 
 This "끈질기게 실행" (persistent execution) rule means the orchestrator never
-gives up on a task-runner until it explicitly returns `STATUS: blocked` with a
+gives up on a supervisor until it explicitly returns `STATUS: blocked` with a
 real, substantive blocker.
 
-Wait for all task-runners to finish (including any crash-retry cycles).
+Wait for all supervisors to finish (including any crash-retry cycles).
 
 #### Session-Aware Result Collection (inline path only — N > 1 with injection support)
 
@@ -1599,35 +1599,35 @@ json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 
 > **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator
 > already returned early at the end of Step 6. This step is **not executed
-> on the P4 path**. On the P4 path, the action gate for each task-runner is
-> handled by the task-runner's own Phase 2.5 Stage Action Gate (using
+> on the P4 path**. On the P4 path, the action gate for each supervisor is
+> handled by the supervisor's own Phase 2.5 Stage Action Gate (using
 > per-task `approval.md`). The consolidated gate here is only for the inline
 > parallel path (`HAS_AGENT_BACKGROUND == 0`, `N > 1`).
 
-> **Skip this step entirely when N == 1.** For single-task runs, the task-runner
+> **Skip this step entirely when N == 1.** For single-task runs, the supervisor
 > itself acts as the local orchestrator for its own stage agents and issues the
 > consolidated structured user-choice intent (per
 > `core/rules/capabilities/interactive-question.md`) via its Phase 2.5 Stage
 > Action Gate. Proceed directly to Step 7 (Collect Results).
 
-When `N > 1`, all task-runners execute concurrently. Before any stage agent
+When `N > 1`, all supervisors execute concurrently. Before any stage agent
 executes a deploy, merge, push, or other destructive action, the orchestrator
 must consolidate their plans and issue a **single** approval gate.
 
 #### Protocol
 
-**Phase A — Plan collection (task-runners block, waiting for approval.md)**
+**Phase A — Plan collection (supervisors block, waiting for approval.md)**
 
 Each stage agent (devops, etc.) that would previously ask for approval must instead:
 1. Write its planned actions to `{TASK_DIR}/context/action-plan.md`
-2. Return a `PLAN:` block to its parent task-runner — do not execute yet
-3. The task-runner writes `PLAN_READY` to `{TASK_DIR}/context/approval.md`
-4. The task-runner polls `{TASK_DIR}/context/approval.md` for `APPROVED` or
+2. Return a `PLAN:` block to its parent supervisor — do not execute yet
+3. The supervisor writes `PLAN_READY` to `{TASK_DIR}/context/approval.md`
+4. The supervisor polls `{TASK_DIR}/context/approval.md` for `APPROVED` or
    `CANCELLED` (up to 60s, 5s interval) before releasing execution
 
 **Phase B — Centralized approval (orchestrator)**
 
-After all task-runners have written `PLAN_READY` to their `approval.md`, the
+After all supervisors have written `PLAN_READY` to their `approval.md`, the
 orchestrator:
 
 1. Reads `action-plan.md` from every `TASK_DIR`
@@ -1675,7 +1675,7 @@ matching the run's task IDs. The file write is still the contract — the
 if [ "${HAS_TASK_TOOLS}" = "1" ]; then
   # Preferred path: deterministic readiness check, one round-trip (no sleep).
   # P1 wrote TaskUpdate(status="blocked", metadata.stage="plan_ready") on each
-  # task-runner's parent host task. We poll TaskList every 1s (long-poll if the
+  # supervisor's parent host task. We poll TaskList every 1s (long-poll if the
   # host supports wake-on-change) until every expected task is present.
   EXPECTED_TASK_IDS="{comma-separated list of TASK_IDs from this run}"
   ELAPSED=0
@@ -1708,7 +1708,7 @@ for TASK_DIR in {all task dirs}; do
 done
 
 # After the structured user-choice decision, write result to each task. When the
-# capability is enabled, ALSO transition each task-runner's parent host task —
+# capability is enabled, ALSO transition each supervisor's parent host task —
 # the TaskGet waiters inside P1 will wake on the next event without paying the
 # 5-second file-poll cadence.
 RESULT="APPROVED"  # or CANCELLED
@@ -1733,7 +1733,7 @@ loop above — identical behavior to pre-P2. The capability flag opts into a
 faster wakeup; it never removes the file contract.
 
 > **Orchestrator rule**: The orchestrator MUST NOT proceed to Step 7 until all
-> task-runners have received their approval signal and resumed (or halted on
+> supervisors have received their approval signal and resumed (or halted on
 > CANCELLED). Task-runners that received CANCELLED must report STATUS: blocked
 > with reason "Cancelled by consolidated approval gate."
 
@@ -1771,7 +1771,7 @@ in Step 6's Session-Aware Result Collection section).
 
 #### P4 — Background fan-out result collection
 
-When task-runners were spawned as background host agents (Step 6 background
+When supervisors were spawned as background host agents (Step 6 background
 path, `HAS_AGENT_BACKGROUND == 1`), the orchestrator does NOT block on inline
 Agent return values. Instead it polls each task's parent host task for
 terminal status:
@@ -1791,7 +1791,7 @@ while true:
     sleep 2
 ```
 
-After all task-runners reach a terminal status, the orchestrator reads each
+After all supervisors reach a terminal status, the orchestrator reads each
 runner's `${TASK_DIR}/result.md` (canonical artifact) AND `TaskOutput` (live
 event stream, when `HAS_MONITOR_TOOL == 1`) to assemble the Run Summary. When
 both sources are available, `result.md` takes precedence — the host stream is
@@ -1828,7 +1828,7 @@ visible during a pipeline run:
 [crew] 20260510-140000-0 | COMPLETED | branch=feat/implement-order-api commits=3
 ```
 
-In parallel runs (N > 1), each task-runner's TASK_ID prefix makes interleaved
+In parallel runs (N > 1), each supervisor's TASK_ID prefix makes interleaved
 lines from concurrent runners easy to distinguish.
 
 **File-based progress log:** In addition to inline `[crew]` lines, every progress
@@ -1838,7 +1838,7 @@ log provides a reliable source of truth for current pipeline state at any point
 during execution. Run `crew:status` at any time to see the current pipeline state
 read from this log. For N > 1, `crew:status` shows the most recently active task.
 
-After all task-runners finish, the orchestrator prints the full Run Summary below.
+After all supervisors finish, the orchestrator prints the full Run Summary below.
 
 **MANDATORY: Output the Run Summary block below to the user before proceeding to any next step. This cannot be skipped.**
 
@@ -1854,14 +1854,14 @@ COMMITS=$(git -C "${PROJECT_ROOT_FOR_TASK}" log --oneline HEAD ^main 2>/dev/null
 If `result.md` is missing or the STATUS field is absent:
 
 - Do **not** report "No result report found."
-- Treat as a task-runner crash. Re-invoke the task-runner for that task.
-- Pass the same `TASK_DIR` so the task-runner resumes from `pipeline.json`.
+- Treat as a supervisor crash. Re-invoke the supervisor for that task.
+- Pass the same `TASK_DIR` so the supervisor resumes from `pipeline.json`.
 - Retry up to **3 times** per task.
 - Only after all retries are exhausted: report the task as `blocked` with the
-  reason "task-runner did not produce a result after 3 restart attempts."
+  reason "supervisor did not produce a result after 3 restart attempts."
 
 In parallel runs (`N > 1`), apply this retry logic independently per task —
-a crashed task-runner must not block result collection for other tasks.
+a crashed supervisor must not block result collection for other tasks.
 
 Display a summary for every task. Do not proceed to Step 8 until the Run Summary has been printed to the user.
 
@@ -2141,13 +2141,13 @@ crew:run "resolve merge conflicts"
 - `crew:run` is the canonical workflow entry point.
 - Use plain `crew:<intent>` syntax in user-facing guidance.
 - Task dependencies still matter. If tasks depend on each other, pass them as a
-  single request so one `task-runner` can sequence the work inside one pipeline.
-- **task-runner never pushes to remote.** All remote operations happen here in
+  single request so one `supervisor` can sequence the work inside one pipeline.
+- **supervisor never pushes to remote.** All remote operations happen here in
   Step 11, only after explicit user approval in Step 10.
 - **Step 8 (merge) applies only to parallel runs (N > 1).** For single-task runs,
   the feature branch is pushed directly without merging to main.
 - **P4 path (background fan-out)**: When `HAS_AGENT_BACKGROUND == 1`, the
-  orchestrator returns immediately after spawning all background task-runners
+  orchestrator returns immediately after spawning all background supervisors
   (including single-task runs). Steps 7–11 are NOT executed in this turn. To
   wait for results and finalize the session (merge branches, show summary,
   deploy), run `crew:status --collect`.
@@ -2157,7 +2157,7 @@ crew:run "resolve merge conflicts"
   `crew:status --collect`.
 - **Fast-path (Step 1.7)**: Trivial operational intents (merge, push, deploy,
   tag, rollback, status, commit-only) are dispatched inline by the orchestrator
-  without spawning a task-runner. They still honor the centralized
+  without spawning a supervisor. They still honor the centralized
   structured user-choice approval gate (per
   `core/rules/capabilities/interactive-question.md`) for destructive
   operations. The classifier is conservative — anything containing an

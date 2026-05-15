@@ -4,7 +4,7 @@ description: >
   Apply to all implementation stages.
   Enforces a validate → fix → re-validate loop until the stage output meets
   the acceptance criteria defined in the PRD, or until the retry limit is reached.
-applies-to: backend, frontend, designer, devops, reviewer, task-runner
+applies-to: backend, frontend, designer, devops, reviewer, supervisor
 ---
 
 # Quality Loop Rule
@@ -75,9 +75,9 @@ This decomposition attempt does **not** count toward the validation retry limit.
 It is a single additional recovery pass performed only after the primary retry
 limit is exhausted.
 
-## Task-Runner Enforcement
+## Supervisor Enforcement
 
-The task-runner must pass the path to this rule to every stage agent:
+The supervisor must pass the path to this rule to every stage agent:
 
 ```text
 QUALITY_RULE_PATH: ~/.agent-crew/rules/quality-loop.md
@@ -85,7 +85,7 @@ QUALITY_RULE_PATH: ~/.agent-crew/rules/quality-loop.md
 Read and apply the quality loop rule before reporting stage completion.
 ```
 
-After each stage returns, the task-runner checks:
+After each stage returns, the supervisor checks:
 
 - If `STATUS: completed` → continue to next stage.
 - If no STATUS returned → treat as crash. Re-invoke the stage (up to 5 crash

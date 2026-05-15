@@ -156,6 +156,46 @@ resolve_source_dir() {
      "${CLAUDE_DIR}/agents"
    ```
 
+3.5. **Phase C3.0 Migration — Remove Stale `task-runner` Files**
+
+   The `task-runner` agent was renamed to `supervisor` in Phase C3.0.
+   `sync_system_agents` and `merge_agents_to_discovery` auto-prune two of the
+   four installation paths; the other two are copied via `cp -R src/. dest/`
+   which overwrites but does not delete. Defensively remove all four
+   locations so the host never sees both the old and the new agent.
+
+   The block is idempotent — `rm -f` is silent on missing files. After the
+   first successful `crew:update` post-C3.0 it becomes a no-op.
+
+   ```bash
+   migrate_remove_stale_task_runner() {
+     local removed=0
+     local f
+     local PROJECT_ROOT_LOCAL
+     PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+     for f in \
+       "${AGENT_CREW_HOME}/system/agents/task-runner.md" \
+       "${CLAUDE_DIR}/agents/task-runner.md" \
+       "${CLAUDE_DIR}/agent-crew/agents/task-runner.md" \
+       "${PROJECT_ROOT_LOCAL}/.codex/agents/task-runner.toml"
+     do
+       if [ -f "${f}" ]; then
+         rm -f "${f}"
+         printf '[crew:update] Removed stale agent file: %s\n' "${f}"
+         removed=$((removed + 1))
+       fi
+     done
+     if [ "${removed}" -eq 0 ]; then
+       printf '[crew:update] No stale task-runner files found (already migrated).\n'
+     fi
+   }
+   migrate_remove_stale_task_runner
+   ```
+
+   > **Note:** the literal token `task-runner` survives intentionally inside
+   > this migration block — it is the name of the OLD file being removed.
+   > Verification greps must allow this single occurrence in `update.md`.
+
 4. Re-run the host adapter against the current project so any project-local
    files (e.g. `~/.claude/agent-crew/`) are also refreshed:
 

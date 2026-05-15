@@ -4,9 +4,9 @@
 Enables the reviewer agent to systematically verify that an implementation matches the PRD, covers non-functional requirements, and contains no obvious quality or security issues — without modifying any implementation files.
 
 ## When to Apply
-- As the final stage of every agent pipeline (always spawned by task-runner)
+- As the final stage of every agent pipeline (always spawned by supervisor)
 - After any implementation agent (backend, frontend, devops) completes its work
-- When the task-runner needs a quality gate before marking a task complete
+- When the supervisor needs a quality gate before marking a task complete
 
 ## Techniques
 

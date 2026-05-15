@@ -18,7 +18,7 @@ Adapter MUST expose one of:
 | `streamOutput(taskId \| backgroundId) -> async iterator` | Yield stdout / stderr lines as they appear |
 | `getOutputTail(taskId, n_lines) -> string` | Return the last `n_lines` of captured output |
 
-Precondition (relied on but not strictly required): the task-runner
+Precondition (relied on but not strictly required): the supervisor
 mirrors every `progress.log` append to `stderr` (see "Stderr Mirroring"
 in `core/rules/host-capabilities.md`). This avoids file-buffering
 caveats that affect raw file tailing.
@@ -38,7 +38,7 @@ Input: boolean flag + task identifier. Output: text lines (string).
 ## Absence Behavior (flag=false)
 
 `crew:status` uses `tail -20 progress.log` (the legacy event stream).
-The file-based path is always written by the task-runner, so the
+The file-based path is always written by the supervisor, so the
 fallback is always safe; nothing breaks when this flag is false.
 
 ## Adapter Examples
@@ -58,5 +58,5 @@ Producer:
 Consumer:
 
 - `core/commands/status.md` (Step 1b, Step 5)
-- `core/agents/task-runner.md` (stderr-mirror invariant — keeps the
+- `core/agents/supervisor.md` (stderr-mirror invariant — keeps the
   fallback path equivalent)

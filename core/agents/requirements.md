@@ -4,7 +4,7 @@ description: >
   Dedicated requirements collection agent. Owns all structured user-choice
   interactions (per `core/rules/capabilities/interactive-question.md`) for
   requirement gathering. TRIGGER when: crew:run needs requirements per task;
-  task-runner encounters absent REQUIREMENTS; planner is invoked directly
+  supervisor encounters absent REQUIREMENTS; planner is invoked directly
   without REQUIREMENTS.
   SKIP: do not call the host's interactive question mechanism for requirements
   outside this agent.
@@ -43,7 +43,7 @@ load them at agent startup:
 The execution flow branches on `MODE` at the top of the agent run:
 
 - **`MODE == "single_round"`** (preferred for `crew:run` Step 5.pre AMBIGUOUS
-  path and task-runner Phase 1a AMBIGUOUS path): run **Step 1S** below, then
+  path and supervisor Phase 1a AMBIGUOUS path): run **Step 1S** below, then
   jump directly to Step 4 (write requirements.md). Round 2 domain-specific
   follow-up is skipped entirely.
 - **`MODE == "two_round"` or unset**: run the original Step 1 → Step 2 →
@@ -340,7 +340,7 @@ If Round 2 was skipped (scope is "Tooling / docs / config"), omit `followup` ent
   MUST issue at least one structured user-choice call (per
   `core/rules/capabilities/interactive-question.md`): Step 1S on `single_round`,
   Step 1 on `two_round`. The upstream sufficiency check (in `crew:run` Step
-  5.pre and in `task-runner` Phase 1a) is responsible for deciding *whether*
+  5.pre and in `supervisor` Phase 1a) is responsible for deciding *whether*
   to invoke this agent in the first place; once invoked, the agent does not
   bypass the user dialog.
 - **NEVER infer requirements** from the TASK description — always ask explicitly.

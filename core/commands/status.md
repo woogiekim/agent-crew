@@ -64,7 +64,7 @@ Two preferences are derived from the flags:
    the "Recent events" stream (P5). Instead of tailing
    `{TASK_DIR}/progress.log`, read `TaskOutput(taskId=<parent host task>)` and
    render the last 20 lines that start with `[crew]`. This eliminates the
-   buffering caveat — task-runners mirror every progress event to stderr in
+   buffering caveat — supervisors mirror every progress event to stderr in
    real time, and the host surfaces stderr through `TaskOutput` without the
    sub-agent having to flush.
 
@@ -84,7 +84,7 @@ session, host unable to respond), silently fall back to the file-based path.
 The capability flag opts in; the actual `TaskList` / `TaskOutput` call must
 still be guarded by a runtime availability check.
 
-`progress.log` is always written by the task-runner regardless of which source
+`progress.log` is always written by the supervisor regardless of which source
 is preferred — it remains the single source of truth per
 `core/rules/host-capabilities.md`.
 
@@ -293,8 +293,8 @@ json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 
 Apply the same crash-retry rule as `crew:run` Step 7: if a task's `result.md`
 is missing or lacks a STATUS field after the poll loop exits, treat it as a
-crash and re-invoke the task-runner for that task (up to 3 retries, passing
-the same `TASK_DIR` so the task-runner resumes from `pipeline.json`).
+crash and re-invoke the supervisor for that task (up to 3 retries, passing
+the same `TASK_DIR` so the supervisor resumes from `pipeline.json`).
 
 ### 5S. Run Summary (--collect only)
 
@@ -561,7 +561,7 @@ Resolve `RECENT_PROGRESS` using the preference matrix from Step 1b:
 
 ```text
 if HAS_MONITOR_TOOL == 1 AND TaskOutput is callable:
-    # P5 — preferred source. The task-runner mirrors every progress event to
+    # P5 — preferred source. The supervisor mirrors every progress event to
     # stderr (host-agnostic), which Claude Code captures as TaskOutput. This
     # avoids the buffering caveat described in core/commands/run.md.
     HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt" 2>/dev/null)
@@ -585,7 +585,7 @@ When the `TaskOutput` call fails at runtime (tool not loaded, host returns an
 error), silently fall back to tailing `progress.log`. The capability flag opts
 in; the actual call must still be guarded by a runtime availability check.
 
-The file is written by the task-runner at every phase and stage boundary, so it
+The file is written by the supervisor at every phase and stage boundary, so it
 always reflects the current live state even while a sub-agent is still
 running. The host-task event stream is the same data path with lower latency.
 
@@ -748,7 +748,7 @@ Pipeline stages:
   this after `crew:run` spawns a background parallel session and returns early.
 - Stage markers in single-task mode reflect `completed_stages` from `pipeline.json`,
   not live agent output. For live event streaming, the "Recent events" section reads
-  `{TASK_DIR}/progress.log` (tail -20), which is written by the task-runner at every
+  `{TASK_DIR}/progress.log` (tail -20), which is written by the supervisor at every
   phase and stage boundary. This log is the most up-to-date source of pipeline state
   even while a sub-agent is still running. The host-task event stream is the same
   data path with lower latency.
@@ -758,7 +758,7 @@ Pipeline stages:
   Claude Code stream that surface live.
 - When the host adapter has advertised `monitor_tool: true`, `crew:status`
   prefers `TaskOutput(taskId)` for the "Recent events" stream (P5). The
-  stderr-mirror rule in `core/agents/task-runner.md` ensures every progress
+  stderr-mirror rule in `core/agents/supervisor.md` ensures every progress
   event is written to stderr (which Claude Code captures as `TaskOutput`),
   eliminating the file-buffering caveat. `progress.log` is still written, so
   the fallback is always safe.

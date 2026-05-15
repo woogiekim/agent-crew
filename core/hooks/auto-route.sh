@@ -47,7 +47,7 @@ if command_match:
             else "No command arguments were provided. Follow Step 1 of the command definition and ask for the task description through the host structured input UI."
         )
         intent_rules = """- Follow the command definition step-by-step, including mandatory requirements collection.
-- Delegate execution to task-runner as defined by the command.
+- Delegate execution to supervisor as defined by the command.
 - Do NOT replace the workflow with "standard verification", CI, linting, or a direct shell command."""
     elif intent == "setup":
         args_note = "No task description is needed. Initialize the current project exactly as the setup command defines."
@@ -248,7 +248,7 @@ Rules enforced by this directive:
 - Do NOT produce any output before calling crew:run.
 - Do NOT run exploratory Bash (git status, ls, cat, etc.) before crew:run.
 - Do NOT ask clarifying questions before crew:run.
-- Do NOT edit or write files directly — the task-runner pipeline handles implementation.
+- Do NOT edit or write files directly — the supervisor pipeline handles implementation.
 Call crew:run NOW."""
 
 output = {

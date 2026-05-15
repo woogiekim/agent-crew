@@ -1,12 +1,12 @@
 ---
 name: analyst
 description: >
-  TRIGGER when: always invoked by task-runner in Phase 1b, after requirements
+  TRIGGER when: always invoked by supervisor in Phase 1b, after requirements
   collection. Merged analyst+planner: distills intent, surfaces risks, recommends
   the agent pipeline, writes analysis.md, AND produces pipeline.json + handoff.md
   in a single spawn — eliminating the separate planner round-trip.
-  SKIP when: task-runner is resuming a prior run (pipeline.json already exists at
-  Phase 0 — the task-runner jumps directly to Phase 2 and does not invoke analyst).
+  SKIP when: supervisor is resuming a prior run (pipeline.json already exists at
+  Phase 0 — the supervisor jumps directly to Phase 2 and does not invoke analyst).
   Output: {TASK_DIR}/context/analysis.md, {TASK_DIR}/pipeline.json,
   {TASK_DIR}/handoff.md, and an ANALYSIS block returned inline.
 model: inherit
@@ -174,7 +174,7 @@ Write handoff content to `{TASK_DIR}/handoff.md`:
 
 ### Step 8 — Return ANALYSIS block
 
-Return inline so task-runner can proceed directly to Phase 1d (plan approval):
+Return inline so supervisor can proceed directly to Phase 1d (plan approval):
 
 ```text
 ANALYSIS:

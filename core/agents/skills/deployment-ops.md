@@ -8,7 +8,7 @@ Enables the devops agent to safely plan, validate, and execute deployments and i
 - When setting up or modifying CI/CD pipelines
 - When managing containers, IaC (Terraform, Kubernetes), or shared modules
 - When creating a release tag or GitHub Release
-- After the task-runner pipeline reaches the deploy stage
+- After the supervisor pipeline reaches the deploy stage
 
 ## Techniques
 
@@ -35,7 +35,7 @@ scripts are missing, or the required approval signal has not been written to
 Do not issue deployment, push, merge, rollback, or branch-cleanup approvals from
 inside the devops agent. Write the planned actions to
 `{TASK_DIR}/context/action-plan.md`, return a `PLAN:` block, and wait for the
-approval signal. The task-runner owns approval for single-task runs; the crew
+approval signal. The supervisor owns approval for single-task runs; the crew
 orchestrator owns approval for parallel runs.
 
 The approval signal is delivered through **two paths that converge on the same
@@ -47,7 +47,7 @@ artifact** — `{TASK_DIR}/context/approval.md` is the contractual record:
    any failure of the host-tool path below.
 2. **Capability-gated wakeup (P1, when `capabilities.json` advertises
    `task_tools=true`).** When `${TASK_DIR}/host-task-id.txt` exists, the
-   task-runner's approval gate ALSO calls
+   supervisor's approval gate ALSO calls
    `TaskUpdate(taskId, status="in_progress")` on APPROVED or
    `TaskUpdate(taskId, status="cancelled")` on CANCELLED. The agent can
    long-poll `TaskGet(taskId).status` for an immediate wakeup instead of
@@ -56,7 +56,7 @@ artifact** — `{TASK_DIR}/context/approval.md` is the contractual record:
    the file is the contract.
 
 Never run `git push`, create remote tags, execute deployment scripts, or modify
-production infrastructure before approval is present. In task-runner pipelines,
+production infrastructure before approval is present. In supervisor pipelines,
 remote pushes are still orchestrator-owned: record the intended push or tag push
 in the action plan instead of executing it directly.
 
@@ -104,7 +104,7 @@ Execute deployment scripts in this priority order:
 4. `docker-compose up -d`
 
 If no script exists, write the missing deployment method to the action plan and
-return `STATUS: plan_ready` so the task-runner or orchestrator can collect the
+return `STATUS: plan_ready` so the supervisor or orchestrator can collect the
 deployment decision. Include the missing command as an explicit blocker in the
 `PLAN:` block; do not prompt the user directly from the devops agent.
 

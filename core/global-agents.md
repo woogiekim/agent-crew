@@ -26,17 +26,17 @@ remains provider-neutral.
 
 | Request Type | Execution Method |
 |---|---|
-| Backend API, domain logic, database work | `crew:run` → task-runner → backend |
-| UI, full-stack, or implementation workflows | `crew:run` → task-runner → pipeline agents |
-| Multiple independent features | `crew:run` with one task-runner per task |
-| Requirements analysis only | `crew:run` → task-runner → planner (no implementation stages) |
+| Backend API, domain logic, database work | `crew:run` → supervisor → backend |
+| UI, full-stack, or implementation workflows | `crew:run` → supervisor → pipeline agents |
+| Multiple independent features | `crew:run` with one supervisor per task |
+| Requirements analysis only | `crew:run` → supervisor → planner (no implementation stages) |
 
 ## Parallel-First Execution Rule
 
 **Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
 
 When a request contains multiple independent sub-tasks — even if they touch the
-same files — run them as parallel task-runners:
+same files — run them as parallel supervisors:
 
 ```
 crew:run "Sub-task A" | "Sub-task B" | "Sub-task C"
@@ -83,7 +83,7 @@ crew:run "{original request}"
 ```
 
 This fallback must depend on the provider-neutral command definitions under
-`~/.agent-crew/commands/`. Do not embed task-runner, planner, backend, frontend,
+`~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
 resolver, or approval behavior in Codex-specific hooks or skills.
 
 ### STOP Directive Rule
@@ -118,7 +118,7 @@ For `crew:run` specifically:
 - If no task argument is provided, follow Step 1 of the command definition and
   ask for the task description through the host structured input UI.
 - If task arguments are provided, use them as the task descriptions and continue
-  through requirements collection and task-runner delegation.
+  through requirements collection and supervisor delegation.
 
 For `crew:setup` specifically:
 
@@ -153,7 +153,7 @@ Do not add duplicate free-form options if the host UI already provides one.
 ### Centralized Approval Gate
 
 All approval decisions for the following actions are owned exclusively by the
-orchestrator (crew:run for N > 1, task-runner for N == 1):
+orchestrator (crew:run for N > 1, supervisor for N == 1):
 
 - Merge (git merge)
 - Push to remote (git push)
@@ -166,7 +166,7 @@ issue the host's interactive question mechanism for any of the above actions
 (see `core/rules/capabilities/interactive-question.md`).** Instead, those agents must:
 
 1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
-2. Return a `PLAN:` block to the task-runner with the following fields:
+2. Return a `PLAN:` block to the supervisor with the following fields:
    ```text
    PLAN:
      actions: {list of planned commands}
@@ -181,7 +181,7 @@ issue the host's interactive question mechanism for any of the above actions
 
 ### Orchestrator Approval Gate
 
-The orchestrator (crew:run or task-runner) issues the consolidated structured
+The orchestrator (crew:run or supervisor) issues the consolidated structured
 user-choice intent (see `core/rules/capabilities/interactive-question.md`)
 after collecting all PLAN blocks. This ensures:
 - A single approval prompt regardless of how many stage agents need approval
@@ -210,9 +210,9 @@ directly without a PLAN gate.
 ### Destructive-action stage agents (devops, and any agent that deploys or pushes)
 
 These agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
-a `PLAN:` block to the task-runner. They do NOT issue the host's interactive
+a `PLAN:` block to the supervisor. They do NOT issue the host's interactive
 question mechanism directly (see `core/rules/capabilities/interactive-question.md`).
-The task-runner (or crew orchestrator for parallel runs) owns the approval gate.
+The supervisor (or crew orchestrator for parallel runs) owns the approval gate.
 
 PLAN block format:
 ```text
@@ -225,7 +225,7 @@ PLAN:
 STATUS: plan_ready
 ```
 
-### Orchestrator-level approval (task-runner for N == 1, crew:run for N > 1)
+### Orchestrator-level approval (supervisor for N == 1, crew:run for N > 1)
 
 After collecting all PLAN blocks, the orchestrator issues a single structured
 user-choice intent (per `core/rules/capabilities/interactive-question.md`)

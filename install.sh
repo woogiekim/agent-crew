@@ -105,9 +105,9 @@ install_global() {
     || log_error "reviewer.md install failed — system/agents/reviewer.md not found"
   log_info "reviewer agent verified"
 
-  [ -f "${AGENT_CREW_DIR}/system/agents/task-runner.md" ] \
-    || log_error "task-runner.md install failed — system/agents/task-runner.md not found"
-  log_info "task-runner agent verified"
+  [ -f "${AGENT_CREW_DIR}/system/agents/supervisor.md" ] \
+    || log_error "supervisor.md install failed — system/agents/supervisor.md not found"
+  log_info "supervisor agent verified"
 
   [ -f "${AGENT_CREW_DIR}/system/agents/planner.md" ] \
     || log_error "planner.md install failed — system/agents/planner.md not found"
@@ -429,7 +429,7 @@ echo "  Installed commands: ${CMD_COUNT} / agents: ${AGENT_COUNT}"
 echo ""
 echo "  Provider-neutral usage from any project:"
 echo "    crew:setup                       # host adapter install + workspace init"
-echo "    crew:run \"request\"              # run one task through task-runner"
+echo "    crew:run \"request\"              # run one task through supervisor"
 echo "    crew:run \"TaskA\" | \"TaskB\"      # run independent tasks in parallel"
 echo "    crew:cost                        # show session cost summary"
 echo ""

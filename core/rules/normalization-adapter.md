@@ -39,7 +39,7 @@ Apply the rules defined in `core/rules/korean-input.md`:
 
 - `NORMALIZED_TASK` must contain no Hangul characters
 - Must read as production-ready workflow instruction language
-- Must be specific enough that a task-runner can derive a concrete pipeline
+- Must be specific enough that a supervisor can derive a concrete pipeline
 - See `core/rules/korean-input.md` for vocabulary, tone, and shorthand expansion reference
 
 ## How to Implement

@@ -3,7 +3,7 @@
 ## Purpose
 
 The host can spawn subagent invocations as background processes that
-outlive the orchestrator's current turn, enabling parallel task-runner
+outlive the orchestrator's current turn, enabling parallel supervisor
 fan-out (`crew:run` Step 6). Without it, fan-out happens inline within a
 single turn, which blocks the user's next input and disables mid-session
 task injection.
@@ -32,14 +32,14 @@ Requirements:
 Concrete call sites:
 
 - **`core/commands/run.md` Step 6 (P4 background fan-out)** — when the
-  flag is true, spawn every task-runner as a background agent,
+  flag is true, spawn every supervisor as a background agent,
   **regardless of `N`**. This includes single-task runs (`N == 1`): on a
   host with `agent_background = true`, a one-shot
-  `crew:run "implement X"` spawns one background task-runner and ends
+  `crew:run "implement X"` spawns one background supervisor and ends
   the orchestrator turn so the user can immediately inject additional
   tasks. Only trivial intents (`crew:run` Step 1.7: status /
   commit_only / merge / push / deploy / tag / rollback) are still
-  dispatched inline — they do not spawn a task-runner at all. When the
+  dispatched inline — they do not spawn a supervisor at all. When the
   flag is false, the orchestrator uses the inline parallel path (legacy
   branch) for all `N`.
 - **`core/hooks/direct-edit-guard.sh`** — supports both marker layouts;
@@ -82,5 +82,5 @@ Consumer:
 
 - `core/commands/run.md` (Step 6)
 - `core/hooks/direct-edit-guard.sh` (marker layout precondition)
-- `core/agents/task-runner.md` (marker write site)
+- `core/agents/supervisor.md` (marker write site)
 - `core/rules/task-injection.md` (injection path uses the same fan-out)

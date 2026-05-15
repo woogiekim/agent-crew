@@ -61,7 +61,7 @@ Files in this directory are NEVER overwritten by crew:update.
 
 Naming: avoid filenames that match built-in agents (analyst.md, backend.md,
 designer.md, devops.md, frontend.md, planner.md, requirements.md, resolver.md,
-reviewer.md, task-runner.md, korean-normalizer.md). Use a unique prefix, e.g.
+reviewer.md, supervisor.md, korean-normalizer.md). Use a unique prefix, e.g.
 my-agent.md, or an org-prefixed name like acme-deploy.md.
 
 crew:update merges these into ~/.claude/agents/ automatically.
