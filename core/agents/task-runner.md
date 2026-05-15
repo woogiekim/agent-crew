@@ -327,21 +327,124 @@ directly to Phase 1b.
 
 ##### Case B — `REQUIREMENTS` is absent
 
-> **NEVER-SKIP**: When REQUIREMENTS is absent, requirement collection is mandatory.
-> Do not infer requirements from TASK or proceed without delegating to the requirements agent.
+> **NEVER-SKIP-WITHOUT-SUFFICIENCY-CHECK**: When REQUIREMENTS is absent, requirement
+> *production* is mandatory — but the *agent invocation* is not. The gate is the
+> sufficiency check below, not the agent call. The principle "REQUIREMENTS must
+> exist before Phase 1b runs" is preserved; what changed is that well-specified
+> TASK strings now skip the agent entirely and synthesize the block inline.
 
-Delegate to the **requirements agent** (blocking):
+Run the sufficiency check first. The check is a deterministic Python snippet
+that scores the TASK string against three signals (scope, target, constraints)
+and returns either `SUFFICIENT` (synthesize REQUIREMENTS inline, no agent
+spawn) or `AMBIGUOUS` (fall through to the agent in single-round mode).
+
+```python
+import re
+
+def sufficiency_check(task: str) -> str:
+    """Return 'SUFFICIENT' if scope, target, and constraints can be inferred
+    with high confidence from TASK alone; otherwise 'AMBIGUOUS'."""
+    t = task.lower()
+
+    # Question-word veto — any question word means we must ask the user.
+    question_markers = ["?", "how should", "what about", "which ", "should i",
+                        "shall i", "do you think"]
+    if any(m in t for m in question_markers):
+        return "AMBIGUOUS"
+
+    # Signal 1: scope inferable
+    backend_kw = ("backend", "api", "server", "endpoint", "database",
+                  "domain model", "schema")
+    ui_kw = ("frontend", "ui ", "component", " page ", "css", "styling",
+             "layout")
+    tooling_kw = ("docs", "documentation", "readme", "markdown", "config",
+                  "script", "refactor", "spec", "tooling", "pipeline",
+                  "agent", "hook")
+    scope_hit = any(k in t for k in backend_kw + ui_kw + tooling_kw)
+
+    # Signal 2: target inferable
+    has_file_path = re.search(
+        r"[a-zA-Z0-9_./-]+\.(md|py|ts|tsx|js|jsx|sh|json|yml|yaml)",
+        task,
+    ) is not None
+    has_branch_ref = re.search(
+        r"\b(feat|fix|docs|chore|refactor|test)/[a-z0-9-]+",
+        task,
+    ) is not None
+    has_quoted_name = '"' in task or "`" in task
+    has_concrete_pointer = re.search(
+        r"\bthe [a-z]+ (agent|hook|command|step|phase|rule|gate|file|module)",
+        t,
+    ) is not None
+    target_hit = (has_file_path or has_branch_ref or has_quoted_name
+                  or has_concrete_pointer)
+
+    # Signal 3: constraints inferable
+    has_perf = re.search(r"\d+\s*(ms|s\b|mb|gb|req/s|qps|rps)", t) is not None
+    has_mvp = any(k in t for k in ("mvp", "minimal", "v1 ", "scope-limit",
+                                   "scope limit"))
+    has_dep = any(k in t for k in ("no new deps", "no new dependencies",
+                                   "existing stack", "existing tech stack",
+                                   "use only"))
+    constraint_hit = has_perf or has_mvp or has_dep
+
+    if scope_hit and target_hit and constraint_hit:
+        return "SUFFICIENT"
+    return "AMBIGUOUS"
+```
+
+This is the **same algorithm** that `crew:run` Step 5.pre uses; the two must
+stay in sync (any change to one MUST be mirrored to the other).
+
+**If `SUFFICIENCY == "SUFFICIENT"`:** Synthesize the REQUIREMENTS block inline
+from the matched signals — do NOT delegate to the requirements agent. Write
+the synthesized block to `{TASK_DIR}/context/requirements.md` and use it as
+the `REQUIREMENTS` value for Phase 1b.
+
+Inline synthesis rule (mirrors `crew:run` Step 5.pre):
+
+- `scope`: `"Backend API"` / `"UI only"` / `"Full-stack"` / `"Tooling / docs / config"`
+  based on which keyword family matched.
+- `target`: `"Developer tooling or API"` for the tooling-family scope;
+  `"End-user product feature"` for quoted-name / component-name dominant;
+  `"Internal team / admin tooling"` for admin/dashboard keywords; otherwise
+  `"Other / not yet defined"`.
+- `constraints`: union of matched constraint signal labels
+  (`"Performance / scalability"`, `"MVP scope"`,
+  `"Use existing tech stack only"`).
+
+The synthesized block has the exact same shape the requirements agent returns:
+
+```text
+REQUIREMENTS: |
+  scope: {synthesized scope}
+  target: {synthesized target}
+  constraints: {comma-separated synthesized constraints}
+  followup: (none)
+  sufficiency: HIGH
+  inline_synthesis: true
+```
+
+**If `SUFFICIENCY == "AMBIGUOUS"`:** Delegate to the **requirements agent** in
+single-round mode (blocking):
 
 ```text
 TASK: {TASK}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
+MODE: single_round
 
-Run the 2-round AskUserQuestion interview, write requirements.md, and return the REQUIREMENTS block.
+Run a single-round AskUserQuestion interview (scope + target + constraints in
+one call), write requirements.md, and return the REQUIREMENTS block.
 ```
 
 Extract the `REQUIREMENTS` block from the requirements agent's response and use it as
 the `REQUIREMENTS` value for Phase 1b.
+
+> **`MODE: two_round` is a deeper fallback** for rare cases where the
+> single-round answers themselves contain ambiguity the agent decides it
+> cannot resolve without a domain-specific follow-up. The task-runner does
+> NOT request `two_round` directly; only the agent may escalate.
 
 ---
 
