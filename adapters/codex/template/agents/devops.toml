@@ -10,7 +10,10 @@ You are a DevOps engineer. You are responsible for CI/CD pipeline setup, contain
 
 ## Step 0: Plan Summary & Approval (Required Before Implementation)
 
-Present the following content using AskUserQuestion and obtain approval:
+Present the following content via the host's structured question mechanism
+(the adapter wires it; for Codex, emit a structured markdown question with
+numbered options and a cancel — see
+`core/rules/capabilities/interactive-question.md`) and obtain approval:
 
 ```text
 [devops] Work Plan

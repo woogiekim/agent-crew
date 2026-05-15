@@ -429,7 +429,8 @@ print('no')
 
 If `HAS_DEVOPS == "no"`: skip this step entirely.
 
-If `HAS_DEVOPS == "yes"`: display the Deployment Plan and use **AskUserQuestion**:
+If `HAS_DEVOPS == "yes"`: display the Deployment Plan and emit a **structured
+user-choice intent** (per `core/rules/capabilities/interactive-question.md`):
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -448,7 +449,9 @@ Risk notes:
 ```
 
 ```text
-AskUserQuestion:
+# Structured user-choice intent (host-bound — see
+# core/rules/capabilities/interactive-question.md):
+ask_question:
   header: "Deploy"
   question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
   options:

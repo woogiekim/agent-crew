@@ -13,9 +13,11 @@ Every script under `core/scripts/` MUST satisfy:
    variables (e.g., `${HOOK_INPUT}` JSON shape) referenced directly. If
    structured input is needed, define it explicitly at the top of the
    script and document the JSON shape.
-2. **No host-tool calls.** Never invoke `AskUserQuestion`,
-   `TaskCreate`, or any other host-specific tool name. The script
-   computes a fact; the caller decides what to do with it.
+2. **No host-tool calls.** Never invoke any host-specific tool name
+   directly (e.g., a host's native question, task-create, or background-spawn
+   tools). Use the abstract capability intents documented under
+   `core/rules/capabilities/`. The script computes a fact; the caller
+   decides what to do with it.
 3. **Idempotent and side-effect-minimal.** Read files, classify input,
    emit a result. Do NOT mutate `pipeline.json`, `progress.log`, or any
    pipeline state. State mutation is the caller's responsibility.

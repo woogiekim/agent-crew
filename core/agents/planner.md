@@ -38,7 +38,7 @@ Check the following values from the prompt:
   target: {target answer}
   constraints: {constraints answer(s)}
   ```
-  When this parameter is present, skip the AskUserQuestion step and use these values directly.
+  When this parameter is present, skip the requirements interview step and use these values directly.
 - `ANALYSIS` _(optional)_: Pre-computed analysis block from the analyst agent:
   ```text
   intent: {one-line intent summary}
@@ -60,7 +60,8 @@ Check the following values from the prompt:
 
 #### Case A — `REQUIREMENTS` is present (passed from the orchestrator):
 
-Use the values directly without calling AskUserQuestion:
+Use the values directly without invoking the requirements interview (see
+`core/rules/capabilities/interactive-question.md`):
 
 - `scope`: taken from `REQUIREMENTS.scope`
 - `target`: taken from `REQUIREMENTS.target`
@@ -70,8 +71,9 @@ Proceed immediately to Step 2.
 
 #### Case B — `REQUIREMENTS` is absent (planner invoked directly):
 
-The `requirements` agent owns all AskUserQuestion interactions. The planner does not
-call AskUserQuestion directly.
+The `requirements` agent owns all structured user-choice interactions (see
+`core/rules/capabilities/interactive-question.md`). The planner does not call
+the host's interactive question mechanism directly.
 
 Delegate to the **requirements agent** (blocking):
 
@@ -80,7 +82,9 @@ TASK: {REQUEST}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
 
-Run the 2-round AskUserQuestion interview, write requirements.md, and return the REQUIREMENTS block.
+Run the 2-round structured user-choice interview (per
+`core/rules/capabilities/interactive-question.md`), write requirements.md, and
+return the REQUIREMENTS block.
 ```
 
 Extract the `REQUIREMENTS` block from the response. Parse `scope`, `target`, `constraints`

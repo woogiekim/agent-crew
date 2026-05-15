@@ -75,9 +75,10 @@ the recommended resolution (document as assumption, or flag for user).
 - **NEEDS_CLARIFICATION**: one or more high-severity ambiguities must be resolved
   before planning can begin.
 
-If `NEEDS_CLARIFICATION`: use AskUserQuestion to resolve each blocker (max
-1 round, max 2 questions). Update `requirements.md` with the resolved values,
-then re-evaluate readiness.
+If `NEEDS_CLARIFICATION`: emit a structured user-choice intent (see
+`core/rules/disambiguation.md` and `core/rules/capabilities/interactive-question.md`)
+to resolve each blocker (max 1 round, max 2 questions). Update
+`requirements.md` with the resolved values, then re-evaluate readiness.
 
 ### Step 5 — Write analysis.md
 

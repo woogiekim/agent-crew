@@ -15,7 +15,12 @@ Check the following values from the prompt:
 ## Execution Flow
 
 ### Step 1: Requirement Collection
-Use the AskUserQuestion tool to collect key information.
+Ask the user via the host's structured question mechanism to collect key
+information. The adapter wires this for you — on Codex (no native
+interactive_question), emit a structured markdown question with numbered
+options and a cancel; on a host that advertises `interactive_question=true`,
+the same intent routes to the native tool. See
+`core/rules/capabilities/interactive-question.md`.
 
 Required collection items:
 - Implementation scope (Backend API / Full-stack / UI only)
@@ -107,7 +112,10 @@ PRD: {TASK_DIR}/context/prd.md
 ---
 
 ## Absolute Rules
-- User confirmation must use the AskUserQuestion tool (plain text prompts are prohibited)
+- User confirmation must use the host's structured question mechanism — the
+  adapter wires it; for Codex emit a structured markdown question with numbered
+  options and a cancel; see `core/rules/capabilities/interactive-question.md`.
+  Plain-text approval prompts are prohibited.
 - `pipeline.json` and `handoff.md` must be saved to be considered complete
 - Completion reports must be within 3 lines — do not re-quote file contents"""
 name = "planner"

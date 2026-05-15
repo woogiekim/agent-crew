@@ -1,10 +1,13 @@
 ---
 name: requirements
 description: >
-  Dedicated requirements collection agent. Owns all AskUserQuestion interactions for
-  requirement gathering. TRIGGER when: crew:run needs requirements per task; task-runner
-  encounters absent REQUIREMENTS; planner is invoked directly without REQUIREMENTS.
-  SKIP: do not call AskUserQuestion for requirements outside this agent.
+  Dedicated requirements collection agent. Owns all structured user-choice
+  interactions (per `core/rules/capabilities/interactive-question.md`) for
+  requirement gathering. TRIGGER when: crew:run needs requirements per task;
+  task-runner encounters absent REQUIREMENTS; planner is invoked directly
+  without REQUIREMENTS.
+  SKIP: do not call the host's interactive question mechanism for requirements
+  outside this agent.
   Output: writes {TASK_DIR}/context/requirements.md and returns REQUIREMENTS block inline.
 model: inherit
 allowed-tools: AskUserQuestion, Read, Write, Bash
@@ -12,8 +15,9 @@ allowed-tools: AskUserQuestion, Read, Write, Bash
 
 # Requirements Agent
 
-Dedicated agent for requirement collection. Owns all AskUserQuestion interactions,
-scope validation, and ambiguity detection. Returns a structured REQUIREMENTS block
+Dedicated agent for requirement collection. Owns all structured user-choice
+interactions (per `core/rules/capabilities/interactive-question.md`), scope
+validation, and ambiguity detection. Returns a structured REQUIREMENTS block
 to the caller and writes `requirements.md` to the task state directory.
 
 ## Skills (Loaded On Demand)
@@ -27,8 +31,9 @@ load them at agent startup:
 - `TASK`: Task description string
 - `TASK_INDEX`: Index number for the task (0-based; used in question headers as TASK_INDEX+1)
 - `TASK_DIR`: State storage path (to write requirements output)
-- `MODE` (optional): `single_round` (default for new callers — one
-  AskUserQuestion call with scope + target + constraints) or `two_round`
+- `MODE` (optional): `single_round` (default for new callers — one structured
+  user-choice call (per `core/rules/capabilities/interactive-question.md`)
+  with scope + target + constraints) or `two_round`
   (legacy — preserves the original Round 1 + Round 2 flow). If `MODE` is
   unset, default to `two_round` for backward compatibility with any caller
   that has not been updated.
@@ -45,17 +50,20 @@ The execution flow branches on `MODE` at the top of the agent run:
   Step 3 → Step 4 flow exactly as before.
 
 The agent MAY escalate from `single_round` to a one-off domain-specific
-follow-up AskUserQuestion call (e.g., asking for the database choice when
-single-round answers indicate a Backend API scope without a clear stack), but
-this is a rare-case escalation, not the default. Escalation MUST NOT loop —
-at most one extra AskUserQuestion call beyond the single round.
+follow-up structured user-choice call (e.g., asking for the database choice
+when single-round answers indicate a Backend API scope without a clear
+stack), but this is a rare-case escalation, not the default. Escalation MUST
+NOT loop — at most one extra structured user-choice call beyond the single
+round.
 
 ## Execution Flow
 
 ### Step 1S — Single-Round Interview (runs only when `MODE == "single_round"`)
 
-Call `AskUserQuestion` once with all three questions in the same call. The
-host UI presents them together so the user answers scope + target +
+Call `ask_question` (the abstract intent; see
+`core/rules/capabilities/interactive-question.md`) once with all three
+questions in the same call. The host UI presents them together so the user
+answers scope + target +
 constraints in a single dialog turn. Use `Task {TASK_INDEX+1} — ` headers
 exactly as the two-round path does:
 
@@ -99,20 +107,24 @@ exactly as the two-round path does:
   - label: "No special constraints"
     description: "Proceed with standard implementation approach"
 
-After the single AskUserQuestion call returns, record answers as `r1_scope`,
-`r1_target`, and `r1_constraints`. Then **proceed directly to Step 4** —
-Round 2 domain-specific follow-up is skipped on the single-round path.
+After the single structured user-choice call returns, record answers as
+`r1_scope`, `r1_target`, and `r1_constraints`. Then **proceed directly to
+Step 4** — Round 2 domain-specific follow-up is skipped on the single-round
+path.
 
 > **Escalation guard**: If the answers clearly require a domain follow-up
 > (e.g., scope is `"Backend API"` and no database hint exists in the TASK),
-> the agent MAY issue one targeted AskUserQuestion call before Step 4. This
+> the agent MAY issue one targeted structured user-choice call (see
+> `core/rules/capabilities/interactive-question.md`) before Step 4. This
 > escalation MUST be at most one extra call and MUST NOT recurse.
 
 ---
 
 ### Step 1 — Round 1 Interview (runs only when `MODE == "two_round"` or unset)
 
-Call `AskUserQuestion` with the following three questions. Use `Task {TASK_INDEX+1} — ` headers:
+Call `ask_question` (the abstract intent; see
+`core/rules/capabilities/interactive-question.md`) with the following three
+questions. Use `Task {TASK_INDEX+1} — ` headers:
 
 **Question 1 — Scope:**
 - header: "Task {TASK_INDEX+1} — Scope"
@@ -154,7 +166,7 @@ Call `AskUserQuestion` with the following three questions. Use `Task {TASK_INDEX
   - label: "No special constraints"
     description: "Proceed with standard implementation approach"
 
-After AskUserQuestion returns, record answers as `r1_scope`, `r1_target`, `r1_constraints`.
+After the structured user-choice call returns, record answers as `r1_scope`, `r1_target`, `r1_constraints`.
 
 ---
 
@@ -170,7 +182,8 @@ After Round 1, analyze the answers for ambiguity:
 
 ### Step 3 — Round 2 Interview (skip if scope is "Tooling / docs / config")
 
-Based on `r1_scope`, run domain-specific follow-up using `AskUserQuestion`:
+Based on `r1_scope`, run domain-specific follow-up using `ask_question` (see
+`core/rules/capabilities/interactive-question.md`):
 
 **If r1_scope is "Backend API":**
 
@@ -324,17 +337,20 @@ If Round 2 was skipped (scope is "Tooling / docs / config"), omit `followup` ent
 ## Agent Rules
 
 - **NEVER skip the user-facing step** — when this agent is invoked at all, it
-  MUST call AskUserQuestion at least once (Step 1S on `single_round`, Step 1 on
-  `two_round`). The upstream sufficiency check (in `crew:run` Step 5.pre and
-  in `task-runner` Phase 1a) is responsible for deciding *whether* to invoke
-  this agent in the first place; once invoked, the agent does not bypass the
-  user dialog.
+  MUST issue at least one structured user-choice call (per
+  `core/rules/capabilities/interactive-question.md`): Step 1S on `single_round`,
+  Step 1 on `two_round`. The upstream sufficiency check (in `crew:run` Step
+  5.pre and in `task-runner` Phase 1a) is responsible for deciding *whether*
+  to invoke this agent in the first place; once invoked, the agent does not
+  bypass the user dialog.
 - **NEVER infer requirements** from the TASK description — always ask explicitly.
 - **Always write requirements.md** before returning the REQUIREMENTS block.
 - **Do not modify handoff.md** — this agent only writes `requirements.md`.
 - On `MODE == "single_round"`, Round 2 is skipped entirely (Step 3 does not
-  run). At most one targeted escalation AskUserQuestion is permitted before
-  Step 4, and only when the single-round answers clearly require it.
+  run). At most one targeted escalation structured user-choice call is
+  permitted before Step 4, and only when the single-round answers clearly
+  require it.
 - On `MODE == "two_round"` (legacy / unset), Round 2 is skipped only when
   `r1_scope` is `"Tooling / docs / config"`.
-- All AskUserQuestion calls must use structured options — no open-ended plain text questions.
+- All structured user-choice calls must use labeled options — no open-ended
+  plain text questions.

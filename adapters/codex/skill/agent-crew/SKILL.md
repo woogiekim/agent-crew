@@ -110,3 +110,52 @@ crew:run "{original request}"
 Then execute the full `crew:run` workflow from `~/.agent-crew/commands/run.md`.
 Preserve the original user wording as the task input, subject to the command
 definition's required normalization and requirements-collection steps.
+
+## Capability fallbacks
+
+Codex does not currently expose a native structured-question tool. The Codex
+adapter therefore advertises `interactive_question = false` in its
+`capabilities.json` (see `core/rules/host-capabilities.md` and
+`core/rules/capabilities/interactive-question.md`).
+
+When core emits an `ask_question(prompt, options[])` intent — for example, at
+the `crew:run` Step 1.5 injection prompt, the task-runner Phase 1d plan
+approval gate, or the Phase 2.5 stage action gate — Codex MUST fall back to a
+**structured markdown question** in the chat. The format is:
+
+```markdown
+{prompt}
+
+Pick one (reply with the option number):
+
+1. **{label_1}** — {description_1}
+2. **{label_2}** — {description_2}
+3. **{label_3}** — {description_3}
+0. **cancel**
+```
+
+Rules for the markdown fallback:
+
+- Always include numbered options (1..N) plus an explicit `0. **cancel**`.
+- Use one option per line; do not collapse into prose.
+- After printing, **stop and wait** for the user's reply. Do not infer the
+  user's choice from prior context.
+- When the user replies with a number, treat the corresponding option as the
+  selected `chosen_label` and proceed exactly as `ask_question` would have on
+  a host where `interactive_question=true`. When the user replies with `0`,
+  `cancel`, `취소`, or any free-text refusal, treat the result as the
+  `__cancelled__` sentinel and route to the cancel branch in the calling
+  command definition.
+- Never ask plain-text yes/no questions ("Should I deploy?", "Shall I merge?")
+  — that violates both `core/rules/disambiguation.md` and the centralized
+  approval-gate rule in `core/global-agents.md`.
+- Cache the user's resolved choice in the task's state directory so a retry
+  of the same stage does not re-prompt (see
+  `core/rules/disambiguation.md` Implementation Requirements §4).
+
+This fallback is the operational path for every `ask_question` intent emitted
+by core when running under the Codex adapter. If a future Codex release
+exposes a native elicitation surface, `adapters/codex/setup.sh` may flip
+`interactive_question` to `true` and bind the intent to that surface in this
+file's "Capability mappings" section (currently absent — Codex has no other
+host-bound tool calls today, so no mapping table is yet warranted).

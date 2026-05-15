@@ -126,8 +126,9 @@ from concurrent runners remain distinguishable:
   constraints: {constraints answer(s)}
   ```
   When present, skip Phase 1a (requirement collection) and pass directly to the planner.
-  When absent, the task-runner collects requirements via AskUserQuestion in Phase 1a before
-  invoking the planner.
+  When absent, the task-runner collects requirements via the host's interactive
+  question mechanism (see `core/rules/capabilities/interactive-question.md`) in
+  Phase 1a before invoking the planner.
 
 ## Execution Flow
 
@@ -435,8 +436,9 @@ TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
 MODE: single_round
 
-Run a single-round AskUserQuestion interview (scope + target + constraints in
-one call), write requirements.md, and return the REQUIREMENTS block.
+Run a single-round structured user-choice interview (per
+`core/rules/capabilities/interactive-question.md`) (scope + target + constraints
+in one call), write requirements.md, and return the REQUIREMENTS block.
 ```
 
 Extract the `REQUIREMENTS` block from the requirements agent's response and use it as
@@ -710,7 +712,8 @@ The `Work:` and `Files:` lines appear only when `prd.md` contains per-agent sect
 If `prd.md` is absent or the relevant sections are missing, the display falls back to
 showing stage names only (no error).
 
-Then fire **AskUserQuestion**:
+Then fire a **structured user-choice intent** (see
+`core/rules/capabilities/interactive-question.md`):
 - header: "Implementation Plan"
 - question: "Review the implementation plan above. Approve to begin execution."
 - options:
@@ -1181,7 +1184,8 @@ Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 ### Phase 2.5: Stage Action Gate
 
 The task-runner owns all approval decisions for its pipeline. Stage agents
-(devops, reviewer, etc.) MUST NOT issue their own AskUserQuestion for deploy,
+(devops, reviewer, etc.) MUST NOT issue their own host interactive question
+mechanism (see `core/rules/capabilities/interactive-question.md`) for deploy,
 merge, push, or destructive operations. Instead they write a PLAN block and wait.
 
 **This phase runs unconditionally after Phase 2 completes.** Do not treat it as conditional on receiving a PLAN: block — it always runs. Within this phase:
@@ -1303,7 +1307,8 @@ When a stage agent returns a `PLAN:` block (instead of executing), the task-runn
    wakeup mechanism fired. The file write is the contract; the host call is
    only the wakeup signal.
 
-4. If `EXECUTION_MODE == single`: the task-runner issues the AskUserQuestion
+4. If `EXECUTION_MODE == single`: the task-runner issues the structured
+   user-choice intent (per `core/rules/capabilities/interactive-question.md`)
    directly (see Step 3 below) and writes the result to `approval.md` itself.
 
 #### Step 3 — Conditional approval gate (N == 1, devops stage only)
@@ -1325,10 +1330,11 @@ print('yes' if has_devops else 'no')
 **If no devops stage is present:** skip this gate entirely and proceed to Phase 3.
 Branches remain local; the crew orchestrator or user can push manually.
 
-**If a devops stage is present:** use **AskUserQuestion** to request approval
-before executing the devops stage. Do not run the devops stage without approval.
-This is the single consolidated approval gate for this pipeline — do not delegate
-it to the devops agent.
+**If a devops stage is present:** emit a **structured user-choice intent** (per
+`core/rules/capabilities/interactive-question.md`) to request approval before
+executing the devops stage. Do not run the devops stage without approval. This
+is the single consolidated approval gate for this pipeline — do not delegate it
+to the devops agent.
 
 Question:
 - header: "Deploy"
@@ -1358,7 +1364,7 @@ If **Approve**:
       (e.g. it needs further confirmation for a specific destructive sub-step).
       Collect its PLAN block, write it to `{TASK_DIR}/context/action-plan.md`
       (appending under a new `## Sub-plan` section), and repeat the
-      AskUserQuestion loop (Step 3) for the sub-plan before continuing.
+      structured user-choice intent loop (Step 3) for the sub-plan before continuing.
     - `STATUS: BLOCKED` → write the blocker to `{TASK_DIR}/result.md` and
       return `STATUS: blocked` to the orchestrator.
     - No STATUS line → treat as a crash; apply the Stage Retry Rule (up to 5

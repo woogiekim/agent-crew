@@ -162,7 +162,8 @@ orchestrator (crew:run for N > 1, task-runner for N == 1):
 - Branch cleanup (git branch -d / -D)
 
 **Stage agents (devops, and any agent that performs destructive operations) MUST NOT
-issue AskUserQuestion for any of the above actions.** Instead, those agents must:
+issue the host's interactive question mechanism for any of the above actions
+(see `core/rules/capabilities/interactive-question.md`).** Instead, those agents must:
 
 1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
 2. Return a `PLAN:` block to the task-runner with the following fields:
@@ -180,13 +181,15 @@ issue AskUserQuestion for any of the above actions.** Instead, those agents must
 
 ### Orchestrator Approval Gate
 
-The orchestrator (crew:run or task-runner) issues the consolidated AskUserQuestion
+The orchestrator (crew:run or task-runner) issues the consolidated structured
+user-choice intent (see `core/rules/capabilities/interactive-question.md`)
 after collecting all PLAN blocks. This ensures:
 - A single approval prompt regardless of how many stage agents need approval
 - A consolidated view of all planned actions across all tasks (for N > 1)
 - No duplicate or out-of-order approval dialogs
 
-All AskUserQuestion calls for these actions must include at minimum:
+All structured user-choice calls (per `core/rules/capabilities/interactive-question.md`)
+for these actions must include at minimum:
 - header: action type (e.g., "Deploy", "Approve All Actions", "Merge", "Push", "Rollback")
 - question: describing the specific action(s) with relevant details
 - options: at minimum "Approve — proceed" and "Cancel — hold"
@@ -207,7 +210,8 @@ directly without a PLAN gate.
 ### Destructive-action stage agents (devops, and any agent that deploys or pushes)
 
 These agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
-a `PLAN:` block to the task-runner. They do NOT issue AskUserQuestion directly.
+a `PLAN:` block to the task-runner. They do NOT issue the host's interactive
+question mechanism directly (see `core/rules/capabilities/interactive-question.md`).
 The task-runner (or crew orchestrator for parallel runs) owns the approval gate.
 
 PLAN block format:
@@ -223,7 +227,8 @@ STATUS: plan_ready
 
 ### Orchestrator-level approval (task-runner for N == 1, crew:run for N > 1)
 
-After collecting all PLAN blocks, the orchestrator issues a single AskUserQuestion
+After collecting all PLAN blocks, the orchestrator issues a single structured
+user-choice intent (per `core/rules/capabilities/interactive-question.md`)
 with a consolidated summary of all planned actions.
 
 Standard approval options:

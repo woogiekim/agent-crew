@@ -21,7 +21,7 @@ prepare one execution context per task   inline dispatch
       |                                  (status / commit /
       v                                   merge / push / deploy /
 delegate one task-runner per task         tag / rollback) with
-      |                                   AskUserQuestion gate
+      |                                   interactive-question approval gate
       v                                   for destructive ops
 collect results and provide merge guidance
 ```
@@ -212,10 +212,13 @@ execution path below).
 
 **If `IS_LIVE_SESSION == 1` AND N == 1 AND `--inject` was NOT passed:**
 A live session exists but the user did not explicitly request injection.
-Ask via AskUserQuestion before deciding:
+Ask via the host's interactive question mechanism (see
+`core/rules/capabilities/interactive-question.md`) before deciding:
 
 ```text
-AskUserQuestion:
+# Structured user-choice intent (host-bound — see
+# core/rules/capabilities/interactive-question.md):
+ask_question:
   header: "Live Session"
   question: "A background session ({SESSION_ID}) is running. Join it or start independently?"
   options:
@@ -234,7 +237,9 @@ A live session exists, but the user submitted multiple tasks without an explicit
 inject flag. Ask the user to clarify:
 
 ```text
-AskUserQuestion:
+# Structured user-choice intent (host-bound — see
+# core/rules/capabilities/interactive-question.md):
+ask_question:
   header: "Live Session Detected"
   question: "A parallel crew:run session (ID: {SESSION_ID}) is already running.
              Do you want to inject these {N} new tasks into the live session,
@@ -357,10 +362,12 @@ The fast path runs only when **all** of the following are true:
 3. The normalized TASK string matches one of the trivial-intent patterns below
    AND none of the exclusion phrases are present (see "Negative-match
    disambiguation").
-4. The host AI tool exposes `AskUserQuestion` (required for destructive
-   intents). When `AskUserQuestion` is unavailable, destructive fast-path
-   intents fall through to the regular pipeline; the read-only `status` and
-   non-destructive `commit_only` paths still run inline.
+4. The host advertises `interactive_question = true` in capabilities.json
+   (required for destructive intents — see
+   `core/rules/capabilities/interactive-question.md`). When the flag is false
+   or the capability is absent, destructive fast-path intents fall through to
+   the regular pipeline; the read-only `status` and non-destructive
+   `commit_only` paths still run inline.
 
 If any of the above is false, **skip this step entirely and proceed to Step 2
 unchanged.** The fast path is purely additive — it never breaks the existing
@@ -534,12 +541,15 @@ Then **STOP — end the turn**. Do not proceed to Step 2.
 
 Extract the commit message from the portion of TASK after the verb (everything
 after the first space, with surrounding whitespace stripped). When the message
-is empty, prompt via AskUserQuestion for a one-line message before committing.
+is empty, prompt via the host's interactive question mechanism (see
+`core/rules/capabilities/interactive-question.md`) for a one-line message
+before committing.
 
 ```bash
 COMMIT_MSG=$(printf "%s" "${TASK}" | sed -E 's/^(commit|stage|git commit|git add)([[:space:]]+(changes))?[[:space:]]*//I')
 if [ -z "${COMMIT_MSG}" ]; then
-  # Ask for the commit message via AskUserQuestion (fallback: prompt inline).
+  # Ask for the commit message via the host's interactive question mechanism
+  # (fallback: prompt inline).
   COMMIT_MSG="chore: commit local changes"
 fi
 
@@ -577,8 +587,9 @@ Approval Rule. The flow is:
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
 
-2. **Fire AskUserQuestion** — the single, structured approval gate. Plain-text
-   approval is forbidden per CLAUDE.md.
+2. **Emit a structured user-choice intent** (per
+   `core/rules/capabilities/interactive-question.md`) — the single, structured
+   approval gate. Plain-text approval is forbidden per CLAUDE.md.
 
    - header: short intent label ("Push", "Merge", "Deploy", "Tag", "Rollback")
    - question: "Review the fast-path action plan above. Approve to run the
@@ -596,10 +607,10 @@ Per-intent commands (executed inline only after Approve):
 
 | Intent | Command |
 |---|---|
-| `merge`    | `git checkout main && git merge --no-ff "${SOURCE_BRANCH}" -m "merge: ${SOURCE_BRANCH} into main"` where `${SOURCE_BRANCH}` is the branch token extracted from TASK (the first `feat/...` / `fix/...` / etc. pattern, or the branch named after "branch" / "into main"). When no branch is identified, prompt via AskUserQuestion for the branch name before composing the PLAN. |
+| `merge`    | `git checkout main && git merge --no-ff "${SOURCE_BRANCH}" -m "merge: ${SOURCE_BRANCH} into main"` where `${SOURCE_BRANCH}` is the branch token extracted from TASK (the first `feat/...` / `fix/...` / etc. pattern, or the branch named after "branch" / "into main"). When no branch is identified, prompt via the host's interactive question mechanism (see `core/rules/capabilities/interactive-question.md`) for the branch name before composing the PLAN. |
 | `push`     | `git push origin "$(git rev-parse --abbrev-ref HEAD)"` for a feature branch, or `git push origin main` when the current branch is `main`. The PLAN line names the exact branch. |
 | `deploy`   | Defer to the project's deploy script when one is recorded. When none is recorded, fall through to the regular pipeline — the fast path does not invent deploy commands. |
-| `tag`      | `git tag "${TAG_NAME}" && git push origin "${TAG_NAME}"` where `${TAG_NAME}` is extracted from TASK (e.g. `tag v1.0.0` → `v1.0.0`). When the tag name is missing, prompt via AskUserQuestion before composing the PLAN. |
+| `tag`      | `git tag "${TAG_NAME}" && git push origin "${TAG_NAME}"` where `${TAG_NAME}` is extracted from TASK (e.g. `tag v1.0.0` → `v1.0.0`). When the tag name is missing, prompt via the host's interactive question mechanism (see `core/rules/capabilities/interactive-question.md`) before composing the PLAN. |
 | `rollback` | `git revert --no-edit HEAD` for "rollback" / "revert last commit". For broader rollback intents (revert deploy, reset to tag), fall through to the regular pipeline. |
 
 #### What the fast path bypasses
@@ -619,7 +630,9 @@ Per-intent commands (executed inline only after Approve):
 - Injection Detection (Step 1.5) — runs first, so trivial intents submitted
   during a live parallel session inject correctly instead of fast-pathing
 - Centralized Approval Gate (CLAUDE.md Approval Rule) — destructive intents
-  pass through AskUserQuestion exactly as the framework requires
+  pass through the host's interactive question mechanism (see
+  `core/rules/capabilities/interactive-question.md`) exactly as the framework
+  requires
 - "task-runner never pushes" rule — the fast path is the orchestrator, not the
   task-runner, so it is allowed to push after approval (per Steps 10–11)
 
@@ -957,8 +970,9 @@ TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
 MODE: single_round
 
-Run a single-round AskUserQuestion interview (scope + target + constraints in
-one call), validate scope, detect ambiguities, write
+Run a single-round structured user-choice interview (per
+`core/rules/capabilities/interactive-question.md`) (scope + target + constraints
+in one call), validate scope, detect ambiguities, write
 {TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
 ```
 
@@ -982,7 +996,7 @@ For each AMBIGUOUS task i:
   TASK_INDEX: i
   TASK_DIR: {TASK_DIR_i}
   MODE: single_round
-  Run a single-round AskUserQuestion interview, write requirements.md, return REQUIREMENTS block.
+  Run a single-round structured user-choice interview (per `core/rules/capabilities/interactive-question.md`), write requirements.md, return REQUIREMENTS block.
 ```
 
 Wait for **all** spawned requirements agents to complete before proceeding to
@@ -1026,8 +1040,10 @@ progress for any AMBIGUOUS task.
 > **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
 > handled **inside** the task-runner at Phase 1d. The task-runner reads `pipeline.json`
 > and `analysis.md` after the merged analyst spawn, displays the full implementation
-> plan, and fires AskUserQuestion before any stage agent executes. Do NOT add a
-> separate plan approval gate here in the orchestrator for N == 1.
+> plan, and emits a structured user-choice intent (see
+> `core/rules/capabilities/interactive-question.md`) before any stage agent
+> executes. Do NOT add a separate plan approval gate here in the orchestrator
+> for N == 1.
 >
 > **Plan Approval Gate (N > 1):** For parallel runs, each task-runner independently
 > handles Phase 1d for its own pipeline. After all task-runners have finished Phase
@@ -1309,8 +1325,9 @@ json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 
 > **Skip this step entirely when N == 1.** For single-task runs, the task-runner
 > itself acts as the local orchestrator for its own stage agents and issues the
-> consolidated AskUserQuestion via its Phase 2.5 Stage Action Gate. Proceed
-> directly to Step 7 (Collect Results).
+> consolidated structured user-choice intent (per
+> `core/rules/capabilities/interactive-question.md`) via its Phase 2.5 Stage
+> Action Gate. Proceed directly to Step 7 (Collect Results).
 
 When `N > 1`, all task-runners execute concurrently. Before any stage agent
 executes a deploy, merge, push, or other destructive action, the orchestrator
@@ -1349,7 +1366,8 @@ orchestrator:
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
 
-3. Issues a **single** AskUserQuestion:
+3. Emits a **single** structured user-choice intent (per
+   `core/rules/capabilities/interactive-question.md`):
    - header: "Approve All Actions"
    - question: "Review the consolidated action plan above. Approve to release all tasks, or cancel to hold."
    - options:
@@ -1408,7 +1426,7 @@ for TASK_DIR in {all task dirs}; do
   cat "${TASK_DIR}/context/action-plan.md"
 done
 
-# After AskUserQuestion decision, write result to each task. When the
+# After the structured user-choice decision, write result to each task. When the
 # capability is enabled, ALSO transition each task-runner's parent host task —
 # the TaskGet waiters inside P1 will wake on the next event without paying the
 # 5-second file-poll cadence.
@@ -1712,7 +1730,8 @@ Note: No remote push has occurred yet.
 > explicitly requests deployment after Step 9 — never proactively. When
 > deployment is requested, delegate to the **devops agent**. The orchestrator
 > must not run `git push` directly. The devops agent owns the approval gate
-> (AskUserQuestion) and execution.
+> (the host's interactive question mechanism — see
+> `core/rules/capabilities/interactive-question.md`) and execution.
 
 **Only execute this step when the pipeline included a `devops` stage that will
 run CI/CD (i.e., a stage whose agent is `devops`).**
@@ -1759,9 +1778,11 @@ Risk notes:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Then use **AskUserQuestion** to request approval. Do not proceed without it.
+Then emit a **structured user-choice intent** (per
+`core/rules/capabilities/interactive-question.md`) to request approval. Do not
+proceed without it.
 
-**Plain-text approval is FORBIDDEN.** Never ask "Shall I merge and push?", "Should I deploy?", or any equivalent free-form question. The AskUserQuestion structured UI is the only permitted approval method for deployment, push, and merge operations.
+**Plain-text approval is FORBIDDEN.** Never ask "Shall I merge and push?", "Should I deploy?", or any equivalent free-form question. The structured user-choice intent (per `core/rules/capabilities/interactive-question.md`) is the only permitted approval method for deployment, push, and merge operations.
 
 **When N > 1:**
 
@@ -1831,8 +1852,9 @@ crew:run "resolve merge conflicts"
   branch pointer, performance/MVP/dependency constraint). `SUFFICIENT` means
   the REQUIREMENTS block is synthesized inline with no agent spawn — cutting
   requirements overhead from ~22 s to ~2 s on well-formed prompts. `AMBIGUOUS`
-  means the requirements agent runs in single-round mode (one AskUserQuestion
-  call asking scope + target + constraints together). The legacy 2-round
+  means the requirements agent runs in single-round mode (one structured
+  user-choice call (per `core/rules/capabilities/interactive-question.md`)
+  asking scope + target + constraints together). The legacy 2-round
   interview remains available as a deeper escalation that only the agent
   itself may request.
 - `crew:run` is the canonical workflow entry point.
@@ -1854,8 +1876,10 @@ crew:run "resolve merge conflicts"
 - **Fast-path (Step 1.7)**: Trivial operational intents (merge, push, deploy,
   tag, rollback, status, commit-only) are dispatched inline by the orchestrator
   without spawning a task-runner. They still honor the centralized
-  AskUserQuestion approval gate for destructive operations. The classifier is
-  conservative — anything containing an implementation keyword ("add",
+  structured user-choice approval gate (per
+  `core/rules/capabilities/interactive-question.md`) for destructive
+  operations. The classifier is conservative — anything containing an
+  implementation keyword ("add",
   "implement", "fix", etc.) falls through to the regular pipeline. See
   Step 1.7 for the full pattern list, exclusion rules, and per-intent
   dispatch table.

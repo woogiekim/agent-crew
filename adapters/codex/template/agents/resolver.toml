@@ -35,7 +35,10 @@ Check the following parameters from the prompt:
    - If one change supersedes the other:
       - select the newer or more complete implementation
    - If the correct resolution cannot be determined:
-      - use `AskUserQuestion` to request clarification from the user
+      - ask the user via the host's structured question mechanism (the
+        adapter wires it; for Codex, emit a structured markdown question
+        with numbered options and a cancel — see
+        `core/rules/capabilities/interactive-question.md`)
 
 4. After resolving conflicts:
    ```bash
