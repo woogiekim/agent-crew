@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "task_id": "bench-mock-B-tdd",
+  "stages": [
+    {
+      "agents": ["backend"],
+      "tdd_parallel": true
+    }
+  ],
+  "needs_creation": [],
+  "completed_stages": 0,
+  "stage_agent_status": {},
+  "_bench_note": "Variant B — TDD parallel. Backend co-spawned with test-writer. Expected Phase 2 spawn count = 2 (test-writer + backend)."
+}

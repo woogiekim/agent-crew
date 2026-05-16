@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "task_id": "bench-mock-A-baseline",
+  "stages": [
+    "backend"
+  ],
+  "needs_creation": [],
+  "completed_stages": 0,
+  "stage_agent_status": {},
+  "_bench_note": "Variant A — baseline. Single backend agent, no parallel features. Expected Phase 2 spawn count = 1."
+}
