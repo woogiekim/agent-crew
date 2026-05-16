@@ -122,6 +122,10 @@ install_global() {
     || log_error "planner.md install failed — system/agents/planner.md not found"
   log_info "planner agent verified"
 
+  [ -f "${AGENT_CREW_DIR}/system/agents/documenter.md" ] \
+    || log_error "documenter.md install failed — system/agents/documenter.md not found"
+  log_info "documenter agent verified"
+
   mkdir -p "${AGENT_CREW_DIR}/system/rules"
   cp -r "${SOURCE_DIR}/rules/"* "${AGENT_CREW_DIR}/system/rules/" 2>/dev/null || true
   log_info "Rules installed → ${AGENT_CREW_DIR}/system/rules/"

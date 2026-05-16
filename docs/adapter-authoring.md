@@ -105,7 +105,9 @@ A bash script that:
 2. Honors `AGENT_CREW_MODE` (`install` or `update`) — the only
    difference is logging; the copy operations themselves are idempotent.
 3. Copies core directories (`commands`, `hooks`, `rules`, `scripts`,
-   `setup`, optionally `agents`) into the host's expected paths.
+   `schemas`, `setup`, optionally `agents`) into the host's expected
+   paths. `schemas/` was added in Phase F4 — see
+   `core/rules/state-files/` for the per-file documentation.
 4. Writes `${STATE_DIR}/capabilities.json` declaring which capability
    flags this host supports (see "Declaring capabilities" below).
 5. Optionally registers hooks into the host's lifecycle mechanism
@@ -134,6 +136,7 @@ copy_dir_contents "${AGENT_CREW_HOME}/commands" "${HOST_DIR}/commands"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks"    "${HOST_DIR}/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/rules"    "${HOST_DIR}/rules"
 copy_dir_contents "${AGENT_CREW_HOME}/scripts"  "${HOST_DIR}/scripts"
+copy_dir_contents "${AGENT_CREW_HOME}/schemas"  "${HOST_DIR}/schemas"
 
 # 2. Write capabilities.json
 STATE_DIR="${AGENT_CREW_HOME}/state/$(basename "${PROJECT_ROOT}")"
@@ -195,23 +198,33 @@ tools; `invocation.md` does.
 
 ## Declaring capabilities
 
-Six flags are currently defined. For each, decide: does my host expose
-the required surface (see `core/rules/capabilities/{flag}.md`)?
+Six runtime flags are defined in `capabilities.json`, plus one
+install-time capability that adapters honor via `setup.sh` only. For
+each, decide: does my host expose the required surface (see
+`core/rules/capabilities/{flag}.md`)?
 
-| Flag | If true, host must provide... | If false, fallback... |
-|---|---|---|
-| `task_tools` | `createTask`/`listTasks`/`getTask`/`updateTask` quartet | `pipeline.json` + 5-second `approval.md` poll |
-| `agent_background` | `spawnBackgroundAgent` + concurrent-safe execution | Inline parallel within one turn |
-| `monitor_tool` | `streamOutput` or `getOutputTail` | `tail -20 progress.log` |
-| `cost_tracking` | Some way to report per-call token totals | No cost data; quality-loop uses retry-count only |
-| `hook_system` | PreToolUse / PostToolUse hook registration | Model-side guidance only |
-| `interactive_question` | `askQuestion(prompt, options) -> chosen` | Structured markdown prompt; model interprets reply |
+| Flag | Kind | If true, host must provide... | If false, fallback... |
+|---|---|---|---|
+| `task_tools` | runtime | `createTask`/`listTasks`/`getTask`/`updateTask` quartet | `pipeline.json` + 5-second `approval.md` poll |
+| `agent_background` | runtime | `spawnBackgroundAgent` + concurrent-safe execution | Inline parallel within one turn |
+| `monitor_tool` | runtime | `streamOutput` or `getOutputTail` | `tail -20 progress.log` |
+| `cost_tracking` | runtime | Some way to report per-call token totals | No cost data; quality-loop uses retry-count only |
+| `hook_system` | runtime | PreToolUse / PostToolUse hook registration | Model-side guidance only |
+| `interactive_question` | runtime | `askQuestion(prompt, options) -> chosen` | Structured markdown prompt; model interprets reply |
+| `reasoning_tier` | install-time | `setup.sh` materializes the abstract tier (`deep`/`balanced`/`light`) to a concrete host model identifier | Single-model environment — tier hint is advisory only |
 
 **You MUST only declare `true` for capabilities your host genuinely
 exposes.** Declaring `true` falsely will break core's gated paths.
 
-The `generic` adapter declares all flags `false` (or omits the file
-entirely) and is the floor of what works.
+The `generic` adapter omits `capabilities.json` entirely; the
+absence-contract treats every flag as `false`. That is the floor of
+what works.
+
+`reasoning_tier` does NOT appear in `capabilities.json`. It is honored
+by your `setup.sh` only — the materializer block writes per-agent
+model identifiers into your host's preferred format (e.g., the Claude
+adapter rewrites the `model:` frontmatter; the Codex adapter sets a
+TOML field). See `core/rules/capabilities/reasoning-tier.md`.
 
 ## Wiring core/scripts/
 
@@ -223,8 +236,8 @@ How your adapter wires them depends on `hook_system`:
 
 | `hook_system` | Wiring approach |
 |---|---|
-| `true`  | Your `setup.sh` registers the scripts as PreToolUse / PostToolUse hooks via the host's registration mechanism. Hooks invoke `core/scripts/check-*.py` directly. |
-| `false` | Your `invocation.md` (or `skill/SKILL.md`) instructs the model: "before invoking X, run `core/scripts/check-Y.sh` and respect its exit code." Best-effort enforcement. |
+| `true`  | Your `setup.sh` registers the scripts as PreToolUse / PostToolUse hooks via the host's registration mechanism. Hooks invoke `core/scripts/check-*.py` directly. The Claude adapter's setup.sh is the reference — see its `cost-tracker.sh` and `forbid-plaintext-approval.sh` registration blocks. |
+| `false` | Your `invocation.md` (or `skill/SKILL.md`) instructs the model: "before invoking X, run `core/scripts/check-Y.sh` and respect its exit code." Best-effort enforcement. The scripts remain runnable standalone for diagnostic use (`check-plaintext-approval.py --text "..."`). |
 
 Either way, the scripts themselves don't change. Provider-neutrality is
 the point.
@@ -234,19 +247,22 @@ the point.
 Read these in order — they illustrate three different host integration
 shapes:
 
-1. **`adapters/claude/`** — full feature set. All six capabilities can
-   eventually be `true`. Uses native `settings.json` hooks, structured
-   prompt tools, background agents. Read this to see what "everything
-   wired" looks like.
+1. **`adapters/claude/`** — full feature set. As of Phase G6, five of
+   the six runtime flags are `true`: `task_tools`, `agent_background`,
+   `monitor_tool`, `cost_tracking`, `hook_system`. Only
+   `interactive_question` remains `false` (uses the structured-markdown
+   fallback). Reasoning-tier is materialized at install time. Read this
+   to see what "everything wired" looks like.
 2. **`adapters/codex/`** — partial feature set. `task_tools`,
-   `agent_background`, `monitor_tool` are `false`; `interactive_question`
-   defaults to markdown fallback. Uses `SKILL.md` for model-side rules
-   instead of OS-level hooks. Read this to see how to fall back
-   gracefully on a less-capable host.
-3. **`adapters/generic/`** — minimum viable adapter. Almost everything
-   `false`. Detect script is `exit 0` (last-resort fallback). Copies
-   core assets to `.agent-crew/` in the project root. Read this to see
-   the smallest possible adapter.
+   `agent_background`, `monitor_tool`, `hook_system` are `false`;
+   `interactive_question` defaults to the markdown fallback. Uses
+   `SKILL.md` for model-side rules instead of OS-level hooks. Read
+   this to see how to fall back gracefully on a less-capable host.
+3. **`adapters/generic/`** — minimum viable adapter. Omits
+   `capabilities.json` entirely (absence-contract treats every flag
+   as `false`). Detect script is `exit 0` (last-resort fallback).
+   Copies core assets to `.agent-crew/` in the project root. Read this
+   to see the smallest possible adapter.
 
 > If your adapter ships custom agent files (e.g., a host-specific
 > variant of `supervisor` or `backend`), follow the prompt-cache tier

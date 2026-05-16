@@ -91,7 +91,8 @@ The following patterns are prohibited under this rule:
   meant X, going with that." The user does not see the alternatives.
 - **Free-text yes/no questions** such as "Should I proceed?" or
   "Shall I merge and push?" — these violate both this rule and the
-  plain-text-approval prohibition (planned hook: refactor item 6).
+  plain-text-approval prohibition (enforced by Phase G6 hook —
+  `core/scripts/check-plaintext-approval.py`).
   All questions MUST be structured options.
 - **Implicit retry without re-asking.** If a stage retries after a
   cancelled disambiguation, the system MUST treat the cancellation as

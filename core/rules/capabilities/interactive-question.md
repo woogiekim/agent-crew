@@ -30,21 +30,25 @@ The mechanism itself is the adapter's choice — a native interactive
 tool, a modal dialog, a chat button row, an MCP elicitation surface,
 whatever the host provides. The adapter binds the abstract call to its
 chosen mechanism in `adapters/{host}/invocation.md` under an
-"Interactive question mapping" section (added in a later refactor
-phase; not part of Phase A1).
+"Interactive question mapping" section.
 
 ## Consumer Contract (core)
 
-Concrete call sites (current and planned):
+Concrete call sites:
 
-- **`core/commands/run.md` intent classifier** (planned — refactor item
-  A4) — when input is ambiguous, ask the user to pick between candidate
-  intents instead of guessing.
-- **`core/rules/task-injection.md` disambiguation rule** (planned —
-  refactor item A4) — when an injected task is a near-duplicate of an
-  in-flight task, ask the user to merge / queue / cancel.
+- **`core/commands/run.md` intent classifier** (implemented — Phase A4,
+  Step 1.7.5) — when input is ambiguous, the orchestrator routes
+  through the disambiguation rule instead of guessing.
+- **`core/rules/task-injection.md` disambiguation rule** (implemented
+  — Phase A4) — when an injected task is a near-duplicate of an
+  in-flight task, the user is asked to merge / queue / cancel.
 - **`core/commands/agent-maker.md`** and other command-level "pick one
   of N" prompts as needed.
+
+All call sites today use the markdown fallback documented under
+"Absence Behavior" below (no adapter advertises `interactive_question:
+true` yet). Adapters that flip the flag pick up the native path
+automatically — call sites do not need to change.
 
 Input shape: a list of options. Output shape: the chosen label, or the
 cancellation sentinel. Core MUST handle the cancellation case
@@ -67,7 +71,8 @@ The model interprets the user's natural-language reply and routes
 accordingly. This is the lowest-common-denominator UX every adapter
 falls back to. The fallback is intentionally restrictive — it produces
 a structured prompt, not a free-text yes/no question, which would
-violate the plain-text approval prohibition (see refactor item 6).
+violate the plain-text approval prohibition enforced by Phase G6
+(`core/scripts/check-plaintext-approval.py`).
 
 ## Adapter Examples
 
@@ -85,12 +90,12 @@ Producer:
 - `adapters/claude/invocation.md` (mapping section to be added in a
   later refactor phase)
 
-Consumer (planned):
+Consumer:
 
-- `core/commands/run.md` (intent classifier disambiguation, refactor
-  item A4)
-- `core/rules/task-injection.md` (duplicate-task disambiguation,
-  refactor item A4)
+- `core/commands/run.md` (intent classifier disambiguation — Phase A4,
+  implemented)
+- `core/rules/task-injection.md` (duplicate-task disambiguation —
+  Phase A4, implemented)
 
 Companion rule:
 

@@ -109,8 +109,8 @@ Consumer:
 Cross-flag:
 
 - `hook_system`: Claude's `cost-tracker.sh` is wired via the host's
-  PostToolUse hook surface. The capability `hook_system` is still
-  nominally `planned`, but the registration mechanism already works on
-  Claude (Phase 3.3 piggybacks on it). The two flags are independent
-  on purpose — a future host could ship `cost_tracking=true` via a
-  different mechanism (e.g., `getTask().usage`) without `hook_system`.
+  PostToolUse hook surface. The capability `hook_system` is now
+  `implemented` (Phase G6) and the Claude adapter advertises it true.
+  The two flags remain independent on purpose — a future host could
+  ship `cost_tracking=true` via a different mechanism (e.g.,
+  `getTask().usage`) without `hook_system`.
