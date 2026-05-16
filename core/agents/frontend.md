@@ -24,6 +24,7 @@ Frontend developer. Implements UI based on the design specification using TDD, a
 Read the following skill files using the Read tool **only when the specific
 technique is needed** during execution — do not load all skills upfront:
 - UI component decomposition and prop design: `core/agents/skills/ui-component-design.md`
+- Error handling and typed error flows: `core/agents/skills/error-handling.md`
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.

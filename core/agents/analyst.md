@@ -184,16 +184,20 @@ the implementer stage in question:
   the implementer will create (function signatures, endpoints, CLI
   flags). test-writer must be able to derive tests from the spec
   alone — it cannot read the implementer's source.
-- The implementation surface is dominated by new files / new entry
-  points (not pure refactors of existing logic — the existing test
-  suite already encodes the "behavior unchanged" contract there).
+- The implementation surface has a clear deliverable surface (new or modified
+  entry points that test-writer can target from the spec alone).
 - The project has a detectable test directory (`tests/`, `test/`,
   `spec/`, `__tests__/`, etc.).
 - The stage's `agents` array has length 1 (MVP scope —
   multi-implementer TDD parallel is a follow-up).
 
-When unsure, default to `false` (omit the field). The existing bare
-forms (`"backend"`, `["designer", "backend"]`) remain fully supported
+**Default: `true` for single-agent code implementation stages** (backend, frontend, or
+any custom implementer) when the project has a detectable test directory. Set
+`tdd_parallel: false` explicitly only when:
+- The stage has `agents.length > 1` (multi-implementer TDD parallel is not yet supported).
+- The spec lacks a clear input/output contract (test-writer cannot derive tests from it).
+
+The existing bare forms (`"backend"`, `["designer", "backend"]`) remain fully supported
 and produce identical behavior to a `tdd_parallel: false` stage.
 
 #### Sub-task fan-out opt-in (`parallelizable_units`)

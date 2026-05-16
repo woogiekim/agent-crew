@@ -24,6 +24,10 @@ Read and reference the following files using the Read tool when necessary:
 - TDD cycle: `~/.agent-crew/system/agents/skills/tdd.md`
 - Object Calisthenics principles: `~/.agent-crew/system/agents/skills/oop-principles.md`
 - API design and contract definition: `core/agents/skills/api-design.md`
+- Domain modeling and aggregate design: `core/agents/skills/domain-modeling.md`
+- Database schema design and indexing strategies: `core/agents/skills/database-design.md`
+- Error handling and typed error flows: `core/agents/skills/error-handling.md`
+- Security hardening (auth, secrets, transport): `core/agents/skills/security-hardening.md`
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never accept inline contents.
