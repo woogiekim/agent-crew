@@ -221,6 +221,40 @@ Perform the assigned work.
 All file operations must be performed relative to {PROJECT_ROOT}.
 ```
 
+##### Reviewer-stage prompt addendum (Issue #3)
+
+When `STAGE_AGENT == "reviewer"`, append a `REQUIRES_TEST_EXECUTION:`
+input line to the prompt above. Extract the flag from the reviewer
+stage's pipeline.json entry — absent → `true` (Issue #3 default;
+test execution required); present and `false` → planner has opted
+out for a docs-only stage:
+
+```bash
+REQUIRES_TEST_EXECUTION=$(python3 -c "
+import json
+try:
+    p = json.load(open('${PIPELINE_PATH}'))
+    stage = p['stages'][${i} - 1]
+    if isinstance(stage, dict):
+        print('false' if stage.get('requires_test_execution', True) is False else 'true')
+    else:
+        print('true')
+except Exception:
+    print('true')
+")
+```
+
+Then append to the reviewer's prompt:
+
+```text
+REQUIRES_TEST_EXECUTION: ${REQUIRES_TEST_EXECUTION}
+```
+
+The reviewer's Phase 0 / Phase 1 / Phase 1.5 honor this flag —
+`false` skips test runner discovery, test execution, and the
+cross-process path agreement check entirely (static review only).
+See `core/agents/reviewer.md` § Inputs and § Phase 0/1/1.5.
+
 ### Single Agent
 
 Spawn using the format above in blocking mode.

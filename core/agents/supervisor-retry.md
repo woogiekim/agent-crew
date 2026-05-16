@@ -167,6 +167,90 @@ parsing `result.md`. `STAGE_START_EPOCH` is set per stage in
 block); when absent (defensive default), the check measures from
 "now" and never fires.
 
+### Reviewer Loop-Back Rule (Issue #3)
+
+When the reviewer stage returns `STATUS: REJECTED` (the Issue #3
+quality-loop short-circuit — distinct from the legacy
+`REVIEW: NEEDS_CHANGES` advisory return), the supervisor MUST re-loop
+to the **most recent implementer stage** instead of advancing
+`completed_stages`. This rule wraps the reviewer stage spawn inside
+the same Stage Retry Rule budget (`validation = 3 retries`) used for
+implementer crashes — the soft loop converges in at most three
+implementer re-runs, then halts with a hard blocker.
+
+The reviewer's `REASON:` line drives the re-loop directive written into
+`handoff.md` before the implementer is re-spawned:
+
+| `REASON:` value | Re-loop target | Directive appended to handoff.md |
+|---|---|---|
+| `tests_failed` | most recent implementer stage | "Tests failed in the previous review. Fix the failing tests reported in `${TASK_DIR}/context/review-tests.md` (failing runners + last 50 lines of output). Do NOT skip or comment out the failing assertions." |
+| `tests_absent_for_code_change` | most recent implementer stage | "Reviewer detected a code change with no discoverable test runner. Add a test runner config AND tests covering the changed behavior. The diff touched code files but the project has no `pytest.ini`/`package.json scripts.test`/`build.gradle*`/`go.mod`/`Cargo.toml`/`tox.ini`. If tests genuinely cannot exist for this surface, the planner must re-mark the reviewer stage with `requires_test_execution: false` and justify the decision." |
+| `cross_process_path_mismatch` | most recent implementer stage | "Reviewer detected a path-literal mismatch across the shell/Python boundary. The conflicting pair is recorded in `${TASK_DIR}/context/review-tests.md` § Cross-process path agreement. Make both sides resolve to the SAME path (literal equality OR a single shared helper that returns the path)." |
+
+Re-loop logic (executed by Phase 2's stage loop wrapper around the
+reviewer stage spawn — runs at the same point in the dispatch flow as
+the existing crash-retry path):
+
+```python
+# Inside the stage loop, after the reviewer agent returns:
+if "STATUS: REJECTED" in reviewer_response:
+    reason = extract_reason(reviewer_response)   # tests_failed | tests_absent_for_code_change | cross_process_path_mismatch
+    quality_retries += 1                          # shares the validation budget (3)
+    log_progress("RETRY", f"attempt {quality_retries} — reviewer_rejected reason={reason}")
+
+    if quality_retries > 3:
+        # Stage Retry Rule budget exhausted — terminal blocker.
+        log_progress("BLOCKED", "quality_loop_exhausted")
+        register_update current_phase blocked
+        register_update blocked_by --json '["quality_loop_exhausted"]'
+        write_blocker_to_result_md(
+            blocker="quality_loop_exhausted",
+            detail=f"Reviewer rejected 3 consecutive times "
+                   f"(reason={reason}). See ${TASK_DIR}/context/review-tests.md "
+                   f"for the most recent failure tail.",
+        )
+        return  # halts pipeline; Phase 3 close-out runs as normal
+
+    # Append the directive matching `reason` to handoff.md and decrement
+    # completed_stages back to the most recent implementer stage so the
+    # outer stage loop re-spawns it instead of advancing.
+    impl_stage_index = find_most_recent_implementer_stage_index()
+    append_directive_to_handoff(reason)
+    pipeline.completed_stages = impl_stage_index - 1
+    pipeline.stage_agent_status.pop(str(impl_stage_index), None)  # clear so retry re-runs
+    save_pipeline_json()
+
+    continue  # re-enter the stage loop at the implementer index
+```
+
+The `find_most_recent_implementer_stage_index()` helper walks
+`pipeline.stages` backwards from the reviewer stage's index and
+returns the first non-reviewer / non-devops / non-resolver index.
+When no implementer is found (degenerate pipeline of `[["reviewer"]]`
+only), the supervisor halts with
+`BLOCKER: quality_loop_no_implementer_to_retry` — re-running an empty
+pipeline cannot produce a different verdict.
+
+The Stage Retry Rule's two pre-existing budgets remain unchanged:
+
+| Budget | Scope | Behavior on exhaustion |
+|---|---|---|
+| `validation = 3` | Reviewer-driven re-loops (this rule) AND any explicit "validation failure" reported by a stage agent. | Hard stop, `BLOCKER: quality_loop_exhausted`. |
+| `crash = 5`      | Stage agent crashes (no STATUS line, host-detected `error`). | Hard stop, crash details to result.md. |
+
+`quality_retries` is initialized to 0 at the top of the reviewer stage
+iteration, alongside `crash_attempts`. The two counters are independent
+— a reviewer rejection consumes a validation retry; a reviewer crash
+consumes a crash retry; they cannot cross-deplete each other.
+
+The legacy `REVIEW: NEEDS_CHANGES` return (a soft advisory that the
+older reviewer used) is preserved for backward compatibility: it does
+NOT trigger the Issue #3 re-loop. Only the structured short-circuit
+`STATUS: REJECTED` with a known `REASON:` does. Pipelines whose
+reviewer has not been updated to Issue #3 (e.g. older installs)
+continue to work — they simply never trigger the re-loop and behave
+exactly as before.
+
 ### Cost Circuit Breaker
 
 Before each stage spawn AND before each retry inside the loop above,

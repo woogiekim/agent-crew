@@ -180,3 +180,76 @@ After each stage returns, the supervisor checks:
   retries). After all crash retries are exhausted, report BLOCKED.
 - If `STATUS: BLOCKED` → halt the pipeline and report the blocker to the
   orchestrator.
+- If `STATUS: REJECTED` (reviewer-only — Issue #3) → re-loop to the
+  most recent implementer stage per the Reviewer Loop-Back Rule below.
+
+## Quality Loop Enforcement (Issue #3)
+
+> **Why this section exists.** A branch was merged with a latent bug a
+> proper test run would have caught: `core/bg.py` used
+> `tempfile.gettempdir()` (returns `/var/folders/...` on macOS) while
+> `hooks/PostToolUse.sh` hardcoded `/tmp/mnemos-bg-check-{uid}.ts`.
+> The two paths never matched — the Python ↔ bash throttle silently
+> never communicated. The reviewer approved on static analysis alone,
+> never running the test suite. This section makes the test-execution
+> requirement explicit and the cross-process path check automatic.
+
+### Test execution requirement
+
+The reviewer agent (`core/agents/reviewer.md` § Phase 0 + Phase 1)
+MUST execute the project's discovered test suite before approving any
+change that touches code files (`*.py`, `*.ts`, `*.tsx`, `*.js`,
+`*.jsx`, `*.kt`, `*.java`, `*.go`, `*.rs`, `*.sh`). Static review
+alone is no longer sufficient. The reviewer's return block carries a
+mandatory `TEST_RUN_RESULT:` line so the supervisor can confirm tests
+actually ran (or were intentionally skipped) rather than silently
+omitted.
+
+Three rejection signals are part of the reviewer's contract:
+
+| `STATUS: REJECTED REASON:` | Triggered when | Supervisor action |
+|---|---|---|
+| `tests_failed`                  | A discovered runner returned non-zero exit. | Re-loop to most recent implementer with the failing tail in handoff.md. |
+| `tests_absent_for_code_change`  | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
+| `cross_process_path_mismatch`   | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
+
+### Cross-process path agreement check
+
+When the diff touches BOTH a shell script and a Python/JS/TS module
+that writes filesystem paths, the reviewer grep-compares path literals
+on both sides and asserts they agree (literal equality OR proven-
+equivalent — both sides bound to the same well-known location).
+`tempfile.gettempdir()` / `os.tmpdir()` / `os.environ['TMPDIR']` /
+`mktemp` are NOT considered provably equivalent to a hard `/tmp/...`
+literal — that exact mismatch is the canonical Issue #3 bug.
+
+### Loop-back semantics
+
+The Reviewer Loop-Back Rule (see `core/agents/supervisor-retry.md` §
+Reviewer Loop-Back Rule) wires the three rejection reasons above into
+the existing **Stage Retry Rule budget**:
+
+- Validation retry budget: **3** (shared with any other validation
+  failure path).
+- After exhaustion: terminal blocker `quality_loop_exhausted` written
+  to `result.md`; no further automatic recovery.
+- The re-loop target is the **most recent implementer stage** —
+  reviewer, devops, and resolver stages are skipped when walking
+  backwards. When no implementer exists (degenerate pipeline of
+  `[["reviewer"]]` only) the supervisor halts with
+  `BLOCKER: quality_loop_no_implementer_to_retry`.
+
+### Planner opt-out (`requires_test_execution: false`)
+
+The planner MAY set `requires_test_execution: false` on the reviewer
+stage's object form for tasks with no testable surface (pure
+documentation, `.gitignore` / config-only, comment-only edits). The
+supervisor passes this as `REQUIRES_TEST_EXECUTION` to the reviewer,
+which skips Phase 0 / Phase 1 / Phase 1.5 entirely and runs only the
+static review.
+
+The field defaults to `true` (test execution required) — existing
+pipeline.json files without the field continue to work and now opt
+their reviewer stage into the test-execution path automatically. See
+`core/agents/planner.md` § Reviewer opt-out for the strict criteria
+on when the opt-out is appropriate.

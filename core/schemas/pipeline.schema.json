@@ -49,6 +49,11 @@
                 "default": false,
                 "description": "When true AND the next stage is a single `reviewer` agent, the supervisor co-spawns the reviewer in MODE=streaming alongside this stage's agent(s) in a single host message. The reviewer polls git log incrementally as new commits land, terminating once this stage's agent reports completed (with one final drain). On joint success, `completed_stages` advances by 2 — the trailing reviewer stage is consumed. Absent or false → existing sequential behavior. See core/agents/supervisor-stages.md § Streaming Review Dispatch."
               },
+              "requires_test_execution": {
+                "type": "boolean",
+                "default": true,
+                "description": "Reviewer-stage opt-out (Issue #3). When true (default, absent), the reviewer EXECUTES the discovered test runner(s) in Phase 0/1 and runs the cross-process path agreement check in Phase 1.5 before approving. When false, the reviewer skips those phases and runs only the static review (the pre-Issue-#3 behavior) — appropriate only for docs-only / .gitignore-only / comment-only stages. Set ONLY on reviewer stage objects; supervisor reads it via stage.get('requires_test_execution', True). See core/agents/planner.md § Reviewer opt-out and core/rules/quality-loop.md § Quality Loop Enforcement (Issue #3)."
+              },
               "parallelizable_units": {
                 "type": "array",
                 "description": "Optional. When length >= 2, the supervisor enters Sub-Task Fan-Out dispatch and spawns one agent-of-`agents[0]` per unit in a single host message. Absence or length <= 1 falls through to legacy single-agent / parallel / TDD dispatch — pre-existing pipelines are unaffected. See core/agents/supervisor-stages.md § Sub-Task Fan-Out Dispatch.",

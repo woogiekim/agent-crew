@@ -418,6 +418,66 @@ other flags select:
 Custom agent names must match the filename format:
 `~/.agent-crew/agents/<name>.md`
 
+#### Reviewer opt-out (`requires_test_execution`)
+
+The reviewer stage defaults to `requires_test_execution: true` —
+since Issue #3, the reviewer EXECUTES the project's test suite before
+approving any change that touches code files. For tasks that genuinely
+have no testable surface (pure documentation, README updates, comment-
+only edits, `.gitignore` changes), the planner MAY opt the reviewer
+stage out by setting `requires_test_execution: false` on the reviewer
+stage's object form:
+
+```json
+{
+  "stages": [
+    ["backend"],
+    { "agents": ["reviewer"], "requires_test_execution": false }
+  ]
+}
+```
+
+When the supervisor spawns the reviewer, it extracts this flag and
+passes it as the `REQUIRES_TEST_EXECUTION` input. With the opt-out
+set, the reviewer SKIPS Phase 0 (runner discovery), Phase 1 (test
+execution), and Phase 1.5 (cross-process path agreement check), and
+runs only the static review from Step 1 onward — the pre-Issue-#3
+behavior.
+
+##### When this flag is appropriate
+
+Set `requires_test_execution: false` ONLY when **all** of the
+following hold:
+
+- The task changes **documentation only** (`README.md`, `CHANGELOG.md`,
+  `docs/**`, agent prompts under `core/agents/**/*.md`, rule
+  documents under `core/rules/**/*.md`) — no executable code paths
+  are altered.
+- The task changes **`.gitignore` / `.gitattributes` / `.editorconfig`**
+  or comparable repo-hygiene config files only.
+- The task makes **comment-only edits** to source files (the code
+  bodies are not modified — only the surrounding `#` / `//` / `/* */`
+  comments).
+
+If ANY of the following is true, do NOT set the flag (leave it absent
+so the default `true` applies):
+
+- The diff touches any `*.py`, `*.ts`, `*.tsx`, `*.js`, `*.jsx`,
+  `*.kt`, `*.java`, `*.go`, `*.rs`, or `*.sh` file's executable body.
+- The task adds, removes, or modifies a CI / build / package config
+  (`pyproject.toml` `[tool.*]` sections, `package.json scripts`,
+  `build.gradle*`, `Cargo.toml [package]/[dependencies]`, `go.mod`,
+  Dockerfile, GitHub Actions workflows) — these have testable surface
+  even if no test file changed.
+- The task is a refactor, a bug fix, or a "no-op cleanup" — the very
+  premise (behavior unchanged) is what tests would verify.
+
+When the flag is absent the supervisor passes
+`REQUIRES_TEST_EXECUTION: true`, which is the Issue #3 default. The
+field is **backwards compatible**: all pipeline.json files emitted
+before this feature continue to work — they simply opt every reviewer
+stage into the test-execution path.
+
 #### Pipeline Validation (after writing pipeline.json)
 
 Run the following validation before returning:

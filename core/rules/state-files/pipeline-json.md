@@ -119,6 +119,39 @@ Fan-Out Dispatch for full pseudocode):
   `completed`. Crashed units trigger per-unit (not whole-stage) retry
   via the Stage Retry Rule.
 
+### Reviewer opt-out stage form (`requires_test_execution`)
+
+A reviewer stage may opt out of Issue #3's test-execution requirement
+by encoding itself as the object form with
+`requires_test_execution: false`. The supervisor extracts this flag
+when spawning the reviewer and passes it as the
+`REQUIRES_TEST_EXECUTION` input — the reviewer then SKIPS Phase 0
+(runner discovery), Phase 1 (test execution), and Phase 1.5
+(cross-process path agreement check), running only the static review
+(pre-Issue-#3 behavior).
+
+```json
+{
+  "stages": [
+    ["documenter"],
+    { "agents": ["reviewer"], "requires_test_execution": false }
+  ]
+}
+```
+
+Backwards compatibility: `requires_test_execution` defaults to `true`.
+When the field is absent — including all pipelines emitted before
+Issue #3 — the supervisor passes `REQUIRES_TEST_EXECUTION: true` and
+the reviewer runs the full test-execution path. Existing pipelines
+keep working; the new behavior is purely additive.
+
+Set the field to `false` ONLY for stages that genuinely have no
+testable surface (docs-only, `.gitignore` / config-only, comment-only
+edits). See `core/agents/planner.md` § Reviewer opt-out
+(`requires_test_execution`) for the strict criteria. Setting `false`
+on a code-touching stage defeats the Issue #3 quality loop and is a
+planner discipline violation.
+
 ### Streaming Review stage form (`streaming_review`)
 
 A stage object may also opt into **streaming review** by setting
@@ -200,7 +233,7 @@ and capability-gated fields evolve faster than the schema does.
 |---|---|---|---|---|
 | `schema_version` | integer (const 1) | optional in v1 | analyst (post-F4) | Pre-F4 pipeline.json omits this field; validators tolerate absence. |
 | `task` | string | yes | analyst Step 6 | Original task description (mirror of `register.json.task`). |
-| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...], streaming_review: bool }` (TDD parallel form and/or sub-task fan-out and/or streaming review — see the three stage-form sections below). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel`, `parallelizable_units`, and `streaming_review` flags. |
+| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...], streaming_review: bool, requires_test_execution: bool }` (TDD parallel form and/or sub-task fan-out and/or streaming review and/or reviewer opt-out — see the four stage-form sections below). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel`, `parallelizable_units`, `streaming_review`, and `requires_test_execution` flags. |
 | `completed_stages` | integer | yes (starts at 0) | analyst Step 6, supervisor-stages | 0-based count of stages whose terminal state was successful completion. Drives the resume logic in Phase 0. |
 | `needs_creation` | array of objects | yes (may be `[]`) | analyst Step 6 / planner Step 3c | Per-entry: `{name, reason, role}`. Drives Phase 1.5 dynamic agent creation. |
 | `stage_agent_status` | object | optional (created on first parallel write) | supervisor-stages Phase 2 | Outer key = 1-based stage index as a string; inner key = agent name (legacy / TDD parallel form) or `agent:unit_id` (sub-task fan-out form); value = `completed \| crashed \| blocked`. |
