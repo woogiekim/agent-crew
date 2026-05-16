@@ -724,13 +724,15 @@ current branch / HEAD only).
 ```bash
 echo "### 🔍 Repo Status"
 echo
-echo "**Branch:** $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+echo "\`\`\`"
+echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 echo
-echo "**Working tree:**"
-git status --short 2>/dev/null | head -20
+echo "Working tree:"
+git status --short 2>/dev/null | head -20 | sed 's/^/  /'
 echo
-echo "**Recent commits:**"
-git log --oneline -5 2>/dev/null
+echo "Recent commits:"
+git log --oneline -5 2>/dev/null | sed 's/^/  /'
+echo "\`\`\`"
 ```
 
 Then **STOP — end the turn**. Do not proceed to Step 2.
@@ -773,15 +775,16 @@ Approval Rule. The flow is:
    ```text
    ### 🎯 Fast-Path Action Plan
 
-   - **Intent**: push
-   - **Command**: `git push origin {BRANCH}`
-   - **Risk**: medium
-   - **Reversible**: no (remote receives commits)
+   \`\`\`
+   Intent     : push
+   Command    : git push origin {BRANCH}
+   Risk       : medium
+   Reversible : no (remote receives commits)
 
-   **Current branch**: {BRANCH}
-
-   **Commits to publish**:
+   Current branch : {BRANCH}
+   Commits        :
      {git log --oneline @{u}..HEAD 2>/dev/null || git log --oneline -3}
+   \`\`\`
    ```
 
 2. **Emit a structured user-choice intent** (per
@@ -1427,19 +1430,21 @@ have been issued), print the following summary and **STOP — end the turn**:
 ```
 ## 🏁 Background Session Started
 
-- **Session**: {SESSION_ID}
-- **Tasks**: {N} supervisor(s) spawned as background agents
+\`\`\`
+Session : {SESSION_ID}
+Tasks   : {N} supervisor(s) spawned as background agents
 
-**Task 1**: {TASK_1 description truncated to 60 chars}
-  - branch: `{BRANCH_1}`  id: `{TASK_ID_1}`
-**Task 2**: {TASK_2 description truncated to 60 chars}
-  - branch: `{BRANCH_2}`  id: `{TASK_ID_2}`
-...
+  Task 1 : {TASK_1 description truncated to 60 chars}
+           branch={BRANCH_1}  id={TASK_ID_1}
+  Task 2 : {TASK_2 description truncated to 60 chars}
+           branch={BRANCH_2}  id={TASK_ID_2}
+  ...
+\`\`\`
 
-Background agents are running. You can now:
-- Check pipeline state: `crew:status`
-- Inject another task: `crew:run "new task"`
-- Collect final results: `crew:status --collect`
+> Background agents are running.
+> - Check pipeline state: `crew:status`
+> - Inject another task: `crew:run "new task"`
+> - Collect final results: `crew:status --collect`
 
 Next step suggestion: run `crew:status` shortly to see the live phase /
 stage progression. The orchestrator turn has ended; this terminal is
@@ -1674,13 +1679,15 @@ orchestrator:
    ```text
    ### 📝 Consolidated Action Plan
 
-   **Task 1** [`{BRANCH_1}`]:
-   - deploy: push to staging via docker-compose up -d
-   - merge: git merge --no-ff {BRANCH_1} into main
+   \`\`\`
+   Task 1 [{BRANCH_1}]:
+     deploy : push to staging via docker-compose up -d
+     merge  : git merge --no-ff {BRANCH_1} into main
 
-   **Task 2** [`{BRANCH_2}`]:
-   - deploy: run npm run build && rsync dist/ to server
-   - merge: git merge --no-ff {BRANCH_2} into main
+   Task 2 [{BRANCH_2}]:
+     deploy : run npm run build && rsync dist/ to server
+     merge  : git merge --no-ff {BRANCH_2} into main
+   \`\`\`
    ```
 
 3. Emits a **single** structured user-choice intent (per
@@ -1921,22 +1928,26 @@ fi
 ```text
 ## 📦 Run Summary
 
-**Task 1**: {description}  [injected]    ← "(injected)" tag when task.injected == true
-- **Status**: ✅ completed | 🚫 blocked
-- **Branch**: `{branch}`
+\`\`\`
+Task 1 : {description}  [injected]    ← "(injected)" tag when task.injected == true
+Status : ✅ completed | 🚫 blocked
+Branch : {branch}
 
-- **Changes**:
+Changes:
   {git diff --stat {PRE_RUN_HEAD}..HEAD output}
 
-- **Diff**:
+Diff:
   {git diff {PRE_RUN_HEAD}..HEAD | head -200 output}
   (If over 200 lines: "… {N} more lines. Run: git diff {PRE_RUN_HEAD}..HEAD")
 
-- **Commits** ({N}):
+Commits ({N}):
   {git log --oneline, up to 5 lines}
+\`\`\`
 
-**Task 2**: {description}
+\`\`\`
+Task 2 : {description}
 ...
+\`\`\`
 ```
 
 The `[injected]` tag appears next to any task whose `session.json` entry has
@@ -2005,14 +2016,16 @@ whether a devops stage was included in the pipeline:
 ```text
 ## 🛠️ Implementation Summary
 
-**Merged branches into main (local):**
-- `{BRANCH_1}`  ({N} commits)
-- `{BRANCH_2}`  ({N} commits)
+\`\`\`
+Merged branches into main (local):
+  {BRANCH_1}  ({N} commits)
+  {BRANCH_2}  ({N} commits)
 
-**Commits ready for push** (origin/main..HEAD):
+Commits ready for push (origin/main..HEAD):
   {git log --oneline origin/main..HEAD, up to 10 lines}
+\`\`\`
 
-> Note: No remote push has occurred yet.
+> No remote push has occurred yet.
 ```
 
 **When N == 1:**
@@ -2020,13 +2033,13 @@ whether a devops stage was included in the pipeline:
 ```text
 ## 🛠️ Implementation Summary
 
-**Branch with local commits:**
-- `{BRANCH}`  ({N} commits)
-
-**Commits ready for review:**
+\`\`\`
+Branch  : {BRANCH}  ({N} commits)
+Commits :
   {git log --oneline HEAD ^main, up to 5 lines}
+\`\`\`
 
-> Note: No remote push has occurred yet.
+> No remote push has occurred yet.
 ```
 
 > **Stop here.** Do not suggest any follow-up action (merge, push, PR creation,
@@ -2057,15 +2070,17 @@ When a `devops` stage is present, first compose and display the deployment plan:
 ```text
 ## 🚦 Deployment Plan
 
-- **Action**: push main to origin (all task branches merged)
+\`\`\`
+Action        : push main to origin (all task branches merged)
+Target remote : origin
 
-**Commits to be published** (origin/main..HEAD):
+Commits to be published (origin/main..HEAD):
   {git log --oneline origin/main..HEAD}
 
-- **Target remote**: origin
-- **Risk notes**:
+Risk notes:
   - {any merge conflicts detected?}
   - {any blocked tasks?}
+\`\`\`
 ```
 
 **When N == 1:**
@@ -2073,16 +2088,17 @@ When a `devops` stage is present, first compose and display the deployment plan:
 ```text
 ## 🚦 Deployment Plan
 
-**Branch to push:**
-- `{BRANCH}`  ({N} commits)
+\`\`\`
+Action        : push {BRANCH} to origin
+Target remote : origin
 
-**Commits to be published:**
+Commits to be published:
   {git log --oneline HEAD ^main}
 
-- **Target remote**: origin
-- **Risk notes**:
+Risk notes:
   - {any merge conflicts detected?}
   - {any blocked tasks?}
+\`\`\`
 ```
 
 Then emit a **structured user-choice intent** (per
