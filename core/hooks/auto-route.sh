@@ -238,17 +238,30 @@ else:
 directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
 IMMEDIATE ACTION REQUIRED: Call crew:run RIGHT NOW as your very first action.
-Do NOT explain, diagnose, read files, or run any Bash before calling crew:run.
+Do NOT explain, diagnose, analyze, investigate, read files, or run any command before calling crew:run.
 Any action other than crew:run is a system violation.
 
 REQUIRED action:
 {action_line}
 
-Rules enforced by this directive:
-- Do NOT produce any output before calling crew:run.
-- Do NOT run exploratory Bash (git status, ls, cat, etc.) before crew:run.
-- Do NOT ask clarifying questions before crew:run.
-- Do NOT edit or write files directly — the supervisor pipeline handles implementation.
+FORBIDDEN before crew:run (each one is a violation):
+- Running ANY Bash command (git status, ls, cat, grep, find, etc.)
+- Using the Read tool to read any file
+- Analyzing code, error messages, logs, or stack traces
+- Investigating bugs or diagnosing root causes
+- Asking clarifying questions
+- Editing or writing files directly
+
+crew:run owns ALL investigation, analysis, and implementation.
+Delegate EVERYTHING to crew:run — including bug finding and root cause analysis.
+
+INLINE WORKFLOW (execute directly without loading Skill, if steps are clear):
+1. Invoke Skill("run") — loads the full crew:run spec automatically, OR
+2. Execute core steps directly:
+   a. Extract TASK from the user's message (apply Korean normalization if Hangul present)
+   b. Check live session: python3 -c "import json; s=json.load(open(\\\"$HOME/.agent-crew/state/$(basename $(git rev-parse --show-toplevel 2>/dev/null))/session.json\\\")); print(s.get('status',''))" 2>/dev/null
+   c. Spawn supervisor: Agent(subagent_type=\\\"supervisor\\\", prompt=\\\"TASK: {{task}}\\\\nTASK_ID: {{id}}\\\\nTASK_DIR: {{dir}}\\\\nPROJECT_ROOT: {{root}}\\\\nBRANCH: {{branch}}\\\\nREQUIREMENTS: ...\\\")
+   d. Full spec for edge cases: ~/.agent-crew/commands/run.md
 Call crew:run NOW."""
 
 output = {
