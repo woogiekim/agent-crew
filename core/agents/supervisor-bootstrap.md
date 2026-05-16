@@ -790,9 +790,36 @@ python3 -c "
 import json, re, sys
 
 # Read pipeline.json
-p = json.load(open('${PIPELINE_PATH}'))
-stages = p.get('stages', [])
-needs_creation = p.get('needs_creation', [])
+try:
+    p = json.load(open('${PIPELINE_PATH}'))
+except Exception:
+    p = {}
+stages = p.get('stages', []) or []
+needs_creation = p.get('needs_creation', []) or []
+
+# Normalize each stage entry into a dict with: agents, tdd_parallel,
+# parallelizable_units, streaming_review. Tolerates the three legacy
+# stage shapes (bare string, bare list, object form).
+def normalize_stage(s):
+    if isinstance(s, str):
+        return {'agents': [s], 'tdd_parallel': False,
+                'parallelizable_units': [], 'streaming_review': False}
+    if isinstance(s, list):
+        return {'agents': [a for a in s if isinstance(a, str)],
+                'tdd_parallel': False,
+                'parallelizable_units': [], 'streaming_review': False}
+    if isinstance(s, dict):
+        units = s.get('parallelizable_units') or []
+        if not isinstance(units, list):
+            units = []
+        return {'agents': [a for a in (s.get('agents') or []) if isinstance(a, str)],
+                'tdd_parallel': bool(s.get('tdd_parallel')),
+                'parallelizable_units': units,
+                'streaming_review': bool(s.get('streaming_review'))}
+    return {'agents': [], 'tdd_parallel': False,
+            'parallelizable_units': [], 'streaming_review': False}
+
+norm_stages = [normalize_stage(s) for s in stages]
 
 # Read prd.md for per-agent detail (tolerant — skip if absent or unparseable)
 prd_agent_detail = {}  # {agent_name: {'work': str, 'files': [str]}}
@@ -806,11 +833,11 @@ try:
         start = m.end()
         end = sections[idx + 1].start() if idx + 1 < len(sections) else len(prd_text)
         body = prd_text[start:end]
-        # Extract **Work**: description (first non-empty line after the marker, max 120 chars)
+        # Extract **Work**: description (first non-empty line after the marker, max 200 chars)
         work = ''
         work_m = re.search(r'\*\*Work\*\*\s*:?\s*(.+)', body)
         if work_m:
-            work = work_m.group(1).strip()[:120]
+            work = work_m.group(1).strip()[:200]
         # Extract **Files**: bullet lines
         files = []
         in_files = False
@@ -828,23 +855,119 @@ try:
 except Exception:
     pass  # prd.md absent or unparseable — fall back to stage names only
 
-print('STAGES:')
-for i, stage in enumerate(stages, 1):
-    agents = stage if isinstance(stage, list) else [stage]
-    print(f'  Stage {i}: {chr(44).join(agents)}')
+prd_loaded = bool(prd_agent_detail)
+detail_missing_note_emitted = False
+
+# Count total agent spawns for the headline (best-effort estimate)
+def stage_spawn_count(ns):
+    n = max(1, len(ns['agents']))
+    if ns['tdd_parallel']:
+        n += 1  # test-writer co-spawn
+    units = len(ns['parallelizable_units'])
+    if units >= 2:
+        n = max(n, units + (1 if ns['tdd_parallel'] else 0))
+    if ns['streaming_review']:
+        n += 1  # reviewer co-spawned
+    return n
+
+total_spawns = sum(stage_spawn_count(ns) for ns in norm_stages)
+
+print('## Plan Approval')
+print('')
+print(f'Pipeline: {len(norm_stages)} stages, ~{total_spawns} agent spawns total')
+print('')
+
+for i, ns in enumerate(norm_stages, 1):
+    agents = ns['agents'] or ['(unknown)']
+    label = ', '.join(agents)
+    flags = []
+    if ns['tdd_parallel']:
+        flags.append('tdd_parallel: true')
+    units = ns['parallelizable_units']
+    if len(units) >= 2:
+        flags.append(f'parallelizable_units: {len(units)}')
+    if ns['streaming_review']:
+        flags.append('streaming_review: true')
+    flag_suffix = f' ({\"; \".join(flags)})' if flags else ''
+    print(f'### Stage {i} — {label}{flag_suffix}')
+
+    # Stage-level brief: use the first agent's PRD entry as a representative.
+    first_detail = prd_agent_detail.get(agents[0].lower(), {}) if agents else {}
+    if first_detail.get('work'):
+        print(f'Brief: {first_detail[\"work\"]}')
+    elif not prd_loaded:
+        if not detail_missing_note_emitted:
+            print('Brief: (detail not provided by planner — see prd.md for full context)')
+            detail_missing_note_emitted = True
+    print('')
+
+    # Sub-task fan-out: render one block per unit, then list any co-spawned agents.
+    if len(units) >= 2:
+        print('Units to spawn:')
+        for u in units:
+            if not isinstance(u, dict):
+                continue
+            uid = u.get('id') or '(unnamed)'
+            ufiles = u.get('files') or []
+            ubrief = u.get('brief') or ''
+            print(f'  - unit {uid} ({agents[0] if agents else \"agent\"})')
+            if ubrief:
+                print(f'      Brief: {ubrief}')
+            if ufiles:
+                print(f'      Files:')
+                for f in ufiles:
+                    if isinstance(f, str):
+                        print(f'        - {f}')
+                    elif isinstance(f, dict) and isinstance(f.get('path'), str):
+                        print(f'        - {f[\"path\"]}')
+        # Co-spawned helpers under fan-out
+        if ns['tdd_parallel']:
+            tw = prd_agent_detail.get('test-writer', {})
+            print(f'  - test-writer (co-spawned, shared across units)')
+            if tw.get('brief') or tw.get('work'):
+                print(f'      Brief: {tw.get(\"work\") or tw.get(\"brief\")}')
+            if tw.get('files'):
+                print(f'      Files:')
+                for f in tw['files']:
+                    print(f'        - {f}')
+        if ns['streaming_review']:
+            print('  - reviewer (co-spawned in streaming mode)')
+        print('')
+        continue
+
+    # Non-fan-out path: list each agent in the stage with its PRD detail.
+    print('Agents to spawn:')
     for agent in agents:
-        detail = prd_agent_detail.get(agent.lower(), {})
-        if detail.get('work'):
-            print(f'    Work: {detail[\"work\"]}')
-        if detail.get('files'):
-            print(f'    Files:')
-            for f in detail['files']:
-                print(f'      - {f}')
-print('NEEDS_CREATION:')
-for item in needs_creation:
-    print(f'  {item[\"name\"]}')
-if not needs_creation:
-    print('  none')
+        print(f'  - {agent}')
+        det = prd_agent_detail.get(agent.lower(), {})
+        if det.get('files'):
+            print(f'      Files:')
+            for f in det['files']:
+                print(f'        - {f}')
+        if det.get('work'):
+            print(f'      Brief: {det[\"work\"]}')
+
+    # Optional co-spawned agents on the legacy / TDD-parallel path.
+    if ns['tdd_parallel']:
+        tw = prd_agent_detail.get('test-writer', {})
+        print(f'  - test-writer (co-spawned)')
+        if tw.get('files'):
+            print(f'      Files:')
+            for f in tw['files']:
+                print(f'        - {f}')
+        if tw.get('work'):
+            print(f'      Brief: {tw[\"work\"]}')
+    if ns['streaming_review']:
+        print('  - reviewer (co-spawned in streaming mode)')
+    print('')
+
+print('### Dynamic Agents To Create')
+if needs_creation:
+    for item in needs_creation:
+        if isinstance(item, dict):
+            print(f'  - {item.get(\"name\", \"(unnamed)\")}: {item.get(\"reason\", \"\")}')
+else:
+    print('  - none')
 " 2>/dev/null
 ```
 
@@ -852,31 +975,61 @@ Also extract from `analysis.md`:
 - `intent:` line → intent summary
 - Count of `risk` entries → risk count
 
-Display the plan summary as inline text:
+Display the plan summary as inline text. The Python block above already
+emits a markdown-styled block (`## Plan Approval` + `### Stage N — …`
+headings, agent/unit bullets with `Brief:` and `Files:` sub-lines). Show
+that output verbatim, then prepend two short context lines from
+`analysis.md` so the user sees task intent + risk count above the
+per-stage breakdown:
 
 ```
-### 📋 Implementation Plan
+## Plan Approval
 
-- **Task**: {TASK}
-- **Intent**: {intent from analysis.md}
-- **Risks**: {risk count} identified
+- Task: {TASK}
+- Intent: {intent from analysis.md}
+- Risks: {risk count} identified
 
-**Pipeline:**
+Pipeline: {N} stages, ~{M} agent spawns total
 
-**Stage 1**: {agent_name}
-  - Work: {work description from prd.md, if available}
-  - Files:
-    - `{file path}` ({new|modified|removed}, if available)
-**Stage 2**: {agent_name}
-  - Work: {work description from prd.md, if available}
-  - ...
+### Stage 1 — backend (tdd_parallel: true)
+Brief: Add cancel-order endpoint with idempotency guard
 
-- **Dynamic agents to create**: {needs_creation list or "none"}
+Agents to spawn:
+  - backend
+      Files:
+        - src/orders/cancel.ts
+        - src/orders/idempotency.ts
+      Brief: Implement POST /orders/{id}/cancel with state-machine guard
+  - test-writer (co-spawned)
+      Files:
+        - tests/orders/cancel.spec.ts
+      Brief: Cover happy path, double-cancel, terminal-state rejection
+
+### Stage 2 — reviewer
+Brief: Verify cancel flow against design doc + run new tests
+
+### Dynamic Agents To Create
+  - none
 ```
 
-The `Work:` and `Files:` lines appear only when `prd.md` contains per-agent sections.
-If `prd.md` is absent or the relevant sections are missing, the display falls back to
-showing stage names only (no error).
+When a stage uses sub-task fan-out (`parallelizable_units` with length
+≥ 2), the per-stage block lists `Units to spawn:` instead of `Agents to
+spawn:`, with one entry per unit (id + brief + files). When
+`tdd_parallel: true` is also set on a fan-out stage, the shared
+`test-writer` is appended under the units block.
+
+The `Brief:` and `Files:` lines appear only when `prd.md` contains
+per-agent sections. If `prd.md` is absent, malformed, or the relevant
+sections are missing, the display falls back to showing stage names
+only — and emits the note `Brief: (detail not provided by planner —
+see prd.md for full context)` once, on the first affected stage. The
+extractor never crashes the supervisor: any exception parsing
+`pipeline.json` or `prd.md` degrades to "stage names only" silently.
+
+**Do not change the structured user-choice intent below.** Only the
+display block above is enriched — the approval gate itself
+(header / question / options) remains exactly as specified so all host
+adapters continue to receive the same choice contract.
 
 #### Speculative I/O Prefetch (idle-window optimization)
 
