@@ -202,17 +202,58 @@ except Exception:
 " 2>/dev/null)
 ```
 
+#### Inject-intent detection (Phase J14)
+
+Before the prompt-based fallback below fires, classify the user's
+input for autonomous inject-intent. Patterns like "추가로 해줘",
+"이것도 부탁해", "더해줘", "Also do ...", "While you're at it ..."
+are unambiguous signals that the user wants to ADD to the live
+session, not start a fresh one. When detected, skip the user
+prompt entirely and proceed straight to the injection execution
+path.
+
+```bash
+INJECT_INTENT=""
+if [ "${IS_LIVE_SESSION}" = "1" ]; then
+  INJECT_INTENT=$(printf '%s' "${USER_INPUT}" \
+    | bash "${AGENT_CREW_HOME}/scripts/detect-inject-intent.sh" 2>/dev/null) \
+    || INJECT_INTENT=""
+fi
+```
+
+When `INJECT_INTENT` is non-empty, the system treats it as an
+implicit `--inject` flag. The routing matrix below short-circuits to
+the injection path without prompting the user.
+
+The detector is intentionally conservative — phrases like "also
+implement X" or "추가 feature" (incomplete connectors) do NOT match,
+so a user describing a fresh task is not auto-routed into the live
+session. When in doubt, the routing falls through to the structured
+user-choice prompt below.
+
 #### Injection routing
 
 **If `IS_LIVE_SESSION == 0`:** No live session. Proceed normally to Step 2.
 
-**If `IS_LIVE_SESSION == 1` AND the `--inject` flag was passed:**
-A live session exists. Route the new task(s) as injections (see injection
-execution path below).
+**If `IS_LIVE_SESSION == 1` AND (the `--inject` flag was passed OR
+`INJECT_INTENT` is non-empty):** A live session exists and the user
+either explicitly requested injection or used unambiguous inject-intent
+phrasing (Phase J14). Route the new task(s) as injections (see
+injection execution path below). When auto-detected via
+`INJECT_INTENT`, emit a notice so the operator can see why the prompt
+was skipped:
 
-**If `IS_LIVE_SESSION == 1` AND N == 1 AND `--inject` was NOT passed:**
-A live session exists but the user did not explicitly request injection.
-Ask via the host's interactive question mechanism (see
+```bash
+if [ -z "${INJECT_FLAG:-}" ] && [ -n "${INJECT_INTENT}" ]; then
+  printf '[crew] INJECT_AUTO | matched=%q | session=%s\n' \
+    "${INJECT_INTENT}" "${SESSION_ID}" >&2
+fi
+```
+
+**If `IS_LIVE_SESSION == 1` AND N == 1 AND neither `--inject` nor
+`INJECT_INTENT` is set:** A live session exists but the user did not
+explicitly request injection and the phrasing is ambiguous. Ask via
+the host's interactive question mechanism (see
 `core/rules/capabilities/interactive-question.md`) before deciding:
 
 ```text
@@ -232,9 +273,10 @@ ask_question:
 - **Run independently**: proceed normally to Step 2 as a fresh N=1 run
   (inline mode — supervisor runs in the current turn, not as a background agent).
 
-**If `IS_LIVE_SESSION == 1` AND N > 1 AND `--inject` was NOT passed:**
-A live session exists, but the user submitted multiple tasks without an explicit
-inject flag. Ask the user to clarify:
+**If `IS_LIVE_SESSION == 1` AND N > 1 AND neither `--inject` nor
+`INJECT_INTENT` is set:** A live session exists, but the user submitted
+multiple tasks without an explicit inject flag and the phrasing is
+ambiguous. Ask the user to clarify:
 
 ```text
 # Structured user-choice intent (host-bound — see

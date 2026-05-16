@@ -17,10 +17,15 @@ Consumers:
   found. Script: `core/scripts/check-plaintext-approval.py`. Hook
   wrapper: `core/hooks/forbid-plaintext-approval.sh`. Registered by
   `adapters/claude/setup.sh` when `hook_system=true`.
-- **Autonomous task injection guards** (planned — refactor item 14). A
-  pre-routing hook detects inject-intent phrases ("추가로 해줘",
-  "이것도 부탁해", etc.) and steers them into the injection flow when
-  a session is live.
+- **Autonomous task injection** (Phase J14 — implemented in `crew:run`
+  Step 1.5, no hook required). `core/scripts/detect-inject-intent.sh`
+  classifies the user's input for inject-intent phrases ("추가로 해줘",
+  "이것도 부탁해", "Also do...", etc.) and `crew:run` auto-routes to
+  the injection path when the phrase matches AND a session is live.
+  Skips the structured user-choice prompt for unambiguous phrasing.
+  This consumer runs inline in `crew:run` rather than through a
+  PostToolUse hook, so it works on every adapter regardless of
+  `hook_system`.
 
 ## Required Adapter Surface (flag=true)
 
@@ -49,10 +54,12 @@ Consumers fall in two layers:
   Phase G6 this set includes `forbid-plaintext-approval.sh`.
 - **Provider-neutral validators** under `core/scripts/check-*.py` are
   the canonical implementations that the adapter wires in. Phase G6
-  ships `check-plaintext-approval.py`; `check-task-injection.py`
-  remains planned (refactor item 14). These scripts run on
-  stdin/stdout with exit codes so they can be invoked from any host's
-  hook mechanism.
+  ships `check-plaintext-approval.py` and `detect-inject-intent.sh`
+  (the latter is invoked inline by `crew:run` Step 1.5 rather than
+  through a hook). `check-task-injection.py` for the mid-injection
+  duplicate-disambiguation prompt remains planned (refactor item 14b).
+  These scripts run on stdin/stdout with exit codes so they can be
+  invoked from any host's hook mechanism.
 
 Core's input shape assumes a `${HOOK_INPUT}` JSON environment variable
 available to hook scripts (matching the current Claude convention). If
@@ -106,8 +113,11 @@ Consumer — current hook scripts:
 Consumer — validator scripts:
 
 - `core/scripts/check-plaintext-approval.py` (Phase G6 — implemented)
-- `core/scripts/check-task-injection.py` (refactor item 14 — not
-  present yet)
+- `core/scripts/detect-inject-intent.sh` (Phase J14 — implemented;
+  invoked by `crew:run` Step 1.5 to auto-route on unambiguous
+  inject-intent phrasing)
+- `core/scripts/check-task-injection.py` (refactor item 14b — not
+  present yet; mid-injection duplicate-disambiguation prompt)
 
 Cross-flag:
 

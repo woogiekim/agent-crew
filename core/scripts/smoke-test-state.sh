@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# smoke-test-state.sh — End-to-end smoke test for the F4/F5/G6/J13 stack.
+# smoke-test-state.sh — End-to-end smoke test for the F4/F5/G6/J13/J14 stack.
 #
 # Spins up a synthetic state directory and exercises:
 #   - F4: validate-state-schema.py against valid + invalid state files
 #   - F5: progress.buffer.jsonl row shape
 #   - G6: check-plaintext-approval.py pattern matching
 #   - J13: telemetry-aggregate.py per-task + summary metrics
+#   - J14: detect-inject-intent.sh Korean + English pattern matching
 #
 # Pure read-only against the repo (uses scripts in core/scripts/).
 # Writes only into a temp directory, cleaned up on exit.
@@ -288,6 +289,41 @@ else
   LAST_FAIL="text format missing 'Tasks: 2 total'"
   printf '  FAIL  %s\n' "text format summary line missing"
 fi
+
+# --------------------------------------------------------------------------- #
+echo ""
+echo "[5/5] J14 — detect-inject-intent classifier"
+echo "------------------------------------"
+# --------------------------------------------------------------------------- #
+
+# Korean inject-intent phrases → match (rc=0).
+for phrase in "추가로 해줘" "이것도 부탁해" "더해줘" "이어서 해줘"; do
+  RC=$(set +e; echo "${phrase}" | bash "${SCRIPTS_DIR}/detect-inject-intent.sh" >/dev/null 2>&1; echo $?)
+  assert_eq "KO '${phrase}' → match (0)" "0" "${RC}"
+done
+
+# English inject-intent phrases → match (rc=0).
+for phrase in "Also do this" "While you're at it" "One more thing"; do
+  RC=$(set +e; echo "${phrase}" | bash "${SCRIPTS_DIR}/detect-inject-intent.sh" >/dev/null 2>&1; echo $?)
+  assert_eq "EN '${phrase}' → match (0)" "0" "${RC}"
+done
+
+# Fresh-task phrases → no match (rc=1).
+for phrase in "implement order API" "fix login bug" "refactor auth module"; do
+  RC=$(set +e; echo "${phrase}" | bash "${SCRIPTS_DIR}/detect-inject-intent.sh" >/dev/null 2>&1; echo $?)
+  assert_eq "fresh '${phrase}' → no match (1)" "1" "${RC}"
+done
+
+# Edge: partial connector → no match.
+RC=$(set +e; echo "추가 feature" | bash "${SCRIPTS_DIR}/detect-inject-intent.sh" >/dev/null 2>&1; echo $?)
+assert_eq "partial '추가 feature' → no match (1)" "1" "${RC}"
+
+RC=$(set +e; echo "also implement payment" | bash "${SCRIPTS_DIR}/detect-inject-intent.sh" >/dev/null 2>&1; echo $?)
+assert_eq "partial 'also implement' → no match (1)" "1" "${RC}"
+
+# Empty input → no match.
+RC=$(set +e; echo "" | bash "${SCRIPTS_DIR}/detect-inject-intent.sh" >/dev/null 2>&1; echo $?)
+assert_eq "empty input → no match (1)" "1" "${RC}"
 
 # --------------------------------------------------------------------------- #
 echo ""

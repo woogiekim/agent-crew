@@ -737,6 +737,57 @@ extend the env vars and let the natural order play out.
 files. After `crew:update` picks up the new supervisor sub-modules,
 set the env var to opt in.
 
+### Phase J14 — Autonomous task injection (inject-intent detection)
+
+`crew:run` Step 1.5 now classifies the user's input for unambiguous
+inject-intent phrasing and auto-routes to the injection path when a
+phrase matches AND a session is live. Skips the structured
+user-choice prompt when the intent is clear.
+
+**No migration code required.** Pure additive:
+
+- New file `core/scripts/detect-inject-intent.sh` — bash classifier
+  (POSIX grep, no Python). Reads user input on stdin, returns exit 0
+  + the matched phrase when a Korean or English inject-intent pattern
+  matches; exit 1 otherwise.
+- `core/commands/run.md` Step 1.5 gains an "inject-intent detection"
+  sub-step that runs the classifier when `IS_LIVE_SESSION == 1` and
+  short-circuits to the injection path when `INJECT_INTENT` is
+  non-empty. An `[crew] INJECT_AUTO | matched=... | session=...`
+  notice is emitted so operators can see why the prompt was skipped.
+
+**Patterns covered.**
+
+| Lang | Phrases |
+|---|---|
+| Korean | `추가로 해줘` / `이것도 부탁해` / `더해줘` / `이어서 해줘` / `추가로 작업해줘` / `이것까지` / `추가로 처리해줘` / `이것도 해줘` / `추가로 부탁` |
+| English | `Also do ...` / `And also` / `Additionally` / `One more thing` / `While you're at it` / `Plus do` |
+
+The classifier is **conservative by design** — incomplete connectors
+like `also implement X` or `추가 feature` do NOT match. False
+negatives fall through to the existing structured user-choice
+prompt; false positives would silently route a fresh task into a
+live session, which is harder to recover from.
+
+**No new capability flag.** Inject-intent detection runs inline in
+`crew:run`; works on every adapter regardless of `hook_system`.
+
+**No `settings.json` changes.** No hook is registered.
+
+**Interaction with the existing routing matrix.**
+
+| Live session | `--inject` flag | `INJECT_INTENT` | Behavior |
+|---|---|---|---|
+| 0 (no) | any | any | Proceed to Step 2 (fresh run) |
+| 1 (yes) | set | any | Inject (explicit flag wins) |
+| 1 (yes) | unset | non-empty | Inject (auto-detected, no prompt) — Phase J14 |
+| 1 (yes) | unset | empty | Structured prompt (existing behavior) |
+
+**Update steps.** The standard category sync in § Execution copies
+`core/scripts/` so the classifier is installed automatically. After
+the next `crew:update`, supported inject-intent phrases route
+autonomously without any operator action.
+
 ## Completion Message
 
 ```text

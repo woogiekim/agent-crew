@@ -69,8 +69,7 @@ documents the planned surface so adapter authors can prepare.
 | Script | Phase | Purpose | Referenced by |
 |---|---|---|---|
 | `classify-trivial-intent.sh` | 0 | Decide whether an input matches one of the 7 trivial operations (merge, push, deploy, tag, rollback, status, commit_only) | `core/commands/run.md` |
-| `detect-inject-intent.sh` | 14 | Detect inject-intent phrases ("추가로 해줘", "이것도 부탁해", etc.) and check session liveness | `core/rules/capabilities/hook-system.md` |
-| `check-task-injection.py` | 14 | Disambiguate duplicate task injection against `session.json` | `core/rules/capabilities/hook-system.md` |
+| `check-task-injection.py` | 14 | Mid-injection duplicate disambiguation prompt (Step 1.6 already does dup detection via inline Python; this script would extend with merge/queue/cancel options) | `core/rules/capabilities/hook-system.md` |
 | `cost-aggregate.py` | E3.3 | Aggregate per-call token data into a per-task / crew-wide summary | `core/commands/cost.md`, `core/rules/capabilities/cost-tracking.md` |
 | ~~`handoff-page-out.py`~~ | superseded by Phase 3.5 | Auto-summarize `handoff.md` when it exceeds a threshold (opt-in) — **now implemented via the documenter agent in `MODE=page-out`, not a standalone script**. See `core/agents/documenter.md` § Page-Out Mode and `core/agents/supervisor-stages.md` § Post-stage handoff page-out. | `core/rules/quality-loop.md` § Page-Out As Hygiene Operation |
 
