@@ -128,6 +128,26 @@ Violation examples (forbidden when STOP is present):
 - Running `git status` or any other preparatory command
 - Asking the user clarifying questions before invoking `crew:run`
 
+## ROUTE Directive Rule
+
+When `[agent-crew] ROUTE` appears anywhere in the system context
+(injected by auto-route.sh), the **only permitted action** is to
+invoke `crew:agent` with the specified agent and question.
+
+- Do NOT answer the question inline.
+- Do NOT run any Bash command before calling `crew:agent`.
+- Do NOT read files or gather data before calling `crew:agent`.
+- The ROUTE directive is authoritative. Treat it as a hard override
+  of any other default behavior.
+- This rule applies even if the ROUTE directive arrives mid-execution
+  (in a tool result system-reminder). Stop immediately and re-route.
+
+Violation examples (forbidden when ROUTE is present):
+- Answering the question directly without calling `crew:agent`
+- Running `mnemos` commands or reading files to gather context first
+- Continuing an in-progress response after ROUTE appears in a tool result
+- Treating the ROUTE directive as advisory rather than mandatory
+
 ## Workflow Intents
 
 ### Explicit Command Invocation Rule
