@@ -722,7 +722,7 @@ current branch / HEAD only).
 ##### `status` — inline read-only summary
 
 ```bash
-echo "### 📊 Repo Status"
+echo "### 🔍 Repo Status"
 echo
 echo "**Branch:** $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 echo
@@ -771,7 +771,7 @@ Approval Rule. The flow is:
    because no stage agent is waiting on `approval.md`. Example:
 
    ```text
-   ### ⚡ Fast-Path Action Plan
+   ### 🎯 Fast-Path Action Plan
 
    - **Intent**: push
    - **Command**: `git push origin {BRANCH}`
@@ -1425,7 +1425,7 @@ After all N background supervisors are spawned (all `TaskCreate` + spawn calls
 have been issued), print the following summary and **STOP — end the turn**:
 
 ```
-## 🚀 Background Session Started
+## 🏁 Background Session Started
 
 - **Session**: {SESSION_ID}
 - **Tasks**: {N} supervisor(s) spawned as background agents
@@ -1672,7 +1672,7 @@ orchestrator:
 2. Composes a consolidated approval summary:
 
    ```text
-   ### 📋 Consolidated Action Plan
+   ### 📝 Consolidated Action Plan
 
    **Task 1** [`{BRANCH_1}`]:
    - deploy: push to staging via docker-compose up -d
@@ -1919,10 +1919,10 @@ fi
 ```
 
 ```text
-## 📋 Run Summary
+## 📦 Run Summary
 
 **Task 1**: {description}  [injected]    ← "(injected)" tag when task.injected == true
-- **Status**: ✅ completed | ❌ blocked
+- **Status**: ✅ completed | 🚫 blocked
 - **Branch**: `{branch}`
 
 - **Changes**:
@@ -2003,7 +2003,7 @@ whether a devops stage was included in the pipeline:
 **When N > 1 (after merge):**
 
 ```text
-## ✅ Implementation Summary
+## 🛠️ Implementation Summary
 
 **Merged branches into main (local):**
 - `{BRANCH_1}`  ({N} commits)
@@ -2018,7 +2018,7 @@ whether a devops stage was included in the pipeline:
 **When N == 1:**
 
 ```text
-## ✅ Implementation Summary
+## 🛠️ Implementation Summary
 
 **Branch with local commits:**
 - `{BRANCH}`  ({N} commits)
@@ -2055,7 +2055,7 @@ When a `devops` stage is present, first compose and display the deployment plan:
 **When N > 1:**
 
 ```text
-## 🚢 Deployment Plan
+## 🚦 Deployment Plan
 
 - **Action**: push main to origin (all task branches merged)
 
@@ -2071,7 +2071,7 @@ When a `devops` stage is present, first compose and display the deployment plan:
 **When N == 1:**
 
 ```text
-## 🚢 Deployment Plan
+## 🚦 Deployment Plan
 
 **Branch to push:**
 - `{BRANCH}`  ({N} commits)
