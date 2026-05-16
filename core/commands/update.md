@@ -196,6 +196,17 @@ resolve_source_dir() {
    > this migration block — it is the name of the OLD file being removed.
    > Verification greps must allow this single occurrence in `update.md`.
 
+3.6. **Phase C2 Note — Supervisor sub-modules**
+
+   Phase C2 split `supervisor.md` into an index plus three sibling content
+   modules (`supervisor-bootstrap.md`, `supervisor-stages.md`,
+   `supervisor-retry.md`). `sync_system_agents` and
+   `merge_agents_to_discovery` handle these automatically because they sit
+   at the top level of `core/agents/` (the same flat-glob copy that already
+   moves `supervisor.md`). No migration code is required — the three new
+   files arrive on the next `crew:update` and the host registers only
+   `supervisor.md` as an agent (the others have no `name:` frontmatter).
+
 4. Re-run the host adapter against the current project so any project-local
    files (e.g. `~/.claude/agent-crew/`) are also refreshed:
 

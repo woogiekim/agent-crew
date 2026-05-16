@@ -109,6 +109,15 @@ install_global() {
     || log_error "supervisor.md install failed — system/agents/supervisor.md not found"
   log_info "supervisor agent verified"
 
+  # Phase C2: supervisor sub-modules. supervisor.md is the index/entry file
+  # (the only agent the host registers); the three sub-modules below are
+  # content fragments the supervisor Reads on demand at phase transitions.
+  for sub in bootstrap stages retry; do
+    [ -f "${AGENT_CREW_DIR}/system/agents/supervisor-${sub}.md" ] \
+      || log_error "supervisor-${sub}.md install failed — system/agents/supervisor-${sub}.md not found"
+    log_info "supervisor sub-module verified: supervisor-${sub}.md"
+  done
+
   [ -f "${AGENT_CREW_DIR}/system/agents/planner.md" ] \
     || log_error "planner.md install failed — system/agents/planner.md not found"
   log_info "planner agent verified"
