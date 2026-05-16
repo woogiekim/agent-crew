@@ -7,6 +7,22 @@ Normalization rule (`core/rules/korean-input.md`) before passing TASK to
 any agent or writing it to pipeline state. Never pass raw Korean text
 as a TASK description to downstream agents.
 
+## Output Language
+
+User-facing output should appear in the user's input language (Claude
+follows the conversation's language naturally; other adapters mirror
+this where possible). See `core/rules/output-language.md` for the full
+rule, including the **English-only status invariant**: structured
+tokens like `STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`,
+`BLOCKER:` are parsed by regex and MUST be returned in English
+regardless of input language. Narrative around those tokens (the
+explanation, description, report body) follows the user's language.
+
+The two rules are paired: input is normalized to English for
+**internal artifacts** (pipeline.json, register.json, handoff.md,
+agent prompts), while output narrative is **NOT forced into English**
+for the user-facing surface.
+
 ## No Direct Implementation
 
 When a user requests coding, implementation, or development work, do not start

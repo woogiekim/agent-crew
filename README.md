@@ -60,6 +60,7 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 - **Pipeline telemetry** — `crew:telemetry` aggregates wall-clock duration, stage/retry counts, token totals, and blocker histograms across recent runs (read-only; works on every adapter).
 - **Forbid plain-text approval** — when `hook_system` is advertised (Claude), a `PostToolUse[Agent]` validator blocks free-text yes/no prompts ("Shall I merge?" / "...진행할까요?") and feeds the violation back to the model. Hook script: `core/hooks/forbid-plaintext-approval.sh`.
 - **Autonomous task injection** — when a session is already running and the user submits "추가로 해줘", "이것도 부탁해", "Also do...", "While you're at it..." etc., `crew:run` Step 1.5 auto-routes the new task into the live session without prompting.
+- **Bilingual input + localized output** — Korean task descriptions are normalized to English for internal artifacts (pipeline.json, register.json, handoff.md, agent prompts) per `core/rules/korean-input.md`, while user-facing output (progress messages, approval prompts, result narratives) follows the user's input language per `core/rules/output-language.md`. Structured status tokens (`STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`) remain English as a parser invariant.
 
 ## Installation
 

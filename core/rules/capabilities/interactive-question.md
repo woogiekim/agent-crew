@@ -74,6 +74,17 @@ a structured prompt, not a free-text yes/no question, which would
 violate the plain-text approval prohibition enforced by Phase G6
 (`core/scripts/check-plaintext-approval.py`).
 
+## Prompt Language
+
+Per `core/rules/output-language.md`, the question text and option
+descriptions SHOULD match the user's input language (Claude does this
+naturally). The **option labels** (the values returned by the host
+back to core) MUST remain in a fixed canonical form — typically
+English short strings like "Approve" / "Cancel" / "Inject" — so the
+core routing logic can compare against them. Adapters that render
+option labels with localized display strings MUST round-trip the
+canonical label back to core unchanged.
+
 ## Adapter Examples
 
 | Adapter | interactive_question | How it is implemented |
