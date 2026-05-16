@@ -232,8 +232,7 @@ Provide the agent with:
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 ```
 
-Invoke the agent using the host's native agent-call mechanism (e.g., the
-Claude Code `Task` tool). Pass as the agent prompt:
+Invoke the agent using the host's native agent-call mechanism. Pass as the agent prompt:
 
 ```text
 You are running in MODE=direct (lightweight invocation via crew:agent).

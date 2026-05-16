@@ -121,6 +121,39 @@ chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
 cp "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md" 2>/dev/null || true
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
 install_codex_skills
+
+# Scaffold skill directories (idempotent)
+mkdir -p "${AGENT_CREW_HOME}/system/skills"
+mkdir -p "${AGENT_CREW_HOME}/user/skills"
+mkdir -p "${AGENT_CREW_HOME}/skills"
+mkdir -p "${HOME}/.codex/agent-crew/skills"
+
+# Sync system skills from source repo when SOURCE_ROOT is available
+if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
+  sync_system_skills \
+    "${SOURCE_ROOT}/core/agents/skills" \
+    "${AGENT_CREW_HOME}/system/skills"
+fi
+
+# Merge system + user skills into unified discovery path
+merge_skills_to_discovery \
+  "${AGENT_CREW_HOME}/system/skills" \
+  "${AGENT_CREW_HOME}/user/skills" \
+  "${AGENT_CREW_HOME}/skills"
+
+# Copy unified skills to Codex host discovery path
+copy_dir_contents "${AGENT_CREW_HOME}/skills" "${HOME}/.codex/agent-crew/skills"
+
+# Write user/skills README placeholder (idempotent)
+if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+  cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
+# User Skills
+
+Place your custom skill definitions here.
+Files in this directory are NEVER overwritten by crew:update.
+UEOF
+fi
+
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
 

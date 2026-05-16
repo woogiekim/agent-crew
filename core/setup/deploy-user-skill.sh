@@ -70,6 +70,18 @@ if [ -d "${CODEX_AGENTS}" ]; then
   DEPLOYED=$((DEPLOYED + 1))
 fi
 
+# ── Generic adapter (best-effort) ────────────────────────────────────────────
+# Deploy to the current project's .agent-crew/skills/ when present.
+# Covers generic-adapter projects. The project root is not known at agent-maker
+# time, so CWD is used as the best-effort anchor.
+if [ -d "${PWD}/.agent-crew" ]; then
+  GENERIC_SKILLS="${PWD}/.agent-crew/skills"
+  mkdir -p "${GENERIC_SKILLS}"
+  printf '[deploy-user-skill] Deploying to generic project: %s\n' "${GENERIC_SKILLS}"
+  cp "${SKILL_PATH}" "${GENERIC_SKILLS}/${SKILL_BASENAME}"
+  DEPLOYED=$((DEPLOYED + 1))
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 if [ "${DEPLOYED}" -eq 0 ]; then
   printf '[deploy-user-skill] No installed host adapters detected — skill saved to user/skills/ only.\n'

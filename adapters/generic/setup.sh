@@ -37,6 +37,28 @@ if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; t
   printf 'If you have custom agents in %s/agents/, move them to %s/user/agents/\n' "${AGENT_CREW_HOME}" "${AGENT_CREW_HOME}"
   printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
 fi
+# Scaffold skill directories and populate unified discovery
+mkdir -p "${AGENT_CREW_HOME}/system/skills"
+mkdir -p "${AGENT_CREW_HOME}/user/skills"
+mkdir -p "${AGENT_CREW_HOME}/skills"
+
+# Sync system skills from source repo when SOURCE_ROOT is available
+if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
+  sync_system_skills \
+    "${SOURCE_ROOT}/core/agents/skills" \
+    "${AGENT_CREW_HOME}/system/skills"
+fi
+
+# Merge system + user skills into unified discovery path
+merge_skills_to_discovery \
+  "${AGENT_CREW_HOME}/system/skills" \
+  "${AGENT_CREW_HOME}/user/skills" \
+  "${AGENT_CREW_HOME}/skills"
+
+# Copy skills to project-local discovery path
+mkdir -p "${PROJECT_ROOT}/.agent-crew/skills"
+copy_dir_contents "${AGENT_CREW_HOME}/skills" "${PROJECT_ROOT}/.agent-crew/skills"
+
 cp "${AGENT_CREW_HOME}/adapters/generic/invocation.md" "${PROJECT_ROOT}/.agent-crew/invocation.md" 2>/dev/null || true
 chmod +x "${PROJECT_ROOT}/.agent-crew/hooks/"*.sh 2>/dev/null || true
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
