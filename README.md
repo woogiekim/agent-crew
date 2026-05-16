@@ -618,9 +618,8 @@ After all supervisors finish, `crew:run` always displays a per-task Run Summary 
 Deployment approval via `AskUserQuestion` is triggered **only when the pipeline included a `devops` stage**. The full deployment plan is displayed first:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Deployment Plan
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Deployment Plan
+
 Branches to push:
   - {BRANCH}  ({N} commits)
 
@@ -631,7 +630,6 @@ Target remote: origin
 Risk notes:
   - {merge conflicts detected?}
   - {blocked tasks?}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Two approval options are offered:
@@ -659,9 +657,8 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 `crew:status` reads `progress.log` and `pipeline.json` from the most recently active task and prints a live pipeline snapshot:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Task Status: 20260510-140000-0
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Task Status: 20260510-140000-0
+
 Task   : implement order management API
 Branch : feature/implement-order-api-20260510-140000-0
 Status : in-progress
@@ -681,7 +678,6 @@ Pipeline stages:
   [ ] reviewer
 
 Completed: 3 / 5 stages
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 `crew:status` is read-only and always targets the most recently modified task directory. It shows the "Recent events" section only when `progress.log` exists.

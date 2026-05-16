@@ -194,9 +194,8 @@ if [ -n "$HOST_TASK_ID" ]:
 Display the session table:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Background Session: {SESSION_ID}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Background Session: {SESSION_ID}
+
 Session status: {running | completed}
 
   #  Task ID              Branch                         Status     Stage
@@ -213,7 +212,6 @@ Last event per task:
   "(inj)" marks tasks injected after session start.
 
 To wait for all tasks and finalize: crew:status --collect
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **If `SESSION_MODE == "session"` (completed session):** append a note:
@@ -331,9 +329,8 @@ fi
 ```
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Run Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Run Summary
+
 Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == true
   Status : completed | blocked
   Branch : {branch}
@@ -350,7 +347,6 @@ Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == 
 
 Task 2: {description}
   ...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 If any task has `STATUS: blocked`, report the blocker. Do not proceed to merge.
@@ -386,9 +382,8 @@ crew:run "resolve merge conflicts"
 After all merges succeed:
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Implementation Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Implementation Summary
+
 Merged branches into main (local):
   - {BRANCH_1}  ({N} commits)
   - {BRANCH_2}  ({N} commits)
@@ -397,7 +392,6 @@ Commits ready for push (origin/main..HEAD):
   {git log --oneline origin/main..HEAD, up to 10 lines}
 
 Note: No remote push has occurred yet.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 > **Stop here by default.** Do not volunteer deployment. If the user wants to
@@ -433,9 +427,8 @@ If `HAS_DEVOPS == "yes"`: display the Deployment Plan and emit a **structured
 user-choice intent** (per `core/rules/capabilities/interactive-question.md`):
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Deployment Plan
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Deployment Plan
+
 Action: push main to origin (all task branches merged)
 
 Commits to be published (origin/main..HEAD):
@@ -445,7 +438,6 @@ Target remote: origin
 Risk notes:
   - {any merge conflicts detected?}
   - {any blocked tasks?}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ```text
@@ -753,9 +745,8 @@ Assemble and print the snapshot in this format. When `RECENT_PROGRESS` is
 non-empty, include the "Recent events" section above the pipeline stages list:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Task Status: {ACTIVE_TASK}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Task Status: {ACTIVE_TASK}
+
 Task    : {TASK_DESC}
 Branch  : {BRANCH}
 Status  : {in-progress | completed | blocked}
@@ -779,15 +770,13 @@ Pipeline stages:
   [ ] reviewer
 
 Completed: 3 / 5 stages
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 When `RECENT_PROGRESS` is empty (no log file yet), omit the "Recent events" section:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Task Status: {ACTIVE_TASK}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Task Status: {ACTIVE_TASK}
+
 Task   : {TASK_DESC}
 Branch : {BRANCH}
 Status : {in-progress | completed | blocked}
@@ -800,15 +789,13 @@ Pipeline stages:
   [ ] reviewer
 
 Completed: 3 / 5 stages
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 When `pipeline.json` does not yet exist (task is in Phase 1 before planning):
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Task Status: {ACTIVE_TASK}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## Task Status: {ACTIVE_TASK}
+
 Task   : {TASK_DESC or "(pending)"}
 Branch : {BRANCH}
 Status : in-progress
@@ -818,7 +805,6 @@ Recent events (from progress.log):
 
 Pipeline stages:
   (pipeline not yet created — still in planning phase)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ---
