@@ -34,7 +34,7 @@ detailed contract for each flag lives at
 | `monitor_tool`        | implemented   | Streaming output surface over background processes | `capabilities/monitor-tool.md` |
 | `reasoning_tier`      | install-time  | Per-agent abstract compute tier; adapter materializes to a host model | `capabilities/reasoning-tier.md` |
 | `cost_tracking`       | implemented   | Per-task token usage reporting (powers cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
-| `hook_system`         | planned     | Host enforces validators at lifecycle moments (PreToolUse, PostToolUse) | `capabilities/hook-system.md` |
+| `hook_system`         | implemented | Host enforces validators at lifecycle moments (PreToolUse, PostToolUse) | `capabilities/hook-system.md` |
 | `interactive_question`| planned     | Structured user-choice prompts (abstracts native question tools) | `capabilities/interactive-question.md` |
 
 "Implemented" means the flag is consumed by current core code. "Planned"
@@ -62,7 +62,7 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json
   "agent_background":     true,
   "monitor_tool":         true,
   "cost_tracking":        false,
-  "hook_system":          false,
+  "hook_system":          true,
   "interactive_question": false
 }
 ```

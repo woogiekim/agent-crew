@@ -584,6 +584,67 @@ register.json for `current_phase`, `approval_status`, and
 `result.md` grep + `pipeline.json` parsing for pre-F4 task
 directories. No user action required.
 
+### Phase G6 — Forbid plain-text approval (hook_system implemented)
+
+A new `PostToolUse[Agent]` hook blocks free-text yes/no approval
+prompts ("Shall I merge?" / "...진행할까요?") with an exit-2 stderr
+message fed back to the model. Implements refactor item 6 and flips
+the Claude adapter's `hook_system` capability flag from `false` to
+`true`.
+
+**No migration code required.** Pure additive:
+
+- New file `core/scripts/check-plaintext-approval.py` — provider-neutral
+  validator. Accepts hook-payload JSON on stdin or `--text "..."` for
+  diagnostic invocation. Exit 0 = clean, exit 2 = violation. Patterns
+  cover the common English modal phrasings (Shall I / Should I / Do
+  you want me to / Would you like me to / May I / Can I) and Korean
+  equivalents (할까요? / 해드릴까요? / 진행할까요? / 해도 될까요? /
+  해도 되나요?). The "Can I help" greeting-style is excluded as a
+  guarded false-positive.
+- New file `core/hooks/forbid-plaintext-approval.sh` — claude-style
+  shell wrapper that forwards hook input to the validator. Resolves
+  the validator from `${AGENT_CREW_HOME}/scripts/` first, then
+  `${AGENT_CREW_HOME}/system/scripts/` (compat alias). Silent no-op
+  when the validator is absent.
+- `adapters/claude/setup.sh` registers the hook via the same
+  `settings.json` merge pattern as `cost-tracker.sh`. Matcher:
+  `"Agent"`. Timeout: 5s.
+- `adapters/claude/setup.sh` capabilities.json now advertises
+  `"hook_system": true`.
+
+**Validator semantics.**
+
+- Hook fires on every `Agent` (Task) tool completion.
+- Exit 2 + stderr → claude surfaces the message to the assistant on
+  the next turn. The model receives clear feedback about which phrase
+  violated and which rule it broke (`core/rules/disambiguation.md`).
+- Non-Agent tool calls are filtered out (`--tool Agent` default).
+- Empty payloads and unknown tool_response shapes silently exit 0.
+
+**Storage impact.** None — the hook adds ~1 KB to settings.json (one
+hook entry).
+
+**False-positive risk.** The patterns deliberately require both
+modal-verb prefix AND a literal question mark, so prose that merely
+references the rule (e.g., a doc explaining "Shall I merge?-style
+prompts are forbidden") matches the regex but is an accepted false
+positive at PostToolUse — the hook fires after agent completion, so
+flagging the agent for quoting the rule in its response is a
+reasonable nudge.
+
+**Adapters without `hook_system=true`.** codex and generic adapters
+continue to rely on model-side guidance documented in their
+`SKILL.md` / `invocation.md`. The validator script remains usable
+standalone for diagnostic checks (`check-plaintext-approval.py --text
+"..."`).
+
+**Update steps.** The standard category sync in § Execution copies
+`core/scripts/` and `core/hooks/` into both `system/` and the compat
+alias. After updating, run `crew:setup` (or `adapters/claude/setup.sh`
+directly) so the new hook gets registered in
+`~/.claude/settings.json`.
+
 ## Completion Message
 
 ```text

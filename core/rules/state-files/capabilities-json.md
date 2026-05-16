@@ -34,7 +34,7 @@ Canonical shape (Phase 3.5 flag set):
   "agent_background":     true,
   "monitor_tool":         true,
   "cost_tracking":        true,
-  "hook_system":          false,
+  "hook_system":          true,
   "interactive_question": false
 }
 ```
@@ -54,7 +54,7 @@ require an exhaustive enumeration.
 | `agent_background` | boolean | optional | Background subagent fan-out. |
 | `monitor_tool` | boolean | optional | Streaming output surface. |
 | `cost_tracking` | boolean | optional | Per-task token usage reporting. |
-| `hook_system` | boolean | optional (planned) | Host enforces validators at lifecycle moments. |
+| `hook_system` | boolean | optional | Host enforces validators at lifecycle moments. Phase G6: true on Claude. |
 | `interactive_question` | boolean | optional (planned) | Structured user-choice prompts. |
 
 Note: `reasoning_tier` is **install-time** (see

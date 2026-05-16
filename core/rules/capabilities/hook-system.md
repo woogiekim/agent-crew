@@ -8,12 +8,15 @@ invariants at execution time, rather than relying on model-side
 guidance alone. This is the difference between "the model is told not
 to do X" and "the host blocks X."
 
-Planned consumers:
+Consumers:
 
-- **Forbid plain-text approval** (planned — refactor item 6). A
-  `PostToolUse` validator inspects the model's response for forbidden
-  patterns like "Shall I merge and push?" and surfaces a blocking
-  message when found.
+- **Forbid plain-text approval** (Phase G6 — implemented). A
+  `PostToolUse[Agent]` validator inspects the agent's response for
+  forbidden patterns like "Shall I merge and push?" /
+  "...진행할까요?" and surfaces a blocking message (exit 2) when
+  found. Script: `core/scripts/check-plaintext-approval.py`. Hook
+  wrapper: `core/hooks/forbid-plaintext-approval.sh`. Registered by
+  `adapters/claude/setup.sh` when `hook_system=true`.
 - **Autonomous task injection guards** (planned — refactor item 14). A
   pre-routing hook detects inject-intent phrases ("추가로 해줘",
   "이것도 부탁해", etc.) and steers them into the injection flow when
@@ -42,11 +45,14 @@ Adapter MUST provide:
 Consumers fall in two layers:
 
 - **Existing hook scripts** under `core/hooks/*.sh` are ready to be
-  wired by any adapter that advertises `hook_system=true`.
-- **Provider-neutral validators** under `core/scripts/check-*.py`
-  (planned — refactor items 6 + 14) are the canonical implementations
-  that the adapter wires in. These scripts run on stdin/stdout with
-  exit codes so they can be invoked from any host's hook mechanism.
+  wired by any adapter that advertises `hook_system=true`. As of
+  Phase G6 this set includes `forbid-plaintext-approval.sh`.
+- **Provider-neutral validators** under `core/scripts/check-*.py` are
+  the canonical implementations that the adapter wires in. Phase G6
+  ships `check-plaintext-approval.py`; `check-task-injection.py`
+  remains planned (refactor item 14). These scripts run on
+  stdin/stdout with exit codes so they can be invoked from any host's
+  hook mechanism.
 
 Core's input shape assumes a `${HOOK_INPUT}` JSON environment variable
 available to hook scripts (matching the current Claude convention). If
@@ -95,11 +101,11 @@ Consumer — current hook scripts:
 - `core/hooks/auto-route.sh`
 - `core/hooks/context-guard.sh`
 - `core/hooks/verify-rules.sh`
+- `core/hooks/forbid-plaintext-approval.sh` (Phase G6)
 
-Consumer — planned validator scripts:
+Consumer — validator scripts:
 
-- `core/scripts/check-plaintext-approval.py` (refactor item 6 — not
-  present yet)
+- `core/scripts/check-plaintext-approval.py` (Phase G6 — implemented)
 - `core/scripts/check-task-injection.py` (refactor item 14 — not
   present yet)
 
