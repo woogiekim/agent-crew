@@ -78,6 +78,14 @@ Each script's introduction PR also adds a corresponding entry in the
 relevant adapter (Claude wires it as a hook; Codex documents the
 invocation in SKILL.md; generic adds guidance).
 
+## Diagnostic tooling
+
+- `smoke-test-state.sh` — end-to-end regression test for the F4
+  validator + F5 progress buffer + G6 plain-text-approval validator +
+  J13 telemetry aggregator. Pure read-only against the repo; writes
+  only into a temp directory. Run `bash core/scripts/smoke-test-state.sh`
+  from the repo root after changing any of these subsystems.
+
 ## Naming conventions
 
 - Use kebab-case: `check-plaintext-approval.py`, not `check_plaintext_approval.py`.

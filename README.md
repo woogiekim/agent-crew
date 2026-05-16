@@ -604,7 +604,9 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew:run "task A" \| "task B"` | Run multiple tasks in parallel |
 | `crew:status` | Snapshot of the most recent task's pipeline state |
 | `crew:cost` | Show the session cost summary |
+| `crew:telemetry` | Pipeline timing, retry, and token aggregates across recent runs |
 | `crew:agent-maker` | Design and register a custom agent |
+| `crew:update` | Sync `~/.agent-crew/` with the source checkout |
 
 ### crew:status
 
