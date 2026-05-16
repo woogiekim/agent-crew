@@ -343,6 +343,78 @@ Combine them only when the implementer-side contract is genuinely
 shared across all units (e.g. all 3 CRUD endpoints share a generated
 TypeScript client and one test file can exercise all 3).
 
+#### When to set `streaming_review`
+
+A stage entry may carry `streaming_review: true` on the object form. When
+set AND the *immediately following* stage in `stages` is a single
+`reviewer` agent, the supervisor co-spawns the reviewer (`MODE=streaming`)
+in the SAME host message as the implementer. The reviewer polls
+`git log` incrementally as new commits land, terminating once the
+implementer reports `completed`, then drains and emits the final
+aggregate verdict. On joint success the trailing reviewer stage is
+consumed: `completed_stages` advances by 2 in one update. Reviewer time
+is taken off the critical path.
+
+See `core/rules/state-files/pipeline-json.md` § Streaming Review stage
+form for the wire shape, and `core/agents/supervisor-stages.md` §
+Streaming Review Dispatch for the spawn protocol.
+
+Set `streaming_review: true` only when **all** of the following hold:
+
+- The implementer stage is expected to be **long-running** — heuristic:
+  more than ~2 minutes of wall-clock work, or three or more commits.
+  Short stages (single commit, sub-30-second completion) gain little
+  from streaming because the reviewer's startup overhead dominates.
+- The implementer makes **code-only changes** — no schema migrations,
+  no destructive deletions, no rename-heavy refactors. The streaming
+  reviewer reviews each commit in isolation; cross-commit changes that
+  only make sense in aggregate (a migration that the same stage's
+  later commit consumes) confuse incremental review.
+- The commit cadence is **realistic for a single reviewer** — for
+  MVP, plan for ~10 commits or fewer across the stage. A stage that
+  lands one commit per second outpaces the 15-second poll interval
+  and turns the streaming reviewer into a glorified `final` reviewer.
+- The trailing stage is **exactly** `["reviewer"]` (single agent, no
+  parallel siblings, no custom-agent substitution). The supervisor's
+  normalization-time eligibility check silently disables the flag and
+  falls back to sequential dispatch when this is not true; setting
+  the flag in the planner's pipeline.json output remains safe in that
+  case, but it does not gain anything.
+
+When **any** of these does not hold, default to `false` (omit the
+field). The existing sequential `[..., ["reviewer"]]` shape continues
+to work and is the conservative choice for short or schema-heavy
+stages.
+
+Anti-patterns — do NOT set `streaming_review: true` for:
+
+- Stages whose trailing pipeline is NOT a single `reviewer` agent
+  (`["reviewer", "devops"]`, multi-agent reviewer stages, missing
+  reviewer altogether).
+- `devops` / `resolver` stages — they do not produce a stream of
+  commits the reviewer can incrementally evaluate.
+- One-commit stages (single edit, single doc fix) where the reviewer
+  would barely see one commit before the implementer is done.
+
+#### Interaction with `streaming_review`, `tdd_parallel`, and `parallelizable_units`
+
+`streaming_review` is **orthogonal** to the two flags above. When
+`streaming_review: true` is combined with the other flags, the
+supervisor co-spawns the reviewer alongside whatever dispatch the
+other flags select:
+
+- `streaming_review` + `tdd_parallel`: three concurrent agents in one
+  host message — test-writer + implementer + streaming reviewer.
+- `streaming_review` + `parallelizable_units`: N implementers + one
+  streaming reviewer. The reviewer watches the single combined branch
+  (`git log` covers all unit commits). MVP keeps reviewer scope to
+  whole-branch review; per-unit reviewer fan-out is a follow-up.
+- `streaming_review` + `tdd_parallel` + `parallelizable_units`:
+  test-writer + N implementers + reviewer (advanced combination;
+  documented but rarely the right choice — set only when the
+  contract is genuinely shared across units AND each unit produces a
+  meaningful commit cadence).
+
 Custom agent names must match the filename format:
 `~/.agent-crew/agents/<name>.md`
 

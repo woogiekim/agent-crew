@@ -119,10 +119,41 @@ Fan-Out Dispatch for full pseudocode):
   `completed`. Crashed units trigger per-unit (not whole-stage) retry
   via the Stage Retry Rule.
 
-### Interaction with `tdd_parallel`
+### Streaming Review stage form (`streaming_review`)
 
-`tdd_parallel` and `parallelizable_units` are independent flags on the
-same stage-object form. The truth table the supervisor honors:
+A stage object may also opt into **streaming review** by setting
+`streaming_review: true`. When the flag is true AND the *next* stage in
+`stages` is a single `reviewer` agent, the supervisor co-spawns the
+reviewer in `MODE=streaming` alongside this stage's agent(s) in a single
+host message. The reviewer polls `git log <pre-stage-head>..HEAD`
+incrementally as new commits land, terminating once this stage's
+implementer reports `completed` (one final drain follows). On joint
+success, `completed_stages` advances by **2** in one update — the
+trailing reviewer stage is consumed by the streaming dispatch and is
+NOT re-run.
+
+```json
+{
+  "stages": [
+    { "agents": ["backend"], "streaming_review": true },
+    ["reviewer"]
+  ]
+}
+```
+
+Backwards compatibility: `streaming_review` defaults to `false`. When
+the field is absent, when it is false, or when the next stage is not a
+single `reviewer` agent, dispatch is unchanged — the implementer runs
+to completion and the reviewer stage spawns sequentially as before. See
+`core/agents/supervisor-stages.md` § Streaming Review Dispatch for the
+full spawn semantics and the termination/drain protocol.
+
+### Interaction with `tdd_parallel`, `parallelizable_units`, and `streaming_review`
+
+`tdd_parallel`, `parallelizable_units`, and `streaming_review` are
+independent flags on the same stage-object form. The truth table the
+supervisor honors (per implementer stage; `streaming_review` is then
+overlaid on top — see the second table below):
 
 | `tdd_parallel` | `parallelizable_units.length` | Dispatch |
 |---|---|---|
@@ -131,11 +162,33 @@ same stage-object form. The truth table the supervisor honors:
 | absent / false | `>= 2` | Sub-Task Fan-Out — N implementers, one per unit. |
 | true | `>= 2` | Combined: N implementers spawned (one per unit) AND a single test-writer co-spawned for the stage (writes tests covering the contract shared across units). Documented as opt-in advanced mode in `core/agents/planner.md` § When to set parallelizable_units. |
 
-For MVP, the planner is instructed to set **at most one** of these two
-flags per stage unless the implementer-side contract is genuinely
-shared across units. When both are set the supervisor still dispatches
-correctly, but the planner's pre-flight checks become harder to
-reason about.
+For MVP, the planner is instructed to set **at most one** of
+`tdd_parallel` / `parallelizable_units` per stage unless the
+implementer-side contract is genuinely shared across units. When both
+are set the supervisor still dispatches correctly, but the planner's
+pre-flight checks become harder to reason about.
+
+`streaming_review` is **orthogonal** to the two flags above and stacks
+on top of the dispatch the truth table selects. The supervisor adds one
+extra parallel reviewer agent to the single host message that the
+selected dispatch would already issue:
+
+| `streaming_review` | Selected dispatch (from table above) | Effective agents co-spawned in one host message |
+|---|---|---|
+| absent / false | any | unchanged — reviewer runs as a separate later stage |
+| true | Legacy single-agent | implementer + reviewer (`MODE=streaming`) |
+| true | TDD Parallel | test-writer + implementer + reviewer (3 concurrent) |
+| true | Sub-Task Fan-Out (N units) | N implementers + reviewer (reviewer watches the single combined branch — for MVP, no per-unit reviewer fan-out) |
+| true | TDD Parallel + Sub-Task Fan-Out (combined) | test-writer + N implementers + reviewer (advanced mode; documented but not auto-recommended) |
+
+`streaming_review: true` is only honored when the *immediately
+following* stage is a single `reviewer` agent (no other agents in that
+stage). When the trailing stage is missing, contains more than one
+agent, or names a non-reviewer agent, the supervisor logs a one-line
+warning and falls through to the dispatch the first table selects
+(reviewer runs sequentially in its own stage as today). This keeps the
+flag safe to set even when the analyst guessed wrong about the
+trailing-stage shape.
 
 JSON Schema: `${AGENT_CREW_HOME}/schemas/pipeline.schema.json`. The
 schema sets `additionalProperties: true` because dynamic-agent shapes
@@ -147,7 +200,7 @@ and capability-gated fields evolve faster than the schema does.
 |---|---|---|---|---|
 | `schema_version` | integer (const 1) | optional in v1 | analyst (post-F4) | Pre-F4 pipeline.json omits this field; validators tolerate absence. |
 | `task` | string | yes | analyst Step 6 | Original task description (mirror of `register.json.task`). |
-| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...] }` (TDD parallel form and/or sub-task fan-out — see the two stage-form sections below). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel` and `parallelizable_units` flags. |
+| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...], streaming_review: bool }` (TDD parallel form and/or sub-task fan-out and/or streaming review — see the three stage-form sections below). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel`, `parallelizable_units`, and `streaming_review` flags. |
 | `completed_stages` | integer | yes (starts at 0) | analyst Step 6, supervisor-stages | 0-based count of stages whose terminal state was successful completion. Drives the resume logic in Phase 0. |
 | `needs_creation` | array of objects | yes (may be `[]`) | analyst Step 6 / planner Step 3c | Per-entry: `{name, reason, role}`. Drives Phase 1.5 dynamic agent creation. |
 | `stage_agent_status` | object | optional (created on first parallel write) | supervisor-stages Phase 2 | Outer key = 1-based stage index as a string; inner key = agent name (legacy / TDD parallel form) or `agent:unit_id` (sub-task fan-out form); value = `completed \| crashed \| blocked`. |

@@ -310,30 +310,61 @@ at stage entry.
 #### Normalization
 
 At the top of each stage iteration, normalize the stage entry into
-four locals — `STAGE_AGENTS`, `STAGE_TDD_PARALLEL`, `STAGE_UNITS_COUNT`,
-and (for the existing parallel-agents path) `STAGE_AGENT` per
-inner-loop iteration. The units detail itself is read from
-`PIPELINE_PATH` on demand by the Sub-Task Fan-Out path; the count
-suffices to route dispatch.
+five locals — `STAGE_AGENTS`, `STAGE_TDD_PARALLEL`, `STAGE_UNITS_COUNT`,
+`STAGE_STREAMING_REVIEW`, and (for the existing parallel-agents path)
+`STAGE_AGENT` per inner-loop iteration. The units detail itself is
+read from `PIPELINE_PATH` on demand by the Sub-Task Fan-Out path; the
+count suffices to route dispatch.
 
 ```bash
 # Read the current stage entry shape from PIPELINE_PATH and normalize.
-read -r STAGE_AGENTS STAGE_TDD_PARALLEL STAGE_UNITS_COUNT < <(python3 -c "
+read -r STAGE_AGENTS STAGE_TDD_PARALLEL STAGE_UNITS_COUNT STAGE_STREAMING_REVIEW < <(python3 -c "
 import json
 p = json.load(open('${PIPELINE_PATH}'))
 stage = p['stages'][${i} - 1]
 if isinstance(stage, str):
-    agents = [stage]; tdd = False; units = 0
+    agents = [stage]; tdd = False; units = 0; stream = False
 elif isinstance(stage, list):
-    agents = stage;   tdd = False; units = 0
+    agents = stage;   tdd = False; units = 0; stream = False
 elif isinstance(stage, dict):
     agents = stage.get('agents', [])
     tdd    = bool(stage.get('tdd_parallel', False))
     units  = len(stage.get('parallelizable_units', []) or [])
+    stream = bool(stage.get('streaming_review', False))
 else:
-    agents = []; tdd = False; units = 0
-print(' '.join(agents), '1' if tdd else '0', units)
+    agents = []; tdd = False; units = 0; stream = False
+print(' '.join(agents), '1' if tdd else '0', units, '1' if stream else '0')
 ")
+
+# Streaming-review eligibility check: the flag is only honored when the
+# IMMEDIATELY following stage is a single `reviewer` agent. Otherwise the
+# supervisor logs one warning and disables the flag for this iteration —
+# the existing dispatch paths run unchanged.
+if [ "${STAGE_STREAMING_REVIEW}" = "1" ]; then
+  NEXT_STAGE_OK=$(python3 -c "
+import json
+p = json.load(open('${PIPELINE_PATH}'))
+stages = p.get('stages', [])
+nxt_idx = ${i}  # 1-based ${i} indexes the next stage at offset 0+i in stages
+if nxt_idx >= len(stages):
+    print('0'); raise SystemExit
+nxt = stages[nxt_idx]
+if isinstance(nxt, str):
+    agents = [nxt]
+elif isinstance(nxt, list):
+    agents = nxt
+elif isinstance(nxt, dict):
+    agents = nxt.get('agents', [])
+else:
+    agents = []
+print('1' if agents == ['reviewer'] else '0')
+")
+  if [ "${NEXT_STAGE_OK}" != "1" ]; then
+    log_progress "STAGE_STREAMING_REVIEW_INELIGIBLE" \
+      "stage=${i} reason=next_stage_not_single_reviewer — falling back to sequential"
+    STAGE_STREAMING_REVIEW=0
+  fi
+fi
 ```
 
 Dispatch routing:
@@ -347,6 +378,13 @@ Dispatch routing:
 - Both `0` → fall through to the existing Single / Parallel Agents
   paths above — no regression for any pre-existing pipeline.json
   (including every pipeline that predates this feature).
+- `STAGE_STREAMING_REVIEW == 1` (independent overlay) → after the
+  selected dispatch composes its agent prompts, the supervisor ALSO
+  composes a `reviewer` prompt in `MODE=streaming` and issues all
+  agent calls (selected-dispatch agents + reviewer) in the same single
+  host message. On joint success, the trailing reviewer stage is
+  consumed: `completed_stages` advances by **2** instead of 1. See §
+  Streaming Review Dispatch below for the spawn protocol.
 
 #### Dispatch — both agents in one host message
 
@@ -638,6 +676,192 @@ When `STAGE_UNITS_COUNT <= 1` (absent field, or length-1 array), Phase
 Parallel Agents path applies depending on `STAGE_TDD_PARALLEL` and the
 agents-list shape. The Sub-Task Fan-Out block is opt-in by stage
 encoding; no pipeline that predates this feature is affected.
+
+### Streaming Review Dispatch
+
+A stage entry may opt into **streaming review** by setting
+`streaming_review: true` on the object stage form (see
+`core/rules/state-files/pipeline-json.md` § Streaming Review stage
+form). When the normalization block above sets
+`STAGE_STREAMING_REVIEW == 1` (eligibility confirmed — the *next*
+stage is a single `reviewer` agent), the supervisor co-spawns the
+reviewer in `MODE=streaming` alongside this stage's selected dispatch
+in a single host message. The reviewer polls `git log
+<pre-stage-head>..HEAD` as new commits land, terminating once this
+stage's implementer reports `completed`. On joint success the trailing
+reviewer stage is **consumed** — `completed_stages` advances by 2 in
+one update.
+
+This overlay is orthogonal to § Single Agent, § Parallel Agents, § TDD
+Parallel Dispatch, and § Sub-Task Fan-Out Dispatch: any of those paths
+may carry the streaming reviewer in the same host message.
+
+#### Capture the pre-stage HEAD
+
+The reviewer needs an immutable starting point for its `git log` poll.
+Capture HEAD **before** issuing the host dispatch:
+
+```bash
+PRE_STAGE_HEAD=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo "")
+echo "${PRE_STAGE_HEAD}" > "${TASK_DIR}/context/streaming-review-head-${i}.txt"
+```
+
+The per-stage filename allows multiple streaming-review stages in a
+single pipeline to coexist (each reviewer reads its own HEAD file).
+The Phase 3 close-out preserves these files for audit; no per-stage
+cleanup is required.
+
+#### Dispatch — selected agents + reviewer in one host message
+
+1. The selected dispatch (Single Agent / Parallel Agents / TDD Parallel
+   / Sub-Task Fan-Out) composes its N agent prompts as documented in
+   the section it owns. **Do not modify** those prompts — the streaming
+   overlay only adds one extra agent to the same host message.
+
+2. Compose the reviewer prompt using the standard Agent prompt format
+   above, with three additional inputs:
+
+   ```text
+   TASK_DIR: {TASK_DIR}
+   PROJECT_ROOT: {PROJECT_ROOT}
+   HANDOFF_PATH: {TASK_DIR}/handoff.md
+   QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+   MODE: streaming
+   PRE_STAGE_HEAD: {captured value}
+   WATCH_STAGE_INDEX: {i}
+   WATCH_AGENT: {first entry of STAGE_AGENTS — the implementer to poll}
+
+   You are running as the streaming reviewer for stage {i}. Poll
+   `git log PRE_STAGE_HEAD..HEAD` on branch {BRANCH} every 15 seconds.
+   Review each NEW commit incrementally per your streaming-mode
+   workflow (see core/agents/reviewer.md § Streaming Mode). Terminate
+   when pipeline.json.stage_agent_status["{i}"]["{WATCH_AGENT}"] ==
+   "completed" OR a STAGE_DONE line for {WATCH_AGENT} appears in
+   progress.log. Then do one final drain poll and emit the aggregate
+   REVIEW verdict.
+   ```
+
+   In Sub-Task Fan-Out combined mode, `WATCH_AGENT` is the unqualified
+   implementer name (`STAGE_AGENTS[0]`); the reviewer watches the
+   whole branch so per-unit commits are covered by the same `git log`
+   poll without needing per-unit awareness.
+
+3. Emit the start event **before** dispatch:
+
+   ```bash
+   log_progress "STAGE_STREAMING_REVIEW_STARTED" \
+     "stage=${i} reviewing=${STAGE_AGENTS%% *}"
+   ```
+
+4. Issue all agent calls (selected-dispatch agents + reviewer) in a
+   **single response** — the same host parallel-spawn convention used
+   by § Parallel Agents, § TDD Parallel Dispatch, and § Sub-Task
+   Fan-Out Dispatch. The supervisor's response message contains one
+   Agent call per partner; the host dispatches them concurrently.
+
+5. As the streaming reviewer's incremental work proceeds, each
+   per-commit verdict is appended to
+   `${TASK_DIR}/context/review-stream.md` by the reviewer (the running
+   ledger format is documented in `core/agents/reviewer.md`). The
+   supervisor does NOT need to poll the ledger — the reviewer
+   completes when the implementer's `stage_agent_status` flips to
+   `completed`, and emits its own
+   `STAGE_STREAMING_REVIEW_INCREMENTAL` log lines via the helper as it
+   reviews each commit. The supervisor's only obligation during dispatch
+   is to wait for both/all agents to return.
+
+#### Per-agent terminal status
+
+Reuse the per-agent intermediate-write block from § Parallel Agents
+verbatim — one write per partner as it terminates. The reviewer's
+status key is the literal string `reviewer` under
+`stage_agent_status["${i}"]`, matching the TDD parallel convention
+(test-writer / implementer use their own un-prefixed names).
+
+#### Advance `completed_stages` by 2
+
+On the joint-success path (every selected-dispatch agent + the
+reviewer all reach `completed`), the trailing reviewer stage is
+consumed. Use a single combined write that advances `completed_stages`
+by **2** in one operation:
+
+```bash
+python3 -c "
+import json
+p = json.load(open('${PIPELINE_PATH}'))
+stage_status = p.get('stage_agent_status', {}).get('${i}', {})
+all_done = stage_status and all(v == 'completed' for v in stage_status.values())
+if all_done:
+    # Consume both this stage and the trailing reviewer stage in one write.
+    p['completed_stages'] = ${i} + 1
+    json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+"
+```
+
+> The `+ 1` (not `+ 2`) reflects that `${i}` is 1-based: this stage's
+> completion sets `completed_stages = ${i}`, and consuming the trailing
+> reviewer stage sets it to `${i} + 1`. The stage loop's existing
+> "skip stages already in `completed_stages`" rule then skips the
+> reviewer stage at iteration `${i} + 1` automatically — no second
+> spawn occurs.
+
+Emit the done event with the reviewer's final verdict (extracted from
+the reviewer agent's `REVIEW: APPROVED | NEEDS_CHANGES` return line,
+mapped to `ok` / `blocked` for the event detail):
+
+```bash
+COMMITS_REVIEWED=$(wc -l < "${TASK_DIR}/context/review-stream.md" 2>/dev/null | tr -d ' ' || echo 0)
+log_progress "STAGE_STREAMING_REVIEW_DONE" \
+  "stage=${i} commits_reviewed=${COMMITS_REVIEWED} final_verdict=${REVIEWER_VERDICT}"
+```
+
+Where `${REVIEWER_VERDICT}` is `ok` when the reviewer returned
+`REVIEW: APPROVED` and `blocked` when it returned `REVIEW:
+NEEDS_CHANGES`. The reviewer's `verification_status` register update
+(see § Stage progress emits — Phase F4 reviewer-stage verification
+status bump) ALSO fires for the streaming reviewer, using the
+reviewer's `REVIEW:` line exactly as in the sequential `final` path.
+
+#### Selective retry semantics
+
+If the implementer crashes but the reviewer completed cleanly (or the
+inverse), apply the Stage Retry Rule to the failed agent only —
+selective retry, matching the § TDD Parallel Dispatch convention. A
+reviewer that crashes mid-stream is restarted from the same
+`PRE_STAGE_HEAD` (the file written above is the source of truth — no
+re-derivation needed) so it can re-traverse all commits the previous
+attempt already covered. The reviewer's streaming mode is idempotent
+on `review-stream.md`: it appends-with-dedupe on commit SHA, so a
+restart does not duplicate findings.
+
+If, after exhausting retries, either the implementer or the reviewer
+remains crashed/blocked, the stage as a whole is BLOCKED — apply the
+standard BLOCKED Recovery contract (write result.md, halt). In that
+case `completed_stages` is NOT advanced; on resume the supervisor
+re-enters this stage from scratch and re-issues the streaming dispatch
+(reading `PRE_STAGE_HEAD` again, possibly re-capturing it if the file
+is missing).
+
+#### Termination trade-off (documented)
+
+Streaming review may flag issues in commits that get fixed up by later
+commits in the same stage (e.g. an early commit introduces a TODO that
+the implementer resolves three commits later). The reviewer's
+streaming mode re-checks the running ledger on each commit and demotes
+prior findings whose target file/line has been re-touched in a later
+commit (`core/agents/reviewer.md` § Streaming Mode — Re-check rule).
+This is best-effort; the final aggregate `review.md` is the
+authoritative verdict and is re-derived from the current branch HEAD
+at termination, not from the running ledger alone.
+
+#### Sequential-path fall-through
+
+When `STAGE_STREAMING_REVIEW == 0` (the absence case — missing field,
+false value, or ineligible trailing stage), Phase 2 dispatch is
+unchanged. The reviewer stage runs sequentially in its own iteration
+of the stage loop, exactly as documented in § Single Agent. The
+Streaming Review Dispatch block is opt-in by stage encoding; no
+pipeline that predates this feature is affected.
 
 #### Post-stage handoff page-out (Phase 3.5, opt-in)
 

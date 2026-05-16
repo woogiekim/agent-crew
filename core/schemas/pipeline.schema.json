@@ -19,7 +19,7 @@
     },
     "stages": {
       "type": "array",
-      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel} (TDD parallel form — co-spawns test-writer alongside every agent in `agents`). Consumers normalize the three shapes.",
+      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel, parallelizable_units, streaming_review} (TDD parallel form, sub-task fan-out, and/or streaming review — see core/rules/state-files/pipeline-json.md for the per-flag semantics). Consumers normalize the three shapes.",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
@@ -43,6 +43,11 @@
                 "type": "boolean",
                 "default": false,
                 "description": "When true, supervisor co-spawns the test-writer agent in parallel with every agent listed in `agents`. Both must complete before the stage advances. See core/agents/supervisor-stages.md § TDD Parallel Dispatch."
+              },
+              "streaming_review": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true AND the next stage is a single `reviewer` agent, the supervisor co-spawns the reviewer in MODE=streaming alongside this stage's agent(s) in a single host message. The reviewer polls git log incrementally as new commits land, terminating once this stage's agent reports completed (with one final drain). On joint success, `completed_stages` advances by 2 — the trailing reviewer stage is consumed. Absent or false → existing sequential behavior. See core/agents/supervisor-stages.md § Streaming Review Dispatch."
               },
               "parallelizable_units": {
                 "type": "array",

@@ -226,6 +226,37 @@ truth table for combinations lives in
 `core/rules/state-files/pipeline-json.md` § Interaction with
 `tdd_parallel`. For MVP, prefer setting at most one per stage.
 
+#### Streaming review opt-in (`streaming_review`)
+
+A stage object may also carry `streaming_review: true`. When set AND the
+immediately following stage is `["reviewer"]`, the supervisor co-spawns
+the reviewer in `MODE=streaming` alongside the implementer in a single
+host message. The reviewer polls `git log` incrementally and emits a
+final verdict shortly after the implementer reports `completed`. On
+joint success the trailing reviewer stage is consumed and
+`completed_stages` advances by 2.
+
+```json
+[
+  { "agents": ["backend"], "streaming_review": true },
+  ["reviewer"]
+]
+```
+
+Set `streaming_review: true` only when the implementer stage is
+expected to be long-running (multiple commits, >~2 min wall-clock), is
+code-only (no schema migrations that confuse incremental review), and
+the trailing stage is exactly `["reviewer"]`. When unsure, default to
+`false` (omit the field) — the existing sequential
+`[..., ["reviewer"]]` shape continues to work and is the conservative
+choice. See `core/agents/planner.md` § When to set `streaming_review`
+for the full criteria, the interaction table with `tdd_parallel` /
+`parallelizable_units`, and the supervisor's eligibility check.
+
+`streaming_review` is orthogonal to `tdd_parallel` and
+`parallelizable_units` — the reviewer is added to whatever single host
+message the other flags' dispatch already issues.
+
 ### Step 7 — Write PRD and handoff.md
 
 Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:

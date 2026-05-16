@@ -121,6 +121,10 @@ if it does not exist.
 | `STAGE_FANOUT_UNIT_DONE` | Phase 2 sub-task fan-out — one unit of the stage returned a terminal status (emitted N times per fan-out stage) | `stage={n} unit={id} status={completed\|crashed\|blocked}` |
 | `STAGE_FANOUT_DONE` | Phase 2 sub-task fan-out — all N units returned a terminal status and the supervisor is about to update `completed_stages` | `stage={n} units={count} all_status={id1=status,id2=status,...}` |
 | `STAGE_FANOUT_CONFLICT` | Phase 2 sub-task fan-out — pre-flight glob overlap check detected at least one pair of units with overlapping `files` globs (the planner should normally prevent this; the supervisor logs and proceeds) | `stage={n} conflicts={a↔b: glob_a vs glob_b; ...}` |
+| `STAGE_STREAMING_REVIEW_STARTED` | Phase 2 stage with `streaming_review: true` — supervisor has just co-spawned the reviewer in `MODE=streaming` alongside the implementer in a single host message | `stage={n} reviewing={agent_name}` |
+| `STAGE_STREAMING_REVIEW_INCREMENTAL` | Streaming reviewer finished reviewing one NEW commit observed on the watched branch (emitted once per commit reviewed; the reviewer triggers the helper indirectly via the supervisor's stream-drain step) | `stage={n} commit={sha} verdict={ok\|warn\|blocked}` |
+| `STAGE_STREAMING_REVIEW_DONE` | Phase 2 streaming-review stage — both the implementer and the streaming reviewer have returned terminal status; the supervisor is about to advance `completed_stages` by 2 (consuming the trailing reviewer stage) | `stage={n} commits_reviewed={count} final_verdict={ok\|blocked}` |
+| `STAGE_STREAMING_REVIEW_INELIGIBLE` | Phase 2 normalization detected `streaming_review: true` but the immediately following stage is NOT a single `reviewer` agent — the flag is disabled for this iteration and the existing sequential dispatch runs unchanged | `stage={n} reason=next_stage_not_single_reviewer — falling back to sequential` |
 
 ### Parallel run prefix rule
 
