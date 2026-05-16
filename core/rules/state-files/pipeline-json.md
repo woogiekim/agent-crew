@@ -69,6 +69,74 @@ functionally identical to writing the `agents` list directly as the
 stage entry. See `core/agents/supervisor-stages.md` § TDD Parallel
 Dispatch for the spawn semantics.
 
+### Sub-Task Fan-Out stage form (`parallelizable_units`)
+
+A single stage may also opt into **sub-task fan-out** (a.k.a. "mini
+fan-out within a single supervisor") by attaching a
+`parallelizable_units` array to the object form. Each unit describes
+one independent slice of the stage's work, and the supervisor spawns
+one agent of the stage's type per unit in a single host message:
+
+```json
+{
+  "stages": [
+    {
+      "agents": ["backend"],
+      "parallelizable_units": [
+        { "id": "orders",   "files": ["src/api/orders/**"],   "brief": "Add CRUD endpoints for orders." },
+        { "id": "products", "files": ["src/api/products/**"], "brief": "Add CRUD endpoints for products." },
+        { "id": "carts",    "files": ["src/api/carts/**"],    "brief": "Add CRUD endpoints for carts." }
+      ]
+    },
+    ["reviewer"]
+  ]
+}
+```
+
+Unit object shape:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | yes | Short slug (`u1`, `orders`, `products`). Unique within the stage. Used as the unit key in `stage_agent_status` writes and progress event details. |
+| `files` | array of string | yes (may be `[]`) | Shell-style glob list of files the unit will touch. Used by the planner's pre-flight overlap check and by the supervisor's MVP conflict logger. May be empty if the unit creates only new files in a fresh subtree. |
+| `brief` | string | yes | 1–2 sentence sub-task description handed to the unit's agent in place of the full stage prompt. |
+
+Dispatch contract (see `core/agents/supervisor-stages.md` § Sub-Task
+Fan-Out Dispatch for full pseudocode):
+
+- `parallelizable_units` is **optional**. When absent, or when its
+  length is `<= 1`, the stage runs exactly as it does today
+  (single agent, or the existing parallel-agents / TDD parallel form).
+  Pre-existing pipelines that omit the field are entirely unaffected.
+- When length `N >= 2`, the supervisor spawns N agents of the stage's
+  type (the first entry in `agents`) in a single host message —
+  the same parallel-spawn convention used by the existing Parallel
+  Agents and TDD Parallel paths.
+- Each unit-agent receives the unit's `brief` and `files` glob list
+  as additional inputs; per-unit completion is recorded in
+  `stage_agent_status["<i>"]["<agent>:<unit_id>"]`.
+- `completed_stages` advances only after **all N** units reach
+  `completed`. Crashed units trigger per-unit (not whole-stage) retry
+  via the Stage Retry Rule.
+
+### Interaction with `tdd_parallel`
+
+`tdd_parallel` and `parallelizable_units` are independent flags on the
+same stage-object form. The truth table the supervisor honors:
+
+| `tdd_parallel` | `parallelizable_units.length` | Dispatch |
+|---|---|---|
+| absent / false | absent / `<= 1` | Legacy single-agent (or bare-array parallel-agents) dispatch. |
+| true | absent / `<= 1` | TDD Parallel — co-spawn test-writer + first implementer. |
+| absent / false | `>= 2` | Sub-Task Fan-Out — N implementers, one per unit. |
+| true | `>= 2` | Combined: N implementers spawned (one per unit) AND a single test-writer co-spawned for the stage (writes tests covering the contract shared across units). Documented as opt-in advanced mode in `core/agents/planner.md` § When to set parallelizable_units. |
+
+For MVP, the planner is instructed to set **at most one** of these two
+flags per stage unless the implementer-side contract is genuinely
+shared across units. When both are set the supervisor still dispatches
+correctly, but the planner's pre-flight checks become harder to
+reason about.
+
 JSON Schema: `${AGENT_CREW_HOME}/schemas/pipeline.schema.json`. The
 schema sets `additionalProperties: true` because dynamic-agent shapes
 and capability-gated fields evolve faster than the schema does.
@@ -79,10 +147,10 @@ and capability-gated fields evolve faster than the schema does.
 |---|---|---|---|---|
 | `schema_version` | integer (const 1) | optional in v1 | analyst (post-F4) | Pre-F4 pipeline.json omits this field; validators tolerate absence. |
 | `task` | string | yes | analyst Step 6 | Original task description (mirror of `register.json.task`). |
-| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool }` (TDD parallel form — co-spawns test-writer alongside every agent listed). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel` flag. |
+| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...] }` (TDD parallel form and/or sub-task fan-out — see the two stage-form sections below). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel` and `parallelizable_units` flags. |
 | `completed_stages` | integer | yes (starts at 0) | analyst Step 6, supervisor-stages | 0-based count of stages whose terminal state was successful completion. Drives the resume logic in Phase 0. |
 | `needs_creation` | array of objects | yes (may be `[]`) | analyst Step 6 / planner Step 3c | Per-entry: `{name, reason, role}`. Drives Phase 1.5 dynamic agent creation. |
-| `stage_agent_status` | object | optional (created on first parallel write) | supervisor-stages Phase 2 | Outer key = 1-based stage index as a string; inner key = agent name; value = `completed \| crashed \| blocked`. |
+| `stage_agent_status` | object | optional (created on first parallel write) | supervisor-stages Phase 2 | Outer key = 1-based stage index as a string; inner key = agent name (legacy / TDD parallel form) or `agent:unit_id` (sub-task fan-out form); value = `completed \| crashed \| blocked`. |
 | `host_task_ids` | array | optional (capability-gated) | supervisor-bootstrap Phase 1c-bis | Parallel to `stages`. Only present when `task_tools=true` and `TaskCreate` calls succeeded. Absence = DAG mirror disabled. |
 
 ## Lifecycle
