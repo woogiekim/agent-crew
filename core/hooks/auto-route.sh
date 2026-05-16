@@ -122,9 +122,17 @@ ACTION_PAT = (
     r"반영|정리|배포|테스트|리뷰|머지|롤백|시도"
 )
 QUESTION_PAT = (
-    r"why|what|how|explain|describe|"
+    r"why|what|how|explain|describe|tell me|show me|list|which|"
     r"어떻게|뭐야|무엇|왜|어떤|설명|"
-    r"알려|이해"
+    r"알려|이해|뭔지|뭔가|뭐가|어디|누가|언제"
+)
+# Truly atomic facts that need no agent — a bare yes/no, a bare file path,
+# or a bare single number. These stay inline even when QUESTION_PAT fires.
+# Must be very tight: multi-word or explanatory responses never qualify.
+TRIVIAL_ATOMIC_PAT = (
+    r"^\s*(yes|no|true|false|예|아니오|맞아|아니야)\s*[.!?]?\s*$|"  # bare yes/no
+    r"^\s*~?/[\w./\-]+\s*$|"                                          # bare file path
+    r"^\s*\d+(\.\d+)?\s*[a-zA-Z%]?\s*$"                               # bare number/metric
 )
 MEMORY_PAT = (
     r"memory|MEMORY\.md|remember|recall|"
@@ -156,6 +164,44 @@ def match(pattern):
 
 
 if match(QUESTION_PAT) and not match(ACTION_PAT):
+    # Questions and explanations must go through crew:agent — not inline.
+    # Exception: truly atomic facts (bare yes/no, bare path, bare number)
+    # that need no explanation are allowed inline.
+    if re.search(TRIVIAL_ATOMIC_PAT, prompt.strip(), re.IGNORECASE):
+        sys.exit(0)  # bare atomic fact — inline is fine
+
+    # Determine the best agent via the routing rules in agent-routing.md.
+    # Default: analyst for codebase Q; historian for session/git/project state Q.
+    HISTORIAN_PAT = (
+        r"어떤\s*에이전트|방금|what just|what did|what ran|what agent|"
+        r"this session|this branch|session history|spawned|이번\s*세션|"
+        r"recent activity|currently running|어떤\s*commit|무슨\s*commit|"
+        r"what('s|s)?\s+running|git log|git history|progress\.log"
+    )
+    if re.search(HISTORIAN_PAT, prompt, re.IGNORECASE):
+        target_agent = "historian"
+        route_reason = "session/git/project-state Q"
+    else:
+        target_agent = "analyst"
+        route_reason = "codebase/explanation Q"
+
+    question_directive = (
+        f"[agent-crew] ROUTE — question detected, routing to {target_agent} ({route_reason}).\n\n"
+        f"Do NOT answer this question inline. Call crew:agent with the question.\n\n"
+        f"REQUIRED action:\n"
+        f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
+        f"Invoke Skill(\"agent\") with the user's question and agent={target_agent}.\n"
+        f"Direct inline responses for questions are forbidden — even short ones.\n"
+        f"The ONLY permitted inline response is a bare atomic fact: "
+        f"literal yes/no, a bare file path, or a bare single number with no explanation."
+    )
+    question_output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": question_directive,
+        }
+    }
+    print(json.dumps(question_output, ensure_ascii=True))
     sys.exit(0)
 
 # --- Trivial-intent fast-path (Change A) ---
