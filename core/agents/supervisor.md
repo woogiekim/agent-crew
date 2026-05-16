@@ -112,6 +112,9 @@ if it does not exist.
 | `HANDOFF_PAGEOUT_SKIPPED` | Page-out skipped because cost breaker is exhausted (Phase 3.5) | `reason=cost_exceeded` |
 | `STATE_WARN` | F4 validator returned rc=1 (soft warnings) or rc≥3 (validator unavailable / unexpected) at Phase 0 | `schema validator warnings (rc={n})` |
 | `STAGE_TIMEOUT` | Phase I11 stage wall-clock budget exceeded (`AGENT_CREW_STAGE_TIMEOUT_SECONDS`) | `stage {i} ({agent}) elapsed={n}s > budget={m}s` |
+| `PHASE_1D_PREFETCH_STARTED` | Phase 1d speculative I/O prefetch background job spawned, just before the approval gate | `pid={n} files={count}` |
+| `PHASE_1D_PREFETCH_DONE` | Phase 1d prefetch background job finished normally (page cache warmed) | `files={count} elapsed={n}s` |
+| `PHASE_1D_PREFETCH_KILLED` | Phase 1d prefetch background job was killed (user Cancel/Request-changes or post-approval cleanup) | `reason={cancel\|request_changes\|approved}` |
 
 ### Parallel run prefix rule
 
