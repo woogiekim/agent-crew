@@ -164,37 +164,23 @@ resolve_source_dir() {
    which overwrites but does not delete. Defensively remove all four
    locations so the host never sees both the old and the new agent.
 
-   The block is idempotent — `rm -f` is silent on missing files. After the
-   first successful `crew:update` post-C3.0 it becomes a no-op.
+   Uses the standard migration helper (see § Migration Conventions
+   below). The block is idempotent — `rm -f` is silent on missing files.
+   After the first successful `crew:update` post-C3.0 it becomes a no-op.
 
    ```bash
-   migrate_remove_stale_task_runner() {
-     local removed=0
-     local f
-     local PROJECT_ROOT_LOCAL
-     PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-     for f in \
-       "${AGENT_CREW_HOME}/system/agents/task-runner.md" \
-       "${CLAUDE_DIR}/agents/task-runner.md" \
-       "${CLAUDE_DIR}/agent-crew/agents/task-runner.md" \
-       "${PROJECT_ROOT_LOCAL}/.codex/agents/task-runner.toml"
-     do
-       if [ -f "${f}" ]; then
-         rm -f "${f}"
-         printf '[crew:update] Removed stale agent file: %s\n' "${f}"
-         removed=$((removed + 1))
-       fi
-     done
-     if [ "${removed}" -eq 0 ]; then
-       printf '[crew:update] No stale task-runner files found (already migrated).\n'
-     fi
-   }
-   migrate_remove_stale_task_runner
+   PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+   bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
+     "Phase C3.0 task-runner" \
+     "${AGENT_CREW_HOME}/system/agents/task-runner.md" \
+     "${CLAUDE_DIR}/agents/task-runner.md" \
+     "${CLAUDE_DIR}/agent-crew/agents/task-runner.md" \
+     "${PROJECT_ROOT_LOCAL}/.codex/agents/task-runner.toml"
    ```
 
    > **Note:** the literal token `task-runner` survives intentionally inside
    > this migration block — it is the name of the OLD file being removed.
-   > Verification greps must allow this single occurrence in `update.md`.
+   > Verification greps must allow these occurrences in `update.md`.
 
 3.6. **Phase C2 Note — Supervisor sub-modules**
 
@@ -233,58 +219,36 @@ resolve_source_dir() {
    block above).
 
    ```bash
-   migrate_remove_stale_scribe_and_outline_hook() {
-     local removed=0
-     local f
-     local PROJECT_ROOT_LOCAL
-     PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+   PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-     # Pre-removal warning if scribe is in system/ but absent from user/
-     if [ -f "${AGENT_CREW_HOME}/system/agents/scribe.md" ] \
-        && [ ! -f "${AGENT_CREW_HOME}/user/agents/scribe.md" ]; then
-       printf '[crew:update] WARNING: scribe.md is being removed from system/ but no user/ copy exists.\n'
-       printf '             If you use scribe, run BEFORE re-running crew:update:\n'
-       printf '               cp "%s" "%s"\n' \
-         "${AGENT_CREW_HOME}/system/agents/scribe.md" \
-         "${AGENT_CREW_HOME}/user/agents/scribe.md"
-       printf '             Continuing in 3s (Ctrl-C to abort)...\n'
-       sleep 3
-     fi
-
-     # Stale scribe agent — four installation paths
-     for f in \
+   # Pre-removal warning if scribe is in system/ but absent from user/
+   # (user-data preservation prompt — specific to this migration; not
+   # extracted to migrate-rm-stale.sh).
+   if [ -f "${AGENT_CREW_HOME}/system/agents/scribe.md" ] \
+      && [ ! -f "${AGENT_CREW_HOME}/user/agents/scribe.md" ]; then
+     printf '[crew:update] WARNING: scribe.md is being removed from system/ but no user/ copy exists.\n'
+     printf '             If you use scribe, run BEFORE re-running crew:update:\n'
+     printf '               cp "%s" "%s"\n' \
        "${AGENT_CREW_HOME}/system/agents/scribe.md" \
-       "${CLAUDE_DIR}/agents/scribe.md" \
-       "${CLAUDE_DIR}/agent-crew/agents/scribe.md" \
-       "${PROJECT_ROOT_LOCAL}/.codex/agents/scribe.toml"
-     do
-       if [ -f "${f}" ]; then
-         rm -f "${f}"
-         printf '[crew:update] Removed stale agent file: %s\n' "${f}"
-         removed=$((removed + 1))
-       fi
-     done
+       "${AGENT_CREW_HOME}/user/agents/scribe.md"
+     printf '             Continuing in 3s (Ctrl-C to abort)...\n'
+     sleep 3
+   fi
 
-     # Stale outline-posttooluse hook — three installation paths
-     for f in \
-       "${AGENT_CREW_HOME}/system/hooks/outline-posttooluse.sh" \
-       "${AGENT_CREW_HOME}/hooks/outline-posttooluse.sh" \
-       "${CLAUDE_DIR}/agent-crew/hooks/outline-posttooluse.sh"
-     do
-       if [ -f "${f}" ]; then
-         rm -f "${f}"
-         printf '[crew:update] Removed stale hook script: %s\n' "${f}"
-         removed=$((removed + 1))
-       fi
-     done
+   # Stale scribe agent — four installation paths
+   bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
+     "Phase 3.1 scribe" \
+     "${AGENT_CREW_HOME}/system/agents/scribe.md" \
+     "${CLAUDE_DIR}/agents/scribe.md" \
+     "${CLAUDE_DIR}/agent-crew/agents/scribe.md" \
+     "${PROJECT_ROOT_LOCAL}/.codex/agents/scribe.toml"
 
-     if [ "${removed}" -eq 0 ]; then
-       printf '[crew:update] No stale scribe / outline-posttooluse files found (already migrated).\n'
-     else
-       printf '[crew:update] Phase 3.1 migration removed %d stale file(s).\n' "${removed}"
-     fi
-   }
-   migrate_remove_stale_scribe_and_outline_hook
+   # Stale outline-posttooluse hook — three installation paths
+   bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
+     "Phase 3.1 outline-posttooluse" \
+     "${AGENT_CREW_HOME}/system/hooks/outline-posttooluse.sh" \
+     "${AGENT_CREW_HOME}/hooks/outline-posttooluse.sh" \
+     "${CLAUDE_DIR}/agent-crew/hooks/outline-posttooluse.sh"
    ```
 
    > **User-data preservation:** if a user has placed their own
@@ -340,6 +304,62 @@ resolve_source_dir() {
   operate on the `system/agents/` layer.
 
 ## Migration Notes
+
+### Migration Conventions
+
+Each phase that removes or relocates files installed by an earlier version
+of agent-crew SHOULD add a migration block to this file. The block is
+executed during `crew:update` on existing installations to clean up the
+two-of-four installation paths that the existing sync helpers
+(`sync_system_agents`, `merge_agents_to_discovery`) do NOT auto-prune:
+
+- `${CLAUDE_DIR}/agent-crew/agents/` (Claude mirror — `cp -R` copy, no prune)
+- `${PROJECT_ROOT}/.codex/agents/` (Codex per-project — `cp -R` copy, no prune)
+- `${CLAUDE_DIR}/agent-crew/hooks/` (Claude hook mirror — `cp -R` copy)
+- `${AGENT_CREW_HOME}/hooks/` (compat alias under user home)
+
+#### Standard pattern
+
+Use the provider-neutral helper `core/scripts/migrate-rm-stale.sh`. It
+takes a label string + one or more candidate paths and idempotently
+removes any that exist. Re-running it after a successful migration is a
+no-op with a single "already migrated" log line.
+
+```bash
+bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
+  "Phase X.Y short-tag" \
+  "${AGENT_CREW_HOME}/system/agents/old-name.md" \
+  "${CLAUDE_DIR}/agents/old-name.md" \
+  "${CLAUDE_DIR}/agent-crew/agents/old-name.md" \
+  "${PROJECT_ROOT_LOCAL}/.codex/agents/old-name.toml"
+```
+
+#### Where to put new migration blocks
+
+| Migration type | Location |
+|---|---|
+| **File removal / rename** (executable bash) | Numbered substep in § Execution (e.g. 3.8, 3.9) **AND** an informational entry in § Migration Notes below. |
+| **Schema/contract change with user-visible impact** (documentation only) | Subsection in § Migration Notes only. |
+| **No-op note** (sync helpers handle it; future readers should know why) | Subsection in § Migration Notes only. |
+
+#### Rules
+
+1. Migration code MUST be idempotent. `migrate-rm-stale.sh` and the
+   user-data preservation guard (see Phase 3.1 example) both satisfy
+   this; future patterns must too.
+2. Literal old filenames inside a migration block are intentional —
+   they are the names of the files being removed. Verification greps
+   that count `old-name` references must allow these occurrences in
+   `update.md`.
+3. User-data preservation: if removing a file from `system/` could
+   strand user customization, the migration block MUST include a
+   pre-removal `WARNING` prompt + `sleep 3` grace period (see Phase
+   3.1 scribe example).
+4. Hooks that were registered in `~/.claude/settings.json` need
+   explicit `settings.json` cleanup separate from file removal; verify
+   the registration status before writing a hook-removal block (the
+   audit in Phase 3.1 found `outline-posttooluse.sh` was never
+   registered, so no `settings.json` rewrite was needed).
 
 ### Phase 3.2 — `reasoning_tier` materialization
 
