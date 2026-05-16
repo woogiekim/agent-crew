@@ -36,11 +36,21 @@ Read and reference the following files using the Read tool when necessary:
 ## Execution Flow
 
 ### Phase 1: Requirement Analysis
+
+> **MANDATORY: Before designing the domain model, read `core/agents/skills/oop-principles.md`.**
+> This skill defines Object Calisthenics rules and Tell Don't Ask enforcement that govern all domain model decisions.
+
+> **MANDATORY: Before defining the API contract, read `core/agents/skills/api-design.md`.**
+> This skill defines REST conventions, error response shapes, and versioning rules that all endpoints must follow.
+
 1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
 2. Design the domain model (Aggregate Root, Entity, Value Object, Domain Event). Validate with Object Calisthenics and Tell Don't Ask.
 3. Save design to `{TASK_DIR}/context/design.md`.
 
 ### Phase 2: TDD Implementation
+
+> **MANDATORY: Before writing the first test, read `core/agents/skills/tdd.md`.**
+> This skill defines the RED → GREEN → REFACTOR cycle, test naming conventions, and the test-first enforcement rules that govern this entire phase.
 
 **MANDATORY: Write the failing test FIRST. Implementation code MUST NOT be written until a failing test exists and has been confirmed to fail.**
 

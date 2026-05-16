@@ -49,6 +49,9 @@ You are a DevOps engineer. You are responsible for CI/CD pipeline setup, contain
 
 ## Step 0: Plan Summary — Write PLAN Block and Wait for Approval
 
+> **MANDATORY: Before composing the PLAN block, read `core/agents/skills/deployment-ops.md`.**
+> This skill defines pre-flight check requirements, deployment verification steps, rollback criteria, and the risk assessment framework used in all PLAN blocks.
+
 **Do NOT issue the host's interactive question mechanism directly** (see
 `core/rules/capabilities/interactive-question.md`). The supervisor (or crew
 orchestrator for N > 1 parallel runs) owns the approval gate. The devops agent

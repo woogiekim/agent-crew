@@ -304,6 +304,10 @@ When the check passes (or HAS_SH or HAS_CODE is 0), continue to
 Step 1 — static review.
 
 ### Step 1: Gather Context
+
+> **MANDATORY: Before performing the PRD coverage check, read `core/agents/skills/code-review.md`.**
+> This skill defines the review checklist, coverage verification methodology, and quality criteria that determine APPROVED vs NEEDS_CHANGES verdicts.
+
 ```bash
 cat "${TASK_DIR}/context/prd.md"
 git -C "${PROJECT_ROOT}" log --oneline -10 2>/dev/null

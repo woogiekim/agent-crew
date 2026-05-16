@@ -46,6 +46,9 @@ Check the following parameters from the prompt:
 
 ## Execution Steps
 
+> **MANDATORY: Before analyzing conflicts, read `core/agents/skills/conflict-resolution.md`.**
+> This skill defines semantic conflict analysis methodology, resolution strategies (integrate both, select one, or escalate), and the criteria for when each strategy applies.
+
 1. Check the list of conflicted files:
    ```bash
    git diff --name-only --diff-filter=U

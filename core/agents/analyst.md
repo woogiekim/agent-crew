@@ -55,6 +55,9 @@ Write a 2–4 sentence intent summary answering:
 
 ### Step 3 — Identify ambiguities and risks
 
+> **MANDATORY: Before performing the ambiguity check, read `core/agents/skills/requirement-gathering.md`.**
+> This skill defines the ambiguity detection criteria, severity classification rules, and resolution strategies that govern this step.
+
 For each item found, record description, severity (`low | medium | high`), and
 the recommended resolution (document as assumption, or flag for user).
 
@@ -107,6 +110,9 @@ If no ambiguities or risks are found, write the table with a single row:
 `| None identified | — | — |`
 
 ### Step 6 — Determine pipeline and write pipeline.json
+
+> **MANDATORY: Before composing the pipeline, read `core/agents/skills/pipeline-planning.md`.**
+> This skill defines stage composition rules, parallelism guidance, flag selection criteria (tdd_parallel, streaming_review, parallelizable_units), and the stage type catalogue used to build pipeline.json.
 
 Based on scope, complexity, and the intent summary from Step 2, determine the
 full pipeline. Use the stage composition table below.
