@@ -878,6 +878,155 @@ The `Work:` and `Files:` lines appear only when `prd.md` contains per-agent sect
 If `prd.md` is absent or the relevant sections are missing, the display falls back to
 showing stage names only (no error).
 
+#### Speculative I/O Prefetch (idle-window optimization)
+
+While the user reviews the plan above (typically 30 s – several minutes), spawn
+a **background shell job** that pre-warms the OS page cache for files the next
+stages will touch. This eliminates stage cold-start latency. The prefetch is:
+
+- **read-only** and **idempotent** — failures degrade silently and MUST NEVER
+  fail the pipeline.
+- **token-free** — pure shell I/O (`cat`, `wc`, `git status`, `ls`). No agent
+  spawns and no LLM-bound calls.
+- **plain shell background** — does NOT require `HAS_AGENT_BACKGROUND`. Uses
+  `&` + `disown` so the job is detached from the supervisor's foreground.
+- **race-safe** — the approval-polling logic below is not modified. The
+  prefetch's PID is captured into a sentinel file (`prefetch.pid`) so it can
+  be killed cleanly regardless of approval outcome.
+
+Spawn the prefetch BEFORE firing the structured user-choice intent:
+
+```bash
+PREFETCH_PID_FILE="${TASK_DIR}/context/prefetch.pid"
+PREFETCH_LOG="${TASK_DIR}/context/prefetch.log"
+PREFETCH_FILES_LIST="${TASK_DIR}/context/prefetch-files.txt"
+
+# Enumerate file paths the upcoming stages will touch — extract from prd.md
+# (per-stage **Files** bullet lines) and union with anything in pipeline.json's
+# `stages[].files` if present. The enumeration is best-effort: if nothing can
+# be derived we still warm the worktree status, which is the cheapest win.
+python3 - <<'PY' >"${PREFETCH_FILES_LIST}" 2>/dev/null || true
+import json, os, re
+
+task_dir = os.environ.get('TASK_DIR', '')
+pipeline_path = os.path.join(task_dir, 'pipeline.json')
+prd_path = os.path.join(task_dir, 'context', 'prd.md')
+
+files = []
+
+# 1) pipeline.json — tolerate missing/extra keys
+try:
+    p = json.load(open(pipeline_path))
+    for stage in p.get('stages', []) or []:
+        # stages may be strings, lists, or dicts depending on planner output
+        if isinstance(stage, dict):
+            for f in stage.get('files', []) or []:
+                if isinstance(f, str):
+                    files.append(f)
+                elif isinstance(f, dict) and isinstance(f.get('path'), str):
+                    files.append(f['path'])
+except Exception:
+    pass
+
+# 2) prd.md — **Files** bullet lines under each Stage section
+try:
+    text = open(prd_path).read()
+    in_files = False
+    for line in text.splitlines():
+        if re.match(r'\*\*Files\*\*', line):
+            in_files = True
+            continue
+        if in_files:
+            m = re.match(r'\s*[-*]\s+`?([^`\s(]+)', line)
+            if m:
+                files.append(m.group(1))
+            elif line.strip() == '' or line.startswith('##') or line.startswith('**'):
+                in_files = False
+except Exception:
+    pass
+
+# De-duplicate while preserving order; cap at 200 to bound work
+seen = set()
+out = []
+for f in files:
+    f = f.strip().rstrip(',').strip('`"\'')
+    if not f or f in seen:
+        continue
+    seen.add(f)
+    out.append(f)
+    if len(out) >= 200:
+        break
+for f in out:
+    print(f)
+PY
+
+PREFETCH_FILE_COUNT=$(wc -l <"${PREFETCH_FILES_LIST}" 2>/dev/null | tr -d ' ' || echo 0)
+
+# Launch the prefetch worker fully detached. All errors are swallowed; the
+# pipeline must never fail because of speculative I/O.
+(
+  set +e
+  start_epoch=$(date +%s)
+
+  # (a) Per-worktree pre-verification — cheap and side-effect-free
+  ( cd "${PROJECT_ROOT}" 2>/dev/null && git status --porcelain >/dev/null 2>&1 ) || true
+  ls -la "${PROJECT_ROOT}" >/dev/null 2>&1 || true
+  ls -la "${TASK_DIR}" >/dev/null 2>&1 || true
+  ls -la "${TASK_DIR}/context" >/dev/null 2>&1 || true
+
+  # (b) Warm OS page cache for each enumerated file
+  warmed=0
+  if [ -s "${PREFETCH_FILES_LIST}" ]; then
+    while IFS= read -r rel; do
+      [ -z "${rel}" ] && continue
+      # Resolve relative to PROJECT_ROOT, but also accept absolute paths
+      case "${rel}" in
+        /*) abs="${rel}" ;;
+        *)  abs="${PROJECT_ROOT}/${rel}" ;;
+      esac
+      if [ -f "${abs}" ]; then
+        # `wc -c` is enough to fault the file into page cache; `cat` would
+        # also work but pipes through more bytes. Both are silenced.
+        wc -c "${abs}" >/dev/null 2>&1 && warmed=$((warmed + 1)) || true
+      fi
+    done <"${PREFETCH_FILES_LIST}"
+  fi
+
+  # (c) Warm the agent-crew system tree (next stages will read agent .md)
+  ls -la "${AGENT_CREW_HOME}/system/agents" >/dev/null 2>&1 || true
+
+  end_epoch=$(date +%s)
+  elapsed=$((end_epoch - start_epoch))
+
+  # Emit the DONE event from inside the background job. Use the same
+  # log_progress format Phase 0 defined; if the helper is not available in
+  # this subshell, append directly to progress.log with a compatible line.
+  detail="files=${warmed} elapsed=${elapsed}s"
+  if command -v log_progress >/dev/null 2>&1; then
+    log_progress "PHASE_1D_PREFETCH_DONE" "${detail}"
+  else
+    echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE_1D_PREFETCH_DONE | ${detail}" \
+      >> "${TASK_DIR}/progress.log" 2>/dev/null || true
+  fi
+  # Clean up our PID file so the post-approval cleanup knows we exited cleanly.
+  rm -f "${PREFETCH_PID_FILE}" 2>/dev/null || true
+) >"${PREFETCH_LOG}" 2>&1 &
+PREFETCH_PID=$!
+disown "${PREFETCH_PID}" 2>/dev/null || true
+echo "${PREFETCH_PID}" > "${PREFETCH_PID_FILE}" 2>/dev/null || true
+
+log_progress "PHASE_1D_PREFETCH_STARTED" "pid=${PREFETCH_PID} files=${PREFETCH_FILE_COUNT}"
+```
+
+The prefetch runs concurrently with the approval gate below. It will either:
+
+- Finish on its own (page cache fully warmed) and emit `PHASE_1D_PREFETCH_DONE`.
+- Still be alive when the user responds — in which case the cleanup block
+  immediately after the approval intent kills it and emits
+  `PHASE_1D_PREFETCH_KILLED`.
+
+Either outcome is acceptable. The pipeline must not block on the prefetch.
+
 Then fire a **structured user-choice intent** (see
 `core/rules/capabilities/interactive-question.md`):
 - header: "Implementation Plan"
@@ -889,6 +1038,46 @@ Then fire a **structured user-choice intent** (see
     description: "Describe what to change (analyst will revise)"
   - label: "Cancel"
     description: "Stop execution"
+
+#### Prefetch cleanup (post-approval)
+
+Immediately after the user's choice is observed (regardless of which option
+they picked), run this idempotent cleanup. It MUST run before any
+option-specific branching below so the background job never outlives the
+approval gate:
+
+```bash
+# Determine the reason label for the KILLED event from the user's choice.
+# CHOICE is the local variable holding the structured-intent response —
+# "approve", "request_changes", or "cancel" (lowercase, dash-normalized).
+case "${CHOICE}" in
+  approve)         PREFETCH_KILL_REASON="approved" ;;
+  request_changes) PREFETCH_KILL_REASON="request_changes" ;;
+  cancel)          PREFETCH_KILL_REASON="cancel" ;;
+  *)               PREFETCH_KILL_REASON="approved" ;;
+esac
+
+if [ -f "${PREFETCH_PID_FILE}" ]; then
+  _pf_pid=$(cat "${PREFETCH_PID_FILE}" 2>/dev/null || echo "")
+  if [ -n "${_pf_pid}" ] && kill -0 "${_pf_pid}" 2>/dev/null; then
+    kill "${_pf_pid}" 2>/dev/null || true
+    log_progress "PHASE_1D_PREFETCH_KILLED" "reason=${PREFETCH_KILL_REASON}"
+  fi
+  rm -f "${PREFETCH_PID_FILE}" 2>/dev/null || true
+fi
+unset PREFETCH_PID PREFETCH_PID_FILE PREFETCH_FILES_LIST PREFETCH_LOG \
+      PREFETCH_FILE_COUNT PREFETCH_KILL_REASON
+```
+
+Notes on this cleanup:
+
+- It is safe to run when the prefetch already finished — `kill -0` returns
+  non-zero, the kill branch is skipped, and the PID file is simply removed.
+- On Approve, the background process is killed (if still alive) only to keep
+  the worktree clean; the OS page cache it already warmed remains valid and
+  is consumed naturally by the upcoming stages — no explicit hand-off needed.
+- On Cancel or Request changes, prefetch results are discarded silently. The
+  warmed pages cost nothing extra; they will simply age out of the cache.
 
 **If Approve:** mark the register and proceed to Phase 1.5.
 
