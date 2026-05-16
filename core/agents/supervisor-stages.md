@@ -468,19 +468,31 @@ print(json.dumps(stage.get('parallelizable_units', [])))
 # the agent type to spawn (use STAGE_AGENTS[0] — the implementer).
 ```
 
-#### Pre-flight overlap check (MVP — log only)
+#### Pre-flight overlap check + resolver auto-mediation
 
 Walk the unit list once and detect any pair of units whose `files`
 globs overlap. Overlap is rare when the planner did its job; when it
-happens the supervisor logs the conflict (and surfaces it later in
-`result.md` via the close-out report) but still proceeds with the
-fan-out. Auto-invoking `resolver` on detected overlap is a documented
-follow-up; for MVP we rely on the planner-side check.
+happens the supervisor (a) logs the conflict, (b) spawns the
+**resolver** agent synchronously in `fanout-mediation` mode to rewrite
+the unit `files` globs to be non-overlapping, and (c) re-runs the
+overlap check on the resolver's output. If the resolver cannot
+eliminate the overlap, the stage is BLOCKED — the parallel agents are
+never dispatched.
+
+This auto-mediation runs in a **single blocking spawn** before any
+implementer is invoked, so it does NOT race with the fan-out itself.
+The resolver's contract for this mode is documented in
+`core/agents/resolver.md` § Mode: fanout-mediation.
 
 ```bash
-OVERLAPS=$(python3 -c "
+overlap_scan() {
+  # Emits one line per overlapping pair to stdout:
+  #   <id_a>↔<id_b>: <glob_a> vs <glob_b>
+  # Joined with "; " for the progress detail field.
+  local _units_json="$1"
+  python3 -c "
 import json, fnmatch
-units = json.loads('''${UNITS_JSON}''')
+units = json.loads('''${_units_json}''')
 out = []
 for i, a in enumerate(units):
     for b in units[i+1:]:
@@ -489,17 +501,146 @@ for i, a in enumerate(units):
                 if fnmatch.fnmatch(ga, gb) or fnmatch.fnmatch(gb, ga):
                     out.append(f\"{a['id']}↔{b['id']}: {ga} vs {gb}\")
 print('; '.join(out))
-")
+"
+}
+
+OVERLAPS=$(overlap_scan "${UNITS_JSON}")
 if [ -n "${OVERLAPS}" ]; then
   log_progress "STAGE_FANOUT_CONFLICT" "stage=${i} conflicts=${OVERLAPS}"
   echo "${OVERLAPS}" >> "${TASK_DIR}/context/fanout-conflicts.log"
+
+  # Persist a structured conflict report for the resolver to read.
+  # We pass paths only — never inline the unit JSON in the resolver prompt.
+  CONFLICT_COUNT=$(echo "${OVERLAPS}" | awk -F';' '{print NF}')
+  python3 -c "
+import json
+units = json.loads('''${UNITS_JSON}''')
+overlaps_raw = '''${OVERLAPS}'''
+pairs = [p.strip() for p in overlaps_raw.split(';') if p.strip()]
+report = {
+    'stage_index': ${i},
+    'conflict_count': len(pairs),
+    'units': units,
+    'overlapping_pairs': pairs,
+}
+import io
+with open('${TASK_DIR}/context/fanout-conflict.md', 'w', encoding='utf-8') as f:
+    f.write('# Stage Fan-Out Conflict Report\n\n')
+    f.write(f'Stage: {report[\"stage_index\"]}\n')
+    f.write(f'Conflicting pairs: {report[\"conflict_count\"]}\n\n')
+    f.write('## Units\n\n')
+    for u in units:
+        f.write(f'- id=\`{u.get(\"id\",\"?\")}\` files={u.get(\"files\",[])} brief={u.get(\"brief\",\"\")}\n')
+    f.write('\n## Overlapping Pairs\n\n')
+    for p in pairs:
+        f.write(f'- {p}\n')
+    f.write('\n## Resolver Task\n\n')
+    f.write('Rewrite the unit \`files\` globs so that no two units share an overlapping glob.\n')
+    f.write('Allowed strategies: (a) narrow one or both units\\' globs to disjoint sub-paths, ')
+    f.write('(b) merge two units into one (combine briefs and union files), (c) reassign a glob to a single owner.\n')
+    f.write('Preserve all unit ids that remain after merges. Preserve every unit\\' brief substance.\n')
+"
+
+  log_progress "STAGE_FANOUT_RESOLVER_STARTED" \
+    "stage=${i} conflicts=${CONFLICT_COUNT}"
+
+  # Spawn resolver synchronously (blocking, single Agent call, NOT in
+  # parallel with the units). Pass paths only.
+  #
+  # Prompt format (Agent tool call, blocking):
+  #   You are the resolver agent.
+  #   TASK_DIR: {TASK_DIR}
+  #   PROJECT_ROOT: {PROJECT_ROOT}
+  #   QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+  #   MODE: fanout-mediation
+  #   CONFLICT_REPORT_PATH: {TASK_DIR}/context/fanout-conflict.md
+  #   STAGE_INDEX: {i}
+  #   PIPELINE_PATH: {PIPELINE_PATH}
+  #
+  #   Rewrite the parallelizable_units to eliminate file-glob overlap.
+  #   Write the rewritten units to {TASK_DIR}/context/fanout-resolved.md
+  #   and return STATUS: completed (or STATUS: BLOCKED if overlap is
+  #   structurally unresolvable). See core/agents/resolver.md
+  #   § Mode: fanout-mediation for the output schema.
+
+  # After the resolver returns STATUS: completed, read the resolved unit
+  # list and re-run the overlap scan. Path-only read.
+  if [ -f "${TASK_DIR}/context/fanout-resolved.md" ]; then
+    RESOLVED_UNITS_JSON=$(python3 -c "
+import json, re, sys
+text = open('${TASK_DIR}/context/fanout-resolved.md', encoding='utf-8').read()
+# Extract the first fenced \`\`\`json block — the resolver writes the
+# rewritten units there per resolver.md § Output.
+m = re.search(r'\`\`\`json\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
+if not m:
+    sys.exit(1)
+units = json.loads(m.group(1))
+print(json.dumps(units))
+")
+    if [ -n "${RESOLVED_UNITS_JSON}" ]; then
+      POST_OVERLAPS=$(overlap_scan "${RESOLVED_UNITS_JSON}")
+      if [ -z "${POST_OVERLAPS}" ]; then
+        # Resolver succeeded — adopt the rewritten units in-memory for
+        # the rest of this stage iteration AND persist them into
+        # pipeline.json so resume/observers see the corrected layout.
+        UNITS_JSON="${RESOLVED_UNITS_JSON}"
+        STAGE_UNITS_COUNT=$(python3 -c "import json; print(len(json.loads('''${UNITS_JSON}''')))")
+        python3 -c "
+import json
+p = json.load(open('${PIPELINE_PATH}'))
+units = json.loads('''${UNITS_JSON}''')
+stage = p['stages'][${i} - 1]
+if isinstance(stage, dict):
+    stage['parallelizable_units'] = units
+    json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+"
+        log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=resolved"
+      else
+        # Resolver returned units that still overlap → unresolvable.
+        log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=unresolvable"
+        log_progress "STAGE_FANOUT_BLOCKED" "stage=${i} reason=overlap_unresolvable"
+        cat > "${TASK_DIR}/result.md" <<EOF
+# ${TASK}
+
+STATUS: blocked
+BLOCKER: stage_fanout_overlap_unresolvable
+DETAIL: Stage ${i} parallelizable_units had overlapping \`files\` globs;
+        resolver agent could not eliminate the overlap. See
+        ${TASK_DIR}/context/fanout-conflict.md and
+        ${TASK_DIR}/context/fanout-resolved.md.
+EOF
+        exit 1
+      fi
+    else
+      log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=unresolvable"
+      log_progress "STAGE_FANOUT_BLOCKED" "stage=${i} reason=overlap_unresolvable"
+      exit 1
+    fi
+  else
+    # Resolver did not write the resolved file — treat as unresolvable.
+    log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=unresolvable"
+    log_progress "STAGE_FANOUT_BLOCKED" "stage=${i} reason=overlap_unresolvable"
+    exit 1
+  fi
 fi
 ```
 
 The conflict log is appended (never truncated) so multiple stages with
-fan-out can each contribute. The Phase 3 close-out reads this file (if
-present) and surfaces a "## Fan-Out Conflicts (detected, not
-auto-resolved)" section in `result.md`.
+fan-out can each contribute. When the resolver successfully mediates,
+the structured report at `${TASK_DIR}/context/fanout-conflict.md` and
+the resolver's rewritten plan at
+`${TASK_DIR}/context/fanout-resolved.md` are both retained for
+post-hoc inspection; the Phase 3 close-out continues to surface a
+"## Fan-Out Conflicts" section in `result.md` with a `resolved` /
+`unresolvable` marker per stage.
+
+**Backwards compatibility.** This entire block runs only inside the
+`STAGE_UNITS_COUNT >= 2` branch (see § Read the unit list above), so
+stages without `parallelizable_units` are unaffected — neither the
+overlap scan nor the resolver invocation fires. Legacy stages (bare
+string, agents-list array, or TDD-parallel object form without
+`parallelizable_units`) reach the original Single / Parallel Agents
+dispatch unchanged.
 
 #### Dispatch — N agents in one host message
 
@@ -619,17 +760,21 @@ If, after exhausting retries, any unit remains `crashed` or `blocked`,
 the stage as a whole is BLOCKED — apply the standard BLOCKED Recovery
 contract (write result.md, halt).
 
-#### File-conflict handling (MVP)
+#### File-conflict handling
 
-Each unit's `files` globs SHOULD be disjoint by planner contract. When
-two units' git commits land on the same path (which the planner's
-overlap check should have prevented), the supervisor logs the
-conflict to `${TASK_DIR}/context/fanout-conflicts.log` (the same file
-written by the pre-flight overlap check) and surfaces it in
-`result.md`. MVP scope does not auto-invoke the `resolver` agent —
-that integration is a documented follow-up. The user (or a manual
-follow-up task) can invoke `resolver` against the conflict log
-post-hoc.
+Each unit's `files` globs SHOULD be disjoint by planner contract. Two
+layers now defend that contract:
+
+1. **Pre-flight (above).** The overlap scan + resolver auto-mediation
+   block rewrites or BLOCKs the stage *before* any implementer runs,
+   so two units never compete for the same file in normal operation.
+2. **Post-hoc.** When two units' git commits nevertheless land on the
+   same path (e.g., a unit edits outside its declared globs), the
+   supervisor logs the conflict to
+   `${TASK_DIR}/context/fanout-conflicts.log` (the same file written
+   by the pre-flight scan) and surfaces it in `result.md`. The user
+   (or a follow-up task) can invoke `resolver` in standard
+   merge-conflict mode against the offending paths post-hoc.
 
 #### Sequential-path fall-through
 

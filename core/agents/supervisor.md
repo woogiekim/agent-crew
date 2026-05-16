@@ -120,7 +120,10 @@ if it does not exist.
 | `STAGE_FANOUT_STARTED` | Phase 2 stage with `parallelizable_units.length >= 2` — supervisor has just dispatched N parallel agents of the stage's type in a single host message | `stage={n} units={count} type={agent_name}` |
 | `STAGE_FANOUT_UNIT_DONE` | Phase 2 sub-task fan-out — one unit of the stage returned a terminal status (emitted N times per fan-out stage) | `stage={n} unit={id} status={completed\|crashed\|blocked}` |
 | `STAGE_FANOUT_DONE` | Phase 2 sub-task fan-out — all N units returned a terminal status and the supervisor is about to update `completed_stages` | `stage={n} units={count} all_status={id1=status,id2=status,...}` |
-| `STAGE_FANOUT_CONFLICT` | Phase 2 sub-task fan-out — pre-flight glob overlap check detected at least one pair of units with overlapping `files` globs (the planner should normally prevent this; the supervisor logs and proceeds) | `stage={n} conflicts={a↔b: glob_a vs glob_b; ...}` |
+| `STAGE_FANOUT_CONFLICT` | Phase 2 sub-task fan-out — pre-flight glob overlap check detected at least one pair of units with overlapping `files` globs (supervisor writes `fanout-conflict.md` and triggers `STAGE_FANOUT_RESOLVER_STARTED` next) | `stage={n} conflicts={a↔b: glob_a vs glob_b; ...}` |
+| `STAGE_FANOUT_RESOLVER_STARTED` | Phase 2 sub-task fan-out — resolver agent spawned synchronously in `fanout-mediation` mode to rewrite overlapping unit globs (blocking, pre-implementer) | `stage={n} conflicts={count}` |
+| `STAGE_FANOUT_RESOLVER_DONE` | Phase 2 sub-task fan-out — resolver returned and supervisor re-ran the overlap check: `resolved` (overlap gone, fan-out proceeds with rewritten units) or `unresolvable` (overlap persists or resolver crashed) | `stage={n} resolution={resolved\|unresolvable}` |
+| `STAGE_FANOUT_BLOCKED` | Phase 2 sub-task fan-out — overlap could not be eliminated; supervisor halts the stage and writes `STATUS: blocked` to `result.md` (parallel implementers are never dispatched) | `stage={n} reason=overlap_unresolvable` |
 
 ### Parallel run prefix rule
 
