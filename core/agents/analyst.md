@@ -243,14 +243,26 @@ joint success the trailing reviewer stage is consumed and
 ]
 ```
 
-Set `streaming_review: true` only when the implementer stage is
-expected to be long-running (multiple commits, >~2 min wall-clock), is
-code-only (no schema migrations that confuse incremental review), and
-the trailing stage is exactly `["reviewer"]`. When unsure, default to
-`false` (omit the field) — the existing sequential
-`[..., ["reviewer"]]` shape continues to work and is the conservative
-choice. See `core/agents/planner.md` § When to set `streaming_review`
-for the full criteria, the interaction table with `tdd_parallel` /
+Set `streaming_review: true` when the implementer stage is expected to
+be long-running (multiple commits, >~2 min wall-clock), is code-only
+(no schema migrations that confuse incremental review), and the
+trailing stage is exactly `["reviewer"]`.
+
+**Default behaviour for `backend` and `frontend` stages doing
+significant work:** set `streaming_review: true` by default — do not
+omit the field. The streaming reviewer delivers feedback incrementally
+as commits land and is more valuable than a single final review pass.
+When unsure, default to `true` for code implementation stages.
+
+Set `streaming_review: false` explicitly only when deliberately opting
+out, for example:
+- Very short stages (expected single commit, <2 min wall-clock)
+- Migration-heavy stages where schema changes would confuse incremental
+  review
+- Stages where the trailing stage is not exactly `["reviewer"]`
+
+See `core/agents/planner.md` § When to set `streaming_review` for the
+full criteria, the interaction table with `tdd_parallel` /
 `parallelizable_units`, and the supervisor's eligibility check.
 
 `streaming_review` is orthogonal to `tdd_parallel` and
