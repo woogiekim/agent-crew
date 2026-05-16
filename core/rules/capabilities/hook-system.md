@@ -35,7 +35,7 @@ Adapter MUST provide:
 - The adapter MAY pre-register the canonical set of hooks that ship
   with agent-crew: `direct-edit-guard`, `cost-tracker`,
   `guard-dangerous-commands`, `agent-diff-pre` / `agent-diff-post`,
-  `auto-route`, `context-guard`, `outline-posttooluse`, `verify-rules`.
+  `auto-route`, `context-guard`, `verify-rules`.
 
 ## Consumer Contract (core)
 
@@ -94,7 +94,6 @@ Consumer — current hook scripts:
 - `core/hooks/guard-dangerous-commands.sh`
 - `core/hooks/auto-route.sh`
 - `core/hooks/context-guard.sh`
-- `core/hooks/outline-posttooluse.sh`
 - `core/hooks/verify-rules.sh`
 
 Consumer — planned validator scripts:

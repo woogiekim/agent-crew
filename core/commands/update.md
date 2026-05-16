@@ -207,6 +207,99 @@ resolve_source_dir() {
    files arrive on the next `crew:update` and the host registers only
    `supervisor.md` as an agent (the others have no `name:` frontmatter).
 
+3.7. **Phase 3.1 Migration — Remove Stale `scribe` Agent and Outline Hook**
+
+   The `scribe` agent was a user-specific Outline / Plane / connect-docs
+   integration that should never have been classified as a system agent.
+   It is removed from the system layer in Phase 3.1; users who wrote
+   custom scribe workflows must copy their version to
+   `~/.agent-crew/user/agents/scribe.md` BEFORE running `crew:update`
+   (this migration only removes the system copies). The paired
+   `outline-posttooluse.sh` hook is also removed — it was passive (never
+   wired into `settings.json`), so no hook unregistration is required.
+
+   `sync_system_agents` and `merge_agents_to_discovery` auto-prune the
+   agents at two of the four installation paths; the other two are copied
+   via `cp -R src/. dest/` which overwrites but does not delete. Hooks
+   are copied via `cp -R` at three paths. Defensively remove all
+   locations so the host never sees the old scribe agent or outline hook
+   script after migration.
+
+   The block is idempotent — `rm -f` is silent on missing files. After
+   the first successful `crew:update` post-3.1 it becomes a no-op. The
+   literal tokens `scribe` and `outline-posttooluse` survive inside this
+   migration block intentionally; verification greps must allow these
+   occurrences in `update.md` (same convention as the C3.0 `task-runner`
+   block above).
+
+   ```bash
+   migrate_remove_stale_scribe_and_outline_hook() {
+     local removed=0
+     local f
+     local PROJECT_ROOT_LOCAL
+     PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+     # Pre-removal warning if scribe is in system/ but absent from user/
+     if [ -f "${AGENT_CREW_HOME}/system/agents/scribe.md" ] \
+        && [ ! -f "${AGENT_CREW_HOME}/user/agents/scribe.md" ]; then
+       printf '[crew:update] WARNING: scribe.md is being removed from system/ but no user/ copy exists.\n'
+       printf '             If you use scribe, run BEFORE re-running crew:update:\n'
+       printf '               cp "%s" "%s"\n' \
+         "${AGENT_CREW_HOME}/system/agents/scribe.md" \
+         "${AGENT_CREW_HOME}/user/agents/scribe.md"
+       printf '             Continuing in 3s (Ctrl-C to abort)...\n'
+       sleep 3
+     fi
+
+     # Stale scribe agent — four installation paths
+     for f in \
+       "${AGENT_CREW_HOME}/system/agents/scribe.md" \
+       "${CLAUDE_DIR}/agents/scribe.md" \
+       "${CLAUDE_DIR}/agent-crew/agents/scribe.md" \
+       "${PROJECT_ROOT_LOCAL}/.codex/agents/scribe.toml"
+     do
+       if [ -f "${f}" ]; then
+         rm -f "${f}"
+         printf '[crew:update] Removed stale agent file: %s\n' "${f}"
+         removed=$((removed + 1))
+       fi
+     done
+
+     # Stale outline-posttooluse hook — three installation paths
+     for f in \
+       "${AGENT_CREW_HOME}/system/hooks/outline-posttooluse.sh" \
+       "${AGENT_CREW_HOME}/hooks/outline-posttooluse.sh" \
+       "${CLAUDE_DIR}/agent-crew/hooks/outline-posttooluse.sh"
+     do
+       if [ -f "${f}" ]; then
+         rm -f "${f}"
+         printf '[crew:update] Removed stale hook script: %s\n' "${f}"
+         removed=$((removed + 1))
+       fi
+     done
+
+     if [ "${removed}" -eq 0 ]; then
+       printf '[crew:update] No stale scribe / outline-posttooluse files found (already migrated).\n'
+     else
+       printf '[crew:update] Phase 3.1 migration removed %d stale file(s).\n' "${removed}"
+     fi
+   }
+   migrate_remove_stale_scribe_and_outline_hook
+   ```
+
+   > **User-data preservation:** if a user has placed their own
+   > customized `scribe.md` at `~/.agent-crew/user/agents/scribe.md`, it
+   > is preserved — the migration only touches `system/` and the
+   > generated discovery mirrors. The user copy continues to be merged
+   > into `~/.claude/agents/scribe.md` by `merge_agents_to_discovery` on
+   > subsequent updates.
+
+   > **Hook registration:** `outline-posttooluse.sh` was never registered
+   > as a `PostToolUse` hook in either `install.sh` or
+   > `adapters/claude/setup.sh` (verified during Phase 3.1 audit). No
+   > `settings.json` rewrite is needed — removing the script alone is
+   > sufficient.
+
 4. Re-run the host adapter against the current project so any project-local
    files (e.g. `~/.claude/agent-crew/`) are also refreshed:
 

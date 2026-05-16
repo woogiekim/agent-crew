@@ -308,7 +308,7 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **devops** | CI/CD pipelines, infrastructure, containers, IaC; writes PLAN block and waits for approval before executing destructive actions |
 | **reviewer** | Final stage — verifies implementation completeness against the PRD (read-only) |
 | **resolver** | Automatic merge conflict resolution after parallel runs |
-| **doc-writer** | Documentation authoring for tooling / docs / config tasks |
+| **documenter** | Internal repo documentation — synthesizes `{TASK_DIR}/result.md`, drafts side-car README / CHANGELOG patches (opt-in via `--to-readme` for repo-tracked writes), and archives stage outputs to `{TASK_DIR}/archive/` |
 | **learning-mentor** | Pedagogical teaching agent — runs 6-Phase structured tutoring sessions (assessment → concept foundation → application → critical evaluation → deepening → closing) with cognitive-load-controlled output |
 | **supervisor** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 

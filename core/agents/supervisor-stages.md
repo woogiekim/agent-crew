@@ -59,7 +59,7 @@ P7 host-status crash classifier.
 
 Before spawning any stage agent, determine whether it is a builtin or custom agent:
 
-BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, supervisor]
+BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, supervisor, documenter]
 
 If the agent name is NOT in BUILTIN_AGENTS:
   1. Read its definition from `${AGENT_CREW_HOME}/agents/{name}.md`

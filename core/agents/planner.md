@@ -110,7 +110,7 @@ Before determining the pipeline, enumerate all available agents and evaluate whe
 
 ```bash
 # Built-in agent list
-BUILTIN_AGENTS="planner designer frontend backend devops resolver supervisor reviewer"
+BUILTIN_AGENTS="planner designer frontend backend devops resolver supervisor reviewer documenter"
 
 # Discover custom agents
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -134,7 +134,7 @@ Decision criteria — a new agent is needed when ANY of the following is true:
 - The task requires domain-specific knowledge (e.g., a particular external system, protocol, or industry domain) that the generic agent cannot reliably provide without hallucinating.
 - The task requires a workflow or output format that differs significantly from what any built-in agent produces (e.g., a custom report format, specialized testing strategy, or integration-specific steps).
 - The task would require more than two significant prompting caveats or workarounds to coerce a generic agent into producing acceptable results.
-- The task is in a domain not covered by any built-in agent (planner, designer, frontend, backend, devops, resolver, reviewer).
+- The task is in a domain not covered by any built-in agent (planner, designer, frontend, backend, devops, resolver, reviewer, documenter).
 
 Bias toward creating a new agent. Only reuse an existing agent when it is an unambiguous match for the required role with no meaningful gaps.
 
@@ -207,7 +207,7 @@ Run the following validation before returning:
 2. For every non-builtin agent name in `stages`, verify it has a corresponding entry in `needs_creation`. If missing, add a `needs_creation` entry with a best-effort `reason` and `role` derived from the stage context.
 
 Builtin agents that do NOT need `needs_creation` entries:
-  planner, designer, frontend, backend, devops, resolver, reviewer, supervisor
+  planner, designer, frontend, backend, devops, resolver, reviewer, supervisor, documenter
 
 ---
 
