@@ -51,7 +51,49 @@ mkdir -p "${AGENT_CREW_HOME}/user/agents"
 mkdir -p "${AGENT_CREW_HOME}/user/skills"
 mkdir -p "${AGENT_CREW_HOME}/user/commands"
 mkdir -p "${AGENT_CREW_HOME}/user/rules"
-# Write README placeholder only if not already present
+# Scaffold system/ and unified discovery directories for skills
+mkdir -p "${AGENT_CREW_HOME}/system/skills"
+mkdir -p "${AGENT_CREW_HOME}/skills"
+mkdir -p "${CLAUDE_DIR}/agent-crew/skills"
+
+# Sync system/skills/ from source and merge into discovery path.
+# Source: core/agents/skills/ → system install: ~/.agent-crew/system/skills/
+# Unified discovery: ~/.agent-crew/skills/ (system + user merged, user wins)
+# Claude mirror: ~/.claude/agent-crew/skills/ (for reference by agents at runtime)
+if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
+  sync_system_skills \
+    "${SOURCE_ROOT}/core/agents/skills" \
+    "${AGENT_CREW_HOME}/system/skills"
+fi
+
+# Merge system/skills/ + user/skills/ → ~/.agent-crew/skills/ (unified discovery)
+merge_skills_to_discovery \
+  "${AGENT_CREW_HOME}/system/skills" \
+  "${AGENT_CREW_HOME}/user/skills" \
+  "${AGENT_CREW_HOME}/skills"
+
+# Copy unified skill discovery to Claude mirror path
+copy_dir_contents "${AGENT_CREW_HOME}/skills" "${CLAUDE_DIR}/agent-crew/skills"
+
+# Write README placeholders only if not already present
+if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+  cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
+# User Skills
+
+Place your custom skill definitions here.
+Files in this directory are NEVER overwritten by crew:update.
+
+User skills take precedence over system skills with the same filename —
+your copy wins in the unified discovery path (~/.agent-crew/skills/).
+
+Naming: you may use the same filename as a system skill to override it,
+or choose a unique name for an additive skill (e.g. my-skill.md).
+
+crew:update merges these into ~/.agent-crew/skills/ and
+~/.claude/agent-crew/skills/ automatically.
+UEOF
+fi
+
 if [ ! -f "${AGENT_CREW_HOME}/user/agents/README.md" ]; then
   cat > "${AGENT_CREW_HOME}/user/agents/README.md" << 'UEOF'
 # User Agents

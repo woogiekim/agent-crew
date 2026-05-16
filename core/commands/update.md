@@ -112,6 +112,7 @@ resolve_source_dir() {
    | setup | `${SOURCE_DIR}/setup/` | `${AGENT_CREW_HOME}/system/setup/` | `${AGENT_CREW_HOME}/setup/` |
    | adapters | `${ADAPTERS_DIR}/` | `${AGENT_CREW_HOME}/system/adapters/` | `${AGENT_CREW_HOME}/adapters/` |
    | agents | `${SOURCE_DIR}/agents/` | `${AGENT_CREW_HOME}/system/agents/` | (via sync_system_agents) |
+   | skills | `${SOURCE_DIR}/agents/skills/` | `${AGENT_CREW_HOME}/system/skills/` | `${AGENT_CREW_HOME}/skills/` |
 
    **Subdirectory categories:** `rules/` contains a `capabilities/`
    subdirectory (per-flag detail docs); `scripts/` may be flat or contain
@@ -124,6 +125,7 @@ resolve_source_dir() {
    | claude setup | `${AGENT_CREW_HOME}/setup/` | `${CLAUDE_DIR}/agent-crew/setup/` | — |
    | claude commands | `${AGENT_CREW_HOME}/commands/` | `${CLAUDE_DIR}/commands/` | — |
    | claude agents | `${AGENT_CREW_HOME}/system/agents/` | `${CLAUDE_DIR}/agent-crew/agents/` | — |
+   | claude skills | `${AGENT_CREW_HOME}/skills/` | `${CLAUDE_DIR}/agent-crew/skills/` | — |
 
    For each file in a category:
 
@@ -155,6 +157,38 @@ resolve_source_dir() {
      "${AGENT_CREW_HOME}/system/agents" \
      "${AGENT_CREW_HOME}/user/agents" \
      "${CLAUDE_DIR}/agents"
+   ```
+
+   **Skill layer enforcement** (use Bash, not Read/Write):
+
+   After syncing agents, run `sync_system_skills` to install skills from the
+   source repo into the system skill layer and prune stale skills that were
+   removed from the source repo:
+
+   ```bash
+   . "${SOURCE_DIR}/setup/common.sh"
+   sync_system_skills \
+     "${SOURCE_DIR}/agents/skills" \
+     "${AGENT_CREW_HOME}/system/skills"
+   ```
+
+   Then merge system + user skills into the unified discovery destination.
+   User skills take precedence — a user skill with the same filename as a
+   system skill overwrites the system copy in the discovery path:
+
+   ```bash
+   merge_skills_to_discovery \
+     "${AGENT_CREW_HOME}/system/skills" \
+     "${AGENT_CREW_HOME}/user/skills" \
+     "${AGENT_CREW_HOME}/skills"
+   ```
+
+   Finally, copy the unified skill discovery to the Claude mirror path:
+
+   ```bash
+   copy_dir_contents \
+     "${AGENT_CREW_HOME}/skills" \
+     "${CLAUDE_DIR}/agent-crew/skills"
    ```
 
 3.5. **Phase C3.0 Migration — Remove Stale `task-runner` Files**
@@ -303,6 +337,11 @@ resolve_source_dir() {
 - Any locally-created custom agents at `~/.agent-crew/user/agents/` are
   preserved — `sync_system_agents` and `merge_agents_to_discovery` only
   operate on the `system/agents/` layer.
+- Any locally-created custom skills at `~/.agent-crew/user/skills/` are
+  preserved — `sync_system_skills` only operates on the `system/skills/`
+  layer. `merge_skills_to_discovery` copies user skills after system skills
+  so user skills take precedence in the unified `~/.agent-crew/skills/` view.
+  User skill files are NEVER deleted or overwritten by `crew:update`.
 
 ## Migration Notes
 
@@ -828,6 +867,49 @@ variants.
 **Update steps.** The standard category sync in § Execution copies
 `core/rules/` so the new file installs automatically. No `crew:setup`
 re-run required.
+
+### Phase L16 — System/user skill layer classification
+
+Skills now have a formal system/user layer structure mirroring the agent
+layer. The source-of-truth location `core/agents/skills/` is unchanged;
+the new infrastructure adds install destinations and a discovery merge path.
+
+**Directory layout after this phase:**
+
+| Path | Purpose |
+|---|---|
+| `core/agents/skills/*.md` | Source repo — system skill definitions |
+| `~/.agent-crew/system/skills/` | System skill install destination (synced from source; always replaced) |
+| `~/.agent-crew/user/skills/` | User skill layer (custom / override skills; never overwritten by crew:update) |
+| `~/.agent-crew/skills/` | Unified discovery path (system + user merged; user wins on name conflict) |
+| `~/.claude/agent-crew/skills/` | Claude mirror of the unified discovery path |
+
+**Precedence:** when the same filename exists in both `system/skills/` and
+`user/skills/`, the user copy wins in the merged `~/.agent-crew/skills/`
+view. Unlike the agent layer (which warns on conflict), the skill layer
+treats user-overriding-system as a first-class workflow — useful for
+tailoring skill guidance without forking the repo.
+
+**No breaking changes.** Existing agent references to skills via relative
+paths inside agent `.md` files are unaffected. The skill files themselves
+are unchanged; only the install machinery is new.
+
+**crew:update steps.** Two new functions in `core/setup/common.sh`:
+- `sync_system_skills` — prunes stale system skills and copies new/updated
+  ones from source; never touches `user/skills/`.
+- `merge_skills_to_discovery` — merges system + user skills with user-wins
+  precedence into `~/.agent-crew/skills/` (the unified discovery path).
+
+**crew:setup / adapters/claude/setup.sh changes.** On install and update:
+- Creates `~/.agent-crew/system/skills/`, `~/.agent-crew/user/skills/`,
+  `~/.agent-crew/skills/`, and `~/.claude/agent-crew/skills/`.
+- Writes a `~/.agent-crew/user/skills/README.md` placeholder (if absent).
+- Runs `sync_system_skills` + `merge_skills_to_discovery` + mirror copy.
+
+**No migration code required.** Pure additive — no files are removed from
+existing installations. The new directories are created with `mkdir -p`
+(idempotent). Existing skill references in agent prompts continue to work
+as before.
 
 ## Completion Message
 
