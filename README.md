@@ -53,6 +53,13 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back after completion
 - **Project-clean state** — all state stored under `~/.agent-crew/state/{PROJECT_NAME}/`, never in your project directory
 - **Global install** — one install works across all your projects
+- **Provider-neutral capability framework** — every host-specific surface (task tools, background agents, monitor stream, hooks, structured questions, cost tracking) is gated by a flag in `capabilities.json` written by the active adapter (`claude`, `codex`, `generic`); core code never names a host-specific tool. See `core/rules/host-capabilities.md`.
+- **Cost circuit breaker** — when the `cost_tracking` capability is advertised, the supervisor checks per-task token usage before every stage spawn and halts with `BLOCKER: cost_budget_exceeded` at 100% of the per-tier budget. Configure via `AGENT_CREW_BUDGET_DEEP|BALANCED|LIGHT`.
+- **Opt-in stage timeout** — set `AGENT_CREW_STAGE_TIMEOUT_SECONDS=1800` to halt any stage that exceeds a wall-clock budget (mirrors the cost-breaker pattern; off by default).
+- **Structured state files with schema validation** — `register.json` (per-task pointer state), `pipeline.json` (execution graph), `session.json` (multi-task registry), and `progress.buffer.jsonl` (one JSON event per line) all validate against JSON schemas under `core/schemas/` at supervisor Phase 0.
+- **Pipeline telemetry** — `crew:telemetry` aggregates wall-clock duration, stage/retry counts, token totals, and blocker histograms across recent runs (read-only; works on every adapter).
+- **Forbid plain-text approval** — when `hook_system` is advertised (Claude), a `PostToolUse[Agent]` validator blocks free-text yes/no prompts ("Shall I merge?" / "...진행할까요?") and feeds the violation back to the model. Hook script: `core/hooks/forbid-plaintext-approval.sh`.
+- **Autonomous task injection** — when a session is already running and the user submits "추가로 해줘", "이것도 부탁해", "Also do...", "While you're at it..." etc., `crew:run` Step 1.5 auto-routes the new task into the live session without prompting.
 
 ## Installation
 
@@ -228,21 +235,35 @@ If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned 
 
 ```
 ~/.agent-crew/state/{PROJECT_NAME}/
+├── capabilities.json          ← host capability flags (Phase A1)
+├── session.json               ← multi-task session registry; runs > 1 day stale-filtered
+├── cost/
+│   └── {TASK_ID}.jsonl        ← per-call token usage (Phase 3.3, cost_tracking only)
 └── tasks/
-    ├── active                  ← marker file; present while a task is running
+    ├── active                 ← marker file; present while a task is running
     └── {TASK_ID}/
-        ├── pipeline.json       ← stages, needs_creation, completed_stages
-        ├── handoff.md          ← inter-agent context (written by planner)
-        ├── result.md           ← final status written by supervisor
-        ├── progress.log        ← real-time timestamped phase/stage events
+        ├── register.json      ← per-task pointer state — current_phase, approval_status,
+        │                         verification_status, modified_files, blocked_by (Phase F4)
+        ├── pipeline.json      ← stages, needs_creation, completed_stages, host_task_ids
+        ├── handoff.md         ← inter-agent context (written by analyst/planner)
+        ├── result.md          ← final status written by supervisor
+        ├── progress.log       ← real-time timestamped phase/stage events (human-readable)
+        ├── progress.buffer.jsonl ← structured event buffer with trace_id (Phase F5)
+        ├── archive/           ← paged-out handoff snapshots (Phase 3.5 documenter)
         └── context/
             ├── requirements.md ← collected requirements (written by requirements agent)
-            ├── analysis.md     ← distilled intent, risks, recommended pipeline (written by analyst)
-            ├── prd.md          ← PRD written by planner
-            ├── action-plan.md  ← planned destructive actions written by stage agents
-            ├── approval.md     ← PLAN_READY / APPROVED / CANCELLED protocol file
-            └── review.md       ← review report written by reviewer
+            ├── analysis.md    ← distilled intent, risks, recommended pipeline (written by analyst)
+            ├── prd.md         ← PRD written by analyst/planner
+            ├── action-plan.md ← planned destructive actions written by stage agents
+            ├── approval.md    ← PLAN_READY / APPROVED / CANCELLED protocol file
+            └── review.md      ← review report written by reviewer
 ```
+
+All structured state files (`register.json`, `pipeline.json`, `session.json`,
+`capabilities.json`, `progress.buffer.jsonl`) are validated against JSON
+schemas under `core/schemas/` at supervisor Phase 0. Own-task files
+hard-halt on schema violation; cross-task files warn but continue.
+Per-file documentation lives under `core/rules/state-files/`.
 
 ## Pipeline Decision Logic
 
@@ -460,6 +481,15 @@ Because sub-agent inline output may be buffered until the agent completes, `prog
 | `BLOCKED` | Any BLOCKED result | blocker summary (1 line) |
 | `RETRY` | Quality loop retry | `attempt {n} — {reason}` |
 | `COMPLETED` | Phase 3 result written | `branch={BRANCH} commits={n}` |
+| `COST_WARN` | Per-task token budget crosses 50% (Phase 3.3) | `{pct}% of budget ({total}/{budget} tokens)` |
+| `COST_BLOCKED` | Per-task token budget hits 100% (Phase 3.3) | `task token budget exceeded` |
+| `HANDOFF_PAGEOUT` / `HANDOFF_PAGEDOUT` | Documenter page-out for oversized `handoff.md` (Phase 3.5) | `size={chars} → archive/handoff-{N}.md` |
+| `STATE_WARN` | F4 state-schema validator returned warnings at Phase 0 | `schema validator warnings (rc={n})` |
+| `STAGE_TIMEOUT` | Per-stage wall-clock budget exceeded (Phase I11) | `stage {i} ({agent}) elapsed={n}s > budget={m}s` |
+
+Every event is also written to `${TASK_DIR}/progress.buffer.jsonl` as a
+single JSON object per line with `trace_id = {SESSION_ID}.{TASK_ID}.{STAGE_INDEX}.{RETRY_ATTEMPT}`
+for cross-task correlation (Phase F5).
 
 ## Centralized Approval Gate
 
@@ -564,6 +594,21 @@ All implementation work must go through the crew pipeline: crew:run "your reques
 ```
 
 Edits to `~/.agent-crew` and `~/.claude` paths are always allowed (agent definitions and harness configuration).
+
+### Forbid Plain-Text Approval (`core/hooks/forbid-plaintext-approval.sh`)
+
+A `PostToolUse[Agent]` hook (Phase G6, gated on `hook_system=true`) that
+inspects the agent's response for free-text yes/no approval prompts:
+
+- English patterns: `Shall I ...?` / `Should I ...?` / `Do you want me to ...?`
+  / `Would you like me to ...?` / `May I ...?` / `Can I [non-help] ...?`
+- Korean patterns: `...할까요?` / `...해드릴까요?` / `...진행할까요?`
+  / `...해도 될까요?` / `...해도 되나요?`
+
+When a violation is detected the hook exits 2 with a stderr message
+fed back to the model. The provider-neutral validator script
+(`core/scripts/check-plaintext-approval.py`) is usable standalone for
+diagnostic checks: `python3 ~/.agent-crew/scripts/check-plaintext-approval.py --text "..."`.
 
 ### Deployment Gate
 
