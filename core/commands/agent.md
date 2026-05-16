@@ -62,8 +62,31 @@ In **auto-routing mode**:
               task: "add a health check endpoint"
 ```
 
+For a question/Q-shaped task that matches the session-state rule:
+```
+[crew:agent] → historian
+              reason: matched session-state Q pattern ("어떤 에이전트")
+              task: "방금 어떤 에이전트가 동작한거야?"
+```
+
 The visibility line is **mandatory** — it is always emitted before the agent
 is invoked so the user always knows what is running.
+
+### Auto-routing modes — questions are routed too
+
+As of the questions-through-agents change, conversational questions
+("explain how X works", "방금 어떤 에이전트?", "what commits are on this
+branch?") are no longer carved out of agent routing. They auto-route the
+same way implementation tasks do:
+
+- Codebase Q ("explain how X works") → analyst (row 7)
+- Session/git/project-state Q ("어떤 에이전트", "what just ran",
+  "what's on this branch") → historian (row 6.5)
+
+The orchestrator may still answer inline only for trivial single-fact
+lookups (yes/no, file path, single-number metric) when no registered agent
+has the right scope. See the global CLAUDE.md "Auto-Execution Triggers"
+section for the canonical wording.
 
 ---
 
