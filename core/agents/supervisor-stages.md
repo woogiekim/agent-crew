@@ -378,7 +378,7 @@ merge, push, or destructive operations. Instead they write a PLAN block and wait
 #### Step 1 — Always display the implementation summary
 
 ```text
-## ✅ Implementation Summary
+## 🛠️ Implementation Summary
 
 - **Branch**: `{BRANCH}`
 
