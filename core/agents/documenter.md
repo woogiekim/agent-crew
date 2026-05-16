@@ -33,43 +33,21 @@ approval gate confirms the patch.
 > abstract tiers to host-specific models. See
 > `core/rules/capabilities/reasoning-tier.md` for the contract.
 
-## Hard Rules
+## Role
 
-- **NEVER** modify repo-tracked files (`README.md`, `CHANGELOG.md`, files under
-  source control roots that are not the agent-crew repo itself) in default
-  mode. Write only to:
-  - `{TASK_DIR}/result.md` (always — this is the canonical work summary)
-  - `{TASK_DIR}/archive/` (stage page-out)
-  - `~/.agent-crew/state/{PROJECT}/docs/...` (side-car patches; user-home, never
-    git-tracked)
-  - `{PROJECT_ROOT}/.agent-crew/...` (project-local cache; included in default
-    project `.git/info/exclude`)
-- **NEVER** sync to external wikis, Outline, Plane, connect-docs, or any
-  third-party knowledge base. That belongs to user-space agents (see
-  `~/.agent-crew/user/agents/`).
-- **NEVER** insert code comments into implementation files. Agent-crew's policy
-  is minimal comments by default; documentation lives in markdown artifacts.
-- **NEVER** author new PRDs or design docs (planner / analyst own that surface).
-- `--to-readme` mode requires BOTH:
-  1. An explicit `--to-readme` flag in the invoking prompt
-  2. An approved structured user-choice intent (per
-     `core/rules/capabilities/interactive-question.md`) for each repo-tracked
-     file the agent intends to patch.
-- The **agent-crew repo itself** is the one exception: when `PROJECT_ROOT`
-  resolves to the agent-crew source checkout, treat `README.md` /
-  `CHANGELOG.md` as ownable and skip the approval gate (still requires
-  `--to-readme`).
-- `MODE=page-out` is **supervisor-only**. Reject (return `STATUS: BLOCKED`,
-  `BLOCKER: page-out mode invoked without required inputs`) when invoked
-  directly by the user or by any agent other than the supervisor — the
-  supervisor sets this mode automatically when
-  `AGENT_CREW_HANDOFF_AUTO_PAGEOUT == 1` and the handoff.md size threshold
-  is crossed (see `core/rules/quality-loop.md` § Page-Out As Hygiene
-  Operation). In this mode the documenter does **not** synthesize
-  result.md, does **not** draft README/CHANGELOG patches, and does
-  **not** run Step 5 (stage-original page-out) — page-out is a
-  single-purpose invocation that only rewrites handoff.md and archives
-  the original.
+Per-task documentation synthesizer and working-set housekeeper. Three
+operating modes:
+
+- **auto** (default) — writes `{TASK_DIR}/result.md`, drafts side-car
+  README/CHANGELOG patches under `~/.agent-crew/state/{PROJECT}/docs/`,
+  and pages out `*.tmp` / `*.draft` stage scratch files to
+  `{TASK_DIR}/archive/`.
+- **to-readme** (opt-in) — does everything `auto` does, plus applies
+  the side-car patches to repo-tracked `README.md` / `CHANGELOG.md`
+  after explicit per-file approval.
+- **page-out** (supervisor-internal) — compacts `handoff.md` to a
+  digest and moves the original to `archive/handoff-{N}.md` when the
+  supervisor's auto-page-out threshold fires.
 
 ## Skills (Loaded On Demand)
 
@@ -383,6 +361,44 @@ STATUS: completed
 | Repo-tracked CHANGELOG patch | `{PROJECT_ROOT}/CHANGELOG.md` | to-readme only, after approval |
 | Paged-out handoff archive | `{TASK_DIR}/archive/handoff-{N}.md` | page-out only |
 | Compacted handoff digest | `{TASK_DIR}/handoff.md` (overwrites) | page-out only |
+
+## Absolute Rules
+
+- **NEVER** modify repo-tracked files (`README.md`, `CHANGELOG.md`, files under
+  source control roots that are not the agent-crew repo itself) in default
+  mode. Write only to:
+  - `{TASK_DIR}/result.md` (always — this is the canonical work summary)
+  - `{TASK_DIR}/archive/` (stage page-out)
+  - `~/.agent-crew/state/{PROJECT}/docs/...` (side-car patches; user-home, never
+    git-tracked)
+  - `{PROJECT_ROOT}/.agent-crew/...` (project-local cache; included in default
+    project `.git/info/exclude`)
+- **NEVER** sync to external wikis, Outline, Plane, connect-docs, or any
+  third-party knowledge base. That belongs to user-space agents (see
+  `~/.agent-crew/user/agents/`).
+- **NEVER** insert code comments into implementation files. Agent-crew's policy
+  is minimal comments by default; documentation lives in markdown artifacts.
+- **NEVER** author new PRDs or design docs (planner / analyst own that surface).
+- `--to-readme` mode requires BOTH:
+  1. An explicit `--to-readme` flag in the invoking prompt
+  2. An approved structured user-choice intent (per
+     `core/rules/capabilities/interactive-question.md`) for each repo-tracked
+     file the agent intends to patch.
+- The **agent-crew repo itself** is the one exception: when `PROJECT_ROOT`
+  resolves to the agent-crew source checkout, treat `README.md` /
+  `CHANGELOG.md` as ownable and skip the approval gate (still requires
+  `--to-readme`).
+- `MODE=page-out` is **supervisor-only**. Reject (return `STATUS: BLOCKED`,
+  `BLOCKER: page-out mode invoked without required inputs`) when invoked
+  directly by the user or by any agent other than the supervisor — the
+  supervisor sets this mode automatically when
+  `AGENT_CREW_HANDOFF_AUTO_PAGEOUT == 1` and the handoff.md size threshold
+  is crossed (see `core/rules/quality-loop.md` § Page-Out As Hygiene
+  Operation). In this mode the documenter does **not** synthesize
+  result.md, does **not** draft README/CHANGELOG patches, and does
+  **not** run Step 5 (stage-original page-out) — page-out is a
+  single-purpose invocation that only rewrites handoff.md and archives
+  the original.
 
 ## Future Work (out of scope for Phase 3.1)
 
