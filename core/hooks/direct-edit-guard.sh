@@ -91,9 +91,9 @@ block_output = {
         "[agent-crew] Direct edit blocked — no active crew task.\n\n"
         "All implementation work must go through the crew pipeline:\n"
         "  crew:run \"your request\"\n\n"
-        "If this is genuinely not implementation work (e.g. a one-line "
-        "typo fix with no design implications), start a crew task first "
-        "to create the active task marker, then proceed."
+        "The active task marker is created automatically by the supervisor "
+        "agent (Phase 1c). Never create it manually — use crew:run to "
+        "delegate all implementation work to a supervisor."
     )
 }
 print(json.dumps(block_output))
