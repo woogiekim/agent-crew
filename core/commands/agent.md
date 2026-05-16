@@ -395,6 +395,95 @@ Stop silently. Do not emit an error message — the user dismissed the dialog.
   need to type a separate command. The failed `TASK_STRING` is passed as context
   so the agent-maker can propose a suitable agent name, scope, and routing keywords.
 
+---
+
+## Escape hatch: host-native subagents
+
+This section documents **when host-native subagents (Explore, Plan, and other
+Claude Code built-in types) are officially permitted** and when they must route
+through `crew:agent` instead.
+
+### Permitted: read-only utility within an already-dispatched agent context
+
+A host-native subagent MAY be used when ALL of the following conditions hold:
+
+1. **Already inside a dispatched agent context** — the call is made from within
+   an agent that was itself spawned by `crew:run` or `crew:agent` (i.e., the
+   crew routing machinery has already fired for the outer task).
+2. **Read-only codebase search** — the built-in subagent only reads files,
+   searches symbols, or explores the repo. It does NOT write files, make commits,
+   run deploy commands, or produce output that feeds directly into user-visible
+   artifacts without review.
+3. **No crew agent covers this specific capability** — the lookup is a pure
+   host-native capability (e.g., an indexed symbol search or file-tree traversal)
+   that no registered agent can fulfill more efficiently.
+
+Example of a permitted bypass:
+
+```text
+# Inside a backend agent context (already crew-dispatched):
+# Use host-native Explore to quickly find a symbol across a large codebase.
+subagent_type="Explore"
+prompt="Find all callers of UserService.cancelOrder"
+```
+
+This is acceptable because: the outer task was crew-routed, the Explore call
+is read-only, and the result feeds back into the crew-dispatched agent's work
+rather than producing independent user-visible output.
+
+### Forbidden: direct use for crew-routable work
+
+A host-native subagent MUST NOT be used when any of the following applies:
+
+- **The task is crew-routable** — implementation, planning, documentation,
+  analysis, or code investigation tasks must go through `crew:agent` or
+  `crew:run`. Routing through a built-in subagent skips the agent registry,
+  Routing Failure Fallback, and routing-misses.log telemetry entirely.
+- **The task involves writing files or committing code** — all file-write and
+  commit operations must be performed by a registered crew agent under the
+  supervisor's oversight.
+- **The task is invoked from the top-level host context** — if there is no
+  outer crew-dispatched agent, there is no routing context, and the call is
+  a direct bypass of crew routing.
+- **The task is conversational or user-facing** — Q&A, explanations, and
+  design discussions must use `crew:agent analyst`, `crew:agent planner`, or
+  `crew:agent learning-mentor` as appropriate.
+
+Forbidden example:
+
+```text
+# WRONG — using a built-in Plan subagent at the top level for a crew-routable task:
+subagent_type="Plan"
+prompt="Design the caching layer for the user-service API"
+# Correct alternative: crew:agent planner "design the caching layer…"
+```
+
+### Decision table
+
+| Context | Read-only search | Write/commit | Crew-routable task |
+|---|---|---|---|
+| Inside crew-dispatched agent | Permitted | Forbidden — use crew agent | Forbidden — use crew:agent |
+| Top-level (no outer crew context) | Forbidden | Forbidden | Forbidden — use crew:agent or crew:run |
+
+### Why this matters
+
+When a built-in subagent runs outside crew routing:
+
+- **Routing Failure Fallback never fires** — the user never sees the Routing Gap
+  choice UI that would prompt creating a new agent for an unrecognized domain.
+- **routing-misses.log is not updated** — the pattern-detection system that
+  elevates routing gaps to new-agent suggestions receives no signal.
+- **No visibility line is emitted** — the `[crew:agent] →` line that tells the
+  user which agent is running is never shown.
+- **No agent registry validation** — restricted agents (reviewer, devops,
+  resolver) can be silently invoked, bypassing the supervisor's approval gate.
+
+The permitted bypass above (read-only utility within an already-dispatched
+agent) is the narrow case where these losses are acceptable because the outer
+crew routing already fired and the inner call is purely mechanical.
+
+---
+
 ### Step 5 — Korean input normalization
 
 If TASK_STRING contains Korean text, normalize it to English before
