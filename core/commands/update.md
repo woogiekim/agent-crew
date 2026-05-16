@@ -645,6 +645,48 @@ alias. After updating, run `crew:setup` (or `adapters/claude/setup.sh`
 directly) so the new hook gets registered in
 `~/.claude/settings.json`.
 
+### Phase J13 — Pipeline telemetry aggregator
+
+A read-only aggregator surfaces per-task wall-clock duration, stage
+and retry counts, and token totals across recent runs. Exposed as
+`crew:telemetry`. Provider-neutral — no capability flag gates the
+command.
+
+**No migration code required.** Pure additive:
+
+- New file `core/scripts/telemetry-aggregate.py` — walks
+  `${STATE_DIR}/tasks/*/register.json`,
+  `${STATE_DIR}/tasks/*/progress.buffer.jsonl`, and
+  `${STATE_DIR}/cost/*.jsonl`. Computes per-task metrics +
+  aggregate summary. `--format text|json`. Selectors: `--task-id`,
+  `--session-id`, `--recent N`, `--since/--until YYYY-MM-DD`.
+- New file `core/commands/telemetry.md` — thin slash-command wrapper
+  that picks the right invocation.
+
+**Read-only.** The aggregator never mutates state. It reads existing
+JSONL buffers and JSON snapshots written by the supervisor; the
+report is computed on every invocation.
+
+**Absence tolerance.** Three independent data sources per task:
+
+- `register.json` — Phase F4. Missing → status/phase/blockers shown
+  as `—`.
+- `progress.buffer.jsonl` — Phase F5. Missing → duration/stage/retry
+  shown as `—`.
+- `${STATE_DIR}/cost/${TASK_ID}.jsonl` — Phase 3.3 + Claude host.
+  Missing → tokens shown as `—`.
+
+Pre-F4/F5 task directories render partial data gracefully. The
+script never errors on absence.
+
+**Storage impact.** None — the aggregator is a script, not a state
+file. No new directories under `${STATE_DIR}`.
+
+**Update steps.** The standard category sync in § Execution copies
+`core/scripts/` and `core/commands/` into both `system/` and the
+compat alias. The new `crew:telemetry` slash command is discoverable
+immediately after the next refresh.
+
 ## Completion Message
 
 ```text

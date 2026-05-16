@@ -4,10 +4,11 @@
 
 Let core measure per-task, per-stage, and per-agent-call token usage so
 that the supervisor can apply a **cost circuit breaker** (Phase 3.3 —
-implemented) and so that telemetry aggregation (Phase 13 — planned) can
-summarize usage across runs. Without this flag, the quality loop has
-only retry-count discipline; it cannot stop a runaway pipeline before
-it exhausts a token budget.
+implemented) and so that telemetry aggregation (Phase J13 —
+implemented, via `core/scripts/telemetry-aggregate.py` and
+`crew:telemetry`) can summarize usage across runs. Without this flag,
+the quality loop has only retry-count discipline; it cannot stop a
+runaway pipeline before it exhausts a token budget.
 
 ## Required Adapter Surface (flag=true) — Phase 3.3 schema
 
