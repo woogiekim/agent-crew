@@ -248,6 +248,12 @@ shapes:
    core assets to `.agent-crew/` in the project root. Read this to see
    the smallest possible adapter.
 
+> If your adapter ships custom agent files (e.g., a host-specific
+> variant of `supervisor` or `backend`), follow the prompt-cache tier
+> convention documented in `docs/cache-tier-convention.md` so the
+> agent's prompt benefits from cache-prefix matching across
+> invocations.
+
 ## Step-by-step: writing a new adapter
 
 1. **Pick a name.** Lowercase, no spaces. Use the host's canonical

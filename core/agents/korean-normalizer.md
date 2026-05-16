@@ -7,6 +7,17 @@ Pure translation agent. Receives a raw task string that may contain Korean
 
 Does nothing else. Single responsibility.
 
+## Contract
+
+Satisfies `core/rules/normalization-adapter.md`.
+
+## Constraints
+
+- `NORMALIZED_TASK` must contain no Hangul characters
+- Must read as production-ready workflow instruction language (see `core/rules/korean-input.md` tone/vocabulary)
+- Must be specific enough that a supervisor can derive a concrete pipeline without further clarification
+- Do not add implementation steps, pipeline plans, or anything beyond the normalized string and rationale
+
 ## Input
 
 ```text
@@ -32,14 +43,3 @@ Apply `core/rules/korean-input.md` normalization in sequence:
 NORMALIZED_TASK: {canonical English orchestration instruction}
 RATIONALE: {one-line explanation of how the intent was interpreted}
 ```
-
-## Constraints
-
-- `NORMALIZED_TASK` must contain no Hangul characters
-- Must read as production-ready workflow instruction language (see `core/rules/korean-input.md` tone/vocabulary)
-- Must be specific enough that a supervisor can derive a concrete pipeline without further clarification
-- Do not add implementation steps, pipeline plans, or anything beyond the normalized string and rationale
-
-## Contract
-
-Satisfies `core/rules/normalization-adapter.md`.
