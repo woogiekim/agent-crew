@@ -124,6 +124,10 @@ if it does not exist.
 | `STAGE_FANOUT_RESOLVER_STARTED` | Phase 2 sub-task fan-out — resolver agent spawned synchronously in `fanout-mediation` mode to rewrite overlapping unit globs (blocking, pre-implementer) | `stage={n} conflicts={count}` |
 | `STAGE_FANOUT_RESOLVER_DONE` | Phase 2 sub-task fan-out — resolver returned and supervisor re-ran the overlap check: `resolved` (overlap gone, fan-out proceeds with rewritten units) or `unresolvable` (overlap persists or resolver crashed) | `stage={n} resolution={resolved\|unresolvable}` |
 | `STAGE_FANOUT_BLOCKED` | Phase 2 sub-task fan-out — overlap could not be eliminated; supervisor halts the stage and writes `STATUS: blocked` to `result.md` (parallel implementers are never dispatched) | `stage={n} reason=overlap_unresolvable` |
+| `STAGE_STREAMING_REVIEW_STARTED` | Phase 2 stage with `streaming_review: true` — supervisor has just co-spawned the reviewer in `MODE=streaming` alongside the implementer in a single host message | `stage={n} reviewing={agent_name}` |
+| `STAGE_STREAMING_REVIEW_INCREMENTAL` | Streaming reviewer finished reviewing one NEW commit observed on the watched branch (emitted once per commit reviewed; the reviewer triggers the helper indirectly via the supervisor's stream-drain step) | `stage={n} commit={sha} verdict={ok\|warn\|blocked}` |
+| `STAGE_STREAMING_REVIEW_DONE` | Phase 2 streaming-review stage — both the implementer and the streaming reviewer have returned terminal status; the supervisor is about to advance `completed_stages` by 2 (consuming the trailing reviewer stage) | `stage={n} commits_reviewed={count} final_verdict={ok\|blocked}` |
+| `STAGE_STREAMING_REVIEW_INELIGIBLE` | Phase 2 normalization detected `streaming_review: true` but the immediately following stage is NOT a single `reviewer` agent — the flag is disabled for this iteration and the existing sequential dispatch runs unchanged | `stage={n} reason=next_stage_not_single_reviewer — falling back to sequential` |
 
 ### Parallel run prefix rule
 
