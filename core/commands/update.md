@@ -327,6 +327,33 @@ resolve_source_dir() {
    This re-runs the marker-merge helpers so any newly added hooks are
    registered without duplicating existing entries.
 
+7. **Sync host AI instruction files from mnemos (Phase L17).** After the
+   asset refresh and adapter re-run, materialize the canonical instruction
+   rules stored in mnemos into the host AI md files. This is the
+   companion to `crew:sync-instructions` and keeps Claude / Codex /
+   Generic guidance coherent with any rule edits since the last update.
+
+   The seed script is run first (idempotent — no-ops when the rule items
+   already exist with identical content), then the sync tool applies any
+   pending diffs:
+
+   ```bash
+   if [ -x "${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}" ]; then
+     bash "${SOURCE_DIR}/scripts/seed-instruction-rules.sh" --apply || true
+     bash "${SOURCE_DIR}/scripts/sync-instructions.sh"     --apply || true
+   else
+     printf '[crew:update] mnemos CLI not found at %s — skipping instruction sync.\n' \
+       "${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
+     printf '              Host AI files remain in their current state.\n'
+   fi
+   ```
+
+   `|| true` ensures a mnemos hiccup never fails the broader update.
+   The dedicated `crew:sync-instructions` command remains available for
+   manual re-runs and dry-run inspection. See
+   `core/commands/sync-instructions.md` and `core/docs/ssot-design.md`
+   for the architecture.
+
 ## Safety Guarantees
 
 - `${AGENT_CREW_HOME}/state/` is NEVER touched. The Read/Write approach
@@ -910,6 +937,42 @@ are unchanged; only the install machinery is new.
 existing installations. The new directories are created with `mkdir -p`
 (idempotent). Existing skill references in agent prompts continue to work
 as before.
+
+### Phase L17 — Instruction SSOT via mnemos
+
+Adds the canonical AI-instruction store and a marker-based sync tool.
+Host AI md files (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`,
+`~/.agent-crew/AGENTS.md`, plus the in-repo `core/global-agents.md`
+rendered fallback) are now assembled from mnemos global-layer items
+tagged `instruction-rule`. Edits flow through `mnemos capture --layer
+global --id <id>` instead of N-way manual file edits.
+
+**No migration code required.** Pure additive:
+
+- New files `core/scripts/seed-instruction-rules.sh` and
+  `core/scripts/sync-instructions.sh` arrive through the standard
+  `core/scripts/` category sync.
+- New `core/commands/sync-instructions.md` registers the
+  `crew:sync-instructions` slash command for manual / dry-run use.
+- The existing `<!-- agent-crew-start -->` / `<!-- agent-crew-end -->`
+  markers are reused — no host-file marker rewrite is required on
+  upgrade.
+- `core/global-agents.md` is now overwritten by the sync tool on every
+  `--apply` run. The repo-tracked version is the rendered output of
+  the seed-script-defined rule bodies, so any drift between the
+  bodies inside `seed-instruction-rules.sh` and the file is corrected
+  automatically when `crew:update` runs.
+- See `core/docs/ssot-design.md` for architecture and
+  `core/rules/instruction-rules-schema.md` for the rule schema.
+
+**No new capability flag.** The sync tool detects mnemos's presence
+at runtime and short-circuits gracefully when absent (logs a one-line
+notice and leaves host files untouched).
+
+**Failure tolerance.** Step 7 of § Execution wraps both calls in
+`|| true` so a mnemos hiccup never fails the broader update flow.
+Host files in their pre-update state remain valid (the marker block
+content from the prior sync remains correct guidance).
 
 ## Completion Message
 
