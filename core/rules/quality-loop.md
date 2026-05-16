@@ -112,6 +112,40 @@ continue spending against the same exhausted budget. The correct
 operator response is to escalate (raise the env var, simplify the
 request, or abort), not to retry smaller.
 
+## Page-Out As Hygiene Operation (Phase 3.5)
+
+The supervisor may invoke the documenter in `MODE=page-out` between
+stages when `AGENT_CREW_HANDOFF_AUTO_PAGEOUT == 1` and `handoff.md`
+exceeds `AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD` (default 8000
+characters). This is a working-set hygiene operation, not a stage in
+the pipeline. It is governed by a relaxed cost and retry policy:
+
+- **Cost accounting.** The page-out invocation IS a real LLM call
+  (light tier) and IS counted against the per-task token budget by
+  the cost circuit breaker. If the breaker is already at `exceeded`
+  when a page-out would otherwise fire, the supervisor SKIPS the
+  page-out (logging `HANDOFF_PAGEOUT_SKIPPED | reason=cost_exceeded`)
+  and continues with the un-paged handoff. The breaker is not
+  re-evaluated specifically for page-out — it uses the same per-stage
+  check.
+- **Retry budget.** Page-out is **not retried**. If the documenter
+  returns `STATUS: BLOCKED` or crashes during a page-out, the
+  supervisor logs `HANDOFF_PAGEOUT_FAILED` and continues. Page-out
+  does NOT consume validation (3) or crash (5) retries from the
+  next stage's budget. Rationale: page-out is hygiene — if it fails,
+  the pipeline can still finish with a larger handoff (potentially
+  slower or more expensive per-stage prompts, but functionally
+  correct).
+- **No BLOCKED Recovery.** Decomposition does not apply. There is no
+  smaller sub-task that recovers a failed summary — either the
+  documenter produced a usable digest or it did not.
+- **Out of band of stage retries.** Page-out invocations occur
+  between stage spawns, so failures NEVER leak into the
+  just-completed or next-to-spawn stage's retry counters.
+
+The default is OFF. When `AGENT_CREW_HANDOFF_AUTO_PAGEOUT` is unset,
+none of this section applies — no page-out ever fires.
+
 ## BLOCKED Recovery
 
 Before reporting BLOCKED to the orchestrator, the agent must attempt one

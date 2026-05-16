@@ -424,6 +424,58 @@ Codex and generic adapters: no change. `cost_tracking` remains
 absence of the file entirely). `crew:cost` prints a one-paragraph
 fallback note on those adapters.
 
+### Phase 3.5 — Auto handoff page-out (opt-in)
+
+The supervisor can now compact `{TASK_DIR}/handoff.md` between stages
+when it grows beyond a configurable threshold. The compacted handoff
+replaces the original at `{TASK_DIR}/handoff.md`; the original is
+preserved at `{TASK_DIR}/archive/handoff-{N}.md`.
+
+**The feature is OFF by default.** Existing installations are
+unaffected by `crew:update` until the user explicitly opts in:
+
+```bash
+export AGENT_CREW_HANDOFF_AUTO_PAGEOUT=1
+# Optional: override default threshold (8000 chars ≈ 2000 tokens for
+# English-heavy text, ~2700 tokens for mixed Korean). Lower values
+# trigger page-outs more aggressively; higher values let handoff.md
+# grow.
+export AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD=8000
+```
+
+When enabled, the supervisor measures `handoff.md` after each stage
+completion (via `wc -m`). If the size exceeds the threshold, the
+supervisor invokes the documenter agent in `MODE=page-out` — a single
+additional **light-tier** LLM call that produces a one-paragraph-per-
+stage digest plus the last 2–3 verbatim stage outputs. The original
+handoff is moved (not copied) to `{TASK_DIR}/archive/handoff-{N}.md`
+where `N` is monotonically increasing, derived statelessly from
+`ls archive/handoff-*.md | wc -l + 1`.
+
+**Cost impact when enabled.** One extra light-tier call per page-out
+event. The conservative default threshold (8000 chars) means most
+short pipelines never trigger a page-out. Long pipelines (10+ stages
+or stages that append verbose handoff content) may see 1–3 page-outs
+per task. The page-out call counts toward the cost circuit breaker
+total (see Phase 3.3).
+
+**Failure mode.** If the page-out itself fails (documenter returns
+`STATUS: BLOCKED` or crashes), the supervisor logs
+`HANDOFF_PAGEOUT_FAILED` and continues with the un-paged handoff.
+The pipeline is never failed because of a page-out failure. See
+`core/rules/quality-loop.md` § Page-Out As Hygiene Operation.
+
+**Cost breaker interaction.** If the cost circuit breaker has already
+reached `exceeded` when a page-out would otherwise fire, the
+supervisor SKIPS the page-out (logs `HANDOFF_PAGEOUT_SKIPPED |
+reason=cost_exceeded`) and continues. Page-out never fires when the
+budget is already gone.
+
+**No migration code required.** This is a pure opt-in feature with no
+state-file schema change and no installed-file removal. The new
+documenter `MODE=page-out` branch arrives via the standard agent-file
+sync (`merge_agents_to_discovery`).
+
 ## Completion Message
 
 ```text

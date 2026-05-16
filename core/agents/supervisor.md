@@ -104,6 +104,12 @@ if it does not exist.
 | `BLOCKED` | Any BLOCKED result | blocker summary (1 line) |
 | `RETRY` | Quality loop retry | `attempt {n} — {reason}` |
 | `COMPLETED` | Phase 3 result written | `branch={BRANCH} commits={n}` |
+| `COST_WARN` | Cost circuit breaker crosses 50% (Phase 3.3) | `{pct}% of budget ({total} / {budget} tokens)` |
+| `COST_BLOCKED` | Cost circuit breaker hits 100% (Phase 3.3) | `task token budget exceeded` |
+| `HANDOFF_PAGEOUT` | Page-out check triggers — size > threshold (Phase 3.5) | `size={chars} threshold={chars} → archive/handoff-{N}.md` |
+| `HANDOFF_PAGEDOUT` | Documenter page-out returns `STATUS: completed` (Phase 3.5) | `pre={chars} post={chars} archive=handoff-{N}.md` |
+| `HANDOFF_PAGEOUT_FAILED` | Documenter page-out returns `STATUS: BLOCKED` or crashes (Phase 3.5) | `{blocker reason}` |
+| `HANDOFF_PAGEOUT_SKIPPED` | Page-out skipped because cost breaker is exhausted (Phase 3.5) | `reason=cost_exceeded` |
 
 ### Parallel run prefix rule
 

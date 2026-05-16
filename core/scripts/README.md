@@ -74,7 +74,7 @@ documents the planned surface so adapter authors can prepare.
 | `check-task-injection.py` | 14 | Disambiguate duplicate task injection against `session.json` | `core/rules/capabilities/hook-system.md` |
 | `validate-state-schema.py` | F (state) | JSON-schema validate `pipeline.json`, `register.json`, `progress.buffer.jsonl`, `capabilities.json`, `session.json` | `core/rules/quality-loop.md` (future revision) |
 | `cost-aggregate.py` | E3.3 | Aggregate per-call token data into a per-task / crew-wide summary | `core/commands/cost.md`, `core/rules/capabilities/cost-tracking.md` |
-| `handoff-page-out.py` | E3.5 | Auto-summarize `handoff.md` when it exceeds a threshold (opt-in) | `core/rules/quality-loop.md` (future revision) |
+| ~~`handoff-page-out.py`~~ | superseded by Phase 3.5 | Auto-summarize `handoff.md` when it exceeds a threshold (opt-in) — **now implemented via the documenter agent in `MODE=page-out`, not a standalone script**. See `core/agents/documenter.md` § Page-Out Mode and `core/agents/supervisor-stages.md` § Post-stage handoff page-out. | `core/rules/quality-loop.md` § Page-Out As Hygiene Operation |
 
 Each script's introduction PR also adds a corresponding entry in the
 relevant adapter (Claude wires it as a hook; Codex documents the

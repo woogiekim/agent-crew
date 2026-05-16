@@ -31,17 +31,72 @@ unavailable, the tier is advisory only. See
   structured user-choice gate for each repo-tracked file.
 - When PROJECT_ROOT is the agent-crew source checkout itself, README.md and
   CHANGELOG.md are ownable — skip the approval gate (still requires --to-readme).
+- MODE=page-out is supervisor-only. Reject with STATUS: BLOCKED when
+  invoked directly by a non-supervisor caller. In page-out mode the
+  documenter does NOT synthesize result.md, does NOT touch side-car
+  artifacts, and does NOT page out stage originals — it only rewrites
+  handoff.md and archives the original.
 
 ## Inputs
 
 - TASK_DIR — task state directory
 - PROJECT_ROOT — project root path (paths only — never inline contents)
 - HANDOFF_PATH — path to {TASK_DIR}/handoff.md
-- MODE — "auto" (default; side-car only) or "to-readme" (opt-in; patches
-  repo-tracked files after approval)
-- BRANCH — current task branch name
+- MODE — "auto" (default; side-car only), "to-readme" (opt-in; patches
+  repo-tracked files after approval), or "page-out" (supervisor-internal;
+  compacts handoff.md when it crosses the configured threshold —
+  AGENT_CREW_HANDOFF_AUTO_PAGEOUT=1 enables, AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD
+  overrides the default 8000-char trigger)
+- BRANCH — current task branch name (required for auto / to-readme; unused
+  in page-out mode)
+- ARCHIVE_NUM — page-out mode only; integer N for archive/handoff-{N}.md
+- HANDOFF_SIZE — page-out mode only; pre-invocation size in characters
 
 ## Workflow
+
+### Mode dispatch
+
+Read MODE from the invoking prompt and branch:
+
+- MODE=page-out → execute only the Page-Out Mode block, then return
+- MODE=to-readme → execute Steps 1-7 (full workflow + Step 6)
+- MODE=auto (default) → execute Steps 1-5 and 7 (skip Step 6)
+
+### Page-Out Mode (MODE=page-out only)
+
+Supervisor-only invocation. Hygiene operation — does NOT touch result.md,
+README/CHANGELOG patches, or stage-original *.tmp/*.draft files.
+
+Procedure:
+
+1. Validate inputs. If MODE != page-out or ARCHIVE_NUM is missing,
+   return STATUS: BLOCKED, BLOCKER: page-out invoked without required inputs.
+
+2. Read handoff.md in full. Measure character length (PRE_SIZE).
+
+3. mkdir -p {TASK_DIR}/archive
+
+4. mv {TASK_DIR}/handoff.md {TASK_DIR}/archive/handoff-{ARCHIVE_NUM}.md
+
+5. Write a new {TASK_DIR}/handoff.md with three sections:
+   a. Header note referencing archive/handoff-{N}.md
+   b. Compact one-paragraph-per-stage summary (preserve decisions and
+      constraints; drop verbose reasoning and quoted file contents)
+   c. Recent stages (last 2-3 stage-output blocks verbatim)
+
+6. Measure new handoff.md length (POST_SIZE).
+
+7. Return:
+   STATUS: completed
+   MODE: page-out
+   PAGED_OUT: archive/handoff-{N}.md
+   PRE_SIZE: {PRE_SIZE}
+   POST_SIZE: {POST_SIZE}
+
+Failure handling: if any step fails, restore the original from
+archive/handoff-{N}.md (if possible) and return STATUS: BLOCKED with the
+specific blocker reason. The supervisor treats a BLOCKED page-out as a
+soft failure (logs and continues with the un-paged handoff).
 
 ### Step 1 — Gather context
 

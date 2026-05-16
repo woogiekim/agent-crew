@@ -247,6 +247,62 @@ ls "${TASK_DIR}/context/"
 
 Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
+#### Post-stage handoff page-out (Phase 3.5, opt-in)
+
+After each stage's terminal completion has been recorded
+(`completed_stages` incremented, `STAGE_DONE` emitted), measure
+`handoff.md` and conditionally invoke the documenter in `MODE=page-out`
+to keep the per-stage working set bounded. The supervisor never reads
+`handoff.md` contents directly — only its size via `wc -m`.
+
+**Default: disabled.** When `AGENT_CREW_HANDOFF_AUTO_PAGEOUT` is unset
+or any value other than `1`, skip the entire block — do not measure,
+do not log. Behavior is identical to pre-3.5.
+
+When enabled:
+
+```bash
+if [ "${AGENT_CREW_HANDOFF_AUTO_PAGEOUT:-0}" = "1" ]; then
+  HANDOFF_SIZE=$(wc -m < "${TASK_DIR}/handoff.md" 2>/dev/null | tr -d ' ' || echo 0)
+  THRESHOLD="${AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD:-8000}"
+  if [ "${HANDOFF_SIZE:-0}" -gt "${THRESHOLD}" ] 2>/dev/null; then
+    # Stateless counter: count existing handoff-*.md archives, add 1.
+    ARCHIVE_NUM=$(ls "${TASK_DIR}/archive/handoff-"*.md 2>/dev/null | wc -l | tr -d ' ')
+    ARCHIVE_NUM=$((ARCHIVE_NUM + 1))
+    log_progress "HANDOFF_PAGEOUT" "size=${HANDOFF_SIZE} threshold=${THRESHOLD} → archive/handoff-${ARCHIVE_NUM}.md"
+    # Spawn documenter in page-out mode (sequential, blocking).
+    # Prompt format:
+    #   TASK_DIR: {TASK_DIR}
+    #   PROJECT_ROOT: {PROJECT_ROOT}
+    #   HANDOFF_PATH: {TASK_DIR}/handoff.md
+    #   QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+    #   MODE: page-out
+    #   ARCHIVE_NUM: {ARCHIVE_NUM}
+    #   HANDOFF_SIZE: {HANDOFF_SIZE}
+    # On STATUS: completed → log HANDOFF_PAGEDOUT with pre/post sizes.
+    # On STATUS: BLOCKED → log HANDOFF_PAGEOUT_FAILED and continue.
+  fi
+fi
+```
+
+Per `core/rules/quality-loop.md` § Page-Out As Hygiene Operation:
+
+- The page-out call **counts** against the cost circuit breaker total
+  (light-tier LLM call). If the cost breaker is already at `exceeded`,
+  skip the page-out (log `HANDOFF_PAGEOUT_SKIPPED | reason=cost_exceeded`)
+  and continue with the un-paged handoff.
+- The page-out call **does not** have its own validation/crash retry
+  budget. On `STATUS: BLOCKED` or crash, log `HANDOFF_PAGEOUT_FAILED`
+  and continue. Page-out failures NEVER increment the just-completed
+  stage's retry counters and NEVER fail the pipeline.
+- Page-out is **out of band** of stage retries.
+
+**Re-entrancy guard.** The page-out invocation does not itself trigger a
+nested page-out check. Even if the documenter's digest were larger than
+the threshold (it should not be), the next size check fires only after
+the *next* stage completes — never recursively inside the page-out
+spawn.
+
 **After the stage loop completes (all non-devops stages done), proceed to Phase 2.5 — do NOT skip to Phase 3.** Phase 2.5 is always entered after Phase 2, whether or not any stage returned `STATUS: plan_ready`.
 
 ---
