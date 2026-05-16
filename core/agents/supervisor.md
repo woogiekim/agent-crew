@@ -117,6 +117,10 @@ if it does not exist.
 | `PHASE_1D_PREFETCH_KILLED` | Phase 1d prefetch background job was killed (user Cancel/Request-changes or post-approval cleanup) | `reason={cancel\|request_changes\|approved}` |
 | `STAGE_TDD_PARALLEL_STARTED` | Phase 2 stage with `tdd_parallel: true` spawns test-writer + implementer in a single parallel host dispatch | `stage={n} agents=test-writer,{implementer}` |
 | `STAGE_TDD_PARALLEL_DONE` | Phase 2 TDD-parallel stage — both agents returned a terminal status and the supervisor is about to update `completed_stages` | `stage={n} test_status={completed\|crashed\|blocked} impl_status={completed\|crashed\|blocked}` |
+| `STAGE_FANOUT_STARTED` | Phase 2 stage with `parallelizable_units.length >= 2` — supervisor has just dispatched N parallel agents of the stage's type in a single host message | `stage={n} units={count} type={agent_name}` |
+| `STAGE_FANOUT_UNIT_DONE` | Phase 2 sub-task fan-out — one unit of the stage returned a terminal status (emitted N times per fan-out stage) | `stage={n} unit={id} status={completed\|crashed\|blocked}` |
+| `STAGE_FANOUT_DONE` | Phase 2 sub-task fan-out — all N units returned a terminal status and the supervisor is about to update `completed_stages` | `stage={n} units={count} all_status={id1=status,id2=status,...}` |
+| `STAGE_FANOUT_CONFLICT` | Phase 2 sub-task fan-out — pre-flight glob overlap check detected at least one pair of units with overlapping `files` globs (the planner should normally prevent this; the supervisor logs and proceeds) | `stage={n} conflicts={a↔b: glob_a vs glob_b; ...}` |
 
 ### Parallel run prefix rule
 

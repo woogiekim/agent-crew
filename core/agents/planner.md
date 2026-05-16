@@ -241,6 +241,108 @@ Anti-patterns — do NOT set `tdd_parallel: true` for:
 - Stages where the PRD's acceptance criteria are still placeholders
   (`TBD`, `to be decided`, `Other / not yet defined`).
 
+#### When to set `parallelizable_units`
+
+A stage entry may carry a `parallelizable_units: [...]` array (object
+stage form only). When the array's length is `>= 2`, the supervisor
+spawns one agent-of-`agents[0]` per unit in a single host message —
+this is **mini fan-out within a single supervisor**, distinct from
+`crew:run N>1` supervisor-level fan-out. When the array is absent or
+its length is `<= 1`, the stage runs with its existing dispatch path
+(legacy single agent, parallel-agents, or TDD parallel). See
+`core/rules/state-files/pipeline-json.md` § Sub-Task Fan-Out stage
+form for the wire schema.
+
+Set `parallelizable_units` (with length `>= 2`) only when **all** of
+the following hold:
+
+- The stage's work decomposes into **independent sub-domains** — no
+  shared mutable state across units, no unit reads another unit's
+  output, no unit needs another unit's brief.
+- The file groups are **separable** — the unit's `files` globs do not
+  overlap with any sibling unit's globs. Run the pre-flight overlap
+  check below before emitting the array.
+- The units have **similar shape** — e.g. "add 3 unrelated CRUD
+  endpoints" → 3 units, "add 4 independent React components in
+  separate directories" → 4 units. Heterogeneous work (one unit edits
+  a model, another writes a migration, another writes a fixture) is
+  usually a sign that the sub-tasks are NOT independent.
+- The stage agent is an implementation agent (`backend`, `frontend`,
+  or a generic implementer custom agent). `reviewer`, `devops`,
+  `resolver`, `documenter`, `designer`, and `analyst` are anti-patterns
+  — their work is inherently whole-stage.
+
+When unsure, default to a **single unit** (omit the field entirely, or
+emit a length-1 array). The supervisor falls through to the unchanged
+legacy path; nothing breaks.
+
+Concrete examples (set the field):
+
+- "Add CRUD endpoints for orders, products, and carts in the same
+  `src/api/<resource>/` subtree" → 3 units with `files: ["src/api/orders/**"]`,
+  `["src/api/products/**"]`, `["src/api/carts/**"]`.
+- "Create independent settings panels for Account, Billing, and
+  Notifications" → 3 units with `files` scoped to each panel's directory.
+- "Add unit tests for 5 unrelated utility modules" → 5 units, one
+  module per unit.
+
+Concrete anti-examples (do NOT set the field):
+
+- "Build the user signup flow" — UI + API + DB migration are
+  tightly coupled (shared schema). One unit.
+- "Refactor the auth layer" — pure refactor of a single shared module.
+  One unit.
+- "Add a single CRUD endpoint for orders" — only one unit's worth of
+  work; the field would be length 1 anyway.
+
+##### Pre-flight overlap check (planner-side, MVP best-effort)
+
+Before emitting `parallelizable_units`, verify that no two units'
+`files` globs overlap. Overlap is a strong signal that the units are
+not actually independent — record the warning in the analysis
+narrative (and consider collapsing the overlapping units into one).
+For MVP this is documented as a planner discipline; the supervisor
+itself only logs detected overlap to `result.md` and does not
+auto-invoke the resolver agent.
+
+A simple Python check the planner can run inline:
+
+```python
+import fnmatch
+
+def units_overlap(units):
+    """Return list of (unit_a_id, unit_b_id, conflicting_glob_pair)
+    for any pair of units whose file globs cover overlapping shells."""
+    out = []
+    for i, a in enumerate(units):
+        for b in units[i+1:]:
+            for ga in a["files"]:
+                for gb in b["files"]:
+                    # fnmatch the literal glob bodies against each other
+                    # — best-effort; full overlap detection requires
+                    # filesystem walks which the planner does not perform.
+                    if fnmatch.fnmatch(ga, gb) or fnmatch.fnmatch(gb, ga):
+                        out.append((a["id"], b["id"], (ga, gb)))
+    return out
+```
+
+#### Interaction with `tdd_parallel`
+
+`tdd_parallel` and `parallelizable_units` are independent flags. The
+supervisor's truth table:
+
+| `tdd_parallel` | `parallelizable_units.length` | Dispatch |
+|---|---|---|
+| false / absent | `<= 1` / absent | Legacy single-agent (or bare-array parallel-agents) dispatch. |
+| true | `<= 1` / absent | TDD Parallel — test-writer + first implementer. |
+| false / absent | `>= 2` | Sub-Task Fan-Out — N implementers, one per unit. |
+| true | `>= 2` | Combined: N implementers (one per unit) + one shared test-writer covering the contract across units. |
+
+For MVP, prefer setting **at most one** of the two flags per stage.
+Combine them only when the implementer-side contract is genuinely
+shared across all units (e.g. all 3 CRUD endpoints share a generated
+TypeScript client and one test file can exercise all 3).
+
 Custom agent names must match the filename format:
 `~/.agent-crew/agents/<name>.md`
 

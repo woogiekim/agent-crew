@@ -310,32 +310,43 @@ at stage entry.
 #### Normalization
 
 At the top of each stage iteration, normalize the stage entry into
-three locals — `STAGE_AGENTS`, `STAGE_TDD_PARALLEL`, and (for the
-existing parallel-agents path) `STAGE_AGENT` per inner-loop iteration:
+four locals — `STAGE_AGENTS`, `STAGE_TDD_PARALLEL`, `STAGE_UNITS_COUNT`,
+and (for the existing parallel-agents path) `STAGE_AGENT` per
+inner-loop iteration. The units detail itself is read from
+`PIPELINE_PATH` on demand by the Sub-Task Fan-Out path; the count
+suffices to route dispatch.
 
 ```bash
 # Read the current stage entry shape from PIPELINE_PATH and normalize.
-read -r STAGE_AGENTS STAGE_TDD_PARALLEL < <(python3 -c "
+read -r STAGE_AGENTS STAGE_TDD_PARALLEL STAGE_UNITS_COUNT < <(python3 -c "
 import json
 p = json.load(open('${PIPELINE_PATH}'))
 stage = p['stages'][${i} - 1]
 if isinstance(stage, str):
-    agents = [stage]; tdd = False
+    agents = [stage]; tdd = False; units = 0
 elif isinstance(stage, list):
-    agents = stage;   tdd = False
+    agents = stage;   tdd = False; units = 0
 elif isinstance(stage, dict):
     agents = stage.get('agents', [])
     tdd    = bool(stage.get('tdd_parallel', False))
+    units  = len(stage.get('parallelizable_units', []) or [])
 else:
-    agents = []; tdd = False
-print(' '.join(agents), '1' if tdd else '0')
+    agents = []; tdd = False; units = 0
+print(' '.join(agents), '1' if tdd else '0', units)
 ")
 ```
 
-`STAGE_TDD_PARALLEL == 1` selects the TDD parallel dispatch path
-below. `STAGE_TDD_PARALLEL == 0` (or absent) falls through to the
-existing Single / Parallel Agents paths above — no regression for any
-pre-existing pipeline.json.
+Dispatch routing:
+
+- `STAGE_UNITS_COUNT >= 2` selects the **Sub-Task Fan-Out** path
+  documented in § Sub-Task Fan-Out Dispatch below. If
+  `STAGE_TDD_PARALLEL == 1` is also set, the combined-mode rule in
+  that section applies.
+- `STAGE_UNITS_COUNT <= 1` AND `STAGE_TDD_PARALLEL == 1` selects the
+  TDD parallel path below.
+- Both `0` → fall through to the existing Single / Parallel Agents
+  paths above — no regression for any pre-existing pipeline.json
+  (including every pipeline that predates this feature).
 
 #### Dispatch — both agents in one host message
 
@@ -425,6 +436,208 @@ bare array stage entries), Phase 2 dispatch is unchanged from the
 behavior documented in § Single Agent and § Parallel Agents above. The
 TDD parallel block is opt-in by stage encoding; no pipeline that
 predates this feature is affected.
+
+### Sub-Task Fan-Out Dispatch
+
+A stage entry may opt into **sub-task fan-out** ("mini fan-out within
+a single supervisor") by attaching a
+`parallelizable_units: [{id, files, brief}, ...]` array to the object
+stage form. The schema doc
+(`core/rules/state-files/pipeline-json.md` § Sub-Task Fan-Out stage
+form) shows the wire shape. The dispatch contract below is what Phase
+2 runs at stage entry when `STAGE_UNITS_COUNT >= 2`.
+
+This is distinct from `crew:run N>1` supervisor-level fan-out: that
+spawns N independent supervisors (one per task); this spawns N
+parallel agents of the **same** type within a single supervisor's
+single stage.
+
+#### Read the unit list
+
+When `STAGE_UNITS_COUNT >= 2`, load the units detail from
+`PIPELINE_PATH` once at stage entry:
+
+```bash
+UNITS_JSON=$(python3 -c "
+import json
+p = json.load(open('${PIPELINE_PATH}'))
+stage = p['stages'][${i} - 1]
+print(json.dumps(stage.get('parallelizable_units', [])))
+")
+# UNITS_JSON is a JSON array of {id, files, brief}; STAGE_AGENTS holds
+# the agent type to spawn (use STAGE_AGENTS[0] — the implementer).
+```
+
+#### Pre-flight overlap check (MVP — log only)
+
+Walk the unit list once and detect any pair of units whose `files`
+globs overlap. Overlap is rare when the planner did its job; when it
+happens the supervisor logs the conflict (and surfaces it later in
+`result.md` via the close-out report) but still proceeds with the
+fan-out. Auto-invoking `resolver` on detected overlap is a documented
+follow-up; for MVP we rely on the planner-side check.
+
+```bash
+OVERLAPS=$(python3 -c "
+import json, fnmatch
+units = json.loads('''${UNITS_JSON}''')
+out = []
+for i, a in enumerate(units):
+    for b in units[i+1:]:
+        for ga in a.get('files', []):
+            for gb in b.get('files', []):
+                if fnmatch.fnmatch(ga, gb) or fnmatch.fnmatch(gb, ga):
+                    out.append(f\"{a['id']}↔{b['id']}: {ga} vs {gb}\")
+print('; '.join(out))
+")
+if [ -n "${OVERLAPS}" ]; then
+  log_progress "STAGE_FANOUT_CONFLICT" "stage=${i} conflicts=${OVERLAPS}"
+  echo "${OVERLAPS}" >> "${TASK_DIR}/context/fanout-conflicts.log"
+fi
+```
+
+The conflict log is appended (never truncated) so multiple stages with
+fan-out can each contribute. The Phase 3 close-out reads this file (if
+present) and surfaces a "## Fan-Out Conflicts (detected, not
+auto-resolved)" section in `result.md`.
+
+#### Dispatch — N agents in one host message
+
+When `STAGE_UNITS_COUNT >= 2`:
+
+1. Resolve the implementer agent name: `IMPL_AGENT="${STAGE_AGENTS%% *}"`
+   (first entry in `STAGE_AGENTS`). For MVP, only the first entry is
+   used as the fan-out type — multi-type fan-out within a single stage
+   is a follow-up.
+
+2. Compose **N** agent prompts, one per unit, using the standard
+   Agent prompt format above. Each prompt additionally carries
+   `UNIT_ID`, `UNIT_BRIEF`, and `UNIT_FILES` so the agent knows its
+   sub-slice of the stage:
+
+   ```text
+   TASK_DIR: {TASK_DIR}
+   PROJECT_ROOT: {PROJECT_ROOT}
+   HANDOFF_PATH: {TASK_DIR}/handoff.md
+   QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+   UNIT_ID: {unit.id}
+   UNIT_BRIEF: {unit.brief}
+   UNIT_FILES: {comma-separated unit.files globs}
+
+   You are running as a sub-task fan-out unit of stage {i}. Read the
+   handoff and PRD as usual, then perform ONLY the work described in
+   UNIT_BRIEF, scoped to the file globs in UNIT_FILES. Do not touch
+   files outside UNIT_FILES — other parallel units own those globs.
+   Do not modify handoff.md (sibling units are writing concurrently).
+   ```
+
+3. Emit the start event **before** dispatch:
+
+   ```bash
+   log_progress "STAGE_FANOUT_STARTED" \
+     "stage=${i} units=${STAGE_UNITS_COUNT} type=${IMPL_AGENT}"
+   ```
+
+4. Issue all N Agent tool calls in a **single response** — the same
+   host parallel-spawn convention used by § Parallel Agents and § TDD
+   Parallel Dispatch above. The supervisor's response message
+   contains one Agent call per unit; the host dispatches them
+   concurrently.
+
+   Combined mode (`STAGE_TDD_PARALLEL == 1` AND
+   `STAGE_UNITS_COUNT >= 2`): co-spawn **one** `test-writer` in the
+   same response alongside the N implementer units. The test-writer
+   covers the contract that is shared across units. This is the
+   advanced combination documented in
+   `core/rules/state-files/pipeline-json.md` § Interaction with
+   `tdd_parallel`; for MVP the planner is steered toward setting at
+   most one of the two flags per stage.
+
+5. As each unit returns, record its terminal status in
+   `pipeline.json.stage_agent_status` under a composite key
+   `<agent>:<unit_id>` so per-unit retries are addressable:
+
+   ```bash
+   # Repeat for each unit as it terminates.
+   python3 -c "
+   import json
+   p = json.load(open('${PIPELINE_PATH}'))
+   key = '${IMPL_AGENT}:${UNIT_ID}'
+   p.setdefault('stage_agent_status', {}).setdefault('${i}', {})[key] = '${status}'
+   json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+   "
+   log_progress "STAGE_FANOUT_UNIT_DONE" \
+     "stage=${i} unit=${UNIT_ID} status=${status}"
+   ```
+
+   In combined mode, the test-writer's status is recorded under its
+   own (non-composite) key `test-writer`, matching the existing TDD
+   parallel convention.
+
+6. Wait for **all N** unit calls (plus the test-writer in combined
+   mode) to return. Emit the done event:
+
+   ```bash
+   log_progress "STAGE_FANOUT_DONE" \
+     "stage=${i} units=${STAGE_UNITS_COUNT} all_status=${ALL_STATUS_CSV}"
+   ```
+
+   `ALL_STATUS_CSV` is a compact summary like
+   `orders=completed,products=completed,carts=crashed` so a downstream
+   log reader can identify which unit failed without reading
+   `pipeline.json`.
+
+7. Advance `completed_stages` only when **every** unit (and, in
+   combined mode, the test-writer) is `completed`:
+
+   ```bash
+   python3 -c "
+   import json
+   p = json.load(open('${PIPELINE_PATH}'))
+   stage_status = p.get('stage_agent_status', {}).get('${i}', {})
+   all_done = stage_status and all(v == 'completed' for v in stage_status.values())
+   if all_done:
+       p['completed_stages'] = ${i}
+       json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+   "
+   ```
+
+#### Selective per-unit retry
+
+If one or more units (or the combined-mode test-writer) crash, do NOT
+re-spawn the whole fan-out. Apply the Stage Retry Rule
+(`supervisor-retry.md`) **per unit** — only failed units get retried.
+Units that returned `STATUS: completed` are not re-invoked.
+
+The retry-key vocabulary widens to include the composite
+`<agent>:<unit_id>` form so the retry counter and the host-task DAG
+mirror (when enabled) both address the correct sub-task. The Stage
+Retry Rule's crash and validation budgets (5 / 3) apply per unit, not
+per stage.
+
+If, after exhausting retries, any unit remains `crashed` or `blocked`,
+the stage as a whole is BLOCKED — apply the standard BLOCKED Recovery
+contract (write result.md, halt).
+
+#### File-conflict handling (MVP)
+
+Each unit's `files` globs SHOULD be disjoint by planner contract. When
+two units' git commits land on the same path (which the planner's
+overlap check should have prevented), the supervisor logs the
+conflict to `${TASK_DIR}/context/fanout-conflicts.log` (the same file
+written by the pre-flight overlap check) and surfaces it in
+`result.md`. MVP scope does not auto-invoke the `resolver` agent —
+that integration is a documented follow-up. The user (or a manual
+follow-up task) can invoke `resolver` against the conflict log
+post-hoc.
+
+#### Sequential-path fall-through
+
+When `STAGE_UNITS_COUNT <= 1` (absent field, or length-1 array), Phase
+2 dispatch is unchanged — the TDD-parallel routing or the Single /
+Parallel Agents path applies depending on `STAGE_TDD_PARALLEL` and the
+agents-list shape. The Sub-Task Fan-Out block is opt-in by stage
+encoding; no pipeline that predates this feature is affected.
 
 #### Post-stage handoff page-out (Phase 3.5, opt-in)
 

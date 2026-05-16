@@ -43,6 +43,33 @@
                 "type": "boolean",
                 "default": false,
                 "description": "When true, supervisor co-spawns the test-writer agent in parallel with every agent listed in `agents`. Both must complete before the stage advances. See core/agents/supervisor-stages.md § TDD Parallel Dispatch."
+              },
+              "parallelizable_units": {
+                "type": "array",
+                "description": "Optional. When length >= 2, the supervisor enters Sub-Task Fan-Out dispatch and spawns one agent-of-`agents[0]` per unit in a single host message. Absence or length <= 1 falls through to legacy single-agent / parallel / TDD dispatch — pre-existing pipelines are unaffected. See core/agents/supervisor-stages.md § Sub-Task Fan-Out Dispatch.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["id", "files", "brief"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                      "description": "Short slug, unique within the stage (e.g. 'u1', 'orders', 'products'). Used as the unit key in stage_agent_status entries and progress event detail strings."
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 },
+                      "description": "Shell-style file globs the unit will touch. Used by the planner's pre-flight overlap check and the supervisor's MVP conflict logger. May be empty when the unit creates a fresh subtree only."
+                    },
+                    "brief": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "1-2 sentence sub-task description handed to the unit's agent."
+                    }
+                  }
+                }
               }
             }
           }

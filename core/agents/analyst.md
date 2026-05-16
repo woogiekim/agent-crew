@@ -196,6 +196,36 @@ When unsure, default to `false` (omit the field). The existing bare
 forms (`"backend"`, `["designer", "backend"]`) remain fully supported
 and produce identical behavior to a `tdd_parallel: false` stage.
 
+#### Sub-task fan-out opt-in (`parallelizable_units`)
+
+A stage entry may also carry a `parallelizable_units: [...]` array on
+the object form. When the array has length `>= 2`, the supervisor
+spawns one agent-of-`agents[0]` per unit in a single host message
+(mini fan-out within a single supervisor). When absent or length `<= 1`,
+behavior is identical to the bare / TDD-parallel forms — pre-existing
+pipelines are unaffected.
+
+```json
+{
+  "agents": ["backend"],
+  "parallelizable_units": [
+    { "id": "orders",   "files": ["src/api/orders/**"],   "brief": "Add CRUD endpoints for orders." },
+    { "id": "products", "files": ["src/api/products/**"], "brief": "Add CRUD endpoints for products." }
+  ]
+}
+```
+
+Set `parallelizable_units` only when the work splits into independent
+sub-domains, the file groups are separable (no glob overlap), and the
+units have similar shape. When unsure, default to a single unit. See
+`core/agents/planner.md` § When to set `parallelizable_units` for the
+full criteria, examples, and the pre-flight overlap check.
+
+`tdd_parallel` and `parallelizable_units` are independent flags. The
+truth table for combinations lives in
+`core/rules/state-files/pipeline-json.md` § Interaction with
+`tdd_parallel`. For MVP, prefer setting at most one per stage.
+
 ### Step 7 — Write PRD and handoff.md
 
 Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
