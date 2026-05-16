@@ -1,39 +1,117 @@
-# TDD Cycle (JUnit 5 + MockK, Kotlin)
+# TDD (Test-Driven Development)
 
-## RED → GREEN → REFACTOR
+## Core Cycle — Red → Green → Refactor (Kent Beck, "Test Driven Development: By Example", 2002)
 
-### RED: Write a Failing Test First
+```
+RED    → Write a failing test that describes the next behaviour
+GREEN  → Write the simplest code that makes the test pass
+REFACTOR → Remove duplication; improve design without breaking tests
+```
+
+**Invariant**: never write production code without a failing test first.
+**Invariant**: never refactor while a test is red.
+
 ```kotlin
+// RED — test that does not compile yet
 @Test
-fun `should have PENDING status when creating an order`() {
-    // given
-    val items = OrderItems(listOf(Item(Money(1000))))
+fun `should calculate total price of order items`() {
+    val items = OrderItems(listOf(Item(Money(1000)), Item(Money(2000))))
+    assertThat(items.totalPrice()).isEqualTo(Money(3000))
+}
+// → run ./gradlew test → confirm FAIL or compile error
 
-    // when
-    val order = Order.create(items)
+// GREEN — minimal production code
+class OrderItems(private val items: List<Item>) {
+    fun totalPrice() = items.map { it.price }.reduce(Money::plus)
+}
+// → run ./gradlew test → confirm PASS
 
-    // then
-    assertThat(order.status).isEqualTo(OrderStatus.PENDING)
+// REFACTOR — consider duplication, naming, Object Calisthenics
+// → run ./gradlew test → confirm still PASS
+```
+
+---
+
+## FIRST Principles (Brett L. Schuchert; popularised by Robert C. Martin)
+
+| Letter | Property | Meaning |
+|---|---|---|
+| F | **Fast** | Tests run in milliseconds; slow tests are skipped |
+| I | **Isolated** | Each test is independent; order does not matter |
+| R | **Repeatable** | Same result on every machine, every run |
+| S | **Self-validating** | Pass or fail — no manual inspection needed |
+| T | **Timely** | Written just before the production code they test |
+
+---
+
+## Test Pyramid (Mike Cohn, "Succeeding with Agile", 2009)
+
+```
+        /\
+       /E2E\          few — slow, brittle, expensive
+      /------\
+     /Integr. \       moderate — DB, HTTP, Kafka
+    /----------\
+   /   Unit     \     many — fast, isolated, cheap
+  /______________\
+```
+
+- **Unit tests**: single class or function in isolation; mocked dependencies.
+- **Integration tests**: multiple real components (DB, message broker, HTTP).
+- **E2E tests**: full system through the UI or public API.
+
+Target ratio: ≈ 70 % unit / 20 % integration / 10 % E2E.
+
+---
+
+## Test Doubles Taxonomy (Gerard Meszaros, "xUnit Test Patterns", 2007)
+
+| Type | Purpose | MockK API |
+|---|---|---|
+| **Dummy** | Passed but never used | `mockk(relaxed = true)` |
+| **Stub** | Returns fixed values | `every { … } returns …` |
+| **Spy** | Real object; verifies calls | `spyk(RealImpl())` |
+| **Mock** | Pre-programmed expectations | `mockk()` + `verify { … }` |
+| **Fake** | Lightweight real implementation | `InMemoryOrderRepository` |
+
+```kotlin
+// Stub — control what the collaborator returns
+@Test
+fun `should apply seasonal discount from pricing service`() {
+    val pricingService = mockk<PricingService>()
+    every { pricingService.discountRate(any()) } returns 0.1
+
+    val service = OrderService(pricingService)
+    assertThat(service.finalPrice(order)).isEqualTo(Money(900))
+}
+
+// Mock — verify an interaction occurred
+@Test
+fun `should save order after placement`() {
+    val repo = mockk<OrderRepository>()
+    every { repo.save(any()) } just Runs
+
+    OrderService(repo).place(order)
+
+    verify(exactly = 1) { repo.save(order) }
+}
+
+// Fake — in-memory implementation; no framework needed
+class InMemoryOrderRepository : OrderRepository {
+    private val store = mutableMapOf<OrderId, Order>()
+    override fun save(order: Order) { store[order.id] = order }
+    override fun findById(id: OrderId) = store[id]
 }
 ```
 
-→ Run `./gradlew test` → Confirm compilation error or FAIL status before proceeding.
+**Guideline**: prefer Fakes for persistence layers; use Mocks sparingly and
+only to verify a side-effect that is the **sole purpose** of the test.
+(Reference: Martin Fowler, "Mocks Aren't Stubs", martinfowler.com, 2004)
 
-### GREEN: Minimal Implementation
-Write the simplest possible code that compiles and passes the test.  
-Avoid excessive abstraction.
+---
 
-→ Run `./gradlew test` → Confirm PASS status before proceeding.
+## MockK — JUnit 5 Integration (Kotlin)
 
-### REFACTOR: Review Design Principles
-- Remove duplication
-- Check for Object Calisthenics violations
-- Check for Tell Don't Ask violations
-- Improve naming to be more meaningful
-
-→ Run `./gradlew test` → Confirm PASS status is maintained after refactoring.
-
-## MockK Usage Pattern
 ```kotlin
 @ExtendWith(MockKExtension::class)
 class OrderServiceTest {
@@ -59,18 +137,124 @@ class OrderServiceTest {
 }
 ```
 
-## Test Naming Convention
-- Use backtick naming style: `` `should [result] when [condition]` ``
-- `given / when / then` comments are mandatory
+---
 
-## Test Execution Commands
+## AssertJ Assertion Patterns (AssertJ docs)
+
+```kotlin
+// Basic equality
+assertThat(result).isEqualTo(expected)
+assertThat(result).isNotEqualTo(other)
+
+// Null / presence
+assertThat(result).isNotNull()
+assertThat(optional).isPresent().get().isEqualTo(value)
+
+// Collections
+assertThat(list).hasSize(3)
+assertThat(list).containsExactlyInAnyOrder(a, b, c)
+assertThat(list).allMatch { it.isValid() }
+assertThat(list).noneMatch { it.isDeleted() }
+
+// Exception assertion
+assertThatThrownBy { service.place(invalidOrder) }
+    .isInstanceOf(IllegalArgumentException::class.java)
+    .hasMessageContaining("invalid")
+
+// Soft assertions — collect all failures
+assertSoftly { s ->
+    s.assertThat(order.status).isEqualTo(OrderStatus.PAID)
+    s.assertThat(order.total).isEqualTo(Money(3000))
+}
+```
+
+---
+
+## Parameterized Tests (JUnit 5)
+
+```kotlin
+@ParameterizedTest
+@MethodSource("discountScenarios")
+fun `should apply correct discount for each tier`(
+    tier: Tier, price: Money, expected: Money
+) {
+    assertThat(discountPolicy(tier).apply(price)).isEqualTo(expected)
+}
+
+companion object {
+    @JvmStatic
+    fun discountScenarios() = Stream.of(
+        Arguments.of(Tier.BRONZE, Money(1000), Money(1000)),
+        Arguments.of(Tier.SILVER, Money(1000), Money(900)),
+        Arguments.of(Tier.GOLD,   Money(1000), Money(800)),
+    )
+}
+```
+
+---
+
+## Test Naming Convention
+
+```kotlin
+// Pattern: `should [expected result] when [condition]`
+@Test fun `should have PENDING status when order is first created`() { }
+@Test fun `should throw IllegalArgumentException when items list is empty`() { }
+@Test fun `should return zero total when no items are present`() { }
+```
+
+`given / when / then` comments are mandatory in every test body.
+
+---
+
+## Transformation Priority Premise (Robert C. Martin, "8thlight.com blog", 2013)
+
+When choosing the simplest GREEN implementation, prefer higher-priority
+transformations over lower-priority ones:
+
+| Priority | Transformation |
+|---|---|
+| 1 (highest) | `{}` → `nil` (return nothing) |
+| 2 | `nil` → constant |
+| 3 | constant → variable |
+| 4 | unconditional → conditional (`if`) |
+| 5 | scalar → array / collection |
+| 6 | statement → recursion |
+| 7 (lowest) | `if` → `while` / iteration |
+
+Choosing a lower-priority transformation when a higher one suffices produces
+harder-to-understand code and may hide design problems.
+
+---
+
+## Test Execution Commands (Gradle / Kotlin)
+
 ```bash
 # Run all tests
 ./gradlew test
 
 # Run a specific test class
-./gradlew test --tests "com.example.domain.order.OrderTest"
+./gradlew test --tests "com.example.domain.order.OrderServiceTest"
 
-# Print detailed test results
+# Run a specific test method
+./gradlew test --tests "com.example.domain.order.OrderServiceTest.should save order after placement"
+
+# Verbose output
 ./gradlew test --info
+
+# Continuous test runner
+./gradlew test --continuous
 ```
+
+---
+
+## Spring Boot Testing Annotations (reference only)
+
+| Annotation | Slice loaded | Use for |
+|---|---|---|
+| `@SpringBootTest` | Full application context | E2E / integration |
+| `@WebMvcTest` | Web layer only | Controller unit tests |
+| `@DataJpaTest` | JPA + embedded DB | Repository tests |
+| `@MockBean` | Spring-managed mock | Replace beans in slice tests |
+
+For domain logic (entities, services, value objects) prefer plain JUnit 5 +
+MockK — no Spring context needed, orders of magnitude faster.
