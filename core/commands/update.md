@@ -788,6 +788,47 @@ live session, which is harder to recover from.
 the next `crew:update`, supported inject-intent phrases route
 autonomously without any operator action.
 
+### Phase L15 — Output language rule
+
+Adds the explicit counterpart to the long-standing Korean Input
+Normalization rule (`core/rules/korean-input.md`). User-facing output
+now has a documented contract: it should match the user's input
+language (Claude does this naturally), while structured status tokens
+remain English as a parser invariant.
+
+**No migration code required.** Pure documentation:
+
+- New file `core/rules/output-language.md` codifies the input/output
+  language split, lists the English-only status invariant
+  (`STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`, `BLOCKER:`, etc.),
+  and notes the specialist-agent exception (e.g., `learning-mentor`).
+- `core/global-agents.md` gains an Output Language section that
+  pairs the two rules.
+- `core/agents/supervisor.md` Absolute Rules adds the English-only
+  status keyword invariant — explicit so localized status tokens
+  don't silently misparse into the crash-retry path.
+- `core/hooks/agent-diff-post.sh` header comment translated to
+  English for parity with peer hooks.
+- `README.md` Key Features gains a "Bilingual input + localized
+  output" bullet.
+
+**No new capability flag.** Output language is host-agnostic and
+follows the AI's natural response language.
+
+**No `settings.json` changes.** No hook is registered.
+
+**Why an invariant on status keywords?** The supervisor's
+stage-result parser uses regex against literal English tokens. If an
+agent localizes the keyword (`상태: 완료` instead of
+`STATUS: completed`), the parser classifies the response as a crash
+and burns the Stage Retry Rule budget. The fix is to document the
+expectation, not to teach the parser every language's keyword
+variants.
+
+**Update steps.** The standard category sync in § Execution copies
+`core/rules/` so the new file installs automatically. No `crew:setup`
+re-run required.
+
 ## Completion Message
 
 ```text

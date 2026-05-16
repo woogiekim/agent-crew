@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# PostToolUse[Agent]: Agent 완료 후 변경사항 표시
+# PostToolUse[Agent]: emit a diff summary of repo changes after an Agent call
+# completes. Header text is English so the diff display is consistent across
+# adapters; agent narrative localization is governed by core/rules/output-language.md.
 
 INPUT=$(cat)
 TOOL=$(python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null <<< "$INPUT" || echo "")

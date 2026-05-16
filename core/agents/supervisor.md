@@ -202,3 +202,11 @@ Cross-references resolve semantically; no link-style markup is used.
   treat it as a crash and apply the Stage Retry Rule (up to 5 crash attempts). Only
   after 5 consecutive crash failures may the supervisor halt with `STATUS: blocked`.
   A supervisor that silently stops without writing `result.md` violates this rule.
+- **English-only status keywords** — the stage-result parser is regex-based and
+  matches English literals: `STATUS: completed`, `STATUS: blocked`,
+  `STATUS: plan_ready`, `REVIEW: APPROVED`, `REVIEW: NEEDS_CHANGES`, `PLAN:`,
+  `BLOCKER:`. Stage agents MUST emit these tokens verbatim in English regardless
+  of the user's input language. The surrounding narrative may localize (per
+  `core/rules/output-language.md`); the tokens themselves are invariant. A
+  localized status (`상태: 완료`, `상태: 차단됨`) is silently misparsed as
+  a crash and triggers the Stage Retry Rule.
