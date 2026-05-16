@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "task_id": "bench-mock-BC-tdd-plus-fanout",
+  "stages": [
+    {
+      "agents": ["backend"],
+      "tdd_parallel": true,
+      "parallelizable_units": [
+        {
+          "id": "u1",
+          "brief": "Implement POST /orders endpoint (create order).",
+          "files": ["app/api/orders_create.py"]
+        },
+        {
+          "id": "u2",
+          "brief": "Implement GET /orders/:id endpoint (fetch single order).",
+          "files": ["app/api/orders_get.py"]
+        },
+        {
+          "id": "u3",
+          "brief": "Implement PATCH /orders/:id endpoint (partial update).",
+          "files": ["app/api/orders_update.py"]
+        }
+      ]
+    }
+  ],
+  "needs_creation": [],
+  "completed_stages": 0,
+  "stage_agent_status": {},
+  "_bench_note": "Combined-mode probe — TDD parallel AND fan-out on the same stage. Documented for completeness; planner is steered toward at most one of the two flags per stage in MVP. Expected Phase 2 spawn count = 1 test-writer + N implementer units = 4."
+}

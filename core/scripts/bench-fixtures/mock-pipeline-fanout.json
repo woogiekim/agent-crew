@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "task_id": "bench-mock-C-fanout",
+  "stages": [
+    {
+      "agents": ["backend"],
+      "parallelizable_units": [
+        {
+          "id": "u1",
+          "brief": "Implement POST /orders endpoint (create order).",
+          "files": ["app/api/orders_create.py"]
+        },
+        {
+          "id": "u2",
+          "brief": "Implement GET /orders/:id endpoint (fetch single order).",
+          "files": ["app/api/orders_get.py"]
+        },
+        {
+          "id": "u3",
+          "brief": "Implement PATCH /orders/:id endpoint (partial update).",
+          "files": ["app/api/orders_update.py"]
+        }
+      ]
+    }
+  ],
+  "needs_creation": [],
+  "completed_stages": 0,
+  "stage_agent_status": {},
+  "_bench_note": "Variant C — sub-task fan-out. Three backend agents spawned in parallel, one per unit. Expected Phase 2 spawn count = 3."
+}
