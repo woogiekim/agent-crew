@@ -110,6 +110,63 @@ BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
 host task id is absent, every "no STATUS line" outcome is classified as a
 crash — identical to pre-P7 behavior.
 
+### Stage Timeout (Phase I11)
+
+Before each stage spawn AND before each retry inside the loop above,
+the supervisor checks elapsed wall-clock time for the current stage
+against `STAGE_TIMEOUT_SECONDS` (resolved once in Phase 0 from
+`AGENT_CREW_STAGE_TIMEOUT_SECONDS`).
+
+The check is **gated on `STAGE_TIMEOUT_SECONDS != 0`**. When the env
+var is unset or zero, this subsection is a no-op — the retry loop
+above runs unchanged and pre-I11 pipelines see identical behavior.
+
+When `STAGE_TIMEOUT_SECONDS != 0`, run the following block
+**immediately before every `invoke agent` call** — once at the top of
+the retry loop (covers the initial spawn) and inside both the
+`token_truncation` resume branch and the `crash_attempts` retry
+branch:
+
+```bash
+if [ "${STAGE_TIMEOUT_SECONDS}" != "0" ]; then
+  STAGE_ELAPSED=$(( $(date +%s) - ${STAGE_START_EPOCH:-$(date +%s)} ))
+  if [ "${STAGE_ELAPSED}" -gt "${STAGE_TIMEOUT_SECONDS}" ]; then
+    log_progress "STAGE_TIMEOUT" \
+      "stage ${STAGE_INDEX:-?} (${STAGE_AGENT:-?}) elapsed=${STAGE_ELAPSED}s > budget=${STAGE_TIMEOUT_SECONDS}s"
+    register_update current_phase blocked
+    register_update blocked_by --json '["stage_timeout"]'
+    cat > "${TASK_DIR}/result.md" <<EOF
+# {TASK}
+
+STATUS: blocked
+BLOCKER: stage_timeout
+DETAIL: Stage ${STAGE_INDEX:-?} (${STAGE_AGENT:-?}) exceeded the per-stage
+        wall-clock budget. elapsed=${STAGE_ELAPSED}s budget=${STAGE_TIMEOUT_SECONDS}s.
+        Re-run with AGENT_CREW_STAGE_TIMEOUT_SECONDS adjusted (or unset to
+        disable) if the work legitimately requires more time.
+EOF
+    # Skip BLOCKED Recovery — timeouts indicate the operating budget
+    # is wrong, not the approach. Run Phase 3 close-out and return
+    # STATUS: blocked to the orchestrator.
+    return STATUS: blocked
+  fi
+fi
+```
+
+The hard stop **skips BLOCKED Recovery** for the same reason cost
+overruns do (see § Cost Circuit Breaker below) — exhaustion of the
+operating budget is not a failure of approach. The operator's correct
+response is to escalate: raise `AGENT_CREW_STAGE_TIMEOUT_SECONDS`,
+simplify the request, decompose the stage, or abort.
+
+`log_progress` is the helper introduced by `supervisor-bootstrap.md`
+Phase 0; `register_update` writes the terminal phase + blocker label
+to `register.json` so external tooling can detect timeout without
+parsing `result.md`. `STAGE_START_EPOCH` is set per stage in
+`supervisor-stages.md` Phase 2 (see the loop variable convention
+block); when absent (defensive default), the check measures from
+"now" and never fires.
+
 ### Cost Circuit Breaker
 
 Before each stage spawn AND before each retry inside the loop above,

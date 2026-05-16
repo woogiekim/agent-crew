@@ -38,13 +38,17 @@ structured buffer's `stage`, `agent`, and `attempt` fields:
 STAGE_INDEX="${i}"          # 1-based stage index (matches existing {i} placeholder)
 STAGE_AGENT="${agent_name}" # currently-running stage agent's name
 RETRY_ATTEMPT=1             # reset per stage; Stage Retry Rule bumps it per retry
+STAGE_START_EPOCH="$(date +%s)"  # Phase I11 — stage-timeout reference point
 ```
 
 For parallel stages (`### Parallel Agents` below), set `STAGE_AGENT` per
 inner-loop iteration so each parallel agent's emits carry the correct
-agent name. At the end of the stage iteration (after `STAGE_DONE`),
-`unset STAGE_INDEX STAGE_AGENT RETRY_ATTEMPT` so subsequent Phase 2.5 and
-Phase 3 events emit with `stage=0`, `agent=""`, `attempt=0`.
+agent name. `STAGE_START_EPOCH` is set ONCE per stage (not per parallel
+agent) so the timeout budget applies to the slowest agent in the stage,
+not to each parallel agent individually. At the end of the stage
+iteration (after `STAGE_DONE`), `unset STAGE_INDEX STAGE_AGENT
+RETRY_ATTEMPT STAGE_START_EPOCH` so subsequent Phase 2.5 and Phase 3
+events emit with `stage=0`, `agent=""`, `attempt=0`.
 
 #### Quality Loop Rule (resolved once in Phase 0, reused here)
 

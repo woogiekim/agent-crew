@@ -687,6 +687,56 @@ file. No new directories under `${STATE_DIR}`.
 compat alias. The new `crew:telemetry` slash command is discoverable
 immediately after the next refresh.
 
+### Phase I11 — Per-stage wall-clock timeout (opt-in)
+
+The supervisor's Stage Retry Rule now consults a per-stage wall-clock
+budget read from `AGENT_CREW_STAGE_TIMEOUT_SECONDS`. When the env var
+is unset or `0` (the default), behavior is identical to pre-I11. When
+set to a positive integer, the supervisor halts with
+`STATUS: blocked` + `BLOCKER: stage_timeout` if any single stage
+(including all its retries) exceeds the budget.
+
+**No migration code required.** Pure additive:
+
+- `supervisor-bootstrap.md` Phase 0 resolves `STAGE_TIMEOUT_SECONDS`
+  from the env var; `0` is the absence-tolerant default.
+- `supervisor-stages.md` Phase 2 stage loop records
+  `STAGE_START_EPOCH` once per stage (not per parallel agent — the
+  budget applies to the slowest agent in the stage).
+- `supervisor-retry.md` Stage Retry Rule runs a timeout check before
+  every invoke-agent call, mirroring the Cost Circuit Breaker
+  pattern. Hard stop skips BLOCKED Recovery for the same reason cost
+  overruns do (escalation, not retry, is the correct response).
+- `supervisor.md` Event catalog gains `STAGE_TIMEOUT` so
+  `progress.buffer.jsonl` and `crew:status` surface the event.
+- `register.json.blocked_by` records `["stage_timeout"]` for
+  programmatic detection without parsing `result.md`.
+
+**No new capability flag.** Stage timeout is host-agnostic. Adapters
+do nothing.
+
+**No `settings.json` changes.** No hook is added.
+
+**Recommended values.**
+
+- `AGENT_CREW_STAGE_TIMEOUT_SECONDS=1800` (30 min): conservative
+  default for most projects; catches genuinely hung stages without
+  false-positives on long legitimate work.
+- `AGENT_CREW_STAGE_TIMEOUT_SECONDS=3600` (60 min): for projects
+  with heavy analysis or large refactors.
+- Unset or `0`: disabled — recommended for one-off / exploratory
+  runs where the operator is watching live.
+
+**Interaction with the cost circuit breaker.** Both run at the same
+checkpoint (before every invoke-agent call). If both budgets are
+exceeded in the same iteration, the cost breaker fires first and
+`blocked_by` records `["cost_budget_exceeded"]`. To record both,
+extend the env vars and let the natural order play out.
+
+**Update steps.** No category changes — all edits land in existing
+files. After `crew:update` picks up the new supervisor sub-modules,
+set the env var to opt in.
+
 ## Completion Message
 
 ```text

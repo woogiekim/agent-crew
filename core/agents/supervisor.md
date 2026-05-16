@@ -111,6 +111,7 @@ if it does not exist.
 | `HANDOFF_PAGEOUT_FAILED` | Documenter page-out returns `STATUS: BLOCKED` or crashes (Phase 3.5) | `{blocker reason}` |
 | `HANDOFF_PAGEOUT_SKIPPED` | Page-out skipped because cost breaker is exhausted (Phase 3.5) | `reason=cost_exceeded` |
 | `STATE_WARN` | F4 validator returned rc=1 (soft warnings) or rc≥3 (validator unavailable / unexpected) at Phase 0 | `schema validator warnings (rc={n})` |
+| `STAGE_TIMEOUT` | Phase I11 stage wall-clock budget exceeded (`AGENT_CREW_STAGE_TIMEOUT_SECONDS`) | `stage {i} ({agent}) elapsed={n}s > budget={m}s` |
 
 ### Parallel run prefix rule
 

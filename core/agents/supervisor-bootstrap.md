@@ -75,6 +75,27 @@ check the relevant flag and fall back to the
 file-based primary (`progress.log`, `approval.md`, `pipeline.json`) when the
 flag is `0`.
 
+### Stage timeout budget (Phase I11)
+
+Read the per-stage wall-clock budget from the environment. Absence (or
+zero) means the timeout is disabled and the supervisor behaves exactly
+as it did before Phase I11. When set, the value is the maximum number
+of seconds a single stage iteration (including all retries) may run
+before the supervisor halts with `BLOCKER: stage_timeout`.
+
+```bash
+STAGE_TIMEOUT_SECONDS="${AGENT_CREW_STAGE_TIMEOUT_SECONDS:-0}"
+case "${STAGE_TIMEOUT_SECONDS}" in
+  ''|*[!0-9]*) STAGE_TIMEOUT_SECONDS=0 ;;  # ignore non-integer
+esac
+```
+
+`STAGE_TIMEOUT_SECONDS == 0` is the absence-tolerant default: the Stage
+Retry Rule's timeout check (see `supervisor-retry.md` § Stage Timeout)
+becomes a no-op and existing pipelines run unchanged. Recommended
+value when enabling: `1800` (30 minutes per stage), which matches
+typical agent invocation costs without false-positive timeouts.
+
 If `HAS_TASK_TOOLS == 1`, the supervisor registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
 
@@ -173,7 +194,7 @@ log_progress() {
     STARTED)                                            _status="started" ;;
     PHASE|STAGE)                                        _status="in_progress" ;;
     STAGE_DONE|COMPLETED|HANDOFF_PAGEDOUT)              _status="completed" ;;
-    BLOCKED|COST_BLOCKED|HANDOFF_PAGEOUT_FAILED)        _status="failed" ;;
+    BLOCKED|COST_BLOCKED|STAGE_TIMEOUT|HANDOFF_PAGEOUT_FAILED) _status="failed" ;;
     RETRY)                                              _status="retry" ;;
     HANDOFF_PAGEOUT_SKIPPED)                            _status="skipped" ;;
     COST_WARN|HANDOFF_PAGEOUT|STATE_WARN)               _status="warn" ;;
