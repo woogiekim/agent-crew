@@ -37,9 +37,14 @@ Input: boolean flag + task identifier. Output: text lines (string).
 
 ## Absence Behavior (flag=false)
 
-`crew:status` uses `tail -20 progress.log` (the legacy event stream).
-The file-based path is always written by the supervisor, so the
-fallback is always safe; nothing breaks when this flag is false.
+`crew:status` renders the last 20 events from
+`${TASK_DIR}/progress.buffer.jsonl` (Phase F5 — structured JSONL, one
+JSON object per line; see
+`core/rules/state-files/progress-buffer-jsonl.md`). When the buffer is
+absent (pre-F5 task directory), `crew:status` falls back to
+`tail -20 progress.log`. Both files are written by the supervisor's
+`log_progress` helper on every event, so the fallback path is always
+safe; nothing breaks when this flag is false.
 
 ## Adapter Examples
 

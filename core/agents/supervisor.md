@@ -130,6 +130,11 @@ from concurrent runners remain distinguishable:
 - `PROJECT_ROOT`: Execution root for this task
 - `BRANCH`: Working branch name (follows `core/rules/branch-naming.md`)
 - `EXECUTION_MODE`: `single` or `parallel`
+- `SESSION_ID` _(optional, Phase F5)_: orchestrator-generated session
+  timestamp. When omitted (single-task path), Phase 0 derives it from
+  `TASK_ID` by stripping the `-N` suffix. Used as the first segment of
+  `trace_id` in `progress.buffer.jsonl` — see
+  `core/rules/state-files/progress-buffer-jsonl.md`.
 - `REQUIREMENTS` _(optional)_: Pre-collected requirements from the orchestrator, in the format:
   ```text
   scope: {scope answer}

@@ -476,6 +476,50 @@ state-file schema change and no installed-file removal. The new
 documenter `MODE=page-out` branch arrives via the standard agent-file
 sync (`merge_agents_to_discovery`).
 
+### Phase F5 — Structured progress event buffer
+
+The supervisor now writes every progress event to a structured JSONL
+buffer at `${STATE_DIR}/tasks/${TASK_ID}/progress.buffer.jsonl` in
+addition to the existing `progress.log` and stderr mirror. Schema:
+`core/rules/state-files/progress-buffer-jsonl.md`.
+
+**No migration code required.** Pure additive:
+
+- New per-task file `progress.buffer.jsonl` appears alongside the
+  existing `progress.log` for every task started after upgrading.
+  Older task directories without the JSONL file continue to render
+  via the legacy `tail -20 progress.log` fallback in `crew:status` —
+  no retroactive write.
+- No env var or feature toggle: the dual-write is always on. Both
+  files are written from a single `log_progress` invocation in
+  `supervisor-bootstrap.md` Phase 0.
+- No `settings.json` changes.
+- No new capability flag. The existing `monitor_tool` flag continues
+  to gate host-streamed event consumption; F5 refines only the
+  file-based fallback path.
+
+**Storage impact.** The JSONL buffer is roughly the same size as
+`progress.log` per task (one structured line per event; ~250 bytes
+per row vs ~80 bytes for the legacy line). A typical short pipeline
+emits 20–40 events; a long pipeline with retries and page-outs may
+reach 200. Total per-task storage stays well below 100 KB even in
+the worst case.
+
+**Trace correlation.** Each row carries a `trace_id` of the form
+`{SESSION_ID}.{TASK_ID}.{STAGE_INDEX}.{RETRY_ATTEMPT}` so events
+from the same attempt correlate, and events from different retries
+of the same stage are distinguishable. See the schema doc for the
+full field catalog.
+
+**Consumer rollout.** `crew:status` Step 5 automatically prefers the
+JSONL buffer when present. No user action required.
+
+**Orchestrator-side change.** `crew:run` now passes `SESSION_ID` to
+the supervisor via the input block (previously absent for single-task
+runs). The supervisor falls back to deriving `SESSION_ID` from
+`TASK_ID` if the orchestrator omits it — old-style spawn paths remain
+functional.
+
 ## Completion Message
 
 ```text

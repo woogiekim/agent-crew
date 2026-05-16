@@ -23,6 +23,23 @@ Skip stages already included in `completed_stages`.
 and let Phase 2.5 handle the devops stage exclusively. This ensures the
 approval gate in Phase 2.5 is always reached before devops runs.
 
+**Phase F5 — Loop variable convention.** At the top of each stage iteration
+(both single and parallel), set the supervisor-local variables that the
+`log_progress` helper consults via `${VAR:-default}` to populate the
+structured buffer's `stage`, `agent`, and `attempt` fields:
+
+```bash
+STAGE_INDEX="${i}"          # 1-based stage index (matches existing {i} placeholder)
+STAGE_AGENT="${agent_name}" # currently-running stage agent's name
+RETRY_ATTEMPT=1             # reset per stage; Stage Retry Rule bumps it per retry
+```
+
+For parallel stages (`### Parallel Agents` below), set `STAGE_AGENT` per
+inner-loop iteration so each parallel agent's emits carry the correct
+agent name. At the end of the stage iteration (after `STAGE_DONE`),
+`unset STAGE_INDEX STAGE_AGENT RETRY_ATTEMPT` so subsequent Phase 2.5 and
+Phase 3 events emit with `stage=0`, `agent=""`, `attempt=0`.
+
 #### Quality Loop Rule (resolved once in Phase 0, reused here)
 
 `QUALITY_RULE_PATH` was already resolved in Phase 0. Use the variable as-is.

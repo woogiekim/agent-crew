@@ -14,20 +14,10 @@
 
 ### Phase 0: Resume Check + Context Bootstrap
 
-Emit before any other work:
-
-```
-[crew] {TASK_ID} | STARTED | {TASK truncated to 60 chars}
-```
-
-Then append to the progress log (created here for the first time):
-
-```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STARTED | {TASK truncated to 60 chars}" >> "${TASK_DIR}/progress.log"
-```
-
 **Read-once context bootstrap**: Resolve all runtime paths once at startup and
 store them as variables. Do not re-read or re-resolve these paths in later phases.
+This block runs FIRST so the `log_progress` helper (defined below) can access
+`TASK_DIR`, `SESSION_ID`, etc. when the first canonical `STARTED` event fires.
 
 ```bash
 # Resolve paths once — reuse these variables throughout all phases
@@ -37,12 +27,20 @@ PIPELINE_PATH="${TASK_DIR}/pipeline.json"
 HANDOFF_PATH="${TASK_DIR}/handoff.md"
 PRD_PATH="${TASK_DIR}/context/prd.md"
 PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-CAPABILITIES_PATH="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json"
+STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
+
+# Phase F5: derive SESSION_ID for the structured progress buffer's trace_id.
+# Parallel runs receive SESSION_ID as a supervisor input; single-task runs
+# fall through to stripping the `-N` suffix from TASK_ID (orchestrator-spawned
+# tasks always have TASK_ID = "{session_ts}-{idx}"). Ad-hoc manual invocations
+# with no `-` suffix collapse SESSION_ID to TASK_ID (acceptable fallback).
+SESSION_ID="${SESSION_ID:-${TASK_ID%-*}}"
 ```
 
-These five variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
-`PRD_PATH`, `CAPABILITIES_PATH`) must be passed as-is to all sub-agents. Never
-re-derive them inline.
+These six variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
+`PRD_PATH`, `CAPABILITIES_PATH`, `STATE_DIR`) plus `SESSION_ID` must be
+passed as-is to all sub-agents. Never re-derive them inline.
 
 **Host capability bootstrap**: Read host capabilities (registry:
 `core/rules/host-capabilities.md`; per-flag detail under
@@ -132,31 +130,100 @@ If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
 `TaskUpdate` call. The file-based pipeline state remains the single source of
 truth in both modes. **Never call `TaskCreate` outside this gated block.**
 
-### Progress Mirroring to Stderr (host-agnostic)
+### Progress Mirroring (host-agnostic, three sinks)
 
-In addition to the file-based progress log, every progress event MUST also be
-written to `stderr`. Hosts that surface stderr (Claude Code's `TaskOutput`,
-plain terminals) will see the same stream of events without any host-specific
-plumbing. This is independent of `task_tools` — it always runs.
+Every progress event MUST be written to **three sinks** in a single helper
+invocation:
 
-Use the helper pattern below in place of every `echo … >> progress.log` line in
-this document. Reading the file path (`progress.log`) and printing to stderr
-are paired so a single line in the doc maps to a single emit at runtime:
+1. `${TASK_DIR}/progress.log` — human-readable single-line log (append).
+2. `stderr` — host-surface mirror (Claude Code's `TaskOutput`, plain
+   terminals) with `[crew]` prefix. Independent of `task_tools` — always
+   runs.
+3. `${TASK_DIR}/progress.buffer.jsonl` — structured event buffer (one
+   JSON object per line, Phase F5). Schema documented at
+   `core/rules/state-files/progress-buffer-jsonl.md`. Consumed by
+   `crew:status` Step 5 (preferred over `progress.log` when present).
 
 ```bash
 log_progress() {
-  local line="$(date -u +%Y-%m-%dT%H:%M:%S) | $1 | $2"
+  local event="$1"
+  local detail="$2"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # Sink 1: human-readable progress.log
+  local line="${ts} | ${event} | ${detail}"
   echo "${line}" >> "${TASK_DIR}/progress.log"
+
+  # Sink 2: stderr mirror
   echo "[crew] ${line}" >&2
+
+  # Sink 3 (Phase F5): structured JSONL buffer.
+  # Supervisor-local context with safe defaults so the helper never
+  # crashes during Phase 0 / Phase 3 (when stage vars are unset).
+  local _stage="${STAGE_INDEX:-0}"
+  local _agent="${STAGE_AGENT:-}"
+  local _attempt="${RETRY_ATTEMPT:-0}"
+  local _session="${SESSION_ID:-${TASK_ID}}"
+  local _trace="${_session}.${TASK_ID}.${_stage}.${_attempt}"
+
+  # Event → status lookup (consumer-friendly default).
+  local _status
+  case "${event}" in
+    STARTED)                                            _status="started" ;;
+    PHASE|STAGE)                                        _status="in_progress" ;;
+    STAGE_DONE|COMPLETED|HANDOFF_PAGEDOUT)              _status="completed" ;;
+    BLOCKED|COST_BLOCKED|HANDOFF_PAGEOUT_FAILED)        _status="failed" ;;
+    RETRY)                                              _status="retry" ;;
+    HANDOFF_PAGEOUT_SKIPPED)                            _status="skipped" ;;
+    COST_WARN|HANDOFF_PAGEOUT)                          _status="warn" ;;
+    *)                                                  _status="unknown" ;;
+  esac
+
+  # JSON-encode via Python heredoc — `detail` may contain quotes,
+  # backticks, em-dashes, Unicode. Shell string concatenation for JSON
+  # is forbidden (same convention as core/hooks/cost-tracker.sh).
+  python3 - "${TASK_DIR}/progress.buffer.jsonl" \
+            "${ts}" "${_trace}" "${TASK_ID}" "${_session}" \
+            "${event}" "${_stage}" "${_agent}" "${_attempt}" \
+            "${_status}" "${detail}" <<'PYEOF' 2>/dev/null || true
+import json, sys
+(path, ts, trace_id, task_id, session_id, event,
+ stage, agent, attempt, status, detail) = sys.argv[1:12]
+row = {
+    "ts":         ts,
+    "trace_id":   trace_id,
+    "task_id":    task_id,
+    "session_id": session_id,
+    "event":      event,
+    "stage":      int(stage) if stage.lstrip("-").isdigit() else 0,
+    "agent":      agent,
+    "attempt":    int(attempt) if attempt.lstrip("-").isdigit() else 0,
+    "status":     status,
+    "detail":     detail,
+    "files":      [],
+}
+with open(path, "a", encoding="utf-8") as f:
+    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+PYEOF
 }
 # Usage: log_progress "PHASE" "1b — Analysis + Planning (merged)"
 ```
 
-Every example in the rest of this document that appears as
-`echo "... | EVENT | detail" >> "${TASK_DIR}/progress.log"` is equivalent to
-calling `log_progress "EVENT" "detail"`. Both writes happen on every event.
-Stdout remains reserved for the orchestrator's final return value — never write
-progress events to stdout.
+Every progress-event emit in the rest of this module (and in
+`supervisor-stages.md`, `supervisor-retry.md`) is a `log_progress` call —
+all three sinks fire. Where an inline `echo … >> "${TASK_DIR}/progress.log"`
+block appears as documentation shorthand in older sections, the runtime
+call is still `log_progress`. Stdout remains reserved for the
+orchestrator's final return value — never write progress events to stdout.
+
+**Emit the canonical `STARTED` event** as the first action after the helper
+is defined. This is the first event of the task — both `progress.log` and
+`progress.buffer.jsonl` are created on this call:
+
+```bash
+log_progress "STARTED" "{TASK truncated to 60 chars}"
+```
 
 **Resume check**: If `PIPELINE_PATH` already exists, resume from that state
 instead of creating a new plan from scratch.

@@ -1453,6 +1453,7 @@ TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {execution root for this task}
 BRANCH: {BRANCH}
 EXECUTION_MODE: single or parallel
+SESSION_ID: {SESSION_ID}
 REQUIREMENTS: |
   scope: {scope answer}
   target: {target answer}

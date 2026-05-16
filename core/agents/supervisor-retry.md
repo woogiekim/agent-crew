@@ -59,6 +59,11 @@ from a true crash on this path, so the full 5-retry budget applies uniformly.
 Retry logic per agent:
 
 ```
+# Phase F5: RETRY_ATTEMPT is set at the top of the Phase 2 stage loop
+# (supervisor-stages.md). The Stage Retry Rule below bumps it on each
+# retry path so log_progress emits carry the correct attempt index in
+# the structured buffer (trace_id's 4th segment).
+RETRY_ATTEMPT = 1
 crash_attempts = 0
 token_limit_resumes_used = 0
 while crash_attempts <= 5:
@@ -83,12 +88,16 @@ while crash_attempts <= 5:
 
         if classification == "token_truncation" AND token_limit_resumes_used < 1:
             token_limit_resumes_used += 1
+            RETRY_ATTEMPT += 1
+            log_progress "RETRY" "attempt {RETRY_ATTEMPT} — token_truncation resume"
             re-invoke agent with resume hint:
               "Resume from: {TASK_DIR}/context/stage_{i}_progress.md if present,
                else from {TASK_DIR}/progress.log tail. Continue prior work."
             continue  # do not increment crash_attempts
         else:
             crash_attempts += 1
+            RETRY_ATTEMPT += 1
+            log_progress "RETRY" "attempt {RETRY_ATTEMPT} — crash"
             if crash_attempts > 5:
                 write crash details to {TASK_DIR}/result.md
                 return STATUS: blocked (reason: agent crashed after 5 attempts)

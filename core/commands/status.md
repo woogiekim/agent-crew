@@ -557,7 +557,10 @@ unset _PY_OUT
 
 ### 5. Read recent progress events
 
-Resolve `RECENT_PROGRESS` using the preference matrix from Step 1b:
+Resolve `RECENT_PROGRESS` using the preference matrix from Step 1b. The
+file-based fallback path prefers the structured JSONL buffer
+(`progress.buffer.jsonl`, Phase F5) when present and falls back to
+`tail -20 progress.log` otherwise:
 
 ```text
 if HAS_MONITOR_TOOL == 1 AND TaskOutput is callable:
@@ -571,14 +574,63 @@ if HAS_MONITOR_TOOL == 1 AND TaskOutput is callable:
             | tail -20)
     else:
         # Parent host task id not recorded — fall back to file tail
-        RECENT_PROGRESS=$(tail -20 "${TASK_DIR}/progress.log" 2>/dev/null || echo "")
+        RECENT_PROGRESS=$(_render_local_recent_events "${TASK_DIR}")
 else:
-    # Legacy fallback: tail the canonical progress.log artifact.
-    PROGRESS_LOG="${TASK_DIR}/progress.log"
-    if [ -f "${PROGRESS_LOG}" ]:
-        RECENT_PROGRESS=$(tail -20 "${PROGRESS_LOG}" 2>/dev/null)
-    else:
-        RECENT_PROGRESS=""
+    # File-based fallback path.
+    RECENT_PROGRESS=$(_render_local_recent_events "${TASK_DIR}")
+```
+
+The `_render_local_recent_events` helper prefers the structured buffer
+when present (Phase F5), falling through to the legacy `progress.log`
+tail when only the older artifact exists (pre-F5 task directories):
+
+```bash
+_render_local_recent_events() {
+  local task_dir="$1"
+  local buffer="${task_dir}/progress.buffer.jsonl"
+  local legacy="${task_dir}/progress.log"
+
+  if [ -f "${buffer}" ] && [ -s "${buffer}" ]; then
+    # Phase F5 — render last 20 JSONL events as a compact table.
+    python3 - "${buffer}" <<'PYEOF' 2>/dev/null || tail -20 "${legacy}" 2>/dev/null
+import json, sys
+from collections import deque
+path = sys.argv[1]
+tail = deque(maxlen=20)
+skipped = 0
+with open(path, "r", encoding="utf-8", errors="replace") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            skipped += 1
+            continue
+        if not all(k in row for k in ("ts", "trace_id", "task_id", "event")):
+            skipped += 1
+            continue
+        tail.append(row)
+for row in tail:
+    ts      = row.get("ts", "")
+    event   = row.get("event", "")
+    stage   = row.get("stage", 0)
+    agent   = row.get("agent", "") or "-"
+    status  = row.get("status", "unknown")
+    detail  = row.get("detail", "")
+    print(f"  {ts} | {event:<24} | stage={stage} agent={agent:<12} "
+          f"status={status:<10} | {detail}")
+if skipped:
+    print(f"  (skipped {skipped} malformed line(s) in progress.buffer.jsonl)",
+          file=sys.stderr)
+PYEOF
+  elif [ -f "${legacy}" ]; then
+    # Pre-F5 task directory — legacy tail
+    tail -20 "${legacy}" 2>/dev/null
+  fi
+  # If neither exists, return empty (caller renders "(no progress log yet)")
+}
 ```
 
 When the `TaskOutput` call fails at runtime (tool not loaded, host returns an
