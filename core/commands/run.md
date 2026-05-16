@@ -722,17 +722,15 @@ current branch / HEAD only).
 ##### `status` — inline read-only summary
 
 ```bash
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Repo Status"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+echo "### 📊 Repo Status"
 echo
-echo "Working tree:"
+echo "**Branch:** $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+echo
+echo "**Working tree:**"
 git status --short 2>/dev/null | head -20
 echo
-echo "Recent commits:"
+echo "**Recent commits:**"
 git log --oneline -5 2>/dev/null
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ```
 
 Then **STOP — end the turn**. Do not proceed to Step 2.
@@ -773,18 +771,17 @@ Approval Rule. The flow is:
    because no stage agent is waiting on `approval.md`. Example:
 
    ```text
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    Fast-Path Action Plan
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Intent     : push
-   Command    : git push origin {BRANCH}
-   Risk       : medium
-   Reversible : no (remote receives commits)
+   ### ⚡ Fast-Path Action Plan
 
-   Current branch: {BRANCH}
-   Commits to publish:
+   - **Intent**: push
+   - **Command**: `git push origin {BRANCH}`
+   - **Risk**: medium
+   - **Reversible**: no (remote receives commits)
+
+   **Current branch**: {BRANCH}
+
+   **Commits to publish**:
      {git log --oneline @{u}..HEAD 2>/dev/null || git log --oneline -3}
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
 
 2. **Emit a structured user-choice intent** (per
@@ -1428,27 +1425,25 @@ After all N background supervisors are spawned (all `TaskCreate` + spawn calls
 have been issued), print the following summary and **STOP — end the turn**:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Background Session Started
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Session : {SESSION_ID}
-Tasks   : {N} supervisor(s) spawned as background agents
+## 🚀 Background Session Started
 
-  Task 1: {TASK_1 description truncated to 60 chars}
-          branch={BRANCH_1}  id={TASK_ID_1}
-  Task 2: {TASK_2 description truncated to 60 chars}
-          branch={BRANCH_2}  id={TASK_ID_2}
-  ...
+- **Session**: {SESSION_ID}
+- **Tasks**: {N} supervisor(s) spawned as background agents
+
+**Task 1**: {TASK_1 description truncated to 60 chars}
+  - branch: `{BRANCH_1}`  id: `{TASK_ID_1}`
+**Task 2**: {TASK_2 description truncated to 60 chars}
+  - branch: `{BRANCH_2}`  id: `{TASK_ID_2}`
+...
 
 Background agents are running. You can now:
-  - Check pipeline state:  crew:status
-  - Inject another task:   crew:run "new task"
-  - Collect final results: crew:status --collect
+- Check pipeline state: `crew:status`
+- Inject another task: `crew:run "new task"`
+- Collect final results: `crew:status --collect`
 
 Next step suggestion: run `crew:status` shortly to see the live phase /
 stage progression. The orchestrator turn has ended; this terminal is
 free for additional `crew:run` or `crew:status` invocations.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **Do NOT proceed to Steps 7–11 on the P4 path.** Those steps (result
@@ -1677,17 +1672,15 @@ orchestrator:
 2. Composes a consolidated approval summary:
 
    ```text
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    Consolidated Action Plan
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Task 1 [{BRANCH_1}]:
-     - deploy: push to staging via docker-compose up -d
-     - merge: git merge --no-ff {BRANCH_1} into main
+   ### 📋 Consolidated Action Plan
 
-   Task 2 [{BRANCH_2}]:
-     - deploy: run npm run build && rsync dist/ to server
-     - merge: git merge --no-ff {BRANCH_2} into main
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   **Task 1** [`{BRANCH_1}`]:
+   - deploy: push to staging via docker-compose up -d
+   - merge: git merge --no-ff {BRANCH_1} into main
+
+   **Task 2** [`{BRANCH_2}`]:
+   - deploy: run npm run build && rsync dist/ to server
+   - merge: git merge --no-ff {BRANCH_2} into main
    ```
 
 3. Emits a **single** structured user-choice intent (per
@@ -1926,26 +1919,24 @@ fi
 ```
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Run Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == true
-  Status : completed | blocked
-  Branch : {branch}
+## 📋 Run Summary
 
-  Changes:
-    {git diff --stat {PRE_RUN_HEAD}..HEAD output}
+**Task 1**: {description}  [injected]    ← "(injected)" tag when task.injected == true
+- **Status**: ✅ completed | ❌ blocked
+- **Branch**: `{branch}`
 
-  Diff:
-    {git diff {PRE_RUN_HEAD}..HEAD | head -200 output}
-    (If over 200 lines: "… {N} more lines. Run: git diff {PRE_RUN_HEAD}..HEAD")
+- **Changes**:
+  {git diff --stat {PRE_RUN_HEAD}..HEAD output}
 
-  Commits ({N}):
-    {git log --oneline, up to 5 lines}
+- **Diff**:
+  {git diff {PRE_RUN_HEAD}..HEAD | head -200 output}
+  (If over 200 lines: "… {N} more lines. Run: git diff {PRE_RUN_HEAD}..HEAD")
 
-Task 2: {description}
-  ...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- **Commits** ({N}):
+  {git log --oneline, up to 5 lines}
+
+**Task 2**: {description}
+...
 ```
 
 The `[injected]` tag appears next to any task whose `session.json` entry has
@@ -2012,34 +2003,30 @@ whether a devops stage was included in the pipeline:
 **When N > 1 (after merge):**
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Implementation Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Merged branches into main (local):
-  - {BRANCH_1}  ({N} commits)
-  - {BRANCH_2}  ({N} commits)
+## ✅ Implementation Summary
 
-Commits ready for push (origin/main..HEAD):
+**Merged branches into main (local):**
+- `{BRANCH_1}`  ({N} commits)
+- `{BRANCH_2}`  ({N} commits)
+
+**Commits ready for push** (origin/main..HEAD):
   {git log --oneline origin/main..HEAD, up to 10 lines}
 
-Note: No remote push has occurred yet.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> Note: No remote push has occurred yet.
 ```
 
 **When N == 1:**
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Implementation Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branch with local commits:
-  - {BRANCH}  ({N} commits)
+## ✅ Implementation Summary
 
-Commits ready for review:
+**Branch with local commits:**
+- `{BRANCH}`  ({N} commits)
+
+**Commits ready for review:**
   {git log --oneline HEAD ^main, up to 5 lines}
 
-Note: No remote push has occurred yet.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> Note: No remote push has occurred yet.
 ```
 
 > **Stop here.** Do not suggest any follow-up action (merge, push, PR creation,
@@ -2068,38 +2055,34 @@ When a `devops` stage is present, first compose and display the deployment plan:
 **When N > 1:**
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Deployment Plan
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Action: push main to origin (all task branches merged)
+## 🚢 Deployment Plan
 
-Commits to be published (origin/main..HEAD):
+- **Action**: push main to origin (all task branches merged)
+
+**Commits to be published** (origin/main..HEAD):
   {git log --oneline origin/main..HEAD}
 
-Target remote: origin
-Risk notes:
+- **Target remote**: origin
+- **Risk notes**:
   - {any merge conflicts detected?}
   - {any blocked tasks?}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **When N == 1:**
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Deployment Plan
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branch to push:
-  - {BRANCH}  ({N} commits)
+## 🚢 Deployment Plan
 
-Commits to be published:
+**Branch to push:**
+- `{BRANCH}`  ({N} commits)
+
+**Commits to be published:**
   {git log --oneline HEAD ^main}
 
-Target remote: origin
-Risk notes:
+- **Target remote**: origin
+- **Risk notes**:
   - {any merge conflicts detected?}
   - {any blocked tasks?}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Then emit a **structured user-choice intent** (per

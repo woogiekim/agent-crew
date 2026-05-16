@@ -855,24 +855,23 @@ Also extract from `analysis.md`:
 Display the plan summary as inline text:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Implementation Plan
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task   : {TASK}
-Intent : {intent from analysis.md}
-Risks  : {risk count} identified
+### 📋 Implementation Plan
 
-Pipeline:
-  Stage 1: {agent_name}
-    Work: {work description from prd.md, if available}
-    Files:
-      - {file path} ({new|modified|removed}, if available)
-  Stage 2: {agent_name}
-    Work: {work description from prd.md, if available}
-    ...
+- **Task**: {TASK}
+- **Intent**: {intent from analysis.md}
+- **Risks**: {risk count} identified
 
-Dynamic agents to create: {needs_creation list or "none"}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Pipeline:**
+
+**Stage 1**: {agent_name}
+  - Work: {work description from prd.md, if available}
+  - Files:
+    - `{file path}` ({new|modified|removed}, if available)
+**Stage 2**: {agent_name}
+  - Work: {work description from prd.md, if available}
+  - ...
+
+- **Dynamic agents to create**: {needs_creation list or "none"}
 ```
 
 The `Work:` and `Files:` lines appear only when `prd.md` contains per-agent sections.

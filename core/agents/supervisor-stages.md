@@ -378,16 +378,14 @@ merge, push, or destructive operations. Instead they write a PLAN block and wait
 #### Step 1 — Always display the implementation summary
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Implementation Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Branch: {BRANCH}
+## ✅ Implementation Summary
 
-Commits ready for review:
+- **Branch**: `{BRANCH}`
+
+**Commits ready for review:**
   {git -C PROJECT_ROOT log --oneline HEAD ^main, up to 10 lines}
 
-Note: No remote push has occurred yet.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+> Note: No remote push has occurred yet.
 ```
 
 Collect the commit log:
