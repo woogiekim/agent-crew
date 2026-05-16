@@ -380,12 +380,13 @@ merge, push, or destructive operations. Instead they write a PLAN block and wait
 ```text
 ## 🛠️ Implementation Summary
 
-- **Branch**: `{BRANCH}`
-
-**Commits ready for review:**
+\`\`\`
+Branch  : {BRANCH}  ({N} commits)
+Commits :
   {git -C PROJECT_ROOT log --oneline HEAD ^main, up to 10 lines}
+\`\`\`
 
-> Note: No remote push has occurred yet.
+> No remote push has occurred yet.
 ```
 
 Collect the commit log:
