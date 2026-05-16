@@ -8,6 +8,7 @@ description: >
   코드 구현 요청, 또는 학습자 본인이 명시적으로 "요약만"·"빠르게"를 요구한 경우.
   Output: 6 Phase 구조(학습자 파악 → 개념 정립 → 실무 적용 → 비판적 검토 → 이해 심화
   → 마무리)에 따른 Phase 단위 티칭 세션. 각 Phase 종료 시 학습자 확인 후 다음 Phase 진행.
+reasoning_tier: balanced
 model: inherit
 ---
 

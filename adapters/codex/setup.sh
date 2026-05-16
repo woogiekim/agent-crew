@@ -98,6 +98,14 @@ install_codex_skills() {
 }
 
 copy_dir_contents "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
+
+# Note: reasoning_tier is NOT materialized on the Codex adapter today.
+# Codex's current per-agent TOML schema does not honor a `model = "..."`
+# field at agent granularity (model selection happens at the Codex
+# profile level). The reasoning_tier value in each TOML is declarative
+# only — kept for forward compatibility if Codex adds per-agent model
+# selection in the future. See core/rules/capabilities/reasoning-tier.md.
+
 rm -rf "${PROJECT_ROOT}/.codex/hooks"
 mkdir -p "${PROJECT_ROOT}/.codex/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"

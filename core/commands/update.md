@@ -339,6 +339,33 @@ resolve_source_dir() {
   preserved — `sync_system_agents` and `merge_agents_to_discovery` only
   operate on the `system/agents/` layer.
 
+## Migration Notes
+
+### Phase 3.2 — `reasoning_tier` materialization
+
+System agents now declare a `reasoning_tier` (`deep` / `balanced` /
+`light`) in their frontmatter. On `crew:update`, the Claude adapter
+rewrites the `model:` line of each installed agent at
+`~/.claude/agents/*.md` to a concrete model identifier based on the
+declared tier (see `core/rules/capabilities/reasoning-tier.md`).
+
+Source files under `core/agents/` keep `model: inherit` and are not
+changed. User agents under `~/.agent-crew/user/agents/` are left
+untouched — user-owned files retain whatever `model:` value they
+have. Agents without YAML frontmatter (e.g. `korean-normalizer.md`)
+are silently skipped.
+
+If you previously hand-edited `~/.claude/agents/*.md` to set a custom
+`model:` for a system agent, your edit will be overwritten on the
+next update. Move the agent to `~/.agent-crew/user/agents/` (and
+rename it to avoid the system filename collision) to preserve a
+manual model choice.
+
+The Codex adapter does NOT currently materialize `reasoning_tier` —
+Codex's per-agent TOML schema does not honor a per-agent model field
+today. The tier remains declared in the Codex TOMLs for forward
+compatibility but is advisory only on Codex.
+
 ## Completion Message
 
 ```text

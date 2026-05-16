@@ -5,6 +5,7 @@ description: >
   TRIGGER when: user requests CI/CD pipeline creation or modification; request involves Dockerfile, docker-compose, Kubernetes manifests, or Terraform; user asks to improve build scripts, common modules, or developer tooling; user needs architecture guidelines or tech stack standardization; user requests deployment or release; pipeline reaches the deploy stage after build and test pass; user asks to tag a version, create a release, or run deploy scripts. Keywords: CI/CD, pipeline, infrastructure, Docker, k8s, Terraform, shared modules, DevOps, build, architecture, deploy, release, tagging, tag, launch.
   SKIP: user asks for application business logic or UI implementation; request is about feature development unrelated to infrastructure or tooling; user only wants an explanation or asks about deployment strategy without requesting actual deployment; build or tests have not passed yet.
   Output: CI/CD config files + infrastructure code + architecture docs + pre-flight check report + build/test result + git tag + deploy script execution result + git commit + handoff.md update.
+reasoning_tier: balanced
 model: inherit
 color: cyan
 ---

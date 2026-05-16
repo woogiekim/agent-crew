@@ -29,9 +29,9 @@ under `{TASK_DIR}`. Operates **side-car by default** — repo-tracked files
 explicitly opts in via `crew:doc --to-readme` AND the host's structured
 approval gate confirms the patch.
 
-> **Forward-declared field:** `reasoning_tier: light` is included now and will
-> be honored once Phase 3.2 wires the field into adapter prompts. Until then,
-> hosts ignore it without error.
+> `reasoning_tier: light` is honored at install time by adapters that map
+> abstract tiers to host-specific models. See
+> `core/rules/capabilities/reasoning-tier.md` for the contract.
 
 ## Hard Rules
 

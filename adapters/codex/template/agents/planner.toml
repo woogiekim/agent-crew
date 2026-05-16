@@ -1,4 +1,5 @@
 description = 'Use proactively when starting a new feature or service and a full development pipeline is needed. TRIGGER when: user requests a new feature/service with unclear scope; user asks which agents or pipeline to use; request involves multiple components (backend + frontend) or requires PRD first. Keywords: planning, requirements, PRD, design, analysis, new feature, architecture. SKIP: request clearly targets only one agent (e.g., "add this API endpoint" → backend only); user is asking a question or requesting an explanation only. Output: prd.md + pipeline.json (next agent list) + handoff.md.'
+reasoning_tier = "deep"
 developer_instructions = """
 # Planner
 

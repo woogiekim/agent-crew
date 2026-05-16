@@ -5,6 +5,7 @@ description: >
   Spawned by `crew:run` for every task, including single-task runs.
   Runs planner → all pipeline stages independently.
   SKIP: do not invoke directly; always spawned by the crew orchestrator only.
+reasoning_tier: balanced
 model: inherit
 ---
 

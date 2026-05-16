@@ -1,4 +1,5 @@
 description = "Autonomously executes the full pipeline for one task. Spawned by crew:run for every task, including single-task runs. Runs planner -> all pipeline stages independently. SKIP: do not invoke directly; always spawned by the run orchestrator only."
+reasoning_tier = "balanced"
 developer_instructions = """
 # Supervisor
 

@@ -9,6 +9,7 @@ description: >
   Phase 0 — the supervisor jumps directly to Phase 2 and does not invoke analyst).
   Output: {TASK_DIR}/context/analysis.md, {TASK_DIR}/pipeline.json,
   {TASK_DIR}/handoff.md, and an ANALYSIS block returned inline.
+reasoning_tier: deep
 model: inherit
 ---
 

@@ -1,4 +1,5 @@
 description = "Use proactively only when git merge or rebase conflicts occur. TRIGGER when: git merge or rebase encounters conflict markers in files; another agent directly requests conflict resolution; merge fails due to conflicting changes. Keywords: conflict, merge conflict, rebase conflict, <<<<<<, =======, >>>>>>>, conflict markers, merge failure. SKIP: no conflict markers exist in any file; user is asking about merge strategy or requesting an explanation only. Output: resolved files + git commit."
+reasoning_tier = "deep"
 developer_instructions = """
 # Resolver
 

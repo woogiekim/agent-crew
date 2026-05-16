@@ -5,6 +5,7 @@ description: >
   TRIGGER when: user requests screen/UI design or wireframe; frontend implementation is planned and design-spec.md does not yet exist; planner pipeline includes a designer stage. Keywords: UI, screen, design, layout, component design, user flow, interface.
   SKIP: design-spec.md already exists and is up to date; request is backend-only with no UI component; user asks for code implementation directly.
   Output: design-spec.md (screen list + component definitions + interaction flow + API integration points). Does not write code.
+reasoning_tier: balanced
 model: inherit
 ---
 

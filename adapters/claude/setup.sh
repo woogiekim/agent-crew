@@ -74,6 +74,91 @@ merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/user/agents" \
   "${CLAUDE_DIR}/agents"
 
+# Materialize reasoning_tier → concrete Claude model identifier in the
+# host's discovery path. The mapping is Claude-specific and lives here;
+# core/agents/*.md files keep `model: inherit`. See
+# core/rules/capabilities/reasoning-tier.md for the contract.
+python3 - "${CLAUDE_DIR}/agents" "${AGENT_CREW_HOME}/system/agents" <<'TIERPY'
+import re
+import sys
+from pathlib import Path
+
+dest = Path(sys.argv[1])
+system_src = Path(sys.argv[2])
+
+# Adapter-local tier map. Update here when Claude's model names change.
+TIER_TO_MODEL = {
+    "deep":     "claude-opus-4-7",
+    "balanced": "claude-sonnet-4-6",
+    "light":    "claude-haiku-4-5",
+}
+DEFAULT_TIER = "balanced"
+
+# Collect system-agent basenames so we only materialize files the system
+# layer owns. User agents (and any file not present in system/) are left
+# untouched — user owns their model choice.
+system_names = {p.name for p in system_src.glob("*.md")} if system_src.exists() else set()
+
+frontmatter_re = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+tier_re = re.compile(r"^reasoning_tier:\s*(\S+)\s*$", re.MULTILINE)
+model_re = re.compile(r"^model:\s*\S+\s*$", re.MULTILINE)
+
+applied = []
+skipped_no_frontmatter = []
+skipped_user = []
+warnings = []
+
+for md_path in sorted(dest.glob("*.md")):
+    name = md_path.name
+    if name == "README.md":
+        continue
+    if name not in system_names:
+        skipped_user.append(name)
+        continue
+
+    text = md_path.read_text()
+    fm = frontmatter_re.match(text)
+    if not fm:
+        skipped_no_frontmatter.append(name)
+        continue
+
+    fm_block = fm.group(1)
+    tier_match = tier_re.search(fm_block)
+    if not tier_match:
+        tier = DEFAULT_TIER
+        warnings.append(f"{name}: no reasoning_tier; defaulted to {tier}")
+    else:
+        tier = tier_match.group(1)
+
+    model = TIER_TO_MODEL.get(tier)
+    if model is None:
+        warnings.append(
+            f"{name}: unknown reasoning_tier '{tier}'; defaulted to {DEFAULT_TIER}"
+        )
+        tier = DEFAULT_TIER
+        model = TIER_TO_MODEL[DEFAULT_TIER]
+
+    if model_re.search(fm_block):
+        new_fm_block = model_re.sub(f"model: {model}", fm_block, count=1)
+    else:
+        # No existing model line in frontmatter — append one.
+        new_fm_block = fm_block.rstrip() + f"\nmodel: {model}"
+
+    new_text = text[:fm.start()] + "---\n" + new_fm_block + "\n---\n" + text[fm.end():]
+    if new_text != text:
+        md_path.write_text(new_text)
+    applied.append(f"{name} → {tier} ({model})")
+
+for line in applied:
+    print(f"[agent-crew] tier: {line}")
+for w in warnings:
+    print(f"[agent-crew] tier WARN: {w}")
+if skipped_no_frontmatter:
+    print(f"[agent-crew] tier: skipped {len(skipped_no_frontmatter)} file(s) without frontmatter: {', '.join(skipped_no_frontmatter)}")
+if skipped_user:
+    print(f"[agent-crew] tier: skipped {len(skipped_user)} user-agent file(s) (user owns model choice)")
+TIERPY
+
 # Auto-migrate legacy flat layout (pre-system/ era):
 # - Non-repo, non-exception agents → user/agents/
 # - Repo agents and system-exception agents → already in system/agents/ (skip)

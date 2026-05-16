@@ -9,6 +9,7 @@ description: >
   SKIP: do not call the host's interactive question mechanism for requirements
   outside this agent.
   Output: writes {TASK_DIR}/context/requirements.md and returns REQUIREMENTS block inline.
+reasoning_tier: balanced
 model: inherit
 allowed-tools: AskUserQuestion, Read, Write, Bash
 ---

@@ -26,6 +26,10 @@ merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/user/agents" \
   "${PROJECT_ROOT}/.agent-crew/agents"
 
+# Note: reasoning_tier is not materialized on the generic adapter.
+# Generic targets single-model environments; the abstract tier is
+# advisory only. See core/rules/capabilities/reasoning-tier.md.
+
 # Detect old flat layout and warn
 if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
   printf '\n[agent-crew] NOTE: Legacy layout detected at %s/agents/\n' "${AGENT_CREW_HOME}"

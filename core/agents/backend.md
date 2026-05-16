@@ -5,6 +5,7 @@ description: >
   TRIGGER when: user requests API development, domain model implementation, or DB integration; request involves Kotlin/Spring Boot code; user asks to add/modify a server endpoint, Entity, Repository, or Service. Keywords: API, backend, server, endpoint, domain, Entity, Repository, Service, save, retrieve, Kotlin, Spring.
   SKIP: request is frontend UI only with no backend changes; user asks for explanation or architecture review only; only a design spec is needed.
   Output: test code + implementation code + git commit. Uses TDD/DDD. Can run directly without planner for pure backend requests.
+reasoning_tier: balanced
 model: inherit
 ---
 

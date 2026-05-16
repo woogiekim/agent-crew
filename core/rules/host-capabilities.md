@@ -31,14 +31,17 @@ detailed contract for each flag lives at
 |---|---|---|---|
 | `task_tools`          | implemented | Host task lifecycle tools — observability mirror + approval signal carrier | `capabilities/task-tools.md` |
 | `agent_background`    | implemented | Background subagent fan-out (parallel supervisor spawn) | `capabilities/agent-background.md` |
-| `monitor_tool`        | implemented | Streaming output surface over background processes | `capabilities/monitor-tool.md` |
-| `cost_tracking`       | planned     | Per-task token usage reporting (gates cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
+| `monitor_tool`        | implemented   | Streaming output surface over background processes | `capabilities/monitor-tool.md` |
+| `reasoning_tier`      | install-time  | Per-agent abstract compute tier; adapter materializes to a host model | `capabilities/reasoning-tier.md` |
+| `cost_tracking`       | planned       | Per-task token usage reporting (gates cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
 | `hook_system`         | planned     | Host enforces validators at lifecycle moments (PreToolUse, PostToolUse) | `capabilities/hook-system.md` |
 | `interactive_question`| planned     | Structured user-choice prompts (abstracts native question tools) | `capabilities/interactive-question.md` |
 
 "Implemented" means the flag is consumed by current core code. "Planned"
 means the capability doc records the contract but consumers are
-introduced by a later refactor phase.
+introduced by a later refactor phase. **"Install-time"** means the
+capability is honored by the adapter's `setup.sh` only; there is no
+runtime gating or `capabilities.json` entry.
 
 ## File Location & Schema
 
@@ -133,6 +136,7 @@ mapping):
 - `core/rules/capabilities/task-tools.md`
 - `core/rules/capabilities/agent-background.md`
 - `core/rules/capabilities/monitor-tool.md`
+- `core/rules/capabilities/reasoning-tier.md`
 - `core/rules/capabilities/cost-tracking.md`
 - `core/rules/capabilities/hook-system.md`
 - `core/rules/capabilities/interactive-question.md`
