@@ -1,0 +1,187 @@
+"""Tests for core/scripts/telemetry-aggregate.py.
+
+Exit code contract:
+  0 — success
+  3 — invalid args / unreadable state dir
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+def _write_register(task_dir: Path, *, task_id: str,
+                    current_phase: str = "completed") -> None:
+    session_id = task_id.rsplit("-", 1)[0]
+    reg = {
+        "schema_version": 1,
+        "task_id": task_id,
+        "session_id": session_id,
+        "task": "telemetry test task",
+        "branch": "test/example",
+        "project_root": "/tmp/proj",
+        "task_dir": str(task_dir),
+        "execution_mode": "single",
+        "current_phase": current_phase,
+        "approval_status": "approved",
+        "verification_status": "passed",
+    }
+    (task_dir / "register.json").write_text(json.dumps(reg))
+
+
+def _write_progress_jsonl(task_dir: Path, rows: list[dict]) -> None:
+    with (task_dir / "progress.buffer.jsonl").open("w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+
+
+class TestTelemetryAggregate:
+    def test_empty_state_dir_emits_no_tasks(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """tasks/ exists but has no entries → exit 0 with empty report."""
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        # Text format prints "(no tasks matched)"
+        assert "no tasks" in r.stdout.lower() or r.stdout.strip() == ""
+
+    def test_single_completed_task_reports_duration_and_stages(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """A task with register + progress buffer reports duration/stages."""
+        task_id = "20260101-120000-0"
+        td = state_dir / "tasks" / task_id
+        (td / "context").mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="completed")
+        # Pipeline with 2 completed stages
+        (td / "pipeline.json").write_text(json.dumps({
+            "schema_version": 1,
+            "task": "telemetry test",
+            "stages": ["planner", "backend"],
+            "completed_stages": 2,
+        }))
+        _write_progress_jsonl(td, [
+            {"ts": "2026-01-01T12:00:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "STARTED"},
+            {"ts": "2026-01-01T12:00:30Z", "trace_id": "x",
+             "task_id": task_id, "event": "STAGE"},
+            {"ts": "2026-01-01T12:05:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "COMPLETED"},
+        ])
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["summary"]["tasks_total"] == 1
+        assert payload["summary"]["tasks_completed"] == 1
+        # Duration should be 300 seconds (12:00:00 -> 12:05:00)
+        task_row = payload["tasks"][0]
+        assert task_row["duration_seconds"] == 300.0
+        assert task_row["stages_completed"] == 2
+
+    def test_missing_register_shows_dash_status(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Task dir without register.json: status falls back from events."""
+        task_id = "20260101-120100-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        # No register.json; events only
+        _write_progress_jsonl(td, [
+            {"ts": "2026-01-01T12:01:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "STARTED"},
+        ])
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0
+        payload = json.loads(r.stdout)
+        assert payload["summary"]["tasks_total"] == 1
+        # No COMPLETED/BLOCKED event → status = running
+        task = payload["tasks"][0]
+        assert task["status"] in ("running", "unknown")
+        # current_phase empty when register missing & no terminal event
+        assert task["current_phase"] in ("", None)
+
+    def test_recent_selector_limits_count(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--recent N limits the number of tasks reported."""
+        for i in range(5):
+            tid = f"20260101-12000{i}-0"
+            td = state_dir / "tasks" / tid
+            td.mkdir(parents=True)
+            _write_register(td, task_id=tid)
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--recent", "2",
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0
+        payload = json.loads(r.stdout)
+        assert payload["summary"]["tasks_total"] == 2
+
+    def test_format_json_is_valid_json(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--format json output parses cleanly."""
+        task_id = "20260101-120000-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id)
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0
+        payload = json.loads(r.stdout)  # raises on invalid JSON
+        assert "summary" in payload and "tasks" in payload
+        assert "state_dir" in payload
+
+    def test_text_format_renders_header_or_empty_message(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--format text default — header line printed when tasks exist."""
+        task_id = "20260101-120000-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id)
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            env=env_with_home,
+        )
+        assert r.returncode == 0
+        # Header includes TASK ID column header
+        assert "TASK ID" in r.stdout or "STATUS" in r.stdout
+
+    def test_unreadable_state_dir_exits_3(
+        self, script_runner, env_with_home
+    ):
+        """state-dir that doesn't exist → exit 3."""
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", "/nonexistent/path/agent-crew",
+            env=env_with_home,
+        )
+        assert r.returncode == 3

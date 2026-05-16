@@ -11,6 +11,7 @@
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Testing](#testing)
 - [How It Works](#how-it-works)
 - [Pipeline Decision Logic](#pipeline-decision-logic)
 - [Agents](#agents)
@@ -41,7 +42,7 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 - **Analyst reasoning layer** — Phase 1b invokes the analyst agent between requirements collection and planning; the analyst distills intent, identifies risks, and recommends the agent pipeline before the planner begins
 - **Phase 1d plan approval gate** — after planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval via `AskUserQuestion` before any stage agent executes
 - **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition directly to `~/.agent-crew/agents/{name}.md` before execution starts
-- **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object
+- **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object. **A real test suite now exists in `tests/`** (see [Testing](#testing)) — the reviewer's runner-discovery on this repo finds `pytest` and exercises all 43 Python tests + the bash suites end-to-end
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; `crew:status` reads this log to show a live pipeline snapshot at any time
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
@@ -116,6 +117,33 @@ matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
+
+## Testing
+
+The repository ships with a real test suite under `tests/` covering the Python
+validators (`pytest`), the bash scripts in `core/scripts` / `core/setup` /
+`core/hooks`, and end-to-end integration scenarios (SSOT mnemos roundtrip,
+schema validity of every existing `pipeline.json`, status-render snippet, CLI
+smokes).
+
+```bash
+make test               # all suites (python + shell + integration)
+make test-python        # pytest tests/python/
+make test-shell         # bash tests/shell/test_*.bash
+make test-integration   # bash tests/integration/test_*.bash
+
+# or the bare runner if `make` is unavailable
+bash tests/run-all.sh
+```
+
+Requirements: Python 3.10+ with `pytest` on `$PATH` (`pip install pytest`).
+If pytest is missing, `tests/run-all.sh` skips the Python suite with an
+install hint and still runs shell + integration suites.
+
+The suite is hermetic — every test uses `tmp_path` (pytest) or `mktemp -d`
+(bash) for isolation; it never touches `${HOME}/.agent-crew/` or the real
+mnemos store. See `tests/README.md` for the layout, how to add new tests,
+and known issues surfaced by the suite.
 
 ## How It Works
 
