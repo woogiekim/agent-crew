@@ -41,6 +41,34 @@ Canonical shape:
 }
 ```
 
+### TDD parallel stage form
+
+A single stage may opt into the **TDD parallel** dispatch contract by
+using the object form below instead of a bare string or array:
+
+```json
+{
+  "stages": [
+    { "agents": ["backend"], "tdd_parallel": true },
+    ["reviewer"]
+  ]
+}
+```
+
+When `tdd_parallel: true`, the supervisor co-spawns `test-writer`
+alongside every agent listed in `agents` (single message, parallel
+host dispatch). Both must reach `STATUS: completed` before the stage's
+`completed_stages` counter increments. Either failure path triggers
+the Stage Retry Rule per agent (selective retry).
+
+Backwards compatibility: `tdd_parallel` defaults to `false`. The two
+legacy stage shapes (`"backend"` as a bare string, `["designer",
+"backend"]` as a list) continue to mean "no TDD parallel — sequential
+spawn(s)". A stage object with `tdd_parallel: false` (or omitted) is
+functionally identical to writing the `agents` list directly as the
+stage entry. See `core/agents/supervisor-stages.md` § TDD Parallel
+Dispatch for the spawn semantics.
+
 JSON Schema: `${AGENT_CREW_HOME}/schemas/pipeline.schema.json`. The
 schema sets `additionalProperties: true` because dynamic-agent shapes
 and capability-gated fields evolve faster than the schema does.
@@ -51,7 +79,7 @@ and capability-gated fields evolve faster than the schema does.
 |---|---|---|---|---|
 | `schema_version` | integer (const 1) | optional in v1 | analyst (post-F4) | Pre-F4 pipeline.json omits this field; validators tolerate absence. |
 | `task` | string | yes | analyst Step 6 | Original task description (mirror of `register.json.task`). |
-| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Older files may have bare strings as inner elements; consumers normalize `stage if isinstance(stage, list) else [stage]`. |
+| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool }` (TDD parallel form — co-spawns test-writer alongside every agent listed). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel` flag. |
 | `completed_stages` | integer | yes (starts at 0) | analyst Step 6, supervisor-stages | 0-based count of stages whose terminal state was successful completion. Drives the resume logic in Phase 0. |
 | `needs_creation` | array of objects | yes (may be `[]`) | analyst Step 6 / planner Step 3c | Per-entry: `{name, reason, role}`. Drives Phase 1.5 dynamic agent creation. |
 | `stage_agent_status` | object | optional (created on first parallel write) | supervisor-stages Phase 2 | Outer key = 1-based stage index as a string; inner key = agent name; value = `completed \| crashed \| blocked`. |

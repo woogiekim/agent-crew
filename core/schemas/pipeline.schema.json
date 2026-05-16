@@ -19,7 +19,7 @@
     },
     "stages": {
       "type": "array",
-      "description": "2D array. Each outer element is a sequential stage; each inner element is an agent name (string) executed in parallel within that stage. Older pipeline.json files may have bare strings as inner elements; the supervisor normalizes via `stage if isinstance(stage, list) else [stage]`.",
+      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel} (TDD parallel form — co-spawns test-writer alongside every agent in `agents`). Consumers normalize the three shapes.",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
@@ -27,6 +27,24 @@
             "type": "array",
             "items": { "type": "string", "minLength": 1 },
             "minItems": 1
+          },
+          {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["agents"],
+            "properties": {
+              "agents": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "minItems": 1,
+                "description": "Implementation agents in this stage. When tdd_parallel=true, test-writer is co-spawned alongside each."
+              },
+              "tdd_parallel": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true, supervisor co-spawns the test-writer agent in parallel with every agent listed in `agents`. Both must complete before the stage advances. See core/agents/supervisor-stages.md § TDD Parallel Dispatch."
+              }
+            }
           }
         ]
       }

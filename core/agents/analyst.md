@@ -159,6 +159,43 @@ Set `needs_creation` to a non-empty array only when a task requires domain-speci
 expertise that no builtin agent (planner, designer, frontend, backend, devops,
 resolver, reviewer) can provide without significant prompting workarounds.
 
+#### TDD parallel stage opt-in
+
+A single implementation stage may be encoded as the object
+`{ "agents": [...], "tdd_parallel": true }` instead of the bare-string
+/ bare-array form. The supervisor then co-spawns `test-writer`
+alongside the implementer in a single parallel host dispatch — see
+`core/agents/supervisor-stages.md` § TDD Parallel Dispatch and
+`core/rules/state-files/pipeline-json.md` § TDD parallel stage form.
+
+Example stages with one TDD parallel stage:
+
+```json
+[
+  { "agents": ["backend"], "tdd_parallel": true },
+  ["reviewer"]
+]
+```
+
+Set `tdd_parallel: true` only when **all** of the following hold for
+the implementer stage in question:
+
+- The PRD defines a clear input/output contract for the entry points
+  the implementer will create (function signatures, endpoints, CLI
+  flags). test-writer must be able to derive tests from the spec
+  alone — it cannot read the implementer's source.
+- The implementation surface is dominated by new files / new entry
+  points (not pure refactors of existing logic — the existing test
+  suite already encodes the "behavior unchanged" contract there).
+- The project has a detectable test directory (`tests/`, `test/`,
+  `spec/`, `__tests__/`, etc.).
+- The stage's `agents` array has length 1 (MVP scope —
+  multi-implementer TDD parallel is a follow-up).
+
+When unsure, default to `false` (omit the field). The existing bare
+forms (`"backend"`, `["designer", "backend"]`) remain fully supported
+and produce identical behavior to a `tdd_parallel: false` stage.
+
 ### Step 7 — Write PRD and handoff.md
 
 Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:

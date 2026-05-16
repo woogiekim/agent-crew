@@ -196,6 +196,51 @@ to reduce total wall-clock time:
 
 If the decision is unclear, conservatively include more agents.
 
+#### When to set `tdd_parallel: true`
+
+A stage entry may be encoded as `{ "agents": [...], "tdd_parallel":
+true }` instead of the bare-string / bare-array form. When set, the
+supervisor co-spawns `test-writer` alongside the implementation agent
+in a single parallel host dispatch, halving the critical path for that
+stage pair. See `core/rules/state-files/pipeline-json.md` § TDD
+parallel stage form for the schema.
+
+Set `tdd_parallel: true` for an implementation stage (backend,
+frontend, or a generic implementer custom agent) only when **all** of
+the following hold:
+
+- The PRD or analysis defines a **clear input/output contract** for
+  the entry points the implementer will create — function signatures,
+  endpoints, CLI flags, or shell helpers with documented inputs and
+  outputs. Tests must be writable from the contract alone, with no
+  knowledge of the implementer's chosen internals.
+- The implementation surface is **separable from existing code** —
+  new files / new endpoints / new modules dominate over edits to
+  existing logic. Pure refactors and bug fixes are poor fits: their
+  contract is "behavior unchanged", which the existing test suite
+  already encodes.
+- The project has a **test directory convention** that test-writer
+  can detect (`tests/`, `test/`, `spec/`, `__tests__/`, or a
+  comparable existing directory). When no test convention exists,
+  default to `false` — adding a test directory is itself a decision
+  that belongs to the implementer, not test-writer.
+- The implementer stage is **a single agent** (`agents` of length 1).
+  Multi-implementer TDD parallel is out of scope for MVP — see
+  `core/agents/supervisor-stages.md` § TDD Parallel Dispatch.
+
+When **any** of these does not hold, default to `false` (omit the
+field, or use the bare-string / bare-array form). Defaulting to false
+preserves the existing critical path and avoids spurious test-writer
+spawns on tasks where the spec is too thin to write meaningful tests.
+
+Anti-patterns — do NOT set `tdd_parallel: true` for:
+
+- `reviewer` / `devops` / `resolver` stages.
+- Stages whose only purpose is to edit documentation or configuration
+  files (no executable contract to test).
+- Stages where the PRD's acceptance criteria are still placeholders
+  (`TBD`, `to be decided`, `Other / not yet defined`).
+
 Custom agent names must match the filename format:
 `~/.agent-crew/agents/<name>.md`
 
