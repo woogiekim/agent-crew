@@ -298,6 +298,134 @@ ls "${TASK_DIR}/context/"
 
 Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
+### TDD Parallel Dispatch
+
+A stage may opt into the **TDD parallel** form by encoding itself as
+the object `{ "agents": [...], "tdd_parallel": true }` instead of the
+bare string / bare array forms. The schema doc
+(`core/rules/state-files/pipeline-json.md` § TDD parallel stage form)
+shows the wire shape. The dispatch contract below is what Phase 2 runs
+at stage entry.
+
+#### Normalization
+
+At the top of each stage iteration, normalize the stage entry into
+three locals — `STAGE_AGENTS`, `STAGE_TDD_PARALLEL`, and (for the
+existing parallel-agents path) `STAGE_AGENT` per inner-loop iteration:
+
+```bash
+# Read the current stage entry shape from PIPELINE_PATH and normalize.
+read -r STAGE_AGENTS STAGE_TDD_PARALLEL < <(python3 -c "
+import json
+p = json.load(open('${PIPELINE_PATH}'))
+stage = p['stages'][${i} - 1]
+if isinstance(stage, str):
+    agents = [stage]; tdd = False
+elif isinstance(stage, list):
+    agents = stage;   tdd = False
+elif isinstance(stage, dict):
+    agents = stage.get('agents', [])
+    tdd    = bool(stage.get('tdd_parallel', False))
+else:
+    agents = []; tdd = False
+print(' '.join(agents), '1' if tdd else '0')
+")
+```
+
+`STAGE_TDD_PARALLEL == 1` selects the TDD parallel dispatch path
+below. `STAGE_TDD_PARALLEL == 0` (or absent) falls through to the
+existing Single / Parallel Agents paths above — no regression for any
+pre-existing pipeline.json.
+
+#### Dispatch — both agents in one host message
+
+When `STAGE_TDD_PARALLEL == 1`:
+
+1. Compose **two** agent prompts (test-writer + each implementer in
+   `STAGE_AGENTS`) using the standard Agent prompt format above. The
+   test-writer prompt carries `STAGE_INDEX` and `IMPLEMENTER_AGENT`
+   inputs so its commit message can reference both.
+
+2. Emit the start event **before** dispatch:
+
+   ```bash
+   log_progress "STAGE_TDD_PARALLEL_STARTED" "stage=${i} agents=test-writer,${STAGE_AGENTS// /,}"
+   ```
+
+3. Issue both Agent tool calls in a **single response** (the host's
+   parallel-spawn semantics — the same convention the existing
+   Parallel Agents path uses). The supervisor's response message
+   contains one Agent call per parallel partner; the host dispatches
+   them concurrently.
+
+   MVP scope: each TDD parallel stage carries exactly one implementer.
+   `STAGE_AGENTS` may legally hold more than one entry (the schema
+   allows it), but only the first implementer is co-spawned with
+   test-writer in MVP. Stages with two or more implementers + TDD
+   parallel are a follow-up; for MVP, the planner is instructed
+   (`core/agents/planner.md` § TDD Parallel Stages and the analyst
+   equivalent) to keep `agents` to a single entry when
+   `tdd_parallel: true`.
+
+4. The test-writer prompt MUST instruct the agent to read the spec
+   only (it MUST NOT read the implementer's source). The
+   `core/agents/test-writer.md` definition encodes this rule — the
+   supervisor's only obligation is to pass `TASK_DIR`, `PROJECT_ROOT`,
+   `HANDOFF_PATH`, `QUALITY_RULE_PATH`, `STAGE_INDEX`, and
+   `IMPLEMENTER_AGENT` so the agent has the inputs it needs.
+
+5. Wait for **both** agent calls to return. Per-agent status writes
+   into `pipeline.json.stage_agent_status["${i}"]` use the same
+   intermediate-write block documented in § Parallel Agents above:
+
+   ```bash
+   # Repeat for each of: test-writer and ${impl_agent}
+   python3 -c "
+   import json
+   p = json.load(open('${PIPELINE_PATH}'))
+   p.setdefault('stage_agent_status', {}).setdefault('${i}', {})['${agent_name}'] = '${status}'
+   json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+   "
+   ```
+
+6. Emit the done event with both per-agent statuses:
+
+   ```bash
+   log_progress "STAGE_TDD_PARALLEL_DONE" \
+     "stage=${i} test_status=${TEST_STATUS} impl_status=${IMPL_STATUS}"
+   ```
+
+7. Advance `completed_stages` only when **both** statuses are
+   `completed`. If either is `crashed`, apply the Stage Retry Rule
+   (`supervisor-retry.md`) to that agent only — selective retry, do
+   not re-spawn the agent that already completed. If either is
+   `blocked`, halt the pipeline per the BLOCKED Recovery contract.
+
+#### File-conflict handling
+
+The test-writer writes to the project's test directory; the implementer
+writes to the project's source directory. The two output sets are
+disjoint by convention, so resolver invocation is normally not
+required.
+
+If a `git commit` from either agent fails because of a merge conflict
+on the same file (rare — typically only when the implementer creates a
+test-adjacent fixture in the test directory, or the test-writer
+extends an existing test file the implementer also touched), the
+supervisor invokes the `resolver` agent before retrying the failed
+agent — the same convention used for parallel-write conflicts in the
+existing Parallel Agents path. The resolver's input is the
+`git status` output identifying the conflicted paths; no other
+plumbing change is needed.
+
+#### Sequential-path fall-through
+
+When `STAGE_TDD_PARALLEL == 0` (the absence case — bare string or
+bare array stage entries), Phase 2 dispatch is unchanged from the
+behavior documented in § Single Agent and § Parallel Agents above. The
+TDD parallel block is opt-in by stage encoding; no pipeline that
+predates this feature is affected.
+
 #### Post-stage handoff page-out (Phase 3.5, opt-in)
 
 After each stage's terminal completion has been recorded

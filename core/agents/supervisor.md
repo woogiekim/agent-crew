@@ -115,6 +115,8 @@ if it does not exist.
 | `PHASE_1D_PREFETCH_STARTED` | Phase 1d speculative I/O prefetch background job spawned, just before the approval gate | `pid={n} files={count}` |
 | `PHASE_1D_PREFETCH_DONE` | Phase 1d prefetch background job finished normally (page cache warmed) | `files={count} elapsed={n}s` |
 | `PHASE_1D_PREFETCH_KILLED` | Phase 1d prefetch background job was killed (user Cancel/Request-changes or post-approval cleanup) | `reason={cancel\|request_changes\|approved}` |
+| `STAGE_TDD_PARALLEL_STARTED` | Phase 2 stage with `tdd_parallel: true` spawns test-writer + implementer in a single parallel host dispatch | `stage={n} agents=test-writer,{implementer}` |
+| `STAGE_TDD_PARALLEL_DONE` | Phase 2 TDD-parallel stage — both agents returned a terminal status and the supervisor is about to update `completed_stages` | `stage={n} test_status={completed\|crashed\|blocked} impl_status={completed\|crashed\|blocked}` |
 
 ### Parallel run prefix rule
 

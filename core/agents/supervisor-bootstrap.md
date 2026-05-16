@@ -210,8 +210,8 @@ log_progress() {
   local _status
   case "${event}" in
     STARTED)                                            _status="started" ;;
-    PHASE|STAGE)                                        _status="in_progress" ;;
-    STAGE_DONE|COMPLETED|HANDOFF_PAGEDOUT)              _status="completed" ;;
+    PHASE|STAGE|STAGE_TDD_PARALLEL_STARTED)              _status="in_progress" ;;
+    STAGE_DONE|STAGE_TDD_PARALLEL_DONE|COMPLETED|HANDOFF_PAGEDOUT) _status="completed" ;;
     BLOCKED|COST_BLOCKED|STAGE_TIMEOUT|HANDOFF_PAGEOUT_FAILED) _status="failed" ;;
     RETRY)                                              _status="retry" ;;
     HANDOFF_PAGEOUT_SKIPPED)                            _status="skipped" ;;
