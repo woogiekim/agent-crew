@@ -1,20 +1,120 @@
-<!-- agent-crew-start -->
-<!-- MANAGED BLOCK - DO NOT EDIT HERE.
-     Edit rules via: mnemos capture --layer global --id <id> --content '...'
-     Then run: crew:sync-instructions --apply
-     Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-05-16T12:34:49Z from 12 mnemos rules (host=repo) -->
+#!/usr/bin/env bash
+# seed-instruction-rules.sh — Idempotent seeder for the agent-crew instruction
+# SSOT. Captures each rule into the mnemos global layer with id
+# `rule:<slug>` and tag `instruction-rule`. Subsequent runs detect
+# unchanged content and skip writes (no churn).
+#
+# Usage:
+#   bash core/scripts/seed-instruction-rules.sh            # default: --apply
+#   bash core/scripts/seed-instruction-rules.sh --dry-run  # report only
+#
+# Environment:
+#   MNEMOS_BIN   path to mnemos CLI (default: ~/.local/bin/mnemos)
+#
+# Exit codes:
+#   0  success (all rules captured/updated/skipped cleanly)
+#   1  mnemos CLI not found
+#   2  one or more rule operations failed
 
-# agent-crew - Global Rules
+set -u
 
-## Input Language
+MNEMOS_BIN="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
+MODE="${1:---apply}"
+case "${MODE}" in
+  --apply|--dry-run) ;;
+  *) echo "usage: $0 [--apply|--dry-run]" >&2; exit 2 ;;
+esac
+
+if [ ! -x "${MNEMOS_BIN}" ]; then
+  echo "ERROR: mnemos CLI not found or not executable at: ${MNEMOS_BIN}" >&2
+  echo "       Set MNEMOS_BIN to override." >&2
+  exit 1
+fi
+
+TAG="instruction-rule"
+LAYER="global"
+
+CREATED=0
+UPDATED=0
+SKIPPED=0
+FAILED=0
+
+# capture_rule <id> <priority> <body-variable-name>
+#   Compares against current mnemos content; captures or edits only on drift.
+#   The body is passed by name (indirect expansion) so heredoc-defined
+#   variables holding multi-line content with backticks / $() / quotes
+#   round-trip cleanly under bash 3.2 (avoids the "$(cat <<'EOF' ...)"
+#   double-quoted command-substitution heredoc pitfall).
+capture_rule() {
+  local id="$1" prio="$2" varname="$3"
+  local body="${!varname}"
+
+  local current
+  current="$("${MNEMOS_BIN}" read "${id}" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get("content", ""), end="")
+except Exception:
+    print("__MISSING__", end="")
+' 2>/dev/null)"
+
+  if [ "${current}" = "__MISSING__" ] || [ -z "${current}" ]; then
+    echo "  + CREATE ${id} (priority=${prio}, ${#body} bytes)"
+    if [ "${MODE}" = "--apply" ]; then
+      if "${MNEMOS_BIN}" capture --layer "${LAYER}" --id "${id}" \
+                       --tag "${TAG}" --content "${body}" --quiet >/dev/null 2>&1; then
+        CREATED=$((CREATED + 1))
+      else
+        echo "    FAIL: capture returned non-zero for ${id}" >&2
+        FAILED=$((FAILED + 1))
+      fi
+    else
+      CREATED=$((CREATED + 1))
+    fi
+  elif [ "${current}" = "${body}" ]; then
+    echo "  = SKIP   ${id} (unchanged)"
+    SKIPPED=$((SKIPPED + 1))
+  else
+    echo "  ~ UPDATE ${id} (content drift detected)"
+    if [ "${MODE}" = "--apply" ]; then
+      if "${MNEMOS_BIN}" edit "${id}" --content "${body}" >/dev/null 2>&1; then
+        UPDATED=$((UPDATED + 1))
+      else
+        echo "    FAIL: edit returned non-zero for ${id}" >&2
+        FAILED=$((FAILED + 1))
+      fi
+    else
+      UPDATED=$((UPDATED + 1))
+    fi
+  fi
+}
+
+echo "[seed-instruction-rules] mode=${MODE} mnemos=${MNEMOS_BIN}"
+echo ""
+
+# --- rule:input-language --------------------------------------------------
+read -r -d '' BODY_INPUT_LANGUAGE <<'RULE_EOF' || true
+---
+title: Input Language
+applies_to: [all]
+priority: 10
+---
 
 Task descriptions may arrive in Korean. Always apply the Korean Input
 Normalization rule (`core/rules/korean-input.md`) before passing TASK to
 any agent or writing it to pipeline state. Never pass raw Korean text
 as a TASK description to downstream agents.
+RULE_EOF
+capture_rule "rule:input-language" 10 BODY_INPUT_LANGUAGE
 
-## Output Language
+# --- rule:output-language -------------------------------------------------
+read -r -d '' BODY_OUTPUT_LANGUAGE <<'RULE_EOF' || true
+---
+title: Output Language
+applies_to: [claude]
+priority: 20
+---
 
 User-facing output should appear in the user's input language (Claude
 follows the conversation's language naturally; other adapters mirror
@@ -29,8 +129,16 @@ The two rules are paired: input is normalized to English for
 **internal artifacts** (pipeline.json, register.json, handoff.md,
 agent prompts), while output narrative is **NOT forced into English**
 for the user-facing surface.
+RULE_EOF
+capture_rule "rule:output-language" 20 BODY_OUTPUT_LANGUAGE
 
-## No Direct Implementation
+# --- rule:no-direct-implementation ----------------------------------------
+read -r -d '' BODY_NO_DIRECT_IMPL <<'RULE_EOF' || true
+---
+title: No Direct Implementation
+applies_to: [all]
+priority: 30
+---
 
 When a user requests coding, implementation, or development work, do not start
 editing files or generating production code directly.
@@ -44,8 +152,16 @@ Always follow this sequence:
 This is a system behavior principle. It is not tied to a specific AI vendor.
 Host adapters may expose different invocation methods, but the workflow intent
 remains provider-neutral.
+RULE_EOF
+capture_rule "rule:no-direct-implementation" 30 BODY_NO_DIRECT_IMPL
 
-## Agent Routing Criteria
+# --- rule:agent-routing-criteria ------------------------------------------
+read -r -d '' BODY_AGENT_ROUTING <<'RULE_EOF' || true
+---
+title: Agent Routing Criteria
+applies_to: [all]
+priority: 40
+---
 
 | Request Type | Execution Method |
 |---|---|
@@ -53,8 +169,16 @@ remains provider-neutral.
 | UI, full-stack, or implementation workflows | `crew:run` → supervisor → pipeline agents |
 | Multiple independent features | `crew:run` with one supervisor per task |
 | Requirements analysis only | `crew:run` → supervisor → planner (no implementation stages) |
+RULE_EOF
+capture_rule "rule:agent-routing-criteria" 40 BODY_AGENT_ROUTING
 
-## Parallel-First Execution Rule
+# --- rule:parallel-first --------------------------------------------------
+read -r -d '' BODY_PARALLEL_FIRST <<'RULE_EOF' || true
+---
+title: Parallel-First Execution Rule
+applies_to: [all]
+priority: 50
+---
 
 **Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
 
@@ -75,8 +199,16 @@ problem the resolver already solves.
 - The tasks are logically a single atomic unit
 
 File overlap alone is never a reason to serialize.
+RULE_EOF
+capture_rule "rule:parallel-first" 50 BODY_PARALLEL_FIRST
 
-## Auto-Execution Triggers
+# --- rule:auto-execution-triggers (commit 011e6be content) ----------------
+read -r -d '' BODY_AUTO_EXEC <<'RULE_EOF' || true
+---
+title: Auto-Execution Triggers
+applies_to: [all]
+priority: 60
+---
 
 > Requirements collection (Step 5 of `crew:run`) is always mandatory and must
 > never be skipped, even when the request seems self-evident.
@@ -94,8 +226,17 @@ selects analyst for codebase Q, historian for session/git/project state Q).
 Direct inline response is permitted ONLY for trivial single-fact replies
 (yes/no, file path lookup, single-number metric) AND when no agent in the
 registry has the right scope.
+RULE_EOF
+capture_rule "rule:auto-execution-triggers" 60 BODY_AUTO_EXEC
 
-## Codex Routing Fallback
+# --- rule:codex-routing-fallback (codex-only) -----------------------------
+read -r -d '' BODY_CODEX_ROUTING <<'RULE_EOF' || true
+---
+title: Codex Routing Fallback
+applies_to: [codex]
+priority: 70
+section: Auto-Execution Triggers
+---
 
 Codex lifecycle hooks can require trust review and may inject only advisory
 context. Therefore, the Codex adapter also installs an `agent-crew` skill as a
@@ -111,8 +252,16 @@ crew:run "{original request}"
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
 resolver, or approval behavior in Codex-specific hooks or skills.
+RULE_EOF
+capture_rule "rule:codex-routing-fallback" 70 BODY_CODEX_ROUTING
 
-## STOP Directive Rule
+# --- rule:stop-directive --------------------------------------------------
+read -r -d '' BODY_STOP <<'RULE_EOF' || true
+---
+title: STOP Directive Rule
+applies_to: [all]
+priority: 80
+---
 
 When `[agent-crew] STOP` appears anywhere in the system context (injected by
 auto-route.sh), the **only permitted first action** is to invoke `crew:run`.
@@ -127,8 +276,16 @@ Violation examples (forbidden when STOP is present):
 - Reading files to "understand the request first"
 - Running `git status` or any other preparatory command
 - Asking the user clarifying questions before invoking `crew:run`
+RULE_EOF
+capture_rule "rule:stop-directive" 80 BODY_STOP
 
-## Workflow Intents
+# --- rule:workflow-intents ------------------------------------------------
+read -r -d '' BODY_WORKFLOW_INTENTS <<'RULE_EOF' || true
+---
+title: Workflow Intents
+applies_to: [all]
+priority: 90
+---
 
 ### Explicit Command Invocation Rule
 
@@ -169,13 +326,29 @@ Project state is stored under:
 ```text
 ~/.agent-crew/state/{PROJECT_NAME}/tasks/{TASK_ID}
 ```
+RULE_EOF
+capture_rule "rule:workflow-intents" 90 BODY_WORKFLOW_INTENTS
 
-## Structured Choice Rules
+# --- rule:structured-choice -----------------------------------------------
+read -r -d '' BODY_STRUCTURED_CHOICE <<'RULE_EOF' || true
+---
+title: Structured Choice Rules
+applies_to: [all]
+priority: 100
+---
 
 Use the host AI tool's structured choice UI when confirmation is required.
 Do not add duplicate free-form options if the host UI already provides one.
+RULE_EOF
+capture_rule "rule:structured-choice" 100 BODY_STRUCTURED_CHOICE
 
-## Approval Rule (Framework-Level)
+# --- rule:approval-gate ---------------------------------------------------
+read -r -d '' BODY_APPROVAL_GATE <<'RULE_EOF' || true
+---
+title: Approval Rule (Framework-Level)
+applies_to: [all]
+priority: 110
+---
 
 ### Centralized Approval Gate
 
@@ -224,8 +397,16 @@ for these actions must include at minimum:
 Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
 are FORBIDDEN at every level of the system. Violating this rule is a workflow
 consistency error.
+RULE_EOF
+capture_rule "rule:approval-gate" 110 BODY_APPROVAL_GATE
 
-## Subagent Plan Approval Rule
+# --- rule:subagent-plan-approval ------------------------------------------
+read -r -d '' BODY_SUBAGENT_PLAN <<'RULE_EOF' || true
+---
+title: Subagent Plan Approval Rule
+applies_to: [all]
+priority: 120
+---
 
 Stage agents that perform **destructive operations** (deploy, push, merge, overwrite,
 or branch cleanup) must present a PLAN block for approval before executing. The planner,
@@ -284,5 +465,22 @@ Risk: {none | low | medium | high}
 
 Proceed with this plan?
 ```
+RULE_EOF
+capture_rule "rule:subagent-plan-approval" 120 BODY_SUBAGENT_PLAN
 
-<!-- agent-crew-end -->
+# NOTE: rule:mnemos-capture is INTENTIONALLY NOT seeded here. The mnemos
+# "Memory" section in ~/.claude/CLAUDE.md is managed by the mnemos installer
+# itself (via the <!-- mnemos-start --> / <!-- mnemos-end --> marker pair —
+# a separate, mnemos-owned marker that is independent of
+# <!-- agent-crew-start --> / <!-- agent-crew-end -->). If we also seeded
+# the mnemos capture rule, the agent-crew sync would write a duplicate
+# copy inside the agent-crew block, and Claude would receive the same
+# guidance twice. See core/docs/ssot-rule-inventory.md for the policy.
+
+echo ""
+echo "[seed-instruction-rules] done. created=${CREATED} updated=${UPDATED} skipped=${SKIPPED} failed=${FAILED}"
+
+if [ "${FAILED}" -gt 0 ]; then
+  exit 2
+fi
+exit 0
