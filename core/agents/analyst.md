@@ -192,8 +192,14 @@ the implementer stage in question:
 - The stage's `agents` array has length 1 (MVP scope —
   multi-implementer TDD parallel is a follow-up).
 
-When unsure, default to `false` (omit the field). The existing bare
-forms (`"backend"`, `["designer", "backend"]`) remain fully supported
+**Default: `true` for single-agent code implementation stages** (backend, frontend, or
+any custom implementer) when the project has a detectable test directory. Set
+`tdd_parallel: false` explicitly only when:
+- The stage is a pure refactor (the existing test suite already encodes the contract).
+- The stage has `agents.length > 1` (multi-implementer TDD parallel is not yet supported).
+- The spec lacks a clear input/output contract (test-writer cannot derive tests from it).
+
+The existing bare forms (`"backend"`, `["designer", "backend"]`) remain fully supported
 and produce identical behavior to a `tdd_parallel: false` stage.
 
 #### Sub-task fan-out opt-in (`parallelizable_units`)
