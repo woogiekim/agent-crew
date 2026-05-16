@@ -128,7 +128,9 @@ ACTION_PAT = (
 QUESTION_PAT = (
     r"why|what|how|explain|describe|tell me|show me|list|which|"
     r"어떻게|뭐야|무엇|왜|어떤|설명|"
-    r"알려|이해|뭔지|뭔가|뭐가|어디|누가|언제"
+    r"알려|이해|뭔지|뭔가|뭐가|어디|누가|언제|"
+    r"있나요|합니까|인가요|할까요|됩니까|인지요|했나요|"
+    r"활용|사용하고|쓰고|동작|작동"
 )
 # Truly atomic facts that need no agent — a bare yes/no, a bare file path,
 # or a bare single number. These stay inline even when QUESTION_PAT fires.
