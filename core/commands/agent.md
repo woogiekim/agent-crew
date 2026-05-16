@@ -206,11 +206,194 @@ For each rule in priority order:
       break.
 
 If no rule matched (NONE):
-  print: "crew:agent: cannot auto-route this task."
-  print: "Specify an agent explicitly: crew:agent <name> \"${TASK_STRING}\""
-  print: "Or delegate to the supervisor:  crew:run \"${TASK_STRING}\""
+  → Execute the Routing Failure Fallback procedure (see below).
   stop.
 ```
+
+#### Routing Failure Fallback
+
+When no auto-routing rule matches (NONE path above), the command MUST:
+
+1. **Write gap telemetry** to `~/.agent-crew/state/{PROJECT_NAME}/routing-misses.log`
+2. **Detect repeat patterns** by reading that log
+3. **Present a structured choice UI** — never emit a plain-text error
+
+##### Step 4a — Gap telemetry
+
+Determine `PROJECT_NAME` from the current working directory or git root:
+
+```bash
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+PROJECT_NAME=$(basename "${PROJECT_ROOT}")
+STATE_DIR="${HOME}/.agent-crew/state/${PROJECT_NAME}"
+ROUTING_MISSES_LOG="${STATE_DIR}/routing-misses.log"
+SESSION_ID="${CREW_SESSION_ID:-$(date -u +%Y%m%d-%H%M%S)}"
+```
+
+Append a JSONL record (one JSON object per line, no trailing comma, newline-terminated):
+
+```python
+import json, sys, os, re, datetime
+
+routing_misses_log = os.path.expanduser(
+    f"~/.agent-crew/state/{os.path.basename(os.getcwd())}/routing-misses.log"
+)
+os.makedirs(os.path.dirname(routing_misses_log), exist_ok=True)
+
+record = {
+    "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "query": TASK_STRING,
+    "matched_candidates": [],   # empty — no rule matched
+    "session_id": SESSION_ID,
+}
+with open(routing_misses_log, "a", encoding="utf-8") as f:
+    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+```
+
+The log file is created on first write. If the directory or file cannot be written
+(e.g., permissions), the failure is silently swallowed and the fallback continues.
+
+##### Step 4b — Repeat-pattern detection
+
+Before displaying the choice UI, count how many times the current query has failed
+before. "Same query" is determined by a normalized form:
+
+- lowercase
+- strip leading/trailing whitespace
+- collapse internal runs of whitespace to a single space
+- strip common punctuation: `?!.,;:`
+
+```python
+import json, os, re
+
+def normalize_query(q: str) -> str:
+    q = q.lower().strip()
+    q = re.sub(r"[?!.,;:]", "", q)
+    q = re.sub(r"\s+", " ", q).strip()
+    return q
+
+def count_prior_failures(routing_misses_log: str, current_query: str) -> int:
+    """Count entries in routing-misses.log whose normalized query matches current_query.
+    The current write in Step 4a is already appended, so subtract 1 to get prior count."""
+    norm_current = normalize_query(current_query)
+    try:
+        with open(routing_misses_log, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return 0
+    count = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            if normalize_query(rec.get("query", "")) == norm_current:
+                count += 1
+        except Exception:
+            continue
+    # Subtract 1 because the current failure was already appended in Step 4a
+    return max(0, count - 1)
+
+PRIOR_FAIL_COUNT = count_prior_failures(ROUTING_MISSES_LOG, TASK_STRING)
+IS_REPEAT = PRIOR_FAIL_COUNT >= 3
+```
+
+`IS_REPEAT` is `True` when the same (normalized) query has failed to route
+**3 or more times previously**. This threshold triggers the RECOMMENDED label on
+option C.
+
+##### Step 4c — Structured choice UI
+
+Present a structured user-choice intent
+(see `core/rules/capabilities/interactive-question.md`):
+
+- **header**: "Routing Gap"
+- **question**: Compose contextually:
+  - If `IS_REPEAT` is `True`:
+    ```
+    No agent matched "{TASK_STRING}".
+    This query pattern has failed to route {PRIOR_FAIL_COUNT} time(s) before.
+    A new agent may be needed to handle this domain. Consider option C.
+    ```
+  - If `IS_REPEAT` is `False`:
+    ```
+    No agent matched "{TASK_STRING}". How would you like to proceed?
+    ```
+- **options**:
+  - `[A] Delegate to crew:run` — Hand off as a full implementation task (supervisor + pipeline)
+  - `[B] Specify agent explicitly` — I'll name the agent to use
+  - `[C] Launch crew:agent-maker` — Design a new agent for this domain`
+    (append " (Recommended)" to the label when `IS_REPEAT` is `True`)
+
+Absence behavior (flag=false): emit the structured markdown question format:
+
+```
+No agent matched "{TASK_STRING}". How would you like to proceed?
+
+[If IS_REPEAT] Note: This query pattern has failed to route {PRIOR_FAIL_COUNT} time(s) before.
+A new agent may be needed to handle this domain.
+
+Pick one (reply with the option number):
+
+1. **Delegate to crew:run** — Hand off as a full implementation task (supervisor + pipeline)
+2. **Specify agent explicitly** — I'll name the agent to use
+3. **Launch crew:agent-maker (Recommended)** — Design a new agent for this domain
+   [only show "Recommended" tag when IS_REPEAT is True]
+0. **cancel**
+```
+
+##### Step 4d — Handle the user's choice
+
+**If [A] — Delegate to crew:run:**
+
+```text
+Invoke crew:run with TASK_STRING as the task description.
+Pass the routing context as a note to the supervisor: "Routed from crew:agent
+after no matching rule — treat as a full implementation task."
+```
+
+**If [B] — Specify agent explicitly:**
+
+```text
+Prompt the user: "Enter the agent name to use:"
+Read the response as EXPLICIT_AGENT_NAME.
+Re-invoke this command from Step 1 in explicit mode:
+  AGENT_NAME  = EXPLICIT_AGENT_NAME
+  TASK_STRING = (unchanged)
+  (Jump to Step 3 — Validate agent)
+```
+
+**If [C] — Launch crew:agent-maker:**
+
+```text
+Automatically invoke crew:agent-maker with the failed query as context:
+
+  crew:agent-maker \
+    --context "Routing gap: no agent matched query: {TASK_STRING}" \
+    --suggest-name "(derive from query domain)"
+
+The agent-maker will guide the user through designing a new agent definition
+for this domain. On completion, the new agent is registered in the Agent Registry
+(core/rules/agent-routing.md) and can be reached on subsequent crew:agent calls.
+```
+
+**If cancel / no response:**
+
+Stop silently. Do not emit an error message — the user dismissed the dialog.
+
+##### Invariants for the fallback
+
+- **NEVER emit a plain-text error message** for the no-match path. The structured
+  choice UI is the only permitted output. Plain-text errors ("cannot auto-route
+  this task") violate the approval prohibition enforced by Phase G6.
+- **Gap telemetry is always written** before the UI is shown, even if the user
+  cancels. The log is append-only and must not be truncated or deleted by this command.
+- **Option C label** carries the "(Recommended)" tag **only** when `IS_REPEAT`
+  is `True` (prior fail count >= 3). It must not appear on first or second failure.
+- **crew:agent-maker invocation** (option C) is automatic — the user does not
+  need to type a separate command. The failed `TASK_STRING` is passed as context
+  so the agent-maker can propose a suitable agent name, scope, and routing keywords.
 
 ### Step 5 — Korean input normalization
 
@@ -297,7 +480,7 @@ requires `crew:run`).
 | Reviewer stage | Yes (automatic) | No |
 | Approval gate for destructive ops | Yes | Not applicable (devops restricted) |
 | Cost tracking | Yes (capability-gated) | No |
-| Telemetry / progress events | Yes | No |
+| Telemetry / progress events | Yes | Routing-gap only (routing-misses.log) |
 
 Because `crew:agent` skips the reviewer stage, code produced by direct
 invocation has not been independently verified. For production-bound changes,
