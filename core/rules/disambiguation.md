@@ -71,8 +71,7 @@ following:
    is fully unambiguous (regex-exact match, file-exists check, etc.).
 
 4. **Cache the resolved decision** into the task's state (e.g.,
-   `{TASK_DIR}/register.json` once introduced, or `pipeline.json`
-   today) so that:
+   `{TASK_DIR}/register.json` or `pipeline.json`) so that:
    - A retry of the same stage does not re-prompt the user.
    - A resume after interruption does not re-prompt the user.
    - The decision is part of the task's audit trail.

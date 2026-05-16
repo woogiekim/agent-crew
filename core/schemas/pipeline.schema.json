@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/pipeline.schema.json",
+  "title": "agent-crew task pipeline",
+  "description": "Execution graph and stage progress for one task. Lives at {TASK_DIR}/pipeline.json. Written by analyst in Phase 1b; mutated by supervisor at each stage boundary. additionalProperties is true because analyst-emitted dynamic-agent entries and capability-gated fields (host_task_ids) are inherently open-ended.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["task", "stages", "completed_stages"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Optional in v1 — analyst-emitted pipeline.json may omit it (backward compat). Bumped on incompatible field changes."
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Original task description (mirror of register.json.task; analyst writes this from its TASK input)."
+    },
+    "stages": {
+      "type": "array",
+      "description": "2D array. Each outer element is a sequential stage; each inner element is an agent name (string) executed in parallel within that stage. Older pipeline.json files may have bare strings as inner elements; the supervisor normalizes via `stage if isinstance(stage, list) else [stage]`.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1 },
+          {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          }
+        ]
+      }
+    },
+    "completed_stages": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based count of stages whose terminal state was successful completion. Resume logic skips stages with index < completed_stages."
+    },
+    "needs_creation": {
+      "type": "array",
+      "description": "Dynamic agents the planner determined must be created at Phase 1.5 before stage execution can begin. Empty array when all stages use builtin agents.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "reason", "role"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "Agent filename without .md. Must match the name used in stages."
+          },
+          "reason": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "stage_agent_status": {
+      "type": "object",
+      "description": "Per-stage per-agent terminal status. Outer key is the 1-based stage index as a string; inner keys are agent names; inner values are completed | crashed | blocked. Written by supervisor-stages Phase 2 after each agent in a parallel stage reaches a terminal state.",
+      "patternProperties": {
+        "^[0-9]+$": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["completed", "crashed", "blocked"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "host_task_ids": {
+      "type": "array",
+      "description": "Capability-gated (task_tools=true). Parallel to stages: outer index = stage index, inner is {agent_name: host_task_id}. Populated by Phase 1c-bis. Absence is equivalent to DAG mirror disabled — every reader MUST tolerate.",
+      "items": {
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      }
+    }
+  }
+}

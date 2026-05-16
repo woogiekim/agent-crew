@@ -148,6 +148,8 @@ case "${COST_VERDICT}" in
     ;;
   exceeded)
     log_progress "COST_BLOCKED" "task token budget exceeded"
+    register_update current_phase blocked
+    register_update blocked_by --json '["cost_budget_exceeded"]'
     cat > "${TASK_DIR}/result.md" <<EOF
 # {TASK}
 
@@ -187,8 +189,21 @@ devops failure in Phase 2.5) halts the pipeline. The supervisor MUST:
 
 1. Write the blocker reason to `{TASK_DIR}/result.md` with
    `STATUS: blocked`.
-2. Run the Phase 3 close-out below in full (Steps 1, 2, 2b, 3, 4, 5).
-3. Return `STATUS: blocked` to the orchestrator with the same final
+2. Update the register with the blocker label so external tooling can
+   read the terminal state without parsing `result.md`:
+
+   ```bash
+   register_update current_phase blocked
+   register_update blocked_by --json '["<reason>"]'
+   ```
+
+   Where `<reason>` is one of: `validation_budget_exceeded`,
+   `crash_budget_exceeded`, `agent_blocked`, `devops_failed`,
+   `state_schema_invalid`, `plan_approval_cancelled`, etc.
+3. Run the Phase 3 close-out below in full (Steps 1, 2, 2b, 3, 4, 5).
+   The close-out's final `register_update current_phase completed`
+   is conditional — it skips when `current_phase` is already `blocked`.
+4. Return `STATUS: blocked` to the orchestrator with the same final
    return value contract used for completed runs.
 
 The crash-exhaustion path (Stage Retry Rule budget reached) and the
@@ -199,6 +214,11 @@ is uniform.
 
 ## Phase 3: Completion Handling
 
+At Phase 3 entry, bump the register:
+
+```bash
+register_update current_phase phase_3
+```
 
 #### 1. Collect git log
 
@@ -260,11 +280,37 @@ After writing result.md, collect the commit count and emit:
 ```
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | COMPLETED | branch={BRANCH} commits={n}" >> "${TASK_DIR}/progress.log"
+log_progress "COMPLETED" "branch=${BRANCH} commits=${n}"
+
+# Phase F4: final register update — terminal state.
+# Read existing register state so we don't overwrite a BLOCKED Recovery
+# label with `completed`.
+REG_PHASE=$(python3 -c "
+import json
+try:
+    r = json.load(open('${TASK_DIR}/register.json'))
+    print(r.get('current_phase', ''))
+except Exception:
+    print('')
+" 2>/dev/null)
+REG_VERIFY=$(python3 -c "
+import json
+try:
+    r = json.load(open('${TASK_DIR}/register.json'))
+    print(r.get('verification_status', 'not_started'))
+except Exception:
+    print('not_started')
+" 2>/dev/null)
+if [ "${REG_VERIFY}" = "not_started" ] || [ "${REG_VERIFY}" = "running" ]; then
+  register_update verification_status skipped
+fi
+if [ "${REG_PHASE}" != "blocked" ]; then
+  register_update current_phase completed
+fi
 ```
 
-The completion event must also be mirrored to stderr per the stderr-mirror rule
-in Phase 0 (use `log_progress "COMPLETED" "branch=${BRANCH} commits=${n}"`).
+The completion event is mirrored to stderr per the stderr-mirror rule
+in Phase 0 via the `log_progress` helper.
 
 #### 2b. Close out the host task (capability-gated)
 

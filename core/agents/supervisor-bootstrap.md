@@ -176,7 +176,7 @@ log_progress() {
     BLOCKED|COST_BLOCKED|HANDOFF_PAGEOUT_FAILED)        _status="failed" ;;
     RETRY)                                              _status="retry" ;;
     HANDOFF_PAGEOUT_SKIPPED)                            _status="skipped" ;;
-    COST_WARN|HANDOFF_PAGEOUT)                          _status="warn" ;;
+    COST_WARN|HANDOFF_PAGEOUT|STATE_WARN)               _status="warn" ;;
     *)                                                  _status="unknown" ;;
   esac
 
@@ -210,6 +210,113 @@ PYEOF
 # Usage: log_progress "PHASE" "1b — Analysis + Planning (merged)"
 ```
 
+### register.json update helper (Phase F4)
+
+The supervisor maintains a slim per-task pointer file at
+`${TASK_DIR}/register.json` (schema: `core/rules/state-files/register-json.md`).
+Every phase boundary calls `register_update` to bump a single field
+atomically.
+
+```bash
+# register_update <field> <value>          — set string/enum field
+# register_update <field> --json <jsv>     — set field to JSON value (array, etc.)
+#
+# Atomic write via tempfile + os.rename(). Auto-seeds register.json
+# with sensible defaults when the file is absent (first-call init).
+register_update() {
+  local field="$1"
+  shift
+  local raw_kind="string"
+  local value="$1"
+  if [ "${1:-}" = "--json" ]; then
+    raw_kind="json"
+    value="$2"
+  fi
+
+  python3 - "${TASK_DIR}/register.json" "${field}" "${raw_kind}" "${value}" \
+           "${TASK_ID}" "${SESSION_ID:-${TASK_ID}}" "${TASK:-}" "${BRANCH:-}" \
+           "${PROJECT_ROOT:-}" "${TASK_DIR}" "${EXECUTION_MODE:-single}" <<'PYEOF' 2>/dev/null || true
+import json, os, sys, tempfile
+
+(path, field, kind, raw_value, task_id, session_id, task, branch,
+ project_root, task_dir, execution_mode) = sys.argv[1:12]
+
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        reg = json.load(f)
+except Exception:
+    reg = {
+        "schema_version":      1,
+        "task_id":              task_id,
+        "session_id":           session_id,
+        "task":                 task,
+        "branch":               branch,
+        "project_root":         project_root,
+        "task_dir":             task_dir,
+        "execution_mode":       execution_mode,
+        "current_phase":        "phase_0",
+        "approval_status":      "not_required",
+        "verification_status":  "not_started",
+        "requirements_path":    f"{task_dir}/context/requirements.md",
+        "analysis_path":        f"{task_dir}/context/analysis.md",
+        "prd_path":             f"{task_dir}/context/prd.md",
+        "pipeline_path":        f"{task_dir}/pipeline.json",
+        "handoff_path":         f"{task_dir}/handoff.md",
+        "progress_log_path":    f"{task_dir}/progress.log",
+        "progress_buffer_path": f"{task_dir}/progress.buffer.jsonl",
+        "result_path":          f"{task_dir}/result.md",
+        "approval_path":        f"{task_dir}/context/approval.md",
+        "start_head_path":      f"{task_dir}/context/start-head.txt",
+        "modified_files":       [],
+        "blocked_by":           [],
+    }
+
+if kind == "json":
+    try:
+        value = json.loads(raw_value)
+    except Exception:
+        value = raw_value
+else:
+    value = raw_value
+
+# Array-valued fields are append-with-dedupe.
+if field in ("modified_files", "blocked_by"):
+    if isinstance(value, list):
+        existing = list(reg.get(field, []))
+        for v in value:
+            if v not in existing:
+                existing.append(v)
+        reg[field] = existing
+    else:
+        existing = list(reg.get(field, []))
+        if value and value not in existing:
+            existing.append(value)
+        reg[field] = existing
+else:
+    reg[field] = value
+
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".register.",
+                            suffix=".tmp")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(reg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.rename(tmp, path)
+except Exception:
+    try:
+        os.unlink(tmp)
+    except Exception:
+        pass
+    raise
+PYEOF
+}
+# Usage:
+#   register_update current_phase phase_2
+#   register_update approval_status pending
+#   register_update modified_files --json '["core/foo.py"]'
+#   register_update blocked_by --json '["state_schema_invalid"]'
+```
+
 Every progress-event emit in the rest of this module (and in
 `supervisor-stages.md`, `supervisor-retry.md`) is a `log_progress` call —
 all three sinks fire. Where an inline `echo … >> "${TASK_DIR}/progress.log"`
@@ -223,6 +330,67 @@ is defined. This is the first event of the task — both `progress.log` and
 
 ```bash
 log_progress "STARTED" "{TASK truncated to 60 chars}"
+```
+
+### State-schema validation (Phase F4)
+
+After `STARTED` (so the helper can emit warnings), run the state-file
+validator. Mixed-mode policy: own-task files (`register.json`,
+`pipeline.json`, `progress.buffer.jsonl`) hard-halt on type errors or
+missing required fields; cross-task files (`session.json`,
+`capabilities.json`) warn but continue.
+
+```bash
+VALIDATOR="${AGENT_CREW_HOME}/scripts/validate-state-schema.py"
+if [ -f "${VALIDATOR}" ]; then
+  VALIDATION_OUTPUT=$(python3 "${VALIDATOR}" \
+       --state-dir "${STATE_DIR}" \
+       --task-dir  "${TASK_DIR}" \
+       --format    text 2>&1)
+  VALIDATION_RC=$?
+  case "${VALIDATION_RC}" in
+    0)
+      : # all clean
+      ;;
+    1)
+      log_progress "STATE_WARN" "schema validator warnings (rc=1)"
+      printf '%s\n' "${VALIDATION_OUTPUT}" >&2
+      ;;
+    2)
+      log_progress "BLOCKED" "schema validator errors (rc=2)"
+      printf '%s\n' "${VALIDATION_OUTPUT}" >&2
+      register_update current_phase blocked
+      register_update blocked_by --json '["state_schema_invalid"]'
+      cat > "${TASK_DIR}/result.md" <<EOF
+# ${TASK}
+
+STATUS: blocked
+BLOCKER: state_schema_invalid
+DETAIL: validate-state-schema.py reported errors at Phase 0. See
+        ${TASK_DIR}/progress.log for the full validator output.
+EOF
+      exit 1
+      ;;
+    *)
+      log_progress "STATE_WARN" "schema validator unavailable (rc=${VALIDATION_RC})"
+      ;;
+  esac
+fi
+```
+
+### Initial register.json seed (Phase F4)
+
+Seed the register file once after STARTED. On fresh runs this creates
+`register.json` with `current_phase=phase_0`. On pre-F4 resumes (no
+register.json yet) it backfills the file; the next stage transition's
+`register_update` will then advance `current_phase` correctly. On F4+
+resumes the existing file is rewritten with the same fields (no data
+loss — register_update preserves all other fields).
+
+```bash
+if [ ! -f "${TASK_DIR}/register.json" ]; then
+  register_update current_phase phase_0
+fi
 ```
 
 **Resume check**: If `PIPELINE_PATH` already exists, resume from that state
@@ -268,7 +436,8 @@ Emit before checking:
 ```
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1a — Requirement collection" >> "${TASK_DIR}/progress.log"
+log_progress "PHASE" "1a — Requirement collection"
+register_update current_phase phase_1a
 ```
 
 **Check whether `REQUIREMENTS` was provided in the supervisor's own input.**
@@ -415,7 +584,8 @@ Emit before delegating:
 ```
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1b — Analysis + Planning (merged)" >> "${TASK_DIR}/progress.log"
+log_progress "PHASE" "1b — Analysis + Planning (merged)"
+register_update current_phase phase_1bc
 ```
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
@@ -499,7 +669,12 @@ cat "${PIPELINE_PATH}"
 
 If `HAS_TASK_TOOLS == 1`, after the analyst (merged analyst+planner) has written `pipeline.json`, create
 one child host task per stage and persist the `blockedBy` DAG so operators can
-see the pipeline structure in the host UI. The per-stage task ids are written
+see the pipeline structure in the host UI.
+
+```bash
+register_update current_phase phase_1c_bis
+```
+ The per-stage task ids are written
 back to `pipeline.json.host_task_ids` as a parallel array to `stages`. Each
 entry is itself a map `{agent_name: host_task_id}` so parallel stages with
 multiple agents all get individual host tasks.
@@ -563,7 +738,9 @@ Emit before displaying the plan:
 Also append to the progress log:
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1d — Plan approval" >> "${TASK_DIR}/progress.log"
+log_progress "PHASE" "1d — Plan approval"
+register_update current_phase phase_1d
+register_update approval_status pending
 ```
 
 Read `pipeline.json` (via `PIPELINE_PATH`), `{TASK_DIR}/context/analysis.md`, and
@@ -675,7 +852,12 @@ Then fire a **structured user-choice intent** (see
   - label: "Cancel"
     description: "Stop execution"
 
-**If Approve:** proceed to Phase 1.5.
+**If Approve:** mark the register and proceed to Phase 1.5.
+
+```bash
+register_update approval_status approved
+```
+
 
 **If Request changes:** collect the change description from the user's response,
 then re-invoke the **analyst** (merged analyst+planner) with the change request.
@@ -718,10 +900,13 @@ Emit:
 [crew] {TASK_ID} | COMPLETED | STATUS=CANCELLED
 ```
 
-And append to progress log:
+And append to progress log + update register:
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | COMPLETED | STATUS=CANCELLED" >> "${TASK_DIR}/progress.log"
+log_progress "COMPLETED" "STATUS=CANCELLED"
+register_update approval_status cancelled
+register_update current_phase blocked
+register_update blocked_by --json '["plan_approval_cancelled"]'
 ```
 
 Then return to the orchestrator without executing any pipeline stages.
@@ -737,7 +922,8 @@ If the `needs_creation` list is non-empty, emit before creating agents (where `{
 ```
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | PHASE | 1.5 — Creating {n} dynamic agent(s)" >> "${TASK_DIR}/progress.log"
+log_progress "PHASE" "1.5 — Creating {n} dynamic agent(s)"
+register_update current_phase phase_1_5
 ```
 
 Read the `needs_creation` list from `PIPELINE_PATH` (already resolved in Phase 0):

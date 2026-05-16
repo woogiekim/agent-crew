@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/register.schema.json",
+  "title": "agent-crew task register",
+  "description": "Slim per-task state pointer file. Lives at {TASK_DIR}/register.json. Introduced in Phase F4 alongside JSON-schema validation. Pointer-only: does NOT duplicate pipeline.json execution-graph content or per-stage handoff content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "session_id",
+    "task",
+    "branch",
+    "project_root",
+    "task_dir",
+    "execution_mode",
+    "current_phase",
+    "approval_status",
+    "verification_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Bumped on incompatible field changes; readers tolerate higher versions with a warning."
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}(-[0-9]+)?$",
+      "description": "{YYYYMMDD}-{HHMMSS}[-{idx}]. Matches the supervisor's TASK_ID input."
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}$",
+      "description": "{YYYYMMDD}-{HHMMSS}. Derived from TASK_ID by stripping the -N suffix when not provided by orchestrator."
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Original task description as passed to crew:run."
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Working branch name. Follows core/rules/branch-naming.md."
+    },
+    "project_root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to project root. May be a worktree path in parallel mode."
+    },
+    "task_dir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to {STATE_DIR}/tasks/{TASK_ID}. Self-referential; useful for tooling that received only register.json."
+    },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["single", "parallel"],
+      "description": "Matches the EXECUTION_MODE supervisor input."
+    },
+    "current_phase": {
+      "type": "string",
+      "enum": [
+        "phase_0",
+        "phase_1a",
+        "phase_1bc",
+        "phase_1c_bis",
+        "phase_1d",
+        "phase_1_5",
+        "phase_2",
+        "phase_2_5",
+        "phase_3",
+        "completed",
+        "blocked"
+      ],
+      "description": "Current supervisor phase. Updated at each phase boundary via the register_update helper. Terminal values: completed, blocked."
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": ["not_required", "pending", "approved", "cancelled"],
+      "description": "Approval gate state. not_required = pipeline has no gate, pending = at the gate, approved/cancelled = post-resolution."
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["not_started", "running", "passed", "failed", "skipped"],
+      "description": "Reviewer stage state. running set at reviewer entry, passed/failed at reviewer exit, skipped when pipeline has no reviewer stage."
+    },
+    "requirements_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/requirements.md. May not exist yet if Phase 1a has not run."
+    },
+    "analysis_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/analysis.md. May not exist yet if Phase 1b has not run."
+    },
+    "prd_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/prd.md."
+    },
+    "pipeline_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/pipeline.json. Resolved at task setup; the file itself is written by analyst in Phase 1b."
+    },
+    "handoff_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/handoff.md."
+    },
+    "progress_log_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/progress.log. Human-readable mirror."
+    },
+    "progress_buffer_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/progress.buffer.jsonl. Phase F5 structured event buffer."
+    },
+    "result_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/result.md. Written by Phase 3 close-out."
+    },
+    "approval_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/approval.md. Only populated for runs that hit Phase 2.5 approval gates."
+    },
+    "start_head_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/start-head.txt — pre-execution HEAD SHA recorded by Phase 1b+1c."
+    },
+    "modified_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Cumulative list of files modified by stage agents during this task. Appended at each STAGE_DONE; deduplicated. Populated from git status --short diff against task_start_head."
+    },
+    "blocked_by": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Reasons / blocker labels when current_phase=blocked. Empty otherwise. Multiple entries when multiple sub-causes apply (e.g., crash budget + cost budget)."
+    }
+  }
+}

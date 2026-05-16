@@ -18,6 +18,12 @@
 Execute the `stages` from `pipeline.json` sequentially.
 Skip stages already included in `completed_stages`.
 
+At Phase 2 entry — before the stage loop begins — bump the register:
+
+```bash
+register_update current_phase phase_2
+```
+
 **Devops skip rule**: When iterating stages, if the stage agent is `devops`
 (or a stage list that contains `devops`), **do not spawn it here**. Skip it
 and let Phase 2.5 handle the devops stage exclusively. This ensures the
@@ -132,7 +138,31 @@ After the stage agent returns and its result is recorded:
 ```
 
 ```bash
-echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE_DONE | {agent_name} — {APPROVED|NEEDS_CHANGES|N/A}" >> "${TASK_DIR}/progress.log"
+log_progress "STAGE_DONE" "{agent_name} — {APPROVED|NEEDS_CHANGES|N/A}"
+
+# Phase F4: append modified files to register (deduplicated).
+MODFILES=$(cd "${PROJECT_ROOT}" && git status --short 2>/dev/null \
+            | awk '{print $2}' \
+            | python3 -c "import sys, json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))")
+register_update modified_files --json "${MODFILES}"
+
+# Phase F4: reviewer-stage verification status bump.
+if [ "${STAGE_AGENT}" = "reviewer" ]; then
+  case "${STAGE_RESULT:-}" in
+    APPROVED)       register_update verification_status passed ;;
+    NEEDS_CHANGES)  register_update verification_status failed ;;
+    *)              register_update verification_status skipped ;;
+  esac
+fi
+```
+
+At reviewer-stage entry (immediately before the STAGE emit, where
+`${STAGE_AGENT} == "reviewer"`), mark verification as running:
+
+```bash
+if [ "${STAGE_AGENT}" = "reviewer" ]; then
+  register_update verification_status running
+fi
 ```
 
 If `HAS_TASK_TOOLS == 1` AND the per-stage host task id is present, mirror the
@@ -326,6 +356,12 @@ spawn.
 
 ### Phase 2.5: Stage Action Gate
 
+At Phase 2.5 entry, bump the register:
+
+```bash
+register_update current_phase phase_2_5
+```
+
 The supervisor owns all approval decisions for its pipeline. Stage agents
 (devops, reviewer, etc.) MUST NOT issue their own host interactive question
 mechanism (see `core/rules/capabilities/interactive-question.md`) for deploy,
@@ -490,6 +526,7 @@ Question:
 
 If **Approve**:
   - Write `APPROVED` to `{TASK_DIR}/context/approval.md` (canonical artifact).
+  - Update register: `register_update approval_status approved`.
   - If `HAS_TASK_TOOLS == 1` and `${TASK_DIR}/host-task-id.txt` exists, also
     transition the parent host task to `in_progress` so any devops-poll-loop
     based on `TaskGet` (P1) wakes up immediately:
@@ -515,6 +552,7 @@ If **Approve**:
 
 If **Cancel**:
   - Write `CANCELLED` to `{TASK_DIR}/context/approval.md`.
+  - Update register: `register_update approval_status cancelled`.
   - If `HAS_TASK_TOOLS == 1` and `${TASK_DIR}/host-task-id.txt` exists, also
     transition the parent host task to `cancelled` so a `TaskGet` waiter wakes
     immediately and stops blocking:

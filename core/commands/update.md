@@ -108,6 +108,7 @@ resolve_source_dir() {
    | rules | `${SOURCE_DIR}/rules/` | `${AGENT_CREW_HOME}/system/rules/` | `${AGENT_CREW_HOME}/rules/` |
    | hooks | `${SOURCE_DIR}/hooks/` | `${AGENT_CREW_HOME}/system/hooks/` | `${AGENT_CREW_HOME}/hooks/` |
    | scripts | `${SOURCE_DIR}/scripts/` | `${AGENT_CREW_HOME}/system/scripts/` | `${AGENT_CREW_HOME}/scripts/` |
+   | schemas | `${SOURCE_DIR}/schemas/` | `${AGENT_CREW_HOME}/system/schemas/` | `${AGENT_CREW_HOME}/schemas/` |
    | setup | `${SOURCE_DIR}/setup/` | `${AGENT_CREW_HOME}/system/setup/` | `${AGENT_CREW_HOME}/setup/` |
    | adapters | `${ADAPTERS_DIR}/` | `${AGENT_CREW_HOME}/system/adapters/` | `${AGENT_CREW_HOME}/adapters/` |
    | agents | `${SOURCE_DIR}/agents/` | `${AGENT_CREW_HOME}/system/agents/` | (via sync_system_agents) |
@@ -519,6 +520,69 @@ the supervisor via the input block (previously absent for single-task
 runs). The supervisor falls back to deriving `SESSION_ID` from
 `TASK_ID` if the orchestrator omits it — old-style spawn paths remain
 functional.
+
+### Phase F4 — State-file schema validation + register.json
+
+The supervisor now writes a per-task `register.json` pointer file
+alongside `pipeline.json`, and a stdlib Python validator at
+`${AGENT_CREW_HOME}/scripts/validate-state-schema.py` runs at every
+supervisor Phase 0 to catch malformed state before serious work. Schemas
+live under `${AGENT_CREW_HOME}/schemas/*.schema.json` (and the compat
+mirror at `${AGENT_CREW_HOME}/system/schemas/`).
+
+**No migration code required.** Pure additive:
+
+- New per-task file `register.json` appears alongside the existing
+  `pipeline.json` for every task started after upgrading. Pre-F4 task
+  directories without `register.json` continue to work — the validator
+  silently warns on absence and the supervisor's resume path tolerates
+  it. The next phase boundary update will create register.json
+  retroactively on resumed tasks.
+- No env var or feature toggle: the validator is always invoked.
+- No new capability flag. Schema validation is host-agnostic.
+- No `settings.json` changes.
+
+**Validator severity classes (mixed mode).**
+
+- Hard halts (exit 2): own-task files (`register.json`,
+  `pipeline.json`, `progress.buffer.jsonl`) with type errors or missing
+  required fields. The supervisor writes BLOCKED with
+  `BLOCKER: state_schema_invalid` and returns to the orchestrator.
+- Soft warns (exit 1): cross-task files (`session.json`,
+  `capabilities.json`); forward-compat (`schema_version > 1`); pre-F4
+  absent files. The supervisor logs `STATE_WARN` and continues.
+
+**Forward compatibility.** Every schema includes a `schema_version`
+field. The current schema is v1. Future versions bump the field and the
+validator tolerates higher versions with a warning (forward-compat).
+
+**Storage impact.** `register.json` is ~600 bytes per task. The 5
+schema JSON files total ~6 KB and sit under `${AGENT_CREW_HOME}/schemas/`
+once per install, not per task.
+
+**Update steps.** The standard category sync in § Execution copies
+`core/schemas/` into both `system/schemas/` and the `schemas/` compat
+alias. No special migration block — `crew:update` picks the schemas up
+on the next refresh.
+
+**Cross-references updated.**
+
+- `core/rules/disambiguation.md` § Approval Workflow drops the
+  "(once introduced)" qualifier on register.json caching.
+- `core/rules/task-injection.md` § `task_hash` field drops the
+  "register.json does not exist yet" note (it now exists, but the
+  field placement decision stays — task_hash lives in session.json
+  only, not register.json, because session.json is the dedup source).
+- `core/rules/state-files/progress-buffer-jsonl.md` § Related Files
+  drops the "Planned (Phase F4)" tag on `register.json.md`.
+- `core/scripts/README.md` § Planned scripts removes the
+  `validate-state-schema.py` row (the script now exists).
+
+**Consumer rollout.** `crew:status` Step 2.5 (new in F4) prefers
+register.json for `current_phase`, `approval_status`, and
+`verification_status` when present; falls back to the existing
+`result.md` grep + `pipeline.json` parsing for pre-F4 task
+directories. No user action required.
 
 ## Completion Message
 

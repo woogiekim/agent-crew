@@ -140,6 +140,15 @@ install_global() {
     log_info "Scripts installed → ${AGENT_CREW_DIR}/system/scripts/"
   fi
 
+  mkdir -p "${AGENT_CREW_DIR}/system/schemas"
+  if [ -d "${SOURCE_DIR}/schemas" ]; then
+    cp -r "${SOURCE_DIR}/schemas/"* "${AGENT_CREW_DIR}/system/schemas/" 2>/dev/null || true
+    log_info "Schemas installed → ${AGENT_CREW_DIR}/system/schemas/"
+  fi
+
+  [ -f "${AGENT_CREW_DIR}/system/schemas/register.schema.json" ] \
+    || log_error "register.schema.json install failed — system/schemas/register.schema.json not found"
+
   mkdir -p "${AGENT_CREW_DIR}/system/hooks"
   cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/system/hooks/"
   chmod +x "${AGENT_CREW_DIR}/system/hooks/"*.sh 2>/dev/null || true
@@ -188,6 +197,11 @@ install_global() {
     cp -r "${SOURCE_DIR}/scripts/"* "${AGENT_CREW_DIR}/scripts/" 2>/dev/null || true
     chmod +x "${AGENT_CREW_DIR}/scripts/"*.sh 2>/dev/null || true
     chmod +x "${AGENT_CREW_DIR}/scripts/"*.py 2>/dev/null || true
+  fi
+
+  mkdir -p "${AGENT_CREW_DIR}/schemas"
+  if [ -d "${SOURCE_DIR}/schemas" ]; then
+    cp -r "${SOURCE_DIR}/schemas/"* "${AGENT_CREW_DIR}/schemas/" 2>/dev/null || true
   fi
 
   # Auto-migrate legacy flat layout (pre-system/ era):

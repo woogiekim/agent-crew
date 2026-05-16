@@ -110,6 +110,7 @@ if it does not exist.
 | `HANDOFF_PAGEDOUT` | Documenter page-out returns `STATUS: completed` (Phase 3.5) | `pre={chars} post={chars} archive=handoff-{N}.md` |
 | `HANDOFF_PAGEOUT_FAILED` | Documenter page-out returns `STATUS: BLOCKED` or crashes (Phase 3.5) | `{blocker reason}` |
 | `HANDOFF_PAGEOUT_SKIPPED` | Page-out skipped because cost breaker is exhausted (Phase 3.5) | `reason=cost_exceeded` |
+| `STATE_WARN` | F4 validator returned rc=1 (soft warnings) or rc≥3 (validator unavailable / unexpected) at Phase 0 | `schema validator warnings (rc={n})` |
 
 ### Parallel run prefix rule
 

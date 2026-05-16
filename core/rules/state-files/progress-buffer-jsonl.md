@@ -170,9 +170,15 @@ Sibling event surfaces:
   surface; F5's file-based buffer is the fallback path)
 - `${TASK_DIR}/progress.log` (human-readable mirror, same event stream)
 
-Planned (Phase F4):
+Sibling state-file docs (Phase F4):
 
-- `core/scripts/validate-state-schema.py` will validate every line
+- `core/rules/state-files/register-json.md`
+- `core/rules/state-files/pipeline-json.md`
+- `core/rules/state-files/session-json.md`
+- `core/rules/state-files/capabilities-json.md`
+
+Schema validator (Phase F4):
+
+- `core/scripts/validate-state-schema.py` validates every line
   against the schema above.
-- `core/rules/state-files/register.json.md` (sibling file in this
-  directory) — Phase F4 introduces it.
+- Schema file: `core/schemas/progress-buffer.schema.json`.

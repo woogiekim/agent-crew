@@ -94,9 +94,10 @@ rest of the schema is unchanged and tolerant of mixed pre/post-B0 entries
 within the same array.
 
 > **Note**: `task_hash` is NOT mirrored to the per-task
-> `{TASK_DIR}/register.json` because `register.json` does not exist yet
-> (planned in Phase F4). For Phase B0 the session.json entry is the sole
-> source of truth for the dedup check.
+> `{TASK_DIR}/register.json` (Phase F4). session.json is the sole
+> dedup source — `register.json` carries per-task pointer state, not
+> session-level identity. Duplicating the hash there would create two
+> writers for the same field with no consensus rule.
 
 ### Status values
 

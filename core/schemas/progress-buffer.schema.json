@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/progress-buffer.schema.json",
+  "title": "agent-crew progress event row",
+  "description": "Per-line shape of {TASK_DIR}/progress.buffer.jsonl (Phase F5). The buffer file is JSON-Lines: each line is one JSON object matching this schema. Validators in F4 inspect this schema per row; consumers per the F5 doc tolerate unknown fields and skip malformed lines.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["ts", "trace_id", "task_id", "event"],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "ISO-8601 UTC with seconds precision and trailing Z."
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "{SESSION_ID}.{TASK_ID}.{STAGE_INDEX}.{RETRY_ATTEMPT} — see progress-buffer-jsonl.md."
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}(-[0-9]+)?$"
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}(-[0-9]+)?$",
+      "description": "Required at write time but absence-tolerant on read (older buffers may omit)."
+    },
+    "event": {
+      "type": "string",
+      "description": "One of the events documented in core/agents/supervisor.md Event catalog. Validators do NOT enforce the enum (the vocabulary is additive across phases); they only check non-empty string."
+    },
+    "stage":   { "type": "integer", "minimum": 0 },
+    "agent":   { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 0 },
+    "status":  { "type": "string" },
+    "detail":  { "type": "string" },
+    "files":   { "type": "array", "items": { "type": "string" } }
+  }
+}

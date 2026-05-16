@@ -72,7 +72,6 @@ documents the planned surface so adapter authors can prepare.
 | `detect-inject-intent.sh` | 14 | Detect inject-intent phrases ("추가로 해줘", "이것도 부탁해", etc.) and check session liveness | `core/rules/capabilities/hook-system.md` |
 | `check-plaintext-approval.py` | 6 | Validate tool output / agent response for forbidden plain-text approval phrases | `core/rules/capabilities/hook-system.md` |
 | `check-task-injection.py` | 14 | Disambiguate duplicate task injection against `session.json` | `core/rules/capabilities/hook-system.md` |
-| `validate-state-schema.py` | F (state) | JSON-schema validate `pipeline.json`, `register.json`, `progress.buffer.jsonl`, `capabilities.json`, `session.json` | `core/rules/quality-loop.md` (future revision) |
 | `cost-aggregate.py` | E3.3 | Aggregate per-call token data into a per-task / crew-wide summary | `core/commands/cost.md`, `core/rules/capabilities/cost-tracking.md` |
 | ~~`handoff-page-out.py`~~ | superseded by Phase 3.5 | Auto-summarize `handoff.md` when it exceeds a threshold (opt-in) — **now implemented via the documenter agent in `MODE=page-out`, not a standalone script**. See `core/agents/documenter.md` § Page-Out Mode and `core/agents/supervisor-stages.md` § Post-stage handoff page-out. | `core/rules/quality-loop.md` § Page-Out As Hygiene Operation |
 

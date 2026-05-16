@@ -485,6 +485,7 @@ ACTIVE_TASK=$(ls -t "${TASKS_DIR}" | head -1)
 TASK_DIR="${TASKS_DIR}/${ACTIVE_TASK}"
 PIPELINE="${TASK_DIR}/pipeline.json"
 RESULT="${TASK_DIR}/result.md"
+REGISTER="${TASK_DIR}/register.json"
 ```
 
 If `TASKS_DIR` does not exist or is empty, print:
@@ -493,16 +494,53 @@ If `TASKS_DIR` does not exist or is empty, print:
 No tasks found. Run crew:setup or crew:run first.
 ```
 
+### 2.5. Prefer register.json for state (Phase F4)
+
+When `register.json` is present, read `current_phase`,
+`approval_status`, and `verification_status` directly — no need to
+parse `pipeline.json` and `progress.log` to infer state. Pre-F4 task
+directories without `register.json` fall through to the existing
+`result.md`-grep logic in Step 3.
+
+```bash
+HAS_REGISTER=0
+REG_CURRENT_PHASE=""
+REG_APPROVAL_STATUS=""
+REG_VERIFY_STATUS=""
+if [ -f "${REGISTER}" ]; then
+  HAS_REGISTER=1
+  read -r REG_CURRENT_PHASE REG_APPROVAL_STATUS REG_VERIFY_STATUS \
+    < <(python3 -c "
+import json
+try:
+    r = json.load(open('${REGISTER}'))
+    print(r.get('current_phase', '?'),
+          r.get('approval_status', '?'),
+          r.get('verification_status', '?'))
+except Exception:
+    print('? ? ?')
+" 2>/dev/null)
+fi
+```
+
 ### 3. Determine overall status
 
 ```bash
-# Check result.md for a completed status
-if grep -q "STATUS: completed" "${RESULT}" 2>/dev/null; then
-  OVERALL_STATUS="completed"
-elif grep -q "STATUS: blocked" "${RESULT}" 2>/dev/null || grep -q "STATUS: BLOCKED" "${RESULT}" 2>/dev/null; then
-  OVERALL_STATUS="blocked"
+if [ "${HAS_REGISTER}" = "1" ]; then
+  case "${REG_CURRENT_PHASE}" in
+    completed)  OVERALL_STATUS="completed" ;;
+    blocked)    OVERALL_STATUS="blocked" ;;
+    *)          OVERALL_STATUS="in-progress" ;;
+  esac
 else
-  OVERALL_STATUS="in-progress"
+  # Pre-F4 fallback: grep result.md for STATUS.
+  if grep -q "STATUS: completed" "${RESULT}" 2>/dev/null; then
+    OVERALL_STATUS="completed"
+  elif grep -q "STATUS: blocked" "${RESULT}" 2>/dev/null || grep -q "STATUS: BLOCKED" "${RESULT}" 2>/dev/null; then
+    OVERALL_STATUS="blocked"
+  else
+    OVERALL_STATUS="in-progress"
+  fi
 fi
 ```
 
@@ -718,9 +756,12 @@ non-empty, include the "Recent events" section above the pipeline stages list:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Task Status: {ACTIVE_TASK}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Task   : {TASK_DESC}
-Branch : {BRANCH}
-Status : {in-progress | completed | blocked}
+Task    : {TASK_DESC}
+Branch  : {BRANCH}
+Status  : {in-progress | completed | blocked}
+Phase   : {REG_CURRENT_PHASE}    ← printed only when register.json present
+Approval: {REG_APPROVAL_STATUS}  ← printed only when register.json present and approval_status != not_required
+Reviewer: {REG_VERIFY_STATUS}    ← printed only when register.json present and verification_status not in (not_started, skipped)
 
 Recent events (from progress.log):
   2026-05-10T14:22:01 | STARTED    | Implement order management API

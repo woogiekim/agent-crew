@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/capabilities.schema.json",
+  "title": "agent-crew host capability flags",
+  "description": "Host capability advertisement. Lives at {STATE_DIR}/capabilities.json. Written by the host adapter's setup.sh; read by core at runtime via the absence contract. additionalProperties is true because each refactor phase adds new flags (e.g., hook_system, interactive_question planned). Missing flags default to false per the absence contract in core/rules/host-capabilities.md.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["host"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Optional. Adapters that predate F4 omit this field."
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Adapter name (e.g., claude, codex, generic). Informational only — invariant 1 forbids gating any code path on this value."
+    },
+    "task_tools":           { "type": "boolean" },
+    "agent_background":     { "type": "boolean" },
+    "monitor_tool":         { "type": "boolean" },
+    "cost_tracking":        { "type": "boolean" },
+    "hook_system":          { "type": "boolean" },
+    "interactive_question": { "type": "boolean" }
+  }
+}
