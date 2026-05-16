@@ -164,20 +164,28 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
 # MUST NOT emit "STOP" or "crew:run" to avoid triggering the full pipeline.
 
 TRIVIAL_INTENT_PAT = {
-    # English intents
-    r"\b(git\s+)?status\b":           ("git status",          "status"),
-    r"\bgit\s+push\b":                ("git push",             "push"),
-    r"\bgit\s+merge\b":               ("git merge <branch>",   "merge"),
-    r"\bgit\s+tag\b":                 ("git tag <name>",       "tag"),
-    r"\b(rollback|revert)\b":         ("git revert HEAD",      "rollback/revert"),
-    r"\bgit\s+commit\b":              ("git commit -m '...'",  "commit"),
+    # English intents — with "git" prefix
+    r"\b(git\s+)?status\b":               ("git status",                    "status"),
+    r"\bgit\s+push\b":                    ("git push",                      "push"),
+    r"\bgit\s+merge\b":                   ("git merge <branch>",            "merge"),
+    r"\bgit\s+tag\b":                     ("git tag <name>",                "tag"),
+    r"\b(rollback|revert)\b":             ("git revert HEAD",               "rollback/revert"),
+    r"\bgit\s+commit\b":                  ("git commit -m '...'",           "commit"),
+    # English bare compound git operations (no "git" prefix required)
+    r"\bmerge\s+and\s+push\b":            ("git merge <branch> && git push", "merge+push"),
+    r"\bpush\s+and\s+merge\b":            ("git push && git merge <branch>", "push+merge"),
+    r"^\s*push\s*$":                      ("git push",                      "push"),
+    r"^\s*merge\s*$":                     ("git merge <branch>",            "merge"),
+    r"^\s*commit\s*$":                    ("git commit -m '...'",           "commit"),
     # Korean equivalents
-    r"머지|병합":                      ("git merge <branch>",   "merge"),
-    r"푸시":                           ("git push",             "push"),
-    r"상태(\s*확인)?":                 ("git status",           "status"),
-    r"태그":                           ("git tag <name>",       "tag"),
-    r"롤백|되돌리기":                  ("git revert HEAD",      "rollback/revert"),
-    r"커밋":                           ("git commit -m '...'",  "commit"),
+    r"머지|병합":                          ("git merge <branch>",            "merge"),
+    r"푸시":                               ("git push",                      "push"),
+    r"상태(\s*확인)?":                     ("git status",                    "status"),
+    r"태그":                               ("git tag <name>",                "tag"),
+    r"롤백|되돌리기":                      ("git revert HEAD",               "rollback/revert"),
+    r"커밋":                               ("git commit -m '...'",           "commit"),
+    r"머지\s*(하고|하고\s*나서)?\s*푸시":  ("git merge <branch> && git push", "merge+push"),
+    r"푸시\s*(하고|하고\s*나서)?\s*머지":  ("git push && git merge <branch>", "push+merge"),
 }
 
 for pat, (cmd_template, intent_label) in TRIVIAL_INTENT_PAT.items():
