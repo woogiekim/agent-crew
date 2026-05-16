@@ -66,6 +66,24 @@ except Exception:
 " 2>/dev/null)
 ```
 
+**Deferred tool schema eager-load (Phase B1)**: Claude Code registers task
+tools (`TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList`, `TaskOutput`) as
+deferred — their schemas are not loaded until `ToolSearch` is called.
+Calling them without loading their schemas results in a silent
+`InputValidationError` that skips the call entirely. When `HAS_TASK_TOOLS == 1`,
+load all task tool schemas immediately after the capability read, before any
+phase that issues a task tool call:
+
+```text
+if [ "${HAS_TASK_TOOLS}" = "1" ]; then
+  ToolSearch("select:TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput")
+fi
+```
+
+This is a one-time bootstrap call. Every subsequent `TaskCreate`, `TaskUpdate`,
+`TaskGet`, `TaskList`, and `TaskOutput` call in all phases reuses the loaded
+schema and will not silently fail.
+
 `HAS_TASK_TOOLS` gates every `TaskCreate` / `TaskList` / `TaskGet` /
 `TaskUpdate` call. `HAS_AGENT_BACKGROUND` gates the background fan-out path in
 `run.md` Step 6. `HAS_MONITOR_TOOL` gates the `TaskOutput` consumption in

@@ -158,6 +158,43 @@ def match(pattern):
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     sys.exit(0)
 
+# --- Trivial-intent fast-path (Change A) ---
+# Detect short operational git intents that map to a known command template.
+# These are handled directly by the model without a full crew:run waterfall.
+# MUST NOT emit "STOP" or "crew:run" to avoid triggering the full pipeline.
+
+TRIVIAL_INTENT_PAT = {
+    # English intents
+    r"\b(git\s+)?status\b":           ("git status",          "status"),
+    r"\bgit\s+push\b":                ("git push",             "push"),
+    r"\bgit\s+merge\b":               ("git merge <branch>",   "merge"),
+    r"\bgit\s+tag\b":                 ("git tag <name>",       "tag"),
+    r"\b(rollback|revert)\b":         ("git revert HEAD",      "rollback/revert"),
+    r"\bgit\s+commit\b":              ("git commit -m '...'",  "commit"),
+    # Korean equivalents
+    r"머지|병합":                      ("git merge <branch>",   "merge"),
+    r"푸시":                           ("git push",             "push"),
+    r"상태(\s*확인)?":                 ("git status",           "status"),
+    r"태그":                           ("git tag <name>",       "tag"),
+    r"롤백|되돌리기":                  ("git revert HEAD",      "rollback/revert"),
+    r"커밋":                           ("git commit -m '...'",  "commit"),
+}
+
+for pat, (cmd_template, intent_label) in TRIVIAL_INTENT_PAT.items():
+    if re.search(pat, prompt, re.IGNORECASE):
+        fast_directive = (
+            f"[agent-crew] FAST-PATH — trivial intent detected: {intent_label}. "
+            f"Execute directly: {cmd_template}. Show approval gate first."
+        )
+        fast_output = {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": fast_directive,
+            }
+        }
+        print(json.dumps(fast_output, ensure_ascii=True))
+        sys.exit(0)
+
 # Memory/feedback meta-operations: skip routing unless combined with ACTION_PAT
 if re.search(MEMORY_PATH_PAT, prompt, re.IGNORECASE):
     if not match(ACTION_PAT):
@@ -213,10 +250,10 @@ if not detected_type:
     # Evaluate once; reuse below.
     has_action = match(ACTION_PAT)
     if (
-        match(FILE_EXT_PAT)          # file extension ref → direct file work
-        or match(PROJECT_KEYWORD_PAT) # agent-crew system keyword
-        or match(WORKFLOW_ACTION_PAT) # operational workflow verb
-        or (match(MEMORY_PAT) and has_action)  # memory + action verb
+        (has_action and match(FILE_EXT_PAT))          # action + file extension
+        or (has_action and match(PROJECT_KEYWORD_PAT)) # action + agent-crew keyword
+        or match(WORKFLOW_ACTION_PAT)                  # workflow verb alone is enough
+        or (match(MEMORY_PAT) and has_action)          # memory + action verb
     ):
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'
