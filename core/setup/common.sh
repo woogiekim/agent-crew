@@ -264,6 +264,106 @@ merge_agents_to_discovery() {
   fi
 }
 
+# Sync system skills from source to system/skills/ destination, enforcing that
+# only skills present in the source remain. Files in system/skills/ that are not
+# in source are removed to prevent stale skills accumulating over updates.
+#
+# Classification rules:
+#   - Skills in the remote repo source  → system layer (copied from source)
+#   - Skills NOT in remote repo source  → user layer   (should not be in system)
+#
+# Arguments:
+#   $1  source_skills  — e.g. core/agents/skills/ from the repo
+#   $2  system_skills  — e.g. ~/.agent-crew/system/skills/
+sync_system_skills() {
+  local source_skills="$1"
+  local system_skills="$2"
+
+  [ -d "${source_skills}" ] || return 0
+  mkdir -p "${system_skills}"
+
+  # Copy all source skills into system (update existing, add new)
+  cp "${source_skills}/"*.md "${system_skills}/" 2>/dev/null || true
+
+  # Remove stale system skills: those not in source
+  while IFS= read -r -d '' system_file; do
+    local basename_file
+    basename_file=$(basename "${system_file}")
+
+    if [ ! -f "${source_skills}/${basename_file}" ]; then
+      printf '[agent-crew] Removing stale system skill: %s (not in source)\n' "${basename_file}"
+      rm -f "${system_file}"
+    fi
+  done < <(find "${system_skills}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+  find "${system_skills}" -name ".DS_Store" -delete 2>/dev/null || true
+}
+
+# Merge system and user skills into the discovery destination.
+#
+# Policy: if the same filename exists in both system/skills/ and user/skills/,
+# the user skill wins — the user copy is placed after the system copy, so it
+# overwrites the system version in the discovery path.
+#
+# Stale cleanup: any .md file in dest that is not present in system/skills/ AND
+# not present in user/skills/ is removed, preventing old removed skills from
+# lingering in the discovery path across updates.
+#
+# Arguments:
+#   $1  system_skills  — e.g. ~/.agent-crew/system/skills/
+#   $2  user_skills    — e.g. ~/.agent-crew/user/skills/
+#   $3  dest           — e.g. ~/.agent-crew/skills/  (the unified discovery path)
+merge_skills_to_discovery() {
+  local system_skills="$1"
+  local user_skills="$2"
+  local dest="$3"
+
+  mkdir -p "${dest}"
+
+  # Remove stale skills from dest: files not in system OR user
+  while IFS= read -r -d '' dest_file; do
+    local basename_file
+    basename_file=$(basename "${dest_file}")
+
+    local in_system=0
+    local in_user=0
+    [ -f "${system_skills}/${basename_file}" ] && in_system=1
+    [ -f "${user_skills}/${basename_file}" ] && in_user=1
+
+    if [ "${in_system}" -eq 0 ] && [ "${in_user}" -eq 0 ]; then
+      printf '[agent-crew] Removing stale skill from discovery: %s\n' "${basename_file}"
+      rm -f "${dest_file}"
+    fi
+  done < <(find "${dest}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+  # Copy system skills first (idempotent — cp overwrites existing files)
+  if [ -d "${system_skills}" ]; then
+    while IFS= read -r -d '' system_file; do
+      cp "${system_file}" "${dest}/"
+    done < <(find "${system_skills}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+  fi
+
+  # User skills overwrite system skills with the same name (user wins)
+  if [ -d "${user_skills}" ]; then
+    local overrides=()
+    while IFS= read -r -d '' user_file; do
+      local basename_file
+      basename_file=$(basename "${user_file}")
+      if [ -f "${system_skills}/${basename_file}" ]; then
+        overrides+=("${basename_file}")
+      fi
+      cp "${user_file}" "${dest}/"
+    done < <(find "${user_skills}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+    if [ ${#overrides[@]} -gt 0 ]; then
+      printf '\n[agent-crew] INFO: User skills overriding system skills (user wins):\n'
+      for o in "${overrides[@]}"; do
+        printf '  override: %s (user/skills/ takes precedence over system/skills/)\n' "${o}"
+      done
+    fi
+  fi
+}
+
 merge_agent_crew_section() {
   local src="$1" dest="$2"
   local start="<!-- agent-crew-start -->"
