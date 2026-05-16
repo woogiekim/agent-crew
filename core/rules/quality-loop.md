@@ -58,6 +58,60 @@ If `BLOCKED`, include:
 BLOCKER: {what failed after all retry attempts}
 ```
 
+## Cost Circuit Breaker
+
+In addition to the validation 3x / crash 5x retry budgets, the supervisor
+enforces a **per-task token budget** before every stage spawn and every
+retry attempt.
+
+### Budget defaults (overridable)
+
+| Tier      | Default budget (tokens) | Env override                  |
+|-----------|------------------------:|-------------------------------|
+| `deep`    |                 200,000 | `AGENT_CREW_BUDGET_DEEP`      |
+| `balanced`|                 150,000 | `AGENT_CREW_BUDGET_BALANCED`  |
+| `light`   |                 100,000 | `AGENT_CREW_BUDGET_LIGHT`     |
+
+The **task-level budget** is `max(tier_budget)` over the tiers of all
+agents that have been invoked for the task so far. A pipeline running
+`analyst (deep) + backend (balanced) + reviewer (deep)` therefore gets
+the deep budget (200,000). Rationale: a small backend stage should not
+shrink the headroom of the surrounding deep analysis and review work.
+
+### Thresholds
+
+| Condition (running total / budget) | Action |
+|---|---|
+| `< 50%` | proceed normally. |
+| `≥ 50%` AND not yet warned | **soft warning** — emit one progress line, continue. |
+| `≥ 100%` | **hard stop** — return `STATUS: blocked`, `BLOCKER: cost_budget_exceeded`. Skip BLOCKED Recovery. |
+
+The breaker fires **before every stage spawn and before every retry**
+(both validation and crash retries). It does **not** fire mid-stage;
+once an agent is dispatched, it runs to completion.
+
+The breaker is gated on `cost_tracking == true`. When the capability
+is false (or the per-task cost file is missing), the breaker is a
+no-op and behavior is identical to the retry-count-only discipline
+above.
+
+### Cost data source
+
+Per-call token usage is captured by the adapter via the contract in
+`core/rules/capabilities/cost-tracking.md` and aggregated by
+`core/scripts/cost-aggregate.py --task-id $TASK_ID --check-breaker`.
+The script returns one of `ok` / `warn` / `exceeded` on stdout with
+exit code `0` / `1` / `2`, which the supervisor branches on.
+
+### Why "skip BLOCKED Recovery" on a cost overrun
+
+BLOCKED Recovery decomposes a failing requirement into smaller sub-tasks
+and retries. A cost overrun is *not* a failure of approach — it is
+exhaustion of the operating budget. Splitting into sub-tasks would
+continue spending against the same exhausted budget. The correct
+operator response is to escalate (raise the env var, simplify the
+request, or abort), not to retry smaller.
+
 ## BLOCKED Recovery
 
 Before reporting BLOCKED to the orchestrator, the agent must attempt one

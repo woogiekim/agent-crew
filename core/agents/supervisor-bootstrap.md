@@ -53,7 +53,7 @@ phase — never re-read the file inline.
 ```bash
 # Single Python process reads capabilities.json once and emits all three flags,
 # eliminating two extra python3 process startups compared to three separate calls.
-read -r HAS_TASK_TOOLS HAS_AGENT_BACKGROUND HAS_MONITOR_TOOL < <(python3 -c "
+read -r HAS_TASK_TOOLS HAS_AGENT_BACKGROUND HAS_MONITOR_TOOL HAS_COST_TRACKING < <(python3 -c "
 import json
 try:
     c = json.load(open('${CAPABILITIES_PATH}'))
@@ -61,16 +61,19 @@ try:
         '1' if c.get('task_tools') else '0',
         '1' if c.get('agent_background') else '0',
         '1' if c.get('monitor_tool') else '0',
+        '1' if c.get('cost_tracking') else '0',
     )
 except Exception:
-    print('0 0 0')
+    print('0 0 0 0')
 " 2>/dev/null)
 ```
 
 `HAS_TASK_TOOLS` gates every `TaskCreate` / `TaskList` / `TaskGet` /
 `TaskUpdate` call. `HAS_AGENT_BACKGROUND` gates the background fan-out path in
 `run.md` Step 6. `HAS_MONITOR_TOOL` gates the `TaskOutput` consumption in
-`crew:status`. Every call site MUST check the relevant flag and fall back to the
+`crew:status`. `HAS_COST_TRACKING` gates the cost circuit breaker in
+`supervisor-retry.md` § Cost Circuit Breaker (Phase 3.3). Every call site MUST
+check the relevant flag and fall back to the
 file-based primary (`progress.log`, `approval.md`, `pipeline.json`) when the
 flag is `0`.
 

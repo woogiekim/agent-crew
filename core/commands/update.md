@@ -366,6 +366,44 @@ Codex's per-agent TOML schema does not honor a per-agent model field
 today. The tier remains declared in the Codex TOMLs for forward
 compatibility but is advisory only on Codex.
 
+### Phase 3.3 — `cost_tracking` capability + cost circuit breaker
+
+The Claude adapter now advertises `cost_tracking: true` in
+`capabilities.json` and registers `cost-tracker.sh` as a `PostToolUse`
+hook in `~/.claude/settings.json`. On the next `crew:update`:
+
+- `adapters/claude/setup.sh` re-writes `capabilities.json` with the
+  new flag set to `true`. Existing files without the field default
+  to `false` per the Absence Contract, so until update runs, the
+  supervisor treats cost tracking as disabled — old installations
+  continue to work unchanged.
+- The `PostToolUse` registration for `cost-tracker.sh` is idempotent
+  (mirrors the existing `agent-diff-post.sh` pattern). Re-running
+  `crew:update` is safe.
+- `core/scripts/cost-aggregate.py` is a new file — copied alongside
+  other scripts under `${AGENT_CREW_HOME}/scripts/`.
+- The legacy `~/.agent-crew/metrics/costs.jsonl` file (written by the
+  pre-3.3 `cost-tracker.sh`) is **NOT** automatically migrated. The
+  new hook writes to per-task files under
+  `${STATE_DIR}/cost/<TASK_ID>.jsonl` instead. Users who want to keep
+  the historical session-scoped data can leave `metrics/costs.jsonl`
+  in place; the new `crew:cost` does not read it but does not delete
+  it either.
+- No manual intervention is needed: a fresh `crew:update` flips all
+  the relevant pieces atomically.
+
+User-facing config:
+
+- `AGENT_CREW_BUDGET_DEEP`, `AGENT_CREW_BUDGET_BALANCED`,
+  `AGENT_CREW_BUDGET_LIGHT` env vars override per-tier budgets.
+  Defaults: 200,000 / 150,000 / 100,000 tokens. See
+  `core/rules/quality-loop.md` § Cost Circuit Breaker.
+
+Codex and generic adapters: no change. `cost_tracking` remains
+`false` (implicit via absence from their `capabilities.json` or
+absence of the file entirely). `crew:cost` prints a one-paragraph
+fallback note on those adapters.
+
 ## Completion Message
 
 ```text

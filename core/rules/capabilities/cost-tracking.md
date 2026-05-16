@@ -3,95 +3,114 @@
 ## Purpose
 
 Let core measure per-task, per-stage, and per-agent-call token usage so
-that the quality-loop supervisor can apply a cost circuit breaker
-(planned — refactor item 3-A) and so that telemetry aggregation
-(planned — refactor item 13) can summarize usage across runs. Without
-this flag, the quality loop has only retry-count discipline; it cannot
-stop a runaway pipeline before it exhausts a token budget.
+that the supervisor can apply a **cost circuit breaker** (Phase 3.3 —
+implemented) and so that telemetry aggregation (Phase 13 — planned) can
+summarize usage across runs. Without this flag, the quality loop has
+only retry-count discipline; it cannot stop a runaway pipeline before
+it exhausts a token budget.
 
-## Required Adapter Surface (flag=true)
+## Required Adapter Surface (flag=true) — Phase 3.3 schema
 
-**Deliberately abstract for Phase A1.** The exact schema is deferred to
-refactor Phase E (item 3.3). Adapter MUST advertise *some* mechanism for
-emitting per-call token totals to core. Three permissible shapes (the
-adapter chooses one):
+The adapter MUST write one JSON line per agent call to:
 
-1. **Per-call file append.** Adapter writes a JSON line to
-   `${STATE_DIR}/cost/<taskId>.jsonl` after every agent call. Suggested
-   shape:
+```
+${STATE_DIR}/cost/${TASK_ID}.jsonl
+```
 
-   ```json
-   {
-     "ts": "...",
-     "agent": "...",
-     "stage": "...",
-     "input_tokens": 0,
-     "output_tokens": 0,
-     "cache_creation_tokens": 0,
-     "cache_read_tokens": 0
-   }
-   ```
+Each line has the shape:
 
-2. **Host getTask usage exposure.** Adapter populates
-   `getTask(taskId).metadata.usage` with token totals. This is the
-   canonical path for hosts that already expose usage via their task
-   surface (Claude Code's `TaskGet` is such a host).
+```json
+{
+  "ts":                    "2026-05-16T01:23:45Z",
+  "task_id":               "20260516-012345-0",
+  "session_id":            "20260516-012345",
+  "agent":                 "backend",
+  "stage":                 2,
+  "model":                 "claude-sonnet-4-6",
+  "tier":                  "balanced",
+  "input_tokens":          12345,
+  "output_tokens":         6789,
+  "cache_creation_tokens": 0,
+  "cache_read_tokens":     0
+}
+```
 
-3. **Adapter-side aggregator.** Adapter ships its own `cost-track.sh`
-   hook that writes to the file in shape (1); core simply reads.
+**Required:** `ts`, `task_id`, `session_id`, `agent`, `model`,
+`input_tokens`, `output_tokens`.
 
-The exact schema is decided in Phase E (item 3.3). For Phase A1 this doc
-records the abstract surface only.
+**Optional** (default `0` / `null` / `"unknown"`): `stage`, `tier`,
+`cache_creation_tokens`, `cache_read_tokens`. When `tier` is `"unknown"`
+the aggregator falls back to a model→tier map; the canonical map lives
+in `adapters/claude/setup.sh`'s `TIER_TO_MODEL` and is mirrored in
+`core/scripts/cost-aggregate.py`'s `MODEL_TIER_FALLBACK`.
+
+The adapter MAY also populate the host's task-metadata surface (e.g.
+`getTask().metadata.usage`); this is not required and not consumed by
+core in Phase 3.3.
+
+**Concurrency.** JSONL append at line granularity is assumed atomic on
+local filesystems (the standard POSIX guarantee for writes ≤ `PIPE_BUF`,
+typically 4096 bytes; each row is ~250 bytes). Lines from concurrent
+writers may interleave in order but each line remains intact and
+parseable.
 
 ## Consumer Contract (core)
 
-Consumers are planned but not implemented in Phase A1:
+Implemented in Phase 3.3:
 
-- **`core/scripts/cost-aggregate.py`** (planned, Phase E3.3 — not
-  present yet) — reads per-task cost data, emits a crew-wide summary.
+- **`core/scripts/cost-aggregate.py`** — provider-neutral reader.
+  Modes: `--task-id`, `--session-id`, `--recent N`, default summary.
   Used by `core/commands/cost.md`.
-- **Quality-loop supervisor** (`core/rules/quality-loop.md`, future
-  revision in Phase E3.3) — checks the running token total against a
-  per-task budget; halts the retry cycle when the threshold is exceeded.
+- **Supervisor cost circuit breaker** — `core/agents/supervisor-retry.md`
+  § Cost Circuit Breaker. Before each stage spawn and each retry, the
+  supervisor calls `cost-aggregate.py --task-id ${TASK_ID} --check-breaker`
+  and branches on `ok` / `warn` / `exceeded`. See
+  `core/rules/quality-loop.md` § Cost Circuit Breaker for thresholds
+  (50% soft warning, 100% hard stop).
 
-Core's input shape, from its perspective, is a function
-`get_task_cost(taskId) -> { input_tokens, output_tokens, ... }` that
-core can call. The implementation is the adapter's choice.
+Core's input shape is a CLI exit code (`0` / `1` / `2` from
+`--check-breaker`) and stdout JSON for richer reads.
 
 ## Absence Behavior (flag=false)
 
-No cost tracking; cost data is unavailable to the quality loop. The
-quality loop uses retry-count only (today's behavior). `crew:cost`
-falls back to the adapter-native cost UI (for example, `claude /cost`)
-and prints a note that cost tracking is not advertised for this
-adapter.
+No cost tracking; cost data is unavailable to the supervisor's circuit
+breaker. The quality loop uses retry-count only (pre-3.3 behavior).
+`crew:cost` prints a one-paragraph fallback note and exits cleanly.
+The circuit breaker check is gated on the flag — when false, the
+supervisor's retry loop is identical to its pre-3.3 form.
 
 ## Adapter Examples
 
 | Adapter | cost_tracking | How it is implemented |
 |---|---|---|
-| claude  | planned-true | Existing `core/hooks/cost-tracker.sh` writes per-call JSONL; `TaskGet().usage` also exposes token fields. Schema finalized in Phase E3.3. |
-| codex   | false | No token-usage exposure in the current Codex tool surface. May flip to true in a future phase. |
+| claude  | **true** | `core/hooks/cost-tracker.sh` PostToolUse hook writes per-call JSONL under `${STATE_DIR}/cost/${TASK_ID}.jsonl`. Hook registered by `adapters/claude/setup.sh` and `install.sh`. |
+| codex   | false | No token-usage exposure in the current Codex tool surface. The flag stays false; `crew:cost` prints the fallback note. |
 | generic | false | No token-usage source. |
 
 ## Related Files
 
-Producer (when flag=true):
+Producer:
 
-- `adapters/claude/setup.sh` (sets the flag)
-- `core/hooks/cost-tracker.sh` (writes per-call data — currently
-  Claude-specific; a future revision may generalize the writer)
+- `adapters/claude/setup.sh` (writes flag `true`; registers
+  `cost-tracker.sh` as `PostToolUse`)
+- `install.sh` (same registration on fresh install)
+- `core/hooks/cost-tracker.sh` (writes per-call JSONL; capability-gated
+  by the `cost_tracking` flag the adapter advertises)
 
-Consumer (planned):
+Consumer:
 
-- `core/scripts/cost-aggregate.py` (Phase E3.3 — not present yet)
-- `core/commands/cost.md`
-- `core/rules/quality-loop.md` (Phase 3-A cost circuit breaker)
+- `core/scripts/cost-aggregate.py` (provider-neutral reader)
+- `core/commands/cost.md` (`crew:cost` user-facing wrapper)
+- `core/agents/supervisor-retry.md` § Cost Circuit Breaker
+- `core/agents/supervisor-bootstrap.md` Phase 0 capability load
+  (`HAS_COST_TRACKING`)
+- `core/rules/quality-loop.md` § Cost Circuit Breaker
 
 Cross-flag:
 
-- `hook_system`: when both flags are true, the adapter can wire
-  `cost-tracker.sh` as a `PostToolUse` hook (the current Claude
-  wiring). When `hook_system` is false, the adapter ships cost data via
-  another mechanism. The two flags are independent on purpose — see
-  `hook-system.md`.
+- `hook_system`: Claude's `cost-tracker.sh` is wired via the host's
+  PostToolUse hook surface. The capability `hook_system` is still
+  nominally `planned`, but the registration mechanism already works on
+  Claude (Phase 3.3 piggybacks on it). The two flags are independent
+  on purpose — a future host could ship `cost_tracking=true` via a
+  different mechanism (e.g., `getTask().usage`) without `hook_system`.

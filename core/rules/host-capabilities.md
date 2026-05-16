@@ -33,7 +33,7 @@ detailed contract for each flag lives at
 | `agent_background`    | implemented | Background subagent fan-out (parallel supervisor spawn) | `capabilities/agent-background.md` |
 | `monitor_tool`        | implemented   | Streaming output surface over background processes | `capabilities/monitor-tool.md` |
 | `reasoning_tier`      | install-time  | Per-agent abstract compute tier; adapter materializes to a host model | `capabilities/reasoning-tier.md` |
-| `cost_tracking`       | planned       | Per-task token usage reporting (gates cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
+| `cost_tracking`       | implemented   | Per-task token usage reporting (powers cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
 | `hook_system`         | planned     | Host enforces validators at lifecycle moments (PreToolUse, PostToolUse) | `capabilities/hook-system.md` |
 | `interactive_question`| planned     | Structured user-choice prompts (abstracts native question tools) | `capabilities/interactive-question.md` |
 

@@ -1,45 +1,92 @@
 #!/usr/bin/env bash
-# Stop hook: record session token and cost data in ~/.agent-crew/metrics/costs.jsonl.
+# PostToolUse hook: record per-call token usage into
+# ${STATE_DIR}/cost/${TASK_ID}.jsonl for the active task.
+#
+# Capability: cost_tracking (advertised by adapters/claude/setup.sh).
+# Schema documented in core/rules/capabilities/cost-tracking.md.
+# Consumer: core/scripts/cost-aggregate.py.
+#
+# This hook is a no-op when no task is active or no usage data is present.
 
 python3 - <<'PYEOF'
-import sys, json, os
+import sys, json, os, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-raw = sys.stdin.read(1024 * 1024)  # max 1 MB
+
+def resolve_task_id():
+    env = os.environ.get("AGENT_CREW_TASK_ID")
+    if env:
+        return env
+    home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
+    project = os.environ.get("AGENT_CREW_PROJECT")
+    if not project:
+        try:
+            project = Path(subprocess.check_output(
+                ["git", "rev-parse", "--show-toplevel"],
+                stderr=subprocess.DEVNULL).decode().strip()).name
+        except Exception:
+            return None
+    tasks_dir = home / "state" / project / "tasks"
+    if not tasks_dir.is_dir():
+        return None
+    markers = sorted(tasks_dir.glob("active.*"),
+                     key=lambda p: p.stat().st_mtime, reverse=True)
+    if markers:
+        return markers[0].name[len("active."):]
+    return None
+
+
+raw = sys.stdin.read(1024 * 1024)
+sys.stdout.write(raw)  # pass through untouched
 
 try:
     data = json.loads(raw)
 except Exception:
-    sys.stdout.write(raw)
     sys.exit(0)
 
 usage = data.get("usage") or data.get("token_usage") or {}
-input_tokens  = int(usage.get("input_tokens")  or usage.get("prompt_tokens")     or 0)
-output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+in_tok  = int(usage.get("input_tokens")          or usage.get("prompt_tokens")     or 0)
+out_tok = int(usage.get("output_tokens")         or usage.get("completion_tokens") or 0)
+cw_tok  = int(usage.get("cache_creation_input_tokens") or 0)
+cr_tok  = int(usage.get("cache_read_input_tokens")     or 0)
 
-model      = str(data.get("model") or os.environ.get("AGENT_CREW_MODEL") or os.environ.get("CLAUDE_MODEL") or "unknown").lower()
-session_id = os.environ.get("AGENT_CREW_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or "default"
+if in_tok == 0 and out_tok == 0 and cw_tok == 0 and cr_tok == 0:
+    sys.exit(0)
 
-if input_tokens > 0 or output_tokens > 0:
-    # $/1M tokens (host-agnostic conservative defaults; override via env)
-    rate_in = float(os.environ.get("AGENT_CREW_RATE_IN_PER_MTOK", "3.0"))
-    rate_out = float(os.environ.get("AGENT_CREW_RATE_OUT_PER_MTOK", "15.0"))
-    cost = (input_tokens / 1_000_000) * rate_in + (output_tokens / 1_000_000) * rate_out
+task_id = resolve_task_id()
+if not task_id:
+    sys.exit(0)  # no active task — skip silently
 
-    metrics_dir = Path.home() / ".agent-crew" / "metrics"
-    metrics_dir.mkdir(parents=True, exist_ok=True)
+home    = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
+project = os.environ.get("AGENT_CREW_PROJECT")
+if not project:
+    try:
+        project = Path(subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL).decode().strip()).name
+    except Exception:
+        sys.exit(0)
 
-    row = {
-        "timestamp":    datetime.now(timezone.utc).isoformat(),
-        "session_id":   session_id,
-        "model":        model,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "cost_usd":     round(cost, 6),
-    }
-    with open(metrics_dir / "costs.jsonl", "a") as f:
-        f.write(json.dumps(row) + "\n")
+cost_dir = home / "state" / project / "cost"
+cost_dir.mkdir(parents=True, exist_ok=True)
 
-sys.stdout.write(raw)
+row = {
+    "ts":                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "task_id":               task_id,
+    "session_id":            os.environ.get("AGENT_CREW_SESSION_ID") or
+                             os.environ.get("CLAUDE_SESSION_ID") or "default",
+    "agent":                 os.environ.get("AGENT_CREW_AGENT_NAME") or "unknown",
+    "stage":                 int(os.environ["AGENT_CREW_STAGE_INDEX"])
+                             if os.environ.get("AGENT_CREW_STAGE_INDEX", "").isdigit() else None,
+    "model":                 str(data.get("model") or os.environ.get("CLAUDE_MODEL") or "unknown").lower(),
+    "tier":                  os.environ.get("AGENT_CREW_TIER") or "unknown",
+    "input_tokens":          in_tok,
+    "output_tokens":         out_tok,
+    "cache_creation_tokens": cw_tok,
+    "cache_read_tokens":     cr_tok,
+}
+
+with open(cost_dir / f"{task_id}.jsonl", "a", encoding="utf-8") as f:
+    f.write(json.dumps(row) + "\n")
 PYEOF

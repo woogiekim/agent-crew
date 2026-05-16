@@ -101,6 +101,73 @@ BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
 host task id is absent, every "no STATUS line" outcome is classified as a
 crash — identical to pre-P7 behavior.
 
+### Cost Circuit Breaker
+
+Before each stage spawn AND before each retry inside the loop above,
+the supervisor checks the running token total against the per-task
+budget. Defined in `core/rules/quality-loop.md` § Cost Circuit Breaker.
+
+The check is **gated on `cost_tracking == true`** (`HAS_COST_TRACKING`
+is loaded once in Phase 0 alongside the other capability flags — see
+`supervisor-bootstrap.md`). When `HAS_COST_TRACKING == 0`, this
+subsection is a no-op: the breaker cannot fire because no cost data
+is being recorded, and the retry loop above runs unchanged.
+
+When `HAS_COST_TRACKING == 1`, run the following block **immediately
+before every `invoke agent` call** — once at the top of the retry
+loop (covers the initial spawn) and inside both the
+`token_truncation` resume branch and the `crash_attempts` retry
+branch:
+
+```bash
+COST_VERDICT=$(python3 "${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
+  --state-dir "${STATE_DIR}" \
+  --task-id "${TASK_ID}" \
+  --check-breaker 2>/dev/null) || true
+
+case "${COST_VERDICT}" in
+  warn)
+    if [ -z "${COST_WARNED:-}" ]; then
+      COST_JSON=$(python3 "${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
+        --state-dir "${STATE_DIR}" --task-id "${TASK_ID}" --format json)
+      COST_TOTAL=$(echo "${COST_JSON}"  | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['task']['total_tokens'])")
+      COST_BUDGET=$(echo "${COST_JSON}" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['task']['task_budget'])")
+      COST_PCT=$(echo "${COST_JSON}"    | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['task']['pct_consumed'])")
+      log_progress "COST_WARN" "${COST_PCT}% of budget (${COST_TOTAL} / ${COST_BUDGET} tokens)"
+      COST_WARNED=1
+    fi
+    ;;
+  exceeded)
+    log_progress "COST_BLOCKED" "task token budget exceeded"
+    cat > "${TASK_DIR}/result.md" <<EOF
+# {TASK}
+
+STATUS: blocked
+BLOCKER: cost_budget_exceeded
+DETAIL: Per-task token budget reached. See ${STATE_DIR}/cost/${TASK_ID}.jsonl
+        and re-run with AGENT_CREW_BUDGET_{TIER} adjusted if intentional.
+EOF
+    # Skip BLOCKED Recovery (quality-loop rule). Run Phase 3 close-out
+    # and return STATUS: blocked to the orchestrator.
+    return STATUS: blocked
+    ;;
+  ok|*)
+    : # proceed
+    ;;
+esac
+```
+
+The `COST_WARNED` guard ensures only one soft warning fires per task
+even if the loop runs many iterations after crossing 50%. The hard
+stop (`exceeded`) **skips BLOCKED Recovery** — cost overruns are
+exhaustion of the operating budget, not a failure of approach.
+Decomposing into smaller sub-tasks would continue spending against the
+same exhausted budget. The operator's correct response is to escalate
+(raise `AGENT_CREW_BUDGET_{TIER}`, simplify the request, or abort).
+
+`log_progress` is the helper introduced by `supervisor-bootstrap.md`
+Phase 0 (mirrors to `progress.log` and stderr).
+
 ---
 
 ## BLOCKED Recovery
