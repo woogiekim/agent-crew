@@ -39,6 +39,9 @@ technique is needed** during execution — do not load all skills upfront:
 
 ### Phase 2: TDD Implementation
 
+> **MANDATORY: Before beginning component decomposition, read `core/agents/skills/ui-component-design.md`.**
+> This skill defines component decomposition strategy, prop design principles, and composition patterns that govern how components are structured in this phase.
+
 **MANDATORY: Write the failing test FIRST. Component implementation MUST NOT be written until a failing test exists and has been confirmed to fail.**
 
 For each component, execute the full RED → GREEN → REFACTOR cycle:

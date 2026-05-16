@@ -25,6 +25,9 @@ technique is needed** during execution — do not load all skills upfront:
 
 ## Execution Steps
 
+> **MANDATORY: Before writing design-spec.md, read `core/agents/skills/ux-design.md`.**
+> This skill defines screen specification format, component definition structure, interaction flow patterns, and quality criteria that design-spec.md must satisfy.
+
 1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
 2. Write UI/UX specification to `{TASK_DIR}/context/design-spec.md`.
 
