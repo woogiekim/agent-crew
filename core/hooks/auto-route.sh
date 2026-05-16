@@ -22,7 +22,7 @@ if prompt.startswith("/"):
 if not prompt.strip():
     sys.exit(0)
 
-COMMAND_PAT = r"^\s*((?:crew|ac):(setup|run|crew|task|status|cost|agent-maker))(?:\s+(.*))?$"
+COMMAND_PAT = r"^\s*((?:crew|ac):(setup|run|crew|task|status|cost|agent-maker|agent|sync-instructions|telemetry|update))(?:\s+(.*))?$"
 command_match = re.match(COMMAND_PAT, prompt, re.IGNORECASE | re.DOTALL)
 if command_match:
     command = command_match.group(1).lower()
@@ -37,6 +37,10 @@ if command_match:
         "status": "status.md",
         "cost": "cost.md",
         "agent-maker": "agent-maker.md",
+        "agent": "agent.md",
+        "sync-instructions": "sync-instructions.md",
+        "telemetry": "telemetry.md",
+        "update": "update.md",
     }
     command_file = command_file_by_intent.get(intent, "run.md")
 
