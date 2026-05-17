@@ -255,7 +255,8 @@ install_global() {
   merge_global_pretooluse  "${AGENT_CREW_HOME}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/agent-diff-pre.sh"
   merge_global_posttooluse "${AGENT_CREW_HOME}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/agent-diff-post.sh"
   merge_global_posttooluse "${AGENT_CREW_HOME}/settings.json" "*"     "${AGENT_CREW_DIR}/hooks/cost-tracker.sh"
-  log_info "Agent diff + cost-tracker hooks registered → ${AGENT_CREW_HOME}/settings.json"
+  merge_global_posttooluse "${AGENT_CREW_HOME}/settings.json" "*"     "${AGENT_CREW_DIR}/hooks/mnemos-capture-guard.sh"
+  log_info "Agent diff + cost-tracker + mnemos-capture-guard hooks registered → ${AGENT_CREW_HOME}/settings.json"
 
   merge_global_agents "${SOURCE_DIR}/global-agents.md" "${AGENT_CREW_HOME}/AGENTS.md"
   log_info "Global agent guidance applied → ${AGENT_CREW_HOME}/AGENTS.md"
@@ -283,7 +284,8 @@ install_claude_compat() {
   merge_global_pretooluse  "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-pre.sh"
   merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-post.sh"
   merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "*"     "${CLAUDE_DIR}/agent-crew/hooks/cost-tracker.sh"
-  log_info "Agent diff + cost-tracker hooks registered → ${CLAUDE_DIR}/settings.json"
+  merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "*"     "${CLAUDE_DIR}/agent-crew/hooks/mnemos-capture-guard.sh"
+  log_info "Agent diff + cost-tracker + mnemos-capture-guard hooks registered → ${CLAUDE_DIR}/settings.json"
   log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
 }
 
