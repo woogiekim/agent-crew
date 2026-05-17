@@ -456,18 +456,31 @@ in Phase 0 via the `log_progress` helper.
 #### 2b. Close out the host task (capability-gated)
 
 If `HAS_TASK_TOOLS == 1` from Phase 0 and `${TASK_DIR}/host-task-id.txt` exists,
-mark the host-side task complete:
+update the host-side task to its terminal status. This is what unblocks
+`run.md` Step 7's `TaskGet` poll loop, which waits for
+`status in ("completed", "blocked", "cancelled")`.
 
-```text
-HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
-TaskUpdate(taskId=HOST_TASK_ID, status="completed")
+```bash
+if [ "${HAS_TASK_TOOLS}" = "1" ] && [ -f "${TASK_DIR}/host-task-id.txt" ]; then
+  HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
+  # Determine the terminal status from the result:
+  #   STATUS: completed  → "completed"
+  #   STATUS: blocked    → "blocked"   (unblocks orchestrator Step 7 loop)
+  #   STATUS: CANCELLED  → "completed" (clean up stale task list)
+  FINAL_HOST_STATUS="completed"
+  if grep -q "^STATUS: blocked" "${TASK_DIR}/result.md" 2>/dev/null; then
+    FINAL_HOST_STATUS="blocked"
+  fi
+  TaskUpdate(taskId=HOST_TASK_ID, status="${FINAL_HOST_STATUS}")
+fi
 ```
 
-For a `STATUS: blocked` exit, call `TaskUpdate(taskId=HOST_TASK_ID,
-status="in_progress")` instead and let the operator decide whether to close it.
-For a `STATUS: CANCELLED` exit (plan-approval gate cancel), call
-`TaskUpdate(taskId=HOST_TASK_ID, status="completed")` so the host task list does
-not accumulate stale tasks.
+The `FINAL_HOST_STATUS` mapping:
+- `STATUS: completed` in `result.md` → `TaskUpdate(status="completed")`
+- `STATUS: blocked` in `result.md` → `TaskUpdate(status="blocked")` so the
+  orchestrator's Step 7 loop exits; the operator can inspect and close it manually.
+- `STATUS: CANCELLED` in `result.md` (plan-approval gate cancel) → `TaskUpdate(status="completed")`
+  so the host task list does not accumulate stale tasks.
 
 If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
