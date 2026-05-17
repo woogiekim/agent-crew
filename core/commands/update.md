@@ -25,6 +25,12 @@ Unlike `crew:setup`, this command:
   the original `install.sh` already does (it reuses the same marker-merge
   logic).
 
+## Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `--pull` | off | Before syncing, run `git pull --ff-only` on the source repo's current branch. Skipped with a warning when the working tree is dirty, no upstream is configured, or the fast-forward fails. Behavior without `--pull` is unchanged. |
+
 ## State Paths
 
 ```bash
@@ -88,6 +94,43 @@ resolve_source_dir() {
    AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
    CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
    ```
+
+2.5. Pull the source repo before syncing (only when `--pull` is passed):
+
+   Parse the flag before any sync begins:
+
+   ```bash
+   PULL_FLAG=0
+   for _arg in "$@"; do [ "${_arg}" = "--pull" ] && PULL_FLAG=1; done
+   ```
+
+   When `PULL_FLAG=1`:
+
+   ```bash
+   _SAVED_DIR=$(pwd)
+   cd "${SOURCE_ROOT}"
+
+   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+     echo "crew:update --pull: source repo has uncommitted changes — skipping pull"
+   else
+     _UPSTREAM=$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo "")
+     if [ -z "${_UPSTREAM}" ]; then
+       echo "crew:update --pull: source repo has no upstream configured — skipping pull"
+     else
+       _BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+       if git pull --ff-only origin "${_BRANCH}" 2>&1; then
+         echo "Pulled source repo → $(git rev-parse --short HEAD)"
+       else
+         echo "crew:update --pull: fast-forward refused (diverged history?) — continuing with existing source"
+       fi
+     fi
+   fi
+
+   cd "${_SAVED_DIR}"
+   ```
+
+   When `--pull` is not passed, skip this step entirely — all downstream
+   sync steps use `SOURCE_ROOT` as-is.
 
 3. For each file category below, enumerate source files with `find` (Bash),
    then use the **Read** tool to read each source file and the **Write** or
