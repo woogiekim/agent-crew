@@ -174,6 +174,20 @@ Then return one of:
 - `STATUS: BLOCKED` — overlap is structurally unresolvable. Include a
   one-line `BLOCKER:` field explaining why.
 
+> **Supervisor interpretation of `STATUS: BLOCKED`**: When the resolver
+> returns `STATUS: BLOCKED` in `fanout-mediation` mode, the supervisor
+> does NOT block the entire task. Instead it **downgrades the stage to
+> sequential execution**: it merges all units into a single unit (union
+> of all `files` globs and concatenated `brief` strings) and proceeds
+> with `STAGE_UNITS_COUNT=1`. The downgrade is logged to `progress.log`
+> as a `STAGE_FANOUT_BLOCKED` event. The task continues — only the
+> intra-stage parallelism is lost, not the task itself.
+>
+> This means returning `STATUS: BLOCKED` from this mode is always safe:
+> the resolver should use it whenever the overlap is structurally
+> unresolvable rather than inventing a fake resolution. The supervisor's
+> sequential fallback ensures the task still completes.
+
 ### Absolute Rules (fanout-mediation)
 
 - Never edit `pipeline.json` directly — the supervisor owns that write.
