@@ -18,9 +18,11 @@ Unlike `crew:setup`, this command:
 
 - Never prompts to reset per-project state under `~/.agent-crew/state/`.
 - Never deletes extraneous files at the install destination.
-- Uses Claude Code's native Edit and Write tools for all file content updates,
-  so every changed file shows a native diff in the Claude Code UI automatically.
-- Is idempotent: re-running with no source changes produces no edits.
+- Uses `cp -f` (Bash) for all file content updates, guaranteeing byte-for-byte
+  replacement of installed files with source content.
+- Is idempotent: re-running with no source changes produces identical installed
+  files — `cp -f` always overwrites destination with source, so a second run
+  leaves files byte-for-byte identical to their source counterparts.
 - Does not alter `~/.claude/settings.json` hook configuration beyond what
   the original `install.sh` already does (it reuses the same marker-merge
   logic).
@@ -89,15 +91,15 @@ resolve_source_dir() {
    CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
    ```
 
-3. For each file category below, enumerate source files with `find` (Bash),
-   then use the **Read** tool to read each source file and the **Write** or
-   **Edit** tool to write it to the destination. This gives every changed file
-   a native diff display in the Claude Code UI — no custom diff code needed.
+3. For each file category below, use Bash `cp -f` (or `cp -rf`) to copy all
+   source files to the destination. This guarantees byte-for-byte replacement
+   regardless of what was previously installed — the destination always matches
+   the source exactly after the copy.
 
-   Bash is used only for:
+   Bash is used for all file operations:
    - `mkdir -p` (create destination directories)
+   - `cp -f` / `cp -rf` (copy files — overwrites destination unconditionally)
    - `chmod +x` (make shell scripts executable)
-   - `find` (enumerate files to copy)
    - `settings.json` hook registration (python3 merge helpers from `install.sh`)
 
    **File categories and their source → destination mappings:**
@@ -116,10 +118,9 @@ resolve_source_dir() {
 
    **Subdirectory categories:** `rules/` contains a `capabilities/`
    subdirectory (per-flag detail docs); `scripts/` may be flat or contain
-   subdirectories. Enumeration of files in these categories MUST be
-   recursive (use `find -type f`, not a flat glob). Destination paths
-   MUST preserve the relative path from the source root so subdirectories
-   are recreated under the destination.
+   subdirectories. Use `cp -rf src/. dest/` for these categories so all
+   subdirectories and their contents are copied recursively and destination
+   paths preserve the relative structure from the source root.
    | claude hooks | `${AGENT_CREW_HOME}/hooks/` | `${CLAUDE_DIR}/agent-crew/hooks/` | — |
    | claude rules | `${AGENT_CREW_HOME}/rules/` | `${CLAUDE_DIR}/agent-crew/rules/` | — |
    | claude setup | `${AGENT_CREW_HOME}/setup/` | `${CLAUDE_DIR}/agent-crew/setup/` | — |
@@ -127,15 +128,26 @@ resolve_source_dir() {
    | claude agents | `${AGENT_CREW_HOME}/system/agents/` | `${CLAUDE_DIR}/agent-crew/agents/` | — |
    | claude skills | `${AGENT_CREW_HOME}/skills/` | `${CLAUDE_DIR}/agent-crew/skills/` | — |
 
-   For each file in a category:
+   For each category, use Bash:
 
+   ```bash
+   # Flat categories (commands, hooks, schemas, setup, adapters, skills):
+   mkdir -p "${DEST_DIR}"
+   cp -f "${SRC_DIR}/"* "${DEST_DIR}/"
+
+   # Recursive categories (rules, scripts, agents):
+   mkdir -p "${DEST_DIR}"
+   cp -rf "${SRC_DIR}/." "${DEST_DIR}/"
+
+   # After copying scripts and hooks:
+   chmod +x "${DEST_DIR}/"*.sh 2>/dev/null || true
    ```
-   1. Read the file at source path using the Read tool.
-   2. If destination file exists: use Edit to update it (shows diff in UI).
-      If destination file does not exist: use Write to create it.
-   3. After writing all files in a category, run:
-      chmod +x "${DEST_DIR}/"*.sh 2>/dev/null || true
-   ```
+
+   Do NOT use the Read/Write/Edit tools for file copying. Those tools perform
+   diff-based or content-augmenting operations that can preserve or add
+   destination content not present in the source, breaking idempotency.
+   `cp -f` / `cp -rf` unconditionally replaces the destination with the source
+   byte-for-byte.
 
    **Agent layer enforcement** (use Bash, not Read/Write):
 
@@ -356,11 +368,15 @@ resolve_source_dir() {
 
 ## Safety Guarantees
 
-- `${AGENT_CREW_HOME}/state/` is NEVER touched. The Read/Write approach
+- `${AGENT_CREW_HOME}/state/` is NEVER touched. The `cp -f` approach
   targets only the categories listed above, which never overlap with state.
 - The state directory marker file `${STATE_DIR}/tasks/active` (if present
   from an in-flight crew task) is preserved.
-- Write/Edit operations are idempotent: unchanged files produce no diff.
+- `cp -f` guarantees byte-for-byte replacement: a second `crew:update` run
+  with no source changes produces installed files that are always identical
+  to source. Unlike Read/Write/Edit tools (which perform diff-based or
+  content-augmenting operations), `cp -f` unconditionally overwrites the
+  destination — installed files can never be larger than source.
 - Any locally-created custom agents at `~/.agent-crew/user/agents/` are
   preserved — `sync_system_agents` and `merge_agents_to_discovery` only
   operate on the `system/agents/` layer.
@@ -853,6 +869,29 @@ live session, which is harder to recover from.
 `core/scripts/` so the classifier is installed automatically. After
 the next `crew:update`, supported inject-intent phrases route
 autonomously without any operator action.
+
+### Issue 21 — `cp -f` replaces Read/Write/Edit for idempotent file sync
+
+**Problem.** Step 3 previously instructed the AI to use the Read/Write/Edit tools
+for copying source files to install destinations. Unlike `cp -f`, the Edit tool
+performs diff-based updates that can preserve or augment destination content not
+present in the source. This broke idempotency: a second `crew:update` run could
+produce installed agent files larger than the source (observed: `supervisor-retry.md`
+and `supervisor-stages.md` contained fan-out prerequisite content added by a prior
+Edit-based update run).
+
+**Fix.** Step 3 now instructs the AI to use `cp -f` / `cp -rf` (Bash) for all file
+categories. `cp -f` unconditionally replaces the destination with the source byte-for-byte,
+so every `crew:update` run leaves installed files identical to their source counterparts.
+The Read/Write/Edit tools are explicitly forbidden for file-copying operations.
+
+**Safety Guarantees updated.** The idempotency guarantee in § Safety Guarantees is now
+stated precisely: a second run always produces files byte-for-byte identical to source.
+
+**No migration code required.** This is a fix to the update procedure itself, not a
+schema or file-structure change. Existing installations that ran the old Edit-based step
+may have over-sized agent files; running `crew:update` after this fix corrects them on
+the next run.
 
 ### Phase L15 — Output language rule
 
