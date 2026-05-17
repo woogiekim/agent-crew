@@ -279,6 +279,34 @@ Violation examples (forbidden when STOP is present):
 RULE_EOF
 capture_rule "rule:stop-directive" 80 BODY_STOP
 
+# --- rule:route-directive -------------------------------------------------
+read -r -d '' BODY_ROUTE <<'RULE_EOF' || true
+---
+title: ROUTE Directive Rule
+applies_to: [all]
+priority: 85
+---
+
+When `[agent-crew] ROUTE` appears anywhere in the system context
+(injected by auto-route.sh), the **only permitted action** is to
+invoke `crew:agent` with the specified agent and question.
+
+- Do NOT answer the question inline.
+- Do NOT run any Bash command before calling `crew:agent`.
+- Do NOT read files or gather data before calling `crew:agent`.
+- The ROUTE directive is authoritative. Treat it as a hard override
+  of any other default behavior.
+- This rule applies even if the ROUTE directive arrives mid-execution
+  (in a tool result system-reminder). Stop immediately and re-route.
+
+Violation examples (forbidden when ROUTE is present):
+- Answering the question directly without calling `crew:agent`
+- Running `mnemos` commands or reading files to gather context first
+- Continuing an in-progress response after ROUTE appears in a tool result
+- Treating the ROUTE directive as advisory rather than mandatory
+RULE_EOF
+capture_rule "rule:route-directive" 85 BODY_ROUTE
+
 # --- rule:workflow-intents ------------------------------------------------
 read -r -d '' BODY_WORKFLOW_INTENTS <<'RULE_EOF' || true
 ---
