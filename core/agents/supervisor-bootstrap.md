@@ -136,6 +136,18 @@ surface so users can see live pipeline progress in the host UI:
    `${TASK_DIR}/host-task-id.txt` so other phases can update it without re-issuing
    TaskCreate.
 
+   After writing `host-task-id.txt`, delete the boot sentinel written by the
+   orchestrator (if present):
+
+   ```bash
+   rm -f "${TASK_DIR}/supervisor-pending.txt"
+   ```
+
+   This deletion is always safe (`rm -f` is idempotent) and applies regardless
+   of `HAS_TASK_TOOLS` — the sentinel signals "supervisor reached Phase 0",
+   not specifically "TaskCreate ran". When `HAS_TASK_TOOLS == 0`, delete the
+   sentinel immediately after logging the `STARTED` event.
+
 2. At Phase 3 completion (after `result.md` is written), call
    `TaskUpdate` with the terminal status derived from `result.md`:
    - `STATUS: completed` → `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`
@@ -151,6 +163,13 @@ surface so users can see live pipeline progress in the host UI:
    has finished. The collect loop exits when status is `"completed"`, `"blocked"`,
    or `"cancelled"` — so passing `status="blocked"` (not `"in_progress"`) is
    essential for blocked exits to unblock the collector.
+
+When `HAS_TASK_TOOLS == 0`: delete the boot sentinel immediately after the
+`STARTED` log event (before any Phase 1 work begins):
+
+```bash
+rm -f "${TASK_DIR}/supervisor-pending.txt"
+```
 
 If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
 `TaskUpdate` call. The file-based pipeline state remains the single source of

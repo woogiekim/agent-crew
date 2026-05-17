@@ -149,10 +149,29 @@ For each task, determine live status:
 # For each task entry:
 TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
 PROGRESS_LOG="${TASK_DIR}/progress.log"
+PENDING_SENTINEL="${TASK_DIR}/supervisor-pending.txt"
+HOST_TASK_ID_FILE="${TASK_DIR}/host-task-id.txt"
+BOOT_TIMEOUT="${AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS:-30}"
 
 # Overall task status:
+# 0. Check supervisor boot sentinel (race window between orchestrator spawn
+#    and supervisor Phase 0 TaskCreate / host-task-id.txt write).
+if [ ! -f "${HOST_TASK_ID_FILE}" ] && [ -f "${PENDING_SENTINEL}" ]; then
+  SENTINEL_AGE=$(python3 -c "
+import os, time
+try:
+    age = time.time() - os.path.getmtime('${PENDING_SENTINEL}')
+    print(int(age))
+except Exception:
+    print(9999)
+" 2>/dev/null)
+  if [ "${SENTINEL_AGE}" -lt "${BOOT_TIMEOUT}" ] 2>/dev/null; then
+    TASK_STATUS="booting"
+  else
+    TASK_STATUS="stalled — supervisor failed to register (>${BOOT_TIMEOUT}s)"
+  fi
 # 1. Check result.md
-if grep -q "STATUS: completed" "${TASK_DIR}/result.md" 2>/dev/null; then
+elif grep -q "STATUS: completed" "${TASK_DIR}/result.md" 2>/dev/null; then
   TASK_STATUS="completed"
 elif grep -q "STATUS: blocked\|STATUS: BLOCKED" "${TASK_DIR}/result.md" 2>/dev/null; then
   TASK_STATUS="blocked"
