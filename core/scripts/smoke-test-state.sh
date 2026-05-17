@@ -188,7 +188,7 @@ RC=$(run_capture_rc python3 "${SCRIPTS_DIR}/validate-state-schema.py" \
 assert_eq "F5 row missing required field → hard error (2)" "2" "${RC}"
 
 # Remove the bad line for the rest of the suite.
-head -n -1 "${TASK_DIR}/progress.buffer.jsonl" > "${TASK_DIR}/progress.buffer.jsonl.tmp"
+sed '$d' "${TASK_DIR}/progress.buffer.jsonl" > "${TASK_DIR}/progress.buffer.jsonl.tmp"
 mv "${TASK_DIR}/progress.buffer.jsonl.tmp" "${TASK_DIR}/progress.buffer.jsonl"
 
 # --------------------------------------------------------------------------- #
