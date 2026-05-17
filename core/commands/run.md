@@ -1400,6 +1400,13 @@ it does not affect the P4 spawn path.
 
 ```text
 for each task i:
+    # Write a sentinel so crew:status can show "booting" during the Phase 0
+    # startup window before the supervisor calls TaskCreate and writes
+    # host-task-id.txt. The supervisor deletes the sentinel at Phase 0 end.
+    SPAWNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    printf 'spawned_at=%s\nsession_id=%s\n' "${SPAWNED_AT}" "${SESSION_ID}" \
+        > "${TASK_DIR}/supervisor-pending.txt"
+
     # Spawn the supervisor as a background agent. The supervisor handles
     # its own TaskCreate in Phase 0 when task_tools capability is present.
     spawn supervisor as background agent with:
