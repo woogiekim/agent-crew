@@ -154,16 +154,20 @@ surface so users can see live pipeline progress in the host UI:
    TaskCreate.
 
 3. At Phase 3 completion (after `result.md` is written), call
-   `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`. On `STATUS: blocked` or
-   `STATUS: CANCELLED`, leave the host task as `in_progress` and append a final
-   progress event — the host task list itself remains the responsibility of the
-   human operator to clean up, so the runner does not delete it.
+   `TaskUpdate` with the terminal status derived from `result.md`:
+   - `STATUS: completed` → `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`
+   - `STATUS: blocked` → `TaskUpdate(taskId=HOST_TASK_ID, status="blocked")`
+   - `STATUS: CANCELLED` → `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`
+
+   This call is gated by `[ -f "${TASK_DIR}/host-task-id.txt" ]` — skip entirely
+   when the file is absent. The full implementation lives in Phase 3 Step 2b of
+   `supervisor-retry.md`.
 
    Under background fan-out (P4), the orchestrator's Step 7 result collection
    reads `TaskGet(HOST_TASK_ID).status` as the primary signal that the runner
-   has finished, so this final `TaskUpdate` is what unblocks the
-   orchestrator's collection loop. The status transition is observable
-   instantly without polling `result.md`.
+   has finished. The step-7 loop exits when status is `"completed"`, `"blocked"`,
+   or `"cancelled"` — so passing `status="blocked"` (not `"in_progress"`) is
+   essential for blocked exits to unblock the orchestrator.
 
 If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
 `TaskUpdate` call. The file-based pipeline state remains the single source of
