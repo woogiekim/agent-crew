@@ -432,6 +432,40 @@ if [ ! -f "${TASK_DIR}/register.json" ]; then
 fi
 ```
 
+### Git-repository guard (Phase 0)
+
+Before proceeding to any planning or git operations, verify that `PROJECT_ROOT`
+is a valid git repository. If it is not, the supervisor cannot record a start
+HEAD, create a branch, or commit changes — the pipeline will fail mid-run with
+confusing git errors.
+
+Check immediately after the register seed and before the resume check:
+
+```bash
+if ! git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+  log_progress "BLOCKED" "PROJECT_ROOT is not a git repository: ${PROJECT_ROOT}"
+  register_update current_phase blocked
+  register_update blocked_by --json '["not_a_git_repo"]'
+  cat > "${TASK_DIR}/result.md" <<EOF
+# ${TASK}
+
+STATUS: blocked
+BLOCKER: not_a_git_repo
+DETAIL: ${PROJECT_ROOT} is not a git repository.
+        Initialize it first, then retry crew:run:
+
+          cd ${PROJECT_ROOT}
+          git init
+          git commit --allow-empty -m "init"
+
+EOF
+  exit 1
+fi
+```
+
+This guard is exempt from the resume-skip rule: even on a resume, `PROJECT_ROOT`
+must still be a valid git repo or the pipeline cannot continue.
+
 **Resume check**: If `PIPELINE_PATH` already exists, resume from that state
 instead of creating a new plan from scratch.
 
