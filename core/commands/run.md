@@ -1380,9 +1380,9 @@ except Exception:
 ```
 
 **P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
-Spawn each supervisor as a host background agent pinned to a pre-created
-parent host task, print a "Background Session Started" summary, and **RETURN
-immediately** (end the turn). Do NOT enter any poll loop.
+Spawn each supervisor as a host background agent, print a "Background Session
+Started" summary, and **RETURN immediately** (end the turn). Do NOT enter any
+poll loop.
 
 This branch runs for **every** nontrivial task — including single-task runs
 (`N == 1`) — when the capability flag is true. The previous `N == 1` carve-out
@@ -1391,41 +1391,25 @@ surface is what makes mid-session task injection work for ordinary one-shot
 `crew:run` invocations as well as for parallel fan-outs. Trivial intents
 (Step 1.7) still dispatch inline because they never spawn a supervisor.
 
+The orchestrator does **not** call `TaskCreate` before spawning. Each
+supervisor creates its own host task entry at Phase 0 startup (when
+`HAS_TASK_TOOLS == 1`). This removes the dual-path coupling where the
+orchestrator needed to know whether to pre-create or skip. The `HAS_TASK_TOOLS`
+flag is used only by `crew:status` (Step 7.5) to choose its polling method —
+it does not affect the P4 spawn path.
+
 ```text
-HAS_TASK_TOOLS=$(python3 -c "...task_tools...")  # already cached, see Step 7.5
-
 for each task i:
-    # Pre-create the parent host task that the runner will adopt in Phase 0
-    # (the runner reads its HOST_TASK_ID from metadata instead of issuing
-    # its own TaskCreate when this path is taken).
-    HOST_TASK_ID = TaskCreate(
-        subject=f"crew:run — {TASK truncated to 60 chars}",
-        description=f"agent-crew supervisor pipeline for TASK_ID={TASK_ID}. "
-                    f"File source of truth: {TASK_DIR}/progress.log",
-        activeForm="Running crew:run pipeline (background)",
-        metadata={
-            "task_id": TASK_ID,
-            "branch": BRANCH,
-            "task_dir": TASK_DIR,
-            "spawn_mode": "background",
-        },
-        status="in_progress",
-    )
-    write HOST_TASK_ID to ${TASK_DIR}/host-task-id.txt
-
-    # Spawn the runner as a host background agent. Implementation depends on
-    # the host's background-agent surface — for Claude Code this maps to the
-    # background task-creation flow that captures stdout/stderr into
-    # TaskOutput so crew:status can read it live (P5).
+    # Spawn the supervisor as a background agent. The supervisor handles
+    # its own TaskCreate in Phase 0 when task_tools capability is present.
     spawn supervisor as background agent with:
         TASK, TASK_ID, TASK_DIR, PROJECT_ROOT, BRANCH,
         EXECUTION_MODE=parallel,
-        HOST_TASK_ID=$HOST_TASK_ID,
         REQUIREMENTS=$REQUIREMENTS
 ```
 
-After all N background supervisors are spawned (all `TaskCreate` + spawn calls
-have been issued), print the following summary and **STOP — end the turn**:
+After all N background supervisors are spawned, print the following summary
+and **STOP — end the turn**:
 
 ```
 ## 🏁 Background Session Started
@@ -1479,12 +1463,10 @@ effectively unavailable.
 Hosts that advertise `agent_background = true` do not reach this branch —
 they always take the P4 path above, regardless of `N`.
 
-Both paths use the same supervisor agent definition. The runner detects
-which surface spawned it by checking whether `HOST_TASK_ID` was passed in its
-prompt (background) vs absent (inline) and adapts Phase 0 accordingly: when
-`HOST_TASK_ID` is provided, skip the in-runner `TaskCreate` and use the
-pre-created id; when absent, fall back to the legacy in-runner `TaskCreate`
-path.
+Both paths use the same supervisor agent definition. The supervisor's Phase 0
+behavior is identical in both cases: when `HAS_TASK_TOOLS == 1`, it calls
+`TaskCreate` itself at startup. No `HOST_TASK_ID` is pre-passed by the
+orchestrator on either path.
 
 Each supervisor receives:
 

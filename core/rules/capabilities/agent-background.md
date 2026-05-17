@@ -42,6 +42,13 @@ Concrete call sites:
   dispatched inline — they do not spawn a supervisor at all. When the
   flag is false, the orchestrator uses the inline parallel path (legacy
   branch) for all `N`.
+
+  **`TaskCreate` is NOT called by the orchestrator on the P4 path.**
+  Each supervisor creates its own host task at Phase 0 startup. The
+  `task_tools` (`HAS_TASK_TOOLS`) capability flag is used only by
+  `crew:status` Step 7.5 to choose the polling method (TaskList-based
+  vs file-based) — it does not affect the spawn path.
+
 - **`core/hooks/direct-edit-guard.sh`** — supports both marker layouts;
   the per-task layout is the precondition when this flag is true.
 

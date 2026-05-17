@@ -117,26 +117,9 @@ typical agent invocation costs without false-positive timeouts.
 If `HAS_TASK_TOOLS == 1`, the supervisor registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
 
-1. **Check whether the orchestrator already pre-created a parent host task.**
-   When the runner is spawned via P4 background fan-out (`agent_background=1`,
-   for any task count including `N == 1`), the orchestrator pre-creates the
-   parent host task and passes its id as `HOST_TASK_ID` in the runner's
-   input. In that case, skip the `TaskCreate` call below and reuse the
-   provided id:
-
-   ```bash
-   if [ -n "${HOST_TASK_ID:-}" ]; then
-     # Background fan-out path — parent task pre-created by orchestrator
-     echo "${HOST_TASK_ID}" > "${TASK_DIR}/host-task-id.txt"
-   else
-     # Inline path — runner creates its own parent task
-     # (call TaskCreate as documented below, capture id, persist)
-     :
-   fi
-   ```
-
-2. **Otherwise, call `TaskCreate` once at the very start of Phase 0** (right
-   after the `STARTED` log line):
+1. **Call `TaskCreate` once at the very start of Phase 0** (right after the
+   `STARTED` log line). The supervisor always creates its own host task — the
+   orchestrator never pre-creates one on behalf of the supervisor:
 
    ```text
    TaskCreate(
@@ -153,7 +136,7 @@ surface so users can see live pipeline progress in the host UI:
    `${TASK_DIR}/host-task-id.txt` so other phases can update it without re-issuing
    TaskCreate.
 
-3. At Phase 3 completion (after `result.md` is written), call
+2. At Phase 3 completion (after `result.md` is written), call
    `TaskUpdate` with the terminal status derived from `result.md`:
    - `STATUS: completed` → `TaskUpdate(taskId=HOST_TASK_ID, status="completed")`
    - `STATUS: blocked` → `TaskUpdate(taskId=HOST_TASK_ID, status="blocked")`
@@ -163,11 +146,11 @@ surface so users can see live pipeline progress in the host UI:
    when the file is absent. The full implementation lives in Phase 3 Step 2b of
    `supervisor-retry.md`.
 
-   Under background fan-out (P4), the orchestrator's Step 7 result collection
-   reads `TaskGet(HOST_TASK_ID).status` as the primary signal that the runner
-   has finished. The step-7 loop exits when status is `"completed"`, `"blocked"`,
+   Under background fan-out (P4), `crew:status --collect` reads
+   `TaskGet(HOST_TASK_ID).status` as the primary signal that the runner
+   has finished. The collect loop exits when status is `"completed"`, `"blocked"`,
    or `"cancelled"` — so passing `status="blocked"` (not `"in_progress"`) is
-   essential for blocked exits to unblock the orchestrator.
+   essential for blocked exits to unblock the collector.
 
 If `HAS_TASK_TOOLS == 0` (or the file is missing): skip every `TaskCreate` /
 `TaskUpdate` call. The file-based pipeline state remains the single source of
