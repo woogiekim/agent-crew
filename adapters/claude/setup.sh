@@ -334,6 +334,38 @@ with open(dest, "w") as f:
   f.write("\n")
 PYEOF
 
+# Issue #16: mnemos-capture-guard.sh — validates ✻ 🧠 capture notifications
+# against actual mnemos captures. Advisory only: always exits 0.
+# mnemos absence = silent no-op (graceful degradation).
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/mnemos-capture-guard.sh" "*" "PostToolUse" <<'PYEOF'
+import sys, json, os
+dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 10}
+if os.path.exists(dest):
+  with open(dest) as f:
+    try: settings = json.load(f)
+    except json.JSONDecodeError: settings = {}
+else:
+  settings = {}
+hooks = settings.setdefault("hooks", {})
+hook_list = hooks.setdefault(hook_type, [])
+hook_path_base = os.path.basename(hook_path)
+for block in hook_list:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+
 # Phase G6: hook_system capability — forbid-plaintext-approval.sh blocks
 # free-text yes/no approval prompts ("Shall I merge?" / "진행할까요?") in
 # Agent responses. Validator: core/scripts/check-plaintext-approval.py.
