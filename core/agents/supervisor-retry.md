@@ -110,6 +110,39 @@ BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
 host task id is absent, every "no STATUS line" outcome is classified as a
 crash — identical to pre-P7 behavior.
 
+### Pre-retry clean state for fan-out units
+
+When the failed agent is a **sub-task fan-out unit** (i.e., the current
+stage has `STAGE_UNITS_COUNT >= 2` and the crashing agent carries a
+`UNIT_ID`), the supervisor MUST restore the unit's worktree to a clean
+state **before** re-spawning. A crashed unit may have left partial
+uncommitted changes in its git worktree; retrying against dirty state
+risks incorrect behavior or a corrupt commit on the retry path.
+
+Required steps (run immediately after incrementing `crash_attempts`,
+before the next `invoke agent` call):
+
+1. For each glob in `UNIT_FILES` (the unit's declared `files` array):
+   - `git -C ${UNIT_WORKTREE_PATH} checkout HEAD -- <glob>` — restore tracked
+     files that were modified.
+   - `git -C ${UNIT_WORKTREE_PATH} clean -fd -- <glob>` — remove untracked
+     files / directories that the crashed unit created.
+
+2. Verify the worktree is clean:
+   ```bash
+   git -C "${UNIT_WORKTREE_PATH}" status --short
+   ```
+   A non-empty output is a warning (log to `progress.log`) but MUST NOT
+   prevent the retry — the unit may have legitimately staged some work
+   before crashing, and the glob-scoped cleanup above is best-effort.
+
+These steps are idempotent. When `UNIT_WORKTREE_PATH` no longer exists
+(e.g., it was removed by a concurrent cleanup step), skip silently and
+proceed with the retry against `PROJECT_ROOT` as a fallback.
+
+See `supervisor-stages.md` § Selective per-unit retry for the bash
+implementation that encodes these steps in the fan-out dispatch section.
+
 ### Stage Timeout (Phase I11)
 
 Before each stage spawn AND before each retry inside the loop above,

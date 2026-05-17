@@ -284,14 +284,26 @@ Save outputs only to your own result files.
 **Per-agent completion tracking (parallel stages only):** After each agent in a
 parallel stage responds, immediately record its result in `PIPELINE_PATH` under
 `stage_agent_status`. For parallel stages this intermediate write is necessary
-because multiple agents may crash independently:
+because multiple agents may crash independently. Use the atomic tempfile + rename
+pattern to avoid truncation if two writes interleave:
 
 ```bash
 python3 -c "
-import json
+import json, os, tempfile
 p = json.load(open('${PIPELINE_PATH}'))
 p.setdefault('stage_agent_status', {}).setdefault('${i}', {})['${agent_name}'] = '${status}'
-json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+path = '${PIPELINE_PATH}'
+dir_ = os.path.dirname(path) or '.'
+fd, tmp = tempfile.mkstemp(dir=dir_, prefix='.pipeline.', suffix='.tmp')
+try:
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(p, f, ensure_ascii=False, indent=2)
+        f.write('\n')
+    os.replace(tmp, path)
+except Exception:
+    try: os.unlink(tmp)
+    except Exception: pass
+    raise
 "
 ```
 
@@ -310,17 +322,29 @@ returned `STATUS: completed` are not re-invoked.
 
 After all agents in the stage have reached a terminal state (`completed` or exhausted
 retries), update `completed_stages` only if **all** agents completed successfully.
-For parallel stages, use a single combined write (not two separate reads/writes):
+For parallel stages, use a single combined write (not two separate reads/writes).
+Use the atomic tempfile + rename pattern:
 
 ```bash
 python3 -c "
-import json
+import json, os, tempfile
 p = json.load(open('${PIPELINE_PATH}'))
 stage_status = p.get('stage_agent_status', {}).get('${i}', {})
 all_done = all(v == 'completed' for v in stage_status.values())
 if all_done:
     p['completed_stages'] = $((i+1))
-    json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+    path = '${PIPELINE_PATH}'
+    dir_ = os.path.dirname(path) or '.'
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix='.pipeline.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(p, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+        os.replace(tmp, path)
+    except Exception:
+        try: os.unlink(tmp)
+        except Exception: pass
+        raise
 "
 ```
 
@@ -459,15 +483,27 @@ When `STAGE_TDD_PARALLEL == 1`:
 
 5. Wait for **both** agent calls to return. Per-agent status writes
    into `pipeline.json.stage_agent_status["${i}"]` use the same
-   intermediate-write block documented in § Parallel Agents above:
+   atomic intermediate-write block documented in § Parallel Agents above
+   (tempfile + os.replace — never bare json.dump(open(path, "w"))):
 
    ```bash
    # Repeat for each of: test-writer and ${impl_agent}
    python3 -c "
-   import json
+   import json, os, tempfile
    p = json.load(open('${PIPELINE_PATH}'))
    p.setdefault('stage_agent_status', {}).setdefault('${i}', {})['${agent_name}'] = '${status}'
-   json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+   path = '${PIPELINE_PATH}'
+   dir_ = os.path.dirname(path) or '.'
+   fd, tmp = tempfile.mkstemp(dir=dir_, prefix='.pipeline.', suffix='.tmp')
+   try:
+       with os.fdopen(fd, 'w', encoding='utf-8') as f:
+           json.dump(p, f, ensure_ascii=False, indent=2)
+           f.write('\n')
+       os.replace(tmp, path)
+   except Exception:
+       try: os.unlink(tmp)
+       except Exception: pass
+       raise
    "
    ```
 
@@ -655,46 +691,109 @@ print(json.dumps(units))
         # Resolver succeeded — adopt the rewritten units in-memory for
         # the rest of this stage iteration AND persist them into
         # pipeline.json so resume/observers see the corrected layout.
+        # Use atomic write (tempfile + os.replace) to avoid truncation
+        # races with any concurrent readers.
         UNITS_JSON="${RESOLVED_UNITS_JSON}"
         STAGE_UNITS_COUNT=$(python3 -c "import json; print(len(json.loads('''${UNITS_JSON}''')))")
         python3 -c "
-import json
+import json, os, tempfile
 p = json.load(open('${PIPELINE_PATH}'))
 units = json.loads('''${UNITS_JSON}''')
 stage = p['stages'][${i} - 1]
 if isinstance(stage, dict):
     stage['parallelizable_units'] = units
-    json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+    path = '${PIPELINE_PATH}'
+    dir_ = os.path.dirname(path) or '.'
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix='.pipeline.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(p, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+        os.replace(tmp, path)
+    except Exception:
+        try: os.unlink(tmp)
+        except Exception: pass
+        raise
 "
         log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=resolved"
       else
         # Resolver returned units that still overlap → unresolvable.
+        # SEQUENTIAL FALLBACK: downgrade stage to single-unit execution
+        # instead of blocking the entire task. Merge all units into one
+        # so the stage runs sequentially, covering all files.
         log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=unresolvable"
-        log_progress "STAGE_FANOUT_BLOCKED" "stage=${i} reason=overlap_unresolvable"
-        cat > "${TASK_DIR}/result.md" <<EOF
-# ${TASK}
-
-STATUS: blocked
-BLOCKER: stage_fanout_overlap_unresolvable
-DETAIL: Stage ${i} parallelizable_units had overlapping \`files\` globs;
-        resolver agent could not eliminate the overlap. See
-        ${TASK_DIR}/context/fanout-conflict.md and
-        ${TASK_DIR}/context/fanout-resolved.md.
-EOF
-        exit 1
+        STAGE_UNITS_COUNT=1
+        UNITS_JSON=$(python3 -c "
+import json
+units = json.loads('''${UNITS_JSON}''')
+if units:
+    all_files, all_briefs, seen = [], [], set()
+    for u in units:
+        for f in u.get('files', []):
+            if f not in seen:
+                seen.add(f); all_files.append(f)
+        b = u.get('brief', '')
+        if b: all_briefs.append(b)
+    units[0]['files'] = all_files
+    units[0]['brief'] = ' | '.join(all_briefs)
+    print(json.dumps([units[0]]))
+else:
+    print('[]')
+")
+        echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE_FANOUT_BLOCKED | stage=${i} reason=overlap_unresolvable — downgraded to sequential (unit_count=1)" >> "${TASK_DIR}/progress.log"
       fi
     else
+      # Resolver did not produce parseable units — downgrade to sequential.
       log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=unresolvable"
-      log_progress "STAGE_FANOUT_BLOCKED" "stage=${i} reason=overlap_unresolvable"
-      exit 1
+      STAGE_UNITS_COUNT=1
+      UNITS_JSON=$(python3 -c "
+import json
+units = json.loads('''${UNITS_JSON}''')
+if units:
+    all_files, all_briefs, seen = [], [], set()
+    for u in units:
+        for f in u.get('files', []):
+            if f not in seen:
+                seen.add(f); all_files.append(f)
+        b = u.get('brief', '')
+        if b: all_briefs.append(b)
+    units[0]['files'] = all_files
+    units[0]['brief'] = ' | '.join(all_briefs)
+    print(json.dumps([units[0]]))
+else:
+    print('[]')
+")
+      echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE_FANOUT_BLOCKED | stage=${i} reason=overlap_unresolvable — downgraded to sequential (unit_count=1)" >> "${TASK_DIR}/progress.log"
     fi
   else
-    # Resolver did not write the resolved file — treat as unresolvable.
+    # Resolver did not write the resolved file — downgrade to sequential.
     log_progress "STAGE_FANOUT_RESOLVER_DONE" "stage=${i} resolution=unresolvable"
-    log_progress "STAGE_FANOUT_BLOCKED" "stage=${i} reason=overlap_unresolvable"
-    exit 1
+    STAGE_UNITS_COUNT=1
+    UNITS_JSON=$(python3 -c "
+import json
+units = json.loads('''${UNITS_JSON}''')
+if units:
+    all_files, all_briefs, seen = [], [], set()
+    for u in units:
+        for f in u.get('files', []):
+            if f not in seen:
+                seen.add(f); all_files.append(f)
+        b = u.get('brief', '')
+        if b: all_briefs.append(b)
+    units[0]['files'] = all_files
+    units[0]['brief'] = ' | '.join(all_briefs)
+    print(json.dumps([units[0]]))
+else:
+    print('[]')
+")
+    echo "$(date -u +%Y-%m-%dT%H:%M:%S) | STAGE_FANOUT_BLOCKED | stage=${i} reason=overlap_unresolvable — downgraded to sequential (unit_count=1)" >> "${TASK_DIR}/progress.log"
   fi
 fi
+# Note: After the block above, STAGE_UNITS_COUNT and UNITS_JSON hold the
+# final (possibly downgraded) state. When STAGE_UNITS_COUNT == 1, the
+# "Dispatch — N agents in one host message" section runs with a single
+# unit — effectively sequential execution. The dispatch code handles
+# unit_count=1 correctly without further branching.
 ```
 
 The conflict log is appended (never truncated) so multiple stages with
@@ -714,6 +813,72 @@ string, agents-list array, or TDD-parallel object form without
 `parallelizable_units`) reach the original Single / Parallel Agents
 dispatch unchanged.
 
+#### Atomic pipeline.json writes
+
+All writes to `pipeline.json` during fan-out MUST use the tempfile +
+`os.replace()` pattern (same as the `register_update` helper). Define
+this helper once at stage entry when `STAGE_UNITS_COUNT >= 2` and reuse
+it for all write sites in this section:
+
+```python
+# pipeline_write_atomic(path, data) — used everywhere below instead of
+# json.dump(open(path, "w"), ...).
+def pipeline_write_atomic(path, data):
+    import tempfile, os
+    dir_ = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".pipeline.", suffix=".tmp")
+    try:
+        import os as _os
+        with _os.fdopen(fd, "w", encoding="utf-8") as f:
+            import json as _json
+            _json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        _os.replace(tmp, path)
+    except Exception:
+        try: _os.unlink(tmp)
+        except Exception: pass
+        raise
+```
+
+In the bash snippets below, every `json.dump(p, open('${PIPELINE_PATH}', 'w'), ...)` 
+is replaced by `pipeline_write_atomic('${PIPELINE_PATH}', p)` to ensure atomicity
+when N units write concurrently.
+
+#### Per-unit git worktree isolation
+
+Before dispatching N parallel unit agents, create one git worktree per
+unit so that concurrent `git add` / `git commit` operations never
+contend on the same `index.lock` file:
+
+```bash
+CREW_WORKTREES_BASE="${PROJECT_ROOT}/.crew-worktrees/${TASK_ID}"
+mkdir -p "${CREW_WORKTREES_BASE}"
+
+# Build a mapping: UNIT_ID → WORKTREE_PATH
+declare -A UNIT_WORKTREE_MAP
+UNIT_IDS=$(python3 -c "
+import json
+units = json.loads('''${UNITS_JSON}''')
+print(' '.join(u['id'] for u in units))
+")
+
+for UNIT_ID in ${UNIT_IDS}; do
+  WT_PATH="${CREW_WORKTREES_BASE}/unit-${UNIT_ID}"
+  WT_BRANCH="unit-${TASK_ID}-${UNIT_ID}"
+  # Remove stale worktree if present (e.g. from an interrupted prior run).
+  git -C "${PROJECT_ROOT}" worktree remove --force "${WT_PATH}" 2>/dev/null || true
+  git -C "${PROJECT_ROOT}" branch -D "${WT_BRANCH}" 2>/dev/null || true
+  git -C "${PROJECT_ROOT}" worktree add -b "${WT_BRANCH}" "${WT_PATH}" HEAD
+  UNIT_WORKTREE_MAP["${UNIT_ID}"]="${WT_PATH}"
+done
+```
+
+Each unit agent receives its own `UNIT_WORKTREE_PATH` (see prompt
+format below) and MUST use it as its working directory instead of
+`PROJECT_ROOT`. After all units complete (success or failure), the
+worktrees are removed — see the cleanup block at the end of this
+section.
+
 #### Dispatch — N agents in one host message
 
 When `STAGE_UNITS_COUNT >= 2`:
@@ -725,23 +890,28 @@ When `STAGE_UNITS_COUNT >= 2`:
 
 2. Compose **N** agent prompts, one per unit, using the standard
    Agent prompt format above. Each prompt additionally carries
-   `UNIT_ID`, `UNIT_BRIEF`, and `UNIT_FILES` so the agent knows its
-   sub-slice of the stage:
+   `UNIT_ID`, `UNIT_BRIEF`, `UNIT_FILES`, and `UNIT_WORKTREE_PATH`
+   so the agent knows its sub-slice of the stage and has an isolated
+   working directory:
 
    ```text
    TASK_DIR: {TASK_DIR}
-   PROJECT_ROOT: {PROJECT_ROOT}
+   PROJECT_ROOT: {UNIT_WORKTREE_PATH}
    HANDOFF_PATH: {TASK_DIR}/handoff.md
    QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
    UNIT_ID: {unit.id}
    UNIT_BRIEF: {unit.brief}
    UNIT_FILES: {comma-separated unit.files globs}
+   UNIT_WORKTREE_PATH: {UNIT_WORKTREE_PATH}
 
    You are running as a sub-task fan-out unit of stage {i}. Read the
    handoff and PRD as usual, then perform ONLY the work described in
    UNIT_BRIEF, scoped to the file globs in UNIT_FILES. Do not touch
    files outside UNIT_FILES — other parallel units own those globs.
    Do not modify handoff.md (sibling units are writing concurrently).
+   Use UNIT_WORKTREE_PATH as your PROJECT_ROOT for all git operations
+   (git add, git commit, git status) — this is your isolated worktree
+   and avoids index.lock contention with sibling units.
    ```
 
 3. Emit the start event **before** dispatch:
@@ -768,17 +938,19 @@ When `STAGE_UNITS_COUNT >= 2`:
 
 5. As each unit returns, record its terminal status in
    `pipeline.json.stage_agent_status` under a composite key
-   `<agent>:<unit_id>` so per-unit retries are addressable:
+   `<agent>:<unit_id>` so per-unit retries are addressable.
+   Use the atomic write helper:
 
-   ```bash
+   ```python
    # Repeat for each unit as it terminates.
-   python3 -c "
    import json
    p = json.load(open('${PIPELINE_PATH}'))
    key = '${IMPL_AGENT}:${UNIT_ID}'
    p.setdefault('stage_agent_status', {}).setdefault('${i}', {})[key] = '${status}'
-   json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
-   "
+   pipeline_write_atomic('${PIPELINE_PATH}', p)
+   ```
+
+   ```bash
    log_progress "STAGE_FANOUT_UNIT_DONE" \
      "stage=${i} unit=${UNIT_ID} status=${status}"
    ```
@@ -801,19 +973,39 @@ When `STAGE_UNITS_COUNT >= 2`:
    `pipeline.json`.
 
 7. Advance `completed_stages` only when **every** unit (and, in
-   combined mode, the test-writer) is `completed`:
+   combined mode, the test-writer) is `completed`. Use the atomic
+   write helper:
 
-   ```bash
-   python3 -c "
+   ```python
    import json
    p = json.load(open('${PIPELINE_PATH}'))
    stage_status = p.get('stage_agent_status', {}).get('${i}', {})
    all_done = stage_status and all(v == 'completed' for v in stage_status.values())
    if all_done:
        p['completed_stages'] = ${i}
-       json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
-   "
+       pipeline_write_atomic('${PIPELINE_PATH}', p)
    ```
+
+#### Per-unit worktree cleanup
+
+After all N units have reached a terminal state (all `completed`, or
+any failed after exhausting retries), remove the per-unit worktrees
+regardless of outcome. Cleanup runs before advancing `completed_stages`
+or halting with BLOCKED:
+
+```bash
+for UNIT_ID in ${UNIT_IDS}; do
+  WT_PATH="${UNIT_WORKTREE_MAP[${UNIT_ID}]}"
+  WT_BRANCH="unit-${TASK_ID}-${UNIT_ID}"
+  git -C "${PROJECT_ROOT}" worktree remove --force "${WT_PATH}" 2>/dev/null || true
+  git -C "${PROJECT_ROOT}" branch -D "${WT_BRANCH}" 2>/dev/null || true
+done
+rmdir "${CREW_WORKTREES_BASE}" 2>/dev/null || true
+```
+
+If cleanup fails (e.g., stale lock file), log a warning and continue —
+the worktree is an implementation detail and its residue does not affect
+the correctness of the task result.
 
 #### Selective per-unit retry
 
@@ -827,6 +1019,48 @@ The retry-key vocabulary widens to include the composite
 mirror (when enabled) both address the correct sub-task. The Stage
 Retry Rule's crash and validation budgets (5 / 3) apply per unit, not
 per stage.
+
+**Pre-retry clean state (required step):** Before re-spawning a failed
+unit, reset the unit's worktree to a clean state. A crashed unit may
+have left partial uncommitted changes in its worktree; retrying against
+dirty state can cause the retry to behave incorrectly or produce a
+corrupt commit.
+
+```bash
+# Run this block before every unit retry (inside the Stage Retry Rule loop,
+# at the same point as the existing crash_attempts increment).
+#
+# UNIT_WORKTREE_PATH is the per-unit path created in the worktree setup above.
+# UNIT_FILES_GLOB is the comma-separated glob list from the unit's 'files' field
+# (expand each entry individually in the loop below).
+
+python3 -c "
+import subprocess, json, sys
+unit_id = '${UNIT_ID}'
+wt_path = '${UNIT_WORKTREE_PATH}'
+units = json.loads('''${UNITS_JSON}''')
+unit = next((u for u in units if u['id'] == unit_id), None)
+if unit is None:
+    sys.exit(0)
+for glob in unit.get('files', []):
+    # Restore tracked files to HEAD state
+    subprocess.run(
+        ['git', '-C', wt_path, 'checkout', 'HEAD', '--', glob],
+        capture_output=True
+    )
+    # Remove untracked files / directories matching the glob
+    subprocess.run(
+        ['git', '-C', wt_path, 'clean', '-fd', '--', glob],
+        capture_output=True
+    )
+" 2>/dev/null || true
+```
+
+This reset is idempotent: if no partial changes exist the commands are
+no-ops. It runs only within the `STAGE_UNITS_COUNT >= 2` fan-out path —
+single-agent stages use the supervisor's main worktree and the Stage
+Retry Rule already handles state hygiene there via the standard
+re-invocation.
 
 If, after exhausting retries, any unit remains `crashed` or `blocked`,
 the stage as a whole is BLOCKED — apply the standard BLOCKED Recovery
@@ -962,18 +1196,29 @@ status key is the literal string `reviewer` under
 On the joint-success path (every selected-dispatch agent + the
 reviewer all reach `completed`), the trailing reviewer stage is
 consumed. Use a single combined write that advances `completed_stages`
-by **2** in one operation:
+by **2** in one operation. Use the atomic tempfile + rename pattern:
 
 ```bash
 python3 -c "
-import json
+import json, os, tempfile
 p = json.load(open('${PIPELINE_PATH}'))
 stage_status = p.get('stage_agent_status', {}).get('${i}', {})
 all_done = stage_status and all(v == 'completed' for v in stage_status.values())
 if all_done:
     # Consume both this stage and the trailing reviewer stage in one write.
     p['completed_stages'] = ${i} + 1
-    json.dump(p, open('${PIPELINE_PATH}', 'w'), ensure_ascii=False, indent=2)
+    path = '${PIPELINE_PATH}'
+    dir_ = os.path.dirname(path) or '.'
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix='.pipeline.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(p, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+        os.replace(tmp, path)
+    except Exception:
+        try: os.unlink(tmp)
+        except Exception: pass
+        raise
 "
 ```
 

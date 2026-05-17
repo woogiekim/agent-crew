@@ -261,18 +261,52 @@ exact write blocks.
 
 ## Concurrency
 
-One supervisor process owns one `pipeline.json`. The two write paths
-inside supervisor-stages.md (per-agent intermediate write, combined
-stage-end write) are not atomic in the same sense as the F4
-`register_update` helper — they use Python's `json.dump(open(...,
-"w"))` which truncates-then-writes. The window for corruption from a
-crash is microseconds. For MVP scope, this matches the
-`session.json` concurrent-write guarantee documented in
-`core/rules/task-injection.md` § Concurrent Write Safety.
+One supervisor process owns one `pipeline.json`. However, during
+**sub-task fan-out** (`parallelizable_units` with N >= 2), multiple
+parallel unit agents may each return and trigger a `stage_agent_status`
+write in rapid succession within the same supervisor. A naive
+`json.dump(open(path, "w"))` approach (truncate-then-write) risks data
+loss if two concurrent writes interleave.
 
-The atomic-write upgrade for pipeline.json is **out of scope for F4**.
-Future phases that need stronger guarantees should adopt the same
-tempfile + rename pattern that `register_update` introduces in F4.
+### Atomic write requirement
+
+**All writes to `pipeline.json` MUST use the tempfile + rename pattern.**
+This is the same approach used by the `register_update` helper in
+`supervisor-bootstrap.md`. The pattern guarantees that readers always
+observe a complete, consistent JSON document:
+
+```python
+import json, os, tempfile
+
+def write_pipeline_atomic(path: str, data: dict) -> None:
+    """Write pipeline.json atomically via tempfile + os.replace()."""
+    dir_ = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".pipeline.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, path)   # atomic on POSIX (rename(2))
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+```
+
+Supervisor-stages.md encodes this as the `pipeline_write_atomic` helper
+and uses it for all write sites:
+
+- **Per-agent intermediate write** (parallel stages, fan-out unit status)
+- **Combined stage-end write** (`stage_agent_status` + `completed_stages`)
+- **Resolver-mediation write** (rewriting `parallelizable_units` after
+  the resolver returns a resolved unit list)
+
+Pre-F4 single-agent sequential pipelines were safe with truncate-then-write
+(no concurrent writers within the same supervisor). The atomic pattern
+is fully backward-compatible and is now the required pattern for all write
+sites to support the fan-out paths introduced later.
 
 ## Consumer Contract
 
