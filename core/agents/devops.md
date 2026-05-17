@@ -373,3 +373,23 @@ Record the following in `handoff.md`:
 - [ ] (For deployment) Git tag created and pushed
 - [ ] (For deployment) Deployment script execution result recorded (success/failure)
 - [ ] (For deployment) Deployment version, result, and timestamp recorded in `handoff.md`
+
+## On Completion — Capture to memory
+
+Before writing `STATUS: completed`, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+"${MEMORY}" capture --quiet --layer session \
+  --tag "agent:devops" \
+  --content "<root cause / decision / workaround>"
+```
+
+Capture candidates:
+- Root cause of bugs found or fixed
+- Architecture decisions made during implementation
+- Workarounds applied for framework limitations
+- Patterns that would recur in similar tasks
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.

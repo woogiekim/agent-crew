@@ -183,3 +183,23 @@ Then return one of:
   narrow, reassign, or merge existing ones.
 - Never commit anything — fan-out mediation is a pre-flight check that
   runs before any implementer touches the working tree.
+
+## On Completion — Capture to memory
+
+Before writing `STATUS: completed`, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+"${MEMORY}" capture --quiet --layer session \
+  --tag "agent:resolver" \
+  --content "<root cause / decision / workaround>"
+```
+
+Capture candidates:
+- Root cause of bugs found or fixed
+- Architecture decisions made during implementation
+- Workarounds applied for framework limitations
+- Patterns that would recur in similar tasks
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.

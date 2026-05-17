@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Thin memory backend wrapper — graceful degradation when mnemos is absent.
+# Usage: memory capture --quiet --layer session --content "..."
+#        memory search "query"
+#
+# Sub-agents must use `memory capture` (not `mnemos capture` directly) so that
+# pipelines work even when no memory backend is installed.
+# See: https://github.com/woogiekim/agent-crew/issues/15
+if command -v mnemos >/dev/null 2>&1; then
+  exec mnemos "$@"
+else
+  echo "[memory] no backend installed — skipping (install mnemos to enable)" >&2
+  exit 0
+fi

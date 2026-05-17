@@ -105,3 +105,23 @@ Return: `STATUS: completed` | `COMMIT: {hash}` | `APIS: {endpoint list}` | `TEST
 - No `else` keyword (Object Calisthenics rule #2)
 - No getter-based decision logic (Tell, Don't Ask)
 - If no test framework is available in the project, halt and report BLOCKED — do not implement without tests
+
+## On Completion — Capture to memory
+
+Before writing `STATUS: completed`, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+"${MEMORY}" capture --quiet --layer session \
+  --tag "agent:backend" \
+  --content "<root cause / decision / workaround>"
+```
+
+Capture candidates:
+- Root cause of bugs found or fixed
+- Architecture decisions made during implementation
+- Workarounds applied for framework limitations
+- Patterns that would recur in similar tasks
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.

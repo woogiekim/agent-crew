@@ -150,6 +150,17 @@ install_global() {
     log_info "Schemas installed → ${AGENT_CREW_DIR}/system/schemas/"
   fi
 
+  # Memory backend wrapper — thin shim that delegates to mnemos when installed,
+  # degrades silently when absent. Sub-agents call `memory capture` (not
+  # `mnemos capture` directly) so pipelines work without a memory backend.
+  # See: https://github.com/woogiekim/agent-crew/issues/15
+  if [ -f "${SOURCE_DIR}/bin/memory" ]; then
+    mkdir -p "${AGENT_CREW_DIR}/bin"
+    cp "${SOURCE_DIR}/bin/memory" "${AGENT_CREW_DIR}/bin/memory"
+    chmod +x "${AGENT_CREW_DIR}/bin/memory"
+    log_info "Memory wrapper installed → ${AGENT_CREW_DIR}/bin/memory"
+  fi
+
   [ -f "${AGENT_CREW_DIR}/system/schemas/register.schema.json" ] \
     || log_error "register.schema.json install failed — system/schemas/register.schema.json not found"
 

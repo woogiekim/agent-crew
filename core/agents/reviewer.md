@@ -582,3 +582,23 @@ ISSUES: {issue count}
 - Return within 5 lines for `final` mode (the optional
   `TEST_RUN_RESULT:` line bumps the historical 4-line limit by one);
   4 lines for `streaming` mode
+
+## On Completion — Capture to memory
+
+Before writing the final `REVIEW:` verdict, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+"${MEMORY}" capture --quiet --layer session \
+  --tag "agent:reviewer" \
+  --content "<root cause / decision / workaround>"
+```
+
+Capture candidates:
+- Root cause of bugs found or fixed
+- Architecture decisions made during implementation
+- Workarounds applied for framework limitations
+- Patterns that would recur in similar tasks
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.
