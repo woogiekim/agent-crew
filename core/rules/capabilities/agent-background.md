@@ -62,9 +62,19 @@ trivial-intent classifier.
 The orchestrator uses the inline path (`crew:run` Step 6 legacy branch)
 for every task — both `N == 1` and `N > 1`. The legacy singleton
 `tasks/active` marker remains the gate. Status tailing reads
-`progress.log` directly. Task injection
-(`core/rules/task-injection.md`) is effectively unavailable because the
-orchestrator's turn does not end until the inline run completes.
+`progress.log` directly.
+
+**Task injection is not available.** When `agent_background=false`, the
+orchestrator's turn does not end until all supervisors complete. There is no
+window for the user to issue a new `crew:run` command mid-run, so mid-session
+task injection (`core/rules/task-injection.md`) is structurally impossible.
+`run.md` Step 1.5 enforces this via the Host-Capability Guard: when
+`HAS_AGENT_BACKGROUND=0`, `IS_LIVE_SESSION` is reset to `0` and the injection
+path is skipped entirely.
+
+**Affected adapters:** Codex (`agent_background=false`) and generic
+(`agent_background=false`). For Codex-specific workarounds (queuing tasks upfront
+using the pipe syntax), see `adapters/codex/invocation.md` § Limitations.
 
 This is the documented best-effort path on Codex, generic, and any
 host that has not advertised `agent_background = true`. Phase B0
