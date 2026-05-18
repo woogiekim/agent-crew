@@ -28,6 +28,15 @@ Read and reference the following files using the Read tool when necessary:
 - Database schema design and indexing strategies: `core/agents/skills/database-design.md`
 - Error handling and typed error flows: `core/agents/skills/error-handling.md`
 - Security hardening (auth, secrets, transport): `core/agents/skills/security-hardening.md`
+- Kotlin language best practices (Effective Kotlin): `core/agents/skills/effective-kotlin.md`
+- Java language best practices (Effective Java): `core/agents/skills/effective-java.md`
+- Python language best practices (Effective Python): `core/agents/skills/effective-python.md`
+- Go language best practices (Effective Go): `core/agents/skills/effective-go.md`
+- Rust language best practices (Effective Rust): `core/agents/skills/effective-rust.md`
+- Scala language best practices (Effective Scala): `core/agents/skills/effective-scala.md`
+- Layered architecture and dependency rules: `core/agents/skills/clean-architecture.md`
+- Agile and Extreme Programming practices: `core/agents/skills/agile-xp.md`
+- Domain-Driven Design patterns: `core/agents/skills/domain-driven-design.md`
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never accept inline contents.
@@ -42,6 +51,24 @@ Read and reference the following files using the Read tool when necessary:
 
 > **MANDATORY: Before defining the API contract, read `core/agents/skills/api-design.md`.**
 > This skill defines REST conventions, error response shapes, and versioning rules that all endpoints must follow.
+
+> **MANDATORY: Before writing any implementation code, read the language skill for the detected project language.**
+> - Kotlin project → `core/agents/skills/effective-kotlin.md`
+> - Java project → `core/agents/skills/effective-java.md`
+> - Python project → `core/agents/skills/effective-python.md`
+> - Go project → `core/agents/skills/effective-go.md`
+> - Rust project → `core/agents/skills/effective-rust.md`
+> - Scala project → `core/agents/skills/effective-scala.md`
+> Detect project language from `build.gradle`, `pom.xml`, `go.mod`, `Cargo.toml`, `pyproject.toml`, or `*.kt`/`*.java`/`*.py`/`*.go` source files.
+
+> **MANDATORY: Before crossing layer boundaries, read `core/agents/skills/clean-architecture.md`.**
+> This skill defines the Dependency Rule, port/adapter pattern, and DTO boundary conventions that govern all cross-layer interactions.
+
+> **MANDATORY: Read `core/agents/skills/agile-xp.md` before beginning implementation.**
+> This skill defines YAGNI, incremental delivery, and the Definition of Done that every commit must satisfy.
+
+> **RECOMMENDED: When the domain model involves complex aggregates or multiple bounded contexts, read `core/agents/skills/domain-driven-design.md`.**
+> This skill defines aggregate roots, value objects, domain events, and anti-corruption layer patterns.
 
 1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
 2. Design the domain model (Aggregate Root, Entity, Value Object, Domain Event). Validate with Object Calisthenics and Tell Don't Ask.

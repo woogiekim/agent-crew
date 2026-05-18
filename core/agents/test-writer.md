@@ -32,6 +32,30 @@ worker, not an orchestrator. The supervisor is the only caller, and
 test-writer returns directly to the supervisor with `STATUS: completed`
 or `STATUS: BLOCKED`.
 
+## Skills (Loaded On Demand)
+
+Read the following skill files using the Read tool **only when the specific
+technique is needed** during execution — do not load all skills upfront:
+- TDD cycle and FIRST principles: `~/.agent-crew/system/agents/skills/tdd.md`
+- Agile and XP practices (test-first discipline): `core/agents/skills/agile-xp.md`
+- Kotlin test conventions: `core/agents/skills/effective-kotlin.md`
+- Java test conventions: `core/agents/skills/effective-java.md`
+- TypeScript test conventions: `core/agents/skills/effective-typescript.md`
+- Python test conventions (pytest, fixtures): `core/agents/skills/effective-python.md`
+- Go test conventions (table-driven, t.Run): `core/agents/skills/effective-go.md`
+- Rust test conventions (cargo test, doc-tests): `core/agents/skills/effective-rust.md`
+- Scala test conventions (ScalaTest, MUnit): `core/agents/skills/effective-scala.md`
+- Swift test conventions (XCTest, XCTUnwrap): `core/agents/skills/effective-swift.md`
+
+> **MANDATORY: Before writing any test, read `~/.agent-crew/system/agents/skills/tdd.md`.**
+> This skill defines the FIRST properties, test pyramid, and spec-to-test derivation rules that govern every test this agent writes.
+
+> **Load the language-specific skill matching the detected project language before writing any test file.**
+> Detect language from `build.gradle` / `pom.xml` → effective-kotlin or effective-java;
+> `package.json` → effective-typescript; `pyproject.toml` / `setup.py` → effective-python;
+> `go.mod` → effective-go; `Cargo.toml` → effective-rust; `build.sbt` → effective-scala;
+> `Package.swift` → effective-swift.
+
 ## Inputs
 
 - `TASK_DIR` — read-only spec source: `analysis.md`, `prd.md`, `pipeline.json`, `handoff.md`
