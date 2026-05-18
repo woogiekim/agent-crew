@@ -57,24 +57,23 @@ if [ "${HOST}" != "auto" ]; then
   exit $?
 fi
 
-# Fan-out: iterate all detected adapters, run each one that is installed.
-# Unlike the previous exec-based dispatch, this loop does NOT stop at the
-# first match — all adapters whose detect.sh succeeds and whose installation
-# directory exists are updated in sequence.
+# Fan-out: iterate all known adapter directories and run each one that is
+# installed on this machine (filesystem check via is_installed()).  This
+# replaces the previous detect.sh-gated loop so that all installed adapters
+# are refreshed regardless of which host is currently running.  detect.sh
+# keeps its role in crew:setup for runtime adapter selection; it is no longer
+# load-bearing for the update fan-out path.
 detected_any=0
-for detect_script in "${AGENT_CREW_HOME}"/adapters/*/detect.sh; do
-  [ -x "${detect_script}" ] || continue
-  if "${detect_script}" "${PROJECT_ROOT}" 2>/dev/null; then
-    host_dir="$(dirname "${detect_script}")"
-    host_name="$(basename "${host_dir}")"
-    # Skip generic here; it is handled as the unconditional fallback below.
-    [ "${host_name}" = "generic" ] && continue
-    if is_installed "${host_name}"; then
-      run_adapter "${host_name}"
-      detected_any=1
-    else
-      printf 'Skipping %s adapter (not installed on this machine)\n' "${host_name}"
-    fi
+for adapter_dir in "${AGENT_CREW_HOME}"/adapters/*/; do
+  [ -d "${adapter_dir}" ] || continue
+  host_name="$(basename "${adapter_dir}")"
+  # Skip generic here; it is handled as the unconditional fallback below.
+  [ "${host_name}" = "generic" ] && continue
+  if is_installed "${host_name}"; then
+    run_adapter "${host_name}"
+    detected_any=1
+  else
+    printf 'Skipping %s adapter (not installed on this machine)\n' "${host_name}"
   fi
 done
 
