@@ -132,7 +132,7 @@ Default parallel groupings (always apply unless overridden by a dependency):
 Always sequential (never group with others in the same stage):
 - `devops` — depends on prior stage artifacts; always its own sequential stage.
 - `resolver` — depends on prior stage artifacts; always its own sequential stage.
-- `reviewer` — always the final sequential stage; never grouped with others.
+- **MANDATORY: `reviewer` — always the final sequential stage; never grouped with others. Every pipeline MUST end with `["reviewer"]`. Omitting the reviewer is a pipeline composition error.**
 
 When uncertain: **prefer parallel**. File-level merge conflicts, if any arise from
 parallel writes, are resolved by the resolver agent — that is its purpose.

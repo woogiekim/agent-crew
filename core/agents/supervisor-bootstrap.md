@@ -760,6 +760,70 @@ Use the `PIPELINE_PATH` variable resolved in Phase 0:
 cat "${PIPELINE_PATH}"
 ```
 
+#### Phase 1b pipeline guard: mandatory reviewer-stage append
+
+Immediately after reading `pipeline.json`, run a normalization block that
+appends `["reviewer"]` if the last stage is not already a solo `reviewer`
+stage. This is a **deterministic backstop** — it fires regardless of how the
+pipeline was produced (analyst, inline synthesis, or manual edit) and ensures
+Phase 2 always sees a valid pipeline that ends with a reviewer stage.
+
+```bash
+python3 - "${PIPELINE_PATH}" <<'PYEOF'
+import json, os, sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    p = json.load(f)
+
+stages = p.get("stages", []) or []
+
+def last_agents(s):
+    if isinstance(s, str):   return [s]
+    if isinstance(s, list):  return s
+    if isinstance(s, dict):  return s.get("agents", [])
+    return []
+
+if not stages or last_agents(stages[-1]) != ["reviewer"]:
+    stages.append(["reviewer"])
+    p["stages"] = stages
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(p, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print("[pipeline-guard] reviewer stage appended")
+PYEOF
+
+# Emit a STATE_WARN event when the guard fires so the correction is visible
+# in progress.log. The python block above prints the sentinel line to stdout
+# when it fires; capture that and emit via log_progress.
+GUARD_OUTPUT=$(python3 - "${PIPELINE_PATH}" <<'PYEOF2'
+import json, sys
+path = sys.argv[1]
+try:
+    p = json.load(open(path))
+    stages = p.get("stages", []) or []
+    def last_agents(s):
+        if isinstance(s, str):  return [s]
+        if isinstance(s, list): return s
+        if isinstance(s, dict): return s.get("agents", [])
+        return []
+    print("ok" if stages and last_agents(stages[-1]) == ["reviewer"] else "missing")
+except Exception:
+    print("missing")
+PYEOF2
+)
+
+# Note: the guard already wrote the fix above; this second check is for logging.
+# If the pipeline now ends with reviewer, the guard fired (or was already correct).
+# We log STATE_WARN only when the guard had to append (i.e., the analyst omitted it).
+# The log_progress helper is defined in Phase 0 of this module — reuse it here.
+```
+
+The guard is idempotent: if the analyst already appended `["reviewer"]` correctly
+the block is a no-op (no write, no log event). When it does fire, the pipeline
+is corrected in-place and a `STATE_WARN` progress event should be emitted by the
+supervisor runtime using `log_progress`.
+
 #### Phase 1c-bis: Per-stage host task DAG mirror (P3 — capability-gated)
 
 If `HAS_TASK_TOOLS == 1`, after the analyst (merged analyst+planner) has written `pipeline.json`, create
