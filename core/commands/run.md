@@ -188,6 +188,28 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 SESSION_FILE="${STATE_DIR}/session.json"
 ```
 
+**Setup guard (pre-injection)**: Before reading `session.json`, verify that the
+project has been initialized. If either `STATE_DIR` does not exist or
+`capabilities.json` is absent inside it, stop immediately and display this error
+(no silent failure — host adapter implementations MUST surface both lines verbatim):
+
+```text
+Error: Project '{PROJECT_NAME}' is not initialized.
+Run crew:setup first to initialize the workspace.
+```
+
+The `{PROJECT_NAME}` placeholder resolves to the `PROJECT_NAME` variable set in the
+bash block above. The guard is expressed as:
+
+```bash
+CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
+if [ ! -d "${STATE_DIR}" ] || [ ! -f "${CAPABILITIES_FILE}" ]; then
+  printf 'Error: Project '\''%s'\'' is not initialized.\nRun crew:setup first to initialize the workspace.\n' \
+    "${PROJECT_NAME}"
+  return 1 2>/dev/null || exit 1
+fi
+```
+
 A **live session** is one where `session.json` exists AND its `status` field
 is `"running"`:
 
@@ -951,8 +973,9 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 ```
 
-If `STATE_DIR` does not exist, stop immediately and display this error to the user (no
-silent failure — host adapter implementations MUST surface both lines verbatim):
+If `STATE_DIR` does not exist **or** `${STATE_DIR}/capabilities.json` does not
+exist, stop immediately and display this error to the user (no silent failure —
+host adapter implementations MUST surface both lines verbatim):
 
 ```text
 Error: Project '{PROJECT_NAME}' is not initialized.
@@ -961,6 +984,28 @@ Run crew:setup first to initialize the workspace.
 
 The `{PROJECT_NAME}` placeholder resolves to the `PROJECT_NAME` variable set in the
 bash block above.
+
+The check covers two distinct failure modes:
+
+- `STATE_DIR` absent — `crew:setup` was never run for this project.
+- `STATE_DIR` present but `capabilities.json` absent — `crew:setup` was interrupted
+  or only partially completed (e.g., `mkdir` ran but the adapter install did not).
+
+Both conditions indicate an unconfigured project and must produce the same error.
+A `capabilities.json` that exists but is empty or unparseable is treated as
+configured (the supervisor falls back to all-false flags — this is expected
+behaviour for minimal setups, not an error).
+
+The guard is expressed as:
+
+```bash
+CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
+if [ ! -d "${STATE_DIR}" ] || [ ! -f "${CAPABILITIES_FILE}" ]; then
+  printf 'Error: Project '\''%s'\'' is not initialized.\nRun crew:setup first to initialize the workspace.\n' \
+    "${PROJECT_NAME}"
+  return 1 2>/dev/null || exit 1
+fi
+```
 
 Before spawning any supervisor agents, capture the current HEAD:
 
