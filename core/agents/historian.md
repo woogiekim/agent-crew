@@ -61,6 +61,17 @@ The historian MUST NOT:
 - Spawn other agents (no Task tool invocations targeting other agents)
 - Read large source-code files for semantic analysis (that's analyst's job)
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "${TASK}" --limit 5 2>/dev/null
+fi
+```
+
+Surface any prior decisions or context captured in memory that is relevant to the question before performing live lookups. The mnemos output itself is the recall result — no file write is needed for this agent since it answers inline.
+
 ## Workflow
 
 ### Step 1 — Classify the question
@@ -96,6 +107,27 @@ STATUS: completed
 SUMMARY: <one or two sentence factual answer>
 FILES: <comma-separated paths consulted, or "none">
 ```
+
+## On Completion — Capture to memory
+
+Before returning the STATUS block, call `memory capture` for key factual findings:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" capture --quiet --layer session \
+    --tag "agent:historian" \
+    --content "<factual finding / decision discovered / session activity summary>"
+fi
+```
+
+Capture candidates:
+- Decisions or patterns surfaced from git history or progress logs that are worth preserving
+- Activity summaries that describe a significant session milestone
+- Cross-session patterns (e.g., recurring agent failures, commonly used pipelines)
+
+Minimum: 1 capture per completed task when the answer contained a non-trivial finding. Skip for trivial lookups (e.g., "what branch am I on?").
+Note: `memory capture` is a no-op if no memory backend is installed.
 
 ## Rules
 

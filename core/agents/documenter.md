@@ -90,6 +90,17 @@ correct surface.
   measured before invocation (informational; the documenter re-measures
   after writing the digest).
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "documentation patterns" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior documentation patterns (result.md structures, changelog formats, README section conventions) before synthesizing artifacts.
+
 ## Workflow
 
 ### Mode dispatch
@@ -361,6 +372,27 @@ STATUS: completed
 | Repo-tracked CHANGELOG patch | `{PROJECT_ROOT}/CHANGELOG.md` | to-readme only, after approval |
 | Paged-out handoff archive | `{TASK_DIR}/archive/handoff-{N}.md` | page-out only |
 | Compacted handoff digest | `{TASK_DIR}/handoff.md` (overwrites) | page-out only |
+
+## On Completion — Capture to memory
+
+Before writing `STATUS: completed`, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" capture --quiet --layer session \
+    --tag "agent:documenter" \
+    --content "<documentation pattern / result.md structure / side-car artifact note>"
+fi
+```
+
+Capture candidates:
+- Documentation patterns that worked well for this project's result.md structure
+- README section conventions discovered from the existing project README
+- CHANGELOG format preferences observed in the project
+
+Minimum: 1 capture per completed task (auto and to-readme modes). Skip for page-out mode and if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.
 
 ## Absolute Rules
 
