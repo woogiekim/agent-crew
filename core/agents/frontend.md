@@ -25,6 +25,10 @@ Read the following skill files using the Read tool **only when the specific
 technique is needed** during execution — do not load all skills upfront:
 - UI component decomposition and prop design: `core/agents/skills/ui-component-design.md`
 - Error handling and typed error flows: `core/agents/skills/error-handling.md`
+- TypeScript language best practices (Effective TypeScript): `core/agents/skills/effective-typescript.md`
+- Swift language best practices (Effective Swift — for iOS/macOS projects): `core/agents/skills/effective-swift.md`
+- Layered architecture and dependency rules: `core/agents/skills/clean-architecture.md`
+- Agile and Extreme Programming practices: `core/agents/skills/agile-xp.md`
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
@@ -41,6 +45,16 @@ technique is needed** during execution — do not load all skills upfront:
 
 > **MANDATORY: Before beginning component decomposition, read `core/agents/skills/ui-component-design.md`.**
 > This skill defines component decomposition strategy, prop design principles, and composition patterns that govern how components are structured in this phase.
+
+> **MANDATORY: Before writing any TypeScript code, read `core/agents/skills/effective-typescript.md`.**
+> This skill defines type safety rules, `unknown` vs `any`, discriminated unions, and strict-mode conventions that govern all TypeScript code in this phase.
+> For Swift/iOS projects, read `core/agents/skills/effective-swift.md` instead.
+
+> **MANDATORY: Before committing any code, read `core/agents/skills/agile-xp.md`.**
+> This skill defines YAGNI, the Definition of Done, and incremental delivery requirements that every commit must satisfy.
+
+> **RECOMMENDED: When code crosses UI/API boundaries (fetch calls, state management), read `core/agents/skills/clean-architecture.md`.**
+> This skill defines how to keep UI components free of business logic and how to structure data transformation at layer boundaries.
 
 **MANDATORY: Write the failing test FIRST. Component implementation MUST NOT be written until a failing test exists and has been confirmed to fail.**
 

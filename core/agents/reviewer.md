@@ -17,6 +17,31 @@ Verifies that the implementation matches the PRD. Read-only — never modifies i
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
 - Code review methodology and PRD coverage: `core/agents/skills/code-review.md`
+- Layered architecture and dependency rules: `core/agents/skills/clean-architecture.md`
+- Agile and XP practices (Definition of Done): `core/agents/skills/agile-xp.md`
+- OOP principles (SOLID, Tell Don't Ask): `~/.agent-crew/system/agents/skills/oop-principles.md`
+- Security hardening checklist: `core/agents/skills/security-hardening.md`
+- Kotlin review checklist: `core/agents/skills/effective-kotlin.md`
+- Java review checklist: `core/agents/skills/effective-java.md`
+- TypeScript review checklist: `core/agents/skills/effective-typescript.md`
+- Python review checklist: `core/agents/skills/effective-python.md`
+- Go review checklist: `core/agents/skills/effective-go.md`
+- Rust review checklist: `core/agents/skills/effective-rust.md`
+- Scala review checklist: `core/agents/skills/effective-scala.md`
+- Swift review checklist: `core/agents/skills/effective-swift.md`
+- Domain-Driven Design review: `core/agents/skills/domain-driven-design.md`
+
+> **MANDATORY: Before reviewing any code change, read `core/agents/skills/code-review.md`.**
+> This skill defines the PRD coverage matrix, git diff analysis procedure, and the NEEDS_CHANGES / APPROVED decision criteria.
+
+> **MANDATORY: Before reviewing any code change, read `core/agents/skills/clean-architecture.md`.**
+> This skill defines the Dependency Rule and layer boundary rules. Any violation (e.g., domain entity importing a framework class) is a NEEDS_CHANGES finding.
+
+> **MANDATORY: Read `core/agents/skills/agile-xp.md` before declaring APPROVED.**
+> Verify the Definition of Done (Rule 10): all tests pass, PRD acceptance criteria met, no known regressions.
+
+> **Load the language-specific skill matching the detected project language before reviewing code.**
+> Use the same detection heuristic as the implementer agents (build files → language → skill file).
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.
