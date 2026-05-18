@@ -173,3 +173,47 @@ exposes a native elicitation surface, `adapters/codex/setup.sh` may flip
 `interactive_question` to `true` and bind the intent to that surface in this
 file's "Capability mappings" section (currently absent — Codex has no other
 host-bound tool calls today, so no mapping table is yet warranted).
+
+## Memory Contract
+
+Before starting any non-trivial agent-crew workflow (`crew:run`, `crew:agent`,
+diagnostics, issue publishing, or document mutation), consult the memory store
+and capture substantive findings afterward.
+
+### Before work — Recall
+
+1. Run `mnemos search "<task keywords>"` using 1–3 keywords derived from the
+   task description or the user's request.
+2. If results are found, summarize them in 1–3 lines in your response before
+   proceeding.
+3. If mnemos is not installed, note `memory_unavailable` in your response and
+   continue without blocking.
+
+```bash
+MNEMOS="${HOME}/.local/bin/mnemos"
+if command -v "${MNEMOS}" >/dev/null 2>&1; then
+  "${MNEMOS}" search "<task keywords>" 2>/dev/null || true
+fi
+```
+
+### After work — Capture
+
+After substantive findings, decisions, or completed work, run:
+
+```bash
+MNEMOS="${HOME}/.local/bin/mnemos"
+if command -v "${MNEMOS}" >/dev/null 2>&1; then
+  "${MNEMOS}" capture --layer session \
+    --content "<insight / decision / root cause>"
+fi
+```
+
+### Audit line (required in every final response)
+
+Include one of these in every final response to make memory consultation
+auditable:
+
+- `Memory consulted: yes (N results)`
+- `Memory consulted: no (mnemos unavailable)`
+
+This line is advisory only — it does not gate workflow execution.
