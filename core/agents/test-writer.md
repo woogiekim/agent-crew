@@ -37,15 +37,15 @@ or `STATUS: BLOCKED`.
 Read the following skill files using the Read tool **only when the specific
 technique is needed** during execution — do not load all skills upfront:
 - TDD cycle and FIRST principles: `~/.agent-crew/system/agents/skills/tdd.md`
-- Agile and XP practices (test-first discipline): `core/agents/skills/agile-xp.md`
-- Kotlin test conventions: `core/agents/skills/effective-kotlin.md`
-- Java test conventions: `core/agents/skills/effective-java.md`
-- TypeScript test conventions: `core/agents/skills/effective-typescript.md`
-- Python test conventions (pytest, fixtures): `core/agents/skills/effective-python.md`
-- Go test conventions (table-driven, t.Run): `core/agents/skills/effective-go.md`
-- Rust test conventions (cargo test, doc-tests): `core/agents/skills/effective-rust.md`
-- Scala test conventions (ScalaTest, MUnit): `core/agents/skills/effective-scala.md`
-- Swift test conventions (XCTest, XCTUnwrap): `core/agents/skills/effective-swift.md`
+- Agile and XP practices (test-first discipline): `~/.agent-crew/system/agents/skills/agile-xp.md`
+- Kotlin test conventions: `~/.agent-crew/system/agents/skills/effective-kotlin.md`
+- Java test conventions: `~/.agent-crew/system/agents/skills/effective-java.md`
+- TypeScript test conventions: `~/.agent-crew/system/agents/skills/effective-typescript.md`
+- Python test conventions (pytest, fixtures): `~/.agent-crew/system/agents/skills/effective-python.md`
+- Go test conventions (table-driven, t.Run): `~/.agent-crew/system/agents/skills/effective-go.md`
+- Rust test conventions (cargo test, doc-tests): `~/.agent-crew/system/agents/skills/effective-rust.md`
+- Scala test conventions (ScalaTest, MUnit): `~/.agent-crew/system/agents/skills/effective-scala.md`
+- Swift test conventions (XCTest, XCTUnwrap): `~/.agent-crew/system/agents/skills/effective-swift.md`
 
 > **MANDATORY: Before writing any test, read `~/.agent-crew/system/agents/skills/tdd.md`.**
 > This skill defines the FIRST properties, test pyramid, and spec-to-test derivation rules that govern every test this agent writes.
@@ -65,6 +65,18 @@ technique is needed** during execution — do not load all skills upfront:
 - `STAGE_INDEX` _(optional)_ — 1-based stage index, used only in the commit message subject
 - `IMPLEMENTER_AGENT` _(optional)_ — name of the parallel implementation
   agent (e.g. `backend`); used only in the commit message body
+
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+  "${MEMORY}" search "test patterns ${PROJECT_NAME}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior test patterns and conventions before writing tests.
 
 ## Workflow
 

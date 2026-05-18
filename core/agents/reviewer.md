@@ -16,28 +16,28 @@ Verifies that the implementation matches the PRD. Read-only — never modifies i
 
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
-- Code review methodology and PRD coverage: `core/agents/skills/code-review.md`
-- Layered architecture and dependency rules: `core/agents/skills/clean-architecture.md`
-- Agile and XP practices (Definition of Done): `core/agents/skills/agile-xp.md`
+- Code review methodology and PRD coverage: `~/.agent-crew/system/agents/skills/code-review.md`
+- Layered architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
+- Agile and XP practices (Definition of Done): `~/.agent-crew/system/agents/skills/agile-xp.md`
 - OOP principles (SOLID, Tell Don't Ask): `~/.agent-crew/system/agents/skills/oop-principles.md`
-- Security hardening checklist: `core/agents/skills/security-hardening.md`
-- Kotlin review checklist: `core/agents/skills/effective-kotlin.md`
-- Java review checklist: `core/agents/skills/effective-java.md`
-- TypeScript review checklist: `core/agents/skills/effective-typescript.md`
-- Python review checklist: `core/agents/skills/effective-python.md`
-- Go review checklist: `core/agents/skills/effective-go.md`
-- Rust review checklist: `core/agents/skills/effective-rust.md`
-- Scala review checklist: `core/agents/skills/effective-scala.md`
-- Swift review checklist: `core/agents/skills/effective-swift.md`
-- Domain-Driven Design review: `core/agents/skills/domain-driven-design.md`
+- Security hardening checklist: `~/.agent-crew/system/agents/skills/security-hardening.md`
+- Kotlin review checklist: `~/.agent-crew/system/agents/skills/effective-kotlin.md`
+- Java review checklist: `~/.agent-crew/system/agents/skills/effective-java.md`
+- TypeScript review checklist: `~/.agent-crew/system/agents/skills/effective-typescript.md`
+- Python review checklist: `~/.agent-crew/system/agents/skills/effective-python.md`
+- Go review checklist: `~/.agent-crew/system/agents/skills/effective-go.md`
+- Rust review checklist: `~/.agent-crew/system/agents/skills/effective-rust.md`
+- Scala review checklist: `~/.agent-crew/system/agents/skills/effective-scala.md`
+- Swift review checklist: `~/.agent-crew/system/agents/skills/effective-swift.md`
+- Domain-Driven Design review: `~/.agent-crew/system/agents/skills/domain-driven-design.md`
 
-> **MANDATORY: Before reviewing any code change, read `core/agents/skills/code-review.md`.**
+> **MANDATORY: Before reviewing any code change, read `~/.agent-crew/system/agents/skills/code-review.md`.**
 > This skill defines the PRD coverage matrix, git diff analysis procedure, and the NEEDS_CHANGES / APPROVED decision criteria.
 
-> **MANDATORY: Before reviewing any code change, read `core/agents/skills/clean-architecture.md`.**
+> **MANDATORY: Before reviewing any code change, read `~/.agent-crew/system/agents/skills/clean-architecture.md`.**
 > This skill defines the Dependency Rule and layer boundary rules. Any violation (e.g., domain entity importing a framework class) is a NEEDS_CHANGES finding.
 
-> **MANDATORY: Read `core/agents/skills/agile-xp.md` before declaring APPROVED.**
+> **MANDATORY: Read `~/.agent-crew/system/agents/skills/agile-xp.md` before declaring APPROVED.**
 > Verify the Definition of Done (Rule 10): all tests pass, PRD acceptance criteria met, no known regressions.
 
 > **Load the language-specific skill matching the detected project language before reviewing code.**
@@ -341,7 +341,7 @@ Step 1 — static review.
 
 ### Step 1: Gather Context
 
-> **MANDATORY: Before performing the PRD coverage check, read `core/agents/skills/code-review.md`.**
+> **MANDATORY: Before performing the PRD coverage check, read `~/.agent-crew/system/agents/skills/code-review.md`.**
 > This skill defines the review checklist, coverage verification methodology, and quality criteria that determine APPROVED vs NEEDS_CHANGES verdicts.
 
 ```bash

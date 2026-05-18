@@ -36,7 +36,7 @@ Read the prompt's `MODE` field first:
 
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
-- Conflict analysis and resolution strategies: `core/agents/skills/conflict-resolution.md`
+- Conflict analysis and resolution strategies: `~/.agent-crew/system/agents/skills/conflict-resolution.md`
 
 ## Input Parameters (Merge mode)
 Check the following parameters from the prompt:
@@ -44,9 +44,20 @@ Check the following parameters from the prompt:
 - `TARGET`: Merge destination branch (usually `main`)
 - `PROJECT_ROOT`: Project root directory
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "conflict resolution ${BRANCH}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior conflict resolution patterns before proceeding.
+
 ## Execution Steps
 
-> **MANDATORY: Before analyzing conflicts, read `core/agents/skills/conflict-resolution.md`.**
+> **MANDATORY: Before analyzing conflicts, read `~/.agent-crew/system/agents/skills/conflict-resolution.md`.**
 > This skill defines semantic conflict analysis methodology, resolution strategies (integrate both, select one, or escalate), and the criteria for when each strategy applies.
 
 1. Check the list of conflicted files:
@@ -120,7 +131,7 @@ The supervisor's spawn prompt carries these fields:
 2. Analyse each overlapping pair and choose one of these strategies (in
    preference order):
    - **Narrow.** Tighten one or both units' globs to disjoint sub-paths
-     (e.g., `core/agents/*.md` and `core/agents/skills/*.md` overlap →
+     (e.g., `core/agents/*.md` and `~/.agent-crew/system/agents/skills/*.md` overlap →
      narrow the first to `core/agents/*.md` excluding `skills/`, expressed
      as a more specific list like `core/agents/supervisor*.md`,
      `core/agents/planner.md`, etc.).
