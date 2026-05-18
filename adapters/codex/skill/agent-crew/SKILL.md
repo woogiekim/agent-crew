@@ -173,3 +173,36 @@ exposes a native elicitation surface, `adapters/codex/setup.sh` may flip
 `interactive_question` to `true` and bind the intent to that surface in this
 file's "Capability mappings" section (currently absent — Codex has no other
 host-bound tool calls today, so no mapping table is yet warranted).
+
+## Missing Route Contract
+
+When a routed action is identified (via Natural-Language Routing above or an
+explicit `crew:run` invocation) but cannot be executed because any of the
+following conditions are true:
+
+- The required user agent is not present in Codex discovery
+  (`.codex/agents/<name>.toml` does not exist), OR
+- The required adapter skill does not exist
+  (`~/.agent-crew/user/skills/<skill>.md` is missing), OR
+- No shell `crew` executable is available on PATH, OR
+- The `crew:run` dispatch path is unavailable for any other reason
+
+Then you MUST:
+
+1. Output the structured block below in chat — do NOT proceed with direct API
+   calls, `curl`, `gh issue create`, REST calls, or any other workaround:
+
+   ```
+   STATUS: BLOCKED
+   BLOCKER: missing_route — {component} not available
+   DETAIL: {one-sentence description of the missing component and how to install it}
+   ```
+
+2. Suggest the corrective action to the user, for example:
+   - "Run `crew:setup` to install the Codex adapter and materialize user agents."
+   - "Add `issuer-github.md` to `~/.agent-crew/user/skills/` to enable GitHub issue publishing."
+
+**Rationale**: A direct API bypass (e.g. calling `gh issue create` directly when
+`issuer` is not in Codex discovery) produces correct-shaped output but bypasses
+the agent-crew audit trail, requirement collection, and quality loop. The
+`STATUS: BLOCKED` return keeps the workflow observable and correctable.
