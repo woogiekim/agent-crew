@@ -44,6 +44,17 @@ Check the following parameters from the prompt:
 - `TARGET`: Merge destination branch (usually `main`)
 - `PROJECT_ROOT`: Project root directory
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "conflict resolution ${BRANCH}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior conflict resolution patterns before proceeding.
+
 ## Execution Steps
 
 > **MANDATORY: Before analyzing conflicts, read `core/agents/skills/conflict-resolution.md`.**

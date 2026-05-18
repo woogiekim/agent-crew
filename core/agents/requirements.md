@@ -57,6 +57,17 @@ stack), but this is a rare-case escalation, not the default. Escalation MUST
 NOT loop — at most one extra structured user-choice call beyond the single
 round.
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "requirements ${TASK}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and surface relevant prior requirements patterns, scope decisions, or constraint history before conducting the interview.
+
 ## Execution Flow
 
 ### Step 1S — Single-Round Interview (runs only when `MODE == "single_round"`)
@@ -332,6 +343,29 @@ REQUIREMENTS: |
 ```
 
 If Round 2 was skipped (scope is "Tooling / docs / config"), omit `followup` entries or set `followup: (none)`.
+
+---
+
+## On Completion — Capture to memory
+
+Before returning the REQUIREMENTS block, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" capture --quiet --layer session \
+    --tag "agent:requirements" \
+    --content "<scope decision / constraint surfaced / ambiguity resolved>"
+fi
+```
+
+Capture candidates:
+- Scope decisions that deviated from the initial task description (e.g., user narrowed "full-stack" to "backend only")
+- Constraints surfaced during the interview that were not in the original task
+- Ambiguities that required escalation follow-up questions
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.
 
 ---
 

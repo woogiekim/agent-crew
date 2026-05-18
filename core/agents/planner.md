@@ -53,6 +53,18 @@ Check the following values from the prompt:
 
 ---
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+  "${MEMORY}" search "architecture decisions ${PROJECT_NAME}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior architecture decisions, pipeline patterns, and agent recommendations before generating the pipeline.
+
 ## Execution Flow
 
 ### Step 1: Requirement Collection
@@ -511,6 +523,28 @@ PRD: {TASK_DIR}/context/prd.md
 ```
 
 ---
+
+## On Completion — Capture to memory
+
+Before writing the completion report, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" capture --quiet --layer session \
+    --tag "agent:planner" \
+    --content "<architecture decision / pipeline pattern / agent recommendation>"
+fi
+```
+
+Capture candidates:
+- Pipeline patterns chosen for this request type (e.g., preferred stage ordering)
+- Architecture decisions embedded in the PRD
+- New custom agents created (name, role, reason)
+- Parallelism decisions and the reasoning behind them
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.
 
 ## Absolute Rules
 - User confirmation must use the host AI tool's structured choice UI (plain text prompts are prohibited)

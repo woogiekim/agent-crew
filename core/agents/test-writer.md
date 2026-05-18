@@ -66,6 +66,18 @@ technique is needed** during execution — do not load all skills upfront:
 - `IMPLEMENTER_AGENT` _(optional)_ — name of the parallel implementation
   agent (e.g. `backend`); used only in the commit message body
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+  "${MEMORY}" search "test patterns ${PROJECT_NAME}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior test patterns and conventions before writing tests.
+
 ## Workflow
 
 ### Step 1 — Read the spec (paths only, no implementation code)
@@ -212,6 +224,27 @@ MISSING:
   - {...}
 STATUS: BLOCKED
 ```
+
+## On Completion — Capture to memory
+
+Before writing `STATUS: completed`, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" capture --quiet --layer session \
+    --tag "agent:test-writer" \
+    --content "<test pattern / framework choice / spec gap found>"
+fi
+```
+
+Capture candidates:
+- Test patterns or conventions discovered for this project's language/framework
+- Spec gaps that required escalating to BLOCKED (useful for improving future PRDs)
+- Test framework setup decisions (e.g., which fixture style, which assertion library)
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.
 
 ## Rules
 
