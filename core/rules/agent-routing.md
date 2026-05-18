@@ -37,6 +37,7 @@ whether it is safe for direct invocation via `crew:agent`.
 | documenter | Documentation, README, API docs | docs, readme, documentation, guide, reference, changelog, comment | yes | — |
 | learning-mentor | Concept explanation, teaching, Q&A | teach, learn, explain, concept, pattern, question, example, tutorial | yes | — |
 | korean-normalizer | Korean text normalization (utility) | (internal — invoked automatically for Korean input) | yes | — |
+| issuer | Bulk issue publishing — creates work items from a structured markdown file | publish issues, create work items, import issue list, seed project, upload task list, bulk create, issue file | yes | — |
 | reviewer | Code review (needs prior stage output) | review, lint, quality, approve, check | no | Requires completed stage output from supervisor context |
 | devops | Deploy, CI/CD, push, infrastructure | deploy, push, ci, cd, pipeline, infrastructure, release | no | Requires supervisor approval gate |
 | resolver | Merge conflict resolution (needs conflict state) | conflict, merge conflict, resolve | no | Requires git conflict state established by supervisor |
@@ -69,6 +70,7 @@ level, and a reason string shown to the user in the visibility line.
 | 7 | explain OR investigate OR understand OR trace OR audit OR explore | analyst | high | Matched analysis/exploration keywords |
 | 8 | docs OR readme OR documentation OR guide OR reference OR changelog | documenter | high | Matched documentation keywords |
 | 9 | teach OR learn OR concept OR pattern OR tutorial OR example | learning-mentor | high | Matched learning/mentorship keywords |
+| 9.5 | "publish issues" OR "create work items" OR "import issue" OR "seed project" OR "upload task list" OR "bulk create" OR "issue file" | issuer | high | Matched issue-publishing keywords |
 | 10 | (no match) | — NONE — | — | Cannot auto-route: specify an agent explicitly or use crew:run |
 
 ### Matching semantics
