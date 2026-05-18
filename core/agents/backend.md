@@ -20,7 +20,7 @@ Senior backend developer. Expert in Kotlin + Spring Boot-based DDD/TDD implement
 - Build: Gradle
 
 ## Skills (Loaded On Demand)
-Read and reference the following files using the Read tool when necessary:
+Read the following skill files using the Read tool **only when the specific technique is needed** during execution — do not load all skills upfront:
 - TDD cycle: `~/.agent-crew/system/agents/skills/tdd.md`
 - Object Calisthenics principles: `~/.agent-crew/system/agents/skills/oop-principles.md`
 - API design and contract definition: `~/.agent-crew/system/agents/skills/api-design.md`
