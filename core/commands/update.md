@@ -385,8 +385,23 @@ resolve_source_dir() {
    > database is clean and future runs of `ingest-claude-md` are content-hash
    > no-ops for unchanged memory files.
 
-4. Re-run the host adapter against the current project so any project-local
-   files (e.g. `~/.claude/agent-crew/`) are also refreshed:
+4. Refresh adapter paths in two phases (P5 split):
+
+   **(a) Global-scope update** — runs all installed global-scope adapters
+   (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/agent-crew/` and
+   `~/.codex/agent-crew/skills/`) without requiring PROJECT_ROOT context.
+   Only adapters whose installation directory already exists on this machine
+   are updated (installation-presence guard):
+
+   ```bash
+   AGENT_CREW_MODE=update SOURCE_ROOT="${SOURCE_ROOT}" \
+     bash "${AGENT_CREW_HOME}/scripts/update-global-adapters.sh"
+   ```
+
+   **(b) Project-local update** — re-runs the detected host adapter for the
+   current project so project-local files are also refreshed.  The fan-out
+   loop in `setup-host.sh` now runs all detected+installed adapters in
+   sequence instead of stopping at the first match (P1 fix):
 
    ```bash
    PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
