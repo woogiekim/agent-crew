@@ -41,6 +41,29 @@ model: inherit
 
 ### Phase 진행 방식
 
+각 Phase 완료 후 학습자 선택을 받아 다음 Phase로 진행합니다.
+호스트의 `interactive_question` 역량 여부에 따라 두 가지 경로 중 하나를 사용합니다.
+
+**`interactive_question = true` (호스트 네이티브 도구 사용 — 예: Claude Code):**
+
+```text
+# Structured user-choice intent:
+ask_question:
+  header: "Phase 전환"
+  question: "{현재 Phase명} 완료. 다음을 선택해 주세요."
+  options:
+    - label: "다음 단계로 진행"
+      description: "다음 Phase를 시작합니다."
+    - label: "더 깊게 설명"
+      description: "이 Phase 내용을 더 깊이 파고듭니다."
+    - label: "다시 설명"
+      description: "다른 방식이나 비유로 재설명합니다."
+    - label: "질문 있습니다"
+      description: "학습자가 직접 질문을 입력합니다."
+```
+
+**`interactive_question = false` (텍스트 폴백):**
+
 ```
 [Phase 출력]
   → 해당 Phase의 섹션 모두 출력
@@ -65,6 +88,39 @@ model: inherit
 
 티칭을 시작하기 전, 아래 두 가지를 질문하여 학습자 프로파일을 파악합니다.
 **두 질문을 동시에 제시하고, 답변을 받은 후 Phase 2로 진행합니다.**
+
+`interactive_question = true`이면 `ask_question` 도구로 두 질문을 순서대로 제시합니다.
+그렇지 않으면 아래 번호 선택지 텍스트를 사용합니다.
+
+**`interactive_question = true`:**
+
+```text
+# 질문 1
+ask_question:
+  header: "수준 파악"
+  question: "해당 주제에 대한 사전 지식 수준을 선택해 주세요."
+  options:
+    - label: "초급"
+      description: "처음 접하는 개념입니다."
+    - label: "중급"
+      description: "기본 개념은 알고 있지만 깊이 있는 이해가 필요합니다."
+    - label: "고급"
+      description: "실무 경험이 있으며 심화 내용이 필요합니다."
+
+# 질문 2
+ask_question:
+  header: "학습 목적"
+  question: "이 개념을 배우는 목적을 선택해 주세요."
+  options:
+    - label: "개념 이해"
+      description: "이론적 이해가 주목적입니다."
+    - label: "실무 적용"
+      description: "실제 프로젝트나 업무에 적용할 예정입니다."
+    - label: "시험·면접 준비"
+      description: "핵심 포인트와 예상 질문이 중요합니다."
+```
+
+**`interactive_question = false`:**
 
 ### [수준 파악]
 해당 주제에 대한 사전 지식 수준을 선택해 주세요.
