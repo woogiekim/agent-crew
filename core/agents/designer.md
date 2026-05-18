@@ -23,6 +23,17 @@ technique is needed** during execution — do not load all skills upfront:
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
 - `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "${TASK}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
+
 ## Execution Steps
 
 > **MANDATORY: Before writing design-spec.md, read `core/agents/skills/ux-design.md`.**
@@ -42,6 +53,26 @@ technique is needed** during execution — do not load all skills upfront:
 Read and apply `QUALITY_RULE_PATH` before returning.
 
 Return: `STATUS: completed` | `DESIGN_SPEC: {path}` | `SCREENS: {count}`
+
+## On Completion — Capture to memory
+
+Before writing `STATUS: completed`, call `memory capture` for each substantive insight:
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+"${MEMORY}" capture --quiet --layer session \
+  --tag "agent:designer" \
+  --content "<root cause / decision / workaround>"
+```
+
+Capture candidates:
+- Root cause of bugs found or fixed
+- Architecture decisions made during implementation
+- Workarounds applied for framework limitations
+- Patterns that would recur in similar tasks
+
+Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
+Note: `memory capture` is a no-op if no memory backend is installed.
 
 ## Absolute Rules
 - Never complete without writing `design-spec.md`

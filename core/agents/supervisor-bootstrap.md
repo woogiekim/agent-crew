@@ -731,6 +731,20 @@ TASK_START_HEAD=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo ""
 echo "${TASK_START_HEAD}" > "${TASK_DIR}/context/start-head.txt"
 ```
 
+**Memory preflight (P40.3)**: Before spawning the analyst, run a mnemos
+search using the task description so the analyst can benefit from prior
+decisions and constraints captured in memory. The search result is written
+to `{TASK_DIR}/context/memory.md` and passed as an optional path input to
+the analyst. This is a no-op when the memory binary is absent.
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "${TASK}" --limit 5 \
+    > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
 Delegate to the **analyst agent** (blocking). The analyst is the merged
 analyst+planner — it produces all planning artifacts in one spawn:
 
@@ -739,6 +753,7 @@ TASK: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
 REQUIREMENTS: {REQUIREMENTS — always present at this point}
+MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  (read this file if non-empty for prior context)
 
 Distill intent, identify ambiguities and risks, determine the agent pipeline,
 write {TASK_DIR}/context/analysis.md, {TASK_DIR}/context/prd.md,

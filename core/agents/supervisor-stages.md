@@ -206,6 +206,29 @@ When the Stage Retry Rule triggers a retry (agent crash, no STATUS line), emit:
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | RETRY | attempt {n} — {reason}" >> "${TASK_DIR}/progress.log"
 ```
 
+#### Per-stage mnemos prefetch (P44.3)
+
+Before composing the agent prompt, the supervisor runs a mnemos memory search
+so each stage agent receives relevant prior context without needing to run the
+search itself. This is complementary to the agent-level recall sections: the
+supervisor pre-populates `context/memory.md`; the agent reads it at startup.
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+MEM_CONTEXT=""
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  MEM_CONTEXT=$("${MEMORY}" search "${STAGE_AGENT} ${TASK}" --limit 3 2>/dev/null || true)
+fi
+# Write to the shared memory context file so the stage agent can read it.
+if [ -n "${MEM_CONTEXT}" ]; then
+  echo "${MEM_CONTEXT}" > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+When `MEM_CONTEXT` is non-empty, also append `MEMORY_CONTEXT_PATH:` to the
+agent prompt (see the prompt format below) so the agent knows a pre-populated
+memory file is available.
+
 #### Agent prompt format (never inline file contents)
 
 ```text
@@ -213,6 +236,7 @@ TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
 HANDOFF_PATH: {TASK_DIR}/handoff.md
 QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+{MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  ← include only when MEM_CONTEXT non-empty}
 
 Read the handoff content directly from HANDOFF_PATH.
 Read the PRD directly from {TASK_DIR}/context/prd.md.
