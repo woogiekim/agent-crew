@@ -978,9 +978,11 @@ An incomplete task is one that has a `pipeline.json` file but no `result.md`
 with `STATUS: completed`.
 
 ```bash
-# Fast check: find the most recent task directory without a completed result
+# Fast check: find the most recent task directory without a completed result.
+# The grep accepts both plain-text ("STATUS: completed") and Markdown-bold
+# ("**Status:** completed") for backward compatibility (issue #31).
 RESUME_CANDIDATE=$(find "${STATE_DIR}/tasks" -maxdepth 1 -mindepth 1 -type d \
-  -exec sh -c '[ -f "$1/pipeline.json" ] && ! grep -q "STATUS: completed" "$1/result.md" 2>/dev/null && echo "$1"' _ {} \; \
+  -exec sh -c '[ -f "$1/pipeline.json" ] && ! grep -qiE "^(\*\*)?status:\*{0,2}\s+\**completed\**" "$1/result.md" 2>/dev/null && echo "$1"' _ {} \; \
   | sort | tail -1)
 ```
 
@@ -1601,7 +1603,7 @@ while true:
     # Check which pending tasks have completed
     for TASK_ID in "${PENDING_TASK_IDS[@]}"; do
         TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
-        if grep -q "STATUS: completed\|STATUS: blocked" "${TASK_DIR}/result.md" 2>/dev/null; then
+        if grep -qiE "^(\*\*)?status:\*{0,2}\s+\**(completed|blocked|BLOCKED)\**" "${TASK_DIR}/result.md" 2>/dev/null; then
             COLLECTED+=("${TASK_ID}")
             PENDING_TASK_IDS=("${PENDING_TASK_IDS[@]/$TASK_ID}")  # remove from pending
             # Update session.json status for this task

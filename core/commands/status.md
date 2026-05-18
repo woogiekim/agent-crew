@@ -171,9 +171,12 @@ except Exception:
     TASK_STATUS="stalled — supervisor failed to register (>${BOOT_TIMEOUT}s)"
   fi
 # 1. Check result.md
-elif grep -q "STATUS: completed" "${TASK_DIR}/result.md" 2>/dev/null; then
+# Accepts both plain-text ("STATUS: completed") and Markdown-bold ("**Status:** completed")
+# for backward compatibility with pre-schema runs (issue #31).
+# Canonical: "STATUS: value"; legacy: "**Status:** value" (colon inside bold markers).
+elif grep -qiE "^(\*\*)?status:\*{0,2}\s+\**completed\**" "${TASK_DIR}/result.md" 2>/dev/null; then
   TASK_STATUS="completed"
-elif grep -q "STATUS: blocked\|STATUS: BLOCKED" "${TASK_DIR}/result.md" 2>/dev/null; then
+elif grep -qiE "^(\*\*)?status:\*{0,2}\s+\**(blocked|BLOCKED)\**" "${TASK_DIR}/result.md" 2>/dev/null; then
   TASK_STATUS="blocked"
 else
   TASK_STATUS="running"
@@ -267,20 +270,29 @@ s = json.load(open('${SESSION_FILE}'))
 print(sum(1 for t in s['tasks'] if t['status'] not in ('completed', 'blocked')))
 " 2>/dev/null)
 
-    # For each still-running task, check result.md and update session.json
+    # For each still-running task, check result.md and update session.json.
+    # The regex accepts both plain-text ("STATUS: completed") and Markdown-bold
+    # ("**Status:** completed") for backward compatibility (issue #31).
+    # Canonical form: "STATUS: value"; legacy form: "**Status:** value"
+    # (colon is inside the bold markers in the legacy format).
     python3 -c "
-import json
+import json, re
 s = json.load(open('${SESSION_FILE}'))
 changed = False
+# Matches: STATUS: value  OR  **Status:** value  (colon inside ** in legacy form)
+_status_re = re.compile(r'^(?:\*\*)?status:\*{0,2}\s+\*{0,2}(\w+)\*{0,2}', re.IGNORECASE | re.MULTILINE)
 for t in s['tasks']:
     if t['status'] not in ('completed', 'blocked'):
         result_path = t['task_dir'] + '/result.md'
         try:
             content = open(result_path).read()
-            if 'STATUS: completed' in content:
-                t['status'] = 'completed'; changed = True
-            elif 'STATUS: blocked' in content or 'STATUS: BLOCKED' in content:
-                t['status'] = 'blocked'; changed = True
+            m = _status_re.search(content)
+            if m:
+                val = m.group(1).lower()
+                if val == 'completed':
+                    t['status'] = 'completed'; changed = True
+                elif val in ('blocked', 'cancelled'):
+                    t['status'] = 'blocked'; changed = True
         except Exception:
             pass
 if changed:
@@ -545,9 +557,14 @@ if [ "${HAS_REGISTER}" = "1" ]; then
   esac
 else
   # Pre-F4 fallback: grep result.md for STATUS.
-  if grep -q "STATUS: completed" "${RESULT}" 2>/dev/null; then
+  # Accepts both plain-text keys (canonical: "STATUS: completed") and
+  # Markdown-bold keys ("**Status:** completed") for backward compatibility
+  # with runs produced before the result-md schema was formalized (issue #31).
+  # The canonical form is "STATUS: value"; the legacy form is "**Status:** value"
+  # (colon inside the bold markers). Pattern: ^(**)?status:**?{space}value
+  if grep -qiE "^(\*\*)?status:\*{0,2}\s+\**completed\**" "${RESULT}" 2>/dev/null; then
     OVERALL_STATUS="completed"
-  elif grep -q "STATUS: blocked" "${RESULT}" 2>/dev/null || grep -q "STATUS: BLOCKED" "${RESULT}" 2>/dev/null; then
+  elif grep -qiE "^(\*\*)?status:\*{0,2}\s+\**(blocked|BLOCKED)\**" "${RESULT}" 2>/dev/null; then
     OVERALL_STATUS="blocked"
   else
     OVERALL_STATUS="in-progress"
@@ -559,7 +576,15 @@ fi
 
 ```bash
 # BRANCH fast path: prefer result.md BRANCH field (simple grep — no Python needed).
-BRANCH=$(grep "^BRANCH:" "${RESULT}" 2>/dev/null | head -1 | sed 's/^BRANCH: //' || true)
+# Accepts both plain-text ("BRANCH: feat/foo") and Markdown-bold ("**Branch:** feat/foo")
+# for backward compatibility with pre-schema runs (issue #31).
+# Canonical form: "BRANCH: value"; legacy form: "**Branch:** value" (colon inside bold).
+BRANCH=$(grep -iE "^(\*\*)?branch:\*{0,2}" "${RESULT}" 2>/dev/null \
+  | head -1 \
+  | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//' \
+  | sed -E 's/^[Bb][Rr][Aa][Nn][Cc][Hh]:[[:space:]]*//' \
+  | tr -d '\r' \
+  || true)
 
 # Single Python process reads pipeline.json once and emits TASK_DESC and
 # (when BRANCH is still empty) the derived branch slug.
@@ -724,12 +749,17 @@ stages = p.get('stages', [])
 completed = p.get('completed_stages', 0)
 agent_status = p.get('stage_agent_status', {})
 
-# Check if overall result shows completed
-import os
+# Check if overall result shows completed.
+# Use a regex that matches both plain-text ("STATUS: completed") and
+# Markdown-bold ("**Status:** completed") for backward compatibility (issue #31).
+# Canonical: "STATUS: completed"; legacy: "**Status:** completed"
+# (colon is inside the bold markers in the legacy format).
+import os, re
+_status_re = re.compile(r'^(?:\*\*)?status:\*{0,2}\s+\*{0,2}completed\*{0,2}', re.IGNORECASE | re.MULTILINE)
 overall_done = False
 try:
     content = open(result_path).read()
-    overall_done = 'STATUS: completed' in content
+    overall_done = bool(_status_re.search(content))
 except:
     pass
 
