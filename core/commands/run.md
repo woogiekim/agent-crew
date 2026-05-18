@@ -951,11 +951,16 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 ```
 
-If `STATE_DIR` does not exist, stop with:
+If `STATE_DIR` does not exist, stop immediately and display this error to the user (no
+silent failure — host adapter implementations MUST surface both lines verbatim):
 
 ```text
-Run crew:setup first.
+Error: Project '{PROJECT_NAME}' is not initialized.
+Run crew:setup first to initialize the workspace.
 ```
+
+The `{PROJECT_NAME}` placeholder resolves to the `PROJECT_NAME` variable set in the
+bash block above.
 
 Before spawning any supervisor agents, capture the current HEAD:
 
