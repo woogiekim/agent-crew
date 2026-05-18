@@ -71,6 +71,17 @@ load them at agent startup:
   `stage_agent_status` flips to `completed` (or a `STAGE_DONE` line for it
   appears in `progress.log`).
 
+## Before Work — Recall from Memory
+
+```bash
+MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  "${MEMORY}" search "${TASK}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+fi
+```
+
+If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
+
 ## Execution Flow — `MODE: final` (default)
 
 > **Issue #3 enforcement** — the reviewer MUST execute the project's test
