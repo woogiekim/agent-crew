@@ -1637,15 +1637,34 @@ When `HAS_TASK_TOOLS == 1` and background task IDs are tracked, use
 directly — the file remains the canonical source.
 
 After all tasks complete, mark `session.json` as done so future `crew:run`
-invocations do not treat it as a live session:
+invocations do not treat it as a live session.
+
+> **MANDATORY (Codex / generic inline path — `HAS_AGENT_BACKGROUND == 0`):**
+> After all inline supervisors return (and after any crash-retry cycles),
+> call `finalize-session.sh` unconditionally. This is the authoritative
+> finalization step for the inline path. Skipping it leaves `session.json`
+> with `status: running`, causing future `crew:run` invocations to detect a
+> false live session and offer the injection prompt incorrectly.
+>
+> The script is idempotent: calling it on an already-completed session is safe.
+> The P4 background path must NOT call this script — its finalization is
+> handled by `crew:status --collect` (Step 4S).
 
 ```bash
-python3 -c "
-import json
-s = json.load(open('${SESSION_FILE}'))
-s['status'] = 'completed'
-json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
-"
+# MANDATORY inline-path finalization — run unconditionally after all supervisors finish.
+# This call is the canonical session-close step for HAS_AGENT_BACKGROUND=0, N>1 runs.
+bash "${AGENT_CREW_HOME}/scripts/finalize-session.sh" "${SESSION_FILE}" "${STATE_DIR}"
+FINALIZE_RC=$?
+if [ "${FINALIZE_RC}" -eq 2 ]; then
+  # Exit code 2 = partial success: some tasks had no result.md (likely crashed).
+  # The script already updated what it could. Log a warning and continue —
+  # the stale-session timeout will clean up any residual 'running' entries.
+  echo "[crew] WARN | finalize-session: one or more tasks missing result.md (rc=2)" >&2
+elif [ "${FINALIZE_RC}" -ne 0 ]; then
+  # Exit codes 1+ (other than 2) are hard errors. Log but do not abort —
+  # Step 7 result collection will still read result.md directly.
+  echo "[crew] WARN | finalize-session: unexpected exit code ${FINALIZE_RC}" >&2
+fi
 ```
 
 ### 7.5. Parallel Action Gate (inline path, N > 1 only)
