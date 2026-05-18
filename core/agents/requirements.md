@@ -25,7 +25,7 @@ to the caller and writes `requirements.md` to the task state directory.
 
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
-- Requirement gathering techniques: `core/agents/skills/requirement-gathering.md`
+- Requirement gathering techniques: `~/.agent-crew/system/agents/skills/requirement-gathering.md`
 
 ## Input Parameters
 

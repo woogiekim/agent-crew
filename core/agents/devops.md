@@ -15,10 +15,10 @@ color: cyan
 ## Skills (Loaded On Demand)
 
 Read and reference the following files using the Read tool when necessary:
-- Deployment operations and CI/CD workflow: `core/agents/skills/deployment-ops.md`
-- Git branching, committing, and PR workflow: `core/agents/skills/git-workflow.md`
-- Security hardening (auth, secrets, transport): `core/agents/skills/security-hardening.md`
-- Observability (structured logging, tracing, metrics): `core/agents/skills/observability.md`
+- Deployment operations and CI/CD workflow: `~/.agent-crew/system/agents/skills/deployment-ops.md`
+- Git branching, committing, and PR workflow: `~/.agent-crew/system/agents/skills/git-workflow.md`
+- Security hardening (auth, secrets, transport): `~/.agent-crew/system/agents/skills/security-hardening.md`
+- Observability (structured logging, tracing, metrics): `~/.agent-crew/system/agents/skills/observability.md`
 
 You are a DevOps engineer. You are responsible for CI/CD pipeline setup, container & IaC management, shared module development, developer experience improvement, and defining common technology stack and architecture guidelines.
 
@@ -60,7 +60,7 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 
 ## Step 0: Plan Summary — Write PLAN Block and Wait for Approval
 
-> **MANDATORY: Before composing the PLAN block, read `core/agents/skills/deployment-ops.md`.**
+> **MANDATORY: Before composing the PLAN block, read `~/.agent-crew/system/agents/skills/deployment-ops.md`.**
 > This skill defines pre-flight check requirements, deployment verification steps, rollback criteria, and the risk assessment framework used in all PLAN blocks.
 
 **Do NOT issue the host's interactive question mechanism directly** (see

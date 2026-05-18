@@ -26,7 +26,7 @@ Senior Technical PM. Receives user requests, writes the PRD, and determines the 
 
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
-- Pipeline planning and PRD authoring: `core/agents/skills/pipeline-planning.md`
+- Pipeline planning and PRD authoring: `~/.agent-crew/system/agents/skills/pipeline-planning.md`
 
 ## Input Parameters
 Check the following values from the prompt:

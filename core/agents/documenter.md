@@ -53,7 +53,7 @@ operating modes:
 
 Read the following skill files using the Read tool **only when needed** — do
 not load them at agent startup:
-- Code review and PRD coverage cross-check: `core/agents/skills/code-review.md`
+- Code review and PRD coverage cross-check: `~/.agent-crew/system/agents/skills/code-review.md`
   (used by responsibility 1 to compare PRD acceptance criteria against
   implementation diffs before drafting README sections)
 

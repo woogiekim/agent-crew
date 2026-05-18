@@ -24,8 +24,8 @@ is eliminated; this agent replaces Phase 1b + Phase 1c in one step.
 
 Read the following skill files using the Read tool **only when needed** — do not
 load them at agent startup:
-- Ambiguity detection and requirements review: `core/agents/skills/requirement-gathering.md`
-- Pipeline planning and PRD authoring: `core/agents/skills/pipeline-planning.md`
+- Ambiguity detection and requirements review: `~/.agent-crew/system/agents/skills/requirement-gathering.md`
+- Pipeline planning and PRD authoring: `~/.agent-crew/system/agents/skills/pipeline-planning.md`
 
 ## Inputs
 
@@ -52,7 +52,7 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 ```bash
 cat "${TASK_DIR}/context/requirements.md"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-ls "${AGENT_CREW_HOME}/agents/" | grep '\.md$'
+ls "${AGENT_CREW_HOME}/system/agents/" | grep '\.md$'
 ```
 
 Read `requirements.md` in full. List available agent filenames only — do not
@@ -66,7 +66,7 @@ Write a 2–4 sentence intent summary answering:
 
 ### Step 3 — Identify ambiguities and risks
 
-> **MANDATORY: Before performing the ambiguity check, read `core/agents/skills/requirement-gathering.md`.**
+> **MANDATORY: Before performing the ambiguity check, read `~/.agent-crew/system/agents/skills/requirement-gathering.md`.**
 > This skill defines the ambiguity detection criteria, severity classification rules, and resolution strategies that govern this step.
 
 For each item found, record description, severity (`low | medium | high`), and
@@ -122,7 +122,7 @@ If no ambiguities or risks are found, write the table with a single row:
 
 ### Step 6 — Determine pipeline and write pipeline.json
 
-> **MANDATORY: Before composing the pipeline, read `core/agents/skills/pipeline-planning.md`.**
+> **MANDATORY: Before composing the pipeline, read `~/.agent-crew/system/agents/skills/pipeline-planning.md`.**
 > This skill defines stage composition rules, parallelism guidance, flag selection criteria (tdd_parallel, streaming_review, parallelizable_units), and the stage type catalogue used to build pipeline.json.
 
 Based on scope, complexity, and the intent summary from Step 2, determine the

@@ -17,7 +17,7 @@ UI/UX designer. Analyzes the PRD and writes detailed screen specifications that 
 
 Read the following skill files using the Read tool **only when the specific
 technique is needed** during execution — do not load all skills upfront:
-- UX design and screen specification: `core/agents/skills/ux-design.md`
+- UX design and screen specification: `~/.agent-crew/system/agents/skills/ux-design.md`
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
@@ -36,7 +36,7 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 
 ## Execution Steps
 
-> **MANDATORY: Before writing design-spec.md, read `core/agents/skills/ux-design.md`.**
+> **MANDATORY: Before writing design-spec.md, read `~/.agent-crew/system/agents/skills/ux-design.md`.**
 > This skill defines screen specification format, component definition structure, interaction flow patterns, and quality criteria that design-spec.md must satisfy.
 
 1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
