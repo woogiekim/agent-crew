@@ -274,6 +274,14 @@ install_claude_compat() {
     return
   fi
 
+  # Installation-presence guard (P2): only run the Claude adapter when it has
+  # been previously set up on this machine.  During a fresh install the Claude
+  # adapter is always installed, so we check the mode first.
+  if [ "${AGENT_CREW_MODE}" = "update" ] && [ ! -d "${CLAUDE_DIR}/agent-crew" ]; then
+    log_info "Skipping Claude adapter update — not installed on this machine"
+    return
+  fi
+
   # Export SOURCE_ROOT so adapters/claude/setup.sh can use sync_system_agents
   # with the correct source reference during install/update runs.
   AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" SOURCE_ROOT="${SOURCE_ROOT}" \
@@ -296,6 +304,13 @@ install_codex_bootstrap_skill() {
 
   if [ ! -d "${source_skill_dir}" ]; then
     log_warn "Skipping Codex bootstrap skill — source not found (${source_skill_dir})"
+    return
+  fi
+
+  # Installation-presence guard (P2): in update mode, only refresh the Codex
+  # bootstrap skill when Codex has been previously installed on this machine.
+  if [ "${AGENT_CREW_MODE}" = "update" ] && [ ! -d "${dest_skill_dir}" ]; then
+    log_info "Skipping Codex bootstrap skill update — not installed on this machine"
     return
   fi
 

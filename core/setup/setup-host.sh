@@ -17,28 +17,67 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
   printf 'MODE: update\n'
 fi
 
-dispatch_adapter() {
+run_adapter() {
   local host="$1"
   local adapter="${AGENT_CREW_HOME}/adapters/${host}/setup.sh"
 
   if [ ! -x "${adapter}" ]; then
     printf 'Unsupported host adapter: %s\n' "${host}" >&2
-    exit 1
+    return 1
   fi
 
-  exec "${adapter}" "${PROJECT_ROOT}"
+  bash "${adapter}" "${PROJECT_ROOT}" || true
+}
+
+# Installation-presence guard: return 0 if an adapter has been previously
+# installed on this machine, 1 if it has never been set up.  Adapters that
+# pass this check are eligible to be re-run during crew:update fan-out.
+is_installed() {
+  local host="$1"
+  case "${host}" in
+    claude)
+      [ -d "${CLAUDE_DIR:-${HOME}/.claude}/agent-crew" ]
+      ;;
+    codex)
+      [ -d "${CODEX_HOME:-${HOME}/.codex}/skills/agent-crew" ]
+      ;;
+    generic)
+      # Generic is always project-local; treat as always eligible.
+      return 0
+      ;;
+    *)
+      # Unknown adapter — allow through so future adapters work automatically.
+      return 0
+      ;;
+  esac
 }
 
 if [ "${HOST}" != "auto" ]; then
-  dispatch_adapter "${HOST}"
+  run_adapter "${HOST}"
+  exit $?
 fi
 
+# Fan-out: iterate all detected adapters, run each one that is installed.
+# Unlike the previous exec-based dispatch, this loop does NOT stop at the
+# first match — all adapters whose detect.sh succeeds and whose installation
+# directory exists are updated in sequence.
+detected_any=0
 for detect_script in "${AGENT_CREW_HOME}"/adapters/*/detect.sh; do
   [ -x "${detect_script}" ] || continue
-  if "${detect_script}" "${PROJECT_ROOT}"; then
+  if "${detect_script}" "${PROJECT_ROOT}" 2>/dev/null; then
     host_dir="$(dirname "${detect_script}")"
-    dispatch_adapter "$(basename "${host_dir}")"
+    host_name="$(basename "${host_dir}")"
+    # Skip generic here; it is handled as the unconditional fallback below.
+    [ "${host_name}" = "generic" ] && continue
+    if is_installed "${host_name}"; then
+      run_adapter "${host_name}"
+      detected_any=1
+    else
+      printf 'Skipping %s adapter (not installed on this machine)\n' "${host_name}"
+    fi
   fi
 done
 
-dispatch_adapter "generic"
+# Always run the generic adapter as a fallback so project-local paths are
+# refreshed regardless of which named host was detected.
+run_adapter "generic"
