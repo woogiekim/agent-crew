@@ -244,7 +244,7 @@ Then you MUST:
 
 2. Suggest the corrective action to the user, for example:
    - "Run `crew:setup` to install the Codex adapter and materialize user agents."
-   - "Add the required skill file to `~/.agent-crew/user/skills/` to enable the missing capability."
+   - "Add `issuer-github.md` to `~/.agent-crew/user/skills/` to enable GitHub issue publishing."
 
 **Rationale**: A direct API bypass (e.g. calling `gh issue create` directly when
 `issuer` is not in Codex discovery) produces correct-shaped output but bypasses
