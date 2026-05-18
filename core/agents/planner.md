@@ -106,6 +106,9 @@ from it and proceed to Step 2.
 ---
 
 ### Step 2: PRD Creation
+
+> **MANDATORY: Before creating the plan, read `~/.agent-crew/system/agents/skills/pipeline-planning.md`.**
+
 Based on the collected information, save the following to `{TASK_DIR}/context/prd.md`:
 
 - Feature goals and background
