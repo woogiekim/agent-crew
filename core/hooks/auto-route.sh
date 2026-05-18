@@ -240,11 +240,14 @@ TRIVIAL_INTENT_PAT = {
     r"푸시\s*(하고|하고\s*나서)?\s*머지":  ("git push && git merge <branch>", "push+merge"),
 }
 
+DESTRUCTIVE_INTENTS = {"push", "merge", "deploy", "tag", "rollback/revert", "merge+push", "push+merge"}
+
 for pat, (cmd_template, intent_label) in TRIVIAL_INTENT_PAT.items():
     if re.search(pat, prompt, re.IGNORECASE):
+        approval_suffix = " Show approval gate first." if intent_label in DESTRUCTIVE_INTENTS else ""
         fast_directive = (
             f"[agent-crew] FAST-PATH — trivial intent detected: {intent_label}. "
-            f"Execute directly: {cmd_template}. Show approval gate first."
+            f"Execute directly: {cmd_template}.{approval_suffix}"
         )
         fast_output = {
             "hookSpecificOutput": {
