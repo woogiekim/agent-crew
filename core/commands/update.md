@@ -354,6 +354,37 @@ resolve_source_dir() {
    > `settings.json` rewrite is needed — removing the script alone is
    > sufficient.
 
+3.8. **Issue #26 — Rebuild mnemos FTS index after mnemos update**
+
+   `mnemos search` was returning raw YAML frontmatter blocks and `MEMORY.md`
+   index entries as search hits (Issue #26).  The fix shipped in mnemos
+   (`core/fts.py` — strip frontmatter before FTS indexing; `agents/scanner.py`
+   — exclude `MEMORY.md` from `discover_memory_files`).
+
+   Because the FTS database (`~/.mnemos/.agent/state/fts.db`) was populated
+   before the fix, existing entries still contain the stale frontmatter-polluted
+   content.  The database is rebuilt correctly on the next `mnemos ingest-claude-md`
+   run — this step triggers that rebuild automatically as part of `crew:update`.
+
+   The block is idempotent and safe to re-run: `ingest-claude-md` uses
+   content-hash deduplication so repeated runs are no-ops on unchanged files.
+
+   ```bash
+   if [ -x "${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}" ]; then
+     printf '[crew:update] Rebuilding mnemos FTS index (issue #26 fix)...\n'
+     "${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}" ingest-claude-md --quiet 2>/dev/null || true
+     printf '[crew:update] mnemos FTS index rebuilt.\n'
+   fi
+   ```
+
+   `|| true` ensures a mnemos failure never blocks the broader update.
+   `--quiet` suppresses per-item capture notices that would clutter the
+   update log.
+
+   > **One-time action:** After the first `crew:update` post-Issue-#26 the FTS
+   > database is clean and future runs of `ingest-claude-md` are content-hash
+   > no-ops for unchanged memory files.
+
 4. Re-run the host adapter against the current project so any project-local
    files (e.g. `~/.claude/agent-crew/`) are also refreshed:
 
@@ -1055,6 +1086,55 @@ notice and leaves host files untouched).
 `|| true` so a mnemos hiccup never fails the broader update flow.
 Host files in their pre-update state remain valid (the marker block
 content from the prior sync remains correct guidance).
+
+### Issue 26 — mnemos search: strip frontmatter + exclude MEMORY.md index
+
+**Problem.** `mnemos search` surfaced raw YAML frontmatter blocks (the
+`---\nname: ...\n---` source-file metadata) and `MEMORY.md` auto-generated
+link-list index entries as search hits, hiding the actual captured insight
+bodies.  The noise-to-signal ratio was high enough that meaningful content was
+routinely missed.
+
+**Root cause (two independent issues).**
+
+1. `core/fts.py` — `FTSIndex.index_item()` stored the full raw content of a
+   memory file including the YAML frontmatter block.  FTS snippets shown by
+   `mnemos search` therefore started with `---\nkey: val\n---` instead of the
+   insight body.
+
+2. `agents/scanner.py` — `ClaudeMdScanner.discover_memory_files()` included
+   every `*.md` file under `~/.claude/projects/*/memory/`, including the
+   auto-generated `MEMORY.md` index file.  That file is a link list, not a
+   content document; it polluted every search that touched ingested memories.
+
+**Fix (in mnemos companion package).**
+
+- `core/fts.py`: Added `_strip_frontmatter()` (regex-based, zero new
+  dependencies) and called it in `index_item()` before storing content in the
+  FTS database.
+- `agents/scanner.py`: `discover_memory_files()` now skips any file whose
+  name (case-insensitively) equals `MEMORY.MD`.
+
+**agent-crew migration action (Step 3.8 of § Execution).**
+
+Because the FTS database was populated before the fix, existing entries
+contain stale frontmatter-polluted content.  Step 3.8 runs `mnemos
+ingest-claude-md --quiet` to rebuild the FTS index with clean data.  This is
+idempotent — unchanged files are skipped after the first rebuild.
+
+**Tests.**
+
+`tests/shell/test_mnemos_search_filter.bash` covers the expected behaviour with
+a mock mnemos stub (no real installation required):
+- MEMORY.md (upper- and lowercase) is excluded from ingest.
+- Inner frontmatter is stripped before storage.
+- Search returns the meaningful insight body, not YAML key-value lines.
+- Search for MEMORY.md-sourced content returns zero results.
+
+**No capability flag.** The fix is entirely in mnemos and the FTS rebuild step;
+no `capabilities.json` change is required.
+
+**No `settings.json` changes.** No new hook is registered.
 
 ## Completion Message
 
