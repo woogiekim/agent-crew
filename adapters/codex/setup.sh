@@ -282,5 +282,29 @@ fi
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
 
+# Write host capability flags so the core pipeline can read them at Phase 0.
+# Codex does not support agent_background, task_tools, monitor_tool,
+# cost_tracking, or hook_system — all flags are false.
+# Schema documented at core/rules/host-capabilities.md.
+# Absence of this file MUST be treated as legacy behavior (all flags false),
+# so writing it explicitly here closes the documentation-implementation gap
+# described in issue #51.
+PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
+mkdir -p "${STATE_DIR}"
+cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
+{
+  "host": "codex",
+  "agent_background": false,
+  "task_tools": false,
+  "interactive_question": false,
+  "monitor_tool": false,
+  "cost_tracking": false,
+  "hook_system": false
+}
+CAPS_EOF
+
 printf 'HOST: codex\n'
 printf 'INSTALLED: %s\n' "${PROJECT_ROOT}/.codex"
+printf 'CAPABILITIES: %s\n' "${CAPABILITIES_FILE}"
