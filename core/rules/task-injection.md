@@ -160,10 +160,42 @@ If any condition fails, `crew:run` starts a fresh session normally.
 > `core/rules/disambiguation.md` for a user choice; it does NOT bypass
 > these detection rules. See `run.md` Step 1.6 for the full flow.
 
+## Host-Capability Guard
+
+Before evaluating the Detection Rules below, check whether the current host
+supports background agents. Task injection requires the orchestrator's turn to
+end after spawning supervisors (the P4 background fan-out path). On hosts where
+`HAS_AGENT_BACKGROUND=0` (Codex, generic adapters), the orchestrator runs inline
+and its turn never ends during execution — no new user input is possible while
+supervisors are running.
+
+When `HAS_AGENT_BACKGROUND=0`, treat `IS_LIVE_SESSION` as `0` regardless of
+`session.json` state:
+
+```bash
+if [ "${HAS_AGENT_BACKGROUND}" = "0" ] && [ "${IS_LIVE_SESSION}" = "1" ]; then
+  # Inline hosts block during execution — mid-run injection is impossible.
+  # Warn the user and fall through to a fresh session.
+  echo "[crew] WARN: Task injection is not supported on this host (agent_background=false)."
+  echo "       Inline hosts block during execution — no mid-run injection possible."
+  echo "       Tip: queue all tasks upfront: crew:run \"Task A\" | \"Task B\" | \"Task C\""
+  IS_LIVE_SESSION=0  # treat as fresh run
+fi
+```
+
+This guard runs in `run.md` Step 1.5 before any injection routing. The
+`HAS_AGENT_BACKGROUND` flag is loaded once at Phase 0 from `capabilities.json`
+(see `core/rules/capabilities/agent-background.md`).
+
+**Affected hosts:** Codex (`agent_background=false`), generic adapter
+(`agent_background=false`). For a per-adapter summary, see
+`adapters/codex/invocation.md` § Limitations.
+
 ## Injection Guard
 
 The following conditions MUST prevent injection (treated as IS_LIVE_SESSION=0):
 
+- `HAS_AGENT_BACKGROUND=0` (host does not support background agents — see Host-Capability Guard above).
 - `session.json` is absent (no active session exists).
 - `session.json.status` is `"completed"` or `"blocked"` (stale).
 - `session.json` file is older than 24 hours (abandoned — stale marker).
