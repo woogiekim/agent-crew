@@ -117,6 +117,8 @@ The three modes are mutually exclusive within a single invocation.
 
 ### Step 1 — Gather context
 
+> **MANDATORY: Before documenting, read `~/.agent-crew/system/agents/skills/code-review.md`.**
+
 Read in this order:
 1. `{TASK_DIR}/context/prd.md` — to know the original feature scope
 2. `{TASK_DIR}/context/analysis.md` — for the intent summary and risk table

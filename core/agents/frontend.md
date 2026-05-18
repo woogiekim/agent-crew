@@ -68,6 +68,8 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 > **RECOMMENDED: When code crosses UI/API boundaries (fetch calls, state management), read `~/.agent-crew/system/agents/skills/clean-architecture.md`.**
 > This skill defines how to keep UI components free of business logic and how to structure data transformation at layer boundaries.
 
+> **MANDATORY: Before writing the first failing test, read `~/.agent-crew/system/agents/skills/tdd.md`.**
+
 **MANDATORY: Write the failing test FIRST. Component implementation MUST NOT be written until a failing test exists and has been confirmed to fail.**
 
 For each component, execute the full RED → GREEN → REFACTOR cycle:

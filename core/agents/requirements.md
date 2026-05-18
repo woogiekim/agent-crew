@@ -70,6 +70,8 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and surface relevant pr
 
 ## Execution Flow
 
+> **MANDATORY: Before gathering requirements, read `~/.agent-crew/system/agents/skills/requirement-gathering.md`.**
+
 ### Step 1S — Single-Round Interview (runs only when `MODE == "single_round"`)
 
 Call `ask_question` (the abstract intent; see
