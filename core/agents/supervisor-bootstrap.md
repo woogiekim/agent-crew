@@ -560,8 +560,14 @@ def sufficiency_check(task: str) -> str:
              "layout")
     tooling_kw = ("docs", "documentation", "readme", "markdown", "config",
                   "script", "refactor", "spec", "tooling", "pipeline",
-                  "agent", "hook")
+                  "agent", "hook", "python", "bash", "shell script")
     scope_hit = any(k in t for k in backend_kw + ui_kw + tooling_kw)
+    # Fallback: infer scope from file extension when keyword match misses
+    # (e.g. "Add a calculator.py …" has no tooling keyword but .py implies
+    # a scripting/tooling scope — issue #29)
+    if not scope_hit:
+        scope_hit = bool(re.search(r"\.(py|sh)\b", task, re.IGNORECASE)) or \
+                    bool(re.search(r"\.(js|ts|jsx|tsx)\b", task, re.IGNORECASE))
 
     # Signal 2: target inferable
     has_file_path = re.search(
@@ -587,7 +593,17 @@ def sufficiency_check(task: str) -> str:
     has_dep = any(k in t for k in ("no new deps", "no new dependencies",
                                    "existing stack", "existing tech stack",
                                    "use only"))
-    constraint_hit = has_perf or has_mvp or has_dep
+    # Infer constraint from an explicit function/interface spec in script-file
+    # tasks: naming specific functions or parameters fully scopes the work
+    # (e.g. "with add, subtract, multiply, divide functions" — issue #29)
+    has_func_spec = bool(re.search(
+        r"\b(function|functions|method|methods|parameter|param)\b", t,
+    )) or bool(re.search(r"[a-zA-Z_]\w*\([^)]*\)", task))
+    has_script_file = bool(re.search(
+        r"\.(py|sh|js|ts|jsx|tsx)\b", task, re.IGNORECASE,
+    ))
+    constraint_hit = (has_perf or has_mvp or has_dep
+                      or (has_script_file and has_func_spec))
 
     if scope_hit and target_hit and constraint_hit:
         return "SUFFICIENT"
