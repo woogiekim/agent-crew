@@ -106,6 +106,121 @@ install_codex_skills() {
   done
 }
 
+# install_user_agents_codex — convert user agent .md files to Codex TOML stubs.
+#
+# Each .md file in user/agents/ is expected to have a YAML frontmatter block at
+# the top (between --- delimiters) containing at minimum:
+#   name:        agent name (used as the TOML filename stem)
+#   description: one-line trigger/skip/output description
+#
+# The generated TOML stub uses the backend.toml shape:
+#   description          = "<frontmatter description>"
+#   reasoning_tier       = "<frontmatter reasoning_tier or 'balanced'>"
+#   developer_instructions = """<full markdown body after frontmatter>"""
+#   name                 = "<agent name>"
+#
+# Output path: ${PROJECT_ROOT}/.codex/agents/<name>.toml
+# Idempotent: existing TOML files are overwritten on each setup/update run so
+# user/agents/ changes are always reflected after crew:setup or crew:update.
+install_user_agents_codex() {
+  local user_agents_dir="${AGENT_CREW_HOME}/user/agents"
+  local dest_dir="${PROJECT_ROOT}/.codex/agents"
+
+  [ -d "${user_agents_dir}" ] || return 0
+  mkdir -p "${dest_dir}"
+
+  python3 - "${user_agents_dir}" "${dest_dir}" <<'PYEOF'
+import os
+import re
+import sys
+
+user_agents_dir = sys.argv[1]
+dest_dir        = sys.argv[2]
+
+def parse_frontmatter(text):
+    """Return (frontmatter_dict, body_text). Tolerates missing frontmatter."""
+    fm = {}
+    body = text
+    m = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', text, re.DOTALL)
+    if m:
+        fm_text = m.group(1)
+        body    = m.group(2)
+        # Parse simple key: value pairs (value may be multi-line with >, |)
+        for line in fm_text.splitlines():
+            kv = re.match(r'^(\w[\w_-]*):\s*(.*)', line)
+            if kv:
+                key, val = kv.group(1), kv.group(2).strip().strip('"\'')
+                # Strip YAML block-scalar indicators
+                if val in ('>', '|', '>-', '|-'):
+                    val = ''
+                fm[key] = val
+    return fm, body
+
+def toml_escape(s):
+    """Escape a string for use inside TOML triple-quoted basic string."""
+    # Escape backslashes first, then any sequence that would close the TOML
+    # triple-quoted string.
+    s = s.replace('\\', '\\\\')
+    # Escape triple-double-quotes by inserting a backslash-escaped char
+    s = s.replace('"""', '""\\"')
+    return s
+
+converted = 0
+skipped   = []
+
+for fname in sorted(os.listdir(user_agents_dir)):
+    if not fname.endswith('.md'):
+        continue
+    if fname.lower() == 'readme.md':
+        continue
+
+    md_path = os.path.join(user_agents_dir, fname)
+    try:
+        text = open(md_path, encoding='utf-8').read()
+    except OSError as e:
+        skipped.append(f'{fname}: read error ({e})')
+        continue
+
+    fm, body = parse_frontmatter(text)
+
+    name = fm.get('name', '') or os.path.splitext(fname)[0]
+    description = fm.get('description', '').strip()
+    reasoning_tier = fm.get('reasoning_tier', 'balanced').strip() or 'balanced'
+
+    if not description:
+        description = f'User agent: {name}'
+
+    # Strip multi-line YAML value indicators from description if present
+    description = description.lstrip('> ').strip()
+
+    toml_name = re.sub(r'[^\w-]', '-', name.lower()).strip('-') or 'unknown'
+    dest_path = os.path.join(dest_dir, toml_name + '.toml')
+
+    body_escaped = toml_escape(body.rstrip())
+    # Escape description for single-line TOML string
+    desc_escaped = description.replace('\\', '\\\\').replace('"', '\\"')
+
+    toml_content = (
+        f'description = "{desc_escaped}"\n'
+        f'reasoning_tier = "{reasoning_tier}"\n'
+        f'developer_instructions = """\n{body_escaped}\n"""\n'
+        f'name = "{toml_name}"\n'
+    )
+
+    try:
+        with open(dest_path, 'w', encoding='utf-8') as f:
+            f.write(toml_content)
+        converted += 1
+    except OSError as e:
+        skipped.append(f'{fname}: write error ({e})')
+
+print(f'[install_user_agents_codex] {converted} agent(s) converted to TOML in {dest_dir}')
+if skipped:
+    for s in skipped:
+        print(f'[install_user_agents_codex] SKIP: {s}')
+PYEOF
+}
+
 copy_dir_contents "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
 
 # Note: reasoning_tier is NOT materialized on the Codex adapter today.
@@ -130,6 +245,7 @@ chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
 cp "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md" 2>/dev/null || true
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
 install_codex_skills
+install_user_agents_codex
 
 # Scaffold skill directories (idempotent)
 mkdir -p "${AGENT_CREW_HOME}/system/skills"

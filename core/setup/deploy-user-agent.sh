@@ -65,11 +65,77 @@ if [ -d "${CLAUDE_AGENTS}" ]; then
 fi
 
 # ── Codex adapter ─────────────────────────────────────────────────────────────
-# Discovery path: ~/.codex/agents/
-CODEX_AGENTS="${HOME}/.codex/agents"
-if [ -d "${CODEX_AGENTS}" ]; then
-  printf '[deploy-user-agent] Deploying to Codex: %s\n' "${CODEX_AGENTS}"
-  cp "${AGENT_PATH}" "${CODEX_AGENTS}/${AGENT_BASENAME}"
+# Discovery path: PROJECT_ROOT/.codex/agents/ (project-local TOML stubs).
+# The Codex adapter uses TOML format for subagent definitions, so the .md file
+# must be converted. We detect any initialised Codex project under common roots:
+#   1. The current git working tree (git rev-parse --show-toplevel)
+#   2. The current directory ($PWD)
+# If neither has a .codex/agents/ directory the adapter is not installed here
+# and we fall through silently — the next crew:setup will pick it up.
+_CODEX_PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "${PWD}")"
+CODEX_PROJECT_AGENTS="${_CODEX_PROJECT_ROOT}/.codex/agents"
+if [ -d "${CODEX_PROJECT_AGENTS}" ]; then
+  printf '[deploy-user-agent] Deploying to Codex (TOML): %s\n' "${CODEX_PROJECT_AGENTS}"
+  python3 - "${AGENT_PATH}" "${CODEX_PROJECT_AGENTS}" <<'PYEOF'
+import os, re, sys
+
+md_path  = sys.argv[1]
+dest_dir = sys.argv[2]
+
+def parse_frontmatter(text):
+    fm = {}
+    body = text
+    m = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', text, re.DOTALL)
+    if m:
+        fm_text = m.group(1)
+        body    = m.group(2)
+        for line in fm_text.splitlines():
+            kv = re.match(r'^(\w[\w_-]*):\s*(.*)', line)
+            if kv:
+                key, val = kv.group(1), kv.group(2).strip().strip('"\'')
+                if val in ('>', '|', '>-', '|-'):
+                    val = ''
+                fm[key] = val
+    return fm, body
+
+def toml_escape(s):
+    s = s.replace('\\', '\\\\')
+    s = s.replace('"""', '""\\"')
+    return s
+
+try:
+    text = open(md_path, encoding='utf-8').read()
+except OSError as e:
+    print(f'[deploy-user-agent] ERROR reading {md_path}: {e}', file=sys.stderr)
+    sys.exit(1)
+
+fm, body = parse_frontmatter(text)
+
+basename = os.path.basename(md_path)
+stem     = os.path.splitext(basename)[0]
+name     = fm.get('name', '').strip() or stem
+description    = fm.get('description', '').strip().lstrip('> ').strip()
+reasoning_tier = fm.get('reasoning_tier', 'balanced').strip() or 'balanced'
+
+if not description:
+    description = f'User agent: {name}'
+
+toml_name   = re.sub(r'[^\w-]', '-', name.lower()).strip('-') or 'unknown'
+dest_path   = os.path.join(dest_dir, toml_name + '.toml')
+body_esc    = toml_escape(body.rstrip())
+desc_esc    = description.replace('\\', '\\\\').replace('"', '\\"')
+
+toml_content = (
+    f'description = "{desc_esc}"\n'
+    f'reasoning_tier = "{reasoning_tier}"\n'
+    f'developer_instructions = """\n{body_esc}\n"""\n'
+    f'name = "{toml_name}"\n'
+)
+
+with open(dest_path, 'w', encoding='utf-8') as f:
+    f.write(toml_content)
+print(f'[deploy-user-agent] Written: {dest_path}')
+PYEOF
   DEPLOYED=$((DEPLOYED + 1))
 fi
 
