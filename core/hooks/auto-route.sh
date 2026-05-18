@@ -163,6 +163,29 @@ WORKFLOW_ACTION_PAT = (
     r"배포해?|테스트\s*돌려|리뷰어?\s*붙여|"
     r"병렬로\s*실행|머지해?|롤백|다시\s*시도|요구사항\s*정리"
 )
+# Artifact-mutation pattern — catches natural-language requests to modify,
+# save, publish, refine, or update repo/worktree/state artifacts (markdown,
+# docs, issue drafts, etc.) without requiring a file extension in the prompt.
+# Korean verbs: 정리, 저장, 발행, 반영, 수정, 고쳐, 업데이트, 작성, 수정해줘
+# Artifact nouns: 파일, 문서, 이슈, 초안, 마크다운, 내용, 클로드가 저장
+# Combined: the pattern must fire ONLY when both a mutation verb AND an
+# artifact noun appear in the same prompt, to avoid false positives on
+# pure read/explain requests that mention artifacts.
+ARTIFACT_VERB_PAT = (
+    r"정리\s*해|정리해줘|정리해서|저장해|저장된|발행해|발행했|반영해|반영했|"
+    r"수정해|수정했|수정해줘|고쳐줘|고쳐서|업데이트해|업데이트했|"
+    r"작성해줘|작성해서|써줘|써서|넣어줘|넣어서|바꿔줘|바꿔서|"
+    r"publish|save\s+(?:this\s+)?to|write\s+(?:this\s+)?to|"
+    r"update\s+(?:the\s+)?(?:doc|file|issue|draft|markdown|md)|"
+    r"update\s+(?:the\s+)?saved|put\s+this\s+in|add\s+this\s+to"
+)
+ARTIFACT_NOUN_PAT = (
+    r"파일|문서|이슈|초안|마크다운|내용|클로드가\s*저장|저장했던\s*파일|"
+    r"저장한\s*파일|작성한\s*파일|작성된\s*파일|"
+    r"issue\s*draft|work\s*item|plane\s*issue|github\s*issue|"
+    r"saved\s+file|the\s+(?:file|doc|issue|draft)|"
+    r"\.md\b|\.txt\b|docs?/"
+)
 
 
 def match(pattern):
@@ -317,6 +340,7 @@ if not detected_type:
         or (has_action and match(PROJECT_KEYWORD_PAT)) # action + agent-crew keyword
         or match(WORKFLOW_ACTION_PAT)                  # workflow verb alone is enough
         or (match(MEMORY_PAT) and has_action)          # memory + action verb
+        or (match(ARTIFACT_VERB_PAT) and match(ARTIFACT_NOUN_PAT))  # artifact mutation (issue #37)
     ):
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'

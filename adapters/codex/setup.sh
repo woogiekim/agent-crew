@@ -47,10 +47,19 @@ settings = {
                     }
                 ],
             },
+            {
+                "matcher": "Edit|Write|MultiEdit|apply_patch",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"bash '{home}/hooks/direct-edit-guard.sh'",
+                    }
+                ],
+            },
         ],
         "PostToolUse": [
             {
-                "matcher": "Edit|Write|MultiEdit",
+                "matcher": "Edit|Write|MultiEdit|apply_patch",
                 "hooks": [
                     {
                         "type": "command",

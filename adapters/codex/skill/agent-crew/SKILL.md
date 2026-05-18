@@ -34,11 +34,25 @@ move, change, migrate, refactor, replace, extend, integrate, test, deploy,
 merge, roll back, or otherwise perform development work, route the request
 through `crew:run`.
 
+This also covers **artifact and documentation edits** — any request to modify,
+save, publish, refine, or update repo/worktree/state artifacts (including
+markdown files, issue drafts, work-item descriptions, docs, or any file the
+assistant previously saved) must be routed through `crew:run`. Do NOT apply
+such edits directly via `apply_patch`, `Edit`, `Write`, or `MultiEdit` tools.
+
 This includes Korean equivalents such as:
 
 - `구현`, `개발`, `추가`, `수정`, `개선`, `보완`
 - `변경`, `삭제`, `이동`, `마이그레이션`, `리팩터링`
 - `테스트`, `배포`, `머지`, `롤백`, `반영`
+- `정리`, `저장`, `발행`, `고쳐`, `업데이트` (artifact/document mutation verbs)
+
+Examples that MUST route through `crew:run` (not handled inline):
+
+- `"여기까지 내용 정리해서 클로드가 저장했던 파일에 수정해주세요"` — artifact update
+- `"이슈 초안에 이 내용 반영해줘"` — issue draft edit
+- `"문서 업데이트해줘"` — documentation update
+- `"저장된 파일에 수정사항 넣어줘"` — saved file edit
 
 Do not start by reading repository files, running shell commands, editing files,
 or asking implementation questions unless the loaded command definition requires
