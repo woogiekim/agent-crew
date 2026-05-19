@@ -84,6 +84,11 @@ invocation in SKILL.md; generic adds guidance).
   J13 telemetry aggregator. Pure read-only against the repo; writes
   only into a temp directory. Run `bash core/scripts/smoke-test-state.sh`
   from the repo root after changing any of these subsystems.
+- `mnemos-bounded.sh` — wraps `mnemos` foreground commands with a portable hard
+  timeout. Use this from Codex/manual recall paths when memory lookup should be
+  visible but non-blocking.
+- `bench-parallel.sh` — token-free dry-run benchmark for stage fan-out widths,
+  N = 1/2/4/8 task-cardinality scenarios, and Phase 1d prefetch cleanup.
 
 ## Naming conventions
 

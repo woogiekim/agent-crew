@@ -219,7 +219,7 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
         f"Do NOT answer this question inline. Call crew:agent with the question.\n\n"
         f"REQUIRED action:\n"
         f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
-        f"Invoke Skill(\"agent\") with the user's question and agent={target_agent}.\n"
+        f"Invoke Skill(\"crew-agent\") with the user's question and agent={target_agent}.\n"
         f"Direct inline responses for questions are forbidden — even short ones.\n"
         f"The ONLY permitted inline response is a bare atomic fact: "
         f"literal yes/no, a bare file path, or a bare single number with no explanation."

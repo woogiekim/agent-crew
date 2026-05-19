@@ -55,6 +55,23 @@ Both features are opt-in by stage encoding. Pre-existing pipelines
 parallel-agents paths unchanged — no regression risk for any pipeline
 that predates the feature.
 
+### N = 1, 2, 4, 8 task-cardinality matrix
+
+Issue #68 requires benchmark coverage at task cardinalities N = 1, 2, 4, and
+8. The dry-run harness now prints this matrix by combining task count with the
+validated per-task fixture widths above:
+
+| N | Worktrees | baseline | TDD | fan-out | combined |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0 | 1 | 2 | 3 | 4 |
+| 2 | 2 | 2 | 4 | 6 | 8 |
+| 4 | 4 | 4 | 8 | 12 | 16 |
+| 8 | 8 | 8 | 16 | 24 | 32 |
+
+These are dispatch-width benchmarks, not live LLM timings. Live timings remain
+host-dependent and should be captured separately once the host exposes stable
+background task instrumentation.
+
 ---
 
 ## 2. Phase 1d Speculative I/O Prefetch — wall-clock + cleanup

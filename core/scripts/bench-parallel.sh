@@ -165,6 +165,33 @@ done
 echo
 
 # ---------------------------------------------------------------------------
+# Section 1b — task-cardinality scenario matrix.
+#
+# Issue #68 needs N=1,2,4,8 coverage even before a live host benchmark exists.
+# This matrix is still token-free: it combines the validated per-task fixture
+# widths above with the orchestrator's task cardinality rules.
+# ---------------------------------------------------------------------------
+echo "Task-cardinality scenario matrix (dry-run):"
+printf "%-4s %-10s %-12s %-12s %-12s %-12s\n" \
+       "N" "WORKTREES" "BASELINE" "TDD" "FANOUT" "COMBINED"
+printf "%-4s %-10s %-12s %-12s %-12s %-12s\n" \
+       "----" "---------" "--------" "---" "------" "--------"
+for n in 1 2 4 8; do
+  if [ "${n}" -eq 1 ]; then
+    worktrees=0
+  else
+    worktrees="${n}"
+  fi
+  printf "%-4s %-10s %-12s %-12s %-12s %-12s\n" \
+    "${n}" "${worktrees}" "$((n * 1))" "$((n * 2))" "$((n * 3))" "$((n * 4))"
+done
+echo
+echo "Columns after WORKTREES are expected Phase 2 agent-spawn widths for"
+echo "each fixture mode across N independent tasks. Live wall-clock timing"
+echo "is intentionally excluded from this dry-run harness."
+echo
+
+# ---------------------------------------------------------------------------
 # Section 2 — Phase 1d prefetch shell block exercise.
 #
 # Build a throwaway TASK_DIR + mock prd.md, run the prefetch block

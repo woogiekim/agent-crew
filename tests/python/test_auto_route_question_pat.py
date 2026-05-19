@@ -121,6 +121,20 @@ class TestIssue14ReproductionCase:
             f"Current QUESTION_PAT:\n{QUESTION_PAT}"
         )
 
+    def test_route_directive_names_existing_codex_skill(self):
+        payload = {"prompt": "버전 달라지며 생긴 문제인가요?"}
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert 'Invoke Skill("crew-agent")' in ctx
+        assert 'Invoke Skill("agent")' not in ctx
+
 
 # ---------------------------------------------------------------------------
 # Pre-existing Korean question markers — must still match (regression)

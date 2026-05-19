@@ -18,6 +18,8 @@ When the user message begins with one of these command forms, treat it as an
 explicit command invocation, not ordinary natural language:
 
 - `crew:setup`
+- `crew:agent`
+- `crew:agent "..."`
 - `crew:run`
 - `crew:run "..."`
 - `crew:status`
@@ -82,6 +84,7 @@ Load and follow the matching command definition:
 | User command | Command definition |
 |---|---|
 | `crew:setup` | `~/.agent-crew/commands/setup.md` |
+| `crew:agent` | `~/.agent-crew/commands/agent.md` |
 | `crew:run` | `~/.agent-crew/commands/run.md` |
 | `crew:status` | `~/.agent-crew/commands/status.md` |
 | `crew:cost` | `~/.agent-crew/commands/cost.md` |
@@ -89,6 +92,21 @@ Load and follow the matching command definition:
 
 If the command definition file is missing, tell the user to install agent-crew
 globally first.
+
+## `crew:agent` Rules
+
+For `crew:agent`, execute the direct-agent workflow from
+`~/.agent-crew/commands/agent.md`:
+
+1. Treat arguments after `crew:agent` as the direct-agent invocation.
+2. Use it only for read-only explanation, lookup, investigation, and
+   normalization tasks.
+3. If the request would mutate files, docs, issues, commits, or state, route
+   through `crew:run` instead.
+
+Never answer routed questions inline when the auto-route hook emits a ROUTE
+directive. Load the command definition and invoke the selected agent as
+specified there.
 
 ## `crew:setup` Rules
 
