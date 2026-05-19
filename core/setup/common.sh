@@ -100,6 +100,18 @@ sync_system_agents() {
     fi
   done < <(find "${system_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
 
+  # Remove stale skills from system/agents/skills/: those no longer in source/skills/
+  if [ -d "${system_agents}/skills" ]; then
+    while IFS= read -r -d '' skill_file; do
+      local basename_file
+      basename_file=$(basename "${skill_file}")
+      if [ ! -f "${source_agents}/skills/${basename_file}" ]; then
+        printf '[agent-crew] Removing stale system agent skill: %s (not in source)\n' "${basename_file}"
+        rm -f "${skill_file}"
+      fi
+    done < <(find "${system_agents}/skills" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+  fi
+
   find "${system_agents}" -name ".DS_Store" -delete 2>/dev/null || true
 }
 
@@ -189,7 +201,9 @@ migrate_legacy_agents() {
 #
 # Stale cleanup: any .md file in dest that is not present in system/agents/ AND
 # not present in user/agents/ is removed, preventing old removed agents from
-# lingering in the discovery path across updates.
+# lingering in the discovery path across updates. Stale .md files in the
+# dest/skills/ subdirectory (not present in system/agents/skills/) are also
+# removed.
 #
 # Arguments:
 #   $1  system_agents  — e.g. ~/.agent-crew/system/agents/
@@ -218,6 +232,18 @@ merge_agents_to_discovery() {
       rm -f "${dest_file}"
     fi
   done < <(find "${dest}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+
+  # Remove stale skills from dest/skills/: files not in system/agents/skills/
+  if [ -d "${dest}/skills" ]; then
+    while IFS= read -r -d '' dest_skill; do
+      local basename_file
+      basename_file=$(basename "${dest_skill}")
+      if [ ! -f "${system_agents}/skills/${basename_file}" ]; then
+        printf '[agent-crew] Removing stale agent skill from discovery: %s\n' "${basename_file}"
+        rm -f "${dest_skill}"
+      fi
+    done < <(find "${dest}/skills" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+  fi
 
   # Copy system agents first (idempotent — cp -R overwrites existing files)
   copy_dir_contents "${system_agents}" "${dest}"
