@@ -33,8 +33,10 @@ following the Adapter Interface Contract below. No changes to this file are need
 
 - `ISSUES_FILE` — Path to the markdown file containing the issues to publish.
   Each issue is a `##` section (see Issue File Format below). **Required.**
-- `BACKEND_ADAPTER` — Which issue tracking backend to use. Default: `plane`.
-  The dispatcher loads the skill named `issuer-{BACKEND_ADAPTER}` automatically.
+- `BACKEND_ADAPTER` — Which issue tracking backend to use. When omitted (or set to
+  `"auto"`), the dispatcher auto-detects the correct adapter from `git remote get-url
+  origin` (Step 0). Explicit values bypass auto-detection and load
+  `issuer-{BACKEND_ADAPTER}` directly. Known values: `github`, `gitlab`, `plane`.
 - `DRY_RUN` — Set to `true` to print all resolved work item payloads without
   making any create calls. Default: `false`.
 - `TASK_DIR` — Task state directory (injected automatically by `crew:run`).
@@ -103,9 +105,89 @@ Free-form markdown description of the issue.
 
 ## Workflow
 
-### Step 0 — Dispatch by adapter
+### Step 0 — Tracker Resolution (auto-detect from git remote)
 
-1. Resolve `BACKEND_ADAPTER` (default: `plane`).
+Before dispatching to any adapter, resolve which issue tracker backend to use by
+inspecting the current repository's git remote. This step MUST run before
+`BACKEND_ADAPTER` is consumed or defaulted.
+
+**Algorithm:**
+
+1. If `BACKEND_ADAPTER` is already explicitly set by the caller (non-empty, not the
+   string `"auto"`), skip this step entirely and proceed to Step 0.5 (Dispatch).
+
+2. Run the following command in `PROJECT_ROOT` (or the current working directory
+   when `PROJECT_ROOT` is not set):
+
+   ```bash
+   git remote get-url origin 2>/dev/null
+   ```
+
+3. Match the remote URL against the following rules (in order):
+
+   | Remote URL pattern | Action |
+   |---|---|
+   | Contains `github.com` | Set `BACKEND_ADAPTER=github`. Use `gh` CLI via the `issuer-github` user skill. |
+   | Contains `gitlab.com` OR matches a self-hosted GitLab URL (heuristic: path contains `/gitlab/` or remote URL resolves to a GitLab instance) | Set `BACKEND_ADAPTER=gitlab`. Use `mcp__gitlab` tools. |
+   | Empty / command failed (no remote configured) | Ask the user via the host's interactive question mechanism (see below). |
+   | Any other URL (Bitbucket, Azure DevOps, etc.) | Present the detected remote to the user and ask for explicit consent before falling back to first-available adapter (see Fallback section below). |
+
+4. **No remote — interactive resolution:**
+
+   When `git remote get-url origin` returns nothing or exits non-zero, present
+   the following prompt using `AskUserQuestion` (when the capability is available)
+   or a plain-text question (fallback):
+
+   - `header`: "No Git Remote Detected — Select Issue Tracker"
+   - `question`: "No git remote origin was found in this repository. Which issue
+     tracker should issues be published to?"
+   - `options`:
+     - `[A] GitHub — use gh CLI (issuer-github)`
+     - `[B] GitLab — use mcp__gitlab (issuer-gitlab)`
+     - `[C] Plane — use mcp__plane (issuer-plane)` _(default)_
+     - `[D] Other — specify adapter name`
+
+   Map the user's choice to `BACKEND_ADAPTER` (`github`, `gitlab`, `plane`, or the
+   custom name entered for option D). Then proceed to Step 0.5.
+
+5. **Unknown remote — explicit consent fallback:**
+
+   When the remote URL does not match `github.com` or `gitlab.com`, display:
+
+   ```
+   [issuer] Unrecognized remote URL: {REMOTE_URL}
+   No automatic adapter mapping available for this host.
+   ```
+
+   Then ask via `AskUserQuestion` (or plain-text fallback):
+   - `header`: "Select Issue Tracker Adapter"
+   - `question`: "Remote origin is '{REMOTE_URL}'. Which adapter should be used?"
+   - `options`:
+     - `[A] GitHub (gh CLI)`
+     - `[B] GitLab (mcp__gitlab)`
+     - `[C] Plane (mcp__plane)`
+     - `[D] Other — specify adapter name`
+     - `[E] Cancel`
+
+   Do NOT automatically fall back to the first available adapter without this
+   explicit consent step. If the user selects Cancel, halt with:
+   ```
+   STATUS: BLOCKED
+   BLOCKER: user_cancelled_adapter_selection
+   DETAIL: No adapter selected. Re-run and choose an adapter when prompted.
+   ```
+
+6. After Step 0 resolves `BACKEND_ADAPTER`, print a single line:
+
+   ```
+   [issuer] Resolved backend adapter: {BACKEND_ADAPTER} (source: {git_remote|explicit|interactive})
+   ```
+
+---
+
+### Step 0.5 — Dispatch by adapter
+
+1. Resolve `BACKEND_ADAPTER` from Step 0 above (already set; no default override).
 
 2. Load the skill named `issuer-{BACKEND_ADAPTER}`.
    The skill is installed at `~/.agent-crew/user/skills/issuer-{BACKEND_ADAPTER}.md`.
@@ -134,7 +216,7 @@ Free-form markdown description of the issue.
    project name, repo, etc.) and returns them to the dispatcher as a structured
    `TARGET_SUMMARY:` block (see Adapter Interface Contract).
 
-5. Execute **Step 0.5** (target confirmation) defined below.
+5. Execute **Step 1** (target confirmation) defined below.
 
 6. Execute adapter Steps 1–5, passing through all inputs (ISSUES_FILE, DRY_RUN,
    WORKSPACE_SLUG, PROJECT_ID, PROJECT_NAME, TASK_DIR, and any backend-specific
@@ -142,12 +224,12 @@ Free-form markdown description of the issue.
 
 ---
 
-### Step 0.5 — Target Confirmation (pre-mutation gate)
+### Step 1 — Target Confirmation (pre-mutation gate)
 
-**This step runs in the dispatcher (issuer.md) AFTER the adapter completes Step 0
-and BEFORE the adapter begins Step 1 (parsing).** It surfaces the resolved target
-details to the user so they can catch wrong-org / wrong-repo / wrong-workspace
-mistakes before any backend-mutating call fires.
+**This step runs in the dispatcher (issuer.md) AFTER the adapter completes its
+authentication step and BEFORE the adapter begins parsing (adapter Step 1).** It
+surfaces the resolved target details to the user so they can catch wrong-org /
+wrong-repo / wrong-workspace mistakes before any backend-mutating call fires.
 
 #### Auto-confirm bypass
 
@@ -230,8 +312,8 @@ Proceed with publication? [Y/N]:
 
 The issue count `N` in the confirmation block is a **quick pre-parse estimate**:
 count the number of `## ` heading lines in `ISSUES_FILE`. This count is
-informational only (does not need to match the exact parsed count from Step 1
-after field validation). If the file cannot be read at this point, omit the
+informational only (does not need to match the exact parsed count from adapter
+Step 1 after field validation). If the file cannot be read at this point, omit the
 count and show `Issues to pub: (unable to read file)`.
 
 ---
@@ -244,7 +326,7 @@ adapter skills both depend on it; neither depends on the other.
 
 | Step | Name | Responsibility |
 |---|---|---|
-| Step 0 | Authenticate and resolve project | Verify credentials; resolve or interactively select the target project; **emit a `TARGET_SUMMARY:` block for the dispatcher's Step 0.5** |
+| Step 0 | Authenticate and resolve project | Verify credentials; resolve or interactively select the target project; **emit a `TARGET_SUMMARY:` block for the dispatcher's Step 1** |
 | Step 1 | Parse the issues file | Read `ISSUES_FILE`; extract titles, priorities, states, labels, assignees, dates, estimates, descriptions |
 | Step 2 | Resolve or create labels | Map label names to backend IDs; create missing labels when allowed |
 | Step 2b | Resolve assignee IDs | Map email/display-name values to backend member IDs |
@@ -252,10 +334,10 @@ adapter skills both depend on it; neither depends on the other.
 | Step 4 | Create work items | For each issue: duplicate detection → (skip if duplicate) → create → log progress |
 | Step 5 | Print summary | Print a summary table (seq#, title, priority, state, URL); write to TASK_DIR if set |
 
-### Step 0 TARGET_SUMMARY block (required for Step 0.5)
+### Step 0 TARGET_SUMMARY block (required for Step 1)
 
 At the end of Step 0, every adapter MUST emit a structured `TARGET_SUMMARY:` block
-that the dispatcher uses to build the Step 0.5 confirmation screen. The block
+that the dispatcher uses to build the Step 1 confirmation screen. The block
 format is:
 
 ```
@@ -267,7 +349,7 @@ TARGET_SUMMARY:
 ```
 
 The dispatcher reads these fields verbatim and uses them to build the confirmation
-block in Step 0.5. Adapter Step 0 MUST NOT proceed to any mutating call before
+block in Step 1. Adapter Step 0 MUST NOT proceed to any mutating call before
 emitting this block.
 
 **Required behaviors in every adapter:**
@@ -287,26 +369,75 @@ emitting this block.
 
 ## Error Handling
 
-- **Missing adapter skill**: return `STATUS: BLOCKED` / `BLOCKER: missing_adapter={adapter}` at Step 0. Never fall back to direct API calls.
+- **User cancelled adapter selection at Step 0**: return `STATUS: BLOCKED` /
+  `BLOCKER: user_cancelled_adapter_selection`. No adapter is loaded; no mutations occur.
+- **Missing adapter skill**: return `STATUS: BLOCKED` / `BLOCKER: missing_adapter={adapter}` at Step 0.5. Never fall back to direct API calls.
 - **File not found / unreadable**: abort immediately with:
   `ERROR: Cannot read ISSUES_FILE "{ISSUES_FILE}". Check the path and try again.`
-- **User cancelled at Step 0.5**: return `STATUS: BLOCKED` / `BLOCKER: user_cancelled_confirmation`. No mutations have occurred.
+- **User cancelled at Step 1**: return `STATUS: BLOCKED` / `BLOCKER: user_cancelled_confirmation`. No mutations have occurred.
 - All other error scenarios are delegated to the adapter skill's own error handling.
 
 ---
 
 ## Usage Example
 
+### GitHub remote (auto-detected)
+
 ```
-User: publish the issues in docs/tasks.md to the "Backend" project
+User: publish the issues in docs/tasks.md to the "agent-crew" repo
 
 Agent inputs resolved:
   ISSUES_FILE      = docs/tasks.md
-  BACKEND_ADAPTER  = plane           (default)
+  BACKEND_ADAPTER  = (not set — auto-detect)
+  PROJECT_NAME     = agent-crew
+  DRY_RUN          = false
+
+Step 0:   $ git remote get-url origin
+          → https://github.com/woogiekim/agent-crew.git
+          Matched: github.com → BACKEND_ADAPTER=github
+          [issuer] Resolved backend adapter: github (source: git_remote)
+
+Step 0.5: Loading skill "issuer-github" from ~/.agent-crew/user/skills/issuer-github.md
+          Executing GitHub adapter Step 0...
+          Authenticated as: woogiekim (via gh CLI)
+          Target repo: woogiekim/agent-crew
+          TARGET_SUMMARY:
+            backend: github
+            project_name: agent-crew
+            project_id: woogiekim/agent-crew
+            workspace_slug: N/A
+
+Step 1:   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          issuer — Target Confirmation
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            Backend       : github
+            Project       : agent-crew (id=woogiekim/agent-crew)
+            Source file   : docs/tasks.md
+            Issues to pub : 12
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          -> [A] Approve - proceed with publication
+          -> [B] Cancel - stop, do not publish
+
+          User selects [A] -> continue to adapter Step 1
+
+Adapter Steps 1-5: (adapter handles parsing, resolution, creation, summary)
+```
+
+### Plane (explicit adapter, no auto-detect)
+
+```
+User: publish the issues in docs/tasks.md to the "Backend" project on Plane
+
+Agent inputs resolved:
+  ISSUES_FILE      = docs/tasks.md
+  BACKEND_ADAPTER  = plane           (explicit — skips Step 0 auto-detect)
   PROJECT_NAME     = Backend
   DRY_RUN          = false
 
-Step 0:   Loading skill "issuer-plane" from ~/.agent-crew/user/skills/issuer-plane.md
+Step 0:   BACKEND_ADAPTER explicitly set — skipping git remote detection.
+          [issuer] Resolved backend adapter: plane (source: explicit)
+
+Step 0.5: Loading skill "issuer-plane" from ~/.agent-crew/user/skills/issuer-plane.md
           Executing Plane adapter Step 0...
           Authenticated as: 김태욱 (user@example.com)
           Target project: Backend (id=abc-123)
@@ -316,7 +447,7 @@ Step 0:   Loading skill "issuer-plane" from ~/.agent-crew/user/skills/issuer-pla
             project_id: abc-123
             workspace_slug: my-org
 
-Step 0.5: ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1:   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           issuer — Target Confirmation
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             Backend       : plane
@@ -328,9 +459,9 @@ Step 0.5: ━━━━━━━━━━━━━━━━━━━━━━━�
           -> [A] Approve - proceed with publication
           -> [B] Cancel - stop, do not publish
 
-          User selects [A] -> continue to Step 1
+          User selects [A] -> continue to adapter Step 1
 
-Steps 1-5: (adapter handles parsing, resolution, creation, summary)
+Adapter Steps 1-5: (adapter handles parsing, resolution, creation, summary)
 ```
 
 See `~/.agent-crew/user/skills/issuer-plane.md` for the full Plane adapter
