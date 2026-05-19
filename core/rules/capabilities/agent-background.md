@@ -73,8 +73,13 @@ task injection (`core/rules/task-injection.md`) is structurally impossible.
 path is skipped entirely.
 
 **Affected adapters:** Codex (`agent_background=false`) and generic
-(`agent_background=false`). For Codex-specific workarounds (queuing tasks upfront
-using the pipe syntax), see `adapters/codex/invocation.md` § Limitations.
+(`agent_background=false`). Codex has native custom subagents in supported
+CLI/app runtimes, but that surface is not equivalent to this capability unless
+agent-crew can call it as `spawnBackgroundAgent(...)` and later observe the
+result. Tool-backed Codex sessions may expose no callable subagent surface at
+all, so the adapter must keep this flag false until the active runtime exposes
+the required background contract. For Codex-specific workarounds and native
+subagent guidance, see `adapters/codex/invocation.md`.
 
 This is the documented best-effort path on Codex, generic, and any
 host that has not advertised `agent_background = true`. Phase B0
@@ -86,7 +91,7 @@ within the flag-true branch* was removed.
 | Adapter | agent_background | How it is implemented |
 |---|---|---|
 | claude  | true  | Host background-agent invocation (Task tool background variant) |
-| codex   | false | No background subagent surface; uses inline fan-out |
+| codex   | false | Native subagents may exist in Codex, but no adapter-level background contract is guaranteed; uses inline/file fallback |
 | generic | false | No fan-out abstraction; inline-only |
 
 ## Related Files

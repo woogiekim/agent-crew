@@ -116,6 +116,9 @@ install_codex_skills() {
 # The generated TOML stub uses the backend.toml shape:
 #   description          = "<frontmatter description>"
 #   reasoning_tier       = "<frontmatter reasoning_tier or 'balanced'>"
+#   model                = "<frontmatter model, optional>"
+#   model_reasoning_effort = "<frontmatter model_reasoning_effort, optional>"
+#   sandbox_mode         = "<frontmatter sandbox_mode, optional>"
 #   developer_instructions = """<full markdown body after frontmatter>"""
 #   name                 = "<agent name>"
 #
@@ -186,6 +189,10 @@ for fname in sorted(os.listdir(user_agents_dir)):
     name = fm.get('name', '') or os.path.splitext(fname)[0]
     description = fm.get('description', '').strip()
     reasoning_tier = fm.get('reasoning_tier', 'balanced').strip() or 'balanced'
+    model = fm.get('model', '').strip()
+    model_reasoning_effort = fm.get('model_reasoning_effort', '').strip()
+    sandbox_mode = fm.get('sandbox_mode', '').strip()
+    nickname_candidates = fm.get('nickname_candidates', '').strip()
 
     if not description:
         description = f'User agent: {name}'
@@ -200,12 +207,39 @@ for fname in sorted(os.listdir(user_agents_dir)):
     # Escape description for single-line TOML string
     desc_escaped = description.replace('\\', '\\\\').replace('"', '\\"')
 
-    toml_content = (
-        f'description = "{desc_escaped}"\n'
-        f'reasoning_tier = "{reasoning_tier}"\n'
-        f'developer_instructions = """\n{body_escaped}\n"""\n'
-        f'name = "{toml_name}"\n'
-    )
+    lines = [
+        f'name = "{toml_name}"',
+        f'description = "{desc_escaped}"',
+    ]
+    # Keep agent-crew's abstract tier visible, while preserving official Codex
+    # per-agent config keys when the user supplied them in frontmatter.
+    if reasoning_tier:
+        lines.append(f'reasoning_tier = "{reasoning_tier}"')
+    for key, value in (
+        ('model', model),
+        ('model_reasoning_effort', model_reasoning_effort),
+        ('sandbox_mode', sandbox_mode),
+    ):
+        if value:
+            escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+            lines.append(f'{key} = "{escaped}"')
+    if nickname_candidates:
+        # Accept either a TOML-ish inline list or a comma-separated shorthand.
+        if nickname_candidates.startswith('[') and nickname_candidates.endswith(']'):
+            lines.append(f'nickname_candidates = {nickname_candidates}')
+        else:
+            names = [
+                x.strip().strip('"\'')
+                for x in nickname_candidates.split(',')
+                if x.strip()
+            ]
+            encoded = ', '.join(
+                '"' + n.replace('\\', '\\\\').replace('"', '\\"') + '"'
+                for n in names
+            )
+            lines.append(f'nickname_candidates = [{encoded}]')
+    lines.append(f'developer_instructions = """\n{body_escaped}\n"""')
+    toml_content = '\n'.join(lines) + '\n'
 
     try:
         with open(dest_path, 'w', encoding='utf-8') as f:
@@ -223,12 +257,12 @@ PYEOF
 
 sync_dir_contents_prune "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
 
-# Note: reasoning_tier is NOT materialized on the Codex adapter today.
-# Codex's current per-agent TOML schema does not honor a `model = "..."`
-# field at agent granularity (model selection happens at the Codex
-# profile level). The reasoning_tier value in each TOML is declarative
-# only — kept for forward compatibility if Codex adds per-agent model
-# selection in the future. See core/rules/capabilities/reasoning-tier.md.
+# Note: reasoning_tier is an agent-crew abstraction. Codex native custom
+# agents honor official per-agent TOML keys such as `model`,
+# `model_reasoning_effort`, and `sandbox_mode`; user agents may provide those
+# keys in frontmatter and this adapter preserves them. We do not auto-map the
+# abstract tier to a concrete model because model availability is operator- and
+# profile-specific. See core/rules/capabilities/reasoning-tier.md.
 
 rm -rf "${PROJECT_ROOT}/.codex/hooks"
 mkdir -p "${PROJECT_ROOT}/.codex/hooks"
@@ -283,8 +317,12 @@ merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.
 register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
 
 # Write host capability flags so the core pipeline can read them at Phase 0.
-# Codex does not support agent_background, task_tools, monitor_tool,
-# cost_tracking, or hook_system — all flags are false.
+# Codex project setup installs native subagent TOMLs and project-local
+# `.codex/config.toml`, but the runtime capability flags below describe what
+# agent-crew can call directly from its provider-neutral workflow. Tool-backed
+# Codex sessions may not expose a callable background subagent or task lifecycle
+# surface to agent-crew, so these flags remain false until that surface is
+# available in the active adapter.
 # Schema documented at core/rules/host-capabilities.md.
 # Absence of this file MUST be treated as legacy behavior (all flags false),
 # so writing it explicitly here closes the documentation-implementation gap

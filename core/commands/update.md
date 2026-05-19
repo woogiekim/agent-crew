@@ -471,10 +471,13 @@ next update. Move the agent to `~/.agent-crew/user/agents/` (and
 rename it to avoid the system filename collision) to preserve a
 manual model choice.
 
-The Codex adapter does NOT currently materialize `reasoning_tier` —
-Codex's per-agent TOML schema does not honor a per-agent model field
-today. The tier remains declared in the Codex TOMLs for forward
-compatibility but is advisory only on Codex.
+The Codex adapter does NOT auto-map `reasoning_tier` to a concrete
+model. Codex custom-agent TOML supports official per-agent keys such as
+`model`, `model_reasoning_effort`, and `sandbox_mode`; when users put
+those keys in `~/.agent-crew/user/agents/*.md` frontmatter, the Codex
+adapter preserves them in generated `.codex/agents/*.toml`. The abstract
+`reasoning_tier` remains advisory unless the user supplies concrete
+Codex model settings.
 
 ### Phase 3.3 — `cost_tracking` capability + cost circuit breaker
 

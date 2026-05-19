@@ -42,6 +42,61 @@ matches your task against keyword patterns and shows which agent was selected
 and why before spawning. The selected agent runs without a supervisor pipeline,
 so the command is intentionally limited to read-only tasks.
 
+## Native Codex Subagents
+
+Codex supports native custom subagents through TOML files in:
+
+- `.codex/agents/*.toml` for project-scoped agents
+- `~/.codex/agents/*.toml` for user-scoped agents
+
+Each agent file must define `name`, `description`, and
+`developer_instructions`. The `name` field is the runtime identity Codex uses
+when spawning the agent; matching the filename is only a convention. The Codex
+setup flow writes regular copied TOML files, not symlinks, because some Codex
+versions have not discovered symlinked custom-agent TOMLs reliably.
+
+The project template also installs `.codex/config.toml` with:
+
+```toml
+[agents]
+max_threads = 6
+max_depth = 1
+```
+
+Keep `max_depth = 1` unless recursive delegation is explicitly required.
+Deeper nesting can multiply token usage, latency, and local resource
+consumption. Use `max_threads` as the concurrency cap for open agent threads.
+
+### Parallel usage pattern on Codex
+
+For user-facing workflows, keep using `crew:run`:
+
+```text
+crew:run "Task A" | "Task B" | "Task C"
+```
+
+Inside Codex, this should be expressed as native subagent fan-out when the
+runtime exposes the subagent surface:
+
+- spawn one `supervisor` subagent per top-level task
+- for a `parallelizable_units` stage, spawn one worker subagent per unit
+- keep every unit scoped to its `UNIT_FILES` and isolated worktree
+- wait for all spawned agents before fan-in, review, and resolver handling
+
+Prefer narrow, role-specific agents for read-only exploration, review, docs
+research, debugging, and targeted fixes. Avoid giving multiple write-capable
+agents the same files unless the supervisor has created isolated worktrees and
+the resolver/fan-in path is active.
+
+### Capability boundary
+
+Codex native subagents are not the same as agent-crew's
+`agent_background=true` contract. The `agent_background` flag means the
+orchestrator can launch background supervisors that outlive the current turn and
+can be monitored later. In tool-backed Codex sessions where no callable
+subagent surface is exposed to agent-crew, the adapter must keep
+`agent_background=false` and use the file-based fallback.
+
 ## Limitations
 
 ### Task injection is not available in Codex

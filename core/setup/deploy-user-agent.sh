@@ -116,6 +116,10 @@ stem     = os.path.splitext(basename)[0]
 name     = fm.get('name', '').strip() or stem
 description    = fm.get('description', '').strip().lstrip('> ').strip()
 reasoning_tier = fm.get('reasoning_tier', 'balanced').strip() or 'balanced'
+model = fm.get('model', '').strip()
+model_reasoning_effort = fm.get('model_reasoning_effort', '').strip()
+sandbox_mode = fm.get('sandbox_mode', '').strip()
+nickname_candidates = fm.get('nickname_candidates', '').strip()
 
 if not description:
     description = f'User agent: {name}'
@@ -125,12 +129,36 @@ dest_path   = os.path.join(dest_dir, toml_name + '.toml')
 body_esc    = toml_escape(body.rstrip())
 desc_esc    = description.replace('\\', '\\\\').replace('"', '\\"')
 
-toml_content = (
-    f'description = "{desc_esc}"\n'
-    f'reasoning_tier = "{reasoning_tier}"\n'
-    f'developer_instructions = """\n{body_esc}\n"""\n'
-    f'name = "{toml_name}"\n'
-)
+lines = [
+    f'name = "{toml_name}"',
+    f'description = "{desc_esc}"',
+]
+if reasoning_tier:
+    lines.append(f'reasoning_tier = "{reasoning_tier}"')
+for key, value in (
+    ('model', model),
+    ('model_reasoning_effort', model_reasoning_effort),
+    ('sandbox_mode', sandbox_mode),
+):
+    if value:
+        escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+        lines.append(f'{key} = "{escaped}"')
+if nickname_candidates:
+    if nickname_candidates.startswith('[') and nickname_candidates.endswith(']'):
+        lines.append(f'nickname_candidates = {nickname_candidates}')
+    else:
+        names = [
+            x.strip().strip('"\'')
+            for x in nickname_candidates.split(',')
+            if x.strip()
+        ]
+        encoded = ', '.join(
+            '"' + n.replace('\\', '\\\\').replace('"', '\\"') + '"'
+            for n in names
+        )
+        lines.append(f'nickname_candidates = [{encoded}]')
+lines.append(f'developer_instructions = """\n{body_esc}\n"""')
+toml_content = '\n'.join(lines) + '\n'
 
 with open(dest_path, 'w', encoding='utf-8') as f:
     f.write(toml_content)

@@ -58,20 +58,28 @@ The Cartesian product gives expected Phase 2 spawn widths:
 ## Recommendations
 
 1. Keep `agent_background`, `task_tools`, and `monitor_tool` as explicit
-   capability gates. Codex must remain on the file-based fallback path until a
-   native background-agent surface is available.
+   capability gates. Codex native subagents are useful for parallel execution,
+   but they must not be treated as `agent_background=true` until the active
+   runtime exposes a callable background spawn surface plus a later observation
+   path. Tool-backed Codex sessions that do not expose such a tool stay on the
+   file-based fallback path.
 2. Use `core/scripts/mnemos-bounded.sh` for support-path memory calls so hangs
    become visible timeouts.
 3. Extend `bench-parallel.sh` output with N = 1, 2, 4, 8 scenario rows and keep
    the existing stage-width fixture checks.
 4. Add a future `bench-worktree-setup.sh` that measures `git worktree add`
    independently from any agent runtime.
-5. Keep project-local Codex stubs thin and preferred over global stubs; prune
-   global stubs on update to prevent old inline bodies from increasing routing
-   latency.
+5. Keep project-local Codex stubs thin and preferred over global stubs; write
+   regular `.codex/agents/*.toml` files instead of symlinks so Codex custom
+   agent discovery sees the official TOML schema (`name`, `description`,
+   `developer_instructions`) consistently.
 6. Batch approval only where the host exposes a structured question capability.
    Codex remains on the markdown/fallback route until `interactive_question`
    changes.
+7. For Codex-native parallelism, keep `.codex/config.toml` at
+   `agents.max_threads = 6` and `agents.max_depth = 1` by default. Increase
+   depth only for explicitly recursive delegation, because broad recursive
+   fan-out raises token, latency, and local resource costs.
 
 ## Relationship to #66 and #67
 

@@ -99,7 +99,7 @@ model.
 | Adapter | Mapping | Notes |
 |---|---|---|
 | claude  | `deep → claude-opus-4-7`, `balanced → claude-sonnet-4-6`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md`. |
-| codex   | advisory — per-agent model selection in the current Codex TOML schema is not honored at runtime | Tier is declared in TOMLs for forward compatibility; the Codex adapter does NOT materialize a per-agent `model = "..."` value. Operators see no per-agent model differentiation today. See `adapters/codex/setup.sh`. |
+| codex   | advisory by default; user-specified official TOML keys are preserved | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter preserves those keys when present in user-agent frontmatter, but does NOT auto-map abstract `reasoning_tier` to a concrete model because model availability is profile- and operator-specific. |
 | generic | none — single-model environment | Leaves `model: inherit` (or absent equivalent) untouched. Tier declarations have no install-time effect. |
 
 ## Related Files
@@ -108,7 +108,8 @@ Producer (install-time):
 
 - `adapters/claude/setup.sh` — Claude materializer (rewrites
   `~/.claude/agents/*.md`)
-- `adapters/codex/setup.sh` — Codex (no-op today; tier is advisory)
+- `adapters/codex/setup.sh` — Codex (preserves official per-agent
+  TOML keys; does not auto-map abstract tiers)
 - `adapters/generic/setup.sh` — no-op
 
 Consumer (none at runtime). The field is purely declarative for
