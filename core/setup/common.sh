@@ -405,7 +405,11 @@ src = Path(sys.argv[1])
 dest = Path(sys.argv[2])
 start = sys.argv[3]
 end = sys.argv[4]
-new_section = f"{start}\n{src.read_text()}\n{end}\n"
+src_content = src.read_text().strip()
+if start in src_content and end in src_content:
+    new_section = f"{src_content}\n"
+else:
+    new_section = f"{start}\n{src_content}\n{end}\n"
 
 content = dest.read_text() if dest.exists() else ""
 pattern = re.escape(start) + r".*" + re.escape(end)
