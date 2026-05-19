@@ -221,7 +221,8 @@ inspecting the current repository's git remote. This step MUST run before
 
 6. Execute adapter Steps 1–5, passing through all inputs (ISSUES_FILE, DRY_RUN,
    WORKSPACE_SLUG, PROJECT_ID, PROJECT_NAME, TASK_DIR, and any backend-specific
-   inputs the caller provided).
+   inputs the caller provided). The adapter must surface a preview gate before
+   any create call when `DRY_RUN` is not enabled.
 
 ---
 
@@ -322,8 +323,9 @@ count and show `Issues to pub: (unable to read file)`.
 ## Adapter Interface Contract
 
 Every adapter skill (`issuer-{BACKEND_ADAPTER}.md`) MUST implement the following
-six-step interface. This contract is the stable abstraction — the dispatcher and
-adapter skills both depend on it; neither depends on the other.
+six-step interface plus a pre-publication preview gate. This contract is the
+stable abstraction — the dispatcher and adapter skills both depend on it;
+neither depends on the other.
 
 | Step | Name | Responsibility |
 |---|---|---|
@@ -332,6 +334,7 @@ adapter skills both depend on it; neither depends on the other.
 | Step 2 | Resolve or create labels | Map label names to backend IDs; create missing labels when allowed |
 | Step 2b | Resolve assignee IDs | Map email/display-name values to backend member IDs |
 | Step 3 | Resolve state IDs | Map state names to backend state IDs; fall back to default unstarted state |
+| Step 3.5 | Preview resolved issues | Render a pre-create preview of the resolved issue set and require explicit approval before Step 4; bypassed in `DRY_RUN` |
 | Step 4 | Create work items | For each issue: duplicate detection → (skip if duplicate) → create → log progress |
 | Step 5 | Print summary | Print a summary table (seq#, title, priority, state, URL); write to TASK_DIR if set |
 
@@ -358,6 +361,9 @@ emitting this block.
 - **Interactive project selection** — when `PROJECT_ID` and `PROJECT_NAME` are
   both absent, the adapter MUST present an interactive choice (via
   `AskUserQuestion`) listing available projects.
+- **Pre-publication preview** — after Steps 1-3 complete and before any create
+  call, the adapter MUST render a preview of the resolved issues and require
+  explicit approval unless `DRY_RUN=true`.
 - **Duplicate detection** — BEFORE each `create` call, the adapter MUST query
   existing items and skip any issue whose title already exists (case-insensitive).
 - **DRY_RUN support** — when `DRY_RUN=true`, the adapter MUST print resolved
@@ -421,7 +427,12 @@ Step 1:   ━━━━━━━━━━━━━━━━━━━━━━━�
 
           User selects [A] -> continue to adapter Step 1
 
-Adapter Steps 1-5: (adapter handles parsing, resolution, creation, summary)
+Step 3.5: Preview 12 issues
+          [A] Approve - proceed with publication
+          [B] Cancel - stop, do not publish
+          User selects [A] -> continue to Step 4
+
+Adapter Steps 1-5: (adapter handles parsing, resolution, preview, creation, summary)
 ```
 
 ### Plane (explicit adapter, no auto-detect)
@@ -462,7 +473,12 @@ Step 1:   ━━━━━━━━━━━━━━━━━━━━━━━�
 
           User selects [A] -> continue to adapter Step 1
 
-Adapter Steps 1-5: (adapter handles parsing, resolution, creation, summary)
+Step 3.5: Preview 12 issues
+          [A] Approve - proceed with publication
+          [B] Cancel - stop, do not publish
+          User selects [A] -> continue to Step 4
+
+Adapter Steps 1-5: (adapter handles parsing, resolution, preview, creation, summary)
 ```
 
 See `~/.agent-crew/user/skills/issuer-plane.md` for the full Plane adapter
