@@ -60,6 +60,7 @@ level, and a reason string shown to the user in the visibility line.
 
 | Priority | Pattern (case-insensitive, any word matches) | Agent | Confidence | Reason shown to user |
 |---|---|---|---|---|
+| 0.5 | build OR implement OR create OR add OR update OR fix OR remove OR move OR change OR migrate OR refactor OR replace OR extend OR integrate OR test OR deploy OR merge OR rollback OR write OR save OR edit OR publish OR commit | — BLOCK — | — | Restricted: mutating work must use crew:run |
 | 1 | deploy OR "push to" OR "ci/cd" OR "cd pipeline" OR "release pipeline" | — BLOCK — | — | Restricted: devops requires supervisor approval gate — use crew:run |
 | 2 | " review" OR "lint " OR " approve" OR "code review" OR "quality check" | — BLOCK — | — | Restricted: reviewer requires prior stage output — use crew:run |
 | 3 | api OR endpoint OR server OR database OR schema OR domain OR service OR repository OR entity | backend | high | Matched backend keywords |
@@ -106,15 +107,20 @@ because the user is asking about session state, not code semantics.
 
 ## How orchestrators must use this file
 
-1. **Agent name validation** — look up the agent name in the Agent Registry.
+1. **Mutating-task guard** — if the task string requests any file/document/
+   issue/work-item creation or update, or any commit, merge, deploy, save,
+   publish, or other state mutation, direct invocation is disallowed
+   regardless of agent. Return the `crew:run` instruction instead.
+
+2. **Agent name validation** — look up the agent name in the Agent Registry.
    If not found: error "unknown agent". If found but `Safe for direct
    invocation = no`: error with the `Reason if restricted` text.
 
-2. **Auto-routing** — apply Auto-Routing Rules top-to-bottom against the
+3. **Auto-routing** — apply Auto-Routing Rules top-to-bottom against the
    normalized task string. Return the matched agent (or block/none result).
 
-3. **Visibility** — always emit the `[crew:agent] →` line before spawning,
+4. **Visibility** — always emit the `[crew:agent] →` line before spawning,
    including the agent name, confidence (if auto-routed), and reason text.
 
-4. **No hard-coding** — orchestrators must read agent names exclusively from
+5. **No hard-coding** — orchestrators must read agent names exclusively from
    this file. Embedding agent names in command logic is a DIP violation.

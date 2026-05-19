@@ -31,7 +31,7 @@ Unlike `crew:setup`, this command:
 
 | Argument | Default | Description |
 |---|---|---|
-| `--pull` | off | Before syncing, run `git pull --ff-only` on the source repo's current branch. Skipped with a warning when the working tree is dirty, no upstream is configured, or the fast-forward fails. Behavior without `--pull` is unchanged. |
+| none | — | `crew:update` always refreshes from the remote source repository. |
 
 ## State Paths
 
@@ -42,99 +42,25 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 ```
 
-## Source Repository Discovery
+## Source Acquisition
 
-The command must locate the agent-crew source repo (the local checkout of
-this project) so it can re-run `install.sh`. Resolution order:
-
-1. `AGENT_CREW_SOURCE_DIR` env var if set.
-2. The git toplevel of the CWD if it contains both `core/` and `adapters/`
-   subdirectories (i.e. the user invoked `crew:update` from inside the
-   agent-crew source checkout).
-3. A previously-recorded source path at `${AGENT_CREW_HOME}/source.path`
-   (written by an earlier `crew:setup` or `crew:update` run — optional).
-4. Fall back to error: ask the user to set `AGENT_CREW_SOURCE_DIR`.
+`crew:update` always starts from a fresh remote checkout. It does not depend on
+an existing local source clone.
 
 ```bash
-resolve_source_dir() {
-  if [ -n "${AGENT_CREW_SOURCE_DIR:-}" ] && [ -d "${AGENT_CREW_SOURCE_DIR}/core" ]; then
-    echo "${AGENT_CREW_SOURCE_DIR}"; return 0
-  fi
-  local toplevel
-  toplevel=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-  if [ -n "${toplevel}" ] && [ -d "${toplevel}/core" ] && [ -d "${toplevel}/adapters" ]; then
-    echo "${toplevel}"; return 0
-  fi
-  if [ -f "${AGENT_CREW_HOME}/source.path" ]; then
-    local rec
-    rec=$(head -1 "${AGENT_CREW_HOME}/source.path")
-    if [ -n "${rec}" ] && [ -d "${rec}/core" ]; then
-      echo "${rec}"; return 0
-    fi
-  fi
-  return 1
-}
+REPO_URL="https://github.com/woogiekim/agent-crew"
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "${WORK_DIR}"' EXIT
+
+git clone --depth 1 "${REPO_URL}" "${WORK_DIR}"
+SOURCE_ROOT="${WORK_DIR}"
+SOURCE_DIR="${SOURCE_ROOT}/core"
+ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 ```
 
 ## Execution
 
-1. Resolve `SOURCE_DIR` using the rules above. If unresolved, print:
-
-   ```text
-   crew:update — could not find the agent-crew source repo.
-   Set AGENT_CREW_SOURCE_DIR to the local path of the agent-crew checkout
-   and re-run, or run crew:update from inside the source checkout.
-   ```
-
-   and stop. Do NOT touch any installed files.
-
-2. Establish path variables:
-
-   ```bash
-   SOURCE_DIR="${SOURCE_ROOT}/core"
-   ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
-   AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-   CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
-   ```
-
-2.5. Pull the source repo before syncing (only when `--pull` is passed):
-
-   Parse the flag before any sync begins:
-
-   ```bash
-   PULL_FLAG=0
-   for _arg in "$@"; do [ "${_arg}" = "--pull" ] && PULL_FLAG=1; done
-   ```
-
-   When `PULL_FLAG=1`:
-
-   ```bash
-   _SAVED_DIR=$(pwd)
-   cd "${SOURCE_ROOT}"
-
-   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-     echo "crew:update --pull: source repo has uncommitted changes — skipping pull"
-   else
-     _UPSTREAM=$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo "")
-     if [ -z "${_UPSTREAM}" ]; then
-       echo "crew:update --pull: source repo has no upstream configured — skipping pull"
-     else
-       _BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-       if git pull --ff-only origin "${_BRANCH}" 2>&1; then
-         echo "Pulled source repo → $(git rev-parse --short HEAD)"
-       else
-         echo "crew:update --pull: fast-forward refused (diverged history?) — continuing with existing source"
-       fi
-     fi
-   fi
-
-   cd "${_SAVED_DIR}"
-   ```
-
-   When `--pull` is not passed, skip this step entirely — all downstream
-   sync steps use `SOURCE_ROOT` as-is.
-
-3. For each file category below, use Bash `cp -f` (or `cp -rf`) to copy all
+1. For each file category below, use Bash `cp -f` (or `cp -rf`) to copy all
    source files to the destination. This guarantees byte-for-byte replacement
    regardless of what was previously installed — the destination always matches
    the source exactly after the copy.
@@ -386,7 +312,7 @@ resolve_source_dir() {
    > database is clean and future runs of `ingest-claude-md` are content-hash
    > no-ops for unchanged memory files.
 
-4. Refresh adapter paths in two phases (P5 split):
+2. Refresh adapter paths in two phases (P5 split):
 
    **(a) Global-scope update** — runs all installed global-scope adapters
    (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/agent-crew/` and
@@ -410,16 +336,7 @@ resolve_source_dir() {
      bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
    ```
 
-5. Record the resolved source path so future invocations of `crew:update`
-   and the auto-sync step in `crew:run` can find it without `AGENT_CREW_SOURCE_DIR`.
-   Always record `SOURCE_ROOT` (the repo root containing `core/` and `adapters/`),
-   not `SOURCE_DIR` (the `core/` subdirectory):
-
-   ```bash
-   printf '%s\n' "${SOURCE_ROOT}" > "${AGENT_CREW_HOME}/source.path"
-   ```
-
-6. Update settings.json hook registrations (idempotent):
+3. Update settings.json hook registrations (idempotent):
 
    ```bash
    AGENT_CREW_MODE=update AGENT_CREW_SOURCE_DIR="${SOURCE_DIR}" \
@@ -429,7 +346,7 @@ resolve_source_dir() {
    This re-runs the marker-merge helpers so any newly added hooks are
    registered without duplicating existing entries.
 
-7. **Sync host AI instruction files from mnemos (Phase L17).** After the
+4. **Sync host AI instruction files from mnemos (Phase L17).** After the
    asset refresh and adapter re-run, materialize the canonical instruction
    rules stored in mnemos into the host AI md files. This is the
    companion to `crew:sync-instructions` and keeps Claude / Codex /

@@ -12,14 +12,16 @@ only on that abstraction — it does not hard-code any agent name in its logic.
 
 | Scenario | Command |
 |---|---|
-| Simple, focused task and you know the right specialist | `crew:agent <name> "task"` |
-| Simple, focused task — let routing pick the agent | `crew:agent "task"` |
+| Read-only lookup / explanation and you know the right specialist | `crew:agent <name> "task"` |
+| Read-only lookup / explanation — let routing pick the agent | `crew:agent "task"` |
+| Any task that writes files, updates docs, creates issues, commits code, or otherwise mutates state | `crew:run "task"` |
 | Any task needing planning + multi-stage review | `crew:run "task"` |
 | Multiple independent tasks | `crew:run "A" \| "B"` |
 | Unknown scope / not sure which agent fits | `crew:run "task"` (supervisor decides) |
 
-Use `crew:agent` when the task is self-contained (no cross-agent handoff) and
-either you know the right specialist or want auto-routing to pick one.
+Use `crew:agent` only for read-only investigation, explanation, lookup, and
+normalization tasks. If the task could change files, docs, issues, commits, or
+environment state, use `crew:run`.
 
 ## Syntax
 
@@ -34,32 +36,30 @@ crew:agent --routing                         # show auto-routing rules table
 
 ```text
 # Explicit mode
-crew:agent backend "add a health check endpoint at /actuator/health"
-crew:agent planner "design the caching layer for the user-service API"
-crew:agent designer "create a wireframe spec for the checkout flow"
-crew:agent frontend "add a loading skeleton to the product listing page"
 crew:agent analyst "explain the current domain model and identify seams"
+crew:agent historian "what ran in this session?"
+crew:agent learning-mentor "explain the difference between a branch and a worktree"
 
 # Auto-routing mode (agent selected from core/rules/agent-routing.md)
-crew:agent "add a health check endpoint at /actuator/health"
-crew:agent "design the caching layer"
 crew:agent "explain the current domain model"
+crew:agent "what ran in this session?"
+crew:agent "why did the router choose historian?"
 ```
 
 ## Agent visibility — always shown before spawning
 
 In **explicit mode**:
 ```
-[crew:agent] → planner agent
+[crew:agent] → analyst agent
               mode: explicit
-              task: "design the caching layer"
+              task: "explain the current domain model"
 ```
 
 In **auto-routing mode**:
 ```
-[crew:agent] → backend agent
-              reason: endpoint keyword matched backend routing rule (confidence: high)
-              task: "add a health check endpoint"
+[crew:agent] → historian
+              reason: matched session-state Q pattern ("what ran")
+              task: "what ran in this session?"
 ```
 
 For a question/Q-shaped task that matches the session-state rule:
@@ -127,6 +127,8 @@ Available agents  (source: core/rules/agent-routing.md)
     crew:agent designer  "…"   — Wireframes, UX specs, visual design
     crew:agent analyst   "…"   — Codebase understanding, domain investigation
     crew:agent documenter "…"  — Documentation, README, API docs
+    crew:agent historian "…"  — Session / git / project state Q&A
+    crew:agent issuer     "…"   — Issue publishing and work-item creation
     crew:agent learning-mentor "…" — Concept explanation, teaching, Q&A
     crew:agent korean-normalizer "…" — Korean text normalization (utility)
 
@@ -165,6 +167,16 @@ Use 'crew:agent --list' to see which agents are available.
 ```
 
 ### Step 3 — Validate agent (explicit mode only)
+
+If `TASK_STRING` requests any file/document/issue/work-item creation or update,
+or any commit, merge, deploy, save, publish, or other state mutation, direct
+invocation is not allowed:
+
+```text
+crew:agent: direct invocation is read-only.
+Reason: mutating work must use crew:run.
+Use 'crew:run "{TASK_STRING}"' instead.
+```
 
 Look up `AGENT_NAME` in the **Agent Registry** (`core/rules/agent-routing.md`):
 
@@ -301,7 +313,7 @@ IS_REPEAT = PRIOR_FAIL_COUNT >= 3
 
 `IS_REPEAT` is `True` when the same (normalized) query has failed to route
 **3 or more times previously**. This threshold triggers the RECOMMENDED label on
-option C.
+option A.
 
 ##### Step 4c — Structured choice UI
 
@@ -314,7 +326,7 @@ Present a structured user-choice intent
     ```
     No agent matched "{TASK_STRING}".
     This query pattern has failed to route {PRIOR_FAIL_COUNT} time(s) before.
-    A new agent may be needed to handle this domain. Consider option C.
+    A new agent may be needed to handle this domain. Consider option A.
     ```
   - If `IS_REPEAT` is `False`:
     ```
@@ -323,8 +335,8 @@ Present a structured user-choice intent
 - **options**:
   - `[A] Delegate to crew:run` — Hand off as a full implementation task (supervisor + pipeline)
   - `[B] Specify agent explicitly` — I'll name the agent to use
-  - `[C] Launch crew:agent-maker` — Design a new agent for this domain`
-    (append " (Recommended)" to the label when `IS_REPEAT` is `True`)
+  - `[C] Cancel` — Stop and rephrase
+    (append " (Recommended)" to the label for option A when `IS_REPEAT` is `True`)
 
 Absence behavior (flag=false): emit the structured markdown question format:
 
@@ -338,8 +350,7 @@ Pick one (reply with the option number):
 
 1. **Delegate to crew:run** — Hand off as a full implementation task (supervisor + pipeline)
 2. **Specify agent explicitly** — I'll name the agent to use
-3. **Launch crew:agent-maker (Recommended)** — Design a new agent for this domain
-   [only show "Recommended" tag when IS_REPEAT is True]
+3. **Cancel**
 0. **cancel**
 ```
 
@@ -364,19 +375,9 @@ Re-invoke this command from Step 1 in explicit mode:
   (Jump to Step 3 — Validate agent)
 ```
 
-**If [C] — Launch crew:agent-maker:**
+**If [C] — Cancel:**
 
-```text
-Automatically invoke crew:agent-maker with the failed query as context:
-
-  crew:agent-maker \
-    --context "Routing gap: no agent matched query: {TASK_STRING}" \
-    --suggest-name "(derive from query domain)"
-
-The agent-maker will guide the user through designing a new agent definition
-for this domain. On completion, the new agent is registered in the Agent Registry
-(core/rules/agent-routing.md) and can be reached on subsequent crew:agent calls.
-```
+Stop silently.
 
 **If cancel / no response:**
 
@@ -389,11 +390,8 @@ Stop silently. Do not emit an error message — the user dismissed the dialog.
   this task") violate the approval prohibition enforced by Phase G6.
 - **Gap telemetry is always written** before the UI is shown, even if the user
   cancels. The log is append-only and must not be truncated or deleted by this command.
-- **Option C label** carries the "(Recommended)" tag **only** when `IS_REPEAT`
+- **Option A label** carries the "(Recommended)" tag **only** when `IS_REPEAT`
   is `True` (prior fail count >= 3). It must not appear on first or second failure.
-- **crew:agent-maker invocation** (option C) is automatic — the user does not
-  need to type a separate command. The failed `TASK_STRING` is passed as context
-  so the agent-maker can propose a suitable agent name, scope, and routing keywords.
 
 ---
 
@@ -436,9 +434,10 @@ rather than producing independent user-visible output.
 A host-native subagent MUST NOT be used when any of the following applies:
 
 - **The task is crew-routable** — implementation, planning, documentation,
-  analysis, or code investigation tasks must go through `crew:agent` or
-  `crew:run`. Routing through a built-in subagent skips the agent registry,
-  Routing Failure Fallback, and routing-misses.log telemetry entirely.
+  publishing, or other state-mutating work must go through `crew:run`.
+  Read-only analysis and investigation may use `crew:agent`. Routing through
+  a built-in subagent skips the agent registry, Routing Failure Fallback, and
+  routing-misses.log telemetry entirely.
 - **The task involves writing files or committing code** — all file-write and
   commit operations must be performed by a registered crew agent under the
   supervisor's oversight.
@@ -446,8 +445,8 @@ A host-native subagent MUST NOT be used when any of the following applies:
   outer crew-dispatched agent, there is no routing context, and the call is
   a direct bypass of crew routing.
 - **The task is conversational or user-facing** — Q&A, explanations, and
-  design discussions must use `crew:agent analyst`, `crew:agent planner`, or
-  `crew:agent learning-mentor` as appropriate.
+  design discussions must use `crew:agent analyst`, `crew:agent planner`,
+  `crew:agent historian`, or `crew:agent learning-mentor` as appropriate.
 
 Forbidden example:
 
@@ -455,15 +454,15 @@ Forbidden example:
 # WRONG — using a built-in Plan subagent at the top level for a crew-routable task:
 subagent_type="Plan"
 prompt="Design the caching layer for the user-service API"
-# Correct alternative: crew:agent planner "design the caching layer…"
+# Correct alternative: crew:run "design the caching layer…"
 ```
 
 ### Decision table
 
 | Context | Read-only search | Write/commit | Crew-routable task |
 |---|---|---|---|
-| Inside crew-dispatched agent | Permitted | Forbidden — use crew agent | Forbidden — use crew:agent |
-| Top-level (no outer crew context) | Forbidden | Forbidden | Forbidden — use crew:agent or crew:run |
+| Inside crew-dispatched agent | Permitted | Forbidden — use crew agent | Forbidden — use crew:run |
+| Top-level (no outer crew context) | Forbidden | Forbidden | Forbidden — use crew:agent for read-only tasks, crew:run for mutating tasks |
 
 ### Why this matters
 
@@ -535,8 +534,8 @@ You are running in MODE=direct (lightweight invocation via crew:agent).
 PROJECT_ROOT: {PROJECT_ROOT}
 TASK: {TASK}
 
-Work in PROJECT_ROOT. Complete the task, commit any code changes to the
-current branch, and return your result.
+Work in PROJECT_ROOT. Complete the read-only task and return your result.
+Do not edit files, write docs, commit code, or mutate state.
 
 Do NOT create pipeline.json, progress.log, register.json, or any
 ~/.agent-crew/state/ entries. This is a lightweight, stateless invocation.

@@ -37,21 +37,6 @@ resolve_source_root() {
     return 0
   fi
 
-  if [ -f "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/source.path" ]; then
-    candidate="$(head -1 "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/source.path" 2>/dev/null || true)"
-    if [ -n "${candidate}" ] && [ -d "${candidate}/core/scripts" ]; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-    if [ -n "${candidate}" ] && [ -d "${candidate}/../adapters" ]; then
-      candidate="$(cd "${candidate}/.." && pwd)"
-      if [ -d "${candidate}/core/scripts" ]; then
-        printf '%s\n' "${candidate}"
-        return 0
-      fi
-    fi
-  fi
-
   printf 'FAIL: could not resolve agent-crew source root from %s\n' "${SCRIPT_DIR}" >&2
   exit 2
 }

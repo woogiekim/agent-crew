@@ -37,16 +37,11 @@ export AGENT_CREW_MODE
 CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 
-# Resolve source root: prefer the explicit env var, then look for the
-# canonical source.path pointer written by crew:update Step 5.
+# Resolve source root: update.md passes the fresh remote checkout in SOURCE_ROOT.
 if [ -z "${SOURCE_ROOT:-}" ]; then
-  if [ -f "${AGENT_CREW_HOME}/source.path" ]; then
-    SOURCE_ROOT="$(cat "${AGENT_CREW_HOME}/source.path")"
-  else
-    printf '[update-global-adapters] WARNING: SOURCE_ROOT not set and source.path not found.\n' >&2
-    printf '  Skipping global adapter update. Run crew:update from the agent-crew source tree.\n' >&2
-    exit 0
-  fi
+  printf '[update-global-adapters] WARNING: SOURCE_ROOT not set.\n' >&2
+  printf '  Skipping global adapter update. crew:update must set SOURCE_ROOT from the remote checkout.\n' >&2
+  exit 0
 fi
 
 SOURCE_DIR="${SOURCE_ROOT}/core"
@@ -108,7 +103,7 @@ prune_and_copy_dir() {
 if [ -d "${CODEX_SKILL_DIR}" ]; then
   printf '[update-global-adapters] Updating Codex bootstrap skill → %s\n' "${CODEX_SKILL_DIR}"
   if [ -d "${ADAPTERS_DIR}/codex/skill/agent-crew" ]; then
-    cp -R "${ADAPTERS_DIR}/codex/skill/agent-crew/." "${CODEX_SKILL_DIR}/"
+    prune_and_copy_dir "${ADAPTERS_DIR}/codex/skill/agent-crew" "${CODEX_SKILL_DIR}"
     printf '[update-global-adapters] Codex bootstrap skill refreshed → %s\n' "${CODEX_SKILL_DIR}"
   else
     printf '[update-global-adapters] WARNING: Codex skill source not found at %s/codex/skill/agent-crew\n' "${ADAPTERS_DIR}" >&2

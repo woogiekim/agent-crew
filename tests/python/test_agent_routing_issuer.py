@@ -96,7 +96,7 @@ class TestAgentRegistryEntry:
         )
 
     def test_issuer_safe_for_direct_invocation(self):
-        """The issuer agent should be safe for direct invocation (crew:agent issuer)."""
+        """The issuer agent remains directly invokable for read-only tasks."""
         text = _load_routing_text()
         rows = _table_rows(text, "Agent Registry")
         issuer_rows = [r for r in rows if r.lstrip("| ").lower().startswith("issuer")]

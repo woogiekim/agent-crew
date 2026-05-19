@@ -26,20 +26,21 @@ not as a custom command prefix.
 
 ## crew:agent — Direct Agent Invocation
 
-For tasks that don't need the full crew:run pipeline overhead, invoke an agent
-directly:
+Use `crew:agent` only for read-only investigation, explanation, lookup, and
+normalization tasks. Any task that would edit files, write docs, create issues,
+commit code, or otherwise mutate state must use `crew:run`.
 
 ```text
 crew:agent "task description"        # auto-routing: crew picks the best agent
-crew:agent backend "task"            # explicit: invoke the backend agent directly
+crew:agent analyst "task"            # explicit: invoke a read-only analysis agent
 crew:agent --list                    # list agents available for direct invocation
 crew:agent --routing                 # display the auto-routing rules table
 ```
 
 The routing logic is defined in `core/rules/agent-routing.md`. Auto-routing
 matches your task against keyword patterns and shows which agent was selected
-and why before spawning. The selected agent runs without a supervisor pipeline —
-no worktree, no `pipeline.json`, no multi-stage review.
+and why before spawning. The selected agent runs without a supervisor pipeline,
+so the command is intentionally limited to read-only tasks.
 
 ## Limitations
 

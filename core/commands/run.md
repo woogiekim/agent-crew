@@ -72,25 +72,13 @@ Resolve the source repository once:
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 
-# Prefer the recorded source path written by install.sh / crew:update.
-# source.path may contain either the repo root OR the core/ subdirectory —
-# normalize to the repo root (the directory that contains both core/ and adapters/).
+# Resolve the local source checkout only when this repo is already present.
+# crew:update no longer records a persistent source path, so this step now
+# skips by default in installed environments.
 SOURCE_ROOT=""
-if [ -f "${AGENT_CREW_HOME}/source.path" ]; then
-  _RECORDED=$(head -1 "${AGENT_CREW_HOME}/source.path" 2>/dev/null || echo "")
-  if [ -d "${_RECORDED}/core" ]; then
-    SOURCE_ROOT="${_RECORDED}"         # recorded path is the repo root
-  elif [ -d "${_RECORDED}/../adapters" ]; then
-    SOURCE_ROOT=$(dirname "${_RECORDED}")  # recorded path is core/ — strip one level
-  fi
-fi
-
-# Fall back to the git toplevel of the CWD when it contains core/ and adapters/.
-if [ -z "${SOURCE_ROOT}" ]; then
-  _TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-  if [ -d "${_TOPLEVEL}/core" ] && [ -d "${_TOPLEVEL}/adapters" ]; then
-    SOURCE_ROOT="${_TOPLEVEL}"
-  fi
+_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -d "${_TOPLEVEL}/core" ] && [ -d "${_TOPLEVEL}/adapters" ]; then
+  SOURCE_ROOT="${_TOPLEVEL}"
 fi
 ```
 

@@ -34,6 +34,11 @@ move, change, migrate, refactor, replace, extend, integrate, test, deploy,
 merge, roll back, or otherwise perform development work, route the request
 through `crew:run`.
 
+`crew:agent` is read-only in Codex. Use it only for explanation, lookup,
+investigation, or normalization tasks that do not mutate files, docs, issues,
+commits, or any other repo/state artifact. If the request would change
+anything, use `crew:run`.
+
 This also covers **artifact and documentation edits** — any request to modify,
 save, publish, refine, or update repo/worktree/state artifacts (including
 markdown files, issue drafts, work-item descriptions, docs, or any file the

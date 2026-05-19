@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-05-19T01:31:44Z from 10 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-05-19T04:02:05Z from 13 mnemos rules (host=repo) -->
 
 # agent-crew - Global Rules
 
@@ -45,6 +45,15 @@ This is a system behavior principle. It is not tied to a specific AI vendor.
 Host adapters may expose different invocation methods, but the workflow intent
 remains provider-neutral.
 
+## Agent Routing Criteria
+
+| Request Type | Execution Method |
+|---|---|
+| Backend API, domain logic, database work | `crew:run` → supervisor → backend |
+| UI, full-stack, or implementation workflows | `crew:run` → supervisor → pipeline agents |
+| Multiple independent features | `crew:run` with one supervisor per task |
+| Requirements analysis only | `crew:run` → supervisor → planner (no implementation stages) |
+
 ## Parallel-First Execution Rule
 
 **Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
@@ -66,6 +75,25 @@ problem the resolver already solves.
 - The tasks are logically a single atomic unit
 
 File overlap alone is never a reason to serialize.
+
+## Auto-Execution Triggers
+
+> Requirements collection (Step 5 of `crew:run`) is always mandatory and must
+> never be skipped, even when the request seems self-evident.
+
+Spawn an agent or workflow when the user asks to build, implement, create, add,
+update, fix, remove, move, change, migrate, refactor, replace, extend, or
+integrate development work.
+
+If the user gives a short confirmation such as "go", "yes", "ok", "continue",
+or "proceed" and the prior context is about implementation work, continue
+through the appropriate `crew:<intent>` workflow instead of answering directly.
+
+For questions and explanations, route through `crew:agent` (auto-routing
+selects analyst for codebase Q, historian for session/git/project state Q).
+Direct inline response is permitted ONLY for trivial single-fact replies
+(yes/no, file path lookup, single-number metric) AND when no agent in the
+registry has the right scope.
 
 ## Codex Routing Fallback
 
@@ -166,6 +194,56 @@ Project state is stored under:
 
 Use the host AI tool's structured choice UI when confirmation is required.
 Do not add duplicate free-form options if the host UI already provides one.
+
+## Approval Rule (Framework-Level)
+
+### Centralized Approval Gate
+
+All approval decisions for the following actions are owned exclusively by the
+orchestrator (crew:run for N > 1, supervisor for N == 1):
+
+- Merge (git merge)
+- Push to remote (git push)
+- Deployment (any deploy script or command)
+- Destructive operations (delete, reset, overwrite)
+- Branch cleanup (git branch -d / -D)
+
+**Stage agents (devops, and any agent that performs destructive operations) MUST NOT
+issue the host's interactive question mechanism for any of the above actions
+(see `core/rules/capabilities/interactive-question.md`).** Instead, those agents must:
+
+1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
+2. Return a `PLAN:` block to the supervisor with the following fields:
+   ```text
+   PLAN:
+     actions: {list of planned commands}
+     risk: {none | low | medium | high}
+     reversible: {yes | no}
+   STATUS: plan_ready
+   ```
+3. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
+   (up to 60s timeout before reporting BLOCKED)
+4. Execute only after receiving `APPROVED`; halt with STATUS: BLOCKED on
+   `CANCELLED` or timeout
+
+### Orchestrator Approval Gate
+
+The orchestrator (crew:run or supervisor) issues the consolidated structured
+user-choice intent (see `core/rules/capabilities/interactive-question.md`)
+after collecting all PLAN blocks. This ensures:
+- A single approval prompt regardless of how many stage agents need approval
+- A consolidated view of all planned actions across all tasks (for N > 1)
+- No duplicate or out-of-order approval dialogs
+
+All structured user-choice calls (per `core/rules/capabilities/interactive-question.md`)
+for these actions must include at minimum:
+- header: action type (e.g., "Deploy", "Approve All Actions", "Merge", "Push", "Rollback")
+- question: describing the specific action(s) with relevant details
+- options: at minimum "Approve — proceed" and "Cancel — hold"
+
+Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
+are FORBIDDEN at every level of the system. Violating this rule is a workflow
+consistency error.
 
 ## Subagent Plan Approval Rule
 
