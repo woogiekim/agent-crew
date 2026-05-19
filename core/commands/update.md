@@ -325,10 +325,30 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
      bash "${AGENT_CREW_HOME}/scripts/update-global-adapters.sh"
    ```
 
-   **(b) Project-local update** — re-runs the detected host adapter for the
-   current project so project-local files are also refreshed.  The fan-out
-   loop in `setup-host.sh` now runs all detected+installed adapters in
-   sequence instead of stopping at the first match (P1 fix):
+3. Update settings.json hook registrations (idempotent):
+
+   ```bash
+   AGENT_CREW_MODE=update \
+   AGENT_CREW_INSTALL_CLAUDE_COMPAT=0 \
+   AGENT_CREW_SOURCE_DIR="${SOURCE_ROOT}" \
+     bash "${SOURCE_ROOT}/install.sh"
+   ```
+
+   This re-runs the marker-merge helpers so any newly added global hooks are
+   registered without duplicating existing entries. `AGENT_CREW_SOURCE_DIR`
+   MUST point to the repository root (the directory containing `core/` and
+   `adapters/`), not to `${SOURCE_DIR}`. `AGENT_CREW_INSTALL_CLAUDE_COMPAT=0`
+   prevents this global hook-registration pass from re-running a project-local
+   Claude adapter and overwriting the current project's active-host
+   `capabilities.json`.
+
+4. **Project-local update** — re-runs the detected host adapter for the
+   current project so project-local files are also refreshed. This step runs
+   after the global `install.sh` pass so the final
+   `${STATE_DIR}/capabilities.json` belongs to the active project host, not to
+   the Claude compatibility layer. The fan-out loop in `setup-host.sh` runs all
+   detected+installed adapters in sequence instead of stopping at the first
+   match (P1 fix):
 
    ```bash
    PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
@@ -336,17 +356,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
      bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
    ```
 
-3. Update settings.json hook registrations (idempotent):
-
-   ```bash
-   AGENT_CREW_MODE=update AGENT_CREW_SOURCE_DIR="${SOURCE_DIR}" \
-     bash "${SOURCE_DIR}/install.sh"
-   ```
-
-   This re-runs the marker-merge helpers so any newly added hooks are
-   registered without duplicating existing entries.
-
-4. **Sync host AI instruction files from mnemos (Phase L17).** After the
+5. **Sync host AI instruction files from mnemos (Phase L17).** After the
    asset refresh and adapter re-run, materialize the canonical instruction
    rules stored in mnemos into the host AI md files. This is the
    companion to `crew:sync-instructions` and keeps Claude / Codex /

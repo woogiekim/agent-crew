@@ -284,7 +284,8 @@ install_claude_compat() {
 
   # Export SOURCE_ROOT so adapters/claude/setup.sh can use sync_system_agents
   # with the correct source reference during install/update runs.
-  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" SOURCE_ROOT="${SOURCE_ROOT}" \
+  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" \
+    AGENT_CREW_WRITE_CAPABILITIES=0 SOURCE_ROOT="${SOURCE_ROOT}" \
     "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
@@ -471,32 +472,34 @@ merge_global_agents() {
   cp "$src" "$dest"
 }
 
-install_global
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  install_global
 
-CMD_COUNT=$(ls "${AGENT_CREW_HOME}/system/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
-AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/system/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  CMD_COUNT=$(ls "${AGENT_CREW_HOME}/system/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/system/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
 
-echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  agent-crew global install complete!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo ""
-echo "  Install path: ${AGENT_CREW_DIR}"
-echo "  Installed commands: ${CMD_COUNT} / agents: ${AGENT_COUNT}"
-echo ""
-echo "  Provider-neutral usage from any project:"
-echo "    crew:setup                       # host adapter install + workspace init"
-echo "    crew:run \"request\"              # run one task through supervisor"
-echo "    crew:run \"TaskA\" | \"TaskB\"      # run independent tasks in parallel"
-echo "    crew:cost                        # show session cost summary"
-echo ""
-echo "  Agent creation:"
-echo "    crew:agent-maker                 # design and create AGENTS.md / Skill / Subagent / Hook files"
-echo "  Agent layers:"
-echo "    ~/.agent-crew/system/agents/  # crew-managed built-in agents (updated by crew:update)"
-echo "    ~/.agent-crew/user/agents/    # user-managed custom agents (never overwritten)"
-echo "    ~/.claude/agents/             # generated merge destination (do not edit directly)"
-echo ""
-echo "  Host adapters may expose native aliases such as slash commands."
-echo -e "${GREEN}  Start in a project with crew:setup.${NC}"
-echo ""
+  echo ""
+  echo -e "${GREEN}========================================${NC}"
+  echo -e "${GREEN}  agent-crew global install complete!${NC}"
+  echo -e "${GREEN}========================================${NC}"
+  echo ""
+  echo "  Install path: ${AGENT_CREW_DIR}"
+  echo "  Installed commands: ${CMD_COUNT} / agents: ${AGENT_COUNT}"
+  echo ""
+  echo "  Provider-neutral usage from any project:"
+  echo "    crew:setup                       # host adapter install + workspace init"
+  echo "    crew:run \"request\"              # run one task through supervisor"
+  echo "    crew:run \"TaskA\" | \"TaskB\"      # run independent tasks in parallel"
+  echo "    crew:cost                        # show session cost summary"
+  echo ""
+  echo "  Agent creation:"
+  echo "    crew:agent-maker                 # design and create AGENTS.md / Skill / Subagent / Hook files"
+  echo "  Agent layers:"
+  echo "    ~/.agent-crew/system/agents/  # crew-managed built-in agents (updated by crew:update)"
+  echo "    ~/.agent-crew/user/agents/    # user-managed custom agents (never overwritten)"
+  echo "    ~/.claude/agents/             # generated merge destination (do not edit directly)"
+  echo ""
+  echo "  Host adapters may expose native aliases such as slash commands."
+  echo -e "${GREEN}  Start in a project with crew:setup.${NC}"
+  echo ""
+fi
