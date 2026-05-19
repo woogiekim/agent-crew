@@ -9,6 +9,7 @@ description: >
   creating new ones.
   Output: Work items created via the selected backend adapter, with a summary
   table of issue titles, priorities, states, and URLs printed after completion.
+reasoning_tier: balanced
 model: inherit
 ---
 
