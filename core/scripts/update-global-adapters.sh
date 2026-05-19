@@ -86,6 +86,24 @@ fi
 # ── Codex global paths ────────────────────────────────────────────────────────
 CODEX_SKILL_DIR="${CODEX_HOME}/skills/agent-crew"
 CODEX_CREW_SKILLS_DIR="${CODEX_HOME}/agent-crew/skills"
+CODEX_AGENTS_DIR="${CODEX_HOME}/agents"
+
+prune_and_copy_dir() {
+  local src="$1" dest="$2"
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+
+  while IFS= read -r -d '' dest_file; do
+    local rel
+    rel="${dest_file#"${dest}/"}"
+    if [ ! -e "${src}/${rel}" ]; then
+      printf '[update-global-adapters] Removing stale Codex global file: %s/%s\n' "${dest}" "${rel}"
+      rm -f "${dest_file}"
+    fi
+  done < <(find "${dest}" -type f -print0 2>/dev/null)
+
+  cp -R "${src}/." "${dest}/"
+}
 
 if [ -d "${CODEX_SKILL_DIR}" ]; then
   printf '[update-global-adapters] Updating Codex bootstrap skill → %s\n' "${CODEX_SKILL_DIR}"
@@ -101,13 +119,20 @@ fi
 
 if [ -d "${CODEX_CREW_SKILLS_DIR}" ]; then
   printf '[update-global-adapters] Updating Codex crew-skills mirror → %s\n' "${CODEX_CREW_SKILLS_DIR}"
-  if [ -d "${AGENT_CREW_HOME}/system/agents/skills" ]; then
-    mkdir -p "${CODEX_CREW_SKILLS_DIR}"
-    cp -r "${AGENT_CREW_HOME}/system/agents/skills/." "${CODEX_CREW_SKILLS_DIR}/" 2>/dev/null || true
+  if [ -d "${AGENT_CREW_HOME}/skills" ]; then
+    prune_and_copy_dir "${AGENT_CREW_HOME}/skills" "${CODEX_CREW_SKILLS_DIR}"
     printf '[update-global-adapters] Codex crew-skills mirror refreshed → %s\n' "${CODEX_CREW_SKILLS_DIR}"
   fi
 else
   printf '[update-global-adapters] Skipping Codex crew-skills mirror — directory not present (%s)\n' "${CODEX_CREW_SKILLS_DIR}"
+fi
+
+if [ -d "${ADAPTERS_DIR}/codex/template/agents" ]; then
+  printf '[update-global-adapters] Updating Codex global agents → %s\n' "${CODEX_AGENTS_DIR}"
+  prune_and_copy_dir "${ADAPTERS_DIR}/codex/template/agents" "${CODEX_AGENTS_DIR}"
+  printf '[update-global-adapters] Codex global agents refreshed → %s\n' "${CODEX_AGENTS_DIR}"
+else
+  printf '[update-global-adapters] Skipping Codex global agents — source not found at %s/codex/template/agents\n' "${ADAPTERS_DIR}" >&2
 fi
 
 printf '[update-global-adapters] Global adapter refresh complete.\n'

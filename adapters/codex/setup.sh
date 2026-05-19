@@ -221,7 +221,7 @@ if skipped:
 PYEOF
 }
 
-copy_dir_contents "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
+sync_dir_contents_prune "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
 
 # Note: reasoning_tier is NOT materialized on the Codex adapter today.
 # Codex's current per-agent TOML schema does not honor a `model = "..."`
@@ -267,7 +267,7 @@ merge_skills_to_discovery \
   "${AGENT_CREW_HOME}/skills"
 
 # Copy unified skills to Codex host discovery path
-copy_dir_contents "${AGENT_CREW_HOME}/skills" "${HOME}/.codex/agent-crew/skills"
+sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${HOME}/.codex/agent-crew/skills"
 
 # Write user/skills README placeholder (idempotent)
 if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then

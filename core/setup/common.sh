@@ -9,6 +9,24 @@ copy_dir_contents() {
   find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
 }
 
+sync_dir_contents_prune() {
+  local src="$1" dest="$2"
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+
+  while IFS= read -r -d '' dest_file; do
+    local rel
+    rel="${dest_file#"${dest}/"}"
+    if [ ! -e "${src}/${rel}" ]; then
+      printf '[agent-crew] Removing stale file from %s: %s\n' "${dest}" "${rel}"
+      rm -f "${dest_file}"
+    fi
+  done < <(find "${dest}" -type f -print0 2>/dev/null)
+
+  cp -R "${src}/." "${dest}/"
+  find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
+}
+
 register_local_git_excludes() {
   local project_root="$1"
   shift

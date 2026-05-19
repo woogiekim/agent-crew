@@ -265,6 +265,7 @@ resolve_source_dir() {
      "${AGENT_CREW_HOME}/system/agents/task-runner.md" \
      "${CLAUDE_DIR}/agents/task-runner.md" \
      "${CLAUDE_DIR}/agent-crew/agents/task-runner.md" \
+     "${CODEX_HOME:-${HOME}/.codex}/agents/task-runner.toml" \
      "${PROJECT_ROOT_LOCAL}/.codex/agents/task-runner.toml"
    ```
 

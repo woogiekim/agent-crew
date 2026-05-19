@@ -5,7 +5,7 @@
 # tmp dir, so we can verify create/update/skip semantics without a real
 # mnemos store.
 #
-# The script captures exactly 12 rules via `capture_rule` calls. The mock
+# The script captures one rule per `capture_rule` call. The mock
 # accepts:
 #   mnemos read   <id>          → emits {"content": "..."} or empty
 #   mnemos capture --id <id> --content <body> ...   → writes flat file
@@ -15,6 +15,7 @@ set -u
 source "$(dirname "$0")/_lib.bash"
 
 SCRIPT="${SCRIPTS_DIR}/seed-instruction-rules.sh"
+EXPECTED_RULE_COUNT=$(grep -c '^[[:space:]]*capture_rule ' "${SCRIPT}" | tr -d '[:space:]')
 
 # --------------------------------------------------------------------------- #
 # Mock mnemos stub                                                            #
@@ -103,7 +104,7 @@ rc=$?
 assert_exit 2 "${rc}"
 
 # --------------------------------------------------------------------------- #
-# --apply on empty store: creates all 12 rules                                #
+# --apply on empty store: creates all rules                                   #
 # --------------------------------------------------------------------------- #
 
 TMP=$(make_tmp)
@@ -114,20 +115,20 @@ out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "--apply created 12 rules"
+it "--apply created all rules"
 # Count "+ CREATE" lines emitted by capture_rule
 n=$(echo "${out}" | grep -c "+ CREATE")
-assert_eq 12 "${n}" "rules created"
+assert_eq "${EXPECTED_RULE_COUNT}" "${n}" "rules created"
 
-it "--apply summary shows created=12"
-assert_contains "${out}" "created=12"
+it "--apply summary shows created count"
+assert_contains "${out}" "created=${EXPECTED_RULE_COUNT}"
 
 it "--apply persisted at least one rule body (input-language)"
 stored="${TMP}/mnemos-store/rule:input-language"
 assert_file_exists "${stored}"
 
 # --------------------------------------------------------------------------- #
-# Re-run --apply with identical content: all 12 skipped                       #
+# Re-run --apply with identical content: all skipped                          #
 # --------------------------------------------------------------------------- #
 
 it "--apply re-run with identical store: exit 0"
@@ -135,8 +136,8 @@ out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "--apply re-run: summary shows skipped=12"
-assert_contains "${out}" "skipped=12"
+it "--apply re-run: summary shows skipped count"
+assert_contains "${out}" "skipped=${EXPECTED_RULE_COUNT}"
 
 it "--apply re-run: no rules updated"
 assert_contains "${out}" "updated=0"

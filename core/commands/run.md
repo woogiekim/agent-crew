@@ -996,6 +996,49 @@ A `capabilities.json` that exists but is empty or unparseable is treated as
 configured (the supervisor falls back to all-false flags — this is expected
 behaviour for minimal setups, not an error).
 
+If `capabilities.json` declares a different host than the active adapter, the
+runtime MUST refresh the active host adapter before continuing. This prevents a
+shared workspace initialized under Claude from being reused by Codex with stale
+Claude capability flags.
+
+Current host resolution:
+
+```bash
+CURRENT_HOST="${AGENT_CREW_HOST:-auto}"
+if [ "${CURRENT_HOST}" = "auto" ]; then
+  if [ -n "${CODEX:-}${CODEX_CI:-}${CODEX_THREAD_ID:-}${CODEX_MANAGED_BY_NPM:-}" ]; then
+    CURRENT_HOST="codex"
+  else
+    CURRENT_HOST=""
+  fi
+fi
+```
+
+Host mismatch guard:
+
+```bash
+CAPABILITIES_HOST=$(python3 -c "
+import json, sys
+try:
+    print(json.load(open('${CAPABILITIES_FILE}')).get('host', ''))
+except Exception:
+    print('')
+" 2>/dev/null)
+
+if [ -n "${CURRENT_HOST}" ] && [ -n "${CAPABILITIES_HOST}" ] \
+   && [ "${CAPABILITIES_HOST}" != "${CURRENT_HOST}" ]; then
+  if [ -x "${AGENT_CREW_HOME}/adapters/${CURRENT_HOST}/setup.sh" ]; then
+    AGENT_CREW_HOST="${CURRENT_HOST}" AGENT_CREW_MODE=update \
+      bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
+  else
+    printf 'Error: Project '\''%s'\'' capabilities were generated for host '\''%s'\'' but current host is '\''%s'\''.\n' \
+      "${PROJECT_NAME}" "${CAPABILITIES_HOST}" "${CURRENT_HOST}"
+    printf 'Run crew:setup under the current host to refresh capabilities.json.\n'
+    return 1 2>/dev/null || exit 1
+  fi
+fi
+```
+
 The guard is expressed as:
 
 ```bash

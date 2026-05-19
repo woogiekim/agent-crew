@@ -6,9 +6,37 @@
 # Sub-agents must use `memory capture` (not `mnemos capture` directly) so that
 # pipelines work even when no memory backend is installed.
 # See: https://github.com/woogiekim/agent-crew/issues/15
-if command -v mnemos >/dev/null 2>&1; then
-  exec mnemos "$@"
-else
+if ! command -v mnemos >/dev/null 2>&1; then
   echo "[memory] no backend installed — skipping (install mnemos to enable)" >&2
   exit 0
 fi
+
+if [ "${1:-}" != "capture" ]; then
+  exec mnemos "$@"
+fi
+
+set +e
+OUTPUT="$(mnemos "$@" 2>&1)"
+RC=$?
+set -e
+
+printf '%s\n' "${OUTPUT}"
+
+if [ "${RC}" -eq 0 ]; then
+  exit 0
+fi
+
+CAPTURE_ID="$(printf '%s' "${OUTPUT}" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+m = re.search(r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", text, re.I)
+print(m.group(0) if m else "")
+' 2>/dev/null || true)"
+
+if [ -n "${CAPTURE_ID}" ] && printf '%s' "${OUTPUT}" | grep -Eqi 'failed to push|remote rejected|cannot lock ref|sync failed|failed to sync|git command failed'; then
+  printf '[memory] captured locally: %s\n' "${CAPTURE_ID}" >&2
+  printf '[memory] warning: vault sync failed; run mnemos sync/pull before retrying push\n' >&2
+  exit 0
+fi
+
+exit "${RC}"

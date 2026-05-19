@@ -22,7 +22,41 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+resolve_source_root() {
+  local candidate
+
+  candidate="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+  if [ -d "${candidate}/core/scripts" ] && [ -d "${candidate}/core/schemas" ]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+
+  if [ -n "${AGENT_CREW_SOURCE_DIR:-}" ] && [ -d "${AGENT_CREW_SOURCE_DIR}/core/scripts" ]; then
+    printf '%s\n' "${AGENT_CREW_SOURCE_DIR}"
+    return 0
+  fi
+
+  if [ -f "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/source.path" ]; then
+    candidate="$(head -1 "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/source.path" 2>/dev/null || true)"
+    if [ -n "${candidate}" ] && [ -d "${candidate}/core/scripts" ]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+    if [ -n "${candidate}" ] && [ -d "${candidate}/../adapters" ]; then
+      candidate="$(cd "${candidate}/.." && pwd)"
+      if [ -d "${candidate}/core/scripts" ]; then
+        printf '%s\n' "${candidate}"
+        return 0
+      fi
+    fi
+  fi
+
+  printf 'FAIL: could not resolve agent-crew source root from %s\n' "${SCRIPT_DIR}" >&2
+  exit 2
+}
+
+REPO_ROOT="$(resolve_source_root)"
 SCRIPTS_DIR="${REPO_ROOT}/core/scripts"
 
 # Prerequisite
@@ -66,7 +100,7 @@ run_capture_rc() {
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
-export AGENT_CREW_HOME="${REPO_ROOT}"  # so validator finds core/schemas/
+export AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 STATE_DIR="${TMPDIR}/state"
 TASK_ID="20260516-120000-0"
 TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"

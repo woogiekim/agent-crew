@@ -37,6 +37,34 @@ rc=$?
 assert_exit 0 "${rc}" "missing-source-dir return"
 
 # --------------------------------------------------------------------------- #
+# sync_dir_contents_prune                                                     #
+# --------------------------------------------------------------------------- #
+
+TMP=$(make_tmp)
+mkdir -p "${TMP}/src/sub" "${TMP}/dst/sub"
+echo "alpha" > "${TMP}/src/alpha.md"
+echo "beta" > "${TMP}/src/sub/beta.md"
+echo "old" > "${TMP}/dst/stale.md"
+echo "old-nested" > "${TMP}/dst/sub/stale-nested.md"
+
+it "sync_dir_contents_prune exits 0"
+sync_dir_contents_prune "${TMP}/src" "${TMP}/dst" >/dev/null 2>&1
+rc=$?
+assert_exit 0 "${rc}" "sync_dir_contents_prune exit"
+
+it "sync_dir_contents_prune copies top-level source file"
+assert_file_exists "${TMP}/dst/alpha.md"
+
+it "sync_dir_contents_prune copies nested source file"
+assert_file_exists "${TMP}/dst/sub/beta.md"
+
+it "sync_dir_contents_prune removes stale top-level file"
+assert_file_absent "${TMP}/dst/stale.md"
+
+it "sync_dir_contents_prune removes stale nested file"
+assert_file_absent "${TMP}/dst/sub/stale-nested.md"
+
+# --------------------------------------------------------------------------- #
 # sync_system_agents                                                          #
 # --------------------------------------------------------------------------- #
 
