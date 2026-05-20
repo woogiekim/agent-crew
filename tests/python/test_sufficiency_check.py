@@ -123,6 +123,28 @@ class TestCommercializationPrompt:
         assert result.stdout == ""
         assert "REQUIREMENTS: |" in out.read_text()
 
+    def test_second_commercialization_e2e_prompt_is_sufficient(self):
+        task = (
+            "Run a second commercialization-focused end-to-end validation of "
+            "agent-crew, prioritizing performance and answer quality. Evaluate "
+            "agent-crew strictly as a prompt-internal orchestration/control "
+            "layer on top of a host AI execution plane, not as an autonomous "
+            "commercial harness. Measure current behavior after the latest "
+            "fixes across crew setup, crew run, crew status, crew update, "
+            "crew agent, fake-host E2E, host handoff quality, stale or "
+            "incomplete pipeline handling, status and telemetry guidance, and "
+            "prompt-runtime overhead. Decide whether latency is acceptable for "
+            "adoption and whether user-visible answer and failure quality is "
+            "actionable enough for commercial use. If narrow safe issues are "
+            "found, implement fixes, run relevant and full tests, and commit "
+            "locally. Do not push or merge without approval."
+        )
+        assert check()(task) == "SUFFICIENT"
+        signals = _module.sufficiency_signals(task)
+        assert signals["workflow_targets"] >= 2
+        assert signals["has_perf"] is True
+        assert signals["has_quality"] is True
+
 
 class TestQuestionVeto:
     def test_question_mark_veto(self):
