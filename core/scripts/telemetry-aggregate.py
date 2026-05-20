@@ -170,7 +170,7 @@ RESULT_STATUS_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 RESULT_FIELD_RE = re.compile(
-    r"^(?:\*\*)?(description|task|branch):\*{0,2}\s*(.+?)\s*$",
+    r"^(?:\*\*)?(description|task|branch|blocker):\*{0,2}\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -205,6 +205,8 @@ def read_result_md(task_dir):
             result.setdefault("task", value)
         elif key == "branch" and value:
             result["branch"] = value
+        elif key == "blocker" and value:
+            result.setdefault("blockers", []).append(value)
 
     return result
 
@@ -219,7 +221,7 @@ def aggregate_task(state_dir, task_dir):
 
     terminal = next((e for e in reversed(events)
                      if e.get("event") in ("COMPLETED", "BLOCKED",
-                                           "COST_BLOCKED")), None)
+                                           "COST_BLOCKED", "STATUS")), None)
 
     # Status / current phase. result.md is the strongest terminal signal:
     # older or interrupted runs can leave register.json stuck at phase_0 even
@@ -227,7 +229,11 @@ def aggregate_task(state_dir, task_dir):
     if result.get("status") in ("completed", "blocked"):
         status = result["status"]
         current_phase = result.get("current_phase", status)
-        blocked_by = result.get("blockers", [])
+        blocked_by = list(result.get("blockers", []))
+        if reg:
+            for blocker in reg.get("blocked_by", []) or []:
+                if blocker not in blocked_by:
+                    blocked_by.append(blocker)
         stages_completed = None
     elif reg:
         status_value = reg.get("current_phase", "")

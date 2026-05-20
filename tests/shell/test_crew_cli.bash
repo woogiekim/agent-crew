@@ -63,6 +63,11 @@ assert_contains "${result}" "STATUS: blocked"
 it "crew run blocked result references host bridge"
 assert_contains "${result}" "host AI bridge has not completed this handoff"
 
+it "crew status --json reports blocked run blocker"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)
+assert_contains "${out}" "\"host AI bridge has not completed this handoff\""
+assert_contains "${out}" "\"host_bridge_not_invoked\""
+
 it "crew run fake host can complete"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --fake-host-result completed "fake host task" 2>&1)
 rc=$?
