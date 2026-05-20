@@ -280,7 +280,7 @@ def guidance_for(blockers, status, current_phase):
         )
     if not guidance and status == "blocked":
         guidance.append("Inspect result.md and progress.log for the blocking reason.")
-    return guidance
+    return list(dict.fromkeys(guidance))
 
 
 def aggregate_task(state_dir, task_dir):

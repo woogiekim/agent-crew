@@ -258,6 +258,33 @@ class TestTelemetryAggregate:
         assert guidance
         assert "Invoke the host bridge" in guidance[0]
 
+    def test_host_bridge_guidance_is_deduplicated(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Equivalent host-bridge blockers should not repeat the same guidance."""
+        task_id = "20260101-120452-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        reg = json.loads((td / "register.json").read_text())
+        reg["blocked_by"] = [
+            "host AI bridge has not completed this handoff",
+            "host_bridge_not_invoked",
+        ]
+        (td / "register.json").write_text(json.dumps(reg))
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        guidance = payload["tasks"][0]["guidance"]
+        assert len(guidance) == 1
+        assert "Invoke the host bridge" in guidance[0]
+
     def test_recent_selector_limits_count(
         self, script_runner, env_with_home, state_dir
     ):
