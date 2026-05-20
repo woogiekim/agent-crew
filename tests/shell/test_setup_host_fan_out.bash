@@ -51,6 +51,9 @@ SH
   cat >"${acHome}/adapters/claude/setup.sh" <<SH
 #!/usr/bin/env bash
 echo "claude" >> "${ran}"
+if [ "\${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
+  echo "claude" > "${acHome}/capabilities-host"
+fi
 SH
   chmod +x "${acHome}/adapters/claude/setup.sh"
 
@@ -66,6 +69,9 @@ SH
   cat >"${acHome}/adapters/codex/setup.sh" <<SH
 #!/usr/bin/env bash
 echo "codex" >> "${ran}"
+if [ "\${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
+  echo "codex" > "${acHome}/capabilities-host"
+fi
 SH
   chmod +x "${acHome}/adapters/codex/setup.sh"
 
@@ -230,5 +236,43 @@ assert_contains "${RAN5_CONTENTS}" "codex"
 
 it "explicit HOST=auto still refreshes generic adapter"
 assert_contains "${RAN5_CONTENTS}" "generic"
+
+# ---------------------------------------------------------------------------
+# Test: update fan-out refreshes installed adapters but writes capabilities
+#       only from the active host adapter.
+# ---------------------------------------------------------------------------
+
+TMP6=$(make_tmp)
+ACHOME6=$(make_acHome)
+RAN6="${ACHOME6}/ran"
+
+CLAUDE_INST6="${TMP6}/claude-inst"
+CODEX_INST6="${TMP6}/codex-inst"
+mkdir -p "${CLAUDE_INST6}/agent-crew"
+mkdir -p "${CODEX_INST6}/skills/agent-crew"
+
+cat >"${ACHOME6}/adapters/claude/detect.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "${ACHOME6}/adapters/claude/detect.sh"
+
+AGENT_CREW_HOME="${ACHOME6}" \
+CLAUDE_DIR="${CLAUDE_INST6}" \
+CODEX_HOME="${CODEX_INST6}" \
+AGENT_CREW_MODE=update \
+AGENT_CREW_HOST=auto \
+  bash "${SETUP_DIR}/setup-host.sh" "$(make_tmp)" 2>/dev/null
+
+RAN6_CONTENTS=$(cat "${RAN6}" 2>/dev/null || echo "")
+it "active-host capability test still refreshes claude"
+assert_contains "${RAN6_CONTENTS}" "claude"
+
+it "active-host capability test still refreshes codex"
+assert_contains "${RAN6_CONTENTS}" "codex"
+
+it "update fan-out writes capabilities from active claude only"
+CAP_HOST=$(cat "${ACHOME6}/capabilities-host" 2>/dev/null || echo "")
+assert_eq "claude" "${CAP_HOST}"
 
 end_report

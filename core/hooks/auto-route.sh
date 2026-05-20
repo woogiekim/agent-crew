@@ -130,7 +130,7 @@ QUESTION_PAT = (
     r"어떻게|뭐야|무엇|왜|어떤|설명|"
     r"알려|이해|뭔지|뭔가|뭐가|뭘|어디|누가|언제|"
     r"있나요|합니까|인가요|할까요|됩니까|인지요|했나요|"
-    r"활용|사용하고|쓰고|동작|작동|비교|평가|쓸만|쓸\s*만|솔직"
+    r"활용|사용하고|쓰고|동작|작동|비교|평가|체크|쓸만|쓸\s*만|솔직"
 )
 # Truly atomic facts that need no agent — a bare yes/no, a bare file path,
 # or a bare single number. These stay inline even when QUESTION_PAT fires.
@@ -187,10 +187,10 @@ ARTIFACT_NOUN_PAT = (
     r"\.md\b|\.txt\b|docs?/"
 )
 READONLY_REVIEW_PAT = (
-    r"review|evaluate|assess|compare|honest\s+review|"
+    r"review|evaluate|assess|compare|honest\s+review|check|diagnos(?:e|is)|"
     r"inspect|determine|identify\s+(?:gaps|issues|problems|fixes)|"
     r"리뷰|검토|평가|비교|솔직|쓸만|쓸\s*만|"
-    r"괜찮|문제점|개선점|부족|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
+    r"괜찮|문제점|개선점|부족|체크|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
 )
 REVIEW_MUTATION_PAT = (
     r"fix\s+it|apply\s+the\s+fix|make\s+the\s+change|implement|"

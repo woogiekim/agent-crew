@@ -29,6 +29,13 @@ run_adapter() {
   bash "${adapter}" "${PROJECT_ROOT}" || true
 }
 
+detect_active_host() {
+  local host="$1"
+  local detect="${AGENT_CREW_HOME}/adapters/${host}/detect.sh"
+  [ -x "${detect}" ] || return 1
+  "${detect}" >/dev/null 2>&1
+}
+
 # Installation-presence guard: return 0 if an adapter has been previously
 # installed on this machine, 1 if it has never been set up.  Adapters that
 # pass this check are eligible to be re-run during crew:update fan-out.
@@ -57,6 +64,14 @@ if [ "${HOST}" != "auto" ]; then
   exit $?
 fi
 
+ACTIVE_HOST=""
+for candidate in claude codex; do
+  if detect_active_host "${candidate}"; then
+    ACTIVE_HOST="${candidate}"
+    break
+  fi
+done
+
 # Fan-out: iterate all known adapter directories and run each one that is
 # installed on this machine (filesystem check via is_installed()).  This
 # replaces the previous detect.sh-gated loop so that all installed adapters
@@ -70,7 +85,11 @@ for adapter_dir in "${AGENT_CREW_HOME}"/adapters/*/; do
   # Skip generic here; it is handled as the unconditional fallback below.
   [ "${host_name}" = "generic" ] && continue
   if is_installed "${host_name}"; then
-    run_adapter "${host_name}"
+    if [ "${AGENT_CREW_MODE}" = "update" ] && [ "${host_name}" != "${ACTIVE_HOST}" ]; then
+      AGENT_CREW_WRITE_CAPABILITIES=0 run_adapter "${host_name}"
+    else
+      run_adapter "${host_name}"
+    fi
     detected_any=1
   else
     printf 'Skipping %s adapter (not installed on this machine)\n' "${host_name}"

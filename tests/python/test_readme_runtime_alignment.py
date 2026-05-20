@@ -64,6 +64,13 @@ def test_readme_documents_one_shot_dangerous_command_approval():
     assert "exact `kind` and\n`command`" in text
 
 
+def test_readme_explains_requirements_question_skip_and_wait_contract():
+    text = readme_text()
+    assert "A missing question can therefore\nbe intentional" in text
+    assert "`SUFFICIENT` tasks synthesize a `REQUIREMENTS` block inline" in text
+    assert "`AMBIGUOUS` tasks must ask and wait" in text
+
+
 def test_readme_does_not_overstate_native_runtime_execution():
     text = readme_text()
     assert "The native `crew`\nCLI remains the deterministic control plane" in text

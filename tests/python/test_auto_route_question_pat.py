@@ -206,6 +206,27 @@ class TestReadOnlyReviewEvaluationRouting:
         assert "routing to analyst" in ctx
         assert "[agent-crew] STOP" not in ctx
 
+    def test_korean_diagnostic_checklist_routes_to_analyst_not_stop(self):
+        payload = {
+            "prompt": (
+                "아래 항목 체크해주세요. 클로드코드에서 crew:update 후 capabilities.json이 "
+                "host=codex로 남는 문제, 코덱스 요구사항 수집에서 질문을 안 하는 이유, "
+                "백엔드나 프론트엔드 구현이 아닌데 질문마다 브랜치가 늘어나는 문제를 확인해주세요."
+            )
+        }
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] ROUTE" in ctx
+        assert "routing to analyst" in ctx
+        assert "[agent-crew] STOP" not in ctx
+
     def test_reviewer_stage_request_still_routes_to_stop(self):
         payload = {"prompt": "리뷰어 붙여서 테스트 돌려주세요"}
         proc = subprocess.run(

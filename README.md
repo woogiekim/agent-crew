@@ -278,7 +278,12 @@ Each `supervisor` handles its full pipeline independently. **Remote push never h
 
 ### Requirements Collection: Sufficiency-Gated Architecture
 
-Requirements are collected only when the task description is not specific enough to plan safely. Both the orchestrator and supervisor use the same sufficiency check before invoking the requirements agent.
+Requirements are collected only when the task description is not specific enough
+to plan safely. Both the orchestrator and supervisor use the same sufficiency
+check before invoking the requirements agent. A missing question can therefore
+be intentional: `SUFFICIENT` tasks synthesize a `REQUIREMENTS` block inline and
+do not ask the user. `AMBIGUOUS` tasks must ask and wait through the host's
+structured-question surface or the adapter's markdown fallback.
 
 #### Layer 1 — Orchestrator (crew:run Step 5)
 
@@ -731,7 +736,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew status` | Native shell command: deterministic snapshot of local task state |
 | `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
 | `crew run "task"` | Native shell command: create deterministic task state and supervisor handoff; currently blocks until a host AI prompt runtime completes the handoff |
-| `crew agent ...` | Host-bridge entrypoint; currently fails fast and directs users to guided host mode |
+| `crew agent ...` | Native shell command: validate a read-only direct-agent request and write host handoff state |
 | `crew:setup` | Host prompt alias for setup in adapters that expose it |
 | `crew:run "task"` | Run a single task through the full pipeline |
 | `crew:run "task A" \| "task B"` | Run multiple tasks in parallel |

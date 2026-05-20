@@ -28,6 +28,10 @@ it "Claude setup honors the write-capabilities opt-out"
 claude_setup=$(cat "${REPO_ROOT}/adapters/claude/setup.sh")
 assert_contains "${claude_setup}" 'AGENT_CREW_WRITE_CAPABILITIES:-1' "Claude adapter must expose an opt-out guard"
 
+it "Codex setup honors the write-capabilities opt-out"
+codex_setup=$(cat "${REPO_ROOT}/adapters/codex/setup.sh")
+assert_contains "${codex_setup}" 'AGENT_CREW_WRITE_CAPABILITIES:-1' "Codex adapter must expose an opt-out guard"
+
 it "crew:update install pass uses repository root as source"
 update_doc=$(cat "${REPO_ROOT}/core/commands/update.md")
 assert_contains "${update_doc}" 'AGENT_CREW_SOURCE_DIR="${SOURCE_ROOT}"' "install.sh expects the repository root, not core/"

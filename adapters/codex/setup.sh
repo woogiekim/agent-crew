@@ -425,8 +425,9 @@ register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
 PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
 STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
-mkdir -p "${STATE_DIR}"
-cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
+if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
+  mkdir -p "${STATE_DIR}"
+  cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
 {
   "host": "codex",
   "agent_background": false,
@@ -437,6 +438,7 @@ cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
   "hook_system": false
 }
 CAPS_EOF
+fi
 
 printf 'HOST: codex\n'
 printf 'INSTALLED: %s\n' "${PROJECT_ROOT}/.codex"
