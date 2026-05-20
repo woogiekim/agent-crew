@@ -12,7 +12,8 @@
 #   bash tests/run-all.sh integration    # integration suite only
 #
 # Environment:
-#   PYTEST_BIN   — override pytest invocation (default: `pytest`)
+#   PYTEST_BIN   — override pytest executable (default: `pytest`; falls back
+#                  to `python3 -m pytest` when the executable is absent)
 
 set -u
 
@@ -48,9 +49,14 @@ run_python_suite() {
   echo ""
   local suite_start
   suite_start=$(date +%s)
-  if ! command -v "${PYTEST_BIN}" >/dev/null 2>&1; then
+  local pytest_cmd=()
+  if command -v "${PYTEST_BIN}" >/dev/null 2>&1; then
+    pytest_cmd=("${PYTEST_BIN}")
+  elif [ "${PYTEST_BIN}" = "pytest" ] && python3 -c 'import pytest' >/dev/null 2>&1; then
+    pytest_cmd=(python3 -m pytest)
+  else
     echo "  pytest not on PATH — skipping python suite."
-    echo "  Install with: pip install pytest    (or python3 -m pip install --user pytest)"
+    echo "  Install with: python3 -m pip install --user pytest"
     SUITE_NAMES+=("python")
     SUITE_RESULTS+=("SKIPPED")
     SUITE_PASS+=(0)
@@ -60,7 +66,7 @@ run_python_suite() {
   fi
   local out rc
   # Use -q for concise output; -rN to show short summary.
-  out=$("${PYTEST_BIN}" tests/python/ 2>&1)
+  out=$("${pytest_cmd[@]}" tests/python/ 2>&1)
   rc=$?
   echo "${out}"
   local suite_end

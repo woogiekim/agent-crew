@@ -59,10 +59,12 @@ pytest tests/python/test_cost_aggregate.py::TestCostAggregate::test_check_breake
 
 ## Requirements
 
-- **Python 3.10+** with `pytest` on `$PATH`
-  - `pip install pytest`  *or*  `python3 -m pip install --user pytest`
-  - If pytest is missing, `tests/run-all.sh` skips the python suite with
-    an install hint and still runs shell + integration.
+- **Python 3.10+** with `pytest` importable by `python3`
+  - `python3 -m pip install --user pytest`
+  - `tests/run-all.sh` uses `pytest` from `$PATH` when present and otherwise
+    falls back to `python3 -m pytest`.
+  - If pytest is missing entirely, `tests/run-all.sh` skips the python suite
+    with an install hint and still runs shell + integration.
 - **Bash 3.2+** (tests are written for macOS / Linux default bash)
 - **git** (for `test_common_sh.bash::register_local_git_excludes` —
   uses a tmp `git init` worktree).

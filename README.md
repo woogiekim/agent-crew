@@ -153,9 +153,11 @@ make test-integration   # bash tests/integration/test_*.bash
 bash tests/run-all.sh
 ```
 
-Requirements: Python 3.10+ with `pytest` on `$PATH` (`pip install pytest`).
-If pytest is missing, `tests/run-all.sh` skips the Python suite with an
-install hint and still runs shell + integration suites.
+Requirements: Python 3.10+ with `pytest` importable by `python3`
+(`python3 -m pip install --user pytest`). `tests/run-all.sh` uses `pytest`
+from `$PATH` when available and falls back to `python3 -m pytest`. If pytest is
+missing entirely, it skips the Python suite with an install hint and still runs
+shell + integration suites.
 
 The suite is hermetic — every test uses `tmp_path` (pytest) or `mktemp -d`
 (bash) for isolation; it never touches `${HOME}/.agent-crew/` or the real
