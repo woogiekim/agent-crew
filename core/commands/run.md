@@ -1565,6 +1565,13 @@ effectively unavailable.
   execute the pipeline inline.
 - If `N > 1`, invoke all `supervisor` agents concurrently in a single
   response containing N parallel Agent tool calls.
+- Codex adapter constraint: when invoking the supervisor through Codex
+  `spawn_agent` / Agent tooling, do not request a full-history fork together
+  with explicit agent/model/reasoning options. Use a prompt-only handoff with
+  the `supervisor` agent selection, or set `fork_context=false`. The supervisor
+  receives all required state through the prompt fields below and must read any
+  needed context from `TASK_DIR`, `PROJECT_ROOT`, and installed agent-crew
+  files.
 
 Hosts that advertise `agent_background = true` do not reach this branch —
 they always take the P4 path above, regardless of `N`.

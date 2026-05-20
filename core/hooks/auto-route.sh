@@ -128,9 +128,9 @@ ACTION_PAT = (
 QUESTION_PAT = (
     r"why|what|how|explain|describe|tell me|show me|list|which|"
     r"어떻게|뭐야|무엇|왜|어떤|설명|"
-    r"알려|이해|뭔지|뭔가|뭐가|어디|누가|언제|"
+    r"알려|이해|뭔지|뭔가|뭐가|뭘|어디|누가|언제|"
     r"있나요|합니까|인가요|할까요|됩니까|인지요|했나요|"
-    r"활용|사용하고|쓰고|동작|작동"
+    r"활용|사용하고|쓰고|동작|작동|비교|평가|쓸만|쓸\s*만|솔직"
 )
 # Truly atomic facts that need no agent — a bare yes/no, a bare file path,
 # or a bare single number. These stay inline even when QUESTION_PAT fires.
@@ -186,10 +186,41 @@ ARTIFACT_NOUN_PAT = (
     r"saved\s+file|the\s+(?:file|doc|issue|draft)|"
     r"\.md\b|\.txt\b|docs?/"
 )
+READONLY_REVIEW_PAT = (
+    r"review|evaluate|assess|compare|honest\s+review|"
+    r"리뷰|검토|평가|비교|솔직|쓸만|쓸\s*만|"
+    r"괜찮|문제점|개선점|고쳐야\s*하|뭘\s*고쳐"
+)
+REVIEW_MUTATION_PAT = (
+    r"fix\s+it|apply\s+the\s+fix|make\s+the\s+change|implement|"
+    r"수정해|수정해줘|고쳐줘|반영해|반영해줘|구현해|"
+    r"바꿔줘|넣어줘|업데이트해|업데이트해줘"
+)
 
 
 def match(pattern):
     return bool(re.search(pattern, prompt, re.IGNORECASE))
+
+
+def emit_question_route(target_agent: str, route_reason: str):
+    question_directive = (
+        f"[agent-crew] ROUTE — question detected, routing to {target_agent} ({route_reason}).\n\n"
+        f"Do NOT answer this question inline. Call crew:agent with the question.\n\n"
+        f"REQUIRED action:\n"
+        f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
+        f"Invoke Skill(\"crew-agent\") with the user's question and agent={target_agent}.\n"
+        f"Direct inline responses for questions are forbidden — even short ones.\n"
+        f"The ONLY permitted inline response is a bare atomic fact: "
+        f"literal yes/no, a bare file path, or a bare single number with no explanation."
+    )
+    question_output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": question_directive,
+        }
+    }
+    print(json.dumps(question_output, ensure_ascii=True))
+    sys.exit(0)
 
 
 if match(QUESTION_PAT) and not match(ACTION_PAT):
@@ -214,24 +245,13 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
         target_agent = "analyst"
         route_reason = "codebase/explanation Q"
 
-    question_directive = (
-        f"[agent-crew] ROUTE — question detected, routing to {target_agent} ({route_reason}).\n\n"
-        f"Do NOT answer this question inline. Call crew:agent with the question.\n\n"
-        f"REQUIRED action:\n"
-        f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
-        f"Invoke Skill(\"crew-agent\") with the user's question and agent={target_agent}.\n"
-        f"Direct inline responses for questions are forbidden — even short ones.\n"
-        f"The ONLY permitted inline response is a bare atomic fact: "
-        f"literal yes/no, a bare file path, or a bare single number with no explanation."
-    )
-    question_output = {
-        "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": question_directive,
-        }
-    }
-    print(json.dumps(question_output, ensure_ascii=True))
-    sys.exit(0)
+    emit_question_route(target_agent, route_reason)
+
+# Read-only review/evaluation requests can contain words such as "리뷰" or
+# "개선점" that are also action-like. Route those to analyst unless the prompt
+# explicitly asks to mutate an artifact or code.
+if match(QUESTION_PAT) and match(READONLY_REVIEW_PAT) and not match(REVIEW_MUTATION_PAT):
+    emit_question_route("analyst", "read-only review/evaluation Q")
 
 # --- Trivial-intent fast-path (Change A) ---
 # Detect short operational git intents that map to a known command template.

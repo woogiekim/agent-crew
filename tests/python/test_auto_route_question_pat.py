@@ -137,6 +137,46 @@ class TestIssue14ReproductionCase:
 
 
 # ---------------------------------------------------------------------------
+# Read-only review/evaluation questions — must route, not STOP
+# ---------------------------------------------------------------------------
+
+class TestReadOnlyReviewEvaluationRouting:
+    def test_honest_agent_crew_review_routes_to_analyst_not_stop(self):
+        payload = {
+            "prompt": (
+                "현재 agnet-crew 를 솔직하게 리뷰해주세요. "
+                "다른 상용 하네스와 비교해서 쓸만한지... "
+                "안쓸만하면 뭘 고쳐야하는지"
+            )
+        }
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] ROUTE" in ctx
+        assert "routing to analyst" in ctx
+        assert "[agent-crew] STOP" not in ctx
+
+    def test_reviewer_stage_request_still_routes_to_stop(self):
+        payload = {"prompt": "리뷰어 붙여서 테스트 돌려주세요"}
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] STOP" in ctx
+
+
+# ---------------------------------------------------------------------------
 # Pre-existing Korean question markers — must still match (regression)
 # ---------------------------------------------------------------------------
 

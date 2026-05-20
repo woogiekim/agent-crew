@@ -1,5 +1,5 @@
 description = "Use as the final non-reviewer stage of every implementation pipeline to synthesize per-task documentation. TRIGGER when: supervisor reaches end-of-pipeline and needs the canonical {TASK_DIR}/result.md synthesized; side-car README or CHANGELOG patch should be drafted from the task's git log and STATUS blocks; the {TASK_DIR} working set needs to be paged out to archive/ at session close; user explicitly runs crew:doc --to-readme (planned future command) to opt into patching the repo's tracked README/CHANGELOG. SKIP: trivial fast-path tasks (no implementation stages ran — e.g. analysis-only pipeline); supervisor reports STATUS: blocked; request is to author a new design doc or PRD (planner/analyst owns those); request is to add code-level comments (agent-crew comment policy is minimal-by-default). Output: {TASK_DIR}/result.md (always); side-car artifacts at ~/.agent-crew/state/{PROJECT}/docs/ (default — never touches repo-tracked files); {TASK_DIR}/archive/ population; in --to-readme mode only, patches to {PROJECT_ROOT}/README.md gated by an explicit user approval prompt."
-reasoning_tier = "light"
+model_reasoning_effort = "low"
 developer_instructions = """
 # Documenter — Internal Repo Documentation
 
@@ -9,7 +9,7 @@ under {TASK_DIR}. Operates side-car by default — repo-tracked files
 opts in via `crew:doc --to-readme` AND the host's structured approval gate
 confirms the patch.
 
-Note: this agent declares `reasoning_tier = "light"` in its core definition.
+Note: this agent maps to `model_reasoning_effort = "low"` in Codex.
 Adapters that support per-agent model selection materialize the tier into a
 concrete model at install time; on hosts where per-agent selection is
 unavailable, the tier is advisory only. See

@@ -106,6 +106,100 @@ install_codex_skills() {
   done
 }
 
+install_system_agents_codex() {
+  local system_agents_dir="${AGENT_CREW_HOME}/system/agents"
+  local dest_dir="${PROJECT_ROOT}/.codex/agents"
+
+  [ -d "${system_agents_dir}" ] || return 0
+  mkdir -p "${dest_dir}"
+
+  python3 - "${system_agents_dir}" "${dest_dir}" <<'PYEOF'
+import os
+import re
+import sys
+
+system_agents_dir = sys.argv[1]
+dest_dir = sys.argv[2]
+
+skip = {
+    "README.md",
+    "supervisor-bootstrap.md",
+    "supervisor-stages.md",
+    "supervisor-retry.md",
+}
+
+def parse_frontmatter(text):
+    fm = {}
+    m = re.match(r'^---\s*\n(.*?)\n---\s*\n', text, re.DOTALL)
+    if not m:
+        return fm
+    for line in m.group(1).splitlines():
+        kv = re.match(r'^(\w[\w_-]*):\s*(.*)', line)
+        if kv:
+            key, val = kv.group(1), kv.group(2).strip().strip('"\'')
+            if val in ('>', '|', '>-', '|-'):
+                val = ''
+            fm[key] = val
+    return fm
+
+def toml_escape(s):
+    return s.replace('\\', '\\\\').replace('"""', '""\\"')
+
+reasoning_map = {
+    'deep': 'high',
+    'balanced': 'medium',
+    'light': 'low',
+}
+
+converted = 0
+
+for fname in sorted(os.listdir(system_agents_dir)):
+    if not fname.endswith('.md') or fname in skip:
+        continue
+
+    path = os.path.join(system_agents_dir, fname)
+    try:
+        text = open(path, encoding='utf-8').read()
+    except OSError:
+        continue
+
+    fm = parse_frontmatter(text)
+    name = fm.get('name') or os.path.splitext(fname)[0]
+    toml_name = re.sub(r'[^\w-]', '-', name.lower()).strip('-') or os.path.splitext(fname)[0]
+    description = (fm.get('description') or f'Agent-crew system agent: {name}').strip()
+    description = re.sub(r'\s+', ' ', description).lstrip('> ').strip()
+    reasoning_tier = (fm.get('reasoning_tier') or 'balanced').strip()
+    effort = reasoning_map.get(reasoning_tier, 'medium')
+
+    instructions = f'''# {name}
+
+This is a Codex adapter bootstrap for the agent-crew system agent.
+
+Before doing any work:
+1. Read `{path}`.
+2. Follow that file as the authoritative agent definition.
+3. If that file references sibling modules or skills, read them from the paths it specifies.
+4. Keep all state and artifact writes exactly where the caller's prompt says.
+
+    Do not use the abbreviated TOML bootstrap as the behavioral source of truth.
+    '''
+
+    desc_escaped = description.replace('\\', '\\\\').replace('"', '\\"')
+    content = (
+        f'description = "{desc_escaped}"\n'
+        f'model_reasoning_effort = "{effort}"\n'
+        f'developer_instructions = """\n{toml_escape(instructions.rstrip())}\n"""\n'
+        f'name = "{toml_name}"\n'
+    )
+
+    with open(os.path.join(dest_dir, toml_name + '.toml'), 'w', encoding='utf-8') as f:
+        f.write(content)
+    converted += 1
+
+print(f'[install_system_agents_codex] {converted} system agent(s) converted to TOML in {dest_dir}')
+PYEOF
+}
+
 # install_user_agents_codex — convert user agent .md files to Codex TOML stubs.
 #
 # Each .md file in user/agents/ is expected to have a YAML frontmatter block at
@@ -120,7 +214,7 @@ install_codex_skills() {
 #   model_reasoning_effort = "<frontmatter model_reasoning_effort, optional>"
 #   sandbox_mode         = "<frontmatter sandbox_mode, optional>"
 #   developer_instructions = """<full markdown body after frontmatter>"""
-#   name                 = "<agent name>"
+#   name                   = "<agent name>"
 #
 # Output path: ${PROJECT_ROOT}/.codex/agents/<name>.toml
 # Idempotent: existing TOML files are overwritten on each setup/update run so
@@ -279,6 +373,7 @@ chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
 cp "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md" 2>/dev/null || true
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
 install_codex_skills
+install_system_agents_codex
 install_user_agents_codex
 
 # Scaffold skill directories (idempotent)

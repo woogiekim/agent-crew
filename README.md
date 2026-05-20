@@ -38,10 +38,10 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 
 ## Key Features
 
-- **2-round deep requirements collection** — `crew:run` gathers scope, target, and constraints (Round 1), then domain-specific follow-ups (Round 2) before spawning supervisors; a fallback layer in supervisor Phase 1a repeats this if requirements were not passed in
-- **Analyst reasoning layer** — Phase 1b invokes the analyst agent between requirements collection and planning; the analyst distills intent, identifies risks, and recommends the agent pipeline before the planner begins
-- **Phase 1d plan approval gate** — after planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval via `AskUserQuestion` before any stage agent executes
-- **Automatic subagent creation** — planner analyzes agent sufficiency and populates `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition directly to `~/.agent-crew/agents/{name}.md` before execution starts
+- **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline; ambiguous tasks still use the requirements agent for a structured interview before supervisors run
+- **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
+- **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
+- **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
 - **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object. **A real test suite now exists in `tests/`** (see [Testing](#testing)) — the reviewer's runner-discovery on this repo finds `pytest` and exercises all 43 Python tests + the bash suites end-to-end
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; `crew:status` reads this log to show a live pipeline snapshot at any time
@@ -50,11 +50,11 @@ The goal: let developers focus on *what* to build, while agent-crew handles requ
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
 - **Reviewer always last** — every pipeline that produces implementation output ends with the `reviewer` agent, which verifies completeness against the PRD
 - **Conditional deployment gate** — after all supervisors complete, `crew:run` always displays a per-task summary; deployment approval via `AskUserQuestion` fires only when the pipeline included a `devops` stage
-- **Native sub-agent delegation** — orchestrator uses the host assistant's agent/delegation capability; no polling or signal files
+- **Native sub-agent delegation where available** — orchestrator uses the host assistant's agent/delegation capability when advertised; adapters without background/task APIs fall back to inline execution and file-based state
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back after completion
 - **Project-clean state** — all state stored under `~/.agent-crew/state/{PROJECT_NAME}/`, never in your project directory
 - **Global install** — one install works across all your projects
-- **Provider-neutral capability framework** — every host-specific surface (task tools, background agents, monitor stream, hooks, structured questions, cost tracking) is gated by a flag in `capabilities.json` written by the active adapter (`claude`, `codex`, `generic`); core code never names a host-specific tool. See `core/rules/host-capabilities.md`.
+- **Provider-neutral capability framework** — every host-specific surface (task tools, background agents, monitor stream, hooks, structured questions, cost tracking) is gated by a flag in `capabilities.json` written by the active adapter (`claude`, `codex`, `generic`); core code never assumes unavailable host features. See `core/rules/host-capabilities.md`.
 - **Cost circuit breaker** — when the `cost_tracking` capability is advertised, the supervisor checks per-task token usage before every stage spawn and halts with `BLOCKER: cost_budget_exceeded` at 100% of the per-tier budget. Configure via `AGENT_CREW_BUDGET_DEEP|BALANCED|LIGHT`.
 - **Opt-in stage timeout** — set `AGENT_CREW_STAGE_TIMEOUT_SECONDS=1800` to halt any stage that exceeds a wall-clock budget (mirrors the cost-breaker pattern; off by default).
 - **Structured state files with schema validation** — `register.json` (per-task pointer state), `pipeline.json` (execution graph), `session.json` (multi-task registry), and `progress.buffer.jsonl` (one JSON event per line) all validate against JSON schemas under `core/schemas/` at supervisor Phase 0.
@@ -118,6 +118,23 @@ inside adapter implementations.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
 
+### Host Capability Caveat
+
+`agent-crew` is capability-gated. The same command may take different execution
+paths depending on the active host adapter:
+
+- Claude adapters can advertise native hooks, structured questions, task tools,
+  or cost tracking when those surfaces are available.
+- Codex currently installs agent/skill/hook compatibility files, but its project
+  `capabilities.json` may legitimately set `agent_background`, `task_tools`,
+  `interactive_question`, `monitor_tool`, `cost_tracking`, and `hook_system` to
+  `false`. In that mode, `crew:run` uses inline execution and markdown/file
+  fallbacks instead of claiming native background sessions, native structured
+  prompts, live monitor streams, or token-budget enforcement.
+
+Always inspect `~/.agent-crew/state/{PROJECT_NAME}/capabilities.json` when
+debugging host-specific behavior.
+
 ## Testing
 
 The repository ships with a real test suite under `tests/` covering the Python
@@ -152,7 +169,7 @@ The orchestrator spawns or delegates to each sub-agent directly using the host A
 ### Pipeline Flow
 
 ```
-requirements → analyst → planner → [Phase 1d: plan approval] → [stages] → reviewer
+requirements sufficiency → analyst+planner → [Phase 1d: plan approval] → [stages] → reviewer
 ```
 
 For each task, the full execution path is:
@@ -160,22 +177,21 @@ For each task, the full execution path is:
 ```
 crew:run "request"
        │
-       ▼ Delegate to requirements agent (2-round AskUserQuestion interview)
-       │   → merged into REQUIREMENTS block
+      ▼ Run deterministic requirements sufficiency check
+      │   → synthesize REQUIREMENTS inline, or delegate to requirements agent if ambiguous
 [orchestrator]
        │
        ▼ delegate one supervisor per task (with REQUIREMENTS)
 [supervisor]
        │ Phase 0:  Resume check + context bootstrap
-       │ Phase 1a: REQUIREMENTS present → skip; absent → delegate to requirements agent
-       │ Phase 1b: analyst (distill intent, identify risks, recommend pipeline)
-       │ Phase 1c: planner (REQUIREMENTS + ANALYSIS → Case A path, skips AskUserQuestion)
-       │ Phase 1d: AskUserQuestion — show plan, await Approve / Request changes / Cancel
+      │ Phase 1a: REQUIREMENTS present → skip; absent → sufficiency check / requirements agent
+      │ Phase 1b+1c: analyst as merged analysis+planning step
+      │ Phase 1d: AskUserQuestion — show plan, await Approve / Request changes / Cancel
        │ Phase 1.5: agent creation (needs_creation from pipeline.json)
        │ Phase 2:  stage execution with quality loop
        │ Phase 2.5: stage action gate (centralized approval for devops/deploy stages)
        ▼ Phase 3:  result reporting
-[requirements] → [analyst] → [planner] → [approval gate] → [stage agents...] → [reviewer]
+[requirements] → [analyst+planner] → [approval gate] → [stage agents...] → [reviewer]
        │
        ▼ complete
 [orchestrator] per-task Run Summary (always shown)
@@ -193,14 +209,14 @@ crew:run "request"
 ```
 crew:run "task A" | "task B" | "task C"
        │
-       ▼ requirements agent for each task (2-round AskUserQuestion)
+      ▼ requirements sufficiency check for each task; requirements agent only for ambiguous tasks
        │
        ▼ create git worktree + branch for each task
        │
        ▼ delegate all supervisors simultaneously (with per-task REQUIREMENTS)
 [supervisor A]         ‖   [supervisor B]         ‖   [supervisor C]
   own worktree               own worktree               own worktree
-  req→analyst→plan→[1d]→stages→reviewer   ...same...   ...same...
+  req→analyst+plan→[1d]→stages→reviewer   ...same...   ...same...
   local commits only         local commits only         local commits only
        │
        ▼ all complete
@@ -221,22 +237,26 @@ Each `supervisor` handles its full pipeline independently. **Remote push never h
 | Phase | Name | Description |
 |---|---|---|
 | **0** | Resume check + bootstrap | Path resolution, resume detection; if `pipeline.json` exists, jump directly to Phase 2 |
-| **1a** | Requirement collection | Skip if REQUIREMENTS provided; else delegate to requirements agent (2-round AskUserQuestion interview) |
-| **1b** | Analysis | Analyst agent — distill intent, identify ambiguities and risks, recommend agent pipeline; writes `{TASK_DIR}/context/analysis.md` |
-| **1c** | Planning | Write active task marker; delegate to planner (REQUIREMENTS + ANALYSIS always present → Case A path, skips AskUserQuestion) |
-| **1d** | Plan approval gate | Display full implementation plan (pipeline, dynamic agents, risk count); AskUserQuestion: Approve / Request changes / Cancel; "Request changes" re-invokes the planner and loops back to 1d |
+| **1a** | Requirement collection | Skip if REQUIREMENTS provided; else run the sufficiency check and delegate to requirements agent only when ambiguous |
+| **1b+1c** | Analysis + planning | Analyst agent runs as the merged analyst+planner step; writes `analysis.md`, `prd.md`, `pipeline.json`, and `handoff.md` |
+| **1d** | Plan approval gate | Display full implementation plan (pipeline, dynamic agents, risk count); AskUserQuestion: Approve / Request changes / Cancel; "Request changes" re-invokes the analyst planning step and loops back to 1d |
 | **1.5** | Dynamic agent creation | Read `needs_creation` from `pipeline.json`; spawn an inline Agent for each missing specialist; verify file exists before proceeding |
 | **2** | Stage execution | Execute `stages` sequentially; apply quality loop rule (validate → fix → re-validate, up to 3 retries) per stage |
 | **2.5** | Stage action gate | Display implementation summary; if pipeline includes `devops` stage, use AskUserQuestion for deployment approval before running devops; stage agents write PLAN blocks — they do not call AskUserQuestion directly |
 | **3** | Result reporting | Collect git log; write `result.md`; emit `COMPLETED`; remove active marker (single mode) or preserve it (parallel mode) |
 
-### Requirements Collection: 2-Round, 2-Layer Architecture
+### Requirements Collection: Sufficiency-Gated Architecture
 
-Requirements are collected in two layers to ensure the planner always receives structured input.
+Requirements are collected only when the task description is not specific enough to plan safely. Both the orchestrator and supervisor use the same sufficiency check before invoking the requirements agent.
 
 #### Layer 1 — Orchestrator (crew:run Step 5)
 
-`crew:run` delegates to the requirements agent before spawning supervisors:
+`crew:run` first runs a deterministic sufficiency check per task:
+
+- `SUFFICIENT` — synthesize the `REQUIREMENTS` block inline and continue.
+- `AMBIGUOUS` — delegate to the requirements agent for a structured interview.
+
+When delegation is needed, the requirements agent asks:
 
 **Round 1 — Base context (3 questions):**
 
@@ -254,11 +274,11 @@ Requirements are collected in two layers to ensure the planner always receives s
 | Full-stack | State management approach · Database choice |
 | UI only | State management approach · Design system |
 
-All answers are merged into a single `REQUIREMENTS` block passed to each supervisor.
+The synthesized or collected answers are merged into a single `REQUIREMENTS` block passed to each supervisor.
 
 #### Layer 2 — supervisor Phase 1a (fallback)
 
-If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it delegates to the **requirements agent** to run the same 2-round interview before invoking the analyst and planner. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
+If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it runs the same sufficiency check and delegates to the **requirements agent** only when the task is ambiguous. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
 
 ### State Directory Layout
 
@@ -296,7 +316,7 @@ Per-file documentation lives under `core/rules/state-files/`.
 
 ## Pipeline Decision Logic
 
-The planner agent automatically selects which agents to run based on the collected requirements and request type:
+The merged analyst+planner step automatically selects which agents to run based on the collected or synthesized requirements and request type:
 
 | Request type | stages |
 |---|---|
@@ -313,7 +333,7 @@ The planner agent automatically selects which agents to run based on the collect
 
 ### Subagent Auto-Creation
 
-When the planner determines that no existing agent can adequately fulfill a required role, it adds an entry to `needs_creation` in `pipeline.json`:
+When the merged analysis/planning step determines that no existing agent can adequately fulfill a required role, it adds an entry to `needs_creation` in `pipeline.json`:
 
 ```json
 {
@@ -328,7 +348,7 @@ When the planner determines that no existing agent can adequately fulfill a requ
 ```
 
 supervisor Phase 1.5 reads this list and, for each entry, spawns an inline Agent
-that writes the agent definition file directly to `~/.agent-crew/agents/{name}.md`.
+that writes the agent definition file into the installed/user agent layer.
 This bypasses the `Skill` tool (which is unavailable inside sub-agents) and produces
 the agent file using a standard template derived from the `name`, `reason`, and `role`
 fields. After each invocation, Phase 1.5 verifies the file exists before continuing.
@@ -340,7 +360,7 @@ with `STATUS: BLOCKED`.
 When a `stages` entry contains a non-builtin agent name, supervisor Phase 2 resolves it at runtime:
 
 1. Check if the name is a builtin: `planner`, `designer`, `frontend`, `backend`, `devops`, `resolver`, `reviewer`, `supervisor`
-2. If **not builtin**: read `~/.agent-crew/agents/{name}.md` and prepend its full content to the stage prompt as a system preamble — the spawned Agent receives both the agent definition and the standard stage parameters (`TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH`)
+2. If **not builtin**: read the installed/user agent definition for `{name}` and prepend its full content to the stage prompt as a system preamble — the spawned Agent receives both the agent definition and the standard stage parameters (`TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH`)
 3. If **builtin**: use the standard stage prompt format (the host already knows builtin agent definitions)
 
 If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was skipped or failed silently), Phase 2 reports `STATUS: BLOCKED` with the file path that was missing.
@@ -350,8 +370,8 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | Agent | Role |
 |---|---|
 | **requirements** | Dedicated requirements collection — runs 2-round AskUserQuestion interview, validates scope, detects ambiguities, writes `requirements.md` |
-| **analyst** | Reasoning and coordination layer — distills user intent, identifies risks and ambiguities, recommends agent pipeline; writes `analysis.md` |
-| **planner** | PRD authoring, agent sufficiency evaluation, pipeline selection; writes `prd.md`, `pipeline.json`, `handoff.md` |
+| **analyst** | Merged analysis/planning layer — distills user intent, identifies risks and ambiguities, writes `analysis.md`, `prd.md`, `pipeline.json`, and `handoff.md` |
+| **planner** | Legacy/specialized PRD and pipeline planner retained for compatibility and targeted workflows |
 | **designer** | UI/UX spec design |
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
@@ -370,20 +390,18 @@ IMPLEMENTATION  → RED: failing test → GREEN: minimal impl → REFACTOR
 VERIFICATION    → OOP principles check + all tests GREEN → git commit
 ```
 
-### Planner Agent Workflow
+### Merged Analyst + Planner Workflow
 
 ```
-Step 1: Requirement collection
-        ├─ Case A: REQUIREMENTS provided → use directly, skip AskUserQuestion
-        └─ Case B: REQUIREMENTS absent → delegate to requirements agent
-Step 2: Write PRD to {TASK_DIR}/context/prd.md
-        └─ When ANALYSIS provided: use analysis.md risk table to populate PRD Risk section
-Step 3: Agent capability analysis
+Step 1: Consume REQUIREMENTS
+        ├─ Case A: REQUIREMENTS provided → use directly
+        └─ Case B: REQUIREMENTS absent → supervisor Phase 1a supplies it first
+Step 2: Write analysis.md and prd.md under {TASK_DIR}/context/
+Step 3: Agent capability analysis and pipeline selection
         ├─ Discover built-in + custom agents
         ├─ Evaluate agent sufficiency per required role
         └─ Populate needs_creation for any role without an adequate agent
 Step 4: Determine pipeline and write pipeline.json
-        ├─ When ANALYSIS provided: use ANALYSIS.pipeline as starting point for stage composition
         └─ Pipeline Validation: enforce bidirectional needs_creation↔stages
            consistency (every needs_creation name must appear in stages; every
            non-builtin stage agent must have a needs_creation entry)
@@ -391,7 +409,7 @@ Step 5: Write handoff.md
 Step 6: Return concise completion report
 ```
 
-The planner always follows Case A when invoked through the standard `crew:run` pipeline, because supervisor always includes both `REQUIREMENTS` and `ANALYSIS` in the planner prompt (Phase 1c).
+The standard `crew:run` path no longer performs a separate planner spawn after analyst. Supervisor Phase 1b+1c delegates once to the analyst, which produces both reasoning and planning artifacts.
 
 ## Specialized Skills
 
