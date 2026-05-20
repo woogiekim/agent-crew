@@ -53,7 +53,7 @@ mkdir -p \
   "${AGENT_CREW_HOME}/system/setup" "${AGENT_CREW_HOME}/setup" \
   "${AGENT_CREW_HOME}/system/adapters" "${AGENT_CREW_HOME}/adapters" \
   "${AGENT_CREW_HOME}/system/agents" "${AGENT_CREW_HOME}/system/skills" \
-  "${AGENT_CREW_HOME}/skills"
+  "${AGENT_CREW_HOME}/skills" "${AGENT_CREW_HOME}/bin"
 
 copy_flat() {
   local src="$1" dest="$2" pattern="$3"
@@ -84,11 +84,13 @@ copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/system/adapters"
 copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/adapters"
 copy_tree "${SOURCE_ROOT}/core/agents" "${AGENT_CREW_HOME}/system/agents"
 copy_tree "${SOURCE_ROOT}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
+copy_flat "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
 
 chmod +x \
   "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \
   "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.sh \
   "${AGENT_CREW_HOME}/system/setup/"*.sh "${AGENT_CREW_HOME}/setup/"*.sh \
+  "${AGENT_CREW_HOME}/bin/"* \
   2>/dev/null || true
 
 # shellcheck source=/dev/null

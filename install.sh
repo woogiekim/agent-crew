@@ -161,6 +161,13 @@ install_global() {
     log_info "Memory wrapper installed → ${AGENT_CREW_DIR}/bin/memory"
   fi
 
+  if [ -f "${SOURCE_DIR}/bin/crew" ]; then
+    mkdir -p "${AGENT_CREW_DIR}/bin"
+    cp "${SOURCE_DIR}/bin/crew" "${AGENT_CREW_DIR}/bin/crew"
+    chmod +x "${AGENT_CREW_DIR}/bin/crew"
+    log_info "crew CLI installed → ${AGENT_CREW_DIR}/bin/crew"
+  fi
+
   [ -f "${AGENT_CREW_DIR}/system/schemas/register.schema.json" ] \
     || log_error "register.schema.json install failed — system/schemas/register.schema.json not found"
 
@@ -486,8 +493,12 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   echo "  Install path: ${AGENT_CREW_DIR}"
   echo "  Installed commands: ${CMD_COUNT} / agents: ${AGENT_COUNT}"
   echo ""
-  echo "  Provider-neutral usage from any project:"
-  echo "    crew:setup                       # host adapter install + workspace init"
+  echo "  Native shell entrypoint:"
+  echo "    crew setup                       # host adapter install + workspace init"
+  echo "    crew status                      # deterministic local state snapshot"
+  echo "    crew update --local [SOURCE]     # refresh install from a checkout"
+  echo ""
+  echo "  Guided host-runtime commands:"
   echo "    crew:run \"request\"              # run one task through supervisor"
   echo "    crew:run \"TaskA\" | \"TaskB\"      # run independent tasks in parallel"
   echo "    crew:cost                        # show session cost summary"
@@ -499,7 +510,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   echo "    ~/.agent-crew/user/agents/    # user-managed custom agents (never overwritten)"
   echo "    ~/.claude/agents/             # generated merge destination (do not edit directly)"
   echo ""
-  echo "  Host adapters may expose native aliases such as slash commands."
-  echo -e "${GREEN}  Start in a project with crew:setup.${NC}"
+  echo "  Codex is currently guided prompt mode for crew:run/crew:agent."
+  echo -e "${GREEN}  Start in a project with crew setup.${NC}"
   echo ""
 fi

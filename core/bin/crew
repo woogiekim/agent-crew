@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# crew - deterministic shell entrypoint for agent-crew.
+
+set -euo pipefail
+
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -d "${SCRIPT_DIR}/../commands" ] && [ -d "${SCRIPT_DIR}/../scripts" ]; then
+  ASSET_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+  ASSET_ROOT="${AGENT_CREW_HOME}"
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
+PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+
+usage() {
+  cat <<'EOF'
+usage: crew <command> [args]
+
+Commands:
+  setup [PROJECT_ROOT]             Install/refresh host adapter for a project
+  status [--json] [--recent N]     Show deterministic local task state
+  update [--local [SOURCE_ROOT]]   Refresh installed assets
+  run "task"                       Host-guided pipeline entrypoint (not native yet)
+  agent [name] [question]          Host-guided read-only agent entrypoint
+  help                             Show this help
+
+Notes:
+  crew setup/status/update are native shell paths.
+  crew run/agent currently require a host runtime such as Codex or Claude and
+  intentionally fail fast instead of pretending that markdown prompts are a CLI.
+EOF
+}
+
+die() {
+  printf 'crew: %s\n' "$*" >&2
+  exit 2
+}
+
+require_file() {
+  local path="$1" label="$2"
+  [ -f "${path}" ] || die "${label} not found at ${path}; install agent-crew first"
+}
+
+cmd_setup() {
+  local project="${1:-${PROJECT_ROOT}}"
+  local setup_script="${ASSET_ROOT}/setup/setup-host.sh"
+  require_file "${setup_script}" "setup dispatcher"
+  bash "${setup_script}" "${project}"
+}
+
+cmd_status_json() {
+  local recent="${1:-10}"
+  local telemetry="${ASSET_ROOT}/scripts/telemetry-aggregate.py"
+  if [ -f "${telemetry}" ]; then
+    python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format json
+    return
+  fi
+  printf '{"project":"%s","state_dir":"%s","error":"telemetry script not found"}\n' \
+    "${PROJECT_NAME}" "${STATE_DIR}"
+}
+
+cmd_status() {
+  local format="text"
+  local recent="10"
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --json) format="json"; shift ;;
+      --recent)
+        [ -n "${2:-}" ] || die "--recent requires a number"
+        recent="$2"
+        shift 2
+        ;;
+      -h|--help)
+        cat <<'EOF'
+usage: crew status [--json] [--recent N]
+
+Reads ~/.agent-crew/state/<project>/ and prints local task telemetry.
+EOF
+        return 0
+        ;;
+      *) die "unknown status argument: $1" ;;
+    esac
+  done
+
+  if [ "${format}" = "json" ]; then
+    cmd_status_json "${recent}"
+    return
+  fi
+
+  printf 'Project: %s\n' "${PROJECT_NAME}"
+  printf 'State  : %s\n\n' "${STATE_DIR}"
+
+  if [ ! -d "${STATE_DIR}/tasks" ]; then
+    printf 'No tasks found. Run crew setup first, then use crew:run in your host runtime.\n'
+    return 0
+  fi
+
+  local telemetry="${ASSET_ROOT}/scripts/telemetry-aggregate.py"
+  if [ -f "${telemetry}" ]; then
+    python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format text
+  else
+    find "${STATE_DIR}/tasks" -mindepth 1 -maxdepth 1 -type d | sort | tail -"${recent}"
+  fi
+}
+
+cmd_update() {
+  local mode="${1:-}"
+  local source="${2:-}"
+
+  case "${mode}" in
+    -h|--help)
+      cat <<'EOF'
+usage: crew update [--local [SOURCE_ROOT]]
+
+Default update mode uses the installed update command definition as guidance.
+Use --local to deterministically refresh the install from a local checkout.
+EOF
+      return 0
+      ;;
+    --local)
+      local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
+      require_file "${sync_script}" "local sync script"
+      bash "${sync_script}" "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+      ;;
+    "")
+      local update_md="${ASSET_ROOT}/commands/update.md"
+      require_file "${update_md}" "update command definition"
+      die "native remote update is not implemented yet; run 'crew update --local [SOURCE_ROOT]' or invoke crew:update in a host runtime"
+      ;;
+    *)
+      die "unknown update argument: ${mode}"
+      ;;
+  esac
+}
+
+cmd_run() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew run "task"
+
+Native deterministic crew run is not implemented yet. Use crew:run in a host
+runtime while the CLI runtime is being extracted from the markdown workflow.
+EOF
+    return 0
+  fi
+  require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
+  die "native crew run is not implemented yet; use crew:run in Codex/Claude guided prompt mode"
+}
+
+cmd_agent() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew agent [agent-name] [question]
+
+Native deterministic crew agent dispatch is not implemented yet. Use crew:agent
+in a host runtime while the CLI runtime is being extracted.
+EOF
+    return 0
+  fi
+  require_file "${ASSET_ROOT}/commands/agent.md" "agent command definition"
+  die "native crew agent dispatch is not implemented yet; use crew:agent in Codex/Claude guided prompt mode"
+}
+
+main() {
+  local command="${1:-help}"
+  [ "$#" -gt 0 ] && shift || true
+
+  case "${command}" in
+    setup) cmd_setup "$@" ;;
+    status) cmd_status "$@" ;;
+    update) cmd_update "$@" ;;
+    run) cmd_run "$@" ;;
+    agent) cmd_agent "$@" ;;
+    help|-h|--help) usage ;;
+    *) die "unknown command: ${command}" ;;
+  esac
+}
+
+main "$@"

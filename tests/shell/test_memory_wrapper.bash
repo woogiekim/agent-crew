@@ -9,6 +9,9 @@ set +e
 
 MEMORY="${REPO_ROOT}/core/bin/memory"
 
+it "crew CLI exists next to memory wrapper"
+assert_file_exists "${REPO_ROOT}/core/bin/crew"
+
 TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash

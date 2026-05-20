@@ -31,7 +31,14 @@ def test_readme_documents_sufficiency_gated_requirements():
 def test_readme_documents_codex_capability_fallbacks():
     text = readme_text()
     assert "Host Capability Caveat" in text
-    assert "Codex currently installs agent/skill/hook compatibility files" in text
+    assert "Codex currently runs in guided prompt mode" in text
     assert "`agent_background`, `task_tools`" in text
     assert "inline execution and markdown/file" in text
     assert "fallbacks instead of claiming native background sessions" in text
+
+
+def test_readme_documents_native_cli_boundary():
+    text = readme_text()
+    assert "`crew` is the native shell entrypoint" in text
+    assert "`crew setup`, `crew status`, and\n`crew update --local` are deterministic CLI paths" in text
+    assert "`crew run` and `crew agent`\nintentionally fail fast" in text

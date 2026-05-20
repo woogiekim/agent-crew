@@ -82,7 +82,7 @@ Repository sources are organized by dependency direction:
 | Host-generated project artifacts | Generated compatibility outputs; not source of truth |
 
 This repository does not track generated host output directories. They are created
-by `crew:setup` and should remain uncommitted. Project-local generated artifacts are
+by `crew setup` / `crew:setup` and should remain uncommitted. Project-local generated artifacts are
 registered in `.git/info/exclude` during setup so repository-level `.gitignore`
 does not need host-specific directory names.
 
@@ -96,25 +96,31 @@ source ~/.bashrc  # bash
 
 ```bash
 # 1. Initialize workspace once per project
-crew:setup
+crew setup
 
-# 2. Run a single task (crew:run collects requirements via 2-round AskUserQuestion first)
+# 2. Run a single task in the host runtime
 crew:run "implement order domain API with TDD"
 
 # 3. Run multiple independent tasks in parallel
 crew:run "implement order API" | "implement product API" | "implement user API"
 
-# 4. Check live pipeline state for the current task
-crew:status
+# 4. Check local pipeline state from any shell
+crew status
 
 # 5. Check cost summary
 crew:cost
 ```
 
-`crew:setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
+`crew setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
 provider-neutral: it calls adapter-owned `detect.sh` scripts and delegates to the
 matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
+
+`crew` is the native shell entrypoint. Today, `crew setup`, `crew status`, and
+`crew update --local` are deterministic CLI paths. `crew run` and `crew agent`
+intentionally fail fast with an explicit guided-prompt-mode message until the
+workflow state machine is extracted from `core/commands/*.md` into a native
+runtime.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
 
@@ -125,7 +131,8 @@ paths depending on the active host adapter:
 
 - Claude adapters can advertise native hooks, structured questions, task tools,
   or cost tracking when those surfaces are available.
-- Codex currently installs agent/skill/hook compatibility files, but its project
+- Codex currently runs in guided prompt mode: it installs agent/skill/hook
+  compatibility files, but its project
   `capabilities.json` may legitimately set `agent_background`, `task_tools`,
   `interactive_question`, `monitor_tool`, `cost_tracking`, and `hook_system` to
   `false`. In that mode, `crew:run` uses inline execution and markdown/file
@@ -691,7 +698,12 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 
 | Command | Description |
 |---|---|
-| `crew:setup` | Install the current host adapter and initialize the project workspace |
+| `crew setup` | Native shell command: install the current host adapter and initialize the project workspace |
+| `crew status` | Native shell command: deterministic snapshot of local task state |
+| `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
+| `crew run "task"` | Reserved native runtime entrypoint; currently fails fast and directs users to guided host mode |
+| `crew agent ...` | Reserved native agent dispatch entrypoint; currently fails fast and directs users to guided host mode |
+| `crew:setup` | Host prompt alias for setup in adapters that expose it |
 | `crew:run "task"` | Run a single task through the full pipeline |
 | `crew:run "task A" \| "task B"` | Run multiple tasks in parallel |
 | `crew:status` | Snapshot of the most recent task's pipeline state |

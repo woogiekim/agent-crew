@@ -81,6 +81,13 @@ assert_exit 0 "${rc}"
 it "shell: sync-local-install.sh help text printed"
 assert_contains "${out}" "usage"
 
+it "bin: crew --help exits 0"
+out=$(bash "${REPO_ROOT}/core/bin/crew" --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+it "bin: crew --help prints usage"
+assert_contains "${out}" "usage: crew"
+
 # detect-inject-intent.sh has no --help; an empty input is a no-op (exit 1).
 # Just confirm the script parses cleanly (bash -n).
 it "shell: detect-inject-intent.sh syntactically valid"
@@ -92,7 +99,7 @@ assert_exit 0 $?
 # core/hooks/ — cheap, catches editor accidents.                              #
 # --------------------------------------------------------------------------- #
 
-for f in "${SCRIPTS_DIR}"/*.sh "${SETUP_DIR}"/*.sh "${HOOKS_DIR}"/*.sh; do
+for f in "${SCRIPTS_DIR}"/*.sh "${SETUP_DIR}"/*.sh "${HOOKS_DIR}"/*.sh "${REPO_ROOT}/core/bin/"*; do
   [ -f "${f}" ] || continue
   base=$(basename "${f}")
   it "bash -n syntax check: ${base}"
