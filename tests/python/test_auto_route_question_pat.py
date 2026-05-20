@@ -162,7 +162,7 @@ class TestReadOnlyReviewEvaluationRouting:
         assert "routing to analyst" in ctx
         assert "[agent-crew] STOP" not in ctx
 
-    def test_prompt_internal_control_layer_evaluation_routes_to_analyst_not_stop(self):
+    def test_prompt_internal_control_layer_evaluation_with_followup_execution_routes_to_stop(self):
         payload = {
             "prompt": (
                 "현재 전제: agent-crew는 AI 프롬프트 안에서 사용되는 "
@@ -170,6 +170,28 @@ class TestReadOnlyReviewEvaluationRouting:
                 "이 정체성을 명확히 설명하는지 확인하고, crew setup, crew run, "
                 "crew status, crew update, crew agent가 이 역할에 맞게 동작하는지 "
                 "검증해주세요. 부족하면 수정 → 테스트 → 커밋까지 진행하세요."
+            )
+        }
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] STOP" in ctx
+        assert "[agent-crew] ROUTE" not in ctx
+
+    def test_prompt_internal_control_layer_read_only_evaluation_routes_to_analyst(self):
+        payload = {
+            "prompt": (
+                "현재 전제: agent-crew는 AI 프롬프트 안에서 사용되는 "
+                "로컬 orchestration/control layer입니다. README와 docs가 "
+                "이 정체성을 명확히 설명하는지 확인하고, crew setup, crew run, "
+                "crew status, crew update, crew agent가 이 역할에 맞게 동작하는지 "
+                "검증해주세요. 수정하지 말고 부족한 점만 알려주세요."
             )
         }
         proc = subprocess.run(

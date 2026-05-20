@@ -194,12 +194,17 @@ READONLY_REVIEW_PAT = (
 )
 REVIEW_MUTATION_PAT = (
     r"fix\s+it|apply\s+the\s+fix|make\s+the\s+change|implement|"
-    r"수정해|수정해줘|고쳐줘|반영해|반영해줘|구현해|"
+    r"수정해|수정해줘|수정\s*(?:→|->|후|하고|및|,)|고쳐줘|반영해|반영해줘|구현해|"
     r"바꿔줘|넣어줘|업데이트해|업데이트해줘"
 )
 CONDITIONAL_REVIEW_FIX_PAT = (
     r"if\s+(?:needed|necessary|there\s+are\s+gaps)|if\s+.*(?:fix|improve)|"
     r"부족하면|필요하면|문제가\s*있으면|갭이\s*있으면"
+)
+FOLLOWUP_EXECUTION_PAT = (
+    r"test\s*→|commit|push|crew-update|crew:update|"
+    r"테스트\s*(?:→|->|후|하고|및|,)|커밋|푸시|push|업데이트까지|"
+    r"수정\s*(?:→|->|후|하고|및|,)"
 )
 
 
@@ -228,8 +233,11 @@ def emit_question_route(target_agent: str, route_reason: str):
     sys.exit(0)
 
 
-if match(QUESTION_PAT) and match(READONLY_REVIEW_PAT) and (
-    not match(REVIEW_MUTATION_PAT) or match(CONDITIONAL_REVIEW_FIX_PAT)
+if (
+    match(QUESTION_PAT)
+    and match(READONLY_REVIEW_PAT)
+    and not match(REVIEW_MUTATION_PAT)
+    and not (match(CONDITIONAL_REVIEW_FIX_PAT) and match(FOLLOWUP_EXECUTION_PAT))
 ):
     emit_question_route("analyst", "read-only review/evaluation Q")
 
@@ -296,21 +304,23 @@ TRIVIAL_INTENT_PAT = {
 
 DESTRUCTIVE_INTENTS = {"push", "merge", "deploy", "tag", "rollback/revert", "merge+push", "push+merge"}
 
-for pat, (cmd_template, intent_label) in TRIVIAL_INTENT_PAT.items():
-    if re.search(pat, prompt, re.IGNORECASE):
-        approval_suffix = " Show approval gate first." if intent_label in DESTRUCTIVE_INTENTS else ""
-        fast_directive = (
-            f"[agent-crew] FAST-PATH — trivial intent detected: {intent_label}. "
-            f"Execute directly: {cmd_template}.{approval_suffix}"
-        )
-        fast_output = {
-            "hookSpecificOutput": {
-                "hookEventName": "UserPromptSubmit",
-                "additionalContext": fast_directive,
+fast_path_candidate = len(prompt.strip()) <= 120 and "\n" not in prompt
+if fast_path_candidate:
+    for pat, (cmd_template, intent_label) in TRIVIAL_INTENT_PAT.items():
+        if re.search(pat, prompt, re.IGNORECASE):
+            approval_suffix = " Show approval gate first." if intent_label in DESTRUCTIVE_INTENTS else ""
+            fast_directive = (
+                f"[agent-crew] FAST-PATH — trivial intent detected: {intent_label}. "
+                f"Execute directly: {cmd_template}.{approval_suffix}"
+            )
+            fast_output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": fast_directive,
+                }
             }
-        }
-        print(json.dumps(fast_output, ensure_ascii=True))
-        sys.exit(0)
+            print(json.dumps(fast_output, ensure_ascii=True))
+            sys.exit(0)
 
 # Memory/feedback meta-operations: skip routing unless combined with ACTION_PAT
 if re.search(MEMORY_PATH_PAT, prompt, re.IGNORECASE):
@@ -370,6 +380,7 @@ if not detected_type:
         (has_action and match(FILE_EXT_PAT))          # action + file extension
         or (has_action and match(PROJECT_KEYWORD_PAT)) # action + agent-crew keyword
         or match(WORKFLOW_ACTION_PAT)                  # workflow verb alone is enough
+        or (match(CONDITIONAL_REVIEW_FIX_PAT) and match(FOLLOWUP_EXECUTION_PAT))
         or (match(MEMORY_PAT) and has_action)          # memory + action verb
         or (match(ARTIFACT_VERB_PAT) and match(ARTIFACT_NOUN_PAT))  # artifact mutation (issue #37)
     ):
