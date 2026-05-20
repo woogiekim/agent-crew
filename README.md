@@ -1,6 +1,8 @@
 # agent-crew
 
-> AI assistant global toolkit — run a full multi-agent development pipeline from any project.
+> Local orchestration/control layer for AI coding assistants — routing,
+> state, handoffs, guardrails, audit, and adapter sync inside Codex/Claude
+> prompt workflows.
 
 ![License](https://img.shields.io/github/license/woogiekim/agent-crew)
 ![Platform](https://img.shields.io/badge/platform-AI%20Assistants-blue)
@@ -30,11 +32,21 @@
 
 ## Overview
 
-When developing with an AI coding assistant, you typically have to manually direct each phase — requirements analysis, design, implementation, verification — and coordinate multiple agent roles consistently. This is tedious and error-prone.
+When developing inside an AI coding assistant, you typically have to manually
+direct each phase — requirements analysis, design, implementation, verification
+— and coordinate multiple agent roles consistently. This is tedious and
+error-prone.
 
-**agent-crew** is an AI-assistant-agnostic workflow toolkit that automates this entire workflow. Install it once, and from any project you can invoke `crew:run` to automatically execute the full pipeline through a single unified execution engine.
+**agent-crew** is an AI-assistant-agnostic orchestration layer that runs inside
+host AI prompt workflows. It is not a replacement for Codex, Claude, Copilot, or
+other execution platforms. The host AI remains the execution plane; agent-crew
+provides the local control plane: routing, workflow intent, deterministic state
+files, handoffs, guardrails, audit logs, update sync, and host adapters.
 
-The goal: let developers focus on *what* to build, while agent-crew handles requirements collection, analysis, planning, agent creation, handoffs, state management, quality validation, and pipeline orchestration automatically.
+The goal: let developers focus on *what* to build, while agent-crew keeps the
+AI-host workflow consistent and reproducible across requirements collection,
+analysis, planning, agent creation, handoffs, state management, quality
+validation, and pipeline orchestration.
 
 ## Key Features
 
@@ -139,6 +151,10 @@ paths depending on the active host adapter:
   `false`. In that mode, `crew:run` uses inline execution and markdown/file
   fallbacks instead of claiming native background sessions, native structured
   prompts, live monitor streams, or token-budget enforcement.
+- Codex may still materialize project-local hook files and `hooks.json` as
+  advisory prompt-workflow guardrails. Treat those as installed compatibility
+  assets, not as enforced `hook_system=true` guarantees unless the active
+  adapter writes that capability flag.
 
 Always inspect `~/.agent-crew/state/{PROJECT_NAME}/capabilities.json` when
 debugging host-specific behavior.

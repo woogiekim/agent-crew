@@ -1,6 +1,10 @@
 #!/bin/bash
 # Block dangerous shell commands before execution.
 # PreToolUse hook: receives JSON via stdin with tool_input.command.
+#
+# Exit codes:
+#   0 — allow
+#   2 — block; host should cancel the tool call and surface the reason
 
 INPUT=$(cat)
 
@@ -10,6 +14,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
 
@@ -56,9 +61,17 @@ def audit(event):
     except Exception:
         pass
 
-approved = os.environ.get("AGENT_CREW_APPROVED_DANGEROUS") == "1" or bool(
-    re.match(r"^\s*(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*AGENT_CREW_APPROVED_DANGEROUS=1(?:\s|$)", command)
-)
+home = os.environ.get("AGENT_CREW_HOME") or os.path.join(os.path.expanduser("~"), ".agent-crew")
+approval_file = Path(home) / "approvals" / "dangerous-commands.approved"
+
+def file_approved():
+    try:
+        content = approval_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        return False
+    return content == "APPROVED"
+
+approved = os.environ.get("AGENT_CREW_APPROVED_DANGEROUS") == "1" or file_approved()
 
 for kind, pattern in DANGEROUS_PATTERNS:
     if re.search(pattern, command):
@@ -69,6 +82,7 @@ for kind, pattern in DANGEROUS_PATTERNS:
             "command": command,
             "tool_name": tool_name,
             "approved": approved,
+            "approval_file": str(approval_file) if approval_file.exists() else "",
         })
         if approved:
             sys.exit(0)
@@ -80,11 +94,11 @@ for kind, pattern in DANGEROUS_PATTERNS:
                 f"Matched pattern: {pattern}\n"
                 f"Command: {command}\n\n"
                 "Deterministic approval is required before running this command. "
-                "Set AGENT_CREW_APPROVED_DANGEROUS=1 only from an approved orchestrator path."
+                f"Write APPROVED to {approval_file} only from an approved orchestrator path."
             )
         }
         print(json.dumps(block_output))
-        sys.exit(0)
+        sys.exit(2)
 
 sys.exit(0)
 PYEOF

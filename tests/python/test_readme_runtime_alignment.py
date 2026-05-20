@@ -35,6 +35,8 @@ def test_readme_documents_codex_capability_fallbacks():
     assert "`agent_background`, `task_tools`" in text
     assert "inline execution and markdown/file" in text
     assert "fallbacks instead of claiming native background sessions" in text
+    assert "advisory prompt-workflow guardrails" in text
+    assert "not as enforced `hook_system=true` guarantees" in text
 
 
 def test_readme_documents_native_cli_boundary():
@@ -43,3 +45,11 @@ def test_readme_documents_native_cli_boundary():
     assert "`crew setup`, `crew status`,\n`crew update --local`, and the initial `crew run` state transition are\ndeterministic CLI paths" in text
     assert "`crew run` writes task state and a supervisor handoff" in text
     assert "`crew agent` still fails fast" in text
+
+
+def test_readme_defines_prompt_internal_control_layer():
+    text = readme_text()
+    assert "orchestration layer that runs inside\nhost AI prompt workflows" in text
+    assert "It is not a replacement for Codex, Claude, Copilot" in text
+    assert "The host AI remains the execution plane" in text
+    assert "agent-crew\nprovides the local control plane" in text

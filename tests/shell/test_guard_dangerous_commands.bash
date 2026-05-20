@@ -28,7 +28,7 @@ TMP_HOME=$(make_tmp)
 it "git push is blocked without deterministic approval"
 out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
-assert_exit 0 "${rc}"
+assert_exit 2 "${rc}"
 
 it "git push block output identifies push kind"
 assert_contains "${out}" "Kind: push"
@@ -46,12 +46,21 @@ it "approved git push writes allow audit trail"
 audit=$(cat "${TMP_HOME}/audit/dangerous-commands.jsonl")
 assert_contains "${audit}" '"decision": "allow"'
 
-it "inline approval env prefix allows git push"
+it "inline approval env prefix does not self-approve git push"
 out=$(run_hook "$(payload_for "AGENT_CREW_APPROVED_DANGEROUS=1 git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: push"
+
+it "approval marker file allows git push"
+mkdir -p "${TMP_HOME}/approvals"
+printf 'APPROVED\n' > "${TMP_HOME}/approvals/dangerous-commands.approved"
+out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
 
 it "git merge is blocked without deterministic approval"
+rm -f "${TMP_HOME}/approvals/dangerous-commands.approved"
 out=$(run_hook "$(payload_for "git merge feature/example")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 assert_contains "${out}" "Kind: merge"
 

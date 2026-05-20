@@ -17,6 +17,9 @@ assert_exit 0 "${rc}"
 it "crew help mentions setup/status/update"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 
+it "crew help states prompt-workflow control plane"
+assert_contains "${out}" "local control plane for AI-host prompt workflows"
+
 TMP_HOME=$(make_tmp)
 TMP_PROJECT=$(make_tmp)
 mkdir -p "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks"
@@ -80,5 +83,8 @@ assert_exit 0 "${rc}"
 
 it "crew update --help documents local mode"
 assert_contains "${out}" "crew update [--local [SOURCE_ROOT]]"
+
+it "crew update --help documents remote default"
+assert_contains "${out}" "clones origin/main into a fresh temporary checkout"
 
 end_report

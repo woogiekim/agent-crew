@@ -21,18 +21,21 @@ usage() {
   cat <<'EOF'
 usage: crew <command> [args]
 
+agent-crew is a local control plane for AI-host prompt workflows. The host AI
+remains the execution plane; crew provides setup, state, handoff, audit, and
+adapter-sync helpers around that prompt runtime.
+
 Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json] [--recent N]     Show deterministic local task state
   update [--local [SOURCE_ROOT]]   Refresh installed assets
-  run "task"                       Host-guided pipeline entrypoint (not native yet)
+  run "task"                       Write state and host handoff for a task
   agent [name] [question]          Host-guided read-only agent entrypoint
   help                             Show this help
 
 Notes:
-  crew setup/status/update are native shell paths.
-  crew run/agent currently require a host runtime such as Codex or Claude and
-  intentionally fail fast instead of pretending that markdown prompts are a CLI.
+  crew setup/status/update and the crew run state transition are native shell
+  paths. crew agent still requires a host runtime such as Codex or Claude.
 EOF
 }
 
@@ -118,8 +121,9 @@ cmd_update() {
       cat <<'EOF'
 usage: crew update [--local [SOURCE_ROOT]]
 
-Default update mode uses the installed update command definition as guidance.
-Use --local to deterministically refresh the install from a local checkout.
+Default update mode clones origin/main into a fresh temporary checkout and
+refreshes the install from that source. Use --local to deterministically refresh
+from an existing local checkout.
 EOF
       return 0
       ;;
@@ -129,9 +133,13 @@ EOF
       bash "${sync_script}" "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
       ;;
     "")
-      local update_md="${ASSET_ROOT}/commands/update.md"
-      require_file "${update_md}" "update command definition"
-      die "native remote update is not implemented yet; run 'crew update --local [SOURCE_ROOT]' or invoke crew:update in a host runtime"
+      command -v git >/dev/null 2>&1 || die "git is required for native remote update"
+      local work_dir
+      work_dir="$(mktemp -d)"
+      git clone --depth 1 https://github.com/woogiekim/agent-crew "${work_dir}"
+      local sync_script="${work_dir}/core/scripts/sync-local-install.sh"
+      require_file "${sync_script}" "remote local sync script"
+      bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"
       ;;
     *)
       die "unknown update argument: ${mode}"
