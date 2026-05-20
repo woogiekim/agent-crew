@@ -74,6 +74,13 @@ assert_exit 0 "${rc}"
 it "shell: mnemos-bounded.sh help text printed"
 assert_contains "${out}" "usage"
 
+it "shell: sync-local-install.sh --help exits 0 with usage"
+out=$(bash "${SCRIPTS_DIR}/sync-local-install.sh" --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+it "shell: sync-local-install.sh help text printed"
+assert_contains "${out}" "usage"
+
 # detect-inject-intent.sh has no --help; an empty input is a no-op (exit 1).
 # Just confirm the script parses cleanly (bash -n).
 it "shell: detect-inject-intent.sh syntactically valid"
