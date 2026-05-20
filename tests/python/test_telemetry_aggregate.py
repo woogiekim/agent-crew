@@ -116,6 +116,96 @@ class TestTelemetryAggregate:
         # current_phase empty when register missing & no terminal event
         assert task["current_phase"] in ("", None)
 
+    def test_missing_register_uses_result_md_terminal_status(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Legacy task dirs with only result.md are not reported as running."""
+        task_id = "20260101-120200-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        (td / "result.md").write_text(
+            "# Legacy task\n\n"
+            "DESCRIPTION: Legacy completed task\n"
+            "BRANCH: feat/legacy\n"
+            "STATUS: completed\n"
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        assert task["status"] == "completed"
+        assert task["current_phase"] == "completed"
+        assert task["task"] == "Legacy completed task"
+        assert payload["summary"]["tasks_completed"] == 1
+        assert payload["summary"]["tasks_running"] == 0
+
+    def test_stale_register_is_overridden_by_result_md_terminal_status(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """A stale phase_0 register should not hide a completed result.md."""
+        task_id = "20260101-120300-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="phase_0")
+        (td / "result.md").write_text(
+            "# Stale register task\n\n"
+            "**Task:** Stale register completed task\n"
+            "**Status:** completed\n"
+        )
+        _write_progress_jsonl(td, [
+            {"ts": "2026-01-01T12:03:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "STARTED"},
+            {"ts": "2026-01-01T12:04:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "COMPLETED"},
+        ])
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        assert task["status"] == "completed"
+        assert task["current_phase"] == "completed"
+        assert task["duration_seconds"] == 60.0
+        assert payload["summary"]["tasks_completed"] == 1
+        assert payload["summary"]["tasks_running"] == 0
+
+    def test_cancelled_result_md_counts_as_blocked(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Plan-cancelled tasks are terminal, not long-running."""
+        task_id = "20260101-120400-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        (td / "result.md").write_text(
+            "# Cancelled task\n\n"
+            "STATUS: CANCELLED\n"
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        assert task["status"] == "blocked"
+        assert task["current_phase"] == "blocked"
+        assert task["blockers"] == ["cancelled"]
+        assert payload["summary"]["tasks_blocked"] == 1
+
     def test_recent_selector_limits_count(
         self, script_runner, env_with_home, state_dir
     ):
@@ -136,6 +226,27 @@ class TestTelemetryAggregate:
         assert r.returncode == 0
         payload = json.loads(r.stdout)
         assert payload["summary"]["tasks_total"] == 2
+
+    def test_stray_tasks_subdirectory_is_ignored(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Non-task folders under tasks/ should not pollute telemetry."""
+        (state_dir / "tasks" / "context").mkdir(parents=True)
+        task_id = "20260101-120500-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id)
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert [t["task_id"] for t in payload["tasks"]] == [task_id]
+        assert payload["summary"]["tasks_total"] == 1
 
     def test_format_json_is_valid_json(
         self, script_runner, env_with_home, state_dir

@@ -58,6 +58,7 @@ Metrics computed:
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 from collections import Counter
@@ -152,15 +153,83 @@ def read_cost_file(state_dir, task_id):
             "tokens_total": total_in + total_out}
 
 
+TASK_ID_RE = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
+
+
+def is_task_dir(path):
+    """Return True for real task directories, excluding stray folders."""
+    if TASK_ID_RE.match(path.name):
+        return True
+    markers = ("register.json", "pipeline.json", "result.md",
+               "progress.buffer.jsonl", "progress.log")
+    return any((path / marker).exists() for marker in markers)
+
+
+RESULT_STATUS_RE = re.compile(
+    r"^(?:\*\*)?status:\*{0,2}\s+\*{0,2}(\w+)\*{0,2}",
+    re.IGNORECASE | re.MULTILINE,
+)
+RESULT_FIELD_RE = re.compile(
+    r"^(?:\*\*)?(description|task|branch):\*{0,2}\s*(.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def read_result_md(task_dir):
+    """Return terminal fields parsed from result.md, or {} when absent."""
+    p = task_dir / "result.md"
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return {}
+
+    result = {}
+    m = RESULT_STATUS_RE.search(text)
+    if m:
+        status = m.group(1).lower()
+        if status == "completed":
+            result["status"] = "completed"
+            result["current_phase"] = "completed"
+        elif status in ("blocked", "cancelled"):
+            result["status"] = "blocked"
+            result["current_phase"] = "blocked"
+            if status == "cancelled":
+                result["blockers"] = ["cancelled"]
+        else:
+            result["status"] = status
+
+    for field, value in RESULT_FIELD_RE.findall(text):
+        key = field.lower()
+        value = value.strip().strip("*").strip()
+        if key in ("description", "task") and value:
+            result.setdefault("task", value)
+        elif key == "branch" and value:
+            result["branch"] = value
+
+    return result
+
+
 def aggregate_task(state_dir, task_dir):
     """Return a per-task dict with metrics + status. Robust to missing data."""
     task_id = task_dir.name
     reg = read_register(task_dir)
     events = read_progress_buffer(task_dir)
     cost = read_cost_file(state_dir, task_id)
+    result = read_result_md(task_dir)
 
-    # Status / current phase from register.json (or events fallback).
-    if reg:
+    terminal = next((e for e in reversed(events)
+                     if e.get("event") in ("COMPLETED", "BLOCKED",
+                                           "COST_BLOCKED")), None)
+
+    # Status / current phase. result.md is the strongest terminal signal:
+    # older or interrupted runs can leave register.json stuck at phase_0 even
+    # after writing a completed/blocked result.
+    if result.get("status") in ("completed", "blocked"):
+        status = result["status"]
+        current_phase = result.get("current_phase", status)
+        blocked_by = result.get("blockers", [])
+        stages_completed = None
+    elif reg:
         status_value = reg.get("current_phase", "")
         if status_value == "completed":
             status = "completed"
@@ -173,32 +242,30 @@ def aggregate_task(state_dir, task_dir):
         current_phase = reg.get("current_phase", "")
         blocked_by = reg.get("blocked_by", []) or []
         stages_completed = None  # filled from pipeline.json below
-    else:
-        # Pre-F4: infer from events.
-        terminal = next((e for e in reversed(events)
-                         if e.get("event") in ("COMPLETED", "BLOCKED")), None)
-        if terminal:
-            status = "completed" if terminal["event"] == "COMPLETED" else "blocked"
-            current_phase = "completed" if terminal["event"] == "COMPLETED" else "blocked"
-            blocked_by = ([terminal.get("detail", "")[:80]]
-                          if terminal["event"] == "BLOCKED" else [])
-        else:
-            status = "running"
-            current_phase = ""
+    elif terminal:
+        if terminal["event"] == "COMPLETED":
+            status = "completed"
+            current_phase = "completed"
             blocked_by = []
+        else:
+            status = "blocked"
+            current_phase = "blocked"
+            blocked_by = [terminal.get("detail", "")[:80]]
+        stages_completed = None
+    else:
+        status = "running"
+        current_phase = ""
+        blocked_by = []
         stages_completed = None
 
     # Timing from events.
     started = next((e for e in events if e.get("event") == "STARTED"), None)
-    terminal_event = next((e for e in reversed(events)
-                           if e.get("event") in ("COMPLETED", "BLOCKED",
-                                                 "COST_BLOCKED")), None)
     duration_seconds = None
     started_ts = None
     if started:
         started_ts = parse_iso_ts(started.get("ts", ""))
-        if terminal_event and started_ts:
-            end_ts = parse_iso_ts(terminal_event.get("ts", ""))
+        if terminal and started_ts:
+            end_ts = parse_iso_ts(terminal.get("ts", ""))
             if end_ts:
                 duration_seconds = (end_ts - started_ts).total_seconds()
 
@@ -219,7 +286,9 @@ def aggregate_task(state_dir, task_dir):
     task_field = ""
     if reg:
         task_field = reg.get("task", "")
-    elif started:
+    if not task_field:
+        task_field = result.get("task", "")
+    if not task_field and started:
         task_field = started.get("detail", "")
 
     return {
@@ -247,7 +316,8 @@ def list_task_dirs(state_dir, args):
     tasks_root = state_dir / "tasks"
     if not tasks_root.is_dir():
         return []
-    candidates = [p for p in tasks_root.iterdir() if p.is_dir()]
+    candidates = [p for p in tasks_root.iterdir()
+                  if p.is_dir() and is_task_dir(p)]
 
     # Sort by mtime descending for --recent and stable ordering.
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
