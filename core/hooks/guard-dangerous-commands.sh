@@ -84,13 +84,14 @@ def load_approval(kind, command):
         return (False, "approval_command_mismatch")
 
     expires_at = data.get("expires_at")
-    if expires_at:
-        try:
-            expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
-            if expiry <= datetime.now(timezone.utc):
-                return (False, "approval_expired")
-        except Exception:
-            return (False, "approval_invalid_expiry")
+    if not expires_at:
+        return (False, "approval_missing_expiry")
+    try:
+        expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+        if expiry <= datetime.now(timezone.utc):
+            return (False, "approval_expired")
+    except Exception:
+        return (False, "approval_invalid_expiry")
 
     return (True, "approval_matched")
 

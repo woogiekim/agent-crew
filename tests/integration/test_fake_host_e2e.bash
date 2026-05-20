@@ -30,4 +30,11 @@ assert_contains "${status}" "\"status\": \"completed\""
 it "fake-host status points at temp state dir"
 assert_contains "${status}" "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")"
 
+it "fake-host state has no schema errors"
+schema=$(AGENT_CREW_HOME="${TMP_HOME}" python3 "${REPO_ROOT}/core/scripts/validate-state-schema.py" \
+  --state-dir "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")" \
+  --task-dir "${TASK_DIR}" \
+  --format json 2>&1)
+assert_contains "${schema}" '"errors": 0'
+
 end_report

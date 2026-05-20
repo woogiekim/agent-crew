@@ -42,11 +42,20 @@ host AI prompt workflows. It is not a replacement for Codex, Claude, Copilot, or
 other execution platforms. The host AI remains the execution plane; agent-crew
 provides the local control plane: routing, workflow intent, deterministic state
 files, handoffs, guardrails, audit logs, update sync, and host adapters.
+Comparisons to commercial autonomous harnesses should be read at this layer
+only: agent-crew coordinates prompt-runtime orchestration above the host AI; it
+does not try to replace the host AI, own OS-level execution, or operate as an
+independent commercial harness.
 
 The goal: let developers focus on *what* to build, while agent-crew keeps the
 AI-host workflow consistent and reproducible across requirements collection,
 analysis, planning, agent creation, handoffs, state management, quality
 validation, and pipeline orchestration.
+
+Current validation conclusion: prompt handling has improved, especially around
+STOP routing, handoff state, and direct-agent boundaries. Performance remains
+very poor and is the primary issue to evaluate and improve in the prompt-runtime
+orchestration workflow.
 
 ## Key Features
 
@@ -518,8 +527,7 @@ Example output during a pipeline run:
 ```
 [crew] 20260510-140000-0 | STARTED   | implement order management API
 [crew] 20260510-140000-0 | PHASE     | 1a — Requirement collection
-[crew] 20260510-140000-0 | PHASE     | 1b — Analysis
-[crew] 20260510-140000-0 | PHASE     | 1c — Planning
+[crew] 20260510-140000-0 | PHASE     | 1b+1c — Analysis + Planning
 [crew] 20260510-140000-0 | PHASE     | 1d — Plan approval
 [crew] 20260510-140000-0 | STAGE     | 1/2 — backend
 [crew] 20260510-140000-0 | STAGE_DONE| backend — N/A
@@ -543,8 +551,7 @@ Each entry is a timestamped line:
 ```
 2026-05-10T14:22:01 | STARTED    | implement order management API
 2026-05-10T14:22:03 | PHASE      | 1a — Requirement collection
-2026-05-10T14:22:45 | PHASE      | 1b — Analysis
-2026-05-10T14:23:10 | PHASE      | 1c — Planning
+2026-05-10T14:22:45 | PHASE      | 1b+1c — Analysis + Planning
 2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
 2026-05-10T14:24:00 | STAGE      | 1/3 — backend
 2026-05-10T14:31:22 | STAGE_DONE | backend — N/A
@@ -623,9 +630,10 @@ Plain-text approval requests ("Shall I?", "Should I?") are forbidden at every le
 The shell guard for dangerous commands is a workflow-integrity check, not an OS
 sandbox. When an approved orchestrator path needs to run `git push`, `git
 merge`, or deployment commands, it must write a one-shot JSON approval to
-`~/.agent-crew/approvals/dangerous-commands.approved` with the exact `kind` and
-`command`. The guard consumes that marker after one matching command and audits
-both blocks and allows to `~/.agent-crew/audit/dangerous-commands.jsonl`.
+`~/.agent-crew/approvals/dangerous-commands.approved` with the exact `kind`,
+`command`, and a short-lived `expires_at` timestamp. The guard consumes that
+marker after one matching command and audits both blocks and allows to
+`~/.agent-crew/audit/dangerous-commands.jsonl`.
 
 ## crew:run Optimizations
 
@@ -683,7 +691,7 @@ A `PreToolUse` hook that intercepts `Edit` and `Write` tool calls. If the target
 All implementation work must go through the crew pipeline: crew:run "your request"
 ```
 
-Edits to `~/.agent-crew` and `~/.claude` paths are always allowed (agent definitions and harness configuration).
+Edits to `~/.agent-crew` and `~/.claude` paths are always allowed (agent definitions and adapter configuration).
 
 ### Forbid Plain-Text Approval (`core/hooks/forbid-plaintext-approval.sh`)
 
@@ -759,8 +767,7 @@ Status : in-progress
 
 Recent events (from progress.log):
   2026-05-10T14:22:01 | STARTED    | implement order management API
-  2026-05-10T14:22:45 | PHASE      | 1b — Analysis
-  2026-05-10T14:23:10 | PHASE      | 1c — Planning
+  2026-05-10T14:22:45 | PHASE      | 1b+1c — Analysis + Planning
   2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
   2026-05-10T14:24:00 | STAGE      | 1/3 — backend
 

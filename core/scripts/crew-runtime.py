@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def utc_now_z() -> str:
+    """Return the progress-buffer timestamp format used by supervisor."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def git_root() -> Path:
     try:
         out = subprocess.check_output(
@@ -121,6 +126,7 @@ def command_run(args: argparse.Namespace) -> int:
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc)
+    now_z = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     session_id = now.strftime("%Y%m%d-%H%M%S")
     task_id = f"{session_id}-0"
     index = 0
@@ -194,29 +200,42 @@ def command_run(args: argparse.Namespace) -> int:
     write_json(task_dir / "pipeline.json", pipeline)
     (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
     (task_dir / "result.md").write_text(result, encoding="utf-8")
+    progress_status = "completed" if result_status == "completed" else "failed"
     (task_dir / "progress.log").write_text(
-        f"[{now.isoformat()}] STARTED {args.task}\n"
-        f"[{now.isoformat()}] STATUS {result_status}\n",
+        f"{now_z} | STARTED | {args.task}\n"
+        f"{now_z} | STATUS | {result_status}\n",
         encoding="utf-8",
     )
     append_jsonl(
         task_dir / "progress.buffer.jsonl",
         {
-            "ts": now.isoformat(),
-            "trace_id": task_id,
+            "ts": now_z,
+            "trace_id": f"{session_id}.{task_id}.0.0",
             "task_id": task_id,
+            "session_id": session_id,
             "event": "STARTED",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "started",
             "detail": args.task,
+            "files": [],
         },
     )
     append_jsonl(
         task_dir / "progress.buffer.jsonl",
         {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "trace_id": task_id,
+            "ts": utc_now_z(),
+            "trace_id": f"{session_id}.{task_id}.0.0",
             "task_id": task_id,
+            "session_id": session_id,
             "event": "STATUS",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": progress_status,
             "detail": result_status,
+            "files": [],
         },
     )
 

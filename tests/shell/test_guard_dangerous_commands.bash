@@ -30,11 +30,13 @@ write_approval() {
   mkdir -p "${home}/approvals"
   python3 -c '
 import json, pathlib, sys
+from datetime import datetime, timedelta, timezone
 path = pathlib.Path(sys.argv[1]) / "approvals" / "dangerous-commands.approved"
 path.write_text(json.dumps({
     "approved": True,
     "kind": sys.argv[2],
     "command": sys.argv[3],
+    "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }) + "\n", encoding="utf-8")
 ' "${home}" "${kind}" "${cmd}"
 }
@@ -83,6 +85,37 @@ printf 'APPROVED\n' > "${TMP_HOME}/approvals/dangerous-commands.approved"
 out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 2 "${rc}"
+
+it "approval marker without expiry does not allow git push"
+python3 -c '
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]) / "approvals" / "dangerous-commands.approved"
+path.write_text(json.dumps({
+    "approved": True,
+    "kind": "push",
+    "command": "git push origin main",
+}) + "\n", encoding="utf-8")
+' "${TMP_HOME}"
+out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: push"
+
+it "expired approval marker does not allow git push"
+python3 -c '
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]) / "approvals" / "dangerous-commands.approved"
+path.write_text(json.dumps({
+    "approved": True,
+    "kind": "push",
+    "command": "git push origin main",
+    "expires_at": "2000-01-01T00:00:00Z",
+}) + "\n", encoding="utf-8")
+' "${TMP_HOME}"
+out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: push"
 
 it "approval marker for different command does not allow git push"
 write_approval "${TMP_HOME}" "push" "git push origin other"

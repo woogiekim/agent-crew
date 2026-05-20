@@ -55,13 +55,16 @@ def test_readme_defines_prompt_internal_control_layer():
     assert "It is not a replacement for Codex, Claude, Copilot" in text
     assert "The host AI remains the execution plane" in text
     assert "agent-crew\nprovides the local control plane" in text
+    assert "Comparisons to commercial autonomous harnesses should be read at this layer\nonly" in text
+    assert "does not try to replace the host AI, own OS-level execution, or operate as an\nindependent commercial harness" in text
 
 
 def test_readme_documents_one_shot_dangerous_command_approval():
     text = readme_text()
     assert "workflow-integrity check, not an OS\nsandbox" in text
     assert "one-shot JSON approval" in text
-    assert "exact `kind` and\n`command`" in text
+    assert "exact `kind`,\n`command`, and a short-lived `expires_at` timestamp" in text
+    assert "short-lived `expires_at` timestamp" in text
 
 
 def test_readme_explains_requirements_question_skip_and_wait_contract():
@@ -76,3 +79,10 @@ def test_readme_does_not_overstate_native_runtime_execution():
     assert "The native `crew`\nCLI remains the deterministic control plane" in text
     assert "waits for the host prompt workflow to complete the execution\ncontract" in text
     assert "No daemon processes, no file polling, no signal files" not in text
+
+
+def test_readme_preserves_validation_conclusion():
+    text = readme_text()
+    assert "prompt handling has improved" in text
+    assert "Performance remains\nvery poor" in text
+    assert "primary issue to evaluate and improve" in text
