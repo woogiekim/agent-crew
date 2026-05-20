@@ -30,12 +30,12 @@ Commands:
   status [--json] [--recent N]     Show deterministic local task state
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
-  agent [name] [question]          Host-guided read-only agent entrypoint
+  agent [name] [question]          Write direct-agent host handoff state
   help                             Show this help
 
 Notes:
-  crew setup/status/update and the crew run state transition are native shell
-  paths. crew agent still requires a host runtime such as Codex or Claude.
+  crew setup/status/update and the crew run/agent state transitions are native
+  shell paths. The host runtime such as Codex or Claude still performs execution.
 EOF
 }
 
@@ -170,13 +170,15 @@ cmd_agent() {
     cat <<'EOF'
 usage: crew agent [agent-name] [question]
 
-crew agent is a host-bridge entrypoint. Use crew:agent inside a Codex/Claude
-prompt runtime until a callable host adapter is available to this CLI.
+Validates the direct-agent request and writes deterministic host handoff state.
+The host prompt runtime still performs the actual read-only analysis.
 EOF
     return 0
   fi
   require_file "${ASSET_ROOT}/commands/agent.md" "agent command definition"
-  die "crew agent requires a host prompt runtime; invoke crew:agent in Codex/Claude guided prompt mode"
+  local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
+  require_file "${runtime}" "native runtime helper"
+  python3 "${runtime}" agent --project-root "${PROJECT_ROOT}" --asset-root "${ASSET_ROOT}" "$@"
 }
 
 main() {

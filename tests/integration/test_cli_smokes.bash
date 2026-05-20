@@ -89,6 +89,14 @@ assert_exit 0 "${rc}"
 it "bin: crew --help prints usage"
 assert_contains "${out}" "usage: crew"
 
+it "bin: crew-runtime agent --list exits 0"
+out=$(python3 "${SCRIPTS_DIR}/crew-runtime.py" agent --asset-root "${REPO_ROOT}/core" --list 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "bin: crew-runtime agent --list includes analyst"
+assert_contains "${out}" "analyst"
+
 # detect-inject-intent.sh has no --help; an empty input is a no-op (exit 1).
 # Just confirm the script parses cleanly (bash -n).
 it "shell: detect-inject-intent.sh syntactically valid"

@@ -71,13 +71,29 @@ assert_exit 0 "${rc}"
 it "crew run fake host output is completed"
 assert_contains "${out}" "STATUS: completed"
 
-it "crew agent fails fast with guided prompt mode message"
+it "crew agent writes deterministic direct-agent handoff"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "what changed?" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew agent output includes request directory"
+assert_contains "${out}" "REQUEST_DIR:"
+
+AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+
+it "crew agent writes request.json"
+assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
+
+it "crew agent writes direct handoff"
+assert_file_exists "${AGENT_REQUEST_DIR}/handoff.md"
+
+it "crew agent blocks mutating direct requests"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "fix the bug" 2>&1)
 rc=$?
 assert_exit 2 "${rc}"
 
-it "crew agent failure is explicit"
-assert_contains "${out}" "requires a host prompt runtime"
+it "crew agent mutating failure redirects to crew run"
+assert_contains "${out}" "Use crew run for mutating work"
 
 it "crew update --help exits 0"
 out=$(bash "${CREW}" update --help 2>&1)

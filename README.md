@@ -129,11 +129,12 @@ matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
 
 `crew` is the native shell entrypoint. Today, `crew setup`, `crew status`,
-`crew update --local`, and the initial `crew run` state transition are
-deterministic CLI paths. `crew run` writes task state and a supervisor handoff;
-until the host AI prompt runtime completes that handoff, non-fake-host runs end
-with `STATUS: blocked`. `crew agent` still fails fast with an explicit
-host-bridge/guided-prompt-mode message.
+`crew update --local`, and the initial `crew run` / `crew agent` state
+transitions are deterministic CLI paths. `crew run` writes task state and a
+supervisor handoff; until the host AI prompt runtime completes that handoff,
+non-fake-host runs end with `STATUS: blocked`. `crew agent` validates a
+read-only direct-agent request and writes host handoff state; the host prompt
+runtime still performs the analysis.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
 

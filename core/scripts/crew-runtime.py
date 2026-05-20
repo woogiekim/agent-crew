@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +41,75 @@ def append_jsonl(path: Path, event: dict) -> None:
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def asset_root(explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    return Path(__file__).resolve().parent.parent
+
+
+def read_agent_registry(root: Path) -> dict[str, dict]:
+    registry_path = root / "rules" / "agent-routing.md"
+    agents: dict[str, dict] = {}
+    if not registry_path.exists():
+        return agents
+
+    in_registry = False
+    for line in registry_path.read_text(encoding="utf-8").splitlines():
+        if line.strip() == "## Agent Registry":
+            in_registry = True
+            continue
+        if in_registry and line.startswith("## ") and line.strip() != "## Agent Registry":
+            break
+        if not in_registry or not line.startswith("|"):
+            continue
+        if "---" in line or line.startswith("| Agent "):
+            continue
+
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 5:
+            continue
+        name, scope, keywords, safe, reason = cells[:5]
+        agents[name] = {
+            "scope": scope,
+            "keywords": keywords,
+            "safe": safe.lower() == "yes",
+            "reason": "" if reason == "—" else reason,
+        }
+    return agents
+
+
+def looks_mutating(task: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(build|implement|create|add|update|fix|remove|move|change|migrate|"
+            r"refactor|replace|extend|integrate|test|deploy|merge|rollback|write|"
+            r"save|edit|publish|commit)\b|"
+            r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+            r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐",
+            task,
+            re.IGNORECASE,
+        )
+    )
+
+
+def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
+    lowered = task.lower()
+    route_patterns = [
+        ("historian", ["어떤 에이전트", "방금", "what just", "what ran", "what agent", "this session", "this branch"]),
+        ("backend", ["api", "endpoint", "server", "database", "schema", "domain", "service", "repository", "entity"]),
+        ("frontend", ["component", " page", " ui ", " css", "style", "layout", "button", "form", "modal", "react", "vue"]),
+        ("designer", ["wireframe", "mockup", "figma", "prototype", "sketch"]),
+        ("planner", ["design", "architecture", "plan", "decompose", "structure", "diagram"]),
+        ("analyst", ["explain", "investigate", "understand", "trace", "audit", "explore", "리뷰", "검토", "평가"]),
+        ("documenter", ["docs", "readme", "documentation", "guide", "reference", "changelog"]),
+        ("learning-mentor", ["teach", "learn", "concept", "pattern", "tutorial", "example"]),
+    ]
+    for name, tokens in route_patterns:
+        if name in agents and any(token in lowered or token in task for token in tokens):
+            return name, f"matched {name} keywords"
+    return None, "no direct-agent routing rule matched"
 
 
 def command_run(args: argparse.Namespace) -> int:
@@ -159,6 +229,105 @@ def command_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_agent(args: argparse.Namespace) -> int:
+    root = asset_root(args.asset_root)
+    agents = read_agent_registry(root)
+    raw_args = list(args.agent_args or [])
+
+    if not raw_args and not args.list and not args.routing:
+        print("usage: crew-runtime.py agent [--list|--routing|agent-name task|task]")
+        return 0
+
+    if args.list:
+        print(f"Available direct agents (source: {root / 'rules' / 'agent-routing.md'})")
+        for name in sorted(agents):
+            if agents[name]["safe"]:
+                print(f"  {name}: {agents[name]['scope']}")
+        return 0
+
+    if args.routing:
+        registry_path = root / "rules" / "agent-routing.md"
+        text = registry_path.read_text(encoding="utf-8")
+        start = text.find("## Auto-Routing Rules")
+        end = text.find("### Matching semantics", start)
+        print(text[start:end].rstrip() if start >= 0 and end > start else text)
+        return 0
+
+    if raw_args[0] in agents:
+        agent_name = raw_args[0]
+        task = " ".join(raw_args[1:]).strip()
+        route_reason = "explicit direct-agent request"
+    else:
+        task = " ".join(raw_args).strip()
+        agent_name, route_reason = auto_route_agent(task, agents)
+
+    if not task:
+        print("crew agent: task description is required", file=sys.stderr)
+        return 2
+
+    if agent_name is None:
+        print("crew agent: cannot auto-route this read-only task; specify an agent name or use crew run", file=sys.stderr)
+        return 2
+
+    info = agents.get(agent_name)
+    if not info:
+        print(f"crew agent: unknown agent '{agent_name}'", file=sys.stderr)
+        return 2
+    if not info["safe"]:
+        reason = info["reason"] or "agent requires supervisor context"
+        print(f"crew agent: '{agent_name}' cannot be invoked directly. Reason: {reason}", file=sys.stderr)
+        return 2
+    if looks_mutating(task):
+        print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
+        return 2
+
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    project_name = project_root.name
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    state_dir = agent_crew_home / "state" / project_name
+    requests_dir = state_dir / "agent-requests"
+    requests_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now(timezone.utc)
+    request_id = f"agent-{now.strftime('%Y%m%d-%H%M%S')}-0"
+    index = 0
+    while (requests_dir / request_id).exists():
+        index += 1
+        request_id = f"agent-{now.strftime('%Y%m%d-%H%M%S')}-{index}"
+
+    request_dir = requests_dir / request_id
+    request = {
+        "schema_version": 1,
+        "request_id": request_id,
+        "agent": agent_name,
+        "task": task,
+        "route_reason": route_reason,
+        "project_root": str(project_root),
+        "request_dir": str(request_dir),
+        "status": "handoff_ready",
+        "created_at": now.isoformat(),
+    }
+    handoff = (
+        f"# Direct Agent Handoff\n\n"
+        f"REQUEST_ID: {request_id}\n"
+        f"AGENT: {agent_name}\n"
+        f"TASK: {task}\n"
+        f"PROJECT_ROOT: {project_root}\n"
+        f"MODE: host-prompt-bridge\n"
+        f"STATUS: handoff_ready\n"
+        f"NEXT: Invoke crew:agent {agent_name!r} with this task inside the host prompt runtime.\n"
+    )
+
+    write_json(request_dir / "request.json", request)
+    (request_dir / "handoff.md").write_text(handoff, encoding="utf-8")
+
+    print(f"AGENT_REQUEST_ID: {request_id}")
+    print(f"AGENT: {agent_name}")
+    print(f"REQUEST_DIR: {request_dir}")
+    print("STATUS: handoff_ready")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="agent-crew deterministic runtime")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -168,6 +337,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--project-root")
     run.add_argument("--fake-host-result", choices=["completed"], default=None)
     run.set_defaults(func=command_run)
+
+    agent = sub.add_parser("agent", help="create deterministic direct-agent handoff")
+    agent.add_argument("--project-root")
+    agent.add_argument("--asset-root")
+    agent.add_argument("--list", action="store_true")
+    agent.add_argument("--routing", action="store_true")
+    agent.add_argument("agent_args", nargs=argparse.REMAINDER)
+    agent.set_defaults(func=command_agent)
 
     return parser
 

@@ -1,3 +1,10 @@
+# agent-crew generated project-local artifacts
+.agent-crew/
+.codex/
+.claude/
+.crew-worktrees/
+.crew_task_id
+
 # Dot-prefixed directories (catch-all)
 .*/
 
