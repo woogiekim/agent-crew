@@ -37,13 +37,33 @@ assert_exit 0 "${rc}"
 it "crew status --json contains tasks key"
 assert_contains "${out}" "\"tasks\""
 
-it "crew run fails fast with guided prompt mode message"
+it "crew run writes deterministic state then exits blocked"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
 rc=$?
-assert_exit 2 "${rc}"
+assert_exit 3 "${rc}"
 
-it "crew run failure is explicit"
-assert_contains "${out}" "native crew run is not implemented yet"
+it "crew run output includes task directory"
+assert_contains "${out}" "TASK_DIR:"
+
+TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+
+it "crew run writes register.json"
+assert_file_exists "${TASK_DIR}/register.json"
+
+it "crew run writes supervisor handoff"
+assert_file_exists "${TASK_DIR}/handoff.md"
+
+it "crew run writes blocked result"
+result=$(cat "${TASK_DIR}/result.md")
+assert_contains "${result}" "STATUS: blocked"
+
+it "crew run fake host can complete"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --fake-host-result completed "fake host task" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew run fake host output is completed"
+assert_contains "${out}" "STATUS: completed"
 
 it "crew agent fails fast with guided prompt mode message"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "what changed?" 2>&1)

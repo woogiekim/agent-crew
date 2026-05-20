@@ -142,15 +142,18 @@ EOF
 cmd_run() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
-usage: crew run "task"
+usage: crew run [--fake-host-result completed] "task"
 
-Native deterministic crew run is not implemented yet. Use crew:run in a host
-runtime while the CLI runtime is being extracted from the markdown workflow.
+Creates deterministic local task state and a supervisor handoff. Without a
+native agent execution backend, normal runs end as STATUS: blocked after writing
+state. Tests may use --fake-host-result completed to exercise the E2E state path.
 EOF
     return 0
   fi
   require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
-  die "native crew run is not implemented yet; use crew:run in Codex/Claude guided prompt mode"
+  local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
+  require_file "${runtime}" "native runtime helper"
+  python3 "${runtime}" run --project-root "${PROJECT_ROOT}" "$@"
 }
 
 cmd_agent() {

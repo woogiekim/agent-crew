@@ -116,11 +116,12 @@ provider-neutral: it calls adapter-owned `detect.sh` scripts and delegates to th
 matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
 
-`crew` is the native shell entrypoint. Today, `crew setup`, `crew status`, and
-`crew update --local` are deterministic CLI paths. `crew run` and `crew agent`
-intentionally fail fast with an explicit guided-prompt-mode message until the
-workflow state machine is extracted from `core/commands/*.md` into a native
-runtime.
+`crew` is the native shell entrypoint. Today, `crew setup`, `crew status`,
+`crew update --local`, and the initial `crew run` state transition are
+deterministic CLI paths. `crew run` writes task state and a supervisor handoff;
+until native agent execution is implemented, non-fake-host runs end with
+`STATUS: blocked`. `crew agent` still fails fast with an explicit
+guided-prompt-mode message.
 
 Set `AGENT_CREW_HOST` to an adapter directory name to override automatic host detection.
 
@@ -701,7 +702,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew setup` | Native shell command: install the current host adapter and initialize the project workspace |
 | `crew status` | Native shell command: deterministic snapshot of local task state |
 | `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
-| `crew run "task"` | Reserved native runtime entrypoint; currently fails fast and directs users to guided host mode |
+| `crew run "task"` | Native shell command: create deterministic task state and supervisor handoff; currently blocks after handoff without a native agent backend |
 | `crew agent ...` | Reserved native agent dispatch entrypoint; currently fails fast and directs users to guided host mode |
 | `crew:setup` | Host prompt alias for setup in adapters that expose it |
 | `crew:run "task"` | Run a single task through the full pipeline |

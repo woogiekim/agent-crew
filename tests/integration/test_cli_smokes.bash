@@ -12,6 +12,7 @@ PYTHON_SCRIPTS=(
   "check-plaintext-approval.py"
   "telemetry-aggregate.py"
   "cost-aggregate.py"
+  "crew-runtime.py"
 )
 
 # Shell scripts in core/scripts/ — exclude smoke-test-state which is itself
