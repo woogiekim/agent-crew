@@ -59,13 +59,13 @@ orchestration workflow.
 
 ## Key Features
 
-- **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline; ambiguous tasks still use the requirements agent for a structured interview before supervisors run
+- **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run
 - **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
 - **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
 - **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
 - **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object. **A real test suite now exists in `tests/`** (see [Testing](#testing)) — the reviewer's runner-discovery on this repo finds `pytest` and exercises all 43 Python tests + the bash suites end-to-end
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
-- **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; `crew:status` reads this log to show a live pipeline snapshot at any time
+- **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
 - **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; the AI must call `crew:run` immediately with no preamble, no file reads, no Bash commands, and no clarifying questions
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
@@ -296,7 +296,7 @@ structured-question surface or the adapter's markdown fallback.
 
 #### Layer 1 — Orchestrator (crew:run Step 5)
 
-`crew:run` first runs a deterministic sufficiency check per task:
+`crew:run` first runs `core/scripts/requirements-sufficiency.py` per task:
 
 - `SUFFICIENT` — synthesize the `REQUIREMENTS` block inline and continue.
 - `AMBIGUOUS` — delegate to the requirements agent for a structured interview.
@@ -756,7 +756,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 
 ### crew:status
 
-`crew:status` reads `progress.log` and `pipeline.json` from the most recently active task and prints a live pipeline snapshot:
+`crew:status` reads local task state from the most recent task directories and prints a live pipeline snapshot:
 
 ```
 ## Task Status: 20260510-140000-0
@@ -781,7 +781,7 @@ Pipeline stages:
 Completed: 3 / 5 stages
 ```
 
-`crew:status` is read-only and always targets the most recently modified task directory. It shows the "Recent events" section only when `progress.log` exists.
+`crew:status` is read-only. When a task has been created but the supervisor has not produced progress artifacts, status reports a stalled supervisor handoff instead of a silent wait and includes next-step guidance.
 
 ## State Layout
 

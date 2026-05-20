@@ -195,6 +195,10 @@ def command_run(args: argparse.Namespace) -> int:
     )
     if result_status == "blocked":
         result += "BLOCKER: host AI bridge has not completed this handoff\n"
+        result += (
+            "NEXT: Invoke the host prompt runtime with handoff.md, or run "
+            "crew status --json for diagnostics and blocker guidance.\n"
+        )
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
@@ -244,6 +248,10 @@ def command_run(args: argparse.Namespace) -> int:
     print(f"STATUS: {result_status}")
     if result_status == "blocked":
         print("BLOCKER: host AI bridge has not completed this handoff")
+        print(
+            "NEXT: Invoke the host prompt runtime with handoff.md, or run "
+            "crew status --json for diagnostics and blocker guidance."
+        )
         return 3
     return 0
 

@@ -211,6 +211,78 @@ def read_result_md(task_dir):
     return result
 
 
+def read_text_file(path):
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def supervisor_boot_timeout_seconds():
+    raw = os.environ.get("AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS", "30")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 30
+    return max(value, 0)
+
+
+def missing_supervisor_boot_state(task_dir, *, has_register, has_events,
+                                  has_result):
+    """Classify task dirs created before supervisor Phase 0 produced state."""
+    if has_register or has_events or has_result:
+        return None
+
+    pending = task_dir / "supervisor-pending.txt"
+    task_txt = task_dir / "task.txt"
+    if not pending.is_file() and not task_txt.is_file():
+        return None
+
+    marker = pending if pending.is_file() else task_txt
+    age = max(0, int(datetime.now(timezone.utc).timestamp() -
+                     marker.stat().st_mtime))
+    timeout = supervisor_boot_timeout_seconds()
+    if age >= timeout:
+        return {
+            "status": "blocked",
+            "current_phase": "supervisor_handoff_stalled",
+            "blockers": ["supervisor_handoff_not_started"],
+            "age_seconds": age,
+        }
+    return {
+        "status": "running",
+        "current_phase": "supervisor_handoff_pending",
+        "blockers": [],
+        "age_seconds": age,
+    }
+
+
+def guidance_for(blockers, status, current_phase):
+    guidance = []
+    for blocker in blockers or []:
+        b = str(blocker)
+        if b == "host_bridge_not_invoked" or "host AI bridge" in b:
+            guidance.append(
+                "Host handoff is ready, but execution has not happened in the "
+                "AI prompt runtime. Invoke the host bridge or inspect handoff.md."
+            )
+        elif b == "supervisor_handoff_not_started":
+            guidance.append(
+                "The orchestrator created task state, but the supervisor did "
+                "not produce progress artifacts. Check host agent availability "
+                "and re-run crew:run with this task context if needed."
+            )
+    if not guidance and current_phase == "supervisor_handoff_pending":
+        guidance.append(
+            "Supervisor boot is pending; run crew status again shortly. If it "
+            "exceeds AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS, treat it as a "
+            "host handoff stall."
+        )
+    if not guidance and status == "blocked":
+        guidance.append("Inspect result.md and progress.log for the blocking reason.")
+    return guidance
+
+
 def aggregate_task(state_dir, task_dir):
     """Return a per-task dict with metrics + status. Robust to missing data."""
     task_id = task_dir.name
@@ -218,6 +290,12 @@ def aggregate_task(state_dir, task_dir):
     events = read_progress_buffer(task_dir)
     cost = read_cost_file(state_dir, task_id)
     result = read_result_md(task_dir)
+    missing_boot = missing_supervisor_boot_state(
+        task_dir,
+        has_register=bool(reg),
+        has_events=bool(events),
+        has_result=bool(result),
+    )
 
     terminal = next((e for e in reversed(events)
                      if e.get("event") in ("COMPLETED", "BLOCKED",
@@ -226,7 +304,12 @@ def aggregate_task(state_dir, task_dir):
     # Status / current phase. result.md is the strongest terminal signal:
     # older or interrupted runs can leave register.json stuck at phase_0 even
     # after writing a completed/blocked result.
-    if result.get("status") in ("completed", "blocked"):
+    if missing_boot:
+        status = missing_boot["status"]
+        current_phase = missing_boot["current_phase"]
+        blocked_by = missing_boot["blockers"]
+        stages_completed = None
+    elif result.get("status") in ("completed", "blocked"):
         status = result["status"]
         current_phase = result.get("current_phase", status)
         blocked_by = list(result.get("blockers", []))
@@ -296,6 +379,8 @@ def aggregate_task(state_dir, task_dir):
         task_field = result.get("task", "")
     if not task_field and started:
         task_field = started.get("detail", "")
+    if not task_field:
+        task_field = read_text_file(task_dir / "task.txt")
 
     return {
         "task_id":           task_id,
@@ -308,6 +393,7 @@ def aggregate_task(state_dir, task_dir):
         "stages_completed":  stages_completed,
         "retries":           retries,
         "blockers":          blocked_by,
+        "guidance":          guidance_for(blocked_by, status, current_phase),
         "tokens_in":         (cost or {}).get("tokens_in"),
         "tokens_out":        (cost or {}).get("tokens_out"),
         "tokens_total":      (cost or {}).get("tokens_total"),
@@ -465,6 +551,15 @@ def render_text(rows, summary):
     if summary["by_blocker"]:
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_blocker"].items())
         print(f"Blockers: {bk}")
+    guidance_rows = [
+        (r["task_id"], r["guidance"])
+        for r in rows
+        if r.get("guidance")
+    ]
+    if guidance_rows:
+        print("Guidance:")
+        for task_id, guidance in guidance_rows:
+            print(f"  {task_id}: {' '.join(guidance)}")
 
 
 # --------------------------------------------------------------------------- #

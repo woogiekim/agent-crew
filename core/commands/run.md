@@ -101,6 +101,19 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/rules" ]; then
   cp "${SOURCE_ROOT}/core/rules/"*.md "${AGENT_CREW_HOME}/system/rules/" 2>/dev/null || true
   cp "${SOURCE_ROOT}/core/rules/"*.md "${AGENT_CREW_HOME}/rules/" 2>/dev/null || true
 fi
+
+# Sync helper scripts used by command definitions. Commands must not point at
+# stale or missing helpers after Step 0 refreshes the prompt definition.
+if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
+  mkdir -p "${AGENT_CREW_HOME}/system/scripts" "${AGENT_CREW_HOME}/scripts"
+  cp "${SOURCE_ROOT}/core/scripts/"*.py "${AGENT_CREW_HOME}/system/scripts/" 2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/scripts/"*.py "${AGENT_CREW_HOME}/scripts/" 2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/" 2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/" 2>/dev/null || true
+  chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.py "${AGENT_CREW_HOME}/scripts/"*.py \
+    "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.sh \
+    2>/dev/null || true
+fi
 ```
 
 **Silent on success**: this step emits nothing when the sync completes normally.
@@ -1155,6 +1168,20 @@ git worktree add -b "${BRANCH}" "${WORKTREE_PATH}" HEAD
 The orchestrator owns context preparation only. The execution engine remains the
 same in both modes.
 
+After creating the branch/worktree and before requirements collection, write
+minimal task metadata plus an initial progress line. This makes `crew:status`
+useful even if the host stalls before the supervisor reaches Phase 0:
+
+```bash
+mkdir -p "${TASK_DIR}/context"
+printf '%s\n' "${TASK}" > "${TASK_DIR}/task.txt"
+printf '%s\n' "${BRANCH}" > "${TASK_DIR}/branch.txt"
+printf '%s\n' "${PRE_RUN_HEAD}" > "${TASK_DIR}/pre-run-head.txt"
+printf '%s\n' "${PROJECT_ROOT_FOR_TASK:-${PROJECT_ROOT}}" > "${TASK_DIR}/project-root.txt"
+printf '%s | ORCHESTRATOR_HANDOFF | task context prepared; requirements pending\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${TASK_DIR}/progress.log"
+```
+
 #### Session Registry Initialization (N > 1 only)
 
 For parallel runs, after all task contexts are prepared, create (or overwrite)
@@ -1228,89 +1255,22 @@ a live parallel session and is not meaningful for single-task execution.
 > confidence, and trivial operational intents (merge/push/etc.) bypass the
 > pipeline entirely via Step 1.7.
 
-Run the sufficiency check once per task, before Step 5. The check is a
-deterministic Python snippet that scores the TASK string against three signals:
+Run the sufficiency check once per task, before Step 5. Use the deterministic
+helper script instead of inlining scoring code into this command prompt:
 
-```python
-import re
-
-def sufficiency_check(task: str) -> str:
-    """Return 'SUFFICIENT' if scope, target, and constraints can be inferred
-    with high confidence from TASK alone; otherwise 'AMBIGUOUS'."""
-    t = task.lower()
-
-    # Question-word veto — any question word means we must ask the user.
-    question_markers = ["?", "how should", "what about", "which ", "should i",
-                        "shall i", "do you think"]
-    if any(m in t for m in question_markers):
-        return "AMBIGUOUS"
-
-    # Signal 1: scope inferable
-    backend_kw = ("backend", "api", "server", "endpoint", "database",
-                  "domain model", "schema")
-    ui_kw = ("frontend", "ui ", "component", " page ", "css", "styling",
-             "layout")
-    tooling_kw = ("docs", "documentation", "readme", "markdown", "config",
-                  "script", "refactor", "spec", "tooling", "pipeline",
-                  "agent", "hook", "python", "bash", "shell script")
-    scope_hit = any(k in t for k in backend_kw + ui_kw + tooling_kw)
-    # Fallback: infer scope from file extension when keyword match misses
-    # (e.g. "Add a calculator.py …" has no tooling keyword but .py implies
-    # a scripting/tooling scope — issue #29)
-    if not scope_hit:
-        scope_hit = bool(re.search(r"\.(py|sh)\b", task, re.IGNORECASE)) or \
-                    bool(re.search(r"\.(js|ts|jsx|tsx)\b", task, re.IGNORECASE))
-
-    # Signal 2: target inferable
-    has_file_path = re.search(
-        r"[a-zA-Z0-9_./-]+\.(md|py|ts|tsx|js|jsx|sh|json|yml|yaml)",
-        task,
-    ) is not None
-    has_branch_ref = re.search(
-        r"\b(feat|fix|docs|chore|refactor|test)/[a-z0-9-]+",
-        task,
-    ) is not None
-    has_quoted_name = '"' in task or "`" in task
-    has_concrete_pointer = re.search(
-        r"\bthe [a-z]+ (agent|hook|command|step|phase|rule|gate|file|module)",
-        t,
-    ) is not None
-    target_hit = (has_file_path or has_branch_ref or has_quoted_name
-                  or has_concrete_pointer)
-
-    # Signal 3: constraints inferable
-    has_perf = re.search(r"\d+\s*(ms|s\b|mb|gb|req/s|qps|rps)", t) is not None
-    has_mvp = any(k in t for k in ("mvp", "minimal", "v1 ", "scope-limit",
-                                   "scope limit"))
-    has_dep = any(k in t for k in ("no new deps", "no new dependencies",
-                                   "existing stack", "existing tech stack",
-                                   "use only"))
-    # Infer constraint from an explicit function/interface spec in script-file
-    # tasks: naming specific functions or parameters fully scopes the work
-    # (e.g. "with add, subtract, multiply, divide functions" — issue #29)
-    has_func_spec = bool(re.search(
-        r"\b(function|functions|method|methods|parameter|param)\b", t,
-    )) or bool(re.search(r"[a-zA-Z_]\w*\([^)]*\)", task))
-    has_script_file = bool(re.search(
-        r"\.(py|sh|js|ts|jsx|tsx)\b", task, re.IGNORECASE,
-    ))
-    constraint_hit = (has_perf or has_mvp or has_dep
-                      or (has_script_file and has_func_spec))
-
-    if scope_hit and target_hit and constraint_hit:
-        return "SUFFICIENT"
-    return "AMBIGUOUS"
+```text
+${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py
 ```
+
+Read `core/rules/requirements-sufficiency.md` only if the helper contract is
+unclear; do not preload that rule during command startup, fast-path
+classification, injection detection, or trivial operational dispatch.
 
 Run the check and branch:
 
 ```bash
-SUFFICIENCY=$(python3 -c "
-import re, sys
-task = sys.argv[1]
-{sufficiency_check function body inlined verbatim}
-print(sufficiency_check(task))
-" "${TASK}")
+SUFFICIENCY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
+  --status "${TASK}")
 ```
 
 **If `SUFFICIENCY == "SUFFICIENT"`:** Synthesize the REQUIREMENTS block inline
@@ -1318,32 +1278,15 @@ from the matched signals — do NOT spawn the requirements agent. Write the
 synthesized block to `{TASK_DIR}/context/requirements.md` (same path the agent
 would have used) and proceed directly to Step 6.
 
-Inline synthesis rule:
+Synthesize with the same helper and do not ask the requirements agent:
 
-- `scope`: the matched keyword family — `"Backend API"` if backend keywords
-  matched and no UI keywords; `"UI only"` if UI keywords matched and no
-  backend keywords; `"Full-stack"` if both matched; `"Tooling / docs / config"`
-  otherwise.
-- `target`: `"Developer tooling or API"` for the tooling-family scope;
-  `"End-user product feature"` if quoted names or specific component names
-  dominate; `"Internal team / admin tooling"` if admin/dashboard keywords
-  appear; otherwise `"Other / not yet defined"`.
-- `constraints`: the union of matched constraint signal labels:
-  `"Performance / scalability"`, `"MVP scope"`, `"Use existing tech stack only"`.
-  Use `"No special constraints"` if none matched (but this should not happen on
-  the SUFFICIENT path — the check requires at least one constraint signal).
-
-The resulting block has the exact same shape the requirements agent returns:
-
-```text
-REQUIREMENTS: |
-  scope: {synthesized scope}
-  target: {synthesized target}
-  constraints: {comma-separated synthesized constraints}
-  followup: (none)
-  sufficiency: HIGH
-  inline_synthesis: true
+```bash
+python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
+  --write "${TASK_DIR}/context/requirements.md" "${TASK}"
 ```
+
+The written block must remain compatible with the requirements agent's
+`REQUIREMENTS: |` output.
 
 **If `SUFFICIENCY == "AMBIGUOUS"`:** Proceed to Step 5 (collect via agent) with
 `MODE: single_round`.
@@ -1478,6 +1421,19 @@ except Exception:
 " 2>/dev/null)
 ```
 
+Before spawning any supervisor, write the boot sentinel and append a progress
+event. This applies to both the background P4 path and the legacy inline path;
+without it, a host-side stall before supervisor Phase 0 looks like a silent
+hang.
+
+```bash
+SPAWNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf 'spawned_at=%s\nsession_id=%s\n' "${SPAWNED_AT}" "${SESSION_ID:-single}" \
+  > "${TASK_DIR}/supervisor-pending.txt"
+printf '%s | SUPERVISOR_HANDOFF | waiting for supervisor Phase 0\n' \
+  "${SPAWNED_AT}" >> "${TASK_DIR}/progress.log"
+```
+
 **P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
 Spawn each supervisor as a host background agent, print a "Background Session
 Started" summary, and **RETURN immediately** (end the turn). Do NOT enter any
@@ -1499,12 +1455,7 @@ it does not affect the P4 spawn path.
 
 ```text
 for each task i:
-    # Write a sentinel so crew:status can show "booting" during the Phase 0
-    # startup window before the supervisor calls TaskCreate and writes
-    # host-task-id.txt. The supervisor deletes the sentinel at Phase 0 end.
-    SPAWNED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    printf 'spawned_at=%s\nsession_id=%s\n' "${SPAWNED_AT}" "${SESSION_ID}" \
-        > "${TASK_DIR}/supervisor-pending.txt"
+    # Write the supervisor-pending sentinel/progress event shown above.
 
     # Spawn the supervisor as a background agent. The supervisor handles
     # its own TaskCreate in Phase 0 when task_tools capability is present.

@@ -206,6 +206,58 @@ class TestTelemetryAggregate:
         assert task["blockers"] == ["cancelled"]
         assert payload["summary"]["tasks_blocked"] == 1
 
+    def test_supervisor_handoff_without_progress_is_actionable(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """A task created before supervisor Phase 0 should not look healthy."""
+        task_id = "20260101-120450-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        (td / "task.txt").write_text("Fix latency and quality blockers")
+        (td / "branch.txt").write_text("fix/latency-quality")
+        env = {
+            **env_with_home,
+            "AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS": "0",
+        }
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        assert task["status"] == "blocked"
+        assert task["current_phase"] == "supervisor_handoff_stalled"
+        assert task["blockers"] == ["supervisor_handoff_not_started"]
+        assert "supervisor did not produce progress artifacts" in task["guidance"][0]
+
+    def test_host_bridge_blocker_includes_guidance(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Blocked native handoff rows include an operator next step."""
+        task_id = "20260101-120451-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        reg = json.loads((td / "register.json").read_text())
+        reg["blocked_by"] = ["host_bridge_not_invoked"]
+        (td / "register.json").write_text(json.dumps(reg))
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        guidance = payload["tasks"][0]["guidance"]
+        assert guidance
+        assert "Invoke the host bridge" in guidance[0]
+
     def test_recent_selector_limits_count(
         self, script_runner, env_with_home, state_dir
     ):

@@ -2,10 +2,10 @@
 
 ## Purpose
 
-Written by the orchestrator immediately before spawning each supervisor as a
-background agent. Signals to external observers (crew:status, crew:status
---collect) that a supervisor is booting but has not yet called TaskCreate and
-written host-task-id.txt.
+Written by the orchestrator immediately before spawning each supervisor,
+including legacy inline hosts such as Codex/generic and background-agent hosts.
+Signals to external observers (`crew:status`, `crew:status --collect`) that a
+supervisor handoff has started but the supervisor has not yet reached Phase 0.
 
 Deleted by the supervisor in Phase 0, immediately after writing
 host-task-id.txt. When HAS_TASK_TOOLS == 0 (TaskCreate skipped), the
@@ -31,7 +31,7 @@ session_id=<SESSION_ID>
 
 | Event | Action |
 |---|---|
-| Orchestrator Step 6 P4 spawn | Written (one per task, before Agent call) |
+| Orchestrator Step 6 supervisor spawn | Written (one per task, before Agent call) |
 | Supervisor Phase 0 after TaskCreate | Deleted (rm -f, idempotent) |
 | crew:status / crew:status --collect | Read to classify boot window |
 
@@ -44,9 +44,10 @@ When host-task-id.txt is absent AND supervisor-pending.txt is present:
 
 ## Absence behavior
 
-When supervisor-pending.txt is absent AND host-task-id.txt is absent: the
-supervisor has either already completed Phase 0 (pre-sentinel install) or
-the task directory is stale. Fall through to legacy file-poll behavior.
+When `supervisor-pending.txt` is absent AND `host-task-id.txt` is absent: the
+supervisor has either already completed Phase 0 (pre-sentinel install), the
+task directory was created by an older command, or the task is stale. Fall
+through to legacy file-poll behavior.
 
 ## Idempotency
 
@@ -58,6 +59,6 @@ or remove this file (it is a runtime state file, not an installed asset).
 
 - ${TASK_DIR}/host-task-id.txt — written by supervisor Phase 0 after TaskCreate
 - ${STATE_DIR}/session.json — written by orchestrator Step 4; contains spawned_at per task
-- core/commands/run.md — Step 6 P4 spawn loop (writes this file)
+- core/commands/run.md — Step 6 supervisor spawn loop (writes this file)
 - core/agents/supervisor-bootstrap.md — Phase 0 (deletes this file)
 - core/commands/status.md — Step 1b / Step 3S (reads this file)

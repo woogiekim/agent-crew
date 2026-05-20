@@ -1,228 +1,187 @@
-"""Tests for the sufficiency_check() function defined in core/commands/run.md
-(Step 5.pre) and mirrored in core/agents/supervisor-bootstrap.md.
-
-Verifies that Python / shell / JS/TS file-creation intents with explicit
-function or parameter specs are correctly classified as SUFFICIENT (issue #29),
-and that pre-existing AMBIGUOUS classifications are not regressed.
-
-The function body is extracted from the live source file so tests stay in
-sync with any future edits — no copy-paste drift.
-"""
+"""Tests for the deterministic requirements sufficiency helper."""
 from __future__ import annotations
 
-import re
-import textwrap
+import importlib.util
+import json
+import subprocess
 from pathlib import Path
 from typing import Callable
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+SCRIPT = REPO_ROOT / "core" / "scripts" / "requirements-sufficiency.py"
 RUN_MD = REPO_ROOT / "core" / "commands" / "run.md"
 SUPERVISOR_BOOTSTRAP_MD = REPO_ROOT / "core" / "agents" / "supervisor-bootstrap.md"
 
 
-# ---------------------------------------------------------------------------
-# Extract sufficiency_check from a markdown file and compile it into a
-# callable.  The function body lives inside a ```python … ``` block.
-# ---------------------------------------------------------------------------
-
-def _extract_sufficiency_check(md_path: Path) -> Callable[[str], str]:
-    """Parse sufficiency_check() out of a markdown file and return it."""
-    src = md_path.read_text(encoding="utf-8")
-
-    # Find the ```python block that contains the function definition.
-    # We match from 'def sufficiency_check' up to the closing ``` line.
-    m = re.search(
-        r"```python\s*\n(.*?def sufficiency_check.*?)```",
-        src,
-        re.DOTALL,
-    )
-    if not m:
-        raise ValueError(
-            f"Could not find sufficiency_check() in {md_path}"
-        )
-
-    func_src = textwrap.dedent(m.group(1))
-    ns: dict = {}
-    exec(  # noqa: S102
-        "import re\n" + func_src,
-        ns,
-    )
-    fn = ns.get("sufficiency_check")
-    if fn is None:
-        raise ValueError(
-            f"sufficiency_check not defined after exec of block in {md_path}"
-        )
-    return fn
+def _load_module():
+    spec = importlib.util.spec_from_file_location("requirements_sufficiency", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-# Build both variants at import time so collection errors surface early.
-_check_run_md = _extract_sufficiency_check(RUN_MD)
-_check_bootstrap_md = _extract_sufficiency_check(SUPERVISOR_BOOTSTRAP_MD)
+_module = _load_module()
 
 
-# ---------------------------------------------------------------------------
-# Parametrize over both files to verify they stay in sync (issue: the two
-# must stay in sync — any change to one MUST be mirrored to the other).
-# ---------------------------------------------------------------------------
+def check() -> Callable[[str], str]:
+    return _module.sufficiency_check
 
-@pytest.fixture(params=["run_md", "bootstrap_md"])
-def check(request) -> Callable[[str], str]:
-    return _check_run_md if request.param == "run_md" else _check_bootstrap_md
-
-
-# ---------------------------------------------------------------------------
-# Issue #29 reproduction cases — must now return SUFFICIENT
-# ---------------------------------------------------------------------------
 
 class TestIssue29PythonFileCreation:
-    """Tasks from the issue #29 reproduction that previously returned AMBIGUOUS."""
-
-    def test_calculator_py_with_functions(self, check):
-        """calculator.py with named arithmetic functions — SUFFICIENT."""
-        assert check(
+    def test_calculator_py_with_functions(self):
+        assert check()(
             "Add a calculator.py with add, subtract, multiply, divide functions"
         ) == "SUFFICIENT"
 
-    def test_hello_py_with_parameter(self, check):
-        """hello.py with a configurable name parameter — SUFFICIENT."""
-        assert check(
+    def test_hello_py_with_parameter(self):
+        assert check()(
             "Add a hello.py that prints Hello, World! with a configurable name parameter"
         ) == "SUFFICIENT"
 
-    def test_fibonacci_py_with_function_signature(self, check):
-        """fibonacci.py with a parenthesized function name — SUFFICIENT."""
-        assert check(
+    def test_fibonacci_py_with_function_signature(self):
+        assert check()(
             "Write a fibonacci.py with a single fibonacci(n) function"
         ) == "SUFFICIENT"
 
 
-# ---------------------------------------------------------------------------
-# Extension-based scope inference — new patterns now SUFFICIENT
-# ---------------------------------------------------------------------------
-
 class TestExtensionBasedScopeInference:
-    def test_deploy_sh_with_function(self, check):
-        """Shell file with function spec — SUFFICIENT."""
-        assert check(
+    def test_deploy_sh_with_function(self):
+        assert check()(
             "Add a deploy.sh with a function to check environment variables"
         ) == "SUFFICIENT"
 
-    def test_typescript_file_with_function_signature(self, check):
-        """TypeScript file with parenthesized function name — SUFFICIENT."""
-        assert check(
+    def test_typescript_file_with_function_signature(self):
+        assert check()(
             "Write a utils.ts with a formatDate(date: Date) function"
         ) == "SUFFICIENT"
 
-    def test_jsx_component_with_method(self, check):
-        """JSX file with method spec — SUFFICIENT."""
-        assert check(
+    def test_jsx_component_with_method(self):
+        assert check()(
             "Add a Button.jsx with an onClick method and disabled parameter"
         ) == "SUFFICIENT"
 
-    def test_python_keyword_in_tooling_kw(self, check):
-        """'python' keyword is now in tooling_kw — scope hit via keyword."""
-        # The word 'python' is now in tooling_kw; this hits scope via keyword.
-        # But target still requires a named file — without one it is AMBIGUOUS.
-        assert check(
+    def test_python_keyword_in_tooling_kw(self):
+        assert check()(
             "Write a Python script to parse CSV files using existing stack"
         ) == "AMBIGUOUS"
 
-    def test_bash_keyword_in_tooling_kw_with_file(self, check):
-        """'bash' keyword in tooling_kw, file named — scope + target hit."""
-        assert check(
+    def test_bash_keyword_in_tooling_kw_with_file(self):
+        assert check()(
             "Add a bash setup.sh with a function to install dependencies"
         ) == "SUFFICIENT"
 
 
-# ---------------------------------------------------------------------------
-# Question-word veto — must still return AMBIGUOUS
-# ---------------------------------------------------------------------------
+class TestCommercializationPrompt:
+    def test_latency_quality_blocker_prompt_is_sufficient(self):
+        task = (
+            "Find and implement concrete fixes for the commercialization blockers "
+            "identified in the previous agent-crew E2E validation. Prioritize "
+            "performance and answer quality as product-critical: poor latency "
+            "blocks adoption and poor output quality makes the product unusable. "
+            "Inspect the current branch, previous validation report, "
+            "run/update/status/agent flows, prompt/instruction surface, "
+            "telemetry/status reporting, and benchmark/test coverage. Implement "
+            "narrow safe fixes. Do not push or merge without approval."
+        )
+        assert check()(task) == "SUFFICIENT"
+        requirements = _module.synthesize_requirements(task)
+        assert "Performance / scalability" in requirements
+        assert "Answer quality / failure guidance" in requirements
+        assert "No remote publish without approval" in requirements
+
+    def test_cli_json_exposes_signals(self):
+        task = (
+            "Improve status reporting for latency and quality blockers in the "
+            "current branch and previous validation report"
+        )
+        result = subprocess.run(
+            ["python3", str(SCRIPT), "--json", task],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "SUFFICIENT"
+        assert payload["signals"]["has_perf"] is True
+        assert payload["signals"]["has_quality"] is True
+
+    def test_cli_write_is_silent_and_creates_requirements(self, tmp_path):
+        out = tmp_path / "requirements.md"
+        result = subprocess.run(
+            [
+                "python3",
+                str(SCRIPT),
+                "--write", str(out),
+                "Improve status reporting for latency and quality blockers in "
+                "the current branch and previous validation report",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert result.stdout == ""
+        assert "REQUIREMENTS: |" in out.read_text()
+
 
 class TestQuestionVeto:
-    def test_question_mark_veto(self, check):
-        assert check("what about adding a .py file?") == "AMBIGUOUS"
+    def test_question_mark_veto(self):
+        assert check()("what about adding a .py file?") == "AMBIGUOUS"
 
-    def test_which_veto(self, check):
-        assert check(
-            "which function should I add to calculator.py?"
-        ) == "AMBIGUOUS"
+    def test_which_veto(self):
+        assert check()("which function should I add to calculator.py?") == "AMBIGUOUS"
 
-    def test_how_should_veto(self, check):
-        assert check("how should I implement the algorithm?") == "AMBIGUOUS"
+    def test_how_should_veto(self):
+        assert check()("how should I implement the algorithm?") == "AMBIGUOUS"
 
-    def test_should_i_veto(self, check):
-        assert check(
+    def test_should_i_veto(self):
+        assert check()(
             "should I add a fibonacci.py with a recursive function?"
         ) == "AMBIGUOUS"
 
 
-# ---------------------------------------------------------------------------
-# Constraint signal only fires for script-file tasks (no false positives)
-# ---------------------------------------------------------------------------
-
 class TestFuncSpecConstraintBoundary:
-    def test_py_file_without_func_spec_is_ambiguous(self, check):
-        """A bare .py filename with no function/parameter description — AMBIGUOUS."""
-        assert check("Create a utils.py") == "AMBIGUOUS"
+    def test_py_file_without_func_spec_is_ambiguous(self):
+        assert check()("Create a utils.py") == "AMBIGUOUS"
 
-    def test_sh_file_without_func_spec_is_ambiguous(self, check):
-        """A bare .sh filename with no function/parameter description — AMBIGUOUS."""
-        assert check("Create a cleanup.sh") == "AMBIGUOUS"
+    def test_sh_file_without_func_spec_is_ambiguous(self):
+        assert check()("Create a cleanup.sh") == "AMBIGUOUS"
 
-    def test_func_spec_without_script_file_does_not_promote(self, check):
-        """'function' keyword alone (no .py/.sh/.ts) does not unlock constraint."""
-        # No specific file path, no constraint hit via func_spec alone
-        # (scope: 'backend'; target: none; constraint: needs file + func_spec OR other signal)
-        assert check(
-            "Add a backend function to handle authentication"
-        ) == "AMBIGUOUS"
+    def test_func_spec_without_script_file_does_not_promote(self):
+        assert check()("Add a backend function to handle authentication") == "AMBIGUOUS"
 
-
-# ---------------------------------------------------------------------------
-# Regression: pre-existing SUFFICIENT cases must still be SUFFICIENT
-# ---------------------------------------------------------------------------
 
 class TestRegressionSufficientCases:
-    def test_tooling_path_dep_triple(self, check):
-        """tooling keyword + file path + dep constraint — still SUFFICIENT."""
-        assert check(
-            "Update the pipeline agent hook to use existing stack"
-        ) == "SUFFICIENT"
+    def test_tooling_path_dep_triple(self):
+        assert check()("Update the pipeline agent hook to use existing stack") == "SUFFICIENT"
 
-    def test_script_keyword_path_dep(self, check):
-        """'script' keyword + quoted name + dep constraint — still SUFFICIENT."""
-        assert check(
-            'Add a "migration.sh" script with no new dependencies'
-        ) == "SUFFICIENT"
+    def test_script_keyword_path_dep(self):
+        assert check()('Add a "migration.sh" script with no new dependencies') == "SUFFICIENT"
 
-    def test_backend_branch_mvp(self, check):
-        """Backend keyword + branch ref + MVP constraint — still SUFFICIENT."""
-        assert check(
-            "Implement MVP auth endpoint on feat/auth-endpoint"
-        ) == "SUFFICIENT"
+    def test_backend_branch_mvp(self):
+        assert check()("Implement MVP auth endpoint on feat/auth-endpoint") == "SUFFICIENT"
 
-    def test_frontend_component_perf(self, check):
-        """Frontend keyword + quoted name + perf constraint — still SUFFICIENT."""
-        assert check(
+    def test_frontend_component_perf(self):
+        assert check()(
             'Add a "DataTable" component that renders 1000 rows under 100ms'
         ) == "SUFFICIENT"
 
 
-# ---------------------------------------------------------------------------
-# Regression: pre-existing AMBIGUOUS cases must still be AMBIGUOUS
-# ---------------------------------------------------------------------------
-
 class TestRegressionAmbiguousCases:
-    def test_no_target_is_ambiguous(self, check):
-        """Scope + constraint but no specific target — AMBIGUOUS."""
-        assert check(
-            "Add a backend API endpoint for user authentication"
-        ) == "AMBIGUOUS"
+    def test_no_target_is_ambiguous(self):
+        assert check()("Add a backend API endpoint for user authentication") == "AMBIGUOUS"
 
-    def test_vague_python_task_is_ambiguous(self, check):
-        """Python task with no named file and no function spec — AMBIGUOUS."""
-        assert check(
+    def test_vague_python_task_is_ambiguous(self):
+        assert check()(
             "Write a Python script to parse CSV files using existing stack"
         ) == "AMBIGUOUS"
+
+
+class TestPromptSurface:
+    def test_large_scoring_function_not_duplicated_in_prompt_docs(self):
+        run_text = RUN_MD.read_text(encoding="utf-8")
+        bootstrap_text = SUPERVISOR_BOOTSTRAP_MD.read_text(encoding="utf-8")
+        assert "def sufficiency_check" not in run_text
+        assert "def sufficiency_check" not in bootstrap_text
+        assert "requirements-sufficiency.py" in run_text
+        assert "requirements-sufficiency.py" in bootstrap_text
