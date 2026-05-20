@@ -60,6 +60,9 @@ it "crew run writes blocked result"
 result=$(cat "${TASK_DIR}/result.md")
 assert_contains "${result}" "STATUS: blocked"
 
+it "crew run blocked result references host bridge"
+assert_contains "${result}" "host AI bridge has not completed this handoff"
+
 it "crew run fake host can complete"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --fake-host-result completed "fake host task" 2>&1)
 rc=$?
@@ -74,7 +77,7 @@ rc=$?
 assert_exit 2 "${rc}"
 
 it "crew agent failure is explicit"
-assert_contains "${out}" "native crew agent dispatch is not implemented yet"
+assert_contains "${out}" "requires a host prompt runtime"
 
 it "crew update --help exits 0"
 out=$(bash "${CREW}" update --help 2>&1)

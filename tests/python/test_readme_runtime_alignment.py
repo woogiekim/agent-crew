@@ -44,7 +44,9 @@ def test_readme_documents_native_cli_boundary():
     assert "`crew` is the native shell entrypoint" in text
     assert "`crew setup`, `crew status`,\n`crew update --local`, and the initial `crew run` state transition are\ndeterministic CLI paths" in text
     assert "`crew run` writes task state and a supervisor handoff" in text
+    assert "until the host AI prompt runtime completes that handoff" in text
     assert "`crew agent` still fails fast" in text
+    assert "host-bridge/guided-prompt-mode message" in text
 
 
 def test_readme_defines_prompt_internal_control_layer():

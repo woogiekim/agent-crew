@@ -64,7 +64,7 @@ def command_run(args: argparse.Namespace) -> int:
 
     result_status = "completed" if args.fake_host_result == "completed" else "blocked"
     current_phase = "completed" if result_status == "completed" else "blocked"
-    blocked_by = [] if result_status == "completed" else ["native_agent_execution_not_implemented"]
+    blocked_by = [] if result_status == "completed" else ["host_bridge_not_invoked"]
 
     register = {
         "schema_version": 1,
@@ -108,7 +108,7 @@ def command_run(args: argparse.Namespace) -> int:
         f"PROJECT_ROOT: {project_root}\n"
         f"MODE: native-cli\n"
         f"STATUS: blocked\n"
-        f"BLOCKER: native agent execution is not implemented yet\n"
+        f"BLOCKER: host AI bridge has not completed this handoff\n"
     )
 
     result = (
@@ -118,7 +118,7 @@ def command_run(args: argparse.Namespace) -> int:
         f"BRANCH: {register['branch']}\n"
     )
     if result_status == "blocked":
-        result += "BLOCKER: native agent execution is not implemented yet\n"
+        result += "BLOCKER: host AI bridge has not completed this handoff\n"
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
@@ -154,7 +154,7 @@ def command_run(args: argparse.Namespace) -> int:
     print(f"TASK_DIR: {task_dir}")
     print(f"STATUS: {result_status}")
     if result_status == "blocked":
-        print("BLOCKER: native agent execution is not implemented yet")
+        print("BLOCKER: host AI bridge has not completed this handoff")
         return 3
     return 0
 

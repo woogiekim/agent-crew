@@ -188,13 +188,18 @@ ARTIFACT_NOUN_PAT = (
 )
 READONLY_REVIEW_PAT = (
     r"review|evaluate|assess|compare|honest\s+review|"
+    r"inspect|determine|identify\s+(?:gaps|issues|problems|fixes)|"
     r"리뷰|검토|평가|비교|솔직|쓸만|쓸\s*만|"
-    r"괜찮|문제점|개선점|고쳐야\s*하|뭘\s*고쳐"
+    r"괜찮|문제점|개선점|부족|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
 )
 REVIEW_MUTATION_PAT = (
     r"fix\s+it|apply\s+the\s+fix|make\s+the\s+change|implement|"
     r"수정해|수정해줘|고쳐줘|반영해|반영해줘|구현해|"
     r"바꿔줘|넣어줘|업데이트해|업데이트해줘"
+)
+CONDITIONAL_REVIEW_FIX_PAT = (
+    r"if\s+(?:needed|necessary|there\s+are\s+gaps)|if\s+.*(?:fix|improve)|"
+    r"부족하면|필요하면|문제가\s*있으면|갭이\s*있으면"
 )
 
 
@@ -223,6 +228,11 @@ def emit_question_route(target_agent: str, route_reason: str):
     sys.exit(0)
 
 
+if match(QUESTION_PAT) and match(READONLY_REVIEW_PAT) and (
+    not match(REVIEW_MUTATION_PAT) or match(CONDITIONAL_REVIEW_FIX_PAT)
+):
+    emit_question_route("analyst", "read-only review/evaluation Q")
+
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     # Questions and explanations must go through crew:agent — not inline.
     # Exception: truly atomic facts (bare yes/no, bare path, bare number)
@@ -246,12 +256,6 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
         route_reason = "codebase/explanation Q"
 
     emit_question_route(target_agent, route_reason)
-
-# Read-only review/evaluation requests can contain words such as "리뷰" or
-# "개선점" that are also action-like. Route those to analyst unless the prompt
-# explicitly asks to mutate an artifact or code.
-if match(QUESTION_PAT) and match(READONLY_REVIEW_PAT) and not match(REVIEW_MUTATION_PAT):
-    emit_question_route("analyst", "read-only review/evaluation Q")
 
 # --- Trivial-intent fast-path (Change A) ---
 # Detect short operational git intents that map to a known command template.

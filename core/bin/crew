@@ -152,9 +152,10 @@ cmd_run() {
     cat <<'EOF'
 usage: crew run [--fake-host-result completed] "task"
 
-Creates deterministic local task state and a supervisor handoff. Without a
-native agent execution backend, normal runs end as STATUS: blocked after writing
-state. Tests may use --fake-host-result completed to exercise the E2E state path.
+Creates deterministic local task state and a supervisor handoff. Without a host
+AI bridge completing that handoff, normal runs end as STATUS: blocked after
+writing state. Tests may use --fake-host-result completed to exercise the E2E
+state path.
 EOF
     return 0
   fi
@@ -169,13 +170,13 @@ cmd_agent() {
     cat <<'EOF'
 usage: crew agent [agent-name] [question]
 
-Native deterministic crew agent dispatch is not implemented yet. Use crew:agent
-in a host runtime while the CLI runtime is being extracted.
+crew agent is a host-bridge entrypoint. Use crew:agent inside a Codex/Claude
+prompt runtime until a callable host adapter is available to this CLI.
 EOF
     return 0
   fi
   require_file "${ASSET_ROOT}/commands/agent.md" "agent command definition"
-  die "native crew agent dispatch is not implemented yet; use crew:agent in Codex/Claude guided prompt mode"
+  die "crew agent requires a host prompt runtime; invoke crew:agent in Codex/Claude guided prompt mode"
 }
 
 main() {
