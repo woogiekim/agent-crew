@@ -233,6 +233,13 @@ if match(QUESTION_PAT) and match(READONLY_REVIEW_PAT) and (
 ):
     emit_question_route("analyst", "read-only review/evaluation Q")
 
+if match(READONLY_REVIEW_PAT) and re.search(
+    r"do\s+not\s+edit|read[- ]only|no\s+files?\s+edited|수정하지\s*마|읽기\s*전용",
+    prompt,
+    re.IGNORECASE,
+):
+    emit_question_route("analyst", "read-only review/evaluation Q")
+
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     # Questions and explanations must go through crew:agent — not inline.
     # Exception: truly atomic facts (bare yes/no, bare path, bare number)

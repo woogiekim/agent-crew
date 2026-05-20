@@ -23,6 +23,22 @@ run_hook() {
   printf '%s' "${payload}" | env "$@" bash "${HOOK}" 2>&1
 }
 
+write_approval() {
+  local home="$1"
+  local kind="$2"
+  local cmd="$3"
+  mkdir -p "${home}/approvals"
+  python3 -c '
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]) / "approvals" / "dangerous-commands.approved"
+path.write_text(json.dumps({
+    "approved": True,
+    "kind": sys.argv[2],
+    "command": sys.argv[3],
+}) + "\n", encoding="utf-8")
+' "${home}" "${kind}" "${cmd}"
+}
+
 TMP_HOME=$(make_tmp)
 
 it "git push is blocked without deterministic approval"
@@ -37,14 +53,23 @@ it "git push block writes audit trail"
 audit=$(cat "${TMP_HOME}/audit/dangerous-commands.jsonl")
 assert_contains "${audit}" '"decision": "block"'
 
-it "approved git push is allowed silently"
+it "environment approval does not bypass git push"
 out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=1")
+rc=$?
+assert_exit 2 "${rc}"
+
+it "command-bound approval marker allows git push"
+write_approval "${TMP_HOME}" "push" "git push origin main"
+out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
 
-it "approved git push writes allow audit trail"
+it "command-bound approval writes allow audit trail"
 audit=$(cat "${TMP_HOME}/audit/dangerous-commands.jsonl")
 assert_contains "${audit}" '"decision": "allow"'
+
+it "command-bound approval marker is consumed after use"
+assert_file_absent "${TMP_HOME}/approvals/dangerous-commands.approved"
 
 it "inline approval env prefix does not self-approve git push"
 out=$(run_hook "$(payload_for "AGENT_CREW_APPROVED_DANGEROUS=1 git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
@@ -52,12 +77,30 @@ rc=$?
 assert_exit 2 "${rc}"
 assert_contains "${out}" "Kind: push"
 
-it "approval marker file allows git push"
+it "legacy APPROVED marker does not allow git push"
 mkdir -p "${TMP_HOME}/approvals"
 printf 'APPROVED\n' > "${TMP_HOME}/approvals/dangerous-commands.approved"
 out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
-assert_exit 0 "${rc}"
+assert_exit 2 "${rc}"
+
+it "approval marker for different command does not allow git push"
+write_approval "${TMP_HOME}" "push" "git push origin other"
+out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+
+it "rm -fr root is blocked"
+out=$(run_hook "$(payload_for "rm -fr /")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+assert_contains "${out}" "Kind: destructive-delete"
+
+it "rm -rf quoted HOME is blocked"
+out=$(run_hook "$(payload_for 'rm -rf "$HOME"')" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+assert_contains "${out}" "Kind: destructive-delete"
+
+it "rm -rf braced HOME is blocked"
+out=$(run_hook "$(payload_for 'rm -rf ${HOME}')" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+assert_contains "${out}" "Kind: destructive-delete"
 
 it "git merge is blocked without deterministic approval"
 rm -f "${TMP_HOME}/approvals/dangerous-commands.approved"

@@ -190,7 +190,11 @@ and known issues surfaced by the suite.
 
 ## How It Works
 
-The orchestrator spawns or delegates to each sub-agent directly using the host AI tool's native mechanism. No daemon processes, no file polling, no signal files.
+Inside a host prompt runtime, the orchestrator delegates to sub-agents using the
+host AI tool's native mechanism where that host exposes one. The native `crew`
+CLI remains the deterministic control plane: it writes state and handoff
+artifacts, then waits for the host prompt workflow to complete the execution
+contract.
 
 ### Pipeline Flow
 
@@ -609,6 +613,13 @@ execute (if APPROVED) ←
 ```
 
 Plain-text approval requests ("Shall I?", "Should I?") are forbidden at every level. The `AskUserQuestion` structured UI is the only permitted approval method for deploy, push, merge, and destructive operations.
+
+The shell guard for dangerous commands is a workflow-integrity check, not an OS
+sandbox. When an approved orchestrator path needs to run `git push`, `git
+merge`, or deployment commands, it must write a one-shot JSON approval to
+`~/.agent-crew/approvals/dangerous-commands.approved` with the exact `kind` and
+`command`. The guard consumes that marker after one matching command and audits
+both blocks and allows to `~/.agent-crew/audit/dangerous-commands.jsonl`.
 
 ## crew:run Optimizations
 

@@ -185,6 +185,27 @@ class TestReadOnlyReviewEvaluationRouting:
         assert "routing to analyst" in ctx
         assert "[agent-crew] STOP" not in ctx
 
+    def test_imperative_read_only_evaluation_routes_to_analyst_not_stop(self):
+        payload = {
+            "prompt": (
+                "Evaluate current repo under the prompt-internal control layer premise. "
+                "Inspect README/docs, crew CLI, fake-host E2E, and approval/audit guard. "
+                "Identify concrete gaps only; do not edit files."
+            )
+        }
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] ROUTE" in ctx
+        assert "routing to analyst" in ctx
+        assert "[agent-crew] STOP" not in ctx
+
     def test_reviewer_stage_request_still_routes_to_stop(self):
         payload = {"prompt": "리뷰어 붙여서 테스트 돌려주세요"}
         proc = subprocess.run(
