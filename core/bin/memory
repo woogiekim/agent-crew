@@ -1,28 +1,84 @@
 #!/usr/bin/env bash
-# Thin memory backend wrapper — graceful degradation when mnemos is absent.
+# Thin memory backend wrapper — graceful degradation when mnemos is absent or slow.
 # Usage: memory capture --quiet --layer session --content "..."
 #        memory search "query"
 #
 # Sub-agents must use `memory capture` (not `mnemos capture` directly) so that
 # pipelines work even when no memory backend is installed.
 # See: https://github.com/woogiekim/agent-crew/issues/15
-if ! command -v mnemos >/dev/null 2>&1; then
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+
+MNEMOS_BIN="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
+if [ ! -x "${MNEMOS_BIN}" ]; then
+  MNEMOS_PATH="$(command -v mnemos 2>/dev/null || true)"
+  if [ -n "${MNEMOS_PATH}" ]; then
+    MNEMOS_BIN="${MNEMOS_PATH}"
+  fi
+fi
+
+if [ ! -x "${MNEMOS_BIN}" ]; then
   echo "[memory] no backend installed — skipping (install mnemos to enable)" >&2
   exit 0
 fi
 
+BOUNDED=""
+for candidate in \
+  "${AGENT_CREW_HOME}/scripts/mnemos-bounded.sh" \
+  "${AGENT_CREW_HOME}/system/scripts/mnemos-bounded.sh" \
+  "${SCRIPT_DIR}/../scripts/mnemos-bounded.sh"; do
+  if [ -f "${candidate}" ]; then
+    BOUNDED="${candidate}"
+    break
+  fi
+done
+
+run_mnemos() {
+  if [ -n "${BOUNDED}" ]; then
+    AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+      MNEMOS_BIN="${MNEMOS_BIN}" \
+      bash "${BOUNDED}" "$@"
+    return $?
+  fi
+  "${MNEMOS_BIN}" "$@"
+}
+
 if [ "${1:-}" != "capture" ]; then
-  exec mnemos "$@"
+  if [ -n "${BOUNDED}" ]; then
+    AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+      MNEMOS_BIN="${MNEMOS_BIN}" \
+      exec bash "${BOUNDED}" "$@"
+  fi
+  exec "${MNEMOS_BIN}" "$@"
+fi
+
+CAPTURE_ARGS=("$@")
+HAS_NO_CLASSIFY=0
+for arg in "${CAPTURE_ARGS[@]}"; do
+  if [ "${arg}" = "--no-classify" ]; then
+    HAS_NO_CLASSIFY=1
+    break
+  fi
+done
+if [ "${HAS_NO_CLASSIFY}" -eq 0 ]; then
+  CAPTURE_ARGS+=("--no-classify")
 fi
 
 set +e
-OUTPUT="$(mnemos "$@" 2>&1)"
+OUTPUT="$(run_mnemos "${CAPTURE_ARGS[@]}" 2>&1)"
 RC=$?
 set -e
 
 printf '%s\n' "${OUTPUT}"
 
 if [ "${RC}" -eq 0 ]; then
+  exit 0
+fi
+
+if [ "${RC}" -eq 124 ]; then
+  printf '[memory] warning: capture timed out; continuing without blocking workflow\n' >&2
   exit 0
 fi
 
@@ -33,9 +89,13 @@ m = re.search(r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", t
 print(m.group(0) if m else "")
 ' 2>/dev/null || true)"
 
-if [ -n "${CAPTURE_ID}" ] && printf '%s' "${OUTPUT}" | grep -Eqi 'failed to push|remote rejected|cannot lock ref|sync failed|failed to sync|git command failed'; then
-  printf '[memory] captured locally: %s\n' "${CAPTURE_ID}" >&2
-  printf '[memory] warning: vault sync failed; run mnemos sync/pull before retrying push\n' >&2
+if printf '%s' "${OUTPUT}" | grep -Eqi 'failed to push|remote rejected|cannot lock ref|index\.lock|another git process|sync failed|failed to sync|git command failed'; then
+  if [ -n "${CAPTURE_ID}" ]; then
+    printf '[memory] captured locally: %s\n' "${CAPTURE_ID}" >&2
+  else
+    printf '[memory] warning: capture could not confirm a local id\n' >&2
+  fi
+  printf '[memory] warning: vault sync failed or is locked; continuing without blocking workflow\n' >&2
   exit 0
 fi
 

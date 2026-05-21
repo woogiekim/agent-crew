@@ -8,14 +8,24 @@ source "$(dirname "$0")/_lib.bash"
 set +e
 
 MEMORY="${REPO_ROOT}/core/bin/memory"
+CODEX_SKILL="${REPO_ROOT}/adapters/codex/skill/agent-crew/SKILL.md"
 
 it "crew CLI exists next to memory wrapper"
 assert_file_exists "${REPO_ROOT}/core/bin/crew"
+
+it "Codex skill memory contract uses the bounded memory wrapper"
+SKILL_TEXT=$(cat "${CODEX_SKILL}")
+assert_contains "${SKILL_TEXT}" '.agent-crew/bin/memory'
+assert_contains "${SKILL_TEXT}" 'AGENT_CREW_MNEMOS_TIMEOUT_SECONDS'
 
 TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "capture" ]; then
+  case " $* " in
+    *" --no-classify "*) ;;
+    *) echo "missing --no-classify"; exit 9 ;;
+  esac
   cat <<'OUT'
 captured memory id: 0716384d-091f-4279-838f-73d54785767a
 error: git command failed (rc=1): remote rejected main -> main (cannot lock ref)
@@ -29,7 +39,7 @@ SH
 chmod +x "${TMP}/mnemos"
 
 it "memory capture returns success when local capture id exists but vault push failed"
-OUTPUT=$(PATH="${TMP}:${PATH}" bash "${MEMORY}" capture --layer session --content "probe" 2>&1)
+OUTPUT=$(MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --layer session --content "probe" 2>&1)
 rc=$?
 assert_exit 0 "${rc}" "nonfatal sync failure"
 
@@ -37,7 +47,29 @@ it "memory capture emits local capture warning"
 assert_contains "${OUTPUT}" "[memory] captured locally: 0716384d-091f-4279-838f-73d54785767a"
 
 it "memory capture emits vault sync warning"
-assert_contains "${OUTPUT}" "[memory] warning: vault sync failed"
+assert_contains "${OUTPUT}" "[memory] warning: vault sync failed or is locked"
+
+it "memory capture adds --no-classify by default"
+assert_not_contains "${OUTPUT}" "missing --no-classify"
+
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capture" ]; then
+  cat <<'OUT'
+error: git command failed (rc=128): fatal: Unable to create '/tmp/vault/.git/index.lock': File exists.
+Another git process seems to be running in this repository.
+OUT
+  exit 1
+fi
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory capture treats vault index lock as non-blocking"
+OUTPUT=$(MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --layer session --content "probe" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "index lock is support-path failure"
+assert_contains "${OUTPUT}" "capture could not confirm a local id"
 
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
@@ -50,8 +82,28 @@ SH
 chmod +x "${TMP}/mnemos"
 
 it "memory capture preserves non-sync failures"
-PATH="${TMP}:${PATH}" bash "${MEMORY}" capture --bad >/dev/null 2>&1
+MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --bad >/dev/null 2>&1
 rc=$?
 assert_exit 7 "${rc}" "non-sync capture failure"
+
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+sleep 5
+echo "late mnemos output"
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory search uses bounded mnemos timeout"
+OUTPUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search slow 2>&1)
+rc=$?
+assert_exit 124 "${rc}" "search timeout"
+assert_contains "${OUTPUT}" "mnemos-bounded: timed out after 1s"
+
+it "memory capture timeout is non-blocking"
+OUTPUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --layer session --content slow 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "capture timeout"
+assert_contains "${OUTPUT}" "[memory] warning: capture timed out"
 
 end_report

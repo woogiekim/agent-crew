@@ -205,17 +205,20 @@ and capture substantive findings afterward.
 
 ### Before work — Recall
 
-1. Run `mnemos search "<task keywords>"` using 1–3 keywords derived from the
-   task description or the user's request.
+1. Run bounded memory recall using 1–3 keywords derived from the task
+   description or the user's request.
 2. If results are found, summarize them in 1–3 lines in your response before
    proceeding.
-3. If mnemos is not installed, note `memory_unavailable` in your response and
-   continue without blocking.
+3. If memory is unavailable or times out, note that briefly and continue
+   without blocking. Memory recall is support context, not the execution plane.
 
 ```bash
-MNEMOS="${HOME}/.local/bin/mnemos"
-if command -v "${MNEMOS}" >/dev/null 2>&1; then
-  "${MNEMOS}" search "<task keywords>" 2>/dev/null || true
+MEMORY="${HOME}/.agent-crew/bin/memory"
+if [ -x "${MEMORY}" ]; then
+  AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+    "${MEMORY}" search "<task keywords>" --limit 5 2>/dev/null || true
+else
+  echo "memory_unavailable"
 fi
 ```
 
@@ -224,9 +227,10 @@ fi
 After substantive findings, decisions, or completed work, run:
 
 ```bash
-MNEMOS="${HOME}/.local/bin/mnemos"
-if command -v "${MNEMOS}" >/dev/null 2>&1; then
-  "${MNEMOS}" capture --layer session \
+MEMORY="${HOME}/.agent-crew/bin/memory"
+if [ -x "${MEMORY}" ]; then
+  AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+    "${MEMORY}" capture --quiet --layer session \
     --content "<insight / decision / root cause>"
 fi
 ```
