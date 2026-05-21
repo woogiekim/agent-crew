@@ -11,6 +11,10 @@ Check the following values from the prompt:
 - `PROJECT_ROOT`: project root path
 - Contents of `handoff.md` (handoff from the designer)
 
+## Code Style Rules
+- Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, rendering, error handling, and reporting as context changes.
+- Do not reformat unrelated code solely to add spacing; apply this rule to code you write or directly touch.
+
 ## Execution Flow
 
 ### Phase 1: Implement

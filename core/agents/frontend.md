@@ -35,6 +35,10 @@ technique is needed** during execution — do not load all skills upfront:
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
 - `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
+## Code Style Rules
+- Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, rendering, error handling, and reporting as context changes.
+- Do not reformat unrelated code solely to add spacing; apply this rule to code you write or directly touch.
+
 ## Before Work — Recall from Memory
 
 ```bash

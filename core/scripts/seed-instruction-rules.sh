@@ -229,6 +229,24 @@ registry has the right scope.
 RULE_EOF
 capture_rule "rule:auto-execution-triggers" 60 BODY_AUTO_EXEC
 
+# --- rule:code-style-context-breaks ---------------------------------------
+read -r -d '' BODY_CODE_STYLE_CONTEXT_BREAKS <<'RULE_EOF' || true
+---
+title: Code Style Context Breaks
+applies_to: [all]
+priority: 65
+---
+
+Frontend and backend agents must preserve code readability by inserting a line
+break when the implementation context changes.
+
+Treat transitions between setup, validation, transformation, side effects,
+rendering or return values, error handling, and reporting as context changes.
+Do not reformat unrelated code solely to add spacing; apply this rule to code
+the agent writes or directly touches.
+RULE_EOF
+capture_rule "rule:code-style-context-breaks" 65 BODY_CODE_STYLE_CONTEXT_BREAKS
+
 # --- rule:codex-routing-fallback (codex-only) -----------------------------
 read -r -d '' BODY_CODEX_ROUTING <<'RULE_EOF' || true
 ---

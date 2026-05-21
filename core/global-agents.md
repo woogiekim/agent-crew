@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-05-19T04:02:05Z from 13 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-05-21T00:11:50Z from 14 mnemos rules (host=repo) -->
 
 # agent-crew - Global Rules
 
@@ -94,6 +94,16 @@ selects analyst for codebase Q, historian for session/git/project state Q).
 Direct inline response is permitted ONLY for trivial single-fact replies
 (yes/no, file path lookup, single-number metric) AND when no agent in the
 registry has the right scope.
+
+## Code Style Context Breaks
+
+Frontend and backend agents must preserve code readability by inserting a line
+break when the implementation context changes.
+
+Treat transitions between setup, validation, transformation, side effects,
+rendering or return values, error handling, and reporting as context changes.
+Do not reformat unrelated code solely to add spacing; apply this rule to code
+the agent writes or directly touches.
 
 ## Codex Routing Fallback
 

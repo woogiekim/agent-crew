@@ -42,6 +42,10 @@ Read the following skill files using the Read tool **only when the specific tech
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never accept inline contents.
 - `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
+## Code Style Rules
+- Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, error handling, and return/reporting as context changes.
+- Do not reformat unrelated code solely to add spacing; apply this rule to code you write or directly touch.
+
 ## Before Work — Recall from Memory
 
 ```bash
