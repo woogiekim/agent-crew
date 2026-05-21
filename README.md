@@ -53,9 +53,11 @@ analysis, planning, agent creation, handoffs, state management, quality
 validation, and pipeline orchestration.
 
 Current validation conclusion: prompt handling has improved, especially around
-STOP routing, handoff state, and direct-agent boundaries. Performance remains
-very poor and is the primary issue to evaluate and improve in the prompt-runtime
-orchestration workflow.
+STOP routing, handoff state, direct-agent boundaries, and memory support-path
+latency. Native control-plane commands are now fast enough for routine use in
+recent E2E probes; the remaining performance risk is host prompt-runtime latency
+and project-specific agent execution overhead, which must continue to be
+measured during commercialization validation.
 
 ## Key Features
 
@@ -63,7 +65,7 @@ orchestration workflow.
 - **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
 - **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
 - **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
-- **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object. **A real test suite now exists in `tests/`** (see [Testing](#testing)) — the reviewer's runner-discovery on this repo finds `pytest` and exercises all 43 Python tests + the bash suites end-to-end
+- **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object. **A real test suite now exists in `tests/`** (see [Testing](#testing)) — the reviewer's runner-discovery on this repo finds `pytest` and exercises the Python, shell, and integration suites end-to-end
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog

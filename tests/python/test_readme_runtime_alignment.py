@@ -84,5 +84,6 @@ def test_readme_does_not_overstate_native_runtime_execution():
 def test_readme_preserves_validation_conclusion():
     text = readme_text()
     assert "prompt handling has improved" in text
-    assert "Performance remains\nvery poor" in text
-    assert "primary issue to evaluate and improve" in text
+    assert "Native control-plane commands are now fast enough for routine use" in text
+    assert "remaining performance risk is host prompt-runtime latency" in text
+    assert "continue to be\nmeasured during commercialization validation" in text
