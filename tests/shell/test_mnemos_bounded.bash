@@ -47,4 +47,11 @@ bash "${SCRIPT}" --help >/dev/null 2>&1
 rc=$?
 assert_exit 0 "${rc}" "help"
 
+it "mnemos-bounded rejects invalid poll interval"
+OUT=$(AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS=bad MNEMOS_BIN="${TMP}/mnemos-fast" \
+  bash "${SCRIPT}" search agent-crew 2>&1)
+rc=$?
+assert_exit 2 "${rc}" "invalid poll interval"
+assert_contains "${OUT}" "poll interval must be numeric"
+
 end_report

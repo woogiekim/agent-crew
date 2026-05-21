@@ -51,7 +51,7 @@ The Cartesian product gives expected Phase 2 spawn widths:
 | Multi-task startup latency | Current dry-run documents dispatch width only. | Add wall-clock capture for N = 1, 2, 4, 8. |
 | Injection latency | Not currently benchmarked on Codex because `agent_background=false`. | Add a session.json append dry run and status-visibility timing. |
 | Bootstrap overhead | Not centrally counted. | Count command/agent/skill files and bytes read per run. |
-| Mnemos overhead | Unbounded foreground behavior observed in #66. | Every memory call in routing/support scripts has a visible timeout path. |
+| Mnemos overhead | Unbounded foreground behavior and Obsidian sync writes were observed in #66 and the sixth commercialization E2E. | Support-path memory search uses read-only FTS first, captures default to local mnemos storage unless `MNEMOS_BACKEND` is explicit, and every fallback CLI call has a visible timeout path. |
 | Result collection latency | 5-second file-poll fallback documented. | Prefer progress-buffer/session reads and reduce avoidable fixed waits. |
 | Worktree setup cost | Not isolated from agent runtime. | Measure per-worktree and total setup time for N = 2, 4, 8. |
 
@@ -63,8 +63,8 @@ The Cartesian product gives expected Phase 2 spawn widths:
    runtime exposes a callable background spawn surface plus a later observation
    path. Tool-backed Codex sessions that do not expose such a tool stay on the
    file-based fallback path.
-2. Use `core/scripts/mnemos-bounded.sh` for support-path memory calls so hangs
-   become visible timeouts.
+2. Use `core/bin/memory` for support-path memory calls. It provides read-only
+   FTS recall, local support captures, and bounded mnemos fallback timeouts.
 3. Extend `bench-parallel.sh` output with N = 1, 2, 4, 8 scenario rows and keep
    the existing stage-width fixture checks.
 4. Add a future `bench-worktree-setup.sh` that measures `git worktree add`

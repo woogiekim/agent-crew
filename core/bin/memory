@@ -11,6 +11,148 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
+fast_search() {
+  [ "${AGENT_CREW_MEMORY_FAST_SEARCH:-1}" = "1" ] || return 1
+  [ "${1:-}" = "search" ] || return 1
+
+  local mnemos_root="${MNEMOS_REPO_ROOT:-${HOME}/.mnemos}"
+  local fts_db="${mnemos_root}/.agent/state/fts.db"
+  [ -f "${fts_db}" ] || return 1
+
+  python3 - "$fts_db" "$@" <<'PY'
+import json
+import re
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+args = sys.argv[2:]
+
+query = ""
+limit = 20
+width = 80
+full = False
+layers = None
+tags = []
+
+i = 1
+if len(args) > 1 and not args[1].startswith("-"):
+    query = args[1]
+    i = 2
+while i < len(args):
+    arg = args[i]
+    if arg in ("--limit",) and i + 1 < len(args):
+        try:
+            limit = int(args[i + 1])
+        except ValueError:
+            limit = 20
+        i += 2
+    elif arg in ("--width",) and i + 1 < len(args):
+        try:
+            width = int(args[i + 1])
+        except ValueError:
+            width = 80
+        i += 2
+    elif arg in ("--layers", "--layer") and i + 1 < len(args):
+        layers = {v.strip() for v in args[i + 1].split(",") if v.strip()}
+        i += 2
+    elif arg == "--tag" and i + 1 < len(args):
+        tags.append(args[i + 1])
+        i += 2
+    elif arg == "--full":
+        full = True
+        i += 1
+    else:
+        i += 1
+
+if not query or tags:
+    sys.exit(2)
+
+special_re = re.compile(r'[-+*^":()\[\]{}|&!]')
+
+def normalise_compounds(value):
+    return re.sub(r"[:\-]", " ", value)
+
+def sanitise(value):
+    tokens = value.split()
+    out = []
+    for token in tokens:
+        if special_re.search(token):
+            out.append('"' + token.replace('"', '""') + '"')
+        else:
+            out.append(token)
+    return " ".join(out)
+
+variants = []
+seen_variants = set()
+for candidate in (query, normalise_compounds(query)):
+    candidate = " ".join(candidate.split())
+    if candidate and candidate not in seen_variants:
+        variants.append(candidate)
+        seen_variants.add(candidate)
+
+results = []
+seen_ids = set()
+try:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    for variant in variants:
+        safe_variant = sanitise(variant)
+        if not safe_variant:
+            continue
+        try:
+            rows = conn.execute(
+                """
+                SELECT item_id, content, metadata, rank
+                FROM items_fts
+                WHERE items_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (safe_variant, max(limit * 3, limit)),
+            ).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            item_id = row["item_id"]
+            if item_id in seen_ids:
+                continue
+            metadata = {}
+            try:
+                metadata = json.loads(row["metadata"] or "{}")
+            except Exception:
+                metadata = {}
+            if layers is not None and metadata.get("layer") not in layers:
+                continue
+            seen_ids.add(item_id)
+            results.append({
+                "item_id": item_id,
+                "content": row["content"] or "",
+            })
+            if len(results) >= limit:
+                break
+        if len(results) >= limit:
+            break
+except Exception:
+    sys.exit(1)
+
+if not results:
+    print("no results found")
+else:
+    for result in results:
+        content = result["content"]
+        preview = content if full or len(content) <= width else content[:width] + "..."
+        print(f"  [fts] {result['item_id']}: {preview}")
+print(f"[mnemos] Retrieved {len(results)} memories")
+PY
+}
+
+if [ "${1:-}" = "search" ]; then
+  if fast_search "$@"; then
+    exit 0
+  fi
+fi
+
 MNEMOS_BIN="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
 if [ ! -x "${MNEMOS_BIN}" ]; then
   MNEMOS_PATH="$(command -v mnemos 2>/dev/null || true)"
@@ -36,13 +178,31 @@ for candidate in \
 done
 
 run_mnemos() {
+  local backend_value=""
+  if [ "${1:-}" = "capture" ] \
+    && [ -z "${MNEMOS_BACKEND:-}" ] \
+    && [ "${AGENT_CREW_MEMORY_CAPTURE_BACKEND:-default}" = "default" ]; then
+    backend_value="MNEMOS_BACKEND=default"
+  fi
   if [ -n "${BOUNDED}" ]; then
-    AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
-      MNEMOS_BIN="${MNEMOS_BIN}" \
-      bash "${BOUNDED}" "$@"
+    if [ -n "${backend_value}" ]; then
+      env "${backend_value}" \
+        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+        MNEMOS_BIN="${MNEMOS_BIN}" \
+        bash "${BOUNDED}" "$@"
+    else
+      env \
+        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+        MNEMOS_BIN="${MNEMOS_BIN}" \
+        bash "${BOUNDED}" "$@"
+    fi
     return $?
   fi
-  "${MNEMOS_BIN}" "$@"
+  if [ -n "${backend_value}" ]; then
+    env "${backend_value}" "${MNEMOS_BIN}" "$@"
+  else
+    env "${MNEMOS_BIN}" "$@"
+  fi
 }
 
 if [ "${1:-}" != "capture" ]; then

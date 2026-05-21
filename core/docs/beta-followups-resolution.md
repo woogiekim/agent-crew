@@ -12,7 +12,7 @@ and validation assets. It does not change production product behavior.
 
 | Area | Resolution | Evidence |
 |---|---|---|
-| Mnemos foreground search/capture can hang | Add a host-neutral bounded wrapper so hooks, Codex skills, and manual recall paths can fail visibly instead of hanging indefinitely. | `core/scripts/mnemos-bounded.sh`, `tests/shell/test_mnemos_bounded.bash` |
+| Mnemos foreground search/capture can hang or trigger slow vault sync | Add a host-neutral bounded wrapper, a read-only FTS fast path for recall, local support-memory captures by default, and sub-second process polling so hooks, Codex skills, and manual recall paths fail visibly without sitting on Obsidian git sync. | `core/bin/memory`, `core/scripts/mnemos-bounded.sh`, `tests/shell/test_memory_wrapper.bash`, `tests/shell/test_mnemos_bounded.bash` |
 | Codex mnemos preservation is manual | Codex remains hook-limited, so the supported path is explicit bounded recall before non-trivial work; failures are visible and non-blocking. | `adapters/codex/skill/agent-crew/SKILL.md` memory contract, `core/scripts/mnemos-bounded.sh` |
 | Stale global Codex agents | Global stubs are regenerated and pruned by the global adapter update path. Project-local stubs remain the preferred discovery surface for a workspace. | `core/scripts/update-global-adapters.sh`, `tests/shell/test_update_global_codex_agents.bash` |
 | Runtime skill usage verification | Structural skill loading remains covered by tests; runtime verification is defined as beta evidence from pipeline logs and stage artifacts, not as production behavior. | `tests/shell/test_skill_loading_open_closed.bash`, checklist below |
@@ -25,18 +25,25 @@ and validation assets. It does not change production product behavior.
 Codex currently cannot rely on a trusted automatic hook path for mnemos context
 in the same way Claude can. The supported Codex path is:
 
-1. Before non-trivial work, run bounded recall:
+1. Before non-trivial work, run bounded recall through the memory wrapper:
 
    ```bash
-   bash core/scripts/mnemos-bounded.sh search "<task keywords>"
+   ~/.agent-crew/bin/memory search "<task keywords>" --limit 5
    ```
+
+   The wrapper first uses the local mnemos FTS index read-only. It falls back
+   to the bounded mnemos CLI only when the fast path is unavailable or disabled
+   with `AGENT_CREW_MEMORY_FAST_SEARCH=0`.
 
 2. Treat exit `124` as a visible memory backend timeout, not a workflow blocker.
 3. Continue from local repo context if recall fails.
 4. Capture substantive findings through the existing `memory` wrapper when
-   possible; if capture times out, report the timeout and continue.
+   possible; if capture times out, report the timeout and continue. Support
+   captures default to mnemos's local backend so they remain fast and searchable
+   without forcing Obsidian vault git sync on the critical path. Set
+   `MNEMOS_BACKEND` explicitly to use a configured backend instead.
 
-Default timeout is 8 seconds and can be tuned:
+Default bounded CLI timeout is 8 seconds and can be tuned:
 
 ```bash
 AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=3 \

@@ -645,6 +645,9 @@ Several optimizations reduce latency and context overhead across the pipeline:
 - **pipeline.json batching** — sequential (single-agent) stages use one combined `json.dump` call to update both `stage_agent_status` and `completed_stages`, halving write overhead versus parallel stages.
 - **Slim agent creation templates** — Phase 1.5 uses a minimal agent template to reduce spawn latency when creating custom agents.
 - **Skip-if-exists guard in Phase 1.5** — before spawning an agent creation sub-agent, Phase 1.5 checks whether the agent file already exists on disk and skips creation if it does.
+- **Read-only mnemos recall fast path** — `~/.agent-crew/bin/memory search` reads the local mnemos FTS index directly before falling back to the mnemos CLI. This avoids search-time metadata writes, Obsidian vault git sync, and access-count updates on the prompt-runtime critical path.
+- **Local support-memory captures** — agent-crew support captures default to mnemos's local backend unless `MNEMOS_BACKEND` is explicitly set. This keeps end-of-stage memory writes fast and searchable while preserving an opt-in path for users who want every support capture synced through their configured mnemos backend.
+- **Sub-second mnemos process polling** — the bounded mnemos wrapper polls at 0.1s by default instead of adding a full one-second floor to every fast memory command.
 
 ## Rules and Hooks
 

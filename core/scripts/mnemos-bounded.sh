@@ -7,6 +7,8 @@
 #   MNEMOS_BIN      path to mnemos CLI (default: ~/.local/bin/mnemos, then PATH)
 #   AGENT_CREW_MNEMOS_TIMEOUT_SECONDS
 #                   positive integer timeout in seconds (default: 8)
+#   AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS
+#                   polling interval in seconds (default: 0.1)
 #
 # Outputs:
 #   stdout/stderr   forwarded from mnemos on success/failure before timeout;
@@ -31,6 +33,8 @@ Run mnemos with a hard timeout.
 Environment:
   MNEMOS_BIN                         path to mnemos CLI
   AGENT_CREW_MNEMOS_TIMEOUT_SECONDS  timeout seconds (default: 8)
+  AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS
+                                      poll interval seconds (default: 0.1)
 EOF
 }
 
@@ -40,6 +44,7 @@ if [ "${1:-}" = "--help" ] || [ $# -eq 0 ]; then
 fi
 
 TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-8}"
+POLL_INTERVAL_SECONDS="${AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS:-0.1}"
 case "${TIMEOUT_SECONDS}" in
   ''|*[!0-9]*)
     printf 'mnemos-bounded: timeout must be a positive integer, got %s\n' "${TIMEOUT_SECONDS}" >&2
@@ -47,6 +52,13 @@ case "${TIMEOUT_SECONDS}" in
     ;;
   0)
     printf 'mnemos-bounded: timeout must be greater than zero\n' >&2
+    exit 2
+    ;;
+esac
+
+case "${POLL_INTERVAL_SECONDS}" in
+  ''|*[!0-9.]*)
+    printf 'mnemos-bounded: poll interval must be numeric, got %s\n' "${POLL_INTERVAL_SECONDS}" >&2
     exit 2
     ;;
 esac
@@ -90,7 +102,7 @@ while kill -0 "${PID}" 2>/dev/null; do
       "${TIMEOUT_SECONDS}" "${MNEMOS_BIN}" "$*" >&2
     exit 124
   fi
-  sleep 1
+  sleep "${POLL_INTERVAL_SECONDS}"
 done
 
 wait "${PID}"

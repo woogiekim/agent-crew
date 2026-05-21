@@ -22,6 +22,10 @@ TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "capture" ]; then
+  if [ "${MNEMOS_BACKEND:-}" != "default" ]; then
+    echo "missing default support backend"
+    exit 9
+  fi
   case " $* " in
     *" --no-classify "*) ;;
     *) echo "missing --no-classify"; exit 9 ;;
@@ -51,6 +55,25 @@ assert_contains "${OUTPUT}" "[memory] warning: vault sync failed or is locked"
 
 it "memory capture adds --no-classify by default"
 assert_not_contains "${OUTPUT}" "missing --no-classify"
+
+it "memory capture defaults agent-crew support writes to local mnemos backend"
+assert_not_contains "${OUTPUT}" "missing default support backend"
+
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capture" ]; then
+  printf 'backend=%s\n' "${MNEMOS_BACKEND:-}"
+  exit 0
+fi
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory capture preserves explicit MNEMOS_BACKEND override"
+OUTPUT=$(MNEMOS_BACKEND=obsidian MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --layer session --content "probe" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "explicit backend preserved"
+assert_contains "${OUTPUT}" "backend=obsidian"
 
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
@@ -95,10 +118,56 @@ SH
 chmod +x "${TMP}/mnemos"
 
 it "memory search uses bounded mnemos timeout"
-OUTPUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search slow 2>&1)
+OUTPUT=$(AGENT_CREW_MEMORY_FAST_SEARCH=0 AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search slow 2>&1)
 rc=$?
 assert_exit 124 "${rc}" "search timeout"
 assert_contains "${OUTPUT}" "mnemos-bounded: timed out after 1s"
+
+FAST_HOME=$(make_tmp)
+mkdir -p "${FAST_HOME}/.mnemos/.agent/state"
+python3 - "${FAST_HOME}/.mnemos/.agent/state/fts.db" <<'PY'
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+conn.execute(
+    """
+    CREATE VIRTUAL TABLE items_fts
+    USING fts5(item_id UNINDEXED, content, metadata)
+    """
+)
+conn.execute(
+    "INSERT INTO items_fts (item_id, content, metadata) VALUES (?, ?, ?)",
+    (
+        "fast-memory-1",
+        "agent crew fast memory search result",
+        json.dumps({"layer": "session", "tags": []}),
+    ),
+)
+conn.commit()
+PY
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+echo "slow backend invoked"
+exit 99
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory search uses read-only FTS fast path before mnemos backend"
+OUTPUT=$(HOME="${FAST_HOME}" MNEMOS_REPO_ROOT="${FAST_HOME}/.mnemos" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "agent crew fast" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "fast FTS search"
+assert_contains "${OUTPUT}" "fast-memory-1"
+assert_not_contains "${OUTPUT}" "slow backend invoked"
+
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+sleep 5
+echo "late mnemos output"
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
 
 it "memory capture timeout is non-blocking"
 OUTPUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --layer session --content slow 2>&1)
