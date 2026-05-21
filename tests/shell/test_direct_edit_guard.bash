@@ -57,6 +57,15 @@ run_hook_env() {
   printf '%s' "${payload}" | env "$@" bash "${HOOK}" 2>&1
 }
 
+run_hook_env_split() {
+  local payload="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  shift 3
+  # Remaining args are VAR=value pairs forwarded to env(1).
+  printf '%s' "${payload}" | env "$@" bash "${HOOK}" >"${stdout_file}" 2>"${stderr_file}"
+}
+
 run_hook_env_rc() {
   local payload="$1"
   shift
@@ -102,6 +111,19 @@ out=$(run_hook_env "${PAYLOAD}" \
   "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
   "AGENT_CREW_ALLOW_DIRECT_EDIT=")
 assert_contains "${out}" "crew:run" "block message mentions crew:run"
+
+it "AC4/AC2: block reason is written to stderr"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+STDOUT_FILE="$(make_tmp)/stdout"
+STDERR_FILE="$(make_tmp)/stderr"
+run_hook_env_split "${PAYLOAD}" "${STDOUT_FILE}" "${STDERR_FILE}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT="
+rc=$?
+assert_exit 2 "${rc}" "exit 2 when no active marker"
+assert_eq "" "$(cat "${STDOUT_FILE}")" "stdout must be empty on block"
+assert_contains "$(cat "${STDERR_FILE}")" '"decision"' "stderr contains block JSON"
+assert_contains "$(cat "${STDERR_FILE}")" "crew:run" "stderr contains actionable reason"
 
 # --------------------------------------------------------------------------- #
 # AC5: Active task marker allows the edit (sub-agent / pipeline path)         #

@@ -124,6 +124,6 @@ block_message = (
     "in the environment or see core/rules/direct-edit-guard.md for the "
     "full escape hatch documentation."
 )
-print(json.dumps({"decision": "block", "reason": block_message}))
+print(json.dumps({"decision": "block", "reason": block_message}), file=sys.stderr)
 sys.exit(2)
 PYEOF

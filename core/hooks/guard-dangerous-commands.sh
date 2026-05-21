@@ -130,7 +130,7 @@ for kind, pattern in DANGEROUS_PATTERNS:
                 f"Write a command-bound JSON approval to {approval_file} only from an approved orchestrator path."
             )
         }
-        print(json.dumps(block_output))
+        print(json.dumps(block_output), file=sys.stderr)
         sys.exit(2)
 
 sys.exit(0)

@@ -23,6 +23,14 @@ run_hook() {
   printf '%s' "${payload}" | env "$@" bash "${HOOK}" 2>&1
 }
 
+run_hook_split() {
+  local payload="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  shift 3
+  printf '%s' "${payload}" | env "$@" bash "${HOOK}" >"${stdout_file}" 2>"${stderr_file}"
+}
+
 write_approval() {
   local home="$1"
   local kind="$2"
@@ -50,6 +58,17 @@ assert_exit 2 "${rc}"
 
 it "git push block output identifies push kind"
 assert_contains "${out}" "Kind: push"
+
+it "git push block reason is written to stderr"
+STDOUT_FILE="$(make_tmp)/stdout"
+STDERR_FILE="$(make_tmp)/stderr"
+run_hook_split "$(payload_for "git push origin main")" "${STDOUT_FILE}" "${STDERR_FILE}" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_APPROVED_DANGEROUS="
+rc=$?
+assert_exit 2 "${rc}"
+assert_eq "" "$(cat "${STDOUT_FILE}")" "stdout must be empty on block"
+assert_contains "$(cat "${STDERR_FILE}")" "Kind: push" "stderr contains block reason"
 
 it "git push block writes audit trail"
 audit=$(cat "${TMP_HOME}/audit/dangerous-commands.jsonl")
