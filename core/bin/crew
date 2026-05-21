@@ -12,6 +12,11 @@ else
   ASSET_ROOT="${AGENT_CREW_HOME}"
 fi
 
+SOURCE_ROOT="${ASSET_ROOT}"
+if [ -d "${ASSET_ROOT}/../adapters" ] && [ "$(basename "${ASSET_ROOT}")" = "core" ]; then
+  SOURCE_ROOT="$(cd "${ASSET_ROOT}/.." && pwd)"
+fi
+
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
 PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
@@ -52,6 +57,15 @@ require_file() {
 cmd_setup() {
   local project="${1:-${PROJECT_ROOT}}"
   local setup_script="${ASSET_ROOT}/setup/setup-host.sh"
+  local install_setup="${AGENT_CREW_HOME}/setup/setup-host.sh"
+
+  if [ ! -x "${install_setup}" ] && [ "${ASSET_ROOT}" != "${AGENT_CREW_HOME}" ]; then
+    local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
+    require_file "${sync_script}" "local sync script"
+    bash "${sync_script}" "${SOURCE_ROOT}" "${project}"
+    return
+  fi
+
   require_file "${setup_script}" "setup dispatcher"
   bash "${setup_script}" "${project}"
 }

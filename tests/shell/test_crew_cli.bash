@@ -40,6 +40,23 @@ assert_exit 0 "${rc}"
 it "crew status --json contains tasks key"
 assert_contains "${out}" "\"tasks\""
 
+SETUP_HOME=$(make_tmp)
+SETUP_PROJECT=$(make_tmp)
+
+it "crew setup bootstraps an empty AGENT_CREW_HOME from source checkout"
+out=$(AGENT_CREW_HOME="${SETUP_HOME}" PROJECT_ROOT="${SETUP_PROJECT}" bash "${CREW}" setup "${SETUP_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew setup bootstrap installs setup dispatcher"
+assert_file_exists "${SETUP_HOME}/setup/setup-host.sh"
+
+it "crew setup bootstrap installs agent skills"
+assert_file_exists "${SETUP_HOME}/system/agents/skills/tdd.md"
+
+it "crew setup bootstrap initializes project capabilities"
+assert_file_exists "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capabilities.json"
+
 it "crew run writes deterministic state then exits blocked"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
 rc=$?
