@@ -285,6 +285,37 @@ class TestTelemetryAggregate:
         assert len(guidance) == 1
         assert "Invoke the host bridge" in guidance[0]
 
+    def test_host_bridge_blocker_summary_is_canonicalized(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Equivalent host-bridge blockers should count as one blocker label."""
+        task_id = "20260101-120453-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        reg = json.loads((td / "register.json").read_text())
+        reg["blocked_by"] = ["host_bridge_not_invoked"]
+        (td / "register.json").write_text(json.dumps(reg))
+        (td / "result.md").write_text(
+            "# Native handoff\n\n"
+            "STATUS: blocked\n"
+            "BLOCKER: host AI bridge has not completed this handoff\n"
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["tasks"][0]["blockers"] == [
+            "host AI bridge has not completed this handoff",
+            "host_bridge_not_invoked",
+        ]
+        assert payload["summary"]["by_blocker"] == {"host_bridge_not_invoked": 1}
+
     def test_recent_selector_limits_count(
         self, script_runner, env_with_home, state_dir
     ):
