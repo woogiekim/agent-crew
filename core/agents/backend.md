@@ -26,6 +26,7 @@ Read the following skill files using the Read tool **only when the specific tech
 - API design and contract definition: `~/.agent-crew/system/agents/skills/api-design.md`
 - Domain modeling and aggregate design: `~/.agent-crew/system/agents/skills/domain-modeling.md`
 - Database schema design and indexing strategies: `~/.agent-crew/system/agents/skills/database-design.md`
+- DGS GraphQL and Feign DataLoader batching: `~/.agent-crew/system/agents/skills/dgs-dataloader.md`
 - Error handling and typed error flows: `~/.agent-crew/system/agents/skills/error-handling.md`
 - Security hardening (auth, secrets, transport): `~/.agent-crew/system/agents/skills/security-hardening.md`
 - Kotlin language best practices (Effective Kotlin): `~/.agent-crew/system/agents/skills/effective-kotlin.md`
@@ -84,6 +85,9 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 
 > **RECOMMENDED: When the domain model involves complex aggregates or multiple bounded contexts, read `~/.agent-crew/system/agents/skills/domain-driven-design.md`.**
 > This skill defines aggregate roots, value objects, domain events, and anti-corruption layer patterns.
+
+> **MANDATORY: When a Kotlin/Spring project uses Netflix DGS, GraphQL field resolvers, Feign clients, or downstream HTTP enrichment for list/nested fields, read `~/.agent-crew/system/agents/skills/dgs-dataloader.md` before designing resolver or service changes.**
+> This skill defines DataLoader batching, request-scoped cache boundaries, and call-count verification required to prevent DGS/Feign N+1 regressions.
 
 1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
 2. Design the domain model (Aggregate Root, Entity, Value Object, Domain Event). Validate with Object Calisthenics and Tell Don't Ask.

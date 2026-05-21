@@ -196,6 +196,7 @@ EXPECTED_SKILLS=(
   "clean-architecture.md"
   "agile-xp.md"
   "domain-driven-design.md"
+  "dgs-dataloader.md"
   "SKILL-TEMPLATE.md"
 )
 for skill in "${EXPECTED_SKILLS[@]}"; do
@@ -218,6 +219,7 @@ NEW_SKILLS=(
   "clean-architecture.md"
   "agile-xp.md"
   "domain-driven-design.md"
+  "dgs-dataloader.md"
 )
 REQUIRED_SECTIONS=("## Source" "## When to Apply" "## Core Rules" "## Anti-Patterns" "## References")
 for skill in "${NEW_SKILLS[@]}"; do
@@ -242,6 +244,24 @@ for skill in "${NEW_SKILLS[@]}"; do
     _fail "expected >= 5 ### Rule sections, found ${rule_count:-0}"
   fi
 done
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test 9: targeted production guidance is declared by the right agents
+# ─────────────────────────────────────────────────────────────────────────────
+BACKEND_CONTENT="$(cat "${REPO_ROOT}/core/agents/backend.md" 2>/dev/null || true)"
+FRONTEND_CONTENT="$(cat "${REPO_ROOT}/core/agents/frontend.md" 2>/dev/null || true)"
+
+it "backend.md declares DGS DataLoader guidance for GraphQL/Feign N+1 prevention"
+assert_contains "${BACKEND_CONTENT}" "dgs-dataloader.md"
+
+it "backend.md mandates DGS DataLoader guidance for DGS or Feign resolver work"
+assert_contains "${BACKEND_CONTENT}" "DGS/Feign N+1"
+
+it "backend.md declares context-change line break code style"
+assert_contains "${BACKEND_CONTENT}" "Insert a line break when the implementation context changes"
+
+it "frontend.md declares context-change line break code style"
+assert_contains "${FRONTEND_CONTENT}" "Insert a line break when the implementation context changes"
 
 # ─────────────────────────────────────────────────────────────────────────────
 end_report

@@ -140,6 +140,24 @@ assert_file_exists "${TMP}/dest/user.md"
 it "merge_agents_to_discovery removed stale dest file"
 assert_file_absent "${TMP}/dest/stale.md"
 
+# Regression: user-owned agents with names removed from system/ remain in
+# generated host discovery paths. This protects custom scribe agents from the
+# Phase 3.1 migration loop.
+TMP=$(make_tmp)
+mkdir -p "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest"
+echo "user-scribe" > "${TMP}/user-agents/scribe.md"
+echo "old-generated" > "${TMP}/dest/scribe.md"
+
+it "merge_agents_to_discovery preserves user-owned scribe discovery output"
+merge_agents_to_discovery \
+  "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest" >/dev/null 2>&1
+rc=$?
+assert_exit 0 "${rc}"
+
+it "merge_agents_to_discovery writes user-owned scribe to discovery"
+actual=$(cat "${TMP}/dest/scribe.md" 2>/dev/null || true)
+assert_eq "user-scribe" "${actual}"
+
 # Now create a conflict
 TMP=$(make_tmp)
 mkdir -p "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest"

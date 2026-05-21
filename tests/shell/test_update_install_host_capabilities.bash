@@ -42,4 +42,13 @@ assert_contains "${update_doc}" "AGENT_CREW_INSTALL_CLAUDE_COMPAT=0" "global hoo
 it "crew:update no longer documents the broken core/core source path"
 assert_not_contains "${update_doc}" 'AGENT_CREW_SOURCE_DIR="${SOURCE_DIR}"' "SOURCE_DIR points at core/ and makes install.sh look for core/core"
 
+it "Phase 3.1 scribe migration preserves user-owned discovery outputs"
+assert_contains "${update_doc}" '[ ! -f "${AGENT_CREW_HOME}/user/agents/scribe.md" ]' "scribe discovery cleanup must be gated by absence of user scribe"
+
+it "Phase 3.1 scribe migration documents the re-removal loop guard"
+assert_contains "${update_doc}" "MUST NOT be removed" "user-owned discovery files must not be deleted on every update"
+
+it "Phase 3.1 scribe migration keeps system cleanup separate from discovery cleanup"
+assert_contains "${update_doc}" "Phase 3.1 scribe discovery" "discovery cleanup must be its own guarded migration label"
+
 end_report

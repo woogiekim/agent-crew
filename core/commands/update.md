@@ -221,12 +221,13 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    `outline-posttooluse.sh` hook is also removed — it was passive (never
    wired into `settings.json`), so no hook unregistration is required.
 
-   `sync_system_agents` and `merge_agents_to_discovery` auto-prune the
-   agents at two of the four installation paths; the other two are copied
-   via `cp -R src/. dest/` which overwrites but does not delete. Hooks
-   are copied via `cp -R` at three paths. Defensively remove all
-   locations so the host never sees the old scribe agent or outline hook
-   script after migration.
+   `sync_system_agents` and `merge_agents_to_discovery` auto-prune stale
+   generated agents when no matching user-owned agent exists. If
+   `~/.agent-crew/user/agents/scribe.md` exists, the generated host
+   discovery files are user-owned outputs and MUST NOT be removed by this
+   migration; otherwise every `crew:update` re-creates them from user/
+   and then deletes them again. Hooks are copied via `cp -R` at three
+   paths, so the stale hook is still removed defensively.
 
    The block is idempotent — `rm -f` is silent on missing files. After
    the first successful `crew:update` post-3.1 it becomes a no-op. The
@@ -236,8 +237,6 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    block above).
 
    ```bash
-   PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-
    # Pre-removal warning if scribe is in system/ but absent from user/
    # (user-data preservation prompt — specific to this migration; not
    # extracted to migrate-rm-stale.sh).
@@ -252,13 +251,20 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
      sleep 3
    fi
 
-   # Stale scribe agent — four installation paths
+   # Stale scribe system copy. Generated host discovery files are removed
+   # only when no user-owned scribe agent exists.
    bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
      "Phase 3.1 scribe" \
-     "${AGENT_CREW_HOME}/system/agents/scribe.md" \
-     "${CLAUDE_DIR}/agents/scribe.md" \
-     "${CLAUDE_DIR}/agent-crew/agents/scribe.md" \
-     "${PROJECT_ROOT_LOCAL}/.codex/agents/scribe.toml"
+     "${AGENT_CREW_HOME}/system/agents/scribe.md"
+
+   if [ ! -f "${AGENT_CREW_HOME}/user/agents/scribe.md" ]; then
+     PROJECT_ROOT_LOCAL="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+     bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
+       "Phase 3.1 scribe discovery" \
+       "${CLAUDE_DIR}/agents/scribe.md" \
+       "${CLAUDE_DIR}/agent-crew/agents/scribe.md" \
+       "${PROJECT_ROOT_LOCAL}/.codex/agents/scribe.toml"
+   fi
 
    # Stale outline-posttooluse hook — three installation paths
    bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
@@ -270,10 +276,10 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
    > **User-data preservation:** if a user has placed their own
    > customized `scribe.md` at `~/.agent-crew/user/agents/scribe.md`, it
-   > is preserved — the migration only touches `system/` and the
-   > generated discovery mirrors. The user copy continues to be merged
-   > into `~/.claude/agents/scribe.md` by `merge_agents_to_discovery` on
-   > subsequent updates.
+   > is preserved — the migration removes only `system/agents/scribe.md`
+   > while that user copy exists. The user copy continues to be merged
+   > into `~/.claude/agents/scribe.md` by `merge_agents_to_discovery` and
+   > into Codex project agents by the Codex adapter on subsequent updates.
 
    > **Hook registration:** `outline-posttooluse.sh` was never registered
    > as a `PostToolUse` hook in either `install.sh` or

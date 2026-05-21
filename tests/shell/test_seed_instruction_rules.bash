@@ -127,6 +127,16 @@ it "--apply persisted at least one rule body (input-language)"
 stored="${TMP}/mnemos-store/rule:input-language"
 assert_file_exists "${stored}"
 
+it "--apply persisted code style context-break rule"
+stored="${TMP}/mnemos-store/rule:code-style-context-breaks"
+assert_file_exists "${stored}"
+
+it "code style context-break rule applies globally"
+assert_contains "$(cat "${stored}" 2>/dev/null || true)" "applies_to: [all]"
+
+it "code style context-break rule requires breaks on context changes"
+assert_contains "$(cat "${stored}" 2>/dev/null || true)" "break when the implementation context changes"
+
 # --------------------------------------------------------------------------- #
 # Re-run --apply with identical content: all skipped                          #
 # --------------------------------------------------------------------------- #
