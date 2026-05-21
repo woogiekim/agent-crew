@@ -239,6 +239,10 @@ def command_haystack(kind, value):
         return mask_quoted_strings(value)
     return value
 
+def block_with_reason(block_output):
+    print(json.dumps(block_output), file=sys.stderr, flush=True)
+    sys.exit(2)
+
 for kind, pattern in DANGEROUS_PATTERNS:
     haystack = command_haystack(kind, command)
     if re.search(pattern, haystack):
@@ -268,8 +272,7 @@ for kind, pattern in DANGEROUS_PATTERNS:
                 f"Write a command-bound JSON approval to {approval_file} only from an approved orchestrator path."
             )
         }
-        print(json.dumps(block_output), file=sys.stderr)
-        sys.exit(2)
+        block_with_reason(block_output)
 
 sys.exit(0)
 PYEOF

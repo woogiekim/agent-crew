@@ -70,6 +70,52 @@ assert_exit 2 "${rc}"
 assert_eq "" "$(cat "${STDOUT_FILE}")" "stdout must be empty on block"
 assert_contains "$(cat "${STDERR_FILE}")" "Kind: push" "stderr contains block reason"
 
+it "every dangerous command block path writes its reason to stderr"
+while IFS='|' read -r label command expected; do
+  [ -n "${label}" ] || continue
+  STDOUT_FILE="$(make_tmp)/stdout"
+  STDERR_FILE="$(make_tmp)/stderr"
+  run_hook_split "$(payload_for "${command}")" "${STDOUT_FILE}" "${STDERR_FILE}" \
+    "AGENT_CREW_HOME=${TMP_HOME}" \
+    "AGENT_CREW_APPROVED_DANGEROUS="
+  rc=$?
+  if [ "${rc}" -ne 2 ]; then
+    _fail "${label}: expected exit=2 actual=${rc}"
+    continue
+  fi
+  if [ -s "${STDOUT_FILE}" ]; then
+    _fail "${label}: stdout must be empty on block"
+    continue
+  fi
+  stderr="$(cat "${STDERR_FILE}")"
+  case "${stderr}" in
+    *'"decision": "block"'*"${expected}"*) _pass ;;
+    *) _fail "${label}: missing block reason on stderr: ${stderr:0:200}" ;;
+  esac
+done <<'EOF'
+destructive root delete|rm -rf /|Kind: destructive-delete
+destructive home delete|rm -rf ~|Kind: destructive-delete
+destructive env home delete|rm -rf $HOME|Kind: destructive-delete
+disk format|mkfs /dev/sdb|Kind: disk-format
+raw disk read|dd if=/dev/zero of=/tmp/out|Kind: raw-disk-write
+raw disk write redirection|printf x > /dev/sda|Kind: raw-disk-write
+git push|git push origin main|Kind: push
+git merge|git merge feature/example|Kind: merge
+deploy script|./deploy.sh production|Kind: deploy
+npm deploy|npm run deploy|Kind: deploy
+EOF
+
+it "fork bomb block path writes its reason to stderr"
+STDOUT_FILE="$(make_tmp)/stdout"
+STDERR_FILE="$(make_tmp)/stderr"
+run_hook_split "$(payload_for ':(){ :|:& };:')" "${STDOUT_FILE}" "${STDERR_FILE}" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_APPROVED_DANGEROUS="
+rc=$?
+assert_exit 2 "${rc}"
+assert_eq "" "$(cat "${STDOUT_FILE}")" "stdout must be empty on block"
+assert_contains "$(cat "${STDERR_FILE}")" "Kind: fork-bomb" "stderr contains block reason"
+
 it "git push block writes audit trail"
 audit=$(cat "${TMP_HOME}/audit/dangerous-commands.jsonl")
 assert_contains "${audit}" '"decision": "block"'

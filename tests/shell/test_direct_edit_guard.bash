@@ -125,6 +125,43 @@ assert_eq "" "$(cat "${STDOUT_FILE}")" "stdout must be empty on block"
 assert_contains "$(cat "${STDERR_FILE}")" '"decision"' "stderr contains block JSON"
 assert_contains "$(cat "${STDERR_FILE}")" "crew:run" "stderr contains actionable reason"
 
+it "all direct edit tool block paths write their reason to stderr"
+for tool_name in Edit Write MultiEdit apply_patch; do
+  PAYLOAD="$(python3 -c "
+import json, sys
+tool = sys.argv[1]
+payload = {'tool_name': tool, 'tool_input': {'file_path': sys.argv[2]}}
+if tool == 'Edit':
+    payload['tool_input'].update({'old_string': 'foo', 'new_string': 'bar'})
+elif tool == 'Write':
+    payload['tool_input']['content'] = 'new content'
+elif tool == 'MultiEdit':
+    payload['tool_input']['edits'] = [{'old_string': 'foo', 'new_string': 'bar'}]
+else:
+    payload['tool_input']['patch'] = '*** Begin Patch\n*** End Patch\n'
+print(json.dumps(payload))
+" "${tool_name}" "${PROJECT_CORE_FILE}")"
+  STDOUT_FILE="$(make_tmp)/stdout"
+  STDERR_FILE="$(make_tmp)/stderr"
+  run_hook_env_split "${PAYLOAD}" "${STDOUT_FILE}" "${STDERR_FILE}" \
+    "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+    "AGENT_CREW_ALLOW_DIRECT_EDIT="
+  rc=$?
+  if [ "${rc}" -ne 2 ]; then
+    _fail "${tool_name}: expected exit=2 actual=${rc}"
+    continue
+  fi
+  if [ -s "${STDOUT_FILE}" ]; then
+    _fail "${tool_name}: stdout must be empty on block"
+    continue
+  fi
+  stderr="$(cat "${STDERR_FILE}")"
+  case "${stderr}" in
+    *'"decision": "block"'*"crew:run"*) _pass ;;
+    *) _fail "${tool_name}: missing block reason on stderr: ${stderr:0:200}" ;;
+  esac
+done
+
 # --------------------------------------------------------------------------- #
 # AC5: Active task marker allows the edit (sub-agent / pipeline path)         #
 # --------------------------------------------------------------------------- #
