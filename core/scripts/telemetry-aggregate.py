@@ -283,6 +283,14 @@ def guidance_for(blockers, status, current_phase):
     return list(dict.fromkeys(guidance))
 
 
+def canonical_blocker(blocker):
+    """Normalize equivalent blocker labels for stable task/status summaries."""
+    value = str(blocker or "").strip()
+    if value == "host_bridge_not_invoked" or "host AI bridge" in value:
+        return "host_bridge_not_invoked"
+    return value
+
+
 def aggregate_task(state_dir, task_dir):
     """Return a per-task dict with metrics + status. Robust to missing data."""
     task_id = task_dir.name
@@ -469,8 +477,13 @@ def aggregate_summary(rows):
     by_phase = Counter(r["current_phase"] for r in rows if r["current_phase"])
     by_blocker = Counter()
     for r in rows:
+        seen_blockers = set()
         for b in r["blockers"]:
-            by_blocker[b] += 1
+            blocker = canonical_blocker(b)
+            if not blocker or blocker in seen_blockers:
+                continue
+            seen_blockers.add(blocker)
+            by_blocker[blocker] += 1
 
     return {
         "tasks_total":             total,
