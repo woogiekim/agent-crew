@@ -92,6 +92,41 @@ assert_contains "${audit}" '"decision": "allow"'
 it "command-bound approval marker is consumed after use"
 assert_file_absent "${TMP_HOME}/approvals/dangerous-commands.approved"
 
+it "command-bound approval tolerates one duplicate hook invocation"
+write_approval "${TMP_HOME}" "push" "git push origin main"
+payload="$(payload_for "git push origin main")"
+out=$(run_hook "${payload}" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}" "first hook pass should use fresh approval"
+out=$(run_hook "${payload}" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}" "second duplicate hook pass should use consumed approval grace"
+out=$(run_hook "${payload}" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}" "third hook pass must not reuse consumed approval"
+
+it "approval JSON write containing git push literal is allowed"
+approval_cmd=$(cat <<EOF
+mkdir -p ${TMP_HOME}/approvals
+printf '{"approved":true,"kind":"push","command":"git push origin main","expires_at":"2999-01-01T00:00:00Z"}\n' > ${TMP_HOME}/approvals/dangerous-commands.approved
+EOF
+)
+out=$(run_hook "$(payload_for "${approval_cmd}")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "approval marker write should not be blocked"
+
+it "crew run task text mentioning git push is allowed"
+out=$(run_hook "$(payload_for 'crew run "Fix guard false positive for git push approval JSON"')" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+
+it "shell evaluator running quoted git push is blocked"
+out=$(run_hook "$(payload_for 'bash -lc "git push origin main"')" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: push"
+
 it "inline approval env prefix does not self-approve git push"
 out=$(run_hook "$(payload_for "AGENT_CREW_APPROVED_DANGEROUS=1 git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
