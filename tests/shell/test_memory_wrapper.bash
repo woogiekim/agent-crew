@@ -145,6 +145,14 @@ conn.execute(
         json.dumps({"layer": "session", "tags": []}),
     ),
 )
+conn.execute(
+    "INSERT INTO items_fts (item_id, content, metadata) VALUES (?, ?, ?)",
+    (
+        "fast-memory-2",
+        "commercialization evaluation found Mnemos latency context",
+        json.dumps({"layer": "session", "tags": []}),
+    ),
+)
 conn.commit()
 PY
 cat > "${TMP}/mnemos" <<'SH'
@@ -159,6 +167,13 @@ OUTPUT=$(HOME="${FAST_HOME}" MNEMOS_REPO_ROOT="${FAST_HOME}/.mnemos" MNEMOS_BIN=
 rc=$?
 assert_exit 0 "${rc}" "fast FTS search"
 assert_contains "${OUTPUT}" "fast-memory-1"
+assert_not_contains "${OUTPUT}" "slow backend invoked"
+
+it "memory search relaxes over-specific FTS queries when strict matching is empty"
+OUTPUT=$(HOME="${FAST_HOME}" MNEMOS_REPO_ROOT="${FAST_HOME}/.mnemos" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "requirements commercialization production readiness Mnemos latency answer quality" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "relaxed FTS search"
+assert_contains "${OUTPUT}" "fast-memory-2"
 assert_not_contains "${OUTPUT}" "slow backend invoked"
 
 cat > "${TMP}/mnemos" <<'SH'
