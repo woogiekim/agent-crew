@@ -29,6 +29,10 @@ import sys
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
 
+def block_with_reason(reason):
+    print(json.dumps({"decision": "block", "reason": reason}), file=sys.stderr, flush=True)
+    sys.exit(2)
+
 try:
     data = json.loads(raw_input)
 except Exception:
@@ -124,6 +128,5 @@ block_message = (
     "in the environment or see core/rules/direct-edit-guard.md for the "
     "full escape hatch documentation."
 )
-print(json.dumps({"decision": "block", "reason": block_message}), file=sys.stderr)
-sys.exit(2)
+block_with_reason(block_message)
 PYEOF
