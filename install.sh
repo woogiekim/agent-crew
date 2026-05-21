@@ -28,6 +28,25 @@ log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 log_section() { echo -e "\n${GREEN}▶ $1${NC}"; }
 
+install_path_crew_cli() {
+  local src="${SOURCE_DIR}/bin/crew"
+  local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
+  local dest="${dest_dir}/crew"
+  [ -f "${src}" ] || return 0
+
+  mkdir -p "${dest_dir}"
+  if [ -f "${dest}" ] \
+    && ! grep -q "experimental Codex launcher for agent-crew" "${dest}" 2>/dev/null \
+    && ! grep -q "deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null; then
+    log_warn "Skipping PATH crew CLI; unmanaged file exists at ${dest}"
+    return 0
+  fi
+
+  cp -f "${src}" "${dest}"
+  chmod +x "${dest}"
+  log_info "Native crew CLI installed → ${dest}"
+}
+
 # Check for an existing installation.
 if [ -d "${AGENT_CREW_DIR}/system/agents" ] || [ -d "${AGENT_CREW_DIR}/agents" ]; then
   if [ "${AGENT_CREW_MODE}" = "update" ]; then
@@ -166,6 +185,7 @@ install_global() {
     cp "${SOURCE_DIR}/bin/crew" "${AGENT_CREW_DIR}/bin/crew"
     chmod +x "${AGENT_CREW_DIR}/bin/crew"
     log_info "crew CLI installed → ${AGENT_CREW_DIR}/bin/crew"
+    install_path_crew_cli
   fi
 
   [ -f "${AGENT_CREW_DIR}/system/schemas/register.schema.json" ] \

@@ -57,6 +57,56 @@ assert_file_exists "${SETUP_HOME}/system/agents/skills/tdd.md"
 it "crew setup bootstrap initializes project capabilities"
 assert_file_exists "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capabilities.json"
 
+PATH_HOME=$(make_tmp)
+PATH_INSTALL=$(make_tmp)
+PATH_PROJECT=$(make_tmp)
+PATH_BIN="${PATH_HOME}/.local/bin"
+mkdir -p "${PATH_BIN}"
+cat > "${PATH_BIN}/crew" <<'EOF_STALE_CREW'
+#!/usr/bin/env bash
+# crew - experimental Codex launcher for agent-crew
+exec codex exec "$@"
+EOF_STALE_CREW
+chmod +x "${PATH_BIN}/crew"
+
+it "local sync replaces stale PATH crew launcher with native CLI"
+out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" CLAUDE_DIR="${PATH_HOME}/.claude" CODEX_HOME="${PATH_HOME}/.codex" \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${PATH_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "local sync reports native PATH crew install"
+assert_contains "${out}" "installed native crew CLI"
+
+it "PATH crew now serves native mutating-agent guard without Codex launcher"
+out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" PROJECT_ROOT="${PATH_PROJECT}" \
+  "${PATH_BIN}/crew" agent "fix the pipeline" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Use crew run for mutating work"
+
+CUSTOM_HOME=$(make_tmp)
+CUSTOM_INSTALL=$(make_tmp)
+CUSTOM_PROJECT=$(make_tmp)
+CUSTOM_BIN="${CUSTOM_HOME}/.local/bin"
+mkdir -p "${CUSTOM_BIN}"
+cat > "${CUSTOM_BIN}/crew" <<'EOF_CUSTOM_CREW'
+#!/usr/bin/env bash
+echo custom-crew
+EOF_CUSTOM_CREW
+chmod +x "${CUSTOM_BIN}/crew"
+
+it "local sync preserves unmanaged PATH crew executable"
+out=$(HOME="${CUSTOM_HOME}" AGENT_CREW_HOME="${CUSTOM_INSTALL}" CLAUDE_DIR="${CUSTOM_HOME}/.claude" CODEX_HOME="${CUSTOM_HOME}/.codex" \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${CUSTOM_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "skipping PATH crew CLI"
+
+it "unmanaged PATH crew remains unchanged"
+out=$("${CUSTOM_BIN}/crew" 2>&1)
+assert_contains "${out}" "custom-crew"
+
 it "crew run writes deterministic state then exits blocked"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
 rc=$?
@@ -119,6 +169,12 @@ rc=$?
 assert_exit 2 "${rc}"
 
 it "crew agent mutating failure redirects to crew run"
+assert_contains "${out}" "Use crew run for mutating work"
+
+it "crew agent auto-route mutating failure redirects to crew run"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent "fix the pipeline" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
 assert_contains "${out}" "Use crew run for mutating work"
 
 it "crew update --help exits 0"

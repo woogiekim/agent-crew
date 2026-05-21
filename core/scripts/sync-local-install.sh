@@ -68,6 +68,25 @@ copy_tree() {
   cp -rf "${src}/." "${dest}/"
 }
 
+install_path_crew_cli() {
+  local src="${SOURCE_ROOT}/core/bin/crew"
+  local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
+  local dest="${dest_dir}/crew"
+  [ -f "${src}" ] || return 0
+
+  mkdir -p "${dest_dir}"
+  if [ -f "${dest}" ] \
+    && ! grep -q "experimental Codex launcher for agent-crew" "${dest}" 2>/dev/null \
+    && ! grep -q "deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null; then
+    printf 'sync-local-install: skipping PATH crew CLI; unmanaged file exists at %s\n' "${dest}"
+    return 0
+  fi
+
+  cp -f "${src}" "${dest}"
+  chmod +x "${dest}"
+  printf 'sync-local-install: installed native crew CLI at %s\n' "${dest}"
+}
+
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
@@ -85,6 +104,7 @@ copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/adapters"
 copy_tree "${SOURCE_ROOT}/core/agents" "${AGENT_CREW_HOME}/system/agents"
 copy_tree "${SOURCE_ROOT}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
 copy_flat "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
+install_path_crew_cli
 
 chmod +x \
   "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \

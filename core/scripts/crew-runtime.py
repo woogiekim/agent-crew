@@ -292,6 +292,10 @@ def command_agent(args: argparse.Namespace) -> int:
         print("crew agent: task description is required", file=sys.stderr)
         return 2
 
+    if looks_mutating(task):
+        print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
+        return 2
+
     if agent_name is None:
         print("crew agent: cannot auto-route this read-only task; specify an agent name or use crew run", file=sys.stderr)
         return 2
@@ -303,9 +307,6 @@ def command_agent(args: argparse.Namespace) -> int:
     if not info["safe"]:
         reason = info["reason"] or "agent requires supervisor context"
         print(f"crew agent: '{agent_name}' cannot be invoked directly. Reason: {reason}", file=sys.stderr)
-        return 2
-    if looks_mutating(task):
-        print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
         return 2
 
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
