@@ -115,7 +115,6 @@ basename = os.path.basename(md_path)
 stem     = os.path.splitext(basename)[0]
 name     = fm.get('name', '').strip() or stem
 description    = fm.get('description', '').strip().lstrip('> ').strip()
-reasoning_tier = fm.get('reasoning_tier', 'balanced').strip() or 'balanced'
 model = fm.get('model', '').strip()
 model_reasoning_effort = fm.get('model_reasoning_effort', '').strip()
 sandbox_mode = fm.get('sandbox_mode', '').strip()
@@ -133,8 +132,8 @@ lines = [
     f'name = "{toml_name}"',
     f'description = "{desc_esc}"',
 ]
-if reasoning_tier:
-    lines.append(f'reasoning_tier = "{reasoning_tier}"')
+# Preserve only official Codex per-agent config keys. `reasoning_tier` is an
+# agent-crew abstraction and is not accepted by Codex TOML agents.
 for key, value in (
     ('model', model),
     ('model_reasoning_effort', model_reasoning_effort),

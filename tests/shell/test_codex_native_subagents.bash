@@ -6,9 +6,12 @@ source "$(dirname "$0")/_lib.bash"
 tmp="$(make_tmp)"
 ac_home="${tmp}/.agent-crew"
 repo="${tmp}/repo"
+setup_repo="${tmp}/setup-repo"
 
 mkdir -p "${ac_home}/setup" "${ac_home}/user/agents" "${repo}/.codex/agents"
 cp "${REPO_ROOT}/core/setup/common.sh" "${ac_home}/setup/common.sh"
+mkdir -p "${ac_home}/adapters/codex" "${ac_home}/hooks"
+cp -R "${REPO_ROOT}/adapters/codex/template" "${ac_home}/adapters/codex/template"
 
 cat >"${ac_home}/user/agents/scout.md" <<'EOF'
 ---
@@ -57,8 +60,25 @@ assert_contains "${out}" 'model_reasoning_effort = "medium"'
 it "Codex TOML preserves official per-agent sandbox mode field"
 assert_contains "${out}" 'sandbox_mode = "read-only"'
 
+it "Codex TOML omits non-native reasoning_tier field"
+assert_not_contains "${out}" 'reasoning_tier ='
+
 it "Codex TOML converts comma-separated nickname candidates"
 assert_contains "${out}" 'nickname_candidates = ["Scout One", "Scout Two"]'
+
+mkdir -p "${setup_repo}"
+(
+  cd "${setup_repo}" || exit 2
+  git init -q
+  AGENT_CREW_HOME="${ac_home}" \
+  HOME="${tmp}/home" \
+  SOURCE_ROOT="${REPO_ROOT}" \
+    bash "${REPO_ROOT}/adapters/codex/setup.sh" "${setup_repo}" >/dev/null
+)
+setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
+
+it "Codex setup user-agent conversion omits reasoning_tier"
+assert_not_contains "${setup_out}" 'reasoning_tier ='
 
 it "Generated Codex TOML parses as valid TOML"
 python3 - "${toml}" <<'PYEOF'
