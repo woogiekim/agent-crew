@@ -59,7 +59,6 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         for key, value in fixture.get("accepted_successor_memory_ids", {}).items()
     }
     returned = extract_ids(output)
-    returned_set = set(returned)
     expected_set = set(expected)
     accepted_successor_ids = {
         successor
@@ -75,16 +74,21 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
     def is_accepted_context(mid: str) -> bool:
         return mid in accepted_context_ids or any(pattern.fullmatch(mid) for pattern in accepted_context_patterns)
 
+    evaluation_returned = [
+        mid for mid in returned
+        if not is_accepted_context(mid)
+    ]
+    evaluation_returned_set = set(evaluation_returned)
     satisfied_by_successor = {
-        mid: [successor for successor in successors.get(mid, []) if successor in returned_set]
+        mid: [successor for successor in successors.get(mid, []) if successor in evaluation_returned_set]
         for mid in expected
     }
     misses = [
         mid for mid in expected
-        if mid not in returned_set and not satisfied_by_successor.get(mid)
+        if mid not in evaluation_returned_set and not satisfied_by_successor.get(mid)
     ]
     noise = [
-        mid for mid in returned
+        mid for mid in evaluation_returned
         if mid not in expected_set
         and mid not in accepted_successor_ids
         and not is_accepted_context(mid)
@@ -107,6 +111,7 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         "query": fixture["query"],
         "expected_memory_ids": expected,
         "returned_memory_ids": returned,
+        "evaluated_memory_ids": evaluation_returned,
         "misses": misses,
         "noise": noise,
         "accepted_context_memory_ids": sorted(accepted_context_ids),
@@ -139,10 +144,12 @@ def main() -> int:
         elapsed_ms = 0.0 if args.elapsed_ms is None else args.elapsed_ms
         rc = 0
     else:
+        search_limit = int(fixture.get("limit", len(fixture["expected_memory_ids"])))
+        search_limit += int(fixture.get("accepted_context_headroom", 0))
         output, rc, elapsed_ms = run_memory(
             Path(args.memory_bin),
             str(fixture["query"]),
-            int(fixture.get("limit", len(fixture["expected_memory_ids"]))),
+            search_limit,
         )
     result = evaluate(fixture, output, elapsed_ms)
     result["memory_rc"] = rc

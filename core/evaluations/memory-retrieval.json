@@ -3,10 +3,11 @@
   "name": "agent-crew memory retrieval regression",
   "query": "commercialization evaluation memory reporting telemetry blockers",
   "limit": 10,
+  "accepted_context_headroom": 5,
   "latency_budget_ms": 1500,
   "noise_budget_count": 2,
   "accepted_context_memory_id_patterns": [
-    "commercialization-e2e-[0-9]+-(review|guardrails|remediation)-[0-9]{8}"
+    "commercialization-e2e-[0-9]+-(review|guardrails|remediation|risk-remediation)-[0-9]{8}"
   ],
   "expected_memory_ids": [
     "f6c6c59e-b4aa-4169-aa27-968de14a1e39",

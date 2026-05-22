@@ -164,7 +164,8 @@ migrate_legacy_agents() {
   [ -d "${legacy_agents}" ] || return 0
 
   local migrated=0
-  local skipped=0
+  local removed=0
+  local retained=0
 
   while IFS= read -r -d '' legacy_file; do
     local basename_file
@@ -184,40 +185,59 @@ migrate_legacy_agents() {
     done
 
     if [ "${in_source}" -eq 1 ] || [ "${is_exception}" -eq 1 ]; then
-      # Repo agent or system exception: already handled by sync_system_agents
-      skipped=$((skipped + 1))
+      # Repo agent or system exception: already handled by sync_system_agents.
+      # Remove only exact duplicates. A differing file may contain user edits
+      # from the legacy flat layout, so keep it for manual review.
+      local canonical_file=""
+      if [ -f "${source_agents}/${basename_file}" ]; then
+        canonical_file="${source_agents}/${basename_file}"
+      elif [ -f "${system_agents}/${basename_file}" ]; then
+        canonical_file="${system_agents}/${basename_file}"
+      fi
+
+      if [ -n "${canonical_file}" ] && cmp -s "${legacy_file}" "${canonical_file}"; then
+        rm -f "${legacy_file}"
+        removed=$((removed + 1))
+      else
+        retained=$((retained + 1))
+      fi
     else
       # Non-repo, non-exception: belongs in user/agents/
       if [ ! -f "${user_agents}/${basename_file}" ]; then
         mkdir -p "${user_agents}"
         cp "${legacy_file}" "${user_agents}/${basename_file}"
         printf '[agent-crew] Migrated %s → user/agents/\n' "${basename_file}"
+        rm -f "${legacy_file}"
         migrated=$((migrated + 1))
+      elif cmp -s "${legacy_file}" "${user_agents}/${basename_file}"; then
+        rm -f "${legacy_file}"
+        removed=$((removed + 1))
       else
-        printf '[agent-crew] Skipping %s — already present in user/agents/\n' "${basename_file}"
-        skipped=$((skipped + 1))
+        printf '[agent-crew] Preserving %s — differs from user/agents copy\n' "${legacy_file}"
+        retained=$((retained + 1))
       fi
     fi
   done < <(find "${legacy_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
 
-  if [ "${migrated}" -gt 0 ] || [ "${skipped}" -gt 0 ]; then
-    printf '[agent-crew] Legacy agents migration: %d moved to user/agents/, %d already classified\n' \
-      "${migrated}" "${skipped}"
+  if [ "${migrated}" -gt 0 ] || [ "${removed}" -gt 0 ] || [ "${retained}" -gt 0 ]; then
+    printf '[agent-crew] Legacy agents migration: %d moved to user/agents/, %d duplicate system/user file(s) removed, %d retained for review\n' \
+      "${migrated}" "${removed}" "${retained}"
   fi
 
-  # Remove the legacy directory if it only contains auto-migrated or already-handled files
-  # (caller may also do this explicitly after verifying)
+  # Remove the legacy directory if it only contains auto-migrated or duplicate files.
   local remaining_md
   remaining_md=$(find "${legacy_agents}" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
   if [ "${remaining_md}" -eq 0 ]; then
     rm -rf "${legacy_agents}"
     printf '[agent-crew] Removed empty legacy agents directory: %s\n' "${legacy_agents}"
   else
-    printf '[agent-crew] NOTE: Legacy agents directory still has %d .md files — review manually:\n' "${remaining_md}"
-    find "${legacy_agents}" -maxdepth 1 -name "*.md" 2>/dev/null | while IFS= read -r f; do
-      printf '  %s\n' "${f}"
-    done
-    printf 'Move non-system files to user/agents/, then delete %s\n' "${legacy_agents}"
+    printf '[agent-crew] NOTE: Legacy agents directory has %d possible user-modified file(s); preserved for manual review at %s\n' \
+      "${remaining_md}" "${legacy_agents}"
+    if [ "${AGENT_CREW_VERBOSE_LEGACY_AGENTS:-0}" = "1" ]; then
+      find "${legacy_agents}" -maxdepth 1 -name "*.md" 2>/dev/null | while IFS= read -r f; do
+        printf '  %s\n' "${f}"
+      done
+    fi
   fi
 }
 

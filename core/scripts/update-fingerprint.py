@@ -98,6 +98,51 @@ def build_payload(args: argparse.Namespace) -> dict:
     }
 
 
+def category_for(entry: str) -> str:
+    parts = entry.split("/")
+    if len(parts) >= 2 and parts[0] in {"source", "output", "user"}:
+        return "/".join(parts[:2])
+    return parts[0] if parts else "unknown"
+
+
+def diff_payload(previous: dict, payload: dict) -> dict:
+    previous_entries = previous.get("entries", {}) if isinstance(previous, dict) else {}
+    current_entries = payload.get("entries", {})
+    if not previous_entries:
+        return {
+            "reason": "missing_previous_fingerprint",
+            "changed_categories": [],
+            "added": 0,
+            "removed": 0,
+            "changed": 0,
+        }
+
+    previous_keys = set(previous_entries)
+    current_keys = set(current_entries)
+    added_keys = current_keys - previous_keys
+    removed_keys = previous_keys - current_keys
+    changed_keys = {
+        key
+        for key in current_keys & previous_keys
+        if previous_entries.get(key) != current_entries.get(key)
+    }
+    category_counts: dict[str, int] = {}
+    for key in added_keys | removed_keys | changed_keys:
+        category = category_for(key)
+        category_counts[category] = category_counts.get(category, 0) + 1
+
+    return {
+        "reason": "entry_hash_changed" if category_counts else "sha_changed",
+        "changed_categories": [
+            {"category": category, "count": category_counts[category]}
+            for category in sorted(category_counts)
+        ],
+        "added": len(added_keys),
+        "removed": len(removed_keys),
+        "changed": len(changed_keys),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True)
@@ -121,11 +166,25 @@ def main() -> int:
         except Exception:
             previous = {}
     matched = bool(previous) and previous.get("sha256") == payload["sha256"]
+    diff = diff_payload(previous, payload) if not matched else {
+        "reason": "matched",
+        "changed_categories": [],
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+    }
 
     if args.write:
         fingerprint_path.parent.mkdir(parents=True, exist_ok=True)
         fingerprint_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         matched = True
+        diff = {
+            "reason": "written",
+            "changed_categories": [],
+            "added": 0,
+            "removed": 0,
+            "changed": 0,
+        }
 
     result = {
         "schema_version": 1,
@@ -134,11 +193,26 @@ def main() -> int:
         "sha256": payload["sha256"],
         "previous_sha256": previous.get("sha256"),
         "entry_count": payload["entry_count"],
+        "reason": diff["reason"],
+        "diff": diff,
     }
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(("MATCH" if matched else "MISS") + ": update fingerprint")
+        if matched:
+            print("MATCH: update fingerprint")
+        elif diff["reason"] == "missing_previous_fingerprint":
+            print("MISS: update fingerprint (no previous fingerprint; full refresh required)")
+        else:
+            categories = ", ".join(
+                f"{item['category']}={item['count']}"
+                for item in diff["changed_categories"][:8]
+            ) or "unknown"
+            print(
+                "MISS: update fingerprint "
+                f"(changed={diff['changed']}, added={diff['added']}, "
+                f"removed={diff['removed']}; categories: {categories})"
+            )
 
     if args.check:
         return 0 if matched else 1

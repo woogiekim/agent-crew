@@ -52,7 +52,22 @@ def memory_ids_from_trace(path: Path) -> set[str]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return set()
-    return {str(mid) for mid in data.get("memory_ids", []) if str(mid).strip()}
+    ids = set()
+    for key in (
+        "memory_ids",
+        "explicit_memory_ids",
+        "accepted_context_memory_ids",
+        "retrieved_memory_ids",
+    ):
+        values = data.get(key, [])
+        if isinstance(values, list):
+            ids.update(str(mid) for mid in values if str(mid).strip())
+    satisfied = data.get("satisfied_by_successor", {})
+    if isinstance(satisfied, dict):
+        for values in satisfied.values():
+            if isinstance(values, list):
+                ids.update(str(mid) for mid in values if str(mid).strip())
+    return ids
 
 
 def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:

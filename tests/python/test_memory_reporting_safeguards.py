@@ -56,8 +56,9 @@ def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
         "75684e27-6093-4630-a8df-b8091fb544c9",
     ]
     assert fixture["accepted_context_memory_id_patterns"] == [
-        "commercialization-e2e-[0-9]+-(review|guardrails|remediation)-[0-9]{8}"
+        "commercialization-e2e-[0-9]+-(review|guardrails|remediation|risk-remediation)-[0-9]{8}"
     ]
+    assert fixture["accepted_context_headroom"] == 5
     assert fixture["latency_budget_ms"] > 0
     assert fixture["noise_budget_count"] >= 0
 
@@ -119,6 +120,31 @@ def test_memory_eval_classifies_round_summaries_as_context_not_noise():
     assert result["passed"] is True
     assert result["noise"] == []
     assert result["context_memory_ids"] == ["commercialization-e2e-14-review-20260522"]
+
+
+def test_memory_eval_context_headroom_prevents_summary_crowding():
+    fixture = {
+        "query": "probe",
+        "limit": 1,
+        "expected_memory_ids": ["expected-memory"],
+        "accepted_context_memory_id_patterns": [
+            "commercialization-e2e-[0-9]+-(review|guardrails|remediation|risk-remediation)-[0-9]{8}"
+        ],
+        "latency_budget_ms": 10,
+        "noise_budget_count": 0,
+    }
+    result = memory_eval.evaluate(
+        fixture,
+        "  [fts] commercialization-e2e-16-risk-remediation-20260522: useful context\n"
+        "  [fts] expected-memory: useful evidence\n",
+        5.0,
+    )
+
+    assert result["passed"] is True
+    assert result["evaluated_memory_ids"] == ["expected-memory"]
+    assert result["context_memory_ids"] == [
+        "commercialization-e2e-16-risk-remediation-20260522"
+    ]
 
 
 def test_memory_eval_still_fails_unrelated_noise():
@@ -432,6 +458,86 @@ def test_memory_evidence_trace_records_memory_reuse_for_report_quality(tmp_path:
     quality = json.loads(result.stdout)
     assert quality["memory_context_ids"] == ["trace-memory-123"]
     assert quality["reused_memory_context_ids"] == ["trace-memory-123"]
+
+
+def test_memory_evidence_trace_folds_retrieval_eval_context_feedback(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    retrieval = task_dir / "retrieval.json"
+    retrieval.write_text(
+        json.dumps(
+            {
+                "passed": True,
+                "returned_memory_ids": ["expected-memory", "round-context"],
+                "context_memory_ids": ["round-context"],
+                "satisfied_by_successor": {"old-memory": ["new-memory"]},
+                "latency_ms": 42.5,
+                "noise": [],
+                "misses": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    trace = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_TRACE),
+            "--task-dir",
+            str(task_dir),
+            "--memory-id",
+            "explicit-memory",
+            "--retrieval-eval-json",
+            str(retrieval),
+            "--evidence",
+            "progress.log",
+            "--reused",
+            "yes",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert trace.returncode == 0, trace.stdout + trace.stderr
+    payload = json.loads(trace.stdout)
+    assert payload["memory_ids"] == ["explicit-memory", "round-context", "new-memory"]
+    assert payload["retrieved_memory_ids"] == ["expected-memory", "round-context"]
+    assert payload["accepted_context_memory_ids"] == ["round-context"]
+    assert payload["retrieval_latency_ms"] == 42.5
+
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: retrieval latency 42.5 ms\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown host variance remains.\n"
+        "Memory reused: round-context and new-memory\n",
+        encoding="utf-8",
+    )
+    quality = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert quality.returncode == 0, quality.stdout + quality.stderr
+    result = json.loads(quality.stdout)
+    assert "round-context" in result["memory_context_ids"]
+    assert "new-memory" in result["memory_context_ids"]
+    assert result["reused_memory_context_ids"] == ["new-memory", "round-context"]
 
 
 def test_canonical_context_compacts_repeated_prior_outcomes(tmp_path: Path):

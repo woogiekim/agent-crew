@@ -61,33 +61,36 @@ if [ -f "${SOURCE_ROOT}/core/scripts/update-preservation-manifest.py" ]; then
 fi
 
 if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
-  && [ -f "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" ] \
-  && python3 "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" \
-    --source-root "${SOURCE_ROOT}" \
-    --project-root "${PROJECT_ROOT}" \
-    --agent-crew-home "${AGENT_CREW_HOME}" \
-    --codex-home "${CODEX_HOME:-${HOME}/.codex}" \
-    --claude-dir "${CLAUDE_DIR}" \
-    --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}" \
-    --fingerprint "${UPDATE_FINGERPRINT}" \
-    --check >/dev/null 2>&1; then
-  if [ -n "${PRESERVATION_MANIFEST}" ]; then
-    python3 "${SOURCE_ROOT}/core/scripts/update-preservation-manifest.py" finish \
-      --manifest "${PRESERVATION_MANIFEST}"
-  fi
-
-  verify_args=(
+  && [ -f "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" ]; then
+  fingerprint_args=(
     --source-root "${SOURCE_ROOT}"
+    --project-root "${PROJECT_ROOT}"
     --agent-crew-home "${AGENT_CREW_HOME}"
+    --codex-home "${CODEX_HOME:-${HOME}/.codex}"
+    --claude-dir "${CLAUDE_DIR}"
     --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
-    --prune-extra
+    --fingerprint "${UPDATE_FINGERPRINT}"
   )
-  if ! path_crew_cli_is_managed; then
-    verify_args+=(--skip-path-bin)
+  if python3 "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" "${fingerprint_args[@]}" --check >/dev/null 2>&1; then
+    if [ -n "${PRESERVATION_MANIFEST}" ]; then
+      python3 "${SOURCE_ROOT}/core/scripts/update-preservation-manifest.py" finish \
+        --manifest "${PRESERVATION_MANIFEST}"
+    fi
+
+    verify_args=(
+      --source-root "${SOURCE_ROOT}"
+      --agent-crew-home "${AGENT_CREW_HOME}"
+      --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
+      --prune-extra
+    )
+    if ! path_crew_cli_is_managed; then
+      verify_args+=(--skip-path-bin)
+    fi
+    python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
+    printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
+    exit 0
   fi
-  python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
-  printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
-  exit 0
+  python3 "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" "${fingerprint_args[@]}" --format text || true
 fi
 
 mkdir -p \

@@ -135,7 +135,7 @@ def row_score(row):
     score = sum(10 for token in query_terms if token in folded)
     if item_id.startswith("req-"):
         score += 14
-    if re.match(r"commercialization-e2e-\d+-(review|guardrails|remediation)-\d{8}", item_id):
+    if re.match(r"commercialization-e2e-\d+-(review|guardrails|remediation|risk-remediation)-\d{8}", item_id):
         score -= 8
     if folded.startswith("requirements collected"):
         score += 20

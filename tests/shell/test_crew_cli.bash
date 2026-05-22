@@ -84,7 +84,9 @@ PATH_HOME=$(make_tmp)
 PATH_INSTALL=$(make_tmp)
 PATH_PROJECT=$(make_tmp)
 PATH_BIN="${PATH_HOME}/.local/bin"
-mkdir -p "${PATH_BIN}" "${PATH_INSTALL}/user/agents" "${PATH_INSTALL}/user/skills"
+mkdir -p "${PATH_BIN}" "${PATH_INSTALL}/agents" "${PATH_INSTALL}/user/agents" "${PATH_INSTALL}/user/skills"
+cp "${REPO_ROOT}/core/agents/backend.md" "${PATH_INSTALL}/agents/backend.md"
+printf 'legacy custom agent\n' > "${PATH_INSTALL}/agents/local-legacy.md"
 printf 'custom agent\n' > "${PATH_INSTALL}/user/agents/custom-agent.md"
 printf 'custom skill\n' > "${PATH_INSTALL}/user/skills/custom-skill.md"
 cat > "${PATH_BIN}/crew" <<'EOF_STALE_CREW'
@@ -102,6 +104,18 @@ assert_exit 0 "${rc}"
 
 it "local sync reports native PATH crew install"
 assert_contains "${out}" "installed native crew CLI"
+
+it "local sync explains first fingerprint miss"
+assert_contains "${out}" "MISS: update fingerprint"
+
+it "local sync removes duplicate legacy system agents"
+assert_file_absent "${PATH_INSTALL}/agents/backend.md"
+
+it "local sync migrates legacy custom agents"
+assert_file_exists "${PATH_INSTALL}/user/agents/local-legacy.md"
+
+it "local sync does not leave noisy legacy agent review warning for duplicates"
+assert_not_contains "${out}" "possible user-modified file(s)"
 
 it "local sync post-check reports install drift success"
 assert_contains "${out}" "PASS: install drift check"
@@ -152,6 +166,20 @@ assert_contains "${out}" "skipping PATH crew CLI"
 it "unmanaged PATH crew remains unchanged"
 out=$("${CUSTOM_BIN}/crew" 2>&1)
 assert_contains "${out}" "custom-crew"
+
+LEGACY_REVIEW_HOME=$(make_tmp)
+LEGACY_REVIEW_INSTALL=$(make_tmp)
+LEGACY_REVIEW_PROJECT=$(make_tmp)
+mkdir -p "${LEGACY_REVIEW_INSTALL}/agents"
+printf '# Backend\n\nuser-modified legacy backend\n' > "${LEGACY_REVIEW_INSTALL}/agents/backend.md"
+
+it "local sync preserves user-modified legacy system-name agents"
+out=$(HOME="${LEGACY_REVIEW_HOME}" AGENT_CREW_HOME="${LEGACY_REVIEW_INSTALL}" CLAUDE_DIR="${LEGACY_REVIEW_HOME}/.claude" CODEX_HOME="${LEGACY_REVIEW_HOME}/.codex" \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${LEGACY_REVIEW_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_file_exists "${LEGACY_REVIEW_INSTALL}/agents/backend.md"
+assert_contains "${out}" "possible user-modified file(s)"
 
 RUNTIME_SYNC_HOME=$(make_tmp)
 RUNTIME_SYNC_PROJECT=$(make_tmp)
