@@ -202,23 +202,37 @@ block); when absent (defensive default), the check measures from
 
 ### Reviewer Loop-Back Rule (Issue #3)
 
-When the reviewer stage returns `STATUS: REJECTED` (the Issue #3
-quality-loop short-circuit — distinct from the legacy
-`REVIEW: NEEDS_CHANGES` advisory return), the supervisor MUST re-loop
-to the **most recent implementer stage** instead of advancing
-`completed_stages`. This rule wraps the reviewer stage spawn inside
-the same Stage Retry Rule budget (`validation = 3 retries`) used for
-implementer crashes — the soft loop converges in at most three
-implementer re-runs, then halts with a hard blocker.
+When the reviewer stage returns either `STATUS: REJECTED` or
+`REVIEW: NEEDS_CHANGES`, the supervisor MUST re-loop to the **most
+recent implementer/TDD stage** instead of advancing `completed_stages`.
+This is the core commercial quality loop: implement through TDD,
+review, remediate/refactor through TDD, re-review, and repeat until
+approval or budget exhaustion.
 
-The reviewer's `REASON:` line drives the re-loop directive written into
-`handoff.md` before the implementer is re-spawned:
+Both reviewer rejection forms are mandatory loop triggers:
 
-| `REASON:` value | Re-loop target | Directive appended to handoff.md |
+| Reviewer return | Triggered when | Re-loop reason |
 |---|---|---|
-| `tests_failed` | most recent implementer stage | "Tests failed in the previous review. Fix the failing tests reported in `${TASK_DIR}/context/review-tests.md` (failing runners + last 50 lines of output). Do NOT skip or comment out the failing assertions." |
-| `tests_absent_for_code_change` | most recent implementer stage | "Reviewer detected a code change with no discoverable test runner. Add a test runner config AND tests covering the changed behavior. The diff touched code files but the project has no `pytest.ini`/`package.json scripts.test`/`build.gradle*`/`go.mod`/`Cargo.toml`/`tox.ini`. If tests genuinely cannot exist for this surface, the planner must re-mark the reviewer stage with `requires_test_execution: false` and justify the decision." |
-| `cross_process_path_mismatch` | most recent implementer stage | "Reviewer detected a path-literal mismatch across the shell/Python boundary. The conflicting pair is recorded in `${TASK_DIR}/context/review-tests.md` § Cross-process path agreement. Make both sides resolve to the SAME path (literal equality OR a single shared helper that returns the path)." |
+| `STATUS: REJECTED` + `REASON: tests_failed` | A discovered test runner failed. | `tests_failed` |
+| `STATUS: REJECTED` + `REASON: tests_absent_for_code_change` | Code changed but no test runner was discoverable. | `tests_absent_for_code_change` |
+| `STATUS: REJECTED` + `REASON: cross_process_path_mismatch` | Cross-process path agreement failed. | `cross_process_path_mismatch` |
+| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | `review_needs_changes` |
+
+Use the provider-neutral classifier before deciding whether to advance
+or re-loop:
+
+```bash
+REVIEW_DECISION=$(python3 "${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
+  --response "${TASK_DIR}/context/reviewer-response.txt" \
+  --format json)
+REVIEW_ACTION=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])")
+REVIEW_REASON=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin)['reason'])")
+REVIEW_DIRECTIVE=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('directive',''))")
+```
+
+The classifier maps both `STATUS: REJECTED` and `REVIEW:
+NEEDS_CHANGES` to `action=retry`. `REVIEW: APPROVED` maps to
+`action=approve`.
 
 Re-loop logic (executed by Phase 2's stage loop wrapper around the
 reviewer stage spawn — runs at the same point in the dispatch flow as
@@ -226,8 +240,9 @@ the existing crash-retry path):
 
 ```python
 # Inside the stage loop, after the reviewer agent returns:
-if "STATUS: REJECTED" in reviewer_response:
-    reason = extract_reason(reviewer_response)   # tests_failed | tests_absent_for_code_change | cross_process_path_mismatch
+decision = reviewer_loop_decision(reviewer_response)
+if decision.action == "retry":
+    reason = decision.reason
     quality_retries += 1                          # shares the validation budget (3)
     log_progress("RETRY", f"attempt {quality_retries} — reviewer_rejected reason={reason}")
 
@@ -248,7 +263,7 @@ if "STATUS: REJECTED" in reviewer_response:
     # completed_stages back to the most recent implementer stage so the
     # outer stage loop re-spawns it instead of advancing.
     impl_stage_index = find_most_recent_implementer_stage_index()
-    append_directive_to_handoff(reason)
+    append_directive_to_handoff(decision.directive)
     pipeline.completed_stages = impl_stage_index - 1
     pipeline.stage_agent_status.pop(str(impl_stage_index), None)  # clear so retry re-runs
     save_pipeline_json()
@@ -274,15 +289,9 @@ The Stage Retry Rule's two pre-existing budgets remain unchanged:
 `quality_retries` is initialized to 0 at the top of the reviewer stage
 iteration, alongside `crash_attempts`. The two counters are independent
 — a reviewer rejection consumes a validation retry; a reviewer crash
-consumes a crash retry; they cannot cross-deplete each other.
-
-The legacy `REVIEW: NEEDS_CHANGES` return (a soft advisory that the
-older reviewer used) is preserved for backward compatibility: it does
-NOT trigger the Issue #3 re-loop. Only the structured short-circuit
-`STATUS: REJECTED` with a known `REASON:` does. Pipelines whose
-reviewer has not been updated to Issue #3 (e.g. older installs)
-continue to work — they simply never trigger the re-loop and behave
-exactly as before.
+consumes a crash retry; they cannot cross-deplete each other. `REVIEW:
+NEEDS_CHANGES` is no longer advisory-only; it is a hard quality-loop
+retry signal.
 
 ### Cost Circuit Breaker
 

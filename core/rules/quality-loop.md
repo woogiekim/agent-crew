@@ -180,8 +180,9 @@ After each stage returns, the supervisor checks:
   retries). After all crash retries are exhausted, report BLOCKED.
 - If `STATUS: BLOCKED` → halt the pipeline and report the blocker to the
   orchestrator.
-- If `STATUS: REJECTED` (reviewer-only — Issue #3) → re-loop to the
-  most recent implementer stage per the Reviewer Loop-Back Rule below.
+- If `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES` (reviewer-only)
+  → re-loop to the most recent implementer/TDD stage per the Reviewer
+  Loop-Back Rule below.
 
 ## Quality Loop Enforcement (Issue #3)
 
@@ -205,13 +206,14 @@ mandatory `TEST_RUN_RESULT:` line so the supervisor can confirm tests
 actually ran (or were intentionally skipped) rather than silently
 omitted.
 
-Three rejection signals are part of the reviewer's contract:
+Four rejection signals are part of the reviewer's contract:
 
-| `STATUS: REJECTED REASON:` | Triggered when | Supervisor action |
+| Reviewer signal | Triggered when | Supervisor action |
 |---|---|---|
-| `tests_failed`                  | A discovered runner returned non-zero exit. | Re-loop to most recent implementer with the failing tail in handoff.md. |
-| `tests_absent_for_code_change`  | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
-| `cross_process_path_mismatch`   | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
+| `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to most recent implementer with the failing tail in handoff.md. |
+| `STATUS: REJECTED REASON: tests_absent_for_code_change` | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
+| `STATUS: REJECTED REASON: cross_process_path_mismatch` | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
+| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to most recent implementer/TDD stage with the issue list from `context/review.md`. |
 
 ### Cross-process path agreement check
 
@@ -226,8 +228,8 @@ literal — that exact mismatch is the canonical Issue #3 bug.
 ### Loop-back semantics
 
 The Reviewer Loop-Back Rule (see `core/agents/supervisor-retry.md` §
-Reviewer Loop-Back Rule) wires the three rejection reasons above into
-the existing **Stage Retry Rule budget**:
+Reviewer Loop-Back Rule) wires the rejection signals above into the
+existing **Stage Retry Rule budget**:
 
 - Validation retry budget: **3** (shared with any other validation
   failure path).

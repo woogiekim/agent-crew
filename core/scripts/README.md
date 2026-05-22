@@ -111,6 +111,9 @@ invocation in SKILL.md; generic adds guidance).
   implementer/TDD completion events, reviewer approval, and rework/re-review
   after any reviewer rejection. The native `crew run` runtime uses this check
   before allowing mutating fake-host or host-bridge auto-completion.
+- `reviewer-loop-decision.py` — classifies reviewer output for the supervisor
+  retry loop. Both `STATUS: REJECTED` and `REVIEW: NEEDS_CHANGES` return
+  `action=retry`; `REVIEW: APPROVED` returns `action=approve`.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.

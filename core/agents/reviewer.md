@@ -383,6 +383,10 @@ ISSUES: {issue count}
 TEST_RUN_RESULT: {one of: passed | skipped_opt_out | skipped_no_runner_docs_only | rejected_short_circuit_above}
 ```
 
+`REVIEW: NEEDS_CHANGES` is a loop-triggering rejection, not advisory text.
+The supervisor classifies it through `core/scripts/reviewer-loop-decision.py`
+and re-runs the most recent implementer/TDD stage before re-running reviewer.
+
 The `TEST_RUN_RESULT:` line is required so the supervisor's parser can
 confirm tests actually ran (or were intentionally skipped) — never
 silently omitted. Acceptable values:
@@ -581,6 +585,10 @@ REVIEW: {APPROVED | NEEDS_CHANGES}
 REPORT: {TASK_DIR}/context/review.md
 ISSUES: {issue count}
 ```
+
+`REVIEW: NEEDS_CHANGES` in streaming mode has the same loop-triggering
+semantics as final mode: the supervisor must return to the most recent
+implementer/TDD stage, then re-run reviewer until approval or budget exhaustion.
 
 ## Trade-offs (streaming mode)
 
