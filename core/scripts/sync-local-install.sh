@@ -120,6 +120,7 @@ mkdir -p \
   "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks" \
   "${AGENT_CREW_HOME}/system/scripts" "${AGENT_CREW_HOME}/scripts" \
   "${AGENT_CREW_HOME}/system/schemas" "${AGENT_CREW_HOME}/schemas" \
+  "${AGENT_CREW_HOME}/system/policies" "${AGENT_CREW_HOME}/policies" \
   "${AGENT_CREW_HOME}/system/setup" "${AGENT_CREW_HOME}/setup" \
   "${AGENT_CREW_HOME}/system/adapters" "${AGENT_CREW_HOME}/adapters" \
   "${AGENT_CREW_HOME}/system/agents" "${AGENT_CREW_HOME}/system/skills" \
@@ -171,6 +172,8 @@ copy_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/system/evaluatio
 copy_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/evaluations"
 copy_flat "${SOURCE_ROOT}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"
 copy_flat "${SOURCE_ROOT}/core/schemas" "${AGENT_CREW_HOME}/schemas" "*.json"
+copy_tree "${SOURCE_ROOT}/core/policies" "${AGENT_CREW_HOME}/system/policies"
+copy_tree "${SOURCE_ROOT}/core/policies" "${AGENT_CREW_HOME}/policies"
 copy_flat "${SOURCE_ROOT}/core/setup" "${AGENT_CREW_HOME}/system/setup" "*.sh"
 copy_flat "${SOURCE_ROOT}/core/setup" "${AGENT_CREW_HOME}/setup" "*.sh"
 copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/system/adapters"

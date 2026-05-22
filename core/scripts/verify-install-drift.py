@@ -104,7 +104,7 @@ def main() -> int:
     path_bin = Path(args.path_bin).expanduser().resolve()
 
     checks = []
-    for rel in ("commands", "hooks", "scripts", "evaluations"):
+    for rel in ("commands", "hooks", "scripts", "evaluations", "policies"):
         src = source_root / "core" / rel
         for dest in (home / "system" / rel, home / rel):
             checks.append(compare_tree(src, dest, prune_extra=args.prune_extra))

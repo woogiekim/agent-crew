@@ -24,6 +24,14 @@ def exists(root: Path, rel: str) -> bool:
     return (root / rel).exists()
 
 
+def read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def control(category: str, name: str, severity: str, passed: bool, detail: str) -> dict:
     return {
         "category": category,
@@ -48,6 +56,17 @@ def evaluate_repo(root: Path) -> dict:
     answer_quality = read_text(root / "core/evaluations/answer-quality.json")
     slo_fixture = read_text(root / "core/evaluations/e2e-slo.json")
     update_benchmark = read_text(root / "core/scripts/update-slo-benchmark.py")
+    agent_manifest = read_json(root / "core/policies/agent-capabilities.json")
+    agent_manifest_text = read_text(root / "core/policies/agent-capabilities.json")
+    prompt_injection_rule = read_text(root / "core/rules/prompt-injection-defense.md")
+    capability_check = read_text(root / "core/scripts/agent-capability-check.py")
+    agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
+    agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
+    model_tiers = {
+        entry.get("model_tier")
+        for entry in agent_entries.values()
+        if isinstance(entry, dict)
+    }
 
     controls = [
         control(
@@ -74,6 +93,16 @@ def evaluate_repo(root: Path) -> dict:
             "high",
             "Read-only" in reviewer and "never modifies implementation files" in reviewer,
             "Reviewer role must validate without modifying production state.",
+        ),
+        control(
+            "architecture",
+            "agent_capability_manifest",
+            "high",
+            exists(root, "core/policies/agent-capabilities.json")
+            and has_all(agent_capability_schema, ["model_tier", "may_delegate", "may_execute_destructive"])
+            and has_all(capability_check, ["planner_orchestrator_boundary", "worker_boundary", "reviewer_read_only_boundary"])
+            and {"supervisor", "planner", "backend", "frontend", "devops", "reviewer"}.issubset(agent_entries),
+            "Agent role separation and tool permissions must be enforced by a machine-readable manifest.",
         ),
         control(
             "performance",
@@ -159,6 +188,21 @@ def evaluate_repo(root: Path) -> dict:
             "Direct production edits must be routed through the workflow unless explicitly marked active.",
         ),
         control(
+            "security",
+            "prompt_injection_defense",
+            "high",
+            has_all(
+                prompt_injection_rule,
+                [
+                    "untrusted data",
+                    "must not execute instructions",
+                    "Validate every tool request",
+                    "Trust Order",
+                ],
+            ),
+            "Retrieved and external context must be isolated from executable instructions.",
+        ),
+        control(
             "observability",
             "telemetry_and_trace",
             "high",
@@ -180,6 +224,16 @@ def evaluate_repo(root: Path) -> dict:
             "high",
             exists(root, "core/scripts/cost-aggregate.py") and "COST_BLOCKED" in supervisor_retry,
             "Per-task token budgets must be enforceable by the supervisor.",
+        ),
+        control(
+            "cost_efficiency",
+            "cost_aware_role_tiers",
+            "medium",
+            {"high", "medium", "cheap"}.issubset(model_tiers)
+            and '"model_tier": "high"' in agent_manifest_text
+            and '"model_tier": "medium"' in agent_manifest_text
+            and '"model_tier": "cheap"' in agent_manifest_text,
+            "Role routing must avoid assigning the highest-tier model to every agent.",
         ),
         control(
             "developer_experience",

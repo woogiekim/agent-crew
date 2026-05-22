@@ -18,6 +18,7 @@ def _make_checkout(root: Path) -> None:
         "core/scripts",
         "core/evaluations",
         "core/schemas",
+        "core/policies",
         "core/setup",
         "core/agents",
         "core/bin",

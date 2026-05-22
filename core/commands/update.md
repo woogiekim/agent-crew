@@ -3,7 +3,7 @@
 ## Purpose
 
 `crew:update` re-runs the host adapter installation against the current
-source repository to refresh installed agents, hooks, rules, commands,
+source repository to refresh installed agents, hooks, rules, policies, commands,
 skills, and adapter scripts under `~/.agent-crew/` and the host-specific
 location (e.g. `~/.claude/agent-crew/` for the Claude adapter).
 
@@ -80,14 +80,15 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    | hooks | `${SOURCE_DIR}/hooks/` | `${AGENT_CREW_HOME}/system/hooks/` | `${AGENT_CREW_HOME}/hooks/` |
    | scripts | `${SOURCE_DIR}/scripts/` | `${AGENT_CREW_HOME}/system/scripts/` | `${AGENT_CREW_HOME}/scripts/` |
    | schemas | `${SOURCE_DIR}/schemas/` | `${AGENT_CREW_HOME}/system/schemas/` | `${AGENT_CREW_HOME}/schemas/` |
+   | policies | `${SOURCE_DIR}/policies/` | `${AGENT_CREW_HOME}/system/policies/` | `${AGENT_CREW_HOME}/policies/` |
    | setup | `${SOURCE_DIR}/setup/` | `${AGENT_CREW_HOME}/system/setup/` | `${AGENT_CREW_HOME}/setup/` |
    | adapters | `${ADAPTERS_DIR}/` | `${AGENT_CREW_HOME}/system/adapters/` | `${AGENT_CREW_HOME}/adapters/` |
    | agents | `${SOURCE_DIR}/agents/` | `${AGENT_CREW_HOME}/system/agents/` | (via sync_system_agents) |
    | skills | `${SOURCE_DIR}/agents/skills/` | `${AGENT_CREW_HOME}/system/skills/` | `${AGENT_CREW_HOME}/skills/` |
 
    **Subdirectory categories:** `rules/` contains a `capabilities/`
-   subdirectory (per-flag detail docs); `scripts/` may be flat or contain
-   subdirectories. Use `cp -rf src/. dest/` for these categories so all
+   subdirectory (per-flag detail docs); `scripts/` and `policies/` may be flat
+   or contain subdirectories. Use `cp -rf src/. dest/` for these categories so all
    subdirectories and their contents are copied recursively and destination
    paths preserve the relative structure from the source root.
    | claude hooks | `${AGENT_CREW_HOME}/hooks/` | `${CLAUDE_DIR}/agent-crew/hooks/` | — |

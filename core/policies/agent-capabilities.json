@@ -1,0 +1,447 @@
+{
+  "schema_version": 1,
+  "agents": {
+    "supervisor": {
+      "role": "orchestrator",
+      "model_tier": "high",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "approval_gate",
+        "delegate_agents",
+        "memory_read",
+        "pipeline_state_write",
+        "read_file",
+        "telemetry_write"
+      ],
+      "denied_capabilities": [
+        "destructive_command_without_approval",
+        "direct_code_implementation"
+      ],
+      "may_delegate": true,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": true,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Owns orchestration, approvals, retry policy, and workflow state."
+    },
+    "supervisor-bootstrap": {
+      "role": "component",
+      "model_tier": "high",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "capability_bootstrap",
+        "memory_read",
+        "pipeline_state_write",
+        "read_file"
+      ],
+      "denied_capabilities": [
+        "destructive_command",
+        "direct_code_implementation"
+      ],
+      "may_delegate": true,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": true,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Supervisor module; not a standalone implementer."
+    },
+    "supervisor-stages": {
+      "role": "component",
+      "model_tier": "high",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "approval_gate",
+        "delegate_agents",
+        "pipeline_state_write",
+        "read_file"
+      ],
+      "denied_capabilities": [
+        "destructive_command_without_approval",
+        "direct_code_implementation"
+      ],
+      "may_delegate": true,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": true,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Supervisor stage dispatcher and stage-action gate."
+    },
+    "supervisor-retry": {
+      "role": "component",
+      "model_tier": "high",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "pipeline_state_write",
+        "read_file",
+        "retry_governance",
+        "telemetry_write"
+      ],
+      "denied_capabilities": [
+        "destructive_command_without_approval",
+        "direct_code_implementation"
+      ],
+      "may_delegate": true,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": true,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Supervisor retry and close-out module."
+    },
+    "analyst": {
+      "role": "readonly",
+      "model_tier": "high",
+      "reasoning_tier": "deep",
+      "allowed_capabilities": [
+        "memory_read",
+        "read_file",
+        "requirements_analysis",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Analyzes context and produces findings without mutating repo state."
+    },
+    "planner": {
+      "role": "planner",
+      "model_tier": "high",
+      "reasoning_tier": "deep",
+      "allowed_capabilities": [
+        "delegate_agents",
+        "pipeline_design",
+        "read_file",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "destructive_command",
+        "direct_code_implementation",
+        "edit_file"
+      ],
+      "may_delegate": true,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Designs deterministic workflow plans and delegates execution."
+    },
+    "requirements": {
+      "role": "support",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "read_file",
+        "requirements_collection",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "direct_code_implementation",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Collects and normalizes requirements before planning."
+    },
+    "backend": {
+      "role": "worker",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "edit_file",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Focused backend implementation worker."
+    },
+    "frontend": {
+      "role": "worker",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "edit_file",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Focused frontend implementation worker."
+    },
+    "test-writer": {
+      "role": "worker",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "edit_test_files",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Writes and runs tests; no workflow-state mutation."
+    },
+    "designer": {
+      "role": "worker",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "design_files",
+        "edit_file",
+        "read_file",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Focused product/design implementation worker."
+    },
+    "devops": {
+      "role": "devops",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "approval_bound_destructive_command",
+        "deployment_plan",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command_without_approval",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": true,
+      "destructive_requires_approval": true,
+      "notes": "May perform destructive or remote operations only through orchestrator approval."
+    },
+    "reviewer": {
+      "role": "reviewer",
+      "model_tier": "high",
+      "reasoning_tier": "deep",
+      "allowed_capabilities": [
+        "policy_review",
+        "read_file",
+        "read_only",
+        "security_review",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Validates output, consistency, security, and policy without edits."
+    },
+    "resolver": {
+      "role": "resolver",
+      "model_tier": "high",
+      "reasoning_tier": "deep",
+      "allowed_capabilities": [
+        "conflict_resolution",
+        "edit_file",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Resolves merge conflicts and integration inconsistencies without recursive delegation."
+    },
+    "issuer": {
+      "role": "issuer",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "issue_report",
+        "read_file",
+        "redaction",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Publishes or drafts issue reports after redaction and deduplication."
+    },
+    "documenter": {
+      "role": "worker",
+      "model_tier": "cheap",
+      "reasoning_tier": "light",
+      "allowed_capabilities": [
+        "edit_docs",
+        "read_file",
+        "structured_output",
+        "summarize_context"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Documentation and context compression worker routed to cheap tier."
+    },
+    "historian": {
+      "role": "readonly",
+      "model_tier": "cheap",
+      "reasoning_tier": "light",
+      "allowed_capabilities": [
+        "git_read",
+        "memory_read",
+        "read_file",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Read-only project/session state lookup routed to cheap tier."
+    },
+    "korean-normalizer": {
+      "role": "support",
+      "model_tier": "cheap",
+      "reasoning_tier": "light",
+      "allowed_capabilities": [
+        "input_normalization",
+        "read_file",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Pure Korean task normalization; no implementation authority."
+    },
+    "learning-mentor": {
+      "role": "support",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "read_file",
+        "structured_output",
+        "teaching_feedback"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Learning feedback support role; no production-state authority."
+    }
+  }
+}

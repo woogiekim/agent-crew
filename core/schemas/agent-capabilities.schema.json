@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/agent-capabilities.schema.json",
+  "title": "agent-crew agent capability manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "agents"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "agents": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "model_tier",
+          "reasoning_tier",
+          "allowed_capabilities",
+          "denied_capabilities",
+          "may_delegate",
+          "may_implement",
+          "may_modify_production_state",
+          "may_mutate_workflow_state",
+          "may_execute_destructive",
+          "destructive_requires_approval"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "orchestrator",
+              "planner",
+              "worker",
+              "reviewer",
+              "resolver",
+              "devops",
+              "issuer",
+              "support",
+              "readonly",
+              "component"
+            ]
+          },
+          "model_tier": {
+            "type": "string",
+            "enum": ["high", "medium", "cheap"]
+          },
+          "reasoning_tier": {
+            "type": "string",
+            "enum": ["deep", "balanced", "light"]
+          },
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "denied_capabilities": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "may_delegate": {"type": "boolean"},
+          "may_implement": {"type": "boolean"},
+          "may_modify_production_state": {"type": "boolean"},
+          "may_mutate_workflow_state": {"type": "boolean"},
+          "may_execute_destructive": {"type": "boolean"},
+          "destructive_requires_approval": {"type": "boolean"},
+          "notes": {"type": "string"}
+        }
+      }
+    }
+  }
+}

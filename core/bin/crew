@@ -143,12 +143,15 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
     "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
     "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
+    "core/scripts/agent-capability-check.py:${AGENT_CREW_HOME}/scripts/agent-capability-check.py" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
     "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
     "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
-    "core/evaluations/memory-retrieval.json:${AGENT_CREW_HOME}/evaluations/memory-retrieval.json"; do
+    "core/rules/prompt-injection-defense.md:${AGENT_CREW_HOME}/rules/prompt-injection-defense.md" \
+    "core/evaluations/memory-retrieval.json:${AGENT_CREW_HOME}/evaluations/memory-retrieval.json" \
+    "core/policies/agent-capabilities.json:${AGENT_CREW_HOME}/policies/agent-capabilities.json"; do
     local src_rel="${check%%:*}" dest="${check#*:}"
     if [ -f "${source}/${src_rel}" ] && ! cmp -s "${source}/${src_rel}" "${dest}" 2>/dev/null; then
       drift=1
@@ -159,12 +162,16 @@ sync_source_runtime_assets_if_drifted() {
 
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+  copy_tree_assets "${source}/core/rules" "${AGENT_CREW_HOME}/system/rules"
+  copy_tree_assets "${source}/core/rules" "${AGENT_CREW_HOME}/rules"
   copy_flat_assets "${source}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"
   copy_flat_assets "${source}/core/hooks" "${AGENT_CREW_HOME}/hooks" "*.sh"
   copy_tree_assets "${source}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
   copy_tree_assets "${source}/core/scripts" "${AGENT_CREW_HOME}/scripts"
   copy_tree_assets "${source}/core/evaluations" "${AGENT_CREW_HOME}/system/evaluations"
   copy_tree_assets "${source}/core/evaluations" "${AGENT_CREW_HOME}/evaluations"
+  copy_tree_assets "${source}/core/policies" "${AGENT_CREW_HOME}/system/policies"
+  copy_tree_assets "${source}/core/policies" "${AGENT_CREW_HOME}/policies"
   copy_flat_assets "${source}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
   sync_managed_path_crew_cli "${source}/core/bin/crew"
   copy_flat_assets "${source}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"

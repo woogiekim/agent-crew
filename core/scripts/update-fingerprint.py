@@ -62,6 +62,7 @@ def build_payload(args: argparse.Namespace) -> dict:
         "core/scripts",
         "core/evaluations",
         "core/schemas",
+        "core/policies",
         "core/setup",
         "core/agents",
         "core/bin",
@@ -81,6 +82,7 @@ def build_payload(args: argparse.Namespace) -> dict:
     add_tree(entries, "output/agent-crew-hooks", home / "hooks")
     add_tree(entries, "output/agent-crew-scripts", home / "scripts")
     add_tree(entries, "output/agent-crew-evaluations", home / "evaluations")
+    add_tree(entries, "output/agent-crew-policies", home / "policies")
     add_tree(entries, "output/agent-crew-bin", home / "bin")
 
     path_crew = path_bin / "crew"

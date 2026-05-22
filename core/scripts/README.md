@@ -99,6 +99,10 @@ invocation in SKILL.md; generic adds guidance).
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term
   scalability controls. The native `crew doctor` command runs this check.
+- `agent-capability-check.py` — validates the machine-readable
+  `core/policies/agent-capabilities.json` manifest against agent markdown files,
+  role boundaries, destructive-operation approval requirements, reviewer
+  read-only constraints, and cost-aware model tier distribution.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and
@@ -140,7 +144,8 @@ invocation in SKILL.md; generic adds guidance).
   repeated no-op local updates can skip expensive adapter refreshes safely, and
   reports changed fingerprint categories when a full refresh is required.
 - `verify-install-drift.py` — post-update source/install drift verifier for
-  source-owned commands, hooks, scripts, evaluations, and binary entrypoints.
+  source-owned commands, hooks, scripts, evaluations, policies, and binary
+  entrypoints.
 
 ## Naming conventions
 

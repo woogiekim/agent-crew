@@ -34,7 +34,7 @@ def test_framework_review_passes_current_repository():
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
     assert payload["summary"]["failed"] == 0
-    assert payload["summary"]["controls"] >= 15
+    assert payload["summary"]["controls"] >= 22
 
 
 def test_framework_review_covers_operational_categories():
@@ -67,3 +67,11 @@ def test_framework_review_fails_when_security_policy_missing(tmp_path: Path):
 
     assert payload["passed"] is False
     assert "forbidden_tool_policy" in failed_names
+
+
+def test_framework_review_fails_when_agent_capability_manifest_missing(tmp_path: Path):
+    payload = framework_review.evaluate_repo(tmp_path)
+    failed_names = {failure["name"] for failure in payload["failures"]}
+
+    assert payload["passed"] is False
+    assert "agent_capability_manifest" in failed_names

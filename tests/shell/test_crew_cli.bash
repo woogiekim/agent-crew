@@ -221,6 +221,7 @@ cp -R "${REPO_ROOT}/core/scripts" "${RUNTIME_SYNC_PROJECT}/core/"
 cp -R "${REPO_ROOT}/core/hooks" "${RUNTIME_SYNC_PROJECT}/core/"
 cp -R "${REPO_ROOT}/core/evaluations" "${RUNTIME_SYNC_PROJECT}/core/"
 cp -R "${REPO_ROOT}/core/schemas" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/policies" "${RUNTIME_SYNC_PROJECT}/core/"
 cp -R "${REPO_ROOT}/core/bin" "${RUNTIME_SYNC_PROJECT}/core/"
 cp -R "${REPO_ROOT}/adapters" "${RUNTIME_SYNC_PROJECT}/"
 cp "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
@@ -243,6 +244,12 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-quality-plan-check.py"
 
 it "crew run installs automatic issue reporter during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/auto-issue-reporter.py"
+
+it "crew run installs agent capability checker during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/agent-capability-check.py"
+
+it "crew run installs agent capability policy during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/policies/agent-capabilities.json"
 
 it "crew run refreshes managed PATH crew CLI during auto-refresh"
 cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
