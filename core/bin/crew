@@ -145,6 +145,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
     "core/scripts/agent-capability-check.py:${AGENT_CREW_HOME}/scripts/agent-capability-check.py" \
     "core/scripts/pipeline-capability-check.py:${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
+    "core/scripts/workflow-replay-check.py:${AGENT_CREW_HOME}/scripts/workflow-replay-check.py" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
@@ -152,6 +153,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
     "core/rules/prompt-injection-defense.md:${AGENT_CREW_HOME}/rules/prompt-injection-defense.md" \
     "core/evaluations/memory-retrieval.json:${AGENT_CREW_HOME}/evaluations/memory-retrieval.json" \
+    "core/evaluations/workflow-replay.json:${AGENT_CREW_HOME}/evaluations/workflow-replay.json" \
     "core/policies/agent-capabilities.json:${AGENT_CREW_HOME}/policies/agent-capabilities.json"; do
     local src_rel="${check%%:*}" dest="${check#*:}"
     if [ -f "${source}/${src_rel}" ] && ! cmp -s "${source}/${src_rel}" "${dest}" 2>/dev/null; then

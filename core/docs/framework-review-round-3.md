@@ -38,7 +38,8 @@ preflight enforcement.
 ## Remaining Work
 
 - Add deterministic replay/golden tool-flow fixtures for full workflow
-  reproducibility.
+  reproducibility. Resolved in Round 4 with `workflow-replay-check.py` and
+  `core/evaluations/workflow-replay.json`.
 - Add a memory GC/eviction command that operationalizes the memory lifecycle
   beyond policy and retrieval SLO checks.
 - Consider a richer custom-agent capability declaration format so user-owned

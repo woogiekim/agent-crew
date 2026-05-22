@@ -108,6 +108,10 @@ invocation in SKILL.md; generic adds guidance).
   delegation agents, workflow-state mutation agents, unsafe reviewer/devops
   stage shapes, unknown agents without custom-agent files or `needs_creation`,
   and custom agents whose names imply destructive authority.
+- `workflow-replay-check.py` — replays golden workflow fixtures against local
+  validators and expected state transitions. It verifies deterministic tool
+  flow for schema validation, quality planning, capability preflight, blocked
+  outcomes, and happy-path completion without calling an LLM.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and

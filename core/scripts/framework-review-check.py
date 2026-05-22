@@ -54,6 +54,7 @@ def evaluate_repo(root: Path) -> dict:
     reviewer = read_text(root / "core/agents/reviewer.md")
     memory_rule = read_text(root / "core/rules/memory-governance.md")
     memory_fixture = read_text(root / "core/evaluations/memory-retrieval.json")
+    workflow_replay_fixture = read_text(root / "core/evaluations/workflow-replay.json")
     answer_quality = read_text(root / "core/evaluations/answer-quality.json")
     slo_fixture = read_text(root / "core/evaluations/e2e-slo.json")
     update_benchmark = read_text(root / "core/scripts/update-slo-benchmark.py")
@@ -62,6 +63,7 @@ def evaluate_repo(root: Path) -> dict:
     prompt_injection_rule = read_text(root / "core/rules/prompt-injection-defense.md")
     capability_check = read_text(root / "core/scripts/agent-capability-check.py")
     pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
+    workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
     agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
     model_tiers = {
@@ -168,6 +170,23 @@ def evaluate_repo(root: Path) -> dict:
             "high",
             has_all(supervisor_retry, ["up to **3 retries**", "up to **5 retries**", "cost_budget_exceeded"]),
             "Retries must have explicit budgets and cost breaker behavior.",
+        ),
+        control(
+            "reliability",
+            "deterministic_workflow_replay",
+            "high",
+            exists(root, "core/scripts/workflow-replay-check.py")
+            and has_all(workflow_replay_fixture, ["tool_flow", "state_transitions", "expected"])
+            and has_all(
+                workflow_replay_check,
+                [
+                    "ALLOWED_TRANSITIONS",
+                    "validate-state-schema.py",
+                    "pipeline-quality-plan-check.py",
+                    "pipeline-capability-check.py",
+                ],
+            ),
+            "Golden workflow replay must pin expected tool flow, failures, and state transitions.",
         ),
         control(
             "memory_governance",

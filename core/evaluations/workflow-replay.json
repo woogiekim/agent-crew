@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "name": "agent-crew deterministic workflow replay",
+  "cases": [
+    {
+      "id": "mutating_tdd_review_happy_path",
+      "task": "Implement a backend workflow with tests and reviewer approval",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Implement a backend workflow with tests and reviewer approval",
+        "stages": [
+          {
+            "agents": [
+              "backend"
+            ],
+            "tdd_parallel": true
+          },
+          "reviewer"
+        ],
+        "completed_stages": 0,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1a",
+        "phase_1bc",
+        "phase_1d",
+        "phase_2",
+        "phase_3",
+        "completed"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay start"
+        },
+        {
+          "event": "PHASE",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "phase_1bc"
+        },
+        {
+          "event": "STAGE_TDD_PARALLEL_DONE",
+          "stage": 1,
+          "agent": "test-writer",
+          "attempt": 1,
+          "status": "completed",
+          "detail": "tests passed"
+        },
+        {
+          "event": "STAGE_DONE",
+          "stage": 1,
+          "agent": "backend",
+          "attempt": 1,
+          "status": "completed",
+          "detail": "implementation completed"
+        },
+        {
+          "event": "REVIEW_APPROVED",
+          "stage": 2,
+          "agent": "reviewer",
+          "attempt": 1,
+          "status": "completed",
+          "detail": "REVIEW: APPROVED"
+        }
+      ],
+      "expected": {
+        "passed": true,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          },
+          {
+            "tool": "pipeline-capability-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "completed"
+      }
+    },
+    {
+      "id": "missing_tdd_is_rejected",
+      "task": "Implement a backend workflow without TDD metadata",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Implement a backend workflow without TDD metadata",
+        "stages": [
+          "backend",
+          "reviewer"
+        ],
+        "completed_stages": 0,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1a",
+        "phase_1bc",
+        "blocked"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay start"
+        },
+        {
+          "event": "BLOCKED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "blocked",
+          "detail": "pipeline quality plan failed"
+        }
+      ],
+      "expected": {
+        "passed": false,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 1,
+            "failures": [
+              "implementation_stage_without_tdd_parallel"
+            ]
+          },
+          {
+            "tool": "pipeline-capability-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "blocked"
+      }
+    },
+    {
+      "id": "recursive_delegation_is_rejected",
+      "task": "Review a malformed runtime pipeline",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Review a malformed runtime pipeline",
+        "stages": [
+          "planner",
+          "reviewer"
+        ],
+        "completed_stages": 0,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1bc",
+        "blocked"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay start"
+        },
+        {
+          "event": "BLOCKED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "blocked",
+          "detail": "pipeline capability preflight failed"
+        }
+      ],
+      "expected": {
+        "passed": false,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          },
+          {
+            "tool": "pipeline-capability-check.py",
+            "returncode": 1,
+            "failures": [
+              "delegating_agent_in_runtime_stage"
+            ]
+          }
+        ],
+        "final_phase": "blocked"
+      }
+    }
+  ]
+}
