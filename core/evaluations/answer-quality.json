@@ -12,6 +12,7 @@
     "supervisor_handoff_not_started",
     "stage_timeout",
     "quality_loop_exhausted",
+    "missing_quality_loop_pipeline",
     "cost_exceeded",
     "manual_fallback_blocked",
     "cancelled"

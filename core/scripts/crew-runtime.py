@@ -13,6 +13,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from quality_loop_lib import check_quality_loop, looks_mutating_task
+
 
 def utc_now_z() -> str:
     """Return the progress-buffer timestamp format used by supervisor."""
@@ -49,6 +51,21 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def load_json(path: Path, fallback: dict | None = None) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return dict(fallback or {})
+    return data if isinstance(data, dict) else dict(fallback or {})
+
+
+def load_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
 def append_progress(task_dir: Path, row: dict) -> None:
     append_jsonl(task_dir / "progress.buffer.jsonl", row)
 
@@ -68,8 +85,87 @@ def render_completed_result(task: str, task_id: str, completion_path: str, note:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_quality_loop_blocked_result(
+    task: str,
+    task_id: str,
+    failures: list[str],
+    evidence_path: str,
+) -> str:
+    return (
+        f"# {task}\n\n"
+        "STATUS: blocked\n"
+        f"TASK_ID: {task_id}\n"
+        "MEASUREMENTS: runtime quality-loop validation ran 1 check, 0 retries\n"
+        "BLOCKER: missing_quality_loop_pipeline\n"
+        f"EVIDENCE: {evidence_path}\n"
+        "EVIDENCE: context/quality-loop-runtime-check.json\n"
+        "DETAIL: Host bridge or fake-host completion cannot mark a mutating "
+        "implementation task completed until the pipeline trace proves TDD, "
+        "review, remediation/refactor after rejection, and reviewer approval.\n"
+        "FAILURES: " + ", ".join(failures) + "\n"
+        "UNCERTAINTY: Host bridge execution may have run outside this process, "
+        "but it did not leave the required provider-neutral quality-loop state.\n"
+    )
+
+
+def mark_quality_loop_blocked(
+    task_dir: Path,
+    register: dict,
+    pipeline: dict,
+    quality_result: dict,
+    evidence_path: str,
+) -> None:
+    now = utc_now_z()
+    failures = list(quality_result.get("failures", []))
+    check_path = task_dir / "context" / "quality-loop-runtime-check.json"
+    write_json(check_path, quality_result)
+
+    register.update({
+        "current_phase": "blocked",
+        "blocked_by": ["missing_quality_loop_pipeline"],
+        "host_bridge_status": "quality_blocked",
+        "host_bridge_completion_path": str(task_dir / evidence_path),
+        "host_bridge_completed_at": now,
+    })
+    pipeline.setdefault("completed_stages", 0)
+
+    write_json(task_dir / "register.json", register)
+    write_json(task_dir / "pipeline.json", pipeline)
+    (task_dir / "result.md").write_text(
+        render_quality_loop_blocked_result(
+            register.get("task", task_dir.name),
+            register.get("task_id", task_dir.name),
+            failures,
+            evidence_path,
+        ),
+        encoding="utf-8",
+    )
+
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
+        handle.write(f"{now} | QUALITY_BLOCKED | missing_quality_loop_pipeline\n")
+        handle.write(f"{now} | STATUS | blocked\n")
+
+    append_progress(
+        task_dir,
+        {
+            "ts": now,
+            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
+            "task_id": task_dir.name,
+            "session_id": register.get("session_id", ""),
+            "event": "QUALITY_BLOCKED",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "failed",
+            "detail": "missing_quality_loop_pipeline",
+            "files": [evidence_path, "context/quality-loop-runtime-check.json", "result.md"],
+        },
+    )
+
+
 def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
-                        bridge_record: dict, note: str) -> None:
+                        bridge_record: dict, note: str,
+                        preserve_quality_state: bool = False) -> None:
     now = utc_now_z()
     completion_path = task_dir / "context" / "host-bridge-completion.json"
     write_json(completion_path, bridge_record)
@@ -83,24 +179,35 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
     })
 
     stages = pipeline.get("stages") or ["supervisor"]
-    pipeline.update({
-        "completed_stages": len(stages),
-        "stage_agent_status": {
+    pipeline["completed_stages"] = len(stages)
+    if preserve_quality_state:
+        pipeline.setdefault("stage_agent_status", {})
+    else:
+        pipeline["stage_agent_status"] = {
             "1": {"supervisor": "completed"}
-        },
-    })
+        }
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
-    (task_dir / "result.md").write_text(
-        render_completed_result(
-            register.get("task", task_dir.name),
-            register.get("task_id", task_dir.name),
-            "context/host-bridge-completion.json",
-            note,
-        ),
-        encoding="utf-8",
-    )
+    existing_result = load_text(task_dir / "result.md")
+    if preserve_quality_state and re.search(r"^STATUS\s*:\s*completed\b", existing_result, re.I | re.M):
+        marker = "HOST_BRIDGE: auto_completed"
+        addition = (
+            "\n" + marker + "\n"
+            "EVIDENCE: context/host-bridge-completion.json\n"
+        )
+        if marker not in existing_result:
+            (task_dir / "result.md").write_text(existing_result.rstrip() + addition, encoding="utf-8")
+    else:
+        (task_dir / "result.md").write_text(
+            render_completed_result(
+                register.get("task", task_dir.name),
+                register.get("task_id", task_dir.name),
+                "context/host-bridge-completion.json",
+                note,
+            ),
+            encoding="utf-8",
+        )
 
     with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
         handle.write(f"{now} | HOST_BRIDGE | auto completed\n")
@@ -256,9 +363,15 @@ def command_run(args: argparse.Namespace) -> int:
     context_dir = task_dir / "context"
     context_dir.mkdir(parents=True, exist_ok=True)
 
-    result_status = "completed" if args.fake_host_result == "completed" else "blocked"
+    fake_completed_requested = args.fake_host_result == "completed"
+    fake_quality_blocked = fake_completed_requested and looks_mutating_task(args.task)
+    result_status = "completed" if fake_completed_requested and not fake_quality_blocked else "blocked"
     current_phase = "completed" if result_status == "completed" else "blocked"
-    blocked_by = [] if result_status == "completed" else ["host_bridge_not_invoked"]
+    blocked_by = []
+    if fake_quality_blocked:
+        blocked_by = ["missing_quality_loop_pipeline"]
+    elif result_status != "completed":
+        blocked_by = ["host_bridge_not_invoked"]
     blocked_next = (
         "NEXT: Hand the generated handoff.md to the host AI prompt runtime. "
         "If the host bridge is unavailable, continue manually by reading "
@@ -267,9 +380,19 @@ def command_run(args: argparse.Namespace) -> int:
         f"`crew repair {task_id} --status completed --note \"<summary>\"` so "
         "`crew telemetry` no longer reports a stale host_bridge_not_invoked blocker.\n"
     )
+    quality_next = (
+        "NEXT: A mutating implementation task can only be auto-completed after "
+        "the host runtime leaves pipeline-level quality-loop evidence in "
+        "pipeline.json and progress.buffer.jsonl.\n"
+    )
 
     bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
-    host_bridge_status = "fake_completed" if result_status == "completed" else ("pending" if bridge_command else "not_invoked")
+    if fake_quality_blocked:
+        host_bridge_status = "quality_blocked"
+    elif result_status == "completed":
+        host_bridge_status = "fake_completed"
+    else:
+        host_bridge_status = "pending" if bridge_command else "not_invoked"
 
     register = {
         "schema_version": 1,
@@ -282,7 +405,7 @@ def command_run(args: argparse.Namespace) -> int:
         "execution_mode": "single",
         "current_phase": current_phase,
         "approval_status": "not_required",
-        "verification_status": "skipped",
+        "verification_status": "failed" if fake_quality_blocked else "skipped",
         "pipeline_path": str(task_dir / "pipeline.json"),
         "handoff_path": str(task_dir / "handoff.md"),
         "progress_log_path": str(task_dir / "progress.log"),
@@ -326,8 +449,16 @@ def command_run(args: argparse.Namespace) -> int:
         f"BRANCH: {register['branch']}\n"
     )
     if result_status == "blocked":
-        result += "BLOCKER: host AI bridge has not completed this handoff\n"
-        result += blocked_next
+        if fake_quality_blocked:
+            result += "BLOCKER: missing_quality_loop_pipeline\n"
+            result += (
+                "DETAIL: fake-host completion for mutating implementation "
+                "tasks is blocked unless the quality loop is actually recorded.\n"
+            )
+            result += quality_next
+        else:
+            result += "BLOCKER: host AI bridge has not completed this handoff\n"
+            result += blocked_next
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
@@ -372,6 +503,16 @@ def command_run(args: argparse.Namespace) -> int:
         },
     )
 
+    if fake_quality_blocked:
+        quality_result = check_quality_loop(task_dir, target_status="completed")
+        mark_quality_loop_blocked(
+            task_dir,
+            register,
+            pipeline,
+            quality_result,
+            "pipeline.json",
+        )
+
     if result_status == "blocked" and bridge_command:
         bridge_record = invoke_host_bridge(
             bridge_command,
@@ -381,6 +522,42 @@ def command_run(args: argparse.Namespace) -> int:
         )
         write_json(task_dir / "context" / "host-bridge-invocation.json", bridge_record)
         if bridge_record["returncode"] == 0:
+            latest_register = load_json(task_dir / "register.json", register)
+            latest_pipeline = load_json(task_dir / "pipeline.json", pipeline)
+            if looks_mutating_task(str(latest_register.get("task", args.task))):
+                quality_result = check_quality_loop(task_dir, target_status="completed")
+                if not quality_result["passed"]:
+                    mark_quality_loop_blocked(
+                        task_dir,
+                        latest_register,
+                        latest_pipeline,
+                        quality_result,
+                        "context/host-bridge-invocation.json",
+                    )
+                    print(f"TASK_ID: {task_id}")
+                    print(f"TASK_DIR: {task_dir}")
+                    print("STATUS: blocked")
+                    print("BLOCKER: missing_quality_loop_pipeline")
+                    print("HOST_BRIDGE: quality_blocked")
+                    return 3
+
+                write_json(task_dir / "context" / "quality-loop-runtime-check.json", quality_result)
+                latest_register = load_json(task_dir / "register.json", latest_register)
+                latest_pipeline = load_json(task_dir / "pipeline.json", latest_pipeline)
+                mark_auto_completed(
+                    task_dir,
+                    latest_register,
+                    latest_pipeline,
+                    bridge_record,
+                    "Automatic host bridge command completed successfully after quality-loop validation.",
+                    preserve_quality_state=True,
+                )
+                print(f"TASK_ID: {task_id}")
+                print(f"TASK_DIR: {task_dir}")
+                print("STATUS: completed")
+                print("HOST_BRIDGE: auto_completed")
+                return 0
+
             mark_auto_completed(
                 task_dir,
                 register,
@@ -402,8 +579,12 @@ def command_run(args: argparse.Namespace) -> int:
     print(f"TASK_DIR: {task_dir}")
     print(f"STATUS: {result_status}")
     if result_status == "blocked":
-        print("BLOCKER: host AI bridge has not completed this handoff")
-        print(blocked_next.rstrip())
+        if fake_quality_blocked:
+            print("BLOCKER: missing_quality_loop_pipeline")
+            print(quality_next.rstrip())
+        else:
+            print("BLOCKER: host AI bridge has not completed this handoff")
+            print(blocked_next.rstrip())
         return 3
     return 0
 

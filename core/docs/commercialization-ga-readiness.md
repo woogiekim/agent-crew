@@ -123,3 +123,12 @@ The report-quality gate applies the same rule to completed implementation
 reports and fails on `missing_tdd_evidence`, `missing_reviewer_evidence`, or
 the `missing_pipeline_*` / `missing_rework_after_review_rejection` labels
 reported by `core/scripts/quality-loop-check.py`.
+
+Runtime auto-completion uses the same fail-closed contract. A fake-host
+completion or zero-exit host bridge command cannot complete a mutating
+implementation task by itself. For mutating tasks, the host bridge must leave
+the provider-neutral quality-loop state in `pipeline.json` and
+`progress.buffer.jsonl`; otherwise `crew run` stays blocked with
+`missing_quality_loop_pipeline`. When the host bridge does leave valid loop
+state, runtime completion preserves that state instead of replacing it with a
+supervisor-only completion record.

@@ -109,7 +109,8 @@ invocation in SKILL.md; generic adds guidance).
 - `quality-loop-check.py` — validates that completed mutating implementation
   tasks have a TDD-capable implementation stage, a later reviewer stage,
   implementer/TDD completion events, reviewer approval, and rework/re-review
-  after any reviewer rejection.
+  after any reviewer rejection. The native `crew run` runtime uses this check
+  before allowing mutating fake-host or host-bridge auto-completion.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.
