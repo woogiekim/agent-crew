@@ -12,6 +12,7 @@ ACHOME="${TMP}/agent-crew-home"
 CODEX_HOME="${TMP}/codex-home"
 CLAUDE_DIR="${TMP}/claude-home"
 mkdir -p "${ACHOME}/skills" "${ACHOME}/system/agents/skills" "${ACHOME}/setup" \
+  "${ACHOME}/hooks" "${ACHOME}/system/hooks" \
   "${ACHOME}/scripts" "${CODEX_HOME}/skills/agent-crew" "${CODEX_HOME}/agent-crew/skills" \
   "${CODEX_HOME}/agents"
 
@@ -25,6 +26,7 @@ chmod +x "${ACHOME}/adapters/generic/setup.sh"
 
 echo "stale" > "${CODEX_HOME}/agents/task-runner.toml"
 echo "stale" > "${CODEX_HOME}/agent-crew/skills/stale.md"
+echo "stale hook" > "${ACHOME}/hooks/auto-route.sh"
 echo "skill" > "${ACHOME}/skills/current.md"
 
 it "update-global-adapters exits 0"
@@ -57,5 +59,9 @@ assert_file_absent "${CODEX_HOME}/agent-crew/skills/stale.md"
 
 it "Codex crew skills mirror copies unified current skill"
 assert_file_exists "${CODEX_HOME}/agent-crew/skills/current.md"
+
+it "update-global-adapters refreshes installed auto-route hook"
+hook_out="$(cat "${ACHOME}/hooks/auto-route.sh")"
+assert_contains "${hook_out}" 'Invoke Skill("crew-run")'
 
 end_report

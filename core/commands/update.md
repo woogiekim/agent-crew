@@ -320,6 +320,12 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
 2. Refresh adapter paths in two phases (P5 split):
 
+   Before adapter-specific paths are refreshed, `update-global-adapters.sh`
+   also copies `core/hooks/*.sh` into both `${AGENT_CREW_HOME}/system/hooks/`
+   and `${AGENT_CREW_HOME}/hooks/`. Hook payloads are live runtime behavior;
+   stale `auto-route.sh` copies must not keep emitting old STOP/ROUTE guidance
+   after source fixes have landed.
+
    **(a) Global-scope update** — runs all installed global-scope adapters
    (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/agent-crew/` and
    the internal agent-crew guide mirror at `~/.codex/agent-crew/skills/`)

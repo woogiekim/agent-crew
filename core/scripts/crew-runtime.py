@@ -141,6 +141,12 @@ def command_run(args: argparse.Namespace) -> int:
     result_status = "completed" if args.fake_host_result == "completed" else "blocked"
     current_phase = "completed" if result_status == "completed" else "blocked"
     blocked_by = [] if result_status == "completed" else ["host_bridge_not_invoked"]
+    blocked_next = (
+        "NEXT: Hand the generated handoff.md to the host AI prompt runtime. "
+        "If the host bridge is unavailable, continue manually by reading "
+        f"{task_dir / 'handoff.md'} in this session and executing the supervisor "
+        "handoff; `crew status --json` shows the same blocker state.\n"
+    )
 
     register = {
         "schema_version": 1,
@@ -195,10 +201,7 @@ def command_run(args: argparse.Namespace) -> int:
     )
     if result_status == "blocked":
         result += "BLOCKER: host AI bridge has not completed this handoff\n"
-        result += (
-            "NEXT: Invoke the host prompt runtime with handoff.md, or run "
-            "crew status --json for diagnostics and blocker guidance.\n"
-        )
+        result += blocked_next
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
@@ -248,10 +251,7 @@ def command_run(args: argparse.Namespace) -> int:
     print(f"STATUS: {result_status}")
     if result_status == "blocked":
         print("BLOCKER: host AI bridge has not completed this handoff")
-        print(
-            "NEXT: Invoke the host prompt runtime with handoff.md, or run "
-            "crew status --json for diagnostics and blocker guidance."
-        )
+        print(blocked_next.rstrip())
         return 3
     return 0
 

@@ -55,6 +55,59 @@ require_file() {
   [ -f "${path}" ] || die "${label} not found at ${path}; install agent-crew first"
 }
 
+sync_source_hooks_if_drifted() {
+  [ "${AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN:-1}" = "1" ] || return 0
+
+  local source source_hooks=""
+  for source in "${AGENT_CREW_SOURCE_DIR:-}" "${PROJECT_ROOT}" "${SOURCE_ROOT}"; do
+    [ -n "${source}" ] || continue
+    if [ -d "${source}/core/hooks" ] && [ -f "${source}/core/hooks/auto-route.sh" ]; then
+      source_hooks="${source}/core/hooks"
+      break
+    fi
+  done
+  [ -n "${source_hooks}" ] || return 0
+
+  local drift=0 hook base dest
+  for hook in "${source_hooks}"/*.sh; do
+    [ -f "${hook}" ] || continue
+    base="$(basename "${hook}")"
+    for dest in "${AGENT_CREW_HOME}/system/hooks/${base}" "${AGENT_CREW_HOME}/hooks/${base}"; do
+      if ! cmp -s "${hook}" "${dest}" 2>/dev/null; then
+        drift=1
+        break 2
+      fi
+    done
+    if [ -d "${PROJECT_ROOT}/.agent-crew/hooks" ] \
+      && ! cmp -s "${hook}" "${PROJECT_ROOT}/.agent-crew/hooks/${base}" 2>/dev/null; then
+      drift=1
+      break
+    fi
+    if [ -d "${PROJECT_ROOT}/.codex/hooks" ] \
+      && ! cmp -s "${hook}" "${PROJECT_ROOT}/.codex/hooks/${base}" 2>/dev/null; then
+      drift=1
+      break
+    fi
+  done
+  [ "${drift}" = "1" ] || return 0
+
+  mkdir -p "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks"
+  cp -f "${source_hooks}/"*.sh "${AGENT_CREW_HOME}/system/hooks/" 2>/dev/null || true
+  cp -f "${source_hooks}/"*.sh "${AGENT_CREW_HOME}/hooks/" 2>/dev/null || true
+  chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
+
+  if [ -d "${PROJECT_ROOT}/.agent-crew/hooks" ]; then
+    cp -f "${source_hooks}/"*.sh "${PROJECT_ROOT}/.agent-crew/hooks/" 2>/dev/null || true
+    chmod +x "${PROJECT_ROOT}/.agent-crew/hooks/"*.sh 2>/dev/null || true
+  fi
+  if [ -d "${PROJECT_ROOT}/.codex/hooks" ]; then
+    cp -f "${source_hooks}/"*.sh "${PROJECT_ROOT}/.codex/hooks/" 2>/dev/null || true
+    chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
+  fi
+
+  printf 'crew: refreshed auto-route hooks from source checkout because installed hooks drifted\n' >&2
+}
+
 cmd_setup() {
   local project="${1:-${PROJECT_ROOT}}"
   local setup_script="${ASSET_ROOT}/setup/setup-host.sh"
@@ -197,6 +250,7 @@ EOF
     return 0
   fi
   require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
+  sync_source_hooks_if_drifted
   local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
   require_file "${runtime}" "native runtime helper"
   python3 "${runtime}" run --project-root "${PROJECT_ROOT}" "$@"

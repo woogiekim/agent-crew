@@ -325,7 +325,9 @@ def guidance_for(blockers, status, current_phase):
         if b == "host_bridge_not_invoked" or "host AI bridge" in b:
             guidance.append(
                 "Host handoff is ready, but execution has not happened in the "
-                "AI prompt runtime. Invoke the host bridge or inspect handoff.md."
+                "AI prompt runtime. Hand task_dir/handoff.md to the host bridge; "
+                "if the bridge is unavailable, read that handoff in the current "
+                "session and continue the supervisor task manually."
             )
         elif b == "supervisor_handoff_not_started":
             guidance.append(

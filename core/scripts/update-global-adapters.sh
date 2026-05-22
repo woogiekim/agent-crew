@@ -69,6 +69,17 @@ fi
 
 printf '[update-global-adapters] Refreshing global adapter paths (MODE: %s)\n' "${AGENT_CREW_MODE}"
 
+# Refresh globally installed hooks before adapter-specific updates. Hook
+# payloads are runtime behavior, so stale ~/.agent-crew/hooks/*.sh can keep
+# emitting old routing directives even after source fixes have landed.
+if [ -d "${SOURCE_DIR}/hooks" ]; then
+  mkdir -p "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks"
+  cp -f "${SOURCE_DIR}/hooks/"*.sh "${AGENT_CREW_HOME}/system/hooks/" 2>/dev/null || true
+  cp -f "${SOURCE_DIR}/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/" 2>/dev/null || true
+  chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
+  printf '[update-global-adapters] Global hooks refreshed → %s/hooks\n' "${AGENT_CREW_HOME}"
+fi
+
 # ── Claude global paths ───────────────────────────────────────────────────────
 if [ -d "${CLAUDE_DIR}/agent-crew" ]; then
   printf '[update-global-adapters] Updating Claude global paths → %s/agent-crew/\n' "${CLAUDE_DIR}"

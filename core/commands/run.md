@@ -114,6 +114,17 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
     "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.sh \
     2>/dev/null || true
 fi
+
+# Sync hooks as runtime behavior, not just install-time templates. Stale
+# auto-route hooks can keep injecting old STOP/ROUTE directives after source
+# fixes land.
+if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
+  mkdir -p "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks"
+  cp "${SOURCE_ROOT}/core/hooks/"*.sh "${AGENT_CREW_HOME}/system/hooks/" 2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/" 2>/dev/null || true
+  chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \
+    2>/dev/null || true
+fi
 ```
 
 **Silent on success**: this step emits nothing when the sync completes normally.
@@ -122,8 +133,8 @@ present on this machine), skip this step entirely and proceed to Step 1. The
 absence of a source root is not an error — the installed commands may already
 be current from the last `crew:update` run.
 
-> **Note**: This step only updates the installed command files. It does NOT
-> re-run hooks registration, agent discovery merge, or any other install side-effect.
+> **Note**: This step updates command, rule, script, and hook payload files. It
+> does NOT re-run hook registration, agent discovery merge, or any other install side-effect.
 > For a full refresh of all assets, run `crew:update` explicitly.
 
 ---

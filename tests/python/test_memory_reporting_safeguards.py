@@ -39,6 +39,13 @@ def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
         "d2d62df8-33c9-4d03-90b3-e2be9484f88f",
     ]
     assert fixture["accepted_successor_memory_ids"][
+        "31ec5287-1233-426e-8e1f-241adff08cb3"
+    ] == [
+        "9d41b3cc-0cb5-4921-a9e6-30dbf0e269cc",
+        "5b5ad81a-4d29-4b4d-a2ce-9e1fcefff04b",
+        "06e5f2d0-6cef-4354-a5c9-921f0a543c9d",
+    ]
+    assert fixture["accepted_successor_memory_ids"][
         "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
     ] == [
         "31ec5287-1233-426e-8e1f-241adff08cb3",

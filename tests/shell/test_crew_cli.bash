@@ -116,6 +116,44 @@ it "unmanaged PATH crew remains unchanged"
 out=$("${CUSTOM_BIN}/crew" 2>&1)
 assert_contains "${out}" "custom-crew"
 
+HOOK_SYNC_HOME=$(make_tmp)
+HOOK_SYNC_PROJECT=$(make_tmp)
+mkdir -p "${HOOK_SYNC_HOME}/commands" "${HOOK_SYNC_HOME}/scripts" \
+  "${HOOK_SYNC_HOME}/hooks" "${HOOK_SYNC_HOME}/system/hooks" \
+  "${HOOK_SYNC_PROJECT}/core/hooks" \
+  "${HOOK_SYNC_PROJECT}/.agent-crew/hooks" "${HOOK_SYNC_PROJECT}/.codex/hooks"
+cp -R "${REPO_ROOT}/core/commands/." "${HOOK_SYNC_HOME}/commands/"
+cp -R "${REPO_ROOT}/core/scripts/." "${HOOK_SYNC_HOME}/scripts/"
+cp -R "${REPO_ROOT}/core/hooks/." "${HOOK_SYNC_PROJECT}/core/hooks/"
+printf 'stale hook\n' > "${HOOK_SYNC_HOME}/hooks/auto-route.sh"
+printf 'stale hook\n' > "${HOOK_SYNC_PROJECT}/.agent-crew/hooks/auto-route.sh"
+printf 'stale hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
+
+it "crew run auto-refreshes drifted hooks from source checkout"
+out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo hook sync task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+
+it "crew run reports hook drift repair"
+assert_contains "${out}" "refreshed auto-route hooks"
+
+it "crew run refreshes installed global auto-route hook"
+assert_contains "$(cat "${HOOK_SYNC_HOME}/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
+
+it "crew run refreshes project-local Codex auto-route hook"
+assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
+
+printf 'stale project hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
+
+it "crew run detects project-local hook drift even when global hook is fresh"
+out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo project hook sync task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "refreshed auto-route hooks"
+
+it "crew run refreshes stale project-local hook after global hook is fresh"
+assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
+
 it "crew run writes deterministic state then exits blocked"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
 rc=$?
@@ -140,7 +178,7 @@ it "crew run blocked result references host bridge"
 assert_contains "${result}" "host AI bridge has not completed this handoff"
 
 it "crew run blocked result includes next step guidance"
-assert_contains "${result}" "NEXT: Invoke the host prompt runtime"
+assert_contains "${result}" "NEXT: Hand the generated handoff.md to the host AI prompt runtime"
 
 it "crew status --json reports blocked run blocker"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)

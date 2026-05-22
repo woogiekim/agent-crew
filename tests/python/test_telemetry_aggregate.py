@@ -335,7 +335,8 @@ class TestTelemetryAggregate:
         payload = json.loads(r.stdout)
         guidance = payload["tasks"][0]["guidance"]
         assert guidance
-        assert "Invoke the host bridge" in guidance[0]
+        assert "Hand task_dir/handoff.md to the host bridge" in guidance[0]
+        assert "continue the supervisor task manually" in guidance[0]
 
     def test_host_bridge_guidance_is_deduplicated(
         self, script_runner, env_with_home, state_dir
@@ -362,7 +363,7 @@ class TestTelemetryAggregate:
         payload = json.loads(r.stdout)
         guidance = payload["tasks"][0]["guidance"]
         assert len(guidance) == 1
-        assert "Invoke the host bridge" in guidance[0]
+        assert "Hand task_dir/handoff.md to the host bridge" in guidance[0]
 
     def test_host_bridge_blocker_summary_is_canonicalized(
         self, script_runner, env_with_home, state_dir
