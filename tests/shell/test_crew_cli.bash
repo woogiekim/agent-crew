@@ -103,6 +103,9 @@ assert_exit 0 "${rc}"
 it "local sync reports native PATH crew install"
 assert_contains "${out}" "installed native crew CLI"
 
+it "local sync post-check reports install drift success"
+assert_contains "${out}" "PASS: install drift check"
+
 it "PATH crew now serves native mutating-agent guard without Codex launcher"
 out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" PROJECT_ROOT="${PATH_PROJECT}" \
   "${PATH_BIN}/crew" agent "fix the pipeline" 2>&1)
@@ -139,6 +142,37 @@ assert_contains "${out}" "skipping PATH crew CLI"
 it "unmanaged PATH crew remains unchanged"
 out=$("${CUSTOM_BIN}/crew" 2>&1)
 assert_contains "${out}" "custom-crew"
+
+RUNTIME_SYNC_HOME=$(make_tmp)
+RUNTIME_SYNC_PROJECT=$(make_tmp)
+RUNTIME_SYNC_BIN=$(make_tmp)
+mkdir -p "${RUNTIME_SYNC_PROJECT}/core" "${RUNTIME_SYNC_BIN}"
+cp -R "${REPO_ROOT}/core/commands" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/scripts" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/hooks" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/evaluations" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/schemas" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/bin" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/adapters" "${RUNTIME_SYNC_PROJECT}/"
+cp "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
+printf '\n# stale managed PATH crew copy\n' >> "${RUNTIME_SYNC_BIN}/crew"
+chmod +x "${RUNTIME_SYNC_BIN}/crew"
+mkdir -p "${RUNTIME_SYNC_HOME}/scripts"
+printf 'stale runtime\n' > "${RUNTIME_SYNC_HOME}/scripts/crew-runtime.py"
+
+it "crew run auto-refreshes drifted runtime assets from local source"
+out=$(PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" "${RUNTIME_SYNC_BIN}/crew" run "runtime sync task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "refreshed runtime assets"
+
+it "crew run installs missing runtime repair script during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
+
+it "crew run refreshes managed PATH crew CLI during auto-refresh"
+cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
+rc=$?
+assert_exit 0 "${rc}"
 
 HOOK_SYNC_HOME=$(make_tmp)
 HOOK_SYNC_PROJECT=$(make_tmp)
@@ -230,6 +264,24 @@ assert_file_exists "${TASK_DIR}/context/manual-fallback-repair.json"
 
 it "crew repair removes stale host bridge blocker from task telemetry"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${TASK_ID}" 2>&1)
+assert_contains "${out}" "\"tasks_completed\": 1"
+assert_not_contains "${out}" "\"host_bridge_not_invoked\""
+
+it "crew cleanup-host-bridge dry-run finds stale host bridge task"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "cleanup stale host bridge task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+CLEANUP_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+CLEANUP_TASK_ID=$(basename "${CLEANUP_TASK_DIR}")
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" cleanup-host-bridge --format json 2>&1)
+assert_contains "${out}" "${CLEANUP_TASK_ID}"
+
+it "crew cleanup-host-bridge apply removes stale host bridge blocker"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" cleanup-host-bridge --apply --status completed --note "bulk completed" --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "${CLEANUP_TASK_ID}"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${CLEANUP_TASK_ID}" 2>&1)
 assert_contains "${out}" "\"tasks_completed\": 1"
 assert_not_contains "${out}" "\"host_bridge_not_invoked\""
 

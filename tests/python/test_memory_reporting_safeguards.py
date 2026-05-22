@@ -55,6 +55,9 @@ def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
         "06e5f2d0-6cef-4354-a5c9-921f0a543c9d",
         "75684e27-6093-4630-a8df-b8091fb544c9",
     ]
+    assert fixture["accepted_context_memory_id_patterns"] == [
+        "commercialization-e2e-[0-9]+-(review|guardrails|remediation)-[0-9]{8}"
+    ]
     assert fixture["latency_budget_ms"] > 0
     assert fixture["noise_budget_count"] >= 0
 
@@ -94,6 +97,48 @@ def test_memory_eval_accepts_explicit_successor_memories():
     assert result["misses"] == []
     assert result["noise"] == []
     assert result["satisfied_by_successor"] == {"older-memory": ["newer-memory"]}
+
+
+def test_memory_eval_classifies_round_summaries_as_context_not_noise():
+    fixture = {
+        "query": "probe",
+        "expected_memory_ids": ["expected-memory"],
+        "accepted_context_memory_id_patterns": [
+            "commercialization-e2e-[0-9]+-(review|guardrails|remediation)-[0-9]{8}"
+        ],
+        "latency_budget_ms": 10,
+        "noise_budget_count": 0,
+    }
+    result = memory_eval.evaluate(
+        fixture,
+        "  [fts] expected-memory: useful\n"
+        "  [fts] commercialization-e2e-14-review-20260522: useful summary\n",
+        5.0,
+    )
+
+    assert result["passed"] is True
+    assert result["noise"] == []
+    assert result["context_memory_ids"] == ["commercialization-e2e-14-review-20260522"]
+
+
+def test_memory_eval_still_fails_unrelated_noise():
+    fixture = {
+        "query": "probe",
+        "expected_memory_ids": ["expected-memory"],
+        "accepted_context_memory_id_patterns": [
+            "commercialization-e2e-[0-9]+-(review|guardrails|remediation)-[0-9]{8}"
+        ],
+        "latency_budget_ms": 10,
+        "noise_budget_count": 0,
+    }
+    result = memory_eval.evaluate(
+        fixture,
+        "  [fts] expected-memory: useful\n  [fts] unrelated-noise: bad\n",
+        5.0,
+    )
+
+    assert result["passed"] is False
+    assert result["failures"]["noise"] == ["unrelated-noise"]
 
 
 def test_report_quality_gate_passes_with_measurements_evidence_blocker_and_memory(

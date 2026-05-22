@@ -66,6 +66,15 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         for values in successors.values()
         for successor in values
     }
+    accepted_context_ids = set(fixture.get("accepted_context_memory_ids", []))
+    accepted_context_patterns = [
+        re.compile(pattern)
+        for pattern in fixture.get("accepted_context_memory_id_patterns", [])
+    ]
+
+    def is_accepted_context(mid: str) -> bool:
+        return mid in accepted_context_ids or any(pattern.fullmatch(mid) for pattern in accepted_context_patterns)
+
     satisfied_by_successor = {
         mid: [successor for successor in successors.get(mid, []) if successor in returned_set]
         for mid in expected
@@ -76,7 +85,13 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
     ]
     noise = [
         mid for mid in returned
-        if mid not in expected_set and mid not in accepted_successor_ids
+        if mid not in expected_set
+        and mid not in accepted_successor_ids
+        and not is_accepted_context(mid)
+    ]
+    context_memory_ids = [
+        mid for mid in returned
+        if mid not in expected_set and mid not in accepted_successor_ids and is_accepted_context(mid)
     ]
     latency_budget_ms = int(fixture["latency_budget_ms"])
     noise_budget_count = int(fixture["noise_budget_count"])
@@ -94,6 +109,9 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         "returned_memory_ids": returned,
         "misses": misses,
         "noise": noise,
+        "accepted_context_memory_ids": sorted(accepted_context_ids),
+        "accepted_context_memory_id_patterns": fixture.get("accepted_context_memory_id_patterns", []),
+        "context_memory_ids": context_memory_ids,
         "accepted_successor_memory_ids": successors,
         "satisfied_by_successor": {
             mid: values for mid, values in satisfied_by_successor.items() if values

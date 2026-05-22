@@ -37,6 +37,7 @@ Commands:
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
   repair [args] TASK_ID            Repair a manually completed handoff task
+  cleanup-host-bridge [args]       Bulk repair stale host bridge blockers
   agent [name] [question]          Write direct-agent host handoff state
   help                             Show this help
 
@@ -56,17 +57,123 @@ require_file() {
   [ -f "${path}" ] || die "${label} not found at ${path}; install agent-crew first"
 }
 
+find_source_checkout() {
+  local source
+  for source in "${AGENT_CREW_SOURCE_DIR:-}" "${PROJECT_ROOT}" "${SOURCE_ROOT}"; do
+    [ -n "${source}" ] || continue
+    if [ -d "${source}/core" ] && [ -d "${source}/adapters" ]; then
+      (cd "${source}" && pwd)
+      return 0
+    fi
+  done
+  return 1
+}
+
+copy_flat_assets() {
+  local src="$1" dest="$2" pattern="$3"
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+  # shellcheck disable=SC2086
+  cp -f "${src}"/${pattern} "${dest}/" 2>/dev/null || true
+}
+
+copy_tree_assets() {
+  local src="$1" dest="$2"
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+  cp -rf "${src}/." "${dest}/"
+}
+
+absolute_file_path() {
+  local path="$1" dir base
+  [ -n "${path}" ] || return 1
+  case "${path}" in
+    /*) ;;
+    *) path="$(pwd)/${path}" ;;
+  esac
+  dir="$(dirname "${path}")"
+  base="$(basename "${path}")"
+  [ -d "${dir}" ] || return 1
+  printf '%s/%s\n' "$(cd "${dir}" && pwd)" "${base}"
+}
+
+is_managed_crew_cli() {
+  local path="$1"
+  [ -f "${path}" ] || return 1
+  grep -q "experimental Codex launcher for agent-crew\\|deterministic shell entrypoint for agent-crew" "${path}" 2>/dev/null
+}
+
+sync_managed_path_crew_cli() {
+  local source_crew="$1" candidate resolved
+  [ -f "${source_crew}" ] || return 0
+
+  for candidate in \
+    "${BASH_SOURCE[0]:-}" \
+    "$(command -v crew 2>/dev/null || true)" \
+    "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}/crew"; do
+    resolved="$(absolute_file_path "${candidate}" 2>/dev/null || true)"
+    [ -n "${resolved}" ] || continue
+    [ -f "${resolved}" ] || continue
+    is_managed_crew_cli "${resolved}" || continue
+    cmp -s "${source_crew}" "${resolved}" 2>/dev/null && continue
+    cp -f "${source_crew}" "${resolved}"
+    chmod +x "${resolved}"
+  done
+}
+
+sync_source_runtime_assets_if_drifted() {
+  [ "${AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN:-1}" = "1" ] || return 0
+
+  local source
+  source="$(find_source_checkout 2>/dev/null || true)"
+  [ -n "${source}" ] || return 0
+
+  local drift=0 check
+  for check in \
+    "core/bin/crew:${AGENT_CREW_HOME}/bin/crew" \
+    "core/scripts/crew-runtime.py:${AGENT_CREW_HOME}/scripts/crew-runtime.py" \
+    "core/scripts/repair-task-state.py:${AGENT_CREW_HOME}/scripts/repair-task-state.py" \
+    "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
+    "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
+    "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
+    "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
+    "core/evaluations/memory-retrieval.json:${AGENT_CREW_HOME}/evaluations/memory-retrieval.json"; do
+    local src_rel="${check%%:*}" dest="${check#*:}"
+    if [ -f "${source}/${src_rel}" ] && ! cmp -s "${source}/${src_rel}" "${dest}" 2>/dev/null; then
+      drift=1
+      break
+    fi
+  done
+  [ "${drift}" = "1" ] || return 0
+
+  copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
+  copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+  copy_flat_assets "${source}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"
+  copy_flat_assets "${source}/core/hooks" "${AGENT_CREW_HOME}/hooks" "*.sh"
+  copy_tree_assets "${source}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
+  copy_tree_assets "${source}/core/scripts" "${AGENT_CREW_HOME}/scripts"
+  copy_tree_assets "${source}/core/evaluations" "${AGENT_CREW_HOME}/system/evaluations"
+  copy_tree_assets "${source}/core/evaluations" "${AGENT_CREW_HOME}/evaluations"
+  copy_flat_assets "${source}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
+  sync_managed_path_crew_cli "${source}/core/bin/crew"
+  copy_flat_assets "${source}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"
+  copy_flat_assets "${source}/core/schemas" "${AGENT_CREW_HOME}/schemas" "*.json"
+  chmod +x \
+    "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \
+    "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.sh \
+    "${AGENT_CREW_HOME}/system/scripts/"*.py "${AGENT_CREW_HOME}/scripts/"*.py \
+    "${AGENT_CREW_HOME}/bin/"* \
+    2>/dev/null || true
+
+  printf 'crew: refreshed runtime assets from source checkout because installed assets drifted\n' >&2
+}
+
 sync_source_hooks_if_drifted() {
   [ "${AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN:-1}" = "1" ] || return 0
 
   local source source_hooks=""
-  for source in "${AGENT_CREW_SOURCE_DIR:-}" "${PROJECT_ROOT}" "${SOURCE_ROOT}"; do
-    [ -n "${source}" ] || continue
-    if [ -d "${source}/core/hooks" ] && [ -f "${source}/core/hooks/auto-route.sh" ]; then
-      source_hooks="${source}/core/hooks"
-      break
-    fi
-  done
+  source="$(find_source_checkout 2>/dev/null || true)"
+  [ -n "${source}" ] && source_hooks="${source}/core/hooks"
   [ -n "${source_hooks}" ] || return 0
 
   local drift=0 hook base dest
@@ -250,6 +357,7 @@ state path.
 EOF
     return 0
   fi
+  sync_source_runtime_assets_if_drifted
   require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
   sync_source_hooks_if_drifted
   local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
@@ -270,8 +378,27 @@ EOF
   fi
 
   local repair="${ASSET_ROOT}/scripts/repair-task-state.py"
+  sync_source_runtime_assets_if_drifted
   require_file "${repair}" "task repair script"
   python3 "${repair}" --state-dir "${STATE_DIR}" "$@"
+}
+
+cmd_cleanup_host_bridge() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew cleanup-host-bridge [--apply] [--status completed|blocked] [--min-age-seconds N]
+
+Finds stale host_bridge_not_invoked tasks. Without --apply, prints a dry-run
+list. With --apply, rewrites matched task state via crew repair so current
+telemetry is not polluted by already-handled manual fallback handoffs.
+EOF
+    return 0
+  fi
+
+  sync_source_runtime_assets_if_drifted
+  local cleanup="${ASSET_ROOT}/scripts/cleanup-host-bridge-blockers.py"
+  require_file "${cleanup}" "host bridge cleanup script"
+  python3 "${cleanup}" --state-dir "${STATE_DIR}" "$@"
 }
 
 cmd_agent() {
@@ -301,6 +428,7 @@ main() {
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
     repair) cmd_repair "$@" ;;
+    cleanup-host-bridge) cmd_cleanup_host_bridge "$@" ;;
     agent) cmd_agent "$@" ;;
     help|-h|--help) usage ;;
     *) die "unknown command: ${command}" ;;

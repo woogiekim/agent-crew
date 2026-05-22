@@ -5,6 +5,9 @@
   "limit": 10,
   "latency_budget_ms": 1500,
   "noise_budget_count": 2,
+  "accepted_context_memory_id_patterns": [
+    "commercialization-e2e-[0-9]+-(review|guardrails|remediation)-[0-9]{8}"
+  ],
   "expected_memory_ids": [
     "f6c6c59e-b4aa-4169-aa27-968de14a1e39",
     "693036fb-febd-4d8a-b8c3-cf3a0d5c73f3",

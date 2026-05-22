@@ -38,6 +38,7 @@ CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 
 SOURCE_ROOT="$(cd "${SOURCE_ROOT}" && pwd)"
 PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
+PATH_CREW_CLI_MANAGED=0
 
 if [ ! -d "${SOURCE_ROOT}/core" ] || [ ! -d "${SOURCE_ROOT}/adapters" ]; then
   printf 'sync-local-install: SOURCE_ROOT is not an agent-crew checkout: %s\n' "${SOURCE_ROOT}" >&2
@@ -86,11 +87,13 @@ install_path_crew_cli() {
     && ! grep -q "experimental Codex launcher for agent-crew" "${dest}" 2>/dev/null \
     && ! grep -q "deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null; then
     printf 'sync-local-install: skipping PATH crew CLI; unmanaged file exists at %s\n' "${dest}"
+    PATH_CREW_CLI_MANAGED=0
     return 0
   fi
 
   cp -f "${src}" "${dest}"
   chmod +x "${dest}"
+  PATH_CREW_CLI_MANAGED=1
   printf 'sync-local-install: installed native crew CLI at %s\n' "${dest}"
 }
 
@@ -155,5 +158,12 @@ if [ -n "${PRESERVATION_MANIFEST}" ]; then
   python3 "${AGENT_CREW_HOME}/system/scripts/update-preservation-manifest.py" finish \
     --manifest "${PRESERVATION_MANIFEST}"
 fi
+
+python3 "${AGENT_CREW_HOME}/system/scripts/verify-install-drift.py" \
+  --source-root "${SOURCE_ROOT}" \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}" \
+  $([ "${PATH_CREW_CLI_MANAGED}" = "1" ] || printf '%s' "--skip-path-bin") \
+  --prune-extra
 
 printf 'sync-local-install: refreshed installed assets from %s\n' "${SOURCE_ROOT}"

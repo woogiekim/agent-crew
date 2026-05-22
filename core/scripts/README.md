@@ -100,8 +100,13 @@ invocation in SKILL.md; generic adds guidance).
 - `repair-task-state.py` — explicit operational repair for manual handoff
   fallback completion; rewrites the task's terminal state and archives the
   pre-repair `result.md`.
+- `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
+  `host_bridge_not_invoked` tasks that were already handled through manual
+  fallback, keeping current telemetry from being dominated by old blockers.
 - `update-preservation-manifest.py` — writes before/after update manifests
   under state to prove user-owned agents and skills were not deleted.
+- `verify-install-drift.py` — post-update source/install drift verifier for
+  source-owned commands, hooks, scripts, evaluations, and binary entrypoints.
 
 ## Naming conventions
 
