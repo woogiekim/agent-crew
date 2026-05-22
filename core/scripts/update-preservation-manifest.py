@@ -11,6 +11,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+CODEX_SYSTEM_AGENT_MARKER = "This is a Codex adapter bootstrap for the agent-crew system agent."
+LEGACY_SYSTEM_CODEX_AGENT_NAMES = {
+    "analyst.toml",
+    "backend.toml",
+    "designer.toml",
+    "devops.toml",
+    "documenter.toml",
+    "frontend.toml",
+    "historian.toml",
+    "issuer.toml",
+    "korean-normalizer.toml",
+    "learning-mentor.toml",
+    "mcp-manager.toml",
+    "planner.toml",
+    "requirements.toml",
+    "resolver.toml",
+    "reviewer.toml",
+    "scribe.toml",
+    "supervisor.toml",
+    "test-writer.toml",
+}
+
+
 def utc_now_z() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -24,9 +47,15 @@ def sha256_file(path: Path) -> str:
 
 
 def file_snapshot(root: Path) -> dict:
+    return filtered_file_snapshot(root)
+
+
+def filtered_file_snapshot(root: Path, predicate=None) -> dict:
     files = {}
     if root.is_dir():
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            if predicate and not predicate(path):
+                continue
             rel = str(path.relative_to(root))
             files[rel] = {
                 "sha256": sha256_file(path),
@@ -37,6 +66,15 @@ def file_snapshot(root: Path) -> dict:
         "count": len(files),
         "files": files,
     }
+
+
+def protected_project_codex_agent(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if CODEX_SYSTEM_AGENT_MARKER in text:
+        return False
+    if path.name in LEGACY_SYSTEM_CODEX_AGENT_NAMES and "Agent-crew system agent:" in text:
+        return False
+    return True
 
 
 def settings_snapshot(paths: list[Path]) -> dict:
@@ -60,6 +98,10 @@ def snapshot(agent_crew_home: Path, project_root: Path) -> dict:
     return {
         "user_agents": file_snapshot(agent_crew_home / "user" / "agents"),
         "user_skills": file_snapshot(agent_crew_home / "user" / "skills"),
+        "project_codex_agents": filtered_file_snapshot(
+            project_root / ".codex" / "agents",
+            protected_project_codex_agent,
+        ),
         "settings": settings_snapshot([
             claude_dir / "settings.json",
             codex_home / "config.toml",
@@ -118,13 +160,15 @@ def finish(args: argparse.Namespace) -> int:
     deleted = {
         "user_agents": deleted_files(before, after, "user_agents"),
         "user_skills": deleted_files(before, after, "user_skills"),
+        "project_codex_agents": deleted_files(before, after, "project_codex_agents"),
     }
+    changed = changed_settings(before, after)
     manifest.update({
         "finished_at": utc_now_z(),
         "after": after,
         "deleted_custom_files": deleted,
-        "changed_settings": changed_settings(before, after),
-        "passed": not deleted["user_agents"] and not deleted["user_skills"],
+        "changed_settings": changed,
+        "passed": not any(deleted.values()),
     })
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if args.format == "json":
@@ -133,8 +177,11 @@ def finish(args: argparse.Namespace) -> int:
         print(f"update-preservation-manifest: {manifest_path}")
         print(f"user_agents: {after['user_agents']['count']} file(s)")
         print(f"user_skills: {after['user_skills']['count']} file(s)")
+        print(f"project_codex_agents: {after['project_codex_agents']['count']} protected file(s)")
         if not manifest["passed"]:
             print("deleted_custom_files: " + json.dumps(deleted, ensure_ascii=False))
+        if changed:
+            print("changed_settings: " + json.dumps(changed, ensure_ascii=False))
     return 0 if manifest["passed"] else 1
 
 

@@ -335,6 +335,32 @@ assert_exit 0 "${rc}"
 it "crew run fake host output is completed"
 assert_contains "${out}" "STATUS: completed"
 
+it "crew run host bridge command can auto-complete a handoff"
+BRIDGE_LOG="$(make_tmp)/host-bridge.log"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_BRIDGE_LOG="${BRIDGE_LOG}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "$AGENT_CREW_TASK_ID" > "$AGENT_CREW_BRIDGE_LOG"' \
+    bash "${CREW}" run "auto bridge task" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "HOST_BRIDGE: auto_completed"
+AUTO_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+AUTO_TASK_ID=$(basename "${AUTO_TASK_DIR}")
+
+it "crew run host bridge command writes completion evidence"
+assert_file_exists "${AUTO_TASK_DIR}/context/host-bridge-completion.json"
+assert_contains "$(cat "${AUTO_TASK_DIR}/result.md")" "STATUS: completed"
+assert_eq "${AUTO_TASK_ID}" "$(cat "${BRIDGE_LOG}")"
+
+it "crew telemetry distinguishes auto host bridge completion"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${AUTO_TASK_ID}" 2>&1)
+assert_contains "${out}" "\"tasks_completed\": 1"
+assert_contains "${out}" "\"host_bridge_status\": \"auto_completed\""
+assert_contains "${out}" "\"auto_completed\": 1"
+
 it "crew agent writes deterministic direct-agent handoff"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "what changed?" 2>&1)
 rc=$?

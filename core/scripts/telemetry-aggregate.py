@@ -389,6 +389,17 @@ def has_host_bridge_blocker(blockers):
     return any(canonical_blocker(blocker) == "host_bridge_not_invoked" for blocker in blockers)
 
 
+def host_bridge_status(register):
+    if not register:
+        return "unknown"
+    explicit = str(register.get("host_bridge_status") or "").strip()
+    if explicit:
+        return explicit
+    if register.get("manual_fallback_repair_path"):
+        return "manual_fallback_completed"
+    return "unknown"
+
+
 def aggregate_task(state_dir, task_dir):
     """Return a per-task dict with metrics + status. Robust to missing data."""
     task_id = task_dir.name
@@ -523,6 +534,7 @@ def aggregate_task(state_dir, task_dir):
         "user_visible_wait_seconds": user_visible_wait_seconds,
         "blockers":          blocked_by,
         "guidance":          guidance_for(blocked_by, status, current_phase),
+        "host_bridge_status": host_bridge_status(reg),
         "tokens_in":         (cost or {}).get("tokens_in"),
         "tokens_out":        (cost or {}).get("tokens_out"),
         "tokens_total":      (cost or {}).get("tokens_total"),
@@ -594,6 +606,11 @@ def aggregate_summary(rows):
                        if r["tokens_total"] is not None)
 
     by_phase = Counter(r["current_phase"] for r in rows if r["current_phase"])
+    by_host_bridge_status = Counter(
+        r.get("host_bridge_status", "unknown")
+        for r in rows
+        if r.get("host_bridge_status")
+    )
     by_blocker = Counter()
     by_stale_blocker = Counter()
     for r in rows:
@@ -621,6 +638,7 @@ def aggregate_summary(rows):
         "total_retries":           total_retries,
         "total_tokens":            total_tokens,
         "by_phase":                dict(by_phase),
+        "by_host_bridge_status":   dict(by_host_bridge_status),
         "by_blocker":              dict(by_blocker),
         "by_stale_blocker":        dict(by_stale_blocker),
     }
@@ -690,6 +708,9 @@ def render_text(rows, summary):
     if summary["by_blocker"]:
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_blocker"].items())
         print(f"Blockers: {bk}")
+    if summary.get("by_host_bridge_status"):
+        hb = ", ".join(f"{k}={v}" for k, v in summary["by_host_bridge_status"].items())
+        print(f"Host bridge: {hb}")
     if summary.get("by_stale_blocker"):
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_stale_blocker"].items())
         print(f"Stale blockers: {bk}")

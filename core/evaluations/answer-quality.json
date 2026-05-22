@@ -18,5 +18,6 @@
   ],
   "memory_context_path": "context/memory.md",
   "canonical_context_path": "context/canonical-context.md",
-  "memory_evidence_trace_path": "context/memory-evidence.json"
+  "memory_evidence_trace_path": "context/memory-evidence.json",
+  "require_memory_evidence_trace_when_context_available": true
 }

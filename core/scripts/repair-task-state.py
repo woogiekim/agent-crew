@@ -95,6 +95,7 @@ def repair(args: argparse.Namespace) -> dict:
     register.update({
         "current_phase": status,
         "blocked_by": blocked_by,
+        "host_bridge_status": "manual_fallback_completed" if status == "completed" else "manual_fallback_blocked",
         "manual_fallback_repaired_at": now,
         "manual_fallback_repair_path": str(task_dir / "context" / "manual-fallback-repair.json"),
     })

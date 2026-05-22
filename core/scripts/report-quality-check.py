@@ -108,6 +108,9 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
         | memory_ids_from_trace(memory_trace)
     )
     reused_ids = sorted(mid for mid in reusable_ids if mid in text)
+    memory_context_available = bool(memory_ids_from(memory_context) or memory_ids_from(canonical_context))
+    if fixture.get("require_memory_evidence_trace_when_context_available") and memory_context_available and not memory_trace.is_file():
+        failures.append("missing_memory_evidence_trace")
     if reusable_ids and not reused_ids:
         failures.append("missing_memory_context_reuse")
 
@@ -120,6 +123,7 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
         "invalid_blockers": invalid_blockers,
         "memory_context_ids": sorted(reusable_ids),
         "reused_memory_context_ids": reused_ids,
+        "memory_evidence_trace": str(memory_trace) if memory_trace.is_file() else None,
     }
 
 

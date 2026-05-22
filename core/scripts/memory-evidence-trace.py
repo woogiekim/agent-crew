@@ -63,6 +63,43 @@ def successor_ids(retrieval: dict) -> list[str]:
     return values
 
 
+def memory_quality(retrieval: dict, *, memory_ids: list[str],
+                   retrieved_ids: list[str], accepted_context_ids: list[str],
+                   successor_memory_ids: list[str]) -> dict:
+    expected_ids = [str(mid) for mid in retrieval.get("expected_memory_ids", [])] if retrieval else []
+    misses = retrieval.get("misses", []) if isinstance(retrieval.get("misses", []), list) else []
+    noise = retrieval.get("noise", []) if isinstance(retrieval.get("noise", []), list) else []
+    latency_ms = retrieval.get("latency_ms") if retrieval else None
+    latency_budget_ms = retrieval.get("latency_budget_ms") if retrieval else None
+    noise_budget_count = retrieval.get("noise_budget_count") if retrieval else None
+    expected_hit_count = len([mid for mid in expected_ids if mid in retrieved_ids or mid in memory_ids])
+    successor_hit_count = len(successor_memory_ids)
+    reusable_count = len(dedupe(memory_ids + accepted_context_ids + successor_memory_ids))
+    miss_count = len(misses)
+    noise_count = len(noise)
+    denominator = max(1, len(expected_ids))
+    precision_denominator = max(1, len(retrieved_ids))
+    precision = round((len(retrieved_ids) - noise_count) / precision_denominator, 3)
+    recall = round((expected_hit_count + successor_hit_count) / denominator, 3)
+    score = round(max(0.0, min(1.0, (precision + recall) / 2)), 3)
+    return {
+        "expected_count": len(expected_ids),
+        "retrieved_count": len(retrieved_ids),
+        "expected_hit_count": expected_hit_count,
+        "successor_hit_count": successor_hit_count,
+        "accepted_context_count": len(accepted_context_ids),
+        "reusable_memory_count": reusable_count,
+        "miss_count": miss_count,
+        "noise_count": noise_count,
+        "noise_budget_count": noise_budget_count,
+        "latency_ms": latency_ms,
+        "latency_budget_ms": latency_budget_ms,
+        "precision": precision,
+        "recall": recall,
+        "score": score,
+    }
+
+
 def write_markdown(path: Path, trace: dict) -> None:
     lines = [
         "# Memory Evidence Trace",
@@ -80,6 +117,16 @@ def write_markdown(path: Path, trace: dict) -> None:
         lines.append("SATISFIED_BY_SUCCESSOR: " + json.dumps(trace["satisfied_by_successor"], sort_keys=True))
     if trace["retrieval_latency_ms"] is not None:
         lines.append(f"RETRIEVAL_LATENCY_MS: {trace['retrieval_latency_ms']}")
+    quality = trace.get("memory_quality", {})
+    if quality:
+        lines.append(
+            "MEMORY_QUALITY: "
+            f"score={quality.get('score')} "
+            f"precision={quality.get('precision')} "
+            f"recall={quality.get('recall')} "
+            f"misses={quality.get('miss_count')} "
+            f"noise={quality.get('noise_count')}/{quality.get('noise_budget_count')}"
+        )
     for evidence in trace["evidence_paths"]:
         lines.append(f"EVIDENCE: {evidence}")
     if trace["missing_evidence_paths"]:
@@ -110,6 +157,13 @@ def main() -> int:
     accepted_context_ids = dedupe([str(mid) for mid in retrieval.get("context_memory_ids", [])])
     successor_memory_ids = dedupe(successor_ids(retrieval))
     memory_ids = dedupe(args.memory_id + accepted_context_ids + successor_memory_ids)
+    quality = memory_quality(
+        retrieval,
+        memory_ids=memory_ids,
+        retrieved_ids=retrieved_ids,
+        accepted_context_ids=accepted_context_ids,
+        successor_memory_ids=successor_memory_ids,
+    )
     trace = {
         "schema_version": 1,
         "created_at": utc_now_z(),
@@ -124,6 +178,7 @@ def main() -> int:
         "retrieval_latency_ms": retrieval.get("latency_ms") if retrieval else None,
         "retrieval_noise": retrieval.get("noise", []) if isinstance(retrieval.get("noise", []), list) else [],
         "retrieval_misses": retrieval.get("misses", []) if isinstance(retrieval.get("misses", []), list) else [],
+        "memory_quality": quality,
         "evidence_paths": evidence_paths,
         "missing_evidence_paths": missing_paths,
         "memory_context_reused": args.reused == "yes",

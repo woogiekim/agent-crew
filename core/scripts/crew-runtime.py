@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -46,6 +47,123 @@ def append_jsonl(path: Path, event: dict) -> None:
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def append_progress(task_dir: Path, row: dict) -> None:
+    append_jsonl(task_dir / "progress.buffer.jsonl", row)
+
+
+def render_completed_result(task: str, task_id: str, completion_path: str, note: str) -> str:
+    lines = [
+        f"# {task}",
+        "",
+        "STATUS: completed",
+        f"TASK_ID: {task_id}",
+        "MEASUREMENTS: host bridge completion recorded 1 automatic completion event",
+        f"EVIDENCE: {completion_path}",
+        "UNCERTAINTY: Host bridge command success indicates handoff delivery completed; downstream host prompt quality still depends on the active runtime.",
+    ]
+    if note:
+        lines.append(f"NOTE: {note}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
+                        bridge_record: dict, note: str) -> None:
+    now = utc_now_z()
+    completion_path = task_dir / "context" / "host-bridge-completion.json"
+    write_json(completion_path, bridge_record)
+
+    register.update({
+        "current_phase": "completed",
+        "blocked_by": [],
+        "host_bridge_status": "auto_completed",
+        "host_bridge_completion_path": str(completion_path),
+        "host_bridge_completed_at": now,
+    })
+
+    stages = pipeline.get("stages") or ["supervisor"]
+    pipeline.update({
+        "completed_stages": len(stages),
+        "stage_agent_status": {
+            "1": {"supervisor": "completed"}
+        },
+    })
+
+    write_json(task_dir / "register.json", register)
+    write_json(task_dir / "pipeline.json", pipeline)
+    (task_dir / "result.md").write_text(
+        render_completed_result(
+            register.get("task", task_dir.name),
+            register.get("task_id", task_dir.name),
+            "context/host-bridge-completion.json",
+            note,
+        ),
+        encoding="utf-8",
+    )
+
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
+        handle.write(f"{now} | HOST_BRIDGE | auto completed\n")
+        handle.write(f"{now} | STATUS | completed\n")
+
+    append_progress(
+        task_dir,
+        {
+            "ts": now,
+            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
+            "task_id": task_dir.name,
+            "session_id": register.get("session_id", ""),
+            "event": "HOST_BRIDGE",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "completed",
+            "detail": "auto host bridge completed",
+            "files": ["context/host-bridge-completion.json", "result.md"],
+        },
+    )
+    append_progress(
+        task_dir,
+        {
+            "ts": now,
+            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
+            "task_id": task_dir.name,
+            "session_id": register.get("session_id", ""),
+            "event": "COMPLETED",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "completed",
+            "detail": "completed",
+            "files": [],
+        },
+    )
+
+
+def invoke_host_bridge(command: str, *, task_dir: Path, register: dict,
+                       project_root: Path) -> dict:
+    env = os.environ.copy()
+    env.update({
+        "AGENT_CREW_TASK_ID": register["task_id"],
+        "AGENT_CREW_TASK_DIR": str(task_dir),
+        "AGENT_CREW_HANDOFF_PATH": str(task_dir / "handoff.md"),
+        "AGENT_CREW_RESULT_PATH": str(task_dir / "result.md"),
+        "AGENT_CREW_PROJECT_ROOT": str(project_root),
+    })
+    started = datetime.now(timezone.utc)
+    proc = subprocess.run(command, shell=True, text=True, capture_output=True, env=env)
+    finished = datetime.now(timezone.utc)
+    return {
+        "schema_version": 1,
+        "task_id": register["task_id"],
+        "command": command,
+        "command_display": shlex.split(command)[0] if command.strip() else "",
+        "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout[-4000:],
+        "stderr": proc.stderr[-4000:],
+    }
 
 
 def asset_root(explicit: str | None = None) -> Path:
@@ -150,6 +268,9 @@ def command_run(args: argparse.Namespace) -> int:
         "`crew telemetry` no longer reports a stale host_bridge_not_invoked blocker.\n"
     )
 
+    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
+    host_bridge_status = "fake_completed" if result_status == "completed" else ("pending" if bridge_command else "not_invoked")
+
     register = {
         "schema_version": 1,
         "task_id": task_id,
@@ -168,6 +289,7 @@ def command_run(args: argparse.Namespace) -> int:
         "progress_buffer_path": str(task_dir / "progress.buffer.jsonl"),
         "result_path": str(task_dir / "result.md"),
         "blocked_by": blocked_by,
+        "host_bridge_status": host_bridge_status,
         "repair_command": f"crew repair {task_id} --status completed --note \"<summary>\"",
     }
 
@@ -249,6 +371,32 @@ def command_run(args: argparse.Namespace) -> int:
             "files": [],
         },
     )
+
+    if result_status == "blocked" and bridge_command:
+        bridge_record = invoke_host_bridge(
+            bridge_command,
+            task_dir=task_dir,
+            register=register,
+            project_root=project_root,
+        )
+        write_json(task_dir / "context" / "host-bridge-invocation.json", bridge_record)
+        if bridge_record["returncode"] == 0:
+            mark_auto_completed(
+                task_dir,
+                register,
+                pipeline,
+                bridge_record,
+                "Automatic host bridge command completed successfully.",
+            )
+            print(f"TASK_ID: {task_id}")
+            print(f"TASK_DIR: {task_dir}")
+            print("STATUS: completed")
+            print("HOST_BRIDGE: auto_completed")
+            return 0
+
+        register["host_bridge_status"] = "failed"
+        register["host_bridge_completion_path"] = str(task_dir / "context" / "host-bridge-invocation.json")
+        write_json(task_dir / "register.json", register)
 
     print(f"TASK_ID: {task_id}")
     print(f"TASK_DIR: {task_dir}")
@@ -368,6 +516,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("task")
     run.add_argument("--project-root")
     run.add_argument("--fake-host-result", choices=["completed"], default=None)
+    run.add_argument("--host-bridge-command", default=None)
     run.set_defaults(func=command_run)
 
     agent = sub.add_parser("agent", help="create deterministic direct-agent handoff")

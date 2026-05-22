@@ -95,10 +95,12 @@ invocation in SKILL.md; generic adds guidance).
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
 - `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
   telemetry, memory search, retrieval evaluation, and update dry-run budgets.
+- `update-slo-benchmark.py` — benchmarks no-op local, cold local, and remote
+  `crew update` modes against explicit latency budgets and phase timings.
 - `memory-evidence-trace.py` — writes `context/memory-evidence.{json,md}` so
   reports can prove which memory IDs and evidence paths were reused; it can
-  fold `memory-retrieval-eval.py --format json` output into accepted-context
-  and successor-memory feedback.
+  fold `memory-retrieval-eval.py --format json` output into accepted-context,
+  successor-memory feedback, and compact memory-quality metrics.
 - `repair-task-state.py` — explicit operational repair for manual handoff
   fallback completion; rewrites the task's terminal state and archives the
   pre-repair `result.md`.
@@ -106,7 +108,8 @@ invocation in SKILL.md; generic adds guidance).
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.
 - `update-preservation-manifest.py` — writes before/after update manifests
-  under state to prove user-owned agents and skills were not deleted.
+  under state to prove user-owned agents, skills, protected project Codex
+  agents, and settings were not silently deleted or changed.
 - `update-fingerprint.py` — records source, user, and generated-output hashes so
   repeated no-op local updates can skip expensive adapter refreshes safely, and
   reports changed fingerprint categories when a full refresh is required.

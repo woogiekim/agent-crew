@@ -68,9 +68,14 @@ def main() -> int:
     parser.add_argument("--telemetry-budget-ms", type=int)
     parser.add_argument("--memory-search-budget-ms", type=int)
     parser.add_argument("--update-dry-run-budget-ms", type=int)
+    parser.add_argument("--update-noop-local-budget-ms", type=int)
+    parser.add_argument("--update-cold-local-budget-ms", type=int)
+    parser.add_argument("--update-remote-budget-ms", type=int)
     parser.add_argument("--skip-memory-search", action="store_true")
     parser.add_argument("--skip-retrieval-eval", action="store_true")
     parser.add_argument("--skip-update-dry-run", action="store_true")
+    parser.add_argument("--include-update-benchmark", action="store_true")
+    parser.add_argument("--include-remote-update", action="store_true")
     parser.add_argument("--format", choices=["json", "text"], default="text")
     args = parser.parse_args()
 
@@ -80,6 +85,9 @@ def main() -> int:
     telemetry_budget_ms = args.telemetry_budget_ms or int(fixture.get("telemetry_budget_ms", 500))
     memory_search_budget_ms = args.memory_search_budget_ms or int(fixture.get("memory_search_budget_ms", 500))
     update_dry_run_budget_ms = args.update_dry_run_budget_ms or int(fixture.get("update_dry_run_budget_ms", 5000))
+    update_noop_local_budget_ms = args.update_noop_local_budget_ms or int(fixture.get("update_noop_local_budget_ms", 1000))
+    update_cold_local_budget_ms = args.update_cold_local_budget_ms or int(fixture.get("update_cold_local_budget_ms", 10000))
+    update_remote_budget_ms = args.update_remote_budget_ms or int(fixture.get("update_remote_budget_ms", 30000))
     env = os.environ.copy()
     env["PROJECT_ROOT"] = str(project_root)
 
@@ -130,6 +138,45 @@ def main() -> int:
             env=env,
         )
         checks.append(check_budget("update_dry_run", update, update_dry_run_budget_ms))
+
+    if args.include_update_benchmark:
+        benchmark_modes = ["noop-local", "cold-local"]
+        if args.include_remote_update:
+            benchmark_modes.append("remote")
+        command = [
+            sys.executable,
+            str(repo_root / "core" / "scripts" / "update-slo-benchmark.py"),
+            "--project-root",
+            str(project_root),
+            "--source-root",
+            str(repo_root),
+            "--crew-bin",
+            args.crew_bin,
+            "--noop-local-budget-ms",
+            str(update_noop_local_budget_ms),
+            "--cold-local-budget-ms",
+            str(update_cold_local_budget_ms),
+            "--remote-budget-ms",
+            str(update_remote_budget_ms),
+            "--format",
+            "json",
+        ]
+        for mode in benchmark_modes:
+            command.extend(["--mode", mode])
+        benchmark = run_timed(command, cwd=project_root, env=env)
+        benchmark_payload = load_json_text(benchmark["stdout"])
+        benchmark_failures = []
+        if benchmark["returncode"] != 0 or not benchmark_payload.get("passed"):
+            benchmark_failures.append("update_benchmark")
+        checks.append({
+            "name": "update_benchmark",
+            "passed": not benchmark_failures,
+            "elapsed_ms": benchmark.get("elapsed_ms"),
+            "budget_ms": None,
+            "returncode": benchmark["returncode"],
+            "failures": benchmark_failures,
+            "benchmark": benchmark_payload.get("checks", []),
+        })
 
     payload = {
         "schema_version": 1,

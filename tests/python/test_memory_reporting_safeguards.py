@@ -176,6 +176,15 @@ def test_report_quality_gate_passes_with_measurements_evidence_blocker_and_memor
         "31ec5287-1233-426e-8e1f-241adff08cb3 repeated latency conclusion\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "memory-evidence.json").write_text(
+        json.dumps({
+            "memory_ids": ["31ec5287-1233-426e-8e1f-241adff08cb3"],
+            "retrieved_memory_ids": ["31ec5287-1233-426e-8e1f-241adff08cb3"],
+            "accepted_context_memory_ids": [],
+            "satisfied_by_successor": {},
+        }),
+        encoding="utf-8",
+    )
     evidence = task_dir / "progress.log"
     evidence.write_text("ok\n", encoding="utf-8")
     report = task_dir / "result.md"
@@ -238,6 +247,45 @@ def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
     assert "missing_measurements" in payload["failures"]
     assert "missing_evidence" in payload["failures"]
     assert "missing_uncertainty" in payload["failures"]
+
+
+def test_report_quality_gate_requires_memory_evidence_trace_when_context_exists(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    (task_dir / "context" / "memory.md").write_text(
+        "trace-memory-456 useful prior context\n",
+        encoding="utf-8",
+    )
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: status latency 42 ms\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown runtime variance remains.\n"
+        "Memory reused: trace-memory-456\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_memory_evidence_trace" in payload["failures"]
 
 
 def test_report_quality_gate_blocks_unclassified_stale_blockers(tmp_path: Path):
@@ -429,6 +477,8 @@ def test_memory_evidence_trace_records_memory_reuse_for_report_quality(tmp_path:
     payload = json.loads(trace.stdout)
     assert payload["memory_context_reused"] is True
     assert payload["memory_ids"] == ["trace-memory-123"]
+    assert payload["memory_quality"]["reusable_memory_count"] == 1
+    assert payload["memory_quality"]["score"] >= 0
 
     report = task_dir / "result.md"
     report.write_text(

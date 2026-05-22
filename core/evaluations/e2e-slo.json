@@ -4,5 +4,8 @@
   "status_budget_ms": 500,
   "telemetry_budget_ms": 500,
   "memory_search_budget_ms": 500,
-  "update_dry_run_budget_ms": 5000
+  "update_dry_run_budget_ms": 5000,
+  "update_noop_local_budget_ms": 1000,
+  "update_cold_local_budget_ms": 10000,
+  "update_remote_budget_ms": 30000
 }

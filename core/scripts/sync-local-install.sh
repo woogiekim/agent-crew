@@ -41,6 +41,22 @@ PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 PATH_CREW_CLI_MANAGED=0
 PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
 UPDATE_FINGERPRINT="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/update-fingerprint.json"
+UPDATE_TOTAL_START="${SECONDS}"
+UPDATE_PHASE_START="${SECONDS}"
+
+print_update_phase() {
+  local name="$1"
+  local now="${SECONDS}"
+  local elapsed_ms=$(( (now - UPDATE_PHASE_START) * 1000 ))
+  printf 'update_phase: %s=%sms\n' "${name}" "${elapsed_ms}"
+  UPDATE_PHASE_START="${now}"
+}
+
+print_update_total() {
+  local now="${SECONDS}"
+  local elapsed_ms=$(( (now - UPDATE_TOTAL_START) * 1000 ))
+  printf 'update_phase: total=%sms\n' "${elapsed_ms}"
+}
 
 if [ ! -d "${SOURCE_ROOT}/core" ] || [ ! -d "${SOURCE_ROOT}/adapters" ]; then
   printf 'sync-local-install: SOURCE_ROOT is not an agent-crew checkout: %s\n' "${SOURCE_ROOT}" >&2
@@ -72,9 +88,11 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     --fingerprint "${UPDATE_FINGERPRINT}"
   )
   if python3 "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" "${fingerprint_args[@]}" --check >/dev/null 2>&1; then
+    print_update_phase "fingerprint_check"
     if [ -n "${PRESERVATION_MANIFEST}" ]; then
       python3 "${SOURCE_ROOT}/core/scripts/update-preservation-manifest.py" finish \
         --manifest "${PRESERVATION_MANIFEST}"
+      print_update_phase "preservation_manifest"
     fi
 
     verify_args=(
@@ -87,9 +105,12 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
       verify_args+=(--skip-path-bin)
     fi
     python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
+    print_update_phase "drift_verification"
+    print_update_total
     printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
     exit 0
   fi
+  print_update_phase "fingerprint_check"
   python3 "${SOURCE_ROOT}/core/scripts/update-fingerprint.py" "${fingerprint_args[@]}" --format text || true
 fi
 
@@ -158,6 +179,7 @@ copy_tree "${SOURCE_ROOT}/core/agents" "${AGENT_CREW_HOME}/system/agents"
 copy_tree "${SOURCE_ROOT}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
 copy_flat "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
 install_path_crew_cli
+print_update_phase "asset_copy"
 
 chmod +x \
   "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \
@@ -194,10 +216,12 @@ SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
 
 SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/setup/setup-host.sh" "${PROJECT_ROOT}"
+print_update_phase "adapter_setup"
 
 if [ -n "${PRESERVATION_MANIFEST}" ]; then
   python3 "${AGENT_CREW_HOME}/system/scripts/update-preservation-manifest.py" finish \
     --manifest "${PRESERVATION_MANIFEST}"
+  print_update_phase "preservation_manifest"
 fi
 
 verify_args=(
@@ -210,6 +234,7 @@ if [ "${PATH_CREW_CLI_MANAGED}" != "1" ]; then
   verify_args+=(--skip-path-bin)
 fi
 python3 "${AGENT_CREW_HOME}/system/scripts/verify-install-drift.py" "${verify_args[@]}"
+print_update_phase "drift_verification"
 
 if [ -f "${AGENT_CREW_HOME}/system/scripts/update-fingerprint.py" ]; then
   python3 "${AGENT_CREW_HOME}/system/scripts/update-fingerprint.py" \
@@ -221,6 +246,8 @@ if [ -f "${AGENT_CREW_HOME}/system/scripts/update-fingerprint.py" ]; then
     --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}" \
     --fingerprint "${UPDATE_FINGERPRINT}" \
     --write >/dev/null
+  print_update_phase "fingerprint_write"
 fi
 
+print_update_total
 printf 'sync-local-install: refreshed installed assets from %s\n' "${SOURCE_ROOT}"
