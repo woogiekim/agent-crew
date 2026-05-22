@@ -44,6 +44,13 @@ if [ ! -d "${SOURCE_ROOT}/core" ] || [ ! -d "${SOURCE_ROOT}/adapters" ]; then
   exit 2
 fi
 
+PRESERVATION_MANIFEST=""
+if [ -f "${SOURCE_ROOT}/core/scripts/update-preservation-manifest.py" ]; then
+  PRESERVATION_MANIFEST="$(python3 "${SOURCE_ROOT}/core/scripts/update-preservation-manifest.py" begin \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${PROJECT_ROOT}")"
+fi
+
 mkdir -p \
   "${AGENT_CREW_HOME}/system/commands" "${AGENT_CREW_HOME}/commands" \
   "${AGENT_CREW_HOME}/system/rules" "${AGENT_CREW_HOME}/rules" \
@@ -143,5 +150,10 @@ SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
 
 SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/setup/setup-host.sh" "${PROJECT_ROOT}"
+
+if [ -n "${PRESERVATION_MANIFEST}" ]; then
+  python3 "${AGENT_CREW_HOME}/system/scripts/update-preservation-manifest.py" finish \
+    --manifest "${PRESERVATION_MANIFEST}"
+fi
 
 printf 'sync-local-install: refreshed installed assets from %s\n' "${SOURCE_ROOT}"

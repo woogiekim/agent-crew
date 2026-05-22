@@ -95,11 +95,17 @@ assert_exists "${CODEX_HOME}/agents/supervisor.toml"
 assert_exists "${AGENT_CREW_HOME}/hooks/auto-route.sh"
 assert_exists "${PROJECT_ROOT}/.codex/hooks/auto-route.sh"
 assert_exists "${PROJECT_ROOT}/.codex/agents/supervisor.toml"
+assert_exists "${AGENT_CREW_HOME}/state/$(basename "${PROJECT_ROOT}")/update-preservation"
 assert_absent "${CODEX_HOME}/agents/task-runner.toml"
 assert_absent "${CODEX_HOME}/agent-crew/skills/stale.md"
 assert_contains "${CODEX_HOME}/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${PROJECT_ROOT}/.codex/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${AGENT_CREW_HOME}/hooks/auto-route.sh" 'Invoke Skill("crew-run")'
 assert_contains "${PROJECT_ROOT}/.codex/hooks/auto-route.sh" 'Invoke Skill("crew-run")'
+if ! find "${AGENT_CREW_HOME}/state/$(basename "${PROJECT_ROOT}")/update-preservation" \
+  -type f -name '*.json' | grep -q .; then
+  printf 'verify-update-dry-run: preservation manifest was not written\n' >&2
+  exit 1
+fi
 
 printf 'PASS: update dry-run verifier (sandbox=%s)\n' "${TMP_ROOT}"

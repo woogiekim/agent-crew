@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MEMORY_EVAL = REPO_ROOT / "core" / "scripts" / "memory-retrieval-eval.py"
 REPORT_CHECK = REPO_ROOT / "core" / "scripts" / "report-quality-check.py"
 CANONICAL_CONTEXT = REPO_ROOT / "core" / "scripts" / "canonical-context.py"
+MEMORY_TRACE = REPO_ROOT / "core" / "scripts" / "memory-evidence-trace.py"
 MEMORY_FIXTURE = REPO_ROOT / "core" / "evaluations" / "memory-retrieval.json"
 
 
@@ -240,6 +241,66 @@ def test_report_quality_memory_ids_ignore_plain_words(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["memory_context_ids"] == []
     assert payload["reused_memory_context_ids"] == []
+
+
+def test_memory_evidence_trace_records_memory_reuse_for_report_quality(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+
+    trace = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_TRACE),
+            "--task-dir",
+            str(task_dir),
+            "--memory-id",
+            "trace-memory-123",
+            "--evidence",
+            "progress.log",
+            "--reused",
+            "yes",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert trace.returncode == 0, trace.stdout + trace.stderr
+    payload = json.loads(trace.stdout)
+    assert payload["memory_context_reused"] is True
+    assert payload["memory_ids"] == ["trace-memory-123"]
+
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: status latency 123 ms\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown host variance remains.\n"
+        "Memory reused: trace-memory-123\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    quality = json.loads(result.stdout)
+    assert quality["memory_context_ids"] == ["trace-memory-123"]
+    assert quality["reused_memory_context_ids"] == ["trace-memory-123"]
 
 
 def test_canonical_context_compacts_repeated_prior_outcomes(tmp_path: Path):

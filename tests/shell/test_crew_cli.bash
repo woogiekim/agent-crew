@@ -49,6 +49,20 @@ assert_exit 0 "${rc}"
 it "crew telemetry empty state prints no tasks"
 assert_contains "${out}" "(no tasks matched)"
 
+it "e2e SLO checker supports CI latency budgets without external memory"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" \
+  python3 "${REPO_ROOT}/core/scripts/e2e-slo-check.py" \
+    --project-root "${TMP_PROJECT}" \
+    --crew-bin "${CREW}" \
+    --status-budget-ms 10000 \
+    --telemetry-budget-ms 10000 \
+    --skip-memory-search \
+    --skip-retrieval-eval \
+    --skip-update-dry-run 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "PASS: e2e slo check"
+
 SETUP_HOME=$(make_tmp)
 SETUP_PROJECT=$(make_tmp)
 
@@ -70,7 +84,9 @@ PATH_HOME=$(make_tmp)
 PATH_INSTALL=$(make_tmp)
 PATH_PROJECT=$(make_tmp)
 PATH_BIN="${PATH_HOME}/.local/bin"
-mkdir -p "${PATH_BIN}"
+mkdir -p "${PATH_BIN}" "${PATH_INSTALL}/user/agents" "${PATH_INSTALL}/user/skills"
+printf 'custom agent\n' > "${PATH_INSTALL}/user/agents/custom-agent.md"
+printf 'custom skill\n' > "${PATH_INSTALL}/user/skills/custom-skill.md"
 cat > "${PATH_BIN}/crew" <<'EOF_STALE_CREW'
 #!/usr/bin/env bash
 # crew - experimental Codex launcher for agent-crew
@@ -93,6 +109,14 @@ out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" PROJECT_ROOT="${PATH
 rc=$?
 assert_exit 2 "${rc}"
 assert_contains "${out}" "Use crew run for mutating work"
+
+it "local sync preserves user-owned agent and skill files"
+assert_file_exists "${PATH_INSTALL}/user/agents/custom-agent.md"
+assert_file_exists "${PATH_INSTALL}/user/skills/custom-skill.md"
+
+it "local sync writes update preservation manifest"
+manifest_count=$(find "${PATH_INSTALL}/state/$(basename "${PATH_PROJECT}")/update-preservation" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "1" "${manifest_count}"
 
 CUSTOM_HOME=$(make_tmp)
 CUSTOM_INSTALL=$(make_tmp)
@@ -192,6 +216,22 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" "\"host_bridge_not_invoked\""
 assert_contains "${out}" "\"tasks_blocked\": 1"
+
+TASK_ID=$(basename "${TASK_DIR}")
+
+it "crew repair marks a manually completed handoff as completed"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status completed --note "manual fallback done" "${TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "STATUS: completed"
+
+it "crew repair writes repair evidence"
+assert_file_exists "${TASK_DIR}/context/manual-fallback-repair.json"
+
+it "crew repair removes stale host bridge blocker from task telemetry"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${TASK_ID}" 2>&1)
+assert_contains "${out}" "\"tasks_completed\": 1"
+assert_not_contains "${out}" "\"host_bridge_not_invoked\""
 
 it "crew run fake host can complete"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --fake-host-result completed "fake host task" 2>&1)

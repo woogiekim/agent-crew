@@ -416,6 +416,11 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   layer. `merge_skills_to_discovery` copies user skills after system skills
   so user skills take precedence in the unified `~/.agent-crew/skills/` view.
   User skill files are NEVER deleted or overwritten by `crew:update`.
+- Every local/remote update writes a preservation manifest under
+  `${AGENT_CREW_HOME}/state/${PROJECT_NAME}/update-preservation/`. The manifest
+  records before/after counts and hashes for user agents, user skills, and
+  relevant host settings. If a user-owned agent or skill disappears during the
+  update, the update fails instead of silently reporting success.
 
 ## Migration Notes
 

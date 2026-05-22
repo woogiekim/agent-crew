@@ -36,6 +36,7 @@ Commands:
   telemetry [args]                 Show timing, retry, blocker, and token metrics
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
+  repair [args] TASK_ID            Repair a manually completed handoff task
   agent [name] [question]          Write direct-agent host handoff state
   help                             Show this help
 
@@ -256,6 +257,23 @@ EOF
   python3 "${runtime}" run --project-root "${PROJECT_ROOT}" "$@"
 }
 
+cmd_repair() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew repair [--status completed|blocked] [--note TEXT] [--evidence PATH] [--memory-id ID] TASK_ID
+
+Records the result of a task that was continued manually from handoff.md in the
+current host session. This updates local task state so telemetry stops reporting
+stale host_bridge_not_invoked blockers after the fallback has completed.
+EOF
+    return 0
+  fi
+
+  local repair="${ASSET_ROOT}/scripts/repair-task-state.py"
+  require_file "${repair}" "task repair script"
+  python3 "${repair}" --state-dir "${STATE_DIR}" "$@"
+}
+
 cmd_agent() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -282,6 +300,7 @@ main() {
     telemetry) cmd_telemetry "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
+    repair) cmd_repair "$@" ;;
     agent) cmd_agent "$@" ;;
     help|-h|--help) usage ;;
     *) die "unknown command: ${command}" ;;

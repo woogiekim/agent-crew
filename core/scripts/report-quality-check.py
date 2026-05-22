@@ -45,6 +45,16 @@ def memory_ids_from(path: Path) -> set[str]:
     return set(MEMORY_ID_RE.findall(path.read_text(encoding="utf-8", errors="replace")))
 
 
+def memory_ids_from_trace(path: Path) -> set[str]:
+    if not path.is_file():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    return {str(mid) for mid in data.get("memory_ids", []) if str(mid).strip()}
+
+
 def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
     text = report_path.read_text(encoding="utf-8", errors="replace")
     failures: list[str] = []
@@ -76,7 +86,12 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
 
     memory_context = task_dir / fixture.get("memory_context_path", "context/memory.md")
     canonical_context = task_dir / fixture.get("canonical_context_path", "context/canonical-context.md")
-    reusable_ids = memory_ids_from(memory_context) | memory_ids_from(canonical_context)
+    memory_trace = task_dir / fixture.get("memory_evidence_trace_path", "context/memory-evidence.json")
+    reusable_ids = (
+        memory_ids_from(memory_context)
+        | memory_ids_from(canonical_context)
+        | memory_ids_from_trace(memory_trace)
+    )
     reused_ids = sorted(mid for mid in reusable_ids if mid in text)
     if reusable_ids and not reused_ids:
         failures.append("missing_memory_context_reuse")

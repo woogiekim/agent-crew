@@ -19,8 +19,9 @@ Every script under `core/scripts/` MUST satisfy:
    `core/rules/capabilities/`. The script computes a fact; the caller
    decides what to do with it.
 3. **Idempotent and side-effect-minimal.** Read files, classify input,
-   emit a result. Do NOT mutate `pipeline.json`, `progress.log`, or any
-   pipeline state. State mutation is the caller's responsibility.
+   emit a result. Scripts that intentionally mutate state must be named as
+   operational tools (`repair-*`, `update-*`) and document the exact files
+   they write. Validators and classifiers must not mutate pipeline state.
 4. **Fail loudly.** Exit codes:
    - `0` — success / "ok"
    - `1` — soft failure (e.g., pattern not matched, threshold not
@@ -92,6 +93,15 @@ invocation in SKILL.md; generic adds guidance).
 - `verify-update-dry-run.sh` — non-mutating update verifier that runs the local
   update flow against temporary install homes and a temporary project, then
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
+- `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
+  telemetry, memory search, retrieval evaluation, and update dry-run budgets.
+- `memory-evidence-trace.py` — writes `context/memory-evidence.{json,md}` so
+  reports can prove which memory IDs and evidence paths were reused.
+- `repair-task-state.py` — explicit operational repair for manual handoff
+  fallback completion; rewrites the task's terminal state and archives the
+  pre-repair `result.md`.
+- `update-preservation-manifest.py` — writes before/after update manifests
+  under state to prove user-owned agents and skills were not deleted.
 
 ## Naming conventions
 

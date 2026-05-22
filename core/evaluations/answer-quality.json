@@ -12,8 +12,10 @@
     "stage_timeout",
     "quality_loop_exhausted",
     "cost_exceeded",
+    "manual_fallback_blocked",
     "cancelled"
   ],
   "memory_context_path": "context/memory.md",
-  "canonical_context_path": "context/canonical-context.md"
+  "canonical_context_path": "context/canonical-context.md",
+  "memory_evidence_trace_path": "context/memory-evidence.json"
 }

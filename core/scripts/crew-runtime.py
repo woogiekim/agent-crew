@@ -145,7 +145,9 @@ def command_run(args: argparse.Namespace) -> int:
         "NEXT: Hand the generated handoff.md to the host AI prompt runtime. "
         "If the host bridge is unavailable, continue manually by reading "
         f"{task_dir / 'handoff.md'} in this session and executing the supervisor "
-        "handoff; `crew status --json` shows the same blocker state.\n"
+        "handoff. After manual completion, run "
+        f"`crew repair {task_id} --status completed --note \"<summary>\"` so "
+        "`crew telemetry` no longer reports a stale host_bridge_not_invoked blocker.\n"
     )
 
     register = {
@@ -166,6 +168,7 @@ def command_run(args: argparse.Namespace) -> int:
         "progress_buffer_path": str(task_dir / "progress.buffer.jsonl"),
         "result_path": str(task_dir / "result.md"),
         "blocked_by": blocked_by,
+        "repair_command": f"crew repair {task_id} --status completed --note \"<summary>\"",
     }
 
     pipeline = {
@@ -191,6 +194,7 @@ def command_run(args: argparse.Namespace) -> int:
         f"MODE: native-cli\n"
         f"STATUS: blocked\n"
         f"BLOCKER: host AI bridge has not completed this handoff\n"
+        f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
     )
 
     result = (

@@ -135,6 +135,18 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Reasons / blocker labels when current_phase=blocked. Empty otherwise. Multiple entries when multiple sub-causes apply (e.g., crash budget + cost budget)."
+    },
+    "repair_command": {
+      "type": "string",
+      "description": "Operator command to reconcile state after a current-session manual handoff fallback."
+    },
+    "manual_fallback_repaired_at": {
+      "type": "string",
+      "description": "UTC timestamp when crew repair reconciled a manual host-handoff fallback."
+    },
+    "manual_fallback_repair_path": {
+      "type": "string",
+      "description": "Path to context/manual-fallback-repair.json when a task was repaired after manual fallback completion."
     }
   }
 }

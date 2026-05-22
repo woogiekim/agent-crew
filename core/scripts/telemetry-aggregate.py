@@ -327,7 +327,9 @@ def guidance_for(blockers, status, current_phase):
                 "Host handoff is ready, but execution has not happened in the "
                 "AI prompt runtime. Hand task_dir/handoff.md to the host bridge; "
                 "if the bridge is unavailable, read that handoff in the current "
-                "session and continue the supervisor task manually."
+                "session and continue the supervisor task manually. After manual "
+                "completion, run crew repair TASK_ID --status completed --note "
+                "\"<summary>\" to remove the stale blocker from telemetry."
             )
         elif b == "supervisor_handoff_not_started":
             guidance.append(
