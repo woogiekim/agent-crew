@@ -14,6 +14,15 @@ Task injection is handled entirely within `core/commands/run.md` Step 1.5
 (Injection Detection). This file is the protocol reference; `run.md` is the
 authoritative implementation spec.
 
+## Operator-Facing Messages
+
+Active-work messages are concise by default. When a live session, duplicate
+task, injected task, or stale session is detected, show only the useful
+coordinates: session id, task id, current phase or status, and the next command
+when one exists. Do not include long policy narration, repeated workflow
+explanations, or troubleshooting detail unless the operator explicitly asks for
+verbose output.
+
 ## Session File
 
 The session registry is stored at:

@@ -108,6 +108,13 @@ def render_quality_loop_blocked_result(
     )
 
 
+def host_bridge_next_line(task_dir: Path, task_id: str) -> str:
+    return (
+        f"NEXT: Continue with {task_dir / 'handoff.md'}, then run "
+        f"`crew repair {task_id} --status completed --note \"<summary>\"`.\n"
+    )
+
+
 def mark_quality_loop_blocked(
     task_dir: Path,
     register: dict,
@@ -372,14 +379,7 @@ def command_run(args: argparse.Namespace) -> int:
         blocked_by = ["missing_quality_loop_pipeline"]
     elif result_status != "completed":
         blocked_by = ["host_bridge_not_invoked"]
-    blocked_next = (
-        "NEXT: Hand the generated handoff.md to the host AI prompt runtime. "
-        "If the host bridge is unavailable, continue manually by reading "
-        f"{task_dir / 'handoff.md'} in this session and executing the supervisor "
-        "handoff. After manual completion, run "
-        f"`crew repair {task_id} --status completed --note \"<summary>\"` so "
-        "`crew telemetry` no longer reports a stale host_bridge_not_invoked blocker.\n"
-    )
+    blocked_next = host_bridge_next_line(task_dir, task_id)
     quality_next = (
         "NEXT: A mutating implementation task can only be auto-completed after "
         "the host runtime leaves pipeline-level quality-loop evidence in "

@@ -276,8 +276,12 @@ assert_contains "${result}" "STATUS: blocked"
 it "crew run blocked result references host bridge"
 assert_contains "${result}" "host AI bridge has not completed this handoff"
 
-it "crew run blocked result includes next step guidance"
-assert_contains "${result}" "NEXT: Hand the generated handoff.md to the host AI prompt runtime"
+it "crew run blocked result includes concise next step guidance"
+assert_contains "${result}" "NEXT: Continue with"
+
+it "crew run blocked result avoids verbose fallback narration"
+assert_not_contains "${result}" "If the host bridge is unavailable"
+assert_not_contains "${result}" "so `crew telemetry` no longer reports"
 
 it "crew status --json reports blocked run blocker"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)

@@ -16,6 +16,11 @@ tasks to finish and then runs the equivalent of Steps 7–11 from `crew:run`
 When no background session exists (or `session.json` is absent / completed),
 `crew:status` falls back to the existing single-task snapshot behavior.
 
+Default status output is intentionally compact. Active-session, duplicate,
+blocked, or resume-style paths should show the minimum useful coordinates
+(session id, task id, status or phase, and monitor/collect command when
+available) and avoid long troubleshooting narration unless explicitly requested.
+
 ---
 
 ## Execution Steps

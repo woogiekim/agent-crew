@@ -109,3 +109,16 @@ def test_readme_preserves_validation_conclusion():
     assert "Native control-plane commands are now fast enough for routine use" in text
     assert "remaining performance risk is host prompt-runtime latency" in text
     assert "continue to be\nmeasured during commercialization validation" in text
+
+
+def test_active_work_docs_require_concise_operator_messages():
+    docs = [
+        (REPO_ROOT / "core" / "commands" / "run.md").read_text(encoding="utf-8"),
+        (REPO_ROOT / "core" / "commands" / "status.md").read_text(encoding="utf-8"),
+        (REPO_ROOT / "core" / "rules" / "task-injection.md").read_text(encoding="utf-8"),
+    ]
+    combined = "\n".join(docs)
+    assert "Operator-facing brevity" in combined
+    assert "Active-work messages are concise by default" in combined
+    assert "session id, task id" in combined
+    assert "long policy narration" in combined

@@ -188,6 +188,14 @@ alongside the original tasks.
 The canonical reference for the injection protocol is
 `core/rules/task-injection.md`.
 
+#### Operator-facing brevity
+
+When Step 1.5 or Step 1.6 detects active work, keep default output short:
+include the session id, task id, current status/phase, and one next command
+when available. Reserve policy detail, duplicate rationale, stale-session
+diagnostics, and full workflow narration for explicit verbose or
+troubleshooting requests.
+
 #### Live session detection
 
 Check whether an active parallel session exists by looking for a `session.json`

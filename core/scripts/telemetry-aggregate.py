@@ -341,34 +341,26 @@ def guidance_for(blockers, status, current_phase):
     guidance = []
     if status == "stale_blocked" or current_phase == "stale_host_bridge_fallback":
         guidance.append(
-            "This host bridge blocker is stale and is excluded from current "
-            "blocked-task totals. Run crew cleanup-host-bridge --apply after "
-            "confirming the manual fallback outcome, or inspect the task's "
-            "context/stale-host-bridge-cleanup.json evidence if cleanup already "
-            "ran."
+            "Stale host-bridge blocker excluded from current totals. Confirm "
+            "the outcome, then run crew cleanup-host-bridge --apply or inspect "
+            "context/stale-host-bridge-cleanup.json."
         )
     for blocker in blockers or []:
         b = str(blocker)
         if b == "host_bridge_not_invoked" or "host AI bridge" in b:
             guidance.append(
-                "Host handoff is ready, but execution has not happened in the "
-                "AI prompt runtime. Hand task_dir/handoff.md to the host bridge; "
-                "if the bridge is unavailable, read that handoff in the current "
-                "session and continue the supervisor task manually. After manual "
-                "completion, run crew repair TASK_ID --status completed --note "
-                "\"<summary>\" to remove the stale blocker from telemetry."
+                "Host handoff is ready. Continue from task_dir/handoff.md, then "
+                "run crew repair TASK_ID --status completed --note \"<summary>\"."
             )
         elif b == "supervisor_handoff_not_started":
             guidance.append(
-                "The orchestrator created task state, but the supervisor did "
-                "not produce progress artifacts. Check host agent availability "
-                "and re-run crew:run with this task context if needed."
+                "Supervisor handoff stalled: supervisor did not produce progress "
+                "artifacts. Check host agents, then re-run crew:run if needed."
             )
     if not guidance and current_phase == "supervisor_handoff_pending":
         guidance.append(
-            "Supervisor boot is pending; run crew status again shortly. If it "
-            "exceeds AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS, treat it as a "
-            "host handoff stall."
+            "Supervisor boot is pending. Run crew status again shortly; if it "
+            "exceeds the boot timeout, treat it as a host handoff stall."
         )
     if not guidance and status == "blocked":
         guidance.append("Inspect result.md and progress.log for the blocking reason.")
