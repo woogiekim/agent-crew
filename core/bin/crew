@@ -33,6 +33,7 @@ adapter-sync helpers around that prompt runtime.
 Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json] [--recent N]     Show deterministic local task state
+  telemetry [args]                 Show timing, retry, blocker, and token metrics
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
   agent [name] [question]          Write direct-agent host handoff state
@@ -126,6 +127,28 @@ EOF
   fi
 }
 
+cmd_telemetry() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew telemetry [--task-id ID] [--session-id ID] [--recent N] [--format text|json]
+
+Reads ~/.agent-crew/state/<project>/ and prints pipeline timing, retry,
+blocker, and token telemetry.
+EOF
+    return 0
+  fi
+
+  local telemetry="${ASSET_ROOT}/scripts/telemetry-aggregate.py"
+  require_file "${telemetry}" "telemetry aggregator"
+
+  if [ ! -d "${STATE_DIR}/tasks" ]; then
+    printf 'No tasks found. Run crew setup first, then use crew run in your host runtime.\n'
+    return 0
+  fi
+
+  python3 "${telemetry}" --state-dir "${STATE_DIR}" "$@"
+}
+
 cmd_update() {
   local mode="${1:-}"
   local source="${2:-}"
@@ -202,6 +225,7 @@ main() {
   case "${command}" in
     setup) cmd_setup "$@" ;;
     status) cmd_status "$@" ;;
+    telemetry) cmd_telemetry "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
     agent) cmd_agent "$@" ;;

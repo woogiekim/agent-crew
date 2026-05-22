@@ -38,6 +38,9 @@ def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
         "31ec5287-1233-426e-8e1f-241adff08cb3",
         "d2d62df8-33c9-4d03-90b3-e2be9484f88f",
     ]
+    assert fixture["accepted_successor_memory_ids"][
+        "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
+    ] == ["cf0a2807-aa93-45ce-9e1c-b2c24c4f7c97"]
     assert fixture["latency_budget_ms"] > 0
     assert fixture["noise_budget_count"] >= 0
 
@@ -59,6 +62,24 @@ def test_memory_eval_reports_misses_noise_and_latency_separately():
     assert result["misses"] == ["expected-b"]
     assert result["failures"]["noise"] == ["noisy-extra"]
     assert result["failures"]["latency_ms"] == 20.0
+
+
+def test_memory_eval_accepts_explicit_successor_memories():
+    fixture = {
+        "query": "probe",
+        "expected_memory_ids": ["older-memory"],
+        "accepted_successor_memory_ids": {
+            "older-memory": ["newer-memory"],
+        },
+        "latency_budget_ms": 10,
+        "noise_budget_count": 0,
+    }
+    result = memory_eval.evaluate(fixture, "  [fts] newer-memory: useful\n", 5.0)
+
+    assert result["passed"] is True
+    assert result["misses"] == []
+    assert result["noise"] == []
+    assert result["satisfied_by_successor"] == {"older-memory": ["newer-memory"]}
 
 
 def test_report_quality_gate_passes_with_measurements_evidence_blocker_and_memory(
@@ -132,6 +153,46 @@ def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
     assert "missing_measurements" in payload["failures"]
     assert "missing_evidence" in payload["failures"]
     assert "missing_uncertainty" in payload["failures"]
+
+
+def test_report_quality_memory_ids_ignore_plain_words(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    (task_dir / "context" / "memory.md").write_text(
+        "commercialization requirements completed bridge\n",
+        encoding="utf-8",
+    )
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: blocked\n"
+        "BLOCKER: stage_timeout\n"
+        "MEASUREMENTS: stage duration 42 seconds, retries 1\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown host runtime variance remains.\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["memory_context_ids"] == []
+    assert payload["reused_memory_context_ids"] == []
 
 
 def test_canonical_context_compacts_repeated_prior_outcomes(tmp_path: Path):

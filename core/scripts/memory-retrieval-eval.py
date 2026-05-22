@@ -54,11 +54,30 @@ def run_memory(memory_bin: Path, query: str, limit: int) -> tuple[str, int, floa
 
 def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
     expected = list(fixture["expected_memory_ids"])
+    successors = {
+        str(key): list(value)
+        for key, value in fixture.get("accepted_successor_memory_ids", {}).items()
+    }
     returned = extract_ids(output)
     returned_set = set(returned)
     expected_set = set(expected)
-    misses = [mid for mid in expected if mid not in returned_set]
-    noise = [mid for mid in returned if mid not in expected_set]
+    accepted_successor_ids = {
+        successor
+        for values in successors.values()
+        for successor in values
+    }
+    satisfied_by_successor = {
+        mid: [successor for successor in successors.get(mid, []) if successor in returned_set]
+        for mid in expected
+    }
+    misses = [
+        mid for mid in expected
+        if mid not in returned_set and not satisfied_by_successor.get(mid)
+    ]
+    noise = [
+        mid for mid in returned
+        if mid not in expected_set and mid not in accepted_successor_ids
+    ]
     latency_budget_ms = int(fixture["latency_budget_ms"])
     noise_budget_count = int(fixture["noise_budget_count"])
 
@@ -75,6 +94,10 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         "returned_memory_ids": returned,
         "misses": misses,
         "noise": noise,
+        "accepted_successor_memory_ids": successors,
+        "satisfied_by_successor": {
+            mid: values for mid, values in satisfied_by_successor.items() if values
+        },
         "latency_ms": round(elapsed_ms, 3),
         "latency_budget_ms": latency_budget_ms,
         "noise_budget_count": noise_budget_count,
