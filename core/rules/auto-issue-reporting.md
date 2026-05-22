@@ -4,7 +4,8 @@
 
 When an operator explicitly reports an agent-crew bug/error, or a `crew`
 command emits explicit bug/error output through a host hook payload, agent-crew
-can automatically publish a GitHub issue to the agent-crew remote repository.
+stores a native local report. GitHub publication is an optional publisher
+backend, not part of the hook contract.
 
 This is an advisory reporting path. It must not block the user's current
 prompt, tool call, or pipeline execution.
@@ -15,6 +16,12 @@ The installed hook wrapper is:
 
 ```text
 core/hooks/auto-issue-report.sh
+```
+
+The hook delegates to the native report command:
+
+```text
+crew report auto
 ```
 
 The provider-neutral implementation is:
@@ -32,7 +39,21 @@ Adapters wire it into:
   A non-zero return code alone is not enough because normal host handoff
   blockers also use non-zero exits.
 
-## Publication Target
+## Native Report Outbox
+
+By default, reports are written under:
+
+```text
+${AGENT_CREW_REPORT_STATE_DIR}
+${AGENT_CREW_AUTO_ISSUE_STATE_DIR}
+${AGENT_CREW_HOME}/state/reports
+```
+
+Each accepted report has a dedup record under `reported/` and a publishable
+JSON document under `outbox/`. This keeps reporting reliable when the operator
+is offline, unauthenticated, or using a non-GitHub workflow.
+
+## Optional GitHub Publisher
 
 Default GitHub repository:
 
@@ -49,15 +70,26 @@ AGENT_CREW_AUTO_ISSUE_REPO=owner/repo
 The reporter uses the `gh` CLI. If `gh` is missing or unavailable, the hook
 writes a local queued report and exits successfully.
 
+To publish during automatic reporting:
+
+```text
+AGENT_CREW_REPORT_PUBLISH=github
+```
+
+To publish queued reports later:
+
+```bash
+crew report publish --backend github
+```
+
 ## Safeguards
 
 - **Narrow trigger**: prompt reports require both an agent-crew signal and a
   bug/error signal; Bash reports require a `crew` command plus bug/error output.
   Generic application errors and normal host-bridge handoff blockers are
   ignored.
-- **Local deduplication**: reports are fingerprinted and recorded under
-  `${AGENT_CREW_AUTO_ISSUE_STATE_DIR}` or
-  `${AGENT_CREW_HOME}/state/auto-issue-reports`.
+- **Local deduplication**: reports are fingerprinted and recorded under the
+  native report state directory.
 - **Remote deduplication**: when `gh` works, the reporter searches existing
   GitHub issues for the fingerprint before creating a new issue.
 - **Secret redaction**: common token/password/API-key patterns are redacted
@@ -71,8 +103,10 @@ writes a local queued report and exits successfully.
 |---|---|
 | `AGENT_CREW_AUTO_ISSUE_REPORT=0` | Disable automatic issue reporting. |
 | `AGENT_CREW_AUTO_ISSUE_REPORT_DISABLED=1` | Disable automatic issue reporting. |
+| `AGENT_CREW_REPORT_STATE_DIR=/path` | Override native report state location. |
+| `AGENT_CREW_REPORT_PUBLISH=github` | Publish accepted automatic reports through GitHub. Omit for local-only reports. |
 | `AGENT_CREW_AUTO_ISSUE_REPO=owner/repo` | Override the GitHub target repository. |
-| `AGENT_CREW_AUTO_ISSUE_STATE_DIR=/path` | Override dedup/queue state location. |
+| `AGENT_CREW_AUTO_ISSUE_STATE_DIR=/path` | Legacy alias for native report state location. |
 | `AGENT_CREW_AUTO_ISSUE_TTL_SECONDS=N` | Local duplicate suppression window. Default: 7 days. |
 | `AGENT_CREW_AUTO_ISSUE_TIMEOUT_SECONDS=N` | Timeout for each `gh` call. Default: 8 seconds. |
 | `AGENT_CREW_AUTO_ISSUE_DRY_RUN=1` | Record and report classification without calling `gh`. |
@@ -81,5 +115,5 @@ writes a local queued report and exits successfully.
 
 ```bash
 printf '{"prompt":"agent-crew error: traceback"}' \
-  | python3 core/scripts/auto-issue-reporter.py --format json
+  | crew report auto --format json
 ```

@@ -29,9 +29,9 @@ Consumers:
 - **Automatic issue reporting** (implemented). A `UserPromptSubmit`
   observer and a `PostToolUse[Bash]` observer detect explicit
   agent-crew bug/error reports or `crew` command payloads with explicit
-  bug/error output, then
-  publish a deduplicated GitHub issue to the agent-crew remote when
-  `gh` is available. Script: `core/scripts/auto-issue-reporter.py`.
+  bug/error output, then call `crew report auto` to store a deduplicated
+  native report/outbox entry. GitHub publication is an optional backend
+  through `crew report publish`. Script: `core/scripts/auto-issue-reporter.py`.
   Hook wrapper: `core/hooks/auto-issue-report.sh`. Contract:
   `core/rules/auto-issue-reporting.md`.
 
@@ -123,7 +123,7 @@ Consumer — validator scripts:
 
 - `core/scripts/check-plaintext-approval.py` (Phase G6 — implemented)
 - `core/scripts/auto-issue-reporter.py` (implemented; advisory
-  UserPromptSubmit/PostToolUse issue publisher)
+  UserPromptSubmit/PostToolUse native report engine)
 - `core/scripts/detect-inject-intent.sh` (Phase J14 — implemented;
   invoked by `crew:run` Step 1.5 to auto-route on unambiguous
   inject-intent phrasing)

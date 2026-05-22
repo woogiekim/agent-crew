@@ -33,11 +33,11 @@ codex_setup=$(cat "${REPO_ROOT}/adapters/codex/setup.sh")
 assert_contains "${codex_setup}" 'AGENT_CREW_WRITE_CAPABILITIES:-1' "Codex adapter must expose an opt-out guard"
 
 it "Codex setup registers automatic issue reporter hooks"
-assert_contains "${codex_setup}" "auto-issue-report.sh" "Codex hooks must publish agent-crew bug reports"
+assert_contains "${codex_setup}" "auto-issue-report.sh" "Codex hooks must route agent-crew bug reports"
 
 it "Claude setup registers automatic issue reporter hooks"
 claude_setup=$(cat "${REPO_ROOT}/adapters/claude/setup.sh")
-assert_contains "${claude_setup}" "auto-issue-report.sh" "Claude hooks must publish agent-crew bug reports"
+assert_contains "${claude_setup}" "auto-issue-report.sh" "Claude hooks must route agent-crew bug reports"
 
 it "crew:update install pass uses repository root as source"
 update_doc=$(cat "${REPO_ROOT}/core/commands/update.md")

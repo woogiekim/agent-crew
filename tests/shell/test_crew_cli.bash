@@ -14,9 +14,10 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/update"
+it "crew help mentions setup/status/telemetry/update/report"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
+assert_contains "${out}" "report auto|publish"
 
 it "crew help states prompt-workflow control plane"
 assert_contains "${out}" "local control plane for AI-host prompt workflows"

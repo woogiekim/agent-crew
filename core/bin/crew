@@ -36,6 +36,7 @@ Commands:
   telemetry [args]                 Show timing, retry, blocker, and token metrics
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
+  report auto|publish [args]       Store/publish native agent-crew reports
   repair [args] TASK_ID            Repair a manually completed handoff task
   cleanup-host-bridge [args]       Bulk repair stale host bridge blockers
   agent [name] [question]          Write direct-agent host handoff state
@@ -401,6 +402,23 @@ EOF
   python3 "${repair}" --state-dir "${STATE_DIR}" "$@"
 }
 
+cmd_report() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew report auto [--format json|text|none] [--publish github]
+       crew report publish [--format json|text|none] [--backend github]
+
+Stores agent-crew bug/error reports in the native local report outbox. GitHub
+publication is an optional backend, not part of the hook contract.
+EOF
+    return 0
+  fi
+
+  local reporter="${ASSET_ROOT}/scripts/auto-issue-reporter.py"
+  require_file "${reporter}" "native report script"
+  python3 "${reporter}" "$@"
+}
+
 cmd_cleanup_host_bridge() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -445,6 +463,7 @@ main() {
     telemetry) cmd_telemetry "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
+    report) cmd_report "$@" ;;
     repair) cmd_repair "$@" ;;
     cleanup-host-bridge) cmd_cleanup_host_bridge "$@" ;;
     agent) cmd_agent "$@" ;;

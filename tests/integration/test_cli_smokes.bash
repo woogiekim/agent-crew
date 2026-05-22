@@ -93,6 +93,13 @@ assert_exit 0 "${rc}"
 it "bin: crew --help prints usage"
 assert_contains "${out}" "usage: crew"
 
+it "bin: crew report --help exits 0"
+out=$(bash "${REPO_ROOT}/core/bin/crew" report --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+it "bin: crew report --help prints usage"
+assert_contains "${out}" "usage: crew report"
+
 it "bin: crew-runtime agent --list exits 0"
 out=$(python3 "${SCRIPTS_DIR}/crew-runtime.py" agent --asset-root "${REPO_ROOT}/core" --list 2>&1)
 rc=$?
