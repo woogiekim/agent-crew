@@ -103,7 +103,9 @@ invocation in SKILL.md; generic adds guidance).
   successor-memory feedback, and compact memory-quality metrics.
 - `repair-task-state.py` — explicit operational repair for manual handoff
   fallback completion; rewrites the task's terminal state and archives the
-  pre-repair `result.md`.
+  pre-repair `result.md`. Completed repairs for mutating implementation tasks
+  require TDD/test evidence and reviewer evidence, or an explicit quality
+  bypass reason.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.

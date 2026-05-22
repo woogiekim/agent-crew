@@ -13,6 +13,23 @@ MEASUREMENT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds|m|minutes|%|
 EVIDENCE_RE = re.compile(r"^(?:[-*]\s*)?(?:EVIDENCE|Evidence|evidence)\s*:\s*(.+)$", re.M)
 BLOCKER_RE = re.compile(r"^(?:[-*]\s*)?BLOCKER\s*:\s*([a-zA-Z0-9_.:-]+)", re.M)
 UNCERTAINTY_RE = re.compile(r"\b(?:Assumption|Unverified|Unknown|uncertain|uncertainty)\b", re.I)
+STATUS_COMPLETED_RE = re.compile(r"^STATUS\s*:\s*completed\b", re.I | re.M)
+MUTATING_TASK_RE = re.compile(
+    r"\b("
+    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|test|deploy|merge|rollback|write|"
+    r"save|edit|publish|commit|resolve|close"
+    r")\b|"
+    r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
+    re.I,
+)
+TDD_RE = re.compile(r"\b(TDD|RED|GREEN|test evidence|tests? passed|pytest|JUnit|MockK)\b", re.I)
+REVIEW_RE = re.compile(
+    r"\b(REVIEW:\s*APPROVED|REVIEW_APPROVED|APPROVED|reviewer approved|"
+    r"review findings.*remediated|CHANGES_REQUESTED.*remediated|재리뷰.*승인|리뷰.*승인)\b",
+    re.I,
+)
 MEMORY_ID_RE = re.compile(
     r"\b(?:"
     r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
@@ -70,6 +87,53 @@ def memory_ids_from_trace(path: Path) -> set[str]:
     return ids
 
 
+def load_task_text(task_dir: Path, report_text: str) -> str:
+    register_path = task_dir / "register.json"
+    try:
+        register = json.loads(register_path.read_text(encoding="utf-8"))
+        if register.get("task"):
+            return str(register["task"])
+    except Exception:
+        pass
+    match = re.search(r"^#\s+(.+)$", report_text, re.M)
+    return match.group(1) if match else ""
+
+
+def looks_mutating_task(text: str) -> bool:
+    return bool(MUTATING_TASK_RE.search(text or ""))
+
+
+def quality_evidence_from(task_dir: Path, paths: list[str]) -> dict:
+    candidates = [
+        task_dir / "context" / "tdd_log.md",
+        task_dir / "context" / "review.md",
+        task_dir / "context" / "reviewer.md",
+        task_dir / "context" / "quality-loop.md",
+        task_dir / "context" / "quality-loop.json",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+
+    tdd_paths: list[str] = []
+    review_paths: list[str] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        rel_name = str(path.relative_to(task_dir)) if path.is_relative_to(task_dir) else str(path)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if TDD_RE.search(text):
+            tdd_paths.append(rel_name)
+        if REVIEW_RE.search(text):
+            review_paths.append(rel_name)
+    return {
+        "tdd_evidence_paths": sorted(set(tdd_paths)),
+        "review_evidence_paths": sorted(set(review_paths)),
+    }
+
+
 def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
     text = report_path.read_text(encoding="utf-8", errors="replace")
     failures: list[str] = []
@@ -114,6 +178,20 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
     if reusable_ids and not reused_ids:
         failures.append("missing_memory_context_reuse")
 
+    task_text = load_task_text(task_dir, text)
+    quality_evidence = quality_evidence_from(task_dir, paths)
+    quality_loop_required = (
+        fixture.get("require_quality_loop_for_implementation_reports")
+        and STATUS_COMPLETED_RE.search(text)
+        and looks_mutating_task(task_text)
+        and "QUALITY_BYPASS_REASON:" not in text
+    )
+    if quality_loop_required:
+        if not quality_evidence["tdd_evidence_paths"]:
+            failures.append("missing_tdd_evidence")
+        if not quality_evidence["review_evidence_paths"]:
+            failures.append("missing_reviewer_evidence")
+
     return {
         "passed": not failures,
         "failures": failures,
@@ -124,6 +202,9 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
         "memory_context_ids": sorted(reusable_ids),
         "reused_memory_context_ids": reused_ids,
         "memory_evidence_trace": str(memory_trace) if memory_trace.is_file() else None,
+        "quality_loop_required": bool(quality_loop_required),
+        "tdd_evidence_paths": quality_evidence["tdd_evidence_paths"],
+        "review_evidence_paths": quality_evidence["review_evidence_paths"],
     }
 
 

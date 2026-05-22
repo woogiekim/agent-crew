@@ -377,11 +377,15 @@ EOF
 cmd_repair() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
-usage: crew repair [--status completed|blocked] [--note TEXT] [--evidence PATH] [--memory-id ID] TASK_ID
+usage: crew repair [--status completed|blocked] [--note TEXT] [--evidence PATH]
+                   [--quality-evidence PATH] [--quality-bypass-reason TEXT]
+                   [--memory-id ID] TASK_ID
 
 Records the result of a task that was continued manually from handoff.md in the
 current host session. This updates local task state so telemetry stops reporting
 stale host_bridge_not_invoked blockers after the fallback has completed.
+For mutating implementation tasks, completed repairs require TDD/test evidence
+and reviewer evidence unless an explicit quality bypass reason is recorded.
 EOF
     return 0
   fi

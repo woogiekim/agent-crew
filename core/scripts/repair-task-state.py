@@ -5,8 +5,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+MUTATING_TASK_RE = re.compile(
+    r"\b("
+    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|test|deploy|merge|rollback|write|"
+    r"save|edit|publish|commit|resolve|close"
+    r")\b|"
+    r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
+    re.IGNORECASE,
+)
+
+TDD_RE = re.compile(r"\b(TDD|RED|GREEN|test evidence|tests? passed|pytest|JUnit|MockK)\b", re.IGNORECASE)
+REVIEW_RE = re.compile(
+    r"\b(REVIEW:\s*APPROVED|REVIEW_APPROVED|APPROVED|reviewer approved|"
+    r"review findings.*remediated|CHANGES_REQUESTED.*remediated|재리뷰.*승인|리뷰.*승인)\b",
+    re.IGNORECASE,
+)
 
 
 def utc_now_z() -> str:
@@ -50,9 +70,80 @@ def backup_result(task_dir: Path) -> None:
         target.write_text(result.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
 
 
+def looks_mutating_task(task: str) -> bool:
+    return bool(MUTATING_TASK_RE.search(task or ""))
+
+
+def resolve_quality_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    candidates = [
+        task_dir / "context" / "tdd_log.md",
+        task_dir / "context" / "review.md",
+        task_dir / "context" / "reviewer.md",
+        task_dir / "context" / "quality-loop.md",
+        task_dir / "context" / "quality-loop.json",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+    return candidates
+
+
+def quality_evidence_status(task_dir: Path, paths: list[str]) -> dict:
+    tdd_paths: list[str] = []
+    review_paths: list[str] = []
+    inspected_paths: list[str] = []
+    for path in resolve_quality_paths(task_dir, paths):
+        if not path.is_file():
+            continue
+        inspected_paths.append(str(path))
+        rel_name = str(path.relative_to(task_dir)) if path.is_relative_to(task_dir) else str(path)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if TDD_RE.search(text):
+            tdd_paths.append(rel_name)
+        if REVIEW_RE.search(text):
+            review_paths.append(rel_name)
+    return {
+        "required": True,
+        "passed": bool(tdd_paths and review_paths),
+        "tdd_evidence_paths": sorted(set(tdd_paths)),
+        "review_evidence_paths": sorted(set(review_paths)),
+        "inspected_paths": sorted(set(inspected_paths)),
+    }
+
+
+def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
+    task = register.get("task", "")
+    required = args.status == "completed" and looks_mutating_task(task)
+    if not required:
+        return {"required": False, "passed": True, "bypassed": False}
+
+    evidence_paths = list(args.evidence) + list(args.quality_evidence)
+    status = quality_evidence_status(task_dir, evidence_paths)
+    status["bypassed"] = False
+    status["bypass_reason"] = ""
+    if status["passed"]:
+        return status
+
+    if args.quality_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.quality_bypass_reason
+        return status
+
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: missing_quality_loop_evidence\n"
+        "DETAIL: completed repair for a mutating implementation task requires "
+        "both TDD/test evidence and reviewer evidence.\n"
+        "NEXT: add --quality-evidence paths for TDD/reviewer artifacts, or "
+        "record an explicit --quality-bypass-reason."
+    )
+
+
 def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   evidence_paths: list[str], memory_ids: list[str],
-                  memory_context_reused: bool) -> str:
+                  memory_context_reused: bool, quality_gate: dict | None = None) -> str:
     lines = [
         f"# {task or task_id}",
         "",
@@ -65,6 +156,16 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
     lines.append(f"EVIDENCE: context/manual-fallback-repair.json")
     for path in evidence_paths:
         lines.append(f"EVIDENCE: {path}")
+    if quality_gate and quality_gate.get("required"):
+        if quality_gate.get("passed"):
+            lines.append("QUALITY_LOOP: passed")
+        elif quality_gate.get("bypassed"):
+            lines.append("QUALITY_LOOP: bypassed")
+            lines.append(f"QUALITY_BYPASS_REASON: {quality_gate.get('bypass_reason')}")
+        for path in quality_gate.get("tdd_evidence_paths", []):
+            lines.append(f"TDD_EVIDENCE: {path}")
+        for path in quality_gate.get("review_evidence_paths", []):
+            lines.append(f"REVIEW_EVIDENCE: {path}")
     lines.append("UNCERTAINTY: Manual repair records the current-session outcome; original host bridge execution did not run automatically.")
     if note:
         lines.append(f"NOTE: {note}")
@@ -83,6 +184,7 @@ def repair(args: argparse.Namespace) -> dict:
 
     register = load_json(register_path)
     pipeline = load_json(pipeline_path)
+    quality_gate = enforce_quality_gate(args, task_dir, register)
     previous = {
         "status": register.get("current_phase"),
         "blocked_by": register.get("blocked_by", []),
@@ -117,6 +219,7 @@ def repair(args: argparse.Namespace) -> dict:
         "evidence_paths": args.evidence,
         "memory_ids": args.memory_id,
         "memory_context_reused": args.reused_memory_context,
+        "quality_gate": quality_gate,
         "previous": previous,
         "repaired_at": now,
     }
@@ -135,6 +238,7 @@ def repair(args: argparse.Namespace) -> dict:
             args.evidence,
             args.memory_id,
             args.reused_memory_context,
+            quality_gate,
         ),
         encoding="utf-8",
     )
@@ -183,6 +287,8 @@ def main() -> int:
     parser.add_argument("--note", default="")
     parser.add_argument("--blocker", default="")
     parser.add_argument("--evidence", action="append", default=[])
+    parser.add_argument("--quality-evidence", action="append", default=[])
+    parser.add_argument("--quality-bypass-reason", default="")
     parser.add_argument("--memory-id", action="append", default=[])
     parser.add_argument("--reused-memory-context", action="store_true")
     parser.add_argument("--format", choices=["text", "json"], default="text")

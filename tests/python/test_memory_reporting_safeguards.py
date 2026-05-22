@@ -249,6 +249,94 @@ def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
     assert "missing_uncertainty" in payload["failures"]
 
 
+def test_report_quality_gate_requires_tdd_and_reviewer_for_completed_implementation(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "register.json").write_text(
+        json.dumps({"task": "Implement a production update quality gate"}),
+        encoding="utf-8",
+    )
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: 12 tests passed\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown reviewer runtime variance remains.\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["quality_loop_required"] is True
+    assert "missing_tdd_evidence" in payload["failures"]
+    assert "missing_reviewer_evidence" in payload["failures"]
+
+
+def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementation(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    (task_dir / "register.json").write_text(
+        json.dumps({"task": "Implement a production update quality gate"}),
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd_log.md").write_text(
+        "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "review.md").write_text(
+        "REVIEW: APPROVED after refactor.\n",
+        encoding="utf-8",
+    )
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: 12 tests passed\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown reviewer runtime variance remains.\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["quality_loop_required"] is True
+    assert payload["tdd_evidence_paths"] == ["context/tdd_log.md"]
+    assert payload["review_evidence_paths"] == ["context/review.md"]
+
+
 def test_report_quality_gate_requires_memory_evidence_trace_when_context_exists(tmp_path: Path):
     task_dir = tmp_path / "task"
     (task_dir / "context").mkdir(parents=True)

@@ -84,3 +84,34 @@ The trace records retrieved IDs, accepted context IDs, successor memory IDs,
 misses, noise, latency, and a compact `memory_quality` score. The answer-quality
 gate fails when reusable memory context is present but no memory evidence trace
 was produced, or when the final report does not reuse any available memory ID.
+
+## Implementation Quality Loop
+
+Commercial implementation tasks must prove the quality loop ran before they are
+marked complete:
+
+1. TDD implementation
+2. reviewer review
+3. TDD refactor or remediation
+4. reviewer re-review
+5. repeat until approval
+
+Manual fallback repair enforces this for mutating tasks. `crew repair --status
+completed` requires TDD/test evidence and reviewer evidence, discovered from
+standard artifacts such as:
+
+```text
+context/tdd_log.md
+context/review.md
+context/reviewer.md
+context/quality-loop.md
+context/quality-loop.json
+```
+
+Additional artifacts can be provided with `--quality-evidence`. If an operator
+must complete a mutating task without that evidence, they must record an
+explicit `--quality-bypass-reason`; otherwise the repair is blocked with
+`missing_quality_loop_evidence`.
+
+The report-quality gate applies the same rule to completed implementation
+reports and fails on `missing_tdd_evidence` or `missing_reviewer_evidence`.
