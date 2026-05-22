@@ -131,8 +131,11 @@ crew:run "implement order API" | "implement product API" | "implement user API"
 # 4. Check local pipeline state from any shell
 crew status
 
-# 5. Check cost summary
-crew:cost
+# 5. Check cost summary from any shell
+crew cost
+
+# 6. Run framework readiness diagnostics
+crew doctor
 ```
 
 `crew:<intent>` is prompt workflow notation for host AI conversations. The
@@ -146,7 +149,7 @@ matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
 
 `crew` is the native shell entrypoint. Today, `crew setup`, `crew status`,
-`crew update --local`, and the initial `crew run` / `crew agent` state
+`crew cost`, `crew doctor`, `crew update --local`, and the initial `crew run` / `crew agent` state
 transitions are deterministic CLI paths. `crew run` writes task state and a
 supervisor handoff; until the host AI prompt runtime completes that handoff,
 non-fake-host runs end with `STATUS: blocked`. `crew agent` validates a
@@ -757,6 +760,8 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 |---|---|
 | `crew setup` | Native shell command: install the current host adapter and initialize the project workspace |
 | `crew status` | Native shell command: deterministic snapshot of local task state |
+| `crew cost` | Native shell command: token/cost aggregates from local cost JSONL state |
+| `crew doctor` | Native shell command: operational readiness checks for architecture, performance, quality, memory, security, observability, cost, DX, and scalability |
 | `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
 | `crew run "task"` | Native shell command: create deterministic task state and supervisor handoff; currently blocks until a host AI prompt runtime completes the handoff |
 | `crew agent ...` | Native shell command: validate a read-only direct-agent request and write host handoff state |

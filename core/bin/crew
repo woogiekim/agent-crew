@@ -34,6 +34,8 @@ Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json] [--recent N]     Show deterministic local task state
   telemetry [args]                 Show timing, retry, blocker, and token metrics
+  cost [args]                      Show token/cost aggregate metrics
+  doctor [args]                    Run framework operational readiness checks
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
   report auto|publish [args]       Store/publish native agent-crew reports
@@ -139,6 +141,8 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/quality_loop_lib.py:${AGENT_CREW_HOME}/scripts/quality_loop_lib.py" \
     "core/scripts/reviewer-loop-decision.py:${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
     "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
+    "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
+    "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
@@ -317,6 +321,39 @@ EOF
   python3 "${telemetry}" --state-dir "${STATE_DIR}" "$@"
 }
 
+cmd_cost() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew cost [--task-id ID] [--session-id ID] [--recent N] [--format json|table]
+
+Reads ~/.agent-crew/state/<project>/cost/*.jsonl and prints token/cost
+aggregate metrics used by the supervisor cost circuit breaker.
+EOF
+    return 0
+  fi
+
+  local cost="${ASSET_ROOT}/scripts/cost-aggregate.py"
+  require_file "${cost}" "cost aggregator"
+  python3 "${cost}" --state-dir "${STATE_DIR}" "$@"
+}
+
+cmd_doctor() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew doctor [--format text|json]
+
+Runs static operational readiness checks for architecture, performance,
+quality, memory governance, security, observability, cost, DX, and long-term
+scalability controls.
+EOF
+    return 0
+  fi
+
+  local doctor="${ASSET_ROOT}/scripts/framework-review-check.py"
+  require_file "${doctor}" "framework review checker"
+  python3 "${doctor}" --project-root "${PROJECT_ROOT}" "$@"
+}
+
 cmd_update() {
   local mode="${1:-}"
   local source="${2:-}"
@@ -461,6 +498,8 @@ main() {
     setup) cmd_setup "$@" ;;
     status) cmd_status "$@" ;;
     telemetry) cmd_telemetry "$@" ;;
+    cost) cmd_cost "$@" ;;
+    doctor) cmd_doctor "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
     report) cmd_report "$@" ;;

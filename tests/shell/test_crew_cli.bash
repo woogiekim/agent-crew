@@ -14,9 +14,11 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/update/report"
+it "crew help mentions setup/status/telemetry/cost/doctor/update/report"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
+assert_contains "${out}" "cost [args]"
+assert_contains "${out}" "doctor [args]"
 assert_contains "${out}" "report auto|publish"
 
 it "crew help states prompt-workflow control plane"
@@ -49,6 +51,34 @@ assert_exit 0 "${rc}"
 
 it "crew telemetry empty state prints no tasks"
 assert_contains "${out}" "(no tasks matched)"
+
+it "crew cost exits 0 with empty cost directory"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" cost 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew cost reports zero tokens with empty cost directory"
+assert_contains "${out}" '"total_tokens": 0'
+
+it "crew cost --help documents aggregate metrics"
+out=$(bash "${CREW}" cost --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "crew cost"
+
+it "crew doctor exits 0 for current repository"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${REPO_ROOT}" bash "${CREW}" doctor 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew doctor reports framework review status"
+assert_contains "${out}" "PASS: framework review check"
+
+it "crew doctor --help documents readiness checks"
+out=$(bash "${CREW}" doctor --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "operational readiness checks"
 
 it "e2e SLO checker supports CI latency budgets without external memory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" \

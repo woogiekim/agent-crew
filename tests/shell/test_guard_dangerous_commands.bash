@@ -105,6 +105,31 @@ deploy script|./deploy.sh production|Kind: deploy
 npm deploy|npm run deploy|Kind: deploy
 EOF
 
+it "forbidden command policy denies sudo without approval path"
+out=$(run_hook "$(payload_for "sudo whoami")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Forbidden command pattern detected"
+assert_contains "${out}" "Kind: sudo"
+
+it "forbidden command policy denies git force push"
+out=$(run_hook "$(payload_for "git push --force-with-lease origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: force-push"
+
+it "forbidden command policy denies credential access"
+out=$(run_hook "$(payload_for "gh auth token")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: credential-access"
+
+it "forbidden command policy ignores quoted documentation text"
+out=$(run_hook "$(payload_for 'grep "sudo" core/hooks/guard-dangerous-commands.sh')" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "quoted documentation search should not be blocked"
+
 it "fork bomb block path writes its reason to stderr"
 STDOUT_FILE="$(make_tmp)/stdout"
 STDERR_FILE="$(make_tmp)/stderr"

@@ -95,6 +95,10 @@ invocation in SKILL.md; generic adds guidance).
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
 - `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
   telemetry, memory search, retrieval evaluation, and update dry-run budgets.
+- `framework-review-check.py` — static operational readiness gate for
+  architecture, performance, quality, reliability, memory governance, security,
+  observability, cost efficiency, developer experience, and long-term
+  scalability controls. The native `crew doctor` command runs this check.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and

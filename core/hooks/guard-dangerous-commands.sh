@@ -49,6 +49,16 @@ DANGEROUS_PATTERNS = [
     ("deploy", r"\b(npm|pnpm|yarn)\s+run\s+deploy\b"),
 ]
 
+FORBIDDEN_PATTERNS = [
+    ("force-push", r"\bgit\s+push\b(?=[^;&|\n]*\s(?:--force(?:-with-lease)?|-f)\b)"),
+    ("sudo", r"(^|[;&|]\s*)sudo(?:\s|$)"),
+    ("credential-access", r"(^|[;&|]\s*)gh\s+auth\s+token\b"),
+    ("credential-access", r"(^|[;&|]\s*)security\s+find-(?:generic|internet)-password\b"),
+    ("credential-access", r"(^|[;&|]\s*)op\s+item\s+get\b"),
+    ("credential-access", r"(^|[;&|]\s*)pass\s+show\b"),
+    ("credential-access", r"(^|[;&|]\s*)(?:cat|less|sed|awk|grep|rg)\b[^;&|\n]*(?:~/)?(?:\.ssh/|\.git-credentials|\.aws/credentials|\.config/gh/hosts\.yml|id_rsa|id_ed25519)"),
+]
+
 def audit(event):
     home = os.environ.get("AGENT_CREW_HOME") or os.path.join(os.path.expanduser("~"), ".agent-crew")
     path = os.path.join(home, "audit", "dangerous-commands.jsonl")
@@ -235,13 +245,47 @@ def runs_shell_evaluator(value):
     )
 
 def command_haystack(kind, value):
-    if kind in ("push", "merge", "deploy") and not runs_shell_evaluator(value):
+    if kind in (
+        "push",
+        "merge",
+        "deploy",
+        "force-push",
+        "sudo",
+        "credential-access",
+    ) and not runs_shell_evaluator(value):
         return mask_quoted_strings(value)
     return value
 
 def block_with_reason(block_output):
     print(json.dumps(block_output), file=sys.stderr, flush=True)
     sys.exit(2)
+
+for kind, pattern in FORBIDDEN_PATTERNS:
+    haystack = command_haystack(kind, command)
+    if re.search(pattern, haystack):
+        audit({
+            "decision": "block",
+            "kind": kind,
+            "pattern": pattern,
+            "command": command,
+            "tool_name": tool_name,
+            "approved": False,
+            "approval_reason": "forbidden_command",
+            "approval_source": "policy",
+            "approval_file": "",
+        })
+        block_output = {
+            "decision": "block",
+            "reason": (
+                f"[agent-crew] Forbidden command pattern detected.\n\n"
+                f"Kind: {kind}\n"
+                f"Matched pattern: {pattern}\n"
+                f"Command: {command}\n\n"
+                "This command is denied by policy and cannot be approved with "
+                "a dangerous-command marker."
+            )
+        }
+        block_with_reason(block_output)
 
 for kind, pattern in DANGEROUS_PATTERNS:
     haystack = command_haystack(kind, command)

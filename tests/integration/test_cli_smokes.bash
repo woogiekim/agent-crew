@@ -13,6 +13,7 @@ PYTHON_SCRIPTS=(
   "auto-issue-reporter.py"
   "telemetry-aggregate.py"
   "cost-aggregate.py"
+  "framework-review-check.py"
   "crew-runtime.py"
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"
