@@ -492,8 +492,8 @@ Resume rules:
 {
   "completed_stages": 2,
   "stage_agent_status": {
-    "1": {"designer": "completed", "backend": "completed"},
-    "2": {"frontend": "completed"}
+    "1": {"test-writer": "completed", "backend": "completed"},
+    "2": {"reviewer": "completed"}
   }
 }
 ```
@@ -757,6 +757,40 @@ The guard is idempotent: if the analyst already appended `["reviewer"]` correctl
 the block is a no-op (no write, no log event). When it does fire, the pipeline
 is corrected in-place and a `STATE_WARN` progress event should be emitted by the
 supervisor runtime using `log_progress`.
+
+#### Phase 1b pipeline quality gate: mandatory TDD implementation plan
+
+Immediately after the reviewer-stage guard, validate that any mutating code
+implementation stage is TDD-capable before the pipeline can enter Phase 2. This
+is a planning-time gate; do not wait until the completion-time
+`quality-loop-check.py` catches the missing evidence.
+
+```bash
+PLAN_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
+  --pipeline "${PIPELINE_PATH}" \
+  --task "${TASK}" \
+  --format text 2>&1)
+PLAN_CHECK_RC=$?
+
+if [ "${PLAN_CHECK_RC}" -ne 0 ]; then
+  log_progress "BLOCKED" "pipeline quality plan failed: ${PLAN_CHECK_OUTPUT}"
+  register_update current_phase blocked
+  register_update blocked_by pipeline_quality_plan_failed
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: BLOCKED
+BLOCKER: pipeline_quality_plan_failed
+DETAIL: pipeline.json contains code implementation stages that are not TDD-capable or are missing a later reviewer stage.
+
+${PLAN_CHECK_OUTPUT}
+EOF
+  exit 1
+fi
+```
+
+Common remediation: rewrite bare code stages such as `["backend"]` or
+`["designer", "backend"]` into separate object stages with
+`{ "agents": ["backend"], "tdd_parallel": true }`, then keep a later solo
+`["reviewer"]` stage.
 
 #### Phase 1c-bis: Per-stage host task DAG mirror (P3 — capability-gated)
 

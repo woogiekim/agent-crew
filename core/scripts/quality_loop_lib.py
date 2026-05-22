@@ -37,6 +37,7 @@ REVIEW_REJECTED_RE = re.compile(
 NON_IMPLEMENTER_AGENTS = {
     "analyst",
     "devops",
+    "designer",
     "documenter",
     "historian",
     "issuer",

@@ -19,7 +19,7 @@
     },
     "stages": {
       "type": "array",
-      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel, parallelizable_units, streaming_review} (TDD parallel form, sub-task fan-out, and/or streaming review — see core/rules/state-files/pipeline-json.md for the per-flag semantics). Consumers normalize the three shapes.",
+      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel, parallelizable_units, streaming_review} (TDD parallel form, sub-task fan-out, and/or streaming review — see core/rules/state-files/pipeline-json.md for the per-flag semantics). Consumers normalize the three shapes. New mutating code implementation stages must use the object form with tdd_parallel=true; legacy bare code stages are schema-compatible but fail the planning-time quality gate.",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
@@ -42,7 +42,7 @@
               "tdd_parallel": {
                 "type": "boolean",
                 "default": false,
-                "description": "When true, supervisor co-spawns the test-writer agent in parallel with every agent listed in `agents`. Both must complete before the stage advances. See core/agents/supervisor-stages.md § TDD Parallel Dispatch."
+                "description": "When true, supervisor co-spawns the test-writer agent in parallel with every agent listed in `agents`. Both must complete before the stage advances. Mandatory for newly planned mutating code implementation stages. See core/agents/supervisor-stages.md § TDD Parallel Dispatch."
               },
               "streaming_review": {
                 "type": "boolean",

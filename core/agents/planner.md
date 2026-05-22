@@ -176,28 +176,35 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 
 **Parallelism guidance**: Prefer grouping independent agents in the same stage
 to reduce total wall-clock time:
-- `designer` and `backend` can always run in parallel — they produce independent
-  artifacts (`design-spec.md` vs. domain/API code) and do not depend on each other
-  within the same stage.
+- `designer` may run before code implementation to produce `design-spec.md`.
+  Do not group it with a code implementer when that would prevent the implementer
+  from using a single-agent TDD parallel stage.
 - `devops` and `resolver` are always sequential — they depend on prior stage output.
-- When uncertain, put agents in the same stage; the supervisor enforces independence.
+- When uncertain for code work, split implementation into single-agent
+  `tdd_parallel` stages; use same-stage parallelism only for non-code agents or
+  explicit `parallelizable_units`.
 
 | Request Type | stages |
 |---|---|
-| Backend API / Domain Logic | `[["backend"], ["reviewer"]]` |
-| Full-stack including UI | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
-| UI only (static pages, etc.) | `[["designer"], ["frontend"], ["reviewer"]]` |
+| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[["backend"], ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer", "backend"], ["frontend"], ["devops"], ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
 | Design / Analysis only | `[]` |
 | Matches custom agent role | Include the custom agent in an appropriate stage, then `["reviewer"]` last |
 
 ```json
 {
   "task": "Original request",
-  "stages": [["designer", "backend"], ["frontend"], ["reviewer"]],
+  "stages": [
+    ["designer"],
+    { "agents": ["backend"], "tdd_parallel": true },
+    { "agents": ["frontend"], "tdd_parallel": true },
+    ["reviewer"]
+  ],
   "needs_creation": [
     {
       "name": "example-specialist",
@@ -211,7 +218,7 @@ to reduce total wall-clock time:
 
 If the decision is unclear, conservatively include more agents.
 
-#### When to set `tdd_parallel: true`
+#### Mandatory TDD implementation stages
 
 A stage entry may be encoded as `{ "agents": [...], "tdd_parallel":
 true }` instead of the bare-string / bare-array form. When set, the
@@ -220,9 +227,25 @@ in a single parallel host dispatch, halving the critical path for that
 stage pair. See `core/rules/state-files/pipeline-json.md` § TDD
 parallel stage form for the schema.
 
-Set `tdd_parallel: true` for an implementation stage (backend,
-frontend, or a generic implementer custom agent) only when **all** of
-the following hold:
+Set `tdd_parallel: true` for every code implementation stage (backend,
+frontend, or a generic implementer custom agent). For mutating code
+work this is not an optimization knob; it is the pipeline's quality
+contract: implementation runs with a TDD partner, then reviewer output
+can drive a TDD remediation pass and re-review.
+
+After emitting `pipeline.json`, run the planning-time gate:
+
+```bash
+python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
+  --pipeline "${TASK_DIR}/pipeline.json" \
+  --format text
+```
+
+If the gate reports `implementation_stage_without_tdd_parallel`, revise
+the pipeline before returning it to the supervisor. Do not defer this to
+the completion-time quality-loop check.
+
+The code implementation stage must have:
 
 - The PRD or analysis defines a **clear input/output contract** for
   the entry points the implementer will create — function signatures,
@@ -231,22 +254,22 @@ the following hold:
   knowledge of the implementer's chosen internals.
 - The implementation surface is **separable from existing code** —
   new files / new endpoints / new modules dominate over edits to
-  existing logic. Pure refactors and bug fixes are poor fits: their
-  contract is "behavior unchanged", which the existing test suite
-  already encodes.
+  existing logic. For refactors and bug fixes, test-writer should write
+  regression tests against the observed contract before the implementer
+  changes internals.
 - The project has a **test directory convention** that test-writer
-  can detect (`tests/`, `test/`, `spec/`, `__tests__/`, or a
-  comparable existing directory). When no test convention exists,
-  default to `false` — adding a test directory is itself a decision
-  that belongs to the implementer, not test-writer.
+  can detect (`tests/`, `test/`, `spec/`, `__tests__/`, or a comparable
+  existing directory). When no test convention exists, the implementer
+  must create the test location as part of the TDD stage; do not switch
+  TDD off.
 - The implementer stage is **a single agent** (`agents` of length 1).
-  Multi-implementer TDD parallel is out of scope for MVP — see
-  `core/agents/supervisor-stages.md` § TDD Parallel Dispatch.
+  Multi-implementer stages must be split into separate single-agent
+  implementation stages so each code implementer gets a TDD partner.
+  See `core/agents/supervisor-stages.md` § TDD Parallel Dispatch.
 
-When **any** of these does not hold, default to `false` (omit the
-field, or use the bare-string / bare-array form). Defaulting to false
-preserves the existing critical path and avoids spurious test-writer
-spawns on tasks where the spec is too thin to write meaningful tests.
+When the spec is too thin to write meaningful tests, return to
+requirements collection or write the missing contract into
+`context/prd.md`. Do not emit a non-TDD code implementation stage.
 
 Anti-patterns — do NOT set `tdd_parallel: true` for:
 
@@ -520,7 +543,7 @@ Write the handoff content for the next agent to read in `{TASK_DIR}/handoff.md`:
 Return only the following format (do not include long explanations or re-quote file contents):
 
 ```text
-PIPELINE: {stages summary ex) [designer‖backend] → [frontend]}
+PIPELINE: {stages summary ex) [designer] → [backend+tdd] → [frontend+tdd] → [reviewer]}
 HANDOFF: {TASK_DIR}/handoff.md
 PRD: {TASK_DIR}/context/prd.md
 ```

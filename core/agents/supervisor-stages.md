@@ -292,11 +292,11 @@ Spawn using the format above in blocking mode.
 
 Invoke multiple agent/delegation calls simultaneously in a single response when the host AI tool supports it.
 
-**Parallelism opportunities**: The following stage compositions are safe to run
-concurrently (they write to independent output files and do not share handoff.md):
-- `["designer", "backend"]` — designer writes `design-spec.md`; backend writes
-  domain model and API code. Neither depends on the other's output within the stage.
-- Any stage where all agents are annotated with `do not modify handoff.md`.
+**Parallelism opportunities**: Same-stage parallelism is safe for non-code
+agents that write independent output files and do not share `handoff.md`.
+Code implementers in newly planned mutating tasks should instead run as
+single-agent TDD parallel stages, so test-writer can co-spawn with that
+implementer.
 
 The `reviewer` stage is always sequential (runs after all prior stages complete).
 The `devops` stage is always sequential (requires prior stage artifacts).
@@ -385,7 +385,7 @@ Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
 ### TDD Parallel Dispatch
 
-A stage may opt into the **TDD parallel** form by encoding itself as
+A code implementation stage uses the **TDD parallel** form by encoding itself as
 the object `{ "agents": [...], "tdd_parallel": true }` instead of the
 bare string / bare array forms. The schema doc
 (`core/rules/state-files/pipeline-json.md` § TDD parallel stage form)
@@ -569,8 +569,9 @@ plumbing change is needed.
 When `STAGE_TDD_PARALLEL == 0` (the absence case — bare string or
 bare array stage entries), Phase 2 dispatch is unchanged from the
 behavior documented in § Single Agent and § Parallel Agents above. The
-TDD parallel block is opt-in by stage encoding; no pipeline that
-predates this feature is affected.
+planning-time quality gate blocks this shape for newly emitted mutating
+code implementation stages, but legacy state, devops-only work, and
+non-code stages still run through the existing dispatch path.
 
 ### Sub-Task Fan-Out Dispatch
 

@@ -46,7 +46,8 @@ Before assigning agents to stages, map data dependencies:
 
 1. List every artifact each agent **produces** and **consumes**.
 2. Draw a dependency graph (can be mental or written).
-3. Agents with no dependency on each other's outputs → same stage (parallel).
+3. Non-code agents with no dependency on each other's outputs → same stage
+   (parallel).
 4. Agent B that consumes Agent A's output → later stage (sequential).
 
 ```
@@ -54,8 +55,9 @@ designer produces: design-spec.md
 backend  produces: OpenAPI contract, DB schema
 frontend consumes: design-spec.md + OpenAPI contract
 
-→ designer and backend can run in parallel (Stage 1)
-→ frontend must follow both (Stage 2)
+→ designer runs before frontend implementation (Stage 1)
+→ backend and frontend run as separate TDD-capable implementation stages
+→ reviewer follows implementation
 ```
 
 **Critical path rule:** the pipeline duration is bounded by the longest sequential chain, not the sum of all work. Maximize parallelism on the critical path.
@@ -64,24 +66,35 @@ frontend consumes: design-spec.md + OpenAPI contract
 
 ## Pipeline Stage Composition
 
-Build `stages` as a 2D array where inner arrays run in parallel and outer arrays run sequentially.
+Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
+run sequentially. Every code implementation stage must use the object form
+`{ "agents": ["backend"], "tdd_parallel": true }` (or frontend/custom
+equivalent). Do not emit bare code stages for new implementation work.
 
 | Scope | stages |
 |---|---|
-| Backend API | `[["backend"], ["reviewer"]]` |
-| Full-stack | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
-| UI only | `[["designer"], ["frontend"], ["reviewer"]]` |
-| Tooling / docs / config | `[["backend"], ["reviewer"]]` unless a dedicated custom agent is created |
+| Backend API | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| UI only | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | CI/CD / infra | `[["devops"], ["reviewer"]]` |
-| Feature + deploy | `[["backend"], ["devops"], ["reviewer"]]` |
+| Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
 
-Only place agents in the same inner array when their outputs are **independent**. If an agent consumes another agent's artifact, put it in a later stage even when both changes touch different files.
+Only place agents in the same inner array when their outputs are **independent**
+and the stage is not a code implementation stage that needs a TDD partner. If
+an agent consumes another agent's artifact, put it in a later stage even when
+both changes touch different files.
 
 **Example pipeline.json:**
 ```json
 {
   "task": "User authentication flow",
-  "stages": [["designer", "backend"], ["frontend"], ["reviewer"]],
+  "stages": [
+    ["designer"],
+    { "agents": ["backend"], "tdd_parallel": true },
+    { "agents": ["frontend"], "tdd_parallel": true },
+    ["reviewer"]
+  ],
   "needs_creation": [],
   "completed_stages": 0,
   "branch": "feature/user-authentication-flow-YYYYMMDD-HHMMSS-0",
@@ -113,6 +126,8 @@ After writing pipeline.json, cross-check:
 4. `completed_stages` is an integer and starts at `0` for new runs
 5. `execution_mode` matches the orchestrator context (`single` or `parallel`)
 6. Final stage is always `["reviewer"]`
+7. `pipeline-quality-plan-check.py --pipeline {TASK_DIR}/pipeline.json` passes
+   for mutating implementation work
 
 ---
 

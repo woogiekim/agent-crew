@@ -133,6 +133,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/bin/crew:${AGENT_CREW_HOME}/bin/crew" \
     "core/scripts/crew-runtime.py:${AGENT_CREW_HOME}/scripts/crew-runtime.py" \
     "core/scripts/repair-task-state.py:${AGENT_CREW_HOME}/scripts/repair-task-state.py" \
+    "core/scripts/pipeline-quality-plan-check.py:${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
     "core/scripts/quality-loop-check.py:${AGENT_CREW_HOME}/scripts/quality-loop-check.py" \
     "core/scripts/quality_loop_lib.py:${AGENT_CREW_HOME}/scripts/quality_loop_lib.py" \
     "core/scripts/reviewer-loop-decision.py:${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \

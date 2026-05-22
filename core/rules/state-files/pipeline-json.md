@@ -26,16 +26,14 @@ Canonical shape:
 {
   "schema_version":   1,
   "task":             "implement order API",
-  "stages":           [["analyst"], ["backend"], ["reviewer"]],
+  "stages":           [{"agents": ["backend"], "tdd_parallel": true}, ["reviewer"]],
   "completed_stages": 0,
   "needs_creation":   [],
   "stage_agent_status": {
-    "1": {"designer": "completed", "backend": "completed"},
-    "2": {"frontend": "completed"}
+    "1": {"test-writer": "completed", "backend": "completed"}
   },
   "host_task_ids":    [
-    {"designer": "task-abc", "backend": "task-def"},
-    {"frontend": "task-ghi"},
+    {"test-writer": "task-abc", "backend": "task-def"},
     {"reviewer": "task-jkl"}
   ]
 }
@@ -43,8 +41,9 @@ Canonical shape:
 
 ### TDD parallel stage form
 
-A single stage may opt into the **TDD parallel** dispatch contract by
-using the object form below instead of a bare string or array:
+A single code implementation stage uses the **TDD parallel** dispatch
+contract by using the object form below instead of a bare string or
+array:
 
 ```json
 {
@@ -61,13 +60,24 @@ host dispatch). Both must reach `STATUS: completed` before the stage's
 `completed_stages` counter increments. Either failure path triggers
 the Stage Retry Rule per agent (selective retry).
 
-Backwards compatibility: `tdd_parallel` defaults to `false`. The two
-legacy stage shapes (`"backend"` as a bare string, `["designer",
-"backend"]` as a list) continue to mean "no TDD parallel — sequential
-spawn(s)". A stage object with `tdd_parallel: false` (or omitted) is
-functionally identical to writing the `agents` list directly as the
-stage entry. See `core/agents/supervisor-stages.md` § TDD Parallel
-Dispatch for the spawn semantics.
+Planning contract: newly emitted mutating code implementation pipelines
+must use this form for each backend, frontend, or custom implementer
+stage and must include a later reviewer stage. Run
+`${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py --pipeline
+${TASK_DIR}/pipeline.json` after analyst/planner emission. A failure
+such as `implementation_stage_without_tdd_parallel` means the
+supervisor must not continue to implementation.
+
+Backwards compatibility: `tdd_parallel` defaults to `false` at the data
+format level. The two legacy stage shapes (`"backend"` as a bare
+string, `["designer", "backend"]` as a list) continue to mean "no TDD
+parallel — sequential spawn(s)" when reading old state, devops-only
+pipelines, or non-code stages. They are schema-compatible, but the
+planner must not emit them for new code implementation stages. A stage
+object with `tdd_parallel: false` (or omitted) is functionally
+identical to writing the `agents` list directly as the stage entry. See
+`core/agents/supervisor-stages.md` § TDD Parallel Dispatch for the spawn
+semantics.
 
 ### Sub-Task Fan-Out stage form (`parallelizable_units`)
 

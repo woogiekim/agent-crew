@@ -6,7 +6,7 @@ description: >
   implementation agent (backend / frontend / generic implementer) so test
   authoring and implementation share the same critical-path budget.
   SKIP when: no stage in the pipeline carries `tdd_parallel: true`, or the
-  user explicitly opts out of TDD parallel for the task.
+  task is non-code work with no implementation stage.
   Output: test files under the project's test directory (per project
   convention), one or more commits, and a STATUS: completed line.
 reasoning_tier: balanced

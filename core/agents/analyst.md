@@ -128,17 +128,19 @@ If no ambiguities or risks are found, write the table with a single row:
 Based on scope, complexity, and the intent summary from Step 2, determine the
 full pipeline. Use the stage composition table below.
 
-**Parallelism guidance** — **default to parallel. Always group independent agents
-in the same stage unless a true data dependency exists.**
+**Parallelism guidance** — default to parallel for independent non-code work, but
+preserve the TDD contract for code implementation stages.
 
 Rule: If agent B does not read any file that agent A writes within the same stage,
-they MUST be grouped as a parallel stage — do not serialize them.
+they may be grouped as a parallel stage unless either agent is a code
+implementer that must run as a single-agent `tdd_parallel` stage.
 
-Default parallel groupings (always apply unless overridden by a dependency):
-- `["designer", "backend"]` — designer writes `design-spec.md`; backend writes
-  domain/API code. Neither reads the other's output within the stage.
-- Any two agents that write to different output files and do not consume each other's
-  output within the same stage round.
+Default grouping:
+- `designer` may run before code implementation to produce `design-spec.md`.
+- Backend/frontend/custom code implementers each get their own
+  `{ "agents": ["..."], "tdd_parallel": true }` stage.
+- Any two non-code agents that write to different output files and do not consume
+  each other's output within the same stage round may run together.
 
 Always sequential (never group with others in the same stage):
 - `devops` — depends on prior stage artifacts; always its own sequential stage.
@@ -151,14 +153,14 @@ Choosing sequential to avoid conflicts is the wrong trade-off.
 
 | Request Type | stages |
 |---|---|
-| Backend API / Domain Logic | `[["backend"], ["reviewer"]]` |
-| Full-stack including UI | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
-| UI only (static pages, etc.) | `[["designer"], ["frontend"], ["reviewer"]]` |
+| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[["backend"], ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer", "backend"], ["frontend"], ["devops"], ["reviewer"]]` |
-| Tooling / docs / config | `[["backend"], ["reviewer"]]` or custom agent + reviewer |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
+| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | Analysis only | `[]` |
 
 Write `{TASK_DIR}/pipeline.json`:
@@ -176,9 +178,9 @@ Set `needs_creation` to a non-empty array only when a task requires domain-speci
 expertise that no builtin agent (planner, designer, frontend, backend, devops,
 resolver, reviewer) can provide without significant prompting workarounds.
 
-#### TDD parallel stage opt-in
+#### Mandatory TDD implementation stage
 
-A single implementation stage may be encoded as the object
+Every code implementation stage must be encoded as the object
 `{ "agents": [...], "tdd_parallel": true }` instead of the bare-string
 / bare-array form. The supervisor then co-spawns `test-writer`
 alongside the implementer in a single parallel host dispatch — see
@@ -194,8 +196,26 @@ Example stages with one TDD parallel stage:
 ]
 ```
 
-Set `tdd_parallel: true` only when **all** of the following hold for
-the implementer stage in question:
+For implementation tasks, `tdd_parallel: true` is mandatory for each
+single-agent code implementer stage (backend, frontend, or a custom
+implementer). If the task lacks enough input/output contract for
+test-writer to derive tests, stop in requirements collection or write
+the missing contract into `context/prd.md`; do not silently emit a
+non-TDD implementation stage.
+
+Before handing off, validate the emitted pipeline:
+
+```bash
+python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
+  --pipeline "${TASK_DIR}/pipeline.json" \
+  --format text
+```
+
+If the check fails, rewrite `pipeline.json` before Phase 2. Do not
+continue with a mutating implementation pipeline that has
+`implementation_stage_without_tdd_parallel`.
+
+The implementer stage must still satisfy:
 
 - The PRD defines a clear input/output contract for the entry points
   the implementer will create (function signatures, endpoints, CLI
@@ -206,16 +226,17 @@ the implementer stage in question:
 - The project has a detectable test directory (`tests/`, `test/`,
   `spec/`, `__tests__/`, etc.).
 - The stage's `agents` array has length 1 (MVP scope —
-  multi-implementer TDD parallel is a follow-up).
+  multi-implementer TDD parallel is not emitted by the planner).
 
-**Default: `true` for single-agent code implementation stages** (backend, frontend, or
-any custom implementer) when the project has a detectable test directory. Set
-`tdd_parallel: false` explicitly only when:
-- The stage has `agents.length > 1` (multi-implementer TDD parallel is not yet supported).
-- The spec lacks a clear input/output contract (test-writer cannot derive tests from it).
+For multi-agent implementation work, split the pipeline into separate
+single-agent code stages instead of writing one combined stage. Example:
+write `["designer"], {"agents":["backend"],"tdd_parallel":true},
+{"agents":["frontend"],"tdd_parallel":true}` rather than
+`["designer", "backend"], ["frontend"]`.
 
-The existing bare forms (`"backend"`, `["designer", "backend"]`) remain fully supported
-and produce identical behavior to a `tdd_parallel: false` stage.
+The existing bare forms (`"backend"`, `["designer", "backend"]`) remain
+schema-compatible for legacy state, devops-only work, and non-code stages. Do
+not emit them for new code implementation stages.
 
 #### Sub-task fan-out opt-in (`parallelizable_units`)
 
@@ -314,7 +335,7 @@ Return inline so supervisor can proceed directly to Phase 1d (plan approval):
 ANALYSIS:
   intent: {one-line intent summary}
   risks: {total count} identified ({high_count} high)
-  pipeline: {stages summary e.g. [designer‖backend] → [frontend] → [reviewer]}
+  pipeline: {stages summary e.g. [designer] → [backend+tdd] → [frontend+tdd] → [reviewer]}
   readiness: {READY | NEEDS_CLARIFICATION | BLOCKED}
 PIPELINE: {stages summary}
 HANDOFF: {TASK_DIR}/handoff.md

@@ -13,6 +13,7 @@ PYTHON_SCRIPTS=(
   "telemetry-aggregate.py"
   "cost-aggregate.py"
   "crew-runtime.py"
+  "pipeline-quality-plan-check.py"
   "quality-loop-check.py"
   "reviewer-loop-decision.py"
 )

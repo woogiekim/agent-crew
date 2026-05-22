@@ -207,6 +207,9 @@ assert_contains "${out}" "refreshed runtime assets"
 it "crew run installs missing runtime repair script during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
 
+it "crew run installs pipeline quality plan checker during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-quality-plan-check.py"
+
 it "crew run refreshes managed PATH crew CLI during auto-refresh"
 cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
 rc=$?

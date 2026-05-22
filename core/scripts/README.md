@@ -106,6 +106,10 @@ invocation in SKILL.md; generic adds guidance).
   pre-repair `result.md`. Completed repairs for mutating implementation tasks
   require TDD/test evidence, reviewer evidence, and pipeline-level quality-loop
   events, or an explicit quality bypass reason.
+- `pipeline-quality-plan-check.py` — validates `pipeline.json` immediately after
+  analyst/planner emission. Mutating implementation stages must be encoded as
+  TDD-capable stages and followed by a reviewer stage; multi-agent code stages
+  must be split so each implementer can run with its own TDD partner.
 - `quality-loop-check.py` — validates that completed mutating implementation
   tasks have a TDD-capable implementation stage, a later reviewer stage,
   implementer/TDD completion events, reviewer approval, and rework/re-review
