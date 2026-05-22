@@ -62,7 +62,8 @@ the Stage Retry Rule per agent (selective retry).
 
 Planning contract: newly emitted mutating code implementation pipelines
 must use this form for each backend, frontend, or custom implementer
-stage and must include a later reviewer stage. Run
+stage, each TDD stage must contain exactly one code implementer, and
+the pipeline must include a later reviewer stage. Run
 `${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py --pipeline
 ${TASK_DIR}/pipeline.json` after analyst/planner emission. A failure
 such as `implementation_stage_without_tdd_parallel` means the

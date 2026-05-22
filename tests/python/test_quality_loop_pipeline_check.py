@@ -100,6 +100,34 @@ def test_quality_loop_checker_blocks_reviewer_rejection_without_rework(tmp_path:
     assert "missing_rework_after_review_rejection" in payload["failures"]
 
 
+def test_quality_loop_checker_blocks_multi_agent_tdd_stage(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "frontend", "frontend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement production quality-loop behavior",
+            "stages": [
+                {"agents": ["backend", "frontend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 2,
+        },
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_pipeline_tdd_stage" in payload["failures"]
+
+
 def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(

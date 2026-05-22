@@ -43,7 +43,7 @@ def test_plan_checker_blocks_bare_implementation_stage(tmp_path: Path):
     assert "implementation_stage_without_tdd_parallel" in payload["failures"]
 
 
-def test_plan_checker_blocks_multi_agent_implementation_stage(tmp_path: Path):
+def test_plan_checker_blocks_mixed_bare_implementation_stage(tmp_path: Path):
     path = write_pipeline(
         tmp_path,
         {
@@ -59,7 +59,29 @@ def test_plan_checker_blocks_multi_agent_implementation_stage(tmp_path: Path):
     assert result.returncode == 1
     payload = json.loads(result.stdout)
     assert "implementation_stage_without_tdd_parallel" in payload["failures"]
+
+
+def test_plan_checker_blocks_multi_agent_tdd_stage(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a full-stack feature",
+            "stages": [
+                {"agents": ["backend", "frontend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "implementation_stage_without_tdd_parallel" in payload["failures"]
     assert "multi_agent_implementation_stage_must_split_for_tdd" in payload["failures"]
+    assert payload["implementation_stages"][0]["implementers"] == ["backend", "frontend"]
 
 
 def test_plan_checker_accepts_split_tdd_implementation_stages(tmp_path: Path):

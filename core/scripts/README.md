@@ -108,8 +108,9 @@ invocation in SKILL.md; generic adds guidance).
   events, or an explicit quality bypass reason.
 - `pipeline-quality-plan-check.py` — validates `pipeline.json` immediately after
   analyst/planner emission. Mutating implementation stages must be encoded as
-  TDD-capable stages and followed by a reviewer stage; multi-agent code stages
-  must be split so each implementer can run with its own TDD partner.
+  TDD-capable stages and followed by a reviewer stage; every TDD stage must
+  contain exactly one code implementer, so multi-agent code stages must be split
+  and each implementer gets its own TDD partner.
 - `quality-loop-check.py` — validates that completed mutating implementation
   tasks have a TDD-capable implementation stage, a later reviewer stage,
   implementer/TDD completion events, reviewer approval, and rework/re-review

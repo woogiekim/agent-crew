@@ -494,12 +494,33 @@ When `STAGE_TDD_PARALLEL == 1`:
 
    MVP scope: each TDD parallel stage carries exactly one implementer.
    `STAGE_AGENTS` may legally hold more than one entry (the schema
-   allows it), but only the first implementer is co-spawned with
-   test-writer in MVP. Stages with two or more implementers + TDD
-   parallel are a follow-up; for MVP, the planner is instructed
-   (`core/agents/planner.md` § TDD Parallel Stages and the analyst
-   equivalent) to keep `agents` to a single entry when
-   `tdd_parallel: true`.
+   allows it for backward compatibility), but the planning-time quality
+   gate rejects new mutating pipelines with two or more code implementers
+   in one TDD stage. If such a stage reaches dispatch anyway, fail closed
+   before spawning agents:
+
+   ```bash
+   TDD_IMPLEMENTER_COUNT=$(python3 -c "
+import json
+non_impl = {'analyst','devops','designer','documenter','historian','issuer','planner','requirements','resolver','reviewer','scribe','supervisor','test-writer'}
+p = json.load(open('${PIPELINE_PATH}'))
+stage = p['stages'][${i} - 1]
+agents = stage.get('agents', []) if isinstance(stage, dict) else []
+impl = [a for a in agents if a.split(':', 1)[0].strip() not in non_impl]
+print(len(impl))
+")
+   if [ "${TDD_IMPLEMENTER_COUNT}" != "1" ]; then
+     log_progress "BLOCKED" "stage=${i} reason=multi_agent_tdd_parallel_unsupported"
+     register_update current_phase blocked
+     register_update blocked_by --json '["multi_agent_tdd_parallel_unsupported"]'
+     cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: multi_agent_tdd_parallel_unsupported
+DETAIL: TDD parallel stages must contain exactly one code implementer. Split the stage so each implementer has its own test-writer partner.
+EOF
+     return STATUS: blocked
+   fi
+   ```
 
 4. The test-writer prompt MUST instruct the agent to read the spec
    only (it MUST NOT read the implementer's source). The

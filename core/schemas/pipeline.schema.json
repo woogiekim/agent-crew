@@ -37,7 +37,7 @@
                 "type": "array",
                 "items": { "type": "string", "minLength": 1 },
                 "minItems": 1,
-                "description": "Implementation agents in this stage. When tdd_parallel=true, test-writer is co-spawned alongside each."
+                "description": "Agents in this stage. For newly planned mutating code work, a tdd_parallel stage must contain exactly one code implementer; split backend/frontend/custom implementers into separate TDD stages. The schema remains permissive for legacy state, but the planning-time quality gate rejects multi-implementer TDD stages."
               },
               "tdd_parallel": {
                 "type": "boolean",

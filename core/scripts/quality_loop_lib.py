@@ -101,8 +101,12 @@ def is_implementer_agent(agent: str) -> bool:
     return bool(name) and name not in NON_IMPLEMENTER_AGENTS
 
 
+def stage_implementer_agents(stage) -> list[str]:
+    return [agent for agent in stage_agents(stage) if is_implementer_agent(agent)]
+
+
 def is_implementation_stage(stage) -> bool:
-    return any(is_implementer_agent(agent) for agent in stage_agents(stage))
+    return bool(stage_implementer_agents(stage))
 
 
 def is_reviewer_stage(stage) -> bool:
@@ -113,7 +117,11 @@ def is_tdd_capable_stage(stage) -> bool:
     agents = stage_agents(stage)
     if "test-writer" in agents:
         return True
-    return isinstance(stage, dict) and bool(stage.get("tdd_parallel")) and is_implementation_stage(stage)
+    return (
+        isinstance(stage, dict)
+        and bool(stage.get("tdd_parallel"))
+        and len(stage_implementer_agents(stage)) == 1
+    )
 
 
 def pipeline_shape(pipeline: dict) -> dict:

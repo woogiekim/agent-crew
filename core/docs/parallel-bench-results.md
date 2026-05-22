@@ -123,11 +123,12 @@ caps TDD parallel co-spawn to a single implementer even when
 formula reproduces this cap (`1 + min(1, max(1, len(agents)))`),
 so a stage encoded with `{agents:[backend, designer], tdd_parallel:true}`
 is currently counted as 2 spawns, not 3. This matches the runtime
-behavior, but the planner-side guidance in `core/agents/planner.md`
-§ When to set `tdd_parallel` is more permissive than the supervisor
-actually honors. **Recommendation**: tighten the planner rule to
-"`tdd_parallel: true` MUST set `agents:` to exactly one entry" so
-the schema disallows a stage shape the dispatcher silently truncates.
+behavior, but a planning/runtime guard must reject the shape before
+dispatch. **Resolved in #82**: `pipeline-quality-plan-check.py` and
+`quality_loop_lib.is_tdd_capable_stage()` now reject multi-implementer
+TDD stages. The accepted shape is exactly one code implementer per
+`tdd_parallel: true` stage; backend/frontend/custom implementers must
+be split into separate TDD stages.
 
 ### G2 — Fan-out overlap check is log-only
 

@@ -31,6 +31,7 @@ from quality_loop_lib import (
     looks_mutating_task,
     pipeline_shape,
     stage_agents,
+    stage_implementer_agents,
 )
 
 
@@ -66,18 +67,21 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
                 continue
 
             agents = stage_agents(stage)
+            implementers = stage_implementer_agents(stage)
             tdd_capable = is_tdd_capable_stage(stage)
             result = {
                 "stage_index": idx,
                 "agents": agents,
+                "implementers": implementers,
                 "tdd_capable": tdd_capable,
             }
             implementation_stage_results.append(result)
 
+            if len(implementers) != 1:
+                failures.append("multi_agent_implementation_stage_must_split_for_tdd")
+
             if not tdd_capable:
                 failures.append("implementation_stage_without_tdd_parallel")
-                if len(agents) > 1:
-                    failures.append("multi_agent_implementation_stage_must_split_for_tdd")
 
         if not shape["has_reviewer_stage"]:
             failures.append("missing_pipeline_reviewer_stage")
