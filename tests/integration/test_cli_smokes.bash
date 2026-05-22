@@ -13,6 +13,7 @@ PYTHON_SCRIPTS=(
   "telemetry-aggregate.py"
   "cost-aggregate.py"
   "crew-runtime.py"
+  "quality-loop-check.py"
 )
 
 # Shell scripts in core/scripts/ — exclude smoke-test-state which is itself

@@ -35,6 +35,67 @@ def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
     return state_dir, task_id, task_dir
 
 
+def write_quality_loop_trace(task_dir: Path) -> None:
+    task_id = "20260522-000000-0"
+    session_id = "20260522-000000"
+    (task_dir / "pipeline.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "task": "Implement a new update gate",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 2,
+        }),
+        encoding="utf-8",
+    )
+    rows = [
+        {
+            "ts": "2026-05-22T00:00:00Z",
+            "trace_id": f"{session_id}.{task_id}.1.1",
+            "task_id": task_id,
+            "session_id": session_id,
+            "event": "STAGE_DONE",
+            "stage": 1,
+            "agent": "test-writer",
+            "attempt": 1,
+            "status": "completed",
+            "detail": "TDD RED GREEN REFACTOR, 3 tests passed",
+            "files": [],
+        },
+        {
+            "ts": "2026-05-22T00:00:01Z",
+            "trace_id": f"{session_id}.{task_id}.1.1",
+            "task_id": task_id,
+            "session_id": session_id,
+            "event": "STAGE_DONE",
+            "stage": 1,
+            "agent": "backend",
+            "attempt": 1,
+            "status": "completed",
+            "detail": "backend - N/A",
+            "files": [],
+        },
+        {
+            "ts": "2026-05-22T00:00:02Z",
+            "trace_id": f"{session_id}.{task_id}.2.1",
+            "task_id": task_id,
+            "session_id": session_id,
+            "event": "STAGE_DONE",
+            "stage": 2,
+            "agent": "reviewer",
+            "attempt": 1,
+            "status": "completed",
+            "detail": "reviewer - REVIEW: APPROVED",
+            "files": [],
+        },
+    ]
+    with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+
+
 def run_repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -63,8 +124,27 @@ def test_repair_blocks_mutating_task_without_quality_loop_evidence(tmp_path: Pat
     assert "BLOCKER: missing_quality_loop_evidence" in result.stderr
 
 
+def test_repair_blocks_evidence_only_without_pipeline_quality_loop(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    (task_dir / "context" / "tdd_log.md").write_text(
+        "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "review.md").write_text(
+        "REVIEW: APPROVED after refactor.\n",
+        encoding="utf-8",
+    )
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_quality_loop_pipeline" in result.stderr
+    assert "missing_pipeline_tdd_stage" in result.stderr
+
+
 def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
     (task_dir / "context" / "tdd_log.md").write_text(
         "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
         encoding="utf-8",
@@ -83,6 +163,7 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
     assert repair["quality_gate"]["review_evidence_paths"] == ["context/review.md"]
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "QUALITY_LOOP: passed" in result_text
+    assert "PIPELINE_QUALITY_LOOP: passed" in result_text
     assert "TDD_EVIDENCE: context/tdd_log.md" in result_text
     assert "REVIEW_EVIDENCE: context/review.md" in result_text
 

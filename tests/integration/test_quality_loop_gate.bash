@@ -34,6 +34,34 @@ cat > "${TASK_DIR}/context/review.md" <<'EOF'
 REVIEW: APPROVED after remediation.
 EOF
 
+it "mutating repair is still blocked when only evidence files exist"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status completed --note "evidence only" "${TASK_ID}" 2>&1)
+rc=$?
+assert_exit 1 "${rc}"
+
+it "evidence-only repair explains missing pipeline quality loop"
+assert_contains "${out}" "BLOCKER: missing_quality_loop_pipeline"
+
+cat > "${TASK_DIR}/pipeline.json" <<'EOF'
+{
+  "schema_version": 1,
+  "task": "Implement quality loop integration behavior",
+  "stages": [
+    {"agents": ["backend"], "tdd_parallel": true},
+    "reviewer"
+  ],
+  "completed_stages": 2
+}
+EOF
+cat > "${TASK_DIR}/progress.buffer.jsonl" <<'EOF'
+{"ts":"2026-05-22T00:00:00Z","trace_id":"20260522-000000.20260522-000000-0.1.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"test-writer","attempt":1,"status":"completed","detail":"TDD RED GREEN, 3 tests passed","files":[]}
+{"ts":"2026-05-22T00:00:01Z","trace_id":"20260522-000000.20260522-000000-0.1.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"backend","attempt":1,"status":"completed","detail":"backend - N/A","files":[]}
+{"ts":"2026-05-22T00:00:02Z","trace_id":"20260522-000000.20260522-000000-0.2.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":2,"agent":"reviewer","attempt":1,"status":"completed","detail":"REVIEW: NEEDS_CHANGES","files":[]}
+{"ts":"2026-05-22T00:00:03Z","trace_id":"20260522-000000.20260522-000000-0.1.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"test-writer","attempt":2,"status":"completed","detail":"TDD REFACTOR, 4 tests passed","files":[]}
+{"ts":"2026-05-22T00:00:04Z","trace_id":"20260522-000000.20260522-000000-0.1.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"backend","attempt":2,"status":"completed","detail":"backend remediation - N/A","files":[]}
+{"ts":"2026-05-22T00:00:05Z","trace_id":"20260522-000000.20260522-000000-0.2.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":2,"agent":"reviewer","attempt":2,"status":"completed","detail":"REVIEW: APPROVED","files":[]}
+EOF
+
 it "mutating repair succeeds with TDD and reviewer evidence"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status completed --note "quality loop completed" "${TASK_ID}" 2>&1)
 rc=$?
@@ -42,6 +70,9 @@ assert_exit 0 "${rc}"
 it "repair result records quality loop pass"
 result=$(cat "${TASK_DIR}/result.md")
 assert_contains "${result}" "QUALITY_LOOP: passed"
+
+it "repair result records pipeline quality loop pass"
+assert_contains "${result}" "PIPELINE_QUALITY_LOOP: passed"
 
 it "repair result records TDD evidence"
 assert_contains "${result}" "TDD_EVIDENCE: context/tdd_log.md"

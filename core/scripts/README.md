@@ -104,8 +104,12 @@ invocation in SKILL.md; generic adds guidance).
 - `repair-task-state.py` — explicit operational repair for manual handoff
   fallback completion; rewrites the task's terminal state and archives the
   pre-repair `result.md`. Completed repairs for mutating implementation tasks
-  require TDD/test evidence and reviewer evidence, or an explicit quality
-  bypass reason.
+  require TDD/test evidence, reviewer evidence, and pipeline-level quality-loop
+  events, or an explicit quality bypass reason.
+- `quality-loop-check.py` — validates that completed mutating implementation
+  tasks have a TDD-capable implementation stage, a later reviewer stage,
+  implementer/TDD completion events, reviewer approval, and rework/re-review
+  after any reviewer rejection.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.

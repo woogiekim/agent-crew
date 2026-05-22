@@ -9,6 +9,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from quality_loop_lib import check_quality_loop
+
 
 MUTATING_TASK_RE = re.compile(
     r"\b("
@@ -121,6 +123,10 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
 
     evidence_paths = list(args.evidence) + list(args.quality_evidence)
     status = quality_evidence_status(task_dir, evidence_paths)
+    pipeline_status = check_quality_loop(task_dir, target_status=args.status)
+    status["pipeline_gate"] = pipeline_status
+    status["pipeline_passed"] = pipeline_status["passed"]
+    status["passed"] = bool(status["passed"] and pipeline_status["passed"])
     status["bypassed"] = False
     status["bypass_reason"] = ""
     if status["passed"]:
@@ -131,11 +137,23 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
         status["bypass_reason"] = args.quality_bypass_reason
         return status
 
+    if status.get("tdd_evidence_paths") and status.get("review_evidence_paths"):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_quality_loop_pipeline\n"
+            "DETAIL: completed repair for a mutating implementation task requires "
+            "pipeline-level quality-loop events, not only evidence files.\n"
+            "FAILURES: " + ", ".join(pipeline_status.get("failures", [])) + "\n"
+            "NEXT: ensure pipeline.json includes TDD-capable implementation and reviewer stages, "
+            "and progress.buffer.jsonl proves implementer/TDD completion plus reviewer approval. "
+            "If review rejected, the trace must show implementer/TDD retry followed by reviewer re-approval."
+        )
+
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_quality_loop_evidence\n"
         "DETAIL: completed repair for a mutating implementation task requires "
-        "both TDD/test evidence and reviewer evidence.\n"
+        "TDD/test evidence, reviewer evidence, and pipeline-level quality-loop events.\n"
         "NEXT: add --quality-evidence paths for TDD/reviewer artifacts, or "
         "record an explicit --quality-bypass-reason."
     )
@@ -162,6 +180,11 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         elif quality_gate.get("bypassed"):
             lines.append("QUALITY_LOOP: bypassed")
             lines.append(f"QUALITY_BYPASS_REASON: {quality_gate.get('bypass_reason')}")
+        if "pipeline_passed" in quality_gate:
+            lines.append(f"PIPELINE_QUALITY_LOOP: {'passed' if quality_gate.get('pipeline_passed') else 'failed'}")
+        pipeline_failures = quality_gate.get("pipeline_gate", {}).get("failures", [])
+        if pipeline_failures:
+            lines.append("PIPELINE_QUALITY_FAILURES: " + ", ".join(pipeline_failures))
         for path in quality_gate.get("tdd_evidence_paths", []):
             lines.append(f"TDD_EVIDENCE: {path}")
         for path in quality_gate.get("review_evidence_paths", []):

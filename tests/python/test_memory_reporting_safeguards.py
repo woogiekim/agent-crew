@@ -296,6 +296,62 @@ def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementati
         json.dumps({"task": "Implement a production update quality gate"}),
         encoding="utf-8",
     )
+    (task_dir / "pipeline.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "task": "Implement a production update quality gate",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 2,
+        }),
+        encoding="utf-8",
+    )
+    progress_rows = [
+        {
+            "ts": "2026-05-22T00:00:00Z",
+            "trace_id": "20260522-000000.20260522-000000-0.1.1",
+            "task_id": "20260522-000000-0",
+            "session_id": "20260522-000000",
+            "event": "STAGE_DONE",
+            "stage": 1,
+            "agent": "test-writer",
+            "attempt": 1,
+            "status": "completed",
+            "detail": "TDD RED GREEN REFACTOR, 12 tests passed",
+            "files": [],
+        },
+        {
+            "ts": "2026-05-22T00:00:01Z",
+            "trace_id": "20260522-000000.20260522-000000-0.1.1",
+            "task_id": "20260522-000000-0",
+            "session_id": "20260522-000000",
+            "event": "STAGE_DONE",
+            "stage": 1,
+            "agent": "backend",
+            "attempt": 1,
+            "status": "completed",
+            "detail": "backend - N/A",
+            "files": [],
+        },
+        {
+            "ts": "2026-05-22T00:00:02Z",
+            "trace_id": "20260522-000000.20260522-000000-0.2.1",
+            "task_id": "20260522-000000-0",
+            "session_id": "20260522-000000",
+            "event": "STAGE_DONE",
+            "stage": 2,
+            "agent": "reviewer",
+            "attempt": 1,
+            "status": "completed",
+            "detail": "reviewer - REVIEW: APPROVED",
+            "files": [],
+        },
+    ]
+    with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
+        for row in progress_rows:
+            handle.write(json.dumps(row) + "\n")
     (task_dir / "context" / "tdd_log.md").write_text(
         "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
         encoding="utf-8",

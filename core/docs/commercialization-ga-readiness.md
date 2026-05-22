@@ -97,8 +97,8 @@ marked complete:
 5. repeat until approval
 
 Manual fallback repair enforces this for mutating tasks. `crew repair --status
-completed` requires TDD/test evidence and reviewer evidence, discovered from
-standard artifacts such as:
+completed` requires both artifact evidence and pipeline-event evidence. TDD/test
+evidence and reviewer evidence are discovered from standard artifacts such as:
 
 ```text
 context/tdd_log.md
@@ -108,10 +108,18 @@ context/quality-loop.md
 context/quality-loop.json
 ```
 
-Additional artifacts can be provided with `--quality-evidence`. If an operator
-must complete a mutating task without that evidence, they must record an
-explicit `--quality-bypass-reason`; otherwise the repair is blocked with
-`missing_quality_loop_evidence`.
+Additional artifacts can be provided with `--quality-evidence`. The pipeline
+trace is validated from `pipeline.json` and `progress.buffer.jsonl`: completed
+mutating tasks must include a TDD-capable implementation stage, a later reviewer
+stage, implementer/TDD completion events, and reviewer approval. When a reviewer
+returns `STATUS: REJECTED`, `REVIEW: NEEDS_CHANGES`, or `reviewer_rejected`, the
+trace must show a later implementer/TDD retry followed by reviewer re-approval.
+
+If an operator must complete a mutating task without that evidence, they must
+record an explicit `--quality-bypass-reason`; otherwise the repair is blocked
+with `missing_quality_loop_evidence` or `missing_quality_loop_pipeline`.
 
 The report-quality gate applies the same rule to completed implementation
-reports and fails on `missing_tdd_evidence` or `missing_reviewer_evidence`.
+reports and fails on `missing_tdd_evidence`, `missing_reviewer_evidence`, or
+the `missing_pipeline_*` / `missing_rework_after_review_rejection` labels
+reported by `core/scripts/quality-loop-check.py`.

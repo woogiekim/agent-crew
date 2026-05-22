@@ -8,6 +8,8 @@ import re
 import sys
 from pathlib import Path
 
+from quality_loop_lib import check_quality_loop
+
 
 MEASUREMENT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds|m|minutes|%|tokens?|retries?|failures?|passes?|tests?)\b", re.I)
 EVIDENCE_RE = re.compile(r"^(?:[-*]\s*)?(?:EVIDENCE|Evidence|evidence)\s*:\s*(.+)$", re.M)
@@ -191,10 +193,17 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
             failures.append("missing_tdd_evidence")
         if not quality_evidence["review_evidence_paths"]:
             failures.append("missing_reviewer_evidence")
+    pipeline_quality_loop = {}
+    if (
+        quality_loop_required
+        and fixture.get("require_pipeline_quality_loop_for_implementation_reports")
+    ):
+        pipeline_quality_loop = check_quality_loop(task_dir)
+        failures.extend(pipeline_quality_loop.get("failures", []))
 
     return {
         "passed": not failures,
-        "failures": failures,
+        "failures": sorted(set(failures)),
         "evidence_paths": paths,
         "missing_evidence_paths": missing_paths,
         "blockers": blockers,
@@ -205,6 +214,7 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
         "quality_loop_required": bool(quality_loop_required),
         "tdd_evidence_paths": quality_evidence["tdd_evidence_paths"],
         "review_evidence_paths": quality_evidence["review_evidence_paths"],
+        "pipeline_quality_loop": pipeline_quality_loop,
     }
 
 
