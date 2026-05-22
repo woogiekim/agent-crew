@@ -77,6 +77,28 @@ assert_contains "${OUTPUT}" "backend=obsidian"
 
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = "read" ]; then
+  printf 'read-backend=%s\n' "${MNEMOS_BACKEND:-}"
+  exit 0
+fi
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory read defaults to the same local support backend as capture"
+OUTPUT=$(MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" read 0716384d-091f-4279-838f-73d54785767a 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "read default backend"
+assert_contains "${OUTPUT}" "read-backend=default"
+
+it "memory read preserves explicit MNEMOS_BACKEND override"
+OUTPUT=$(MNEMOS_BACKEND=obsidian MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" read 0716384d-091f-4279-838f-73d54785767a 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "read explicit backend"
+assert_contains "${OUTPUT}" "read-backend=obsidian"
+
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
 if [ "${1:-}" = "capture" ]; then
   cat <<'OUT'
 error: git command failed (rc=128): fatal: Unable to create '/tmp/vault/.git/index.lock': File exists.

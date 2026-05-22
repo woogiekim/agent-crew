@@ -82,6 +82,7 @@ fi
 CODEX_SKILL_DIR="${CODEX_HOME}/skills/agent-crew"
 CODEX_CREW_SKILLS_DIR="${CODEX_HOME}/agent-crew/skills"
 CODEX_AGENTS_DIR="${CODEX_HOME}/agents"
+CODEX_AGENT_GENERATOR="${SOURCE_DIR}/scripts/generate-codex-system-agents.py"
 
 prune_and_copy_dir() {
   local src="$1" dest="$2"
@@ -124,7 +125,18 @@ fi
 
 if [ -d "${ADAPTERS_DIR}/codex/template/agents" ]; then
   printf '[update-global-adapters] Updating Codex global agents → %s\n' "${CODEX_AGENTS_DIR}"
-  prune_and_copy_dir "${ADAPTERS_DIR}/codex/template/agents" "${CODEX_AGENTS_DIR}"
+  if [ -f "${CODEX_AGENT_GENERATOR}" ]; then
+    tmp_agents="$(mktemp -d)"
+    python3 "${CODEX_AGENT_GENERATOR}" \
+      "${SOURCE_DIR}/agents" \
+      "${tmp_agents}" \
+      --source-ref-root "${AGENT_CREW_HOME}/system/agents" >/dev/null
+    prune_and_copy_dir "${tmp_agents}" "${CODEX_AGENTS_DIR}"
+    rm -rf "${tmp_agents}"
+  else
+    printf '[update-global-adapters] WARNING: Codex agent generator not found at %s; falling back to static templates.\n' "${CODEX_AGENT_GENERATOR}" >&2
+    prune_and_copy_dir "${ADAPTERS_DIR}/codex/template/agents" "${CODEX_AGENTS_DIR}"
+  fi
   printf '[update-global-adapters] Codex global agents refreshed → %s\n' "${CODEX_AGENTS_DIR}"
 else
   printf '[update-global-adapters] Skipping Codex global agents — source not found at %s/codex/template/agents\n' "${ADAPTERS_DIR}" >&2

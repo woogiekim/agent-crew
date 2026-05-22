@@ -16,12 +16,19 @@
     "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
   ],
   "accepted_successor_memory_ids": {
+    "c004a271-d86c-4467-bf54-29927887bbd6": [
+      "693036fb-febd-4d8a-b8c3-cf3a0d5c73f3"
+    ],
     "a1fc78d0-14fd-45ae-a3e5-1363e328f813": [
       "c5659a6d-c31a-4aad-b951-926e3fbb813b",
       "e52dc828-2dc4-48b2-bdb1-51c200a92277"
     ],
     "d2d62df8-33c9-4d03-90b3-e2be9484f88f": [
-      "cf0a2807-aa93-45ce-9e1c-b2c24c4f7c97"
+      "31ec5287-1233-426e-8e1f-241adff08cb3",
+      "cf0a2807-aa93-45ce-9e1c-b2c24c4f7c97",
+      "5b5ad81a-4d29-4b4d-a2ce-9e1fcefff04b",
+      "06e5f2d0-6cef-4354-a5c9-921f0a543c9d",
+      "75684e27-6093-4630-a8df-b8091fb544c9"
     ]
   }
 }

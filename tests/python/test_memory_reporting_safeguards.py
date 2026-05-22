@@ -40,7 +40,13 @@ def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
     ]
     assert fixture["accepted_successor_memory_ids"][
         "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
-    ] == ["cf0a2807-aa93-45ce-9e1c-b2c24c4f7c97"]
+    ] == [
+        "31ec5287-1233-426e-8e1f-241adff08cb3",
+        "cf0a2807-aa93-45ce-9e1c-b2c24c4f7c97",
+        "5b5ad81a-4d29-4b4d-a2ce-9e1fcefff04b",
+        "06e5f2d0-6cef-4354-a5c9-921f0a543c9d",
+        "75684e27-6093-4630-a8df-b8091fb544c9",
+    ]
     assert fixture["latency_budget_ms"] > 0
     assert fixture["noise_budget_count"] >= 0
 
@@ -150,6 +156,40 @@ def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
 
     assert result.returncode == 1
     payload = json.loads(result.stdout)
+    assert "missing_measurements" in payload["failures"]
+    assert "missing_evidence" in payload["failures"]
+    assert "missing_uncertainty" in payload["failures"]
+
+
+def test_report_quality_gate_blocks_low_value_blocked_handoff(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: blocked\n"
+        "BLOCKER: supervisor_handoff_not_started\n"
+        "DETAIL: Host bridge did not complete the handoff.\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["blockers"] == ["supervisor_handoff_not_started"]
     assert "missing_measurements" in payload["failures"]
     assert "missing_evidence" in payload["failures"]
     assert "missing_uncertainty" in payload["failures"]

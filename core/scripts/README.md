@@ -89,6 +89,9 @@ invocation in SKILL.md; generic adds guidance).
   visible but non-blocking.
 - `bench-parallel.sh` — token-free dry-run benchmark for stage fan-out widths,
   N = 1/2/4/8 task-cardinality scenarios, and Phase 1d prefetch cleanup.
+- `verify-update-dry-run.sh` — non-mutating update verifier that runs the local
+  update flow against temporary install homes and a temporary project, then
+  checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
 
 ## Naming conventions
 

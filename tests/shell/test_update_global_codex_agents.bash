@@ -39,6 +39,13 @@ assert_exit 0 "${rc}" "update-global-adapters"
 it "global Codex agents include supervisor"
 assert_file_exists "${CODEX_HOME}/agents/supervisor.toml"
 
+it "global Codex supervisor delegates to canonical markdown"
+supervisor_toml="$(cat "${CODEX_HOME}/agents/supervisor.toml")"
+assert_contains "${supervisor_toml}" 'Read `'"${ACHOME}"'/system/agents/supervisor.md`'
+
+it "global Codex supervisor does not inline stale pipeline instructions"
+assert_not_contains "${supervisor_toml}" "### Phase 1: Spawn planner"
+
 it "global Codex agents include documenter"
 assert_file_exists "${CODEX_HOME}/agents/documenter.toml"
 

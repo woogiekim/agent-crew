@@ -88,7 +88,7 @@ fi
 it "AC5: notification with valid existing UUID produces no warning"
 if command -v mnemos >/dev/null 2>&1; then
   # Capture a real item to get a valid UUID
-  CAPTURE_OUT=$(mnemos capture --content "mnemos-capture-guard test item" --layer ephemeral 2>&1)
+  CAPTURE_OUT=$(MNEMOS_BACKEND=default mnemos capture --content "mnemos-capture-guard test item" --layer ephemeral 2>&1)
   # Use Python for cross-platform UUID extraction (macOS grep lacks -P)
   REAL_UUID=$(printf '%s' "${CAPTURE_OUT}" | python3 -c "
 import re, sys
@@ -100,7 +100,7 @@ print(m.group(0) if m else '')
     output=$(run_hook "✻ 🧠 test capture [id: ${REAL_UUID}]")
     assert_not_contains "${output}" "WARNING" "valid uuid no warning"
     # Clean up the test capture
-    mnemos archive "${REAL_UUID}" >/dev/null 2>&1 || true
+    MNEMOS_BACKEND=default mnemos archive "${REAL_UUID}" >/dev/null 2>&1 || true
   else
     # Could not extract UUID from capture output — skip AC5 (advisory test)
     it "AC5: skipped — could not extract UUID from mnemos capture output"
@@ -110,6 +110,23 @@ else
   # mnemos absent — skip AC5
   _pass
 fi
+
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "read" ] && [ "${MNEMOS_BACKEND:-}" = "default" ] \
+  && [ "${2:-}" = "11111111-1111-1111-1111-111111111111" ]; then
+  echo "found"
+  exit 0
+fi
+exit 1
+SH
+chmod +x "${TMP}/mnemos"
+
+it "AC5: guard validates capture IDs through the default support backend"
+output=$(PATH="${TMP}:${PATH}" MNEMOS_BIN="${TMP}/mnemos" \
+  bash "${HOOK}" "✻ 🧠 test capture [id: 11111111-1111-1111-1111-111111111111]" 2>&1)
+assert_not_contains "${output}" "WARNING" "default backend read no warning"
 
 # --------------------------------------------------------------------------- #
 # AC6: With mnemos absent — hook produces no output and exits 0               #
