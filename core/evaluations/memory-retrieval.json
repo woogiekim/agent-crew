@@ -14,5 +14,14 @@
     "a1fc78d0-14fd-45ae-a3e5-1363e328f813",
     "31ec5287-1233-426e-8e1f-241adff08cb3",
     "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
-  ]
+  ],
+  "accepted_successor_memory_ids": {
+    "a1fc78d0-14fd-45ae-a3e5-1363e328f813": [
+      "c5659a6d-c31a-4aad-b951-926e3fbb813b",
+      "e52dc828-2dc4-48b2-bdb1-51c200a92277"
+    ],
+    "d2d62df8-33c9-4d03-90b3-e2be9484f88f": [
+      "cf0a2807-aa93-45ce-9e1c-b2c24c4f7c97"
+    ]
+  }
 }

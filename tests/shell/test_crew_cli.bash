@@ -14,8 +14,9 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/update"
+it "crew help mentions setup/status/telemetry/update"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
+assert_contains "${out}" "telemetry [args]"
 
 it "crew help states prompt-workflow control plane"
 assert_contains "${out}" "local control plane for AI-host prompt workflows"
@@ -39,6 +40,14 @@ assert_exit 0 "${rc}"
 
 it "crew status --json contains tasks key"
 assert_contains "${out}" "\"tasks\""
+
+it "crew telemetry exits 0 with empty task directory"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew telemetry empty state prints no tasks"
+assert_contains "${out}" "(no tasks matched)"
 
 SETUP_HOME=$(make_tmp)
 SETUP_PROJECT=$(make_tmp)
@@ -138,6 +147,13 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 assert_contains "${out}" "\"host AI bridge has not completed this handoff\""
 assert_contains "${out}" "\"host_bridge_not_invoked\""
 assert_contains "${out}" "\"guidance\""
+
+it "crew telemetry --format json reports blocked run blocker"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "\"host_bridge_not_invoked\""
+assert_contains "${out}" "\"tasks_blocked\": 1"
 
 it "crew run fake host can complete"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --fake-host-result completed "fake host task" 2>&1)

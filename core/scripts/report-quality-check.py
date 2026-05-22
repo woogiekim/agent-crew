@@ -13,7 +13,14 @@ MEASUREMENT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds|m|minutes|%|
 EVIDENCE_RE = re.compile(r"^(?:[-*]\s*)?(?:EVIDENCE|Evidence|evidence)\s*:\s*(.+)$", re.M)
 BLOCKER_RE = re.compile(r"^(?:[-*]\s*)?BLOCKER\s*:\s*([a-zA-Z0-9_.:-]+)", re.M)
 UNCERTAINTY_RE = re.compile(r"\b(?:Assumption|Unverified|Unknown|uncertain|uncertainty)\b", re.I)
-MEMORY_ID_RE = re.compile(r"\b(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-z0-9][a-z0-9_.:-]{5,})\b", re.I)
+MEMORY_ID_RE = re.compile(
+    r"\b(?:"
+    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+    r"|"
+    r"(?=[a-z0-9_.:-]{6,}\b)(?=[a-z0-9_.:-]*(?:[_.:-]|\d))[a-z0-9][a-z0-9_.:-]+"
+    r")\b",
+    re.I,
+)
 
 
 def load_json(path: Path) -> dict:
