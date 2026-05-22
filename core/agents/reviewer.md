@@ -91,8 +91,9 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 > may short-circuit with `STATUS: REJECTED` if tests fail or are absent
 > for a code change. The supervisor's Reviewer Loop-Back Rule
 > (see `core/agents/supervisor-retry.md` § Reviewer Loop-Back Rule)
-> consumes the rejection and re-loops to the most recent implementer
-> within the existing Stage Retry Rule budget (3 retries).
+> consumes the rejection and re-loops to the immediately preceding
+> implementation/TDD stage within the existing Stage Retry Rule budget
+> (3 retries).
 >
 > When the supervisor passes `REQUIRES_TEST_EXECUTION: false` (planner
 > opt-out for docs-only stages), SKIP both Phase 0 and Phase 1 entirely
@@ -194,7 +195,8 @@ REPORT: ${TASK_DIR}/context/review-tests.md
 (Detect code-file touches by running `git -C "${PROJECT_ROOT}" diff
 --name-only "${TASK_START_HEAD:-HEAD~5}..HEAD"` and matching the
 extension list above.) The supervisor's Reviewer Loop-Back Rule will
-re-spawn the most recent implementer with the directive "add tests".
+re-spawn the immediately preceding implementation/TDD stage with the
+directive "add tests".
 
 If `DISCOVERED == 0` AND the diff is docs-only / config-only, proceed
 to Step 1 (no test execution possible, static review continues —
@@ -385,7 +387,8 @@ TEST_RUN_RESULT: {one of: passed | skipped_opt_out | skipped_no_runner_docs_only
 
 `REVIEW: NEEDS_CHANGES` is a loop-triggering rejection, not advisory text.
 The supervisor classifies it through `core/scripts/reviewer-loop-decision.py`
-and re-runs the most recent implementer/TDD stage before re-running reviewer.
+and re-runs the immediately preceding implementation/TDD stage before
+re-running reviewer.
 
 The `TEST_RUN_RESULT:` line is required so the supervisor's parser can
 confirm tests actually ran (or were intentionally skipped) — never

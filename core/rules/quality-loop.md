@@ -181,8 +181,8 @@ After each stage returns, the supervisor checks:
 - If `STATUS: BLOCKED` → halt the pipeline and report the blocker to the
   orchestrator.
 - If `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES` (reviewer-only)
-  → re-loop to the most recent implementer/TDD stage per the Reviewer
-  Loop-Back Rule below.
+  → re-loop to the immediately preceding implementation/TDD stage per
+  the Reviewer Loop-Back Rule below.
 
 ## Quality Loop Enforcement (Issue #3)
 
@@ -210,10 +210,10 @@ Four rejection signals are part of the reviewer's contract:
 
 | Reviewer signal | Triggered when | Supervisor action |
 |---|---|---|
-| `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to most recent implementer with the failing tail in handoff.md. |
+| `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to the immediately preceding implementation/TDD stage with the failing tail in handoff.md. |
 | `STATUS: REJECTED REASON: tests_absent_for_code_change` | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
 | `STATUS: REJECTED REASON: cross_process_path_mismatch` | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
-| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to most recent implementer/TDD stage with the issue list from `context/review.md`. |
+| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to the immediately preceding implementation/TDD stage with the issue list from `context/review.md`. |
 
 ### Cross-process path agreement check
 
@@ -235,10 +235,13 @@ existing **Stage Retry Rule budget**:
   failure path).
 - After exhaustion: terminal blocker `quality_loop_exhausted` written
   to `result.md`; no further automatic recovery.
-- The re-loop target is the **most recent implementer stage** —
-  reviewer, devops, and resolver stages are skipped when walking
-  backwards. When no implementer exists (degenerate pipeline of
-  `[["reviewer"]]` only) the supervisor halts with
+- For code-review stages, the re-loop target is the **immediately preceding
+  implementation/TDD stage**. The planner must insert a solo reviewer directly
+  after every code implementation stage; batching multiple implementation stages
+  before one reviewer is a pipeline composition error because it makes
+  remediation target selection ambiguous. When no implementation stage exists
+  before the reviewer (degenerate pipeline of `[["reviewer"]]` only), the
+  supervisor halts with
   `BLOCKER: quality_loop_no_implementer_to_retry`.
 
 ### Planner opt-out (`requires_test_execution: false`)

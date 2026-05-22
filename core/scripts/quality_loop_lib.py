@@ -113,6 +113,10 @@ def is_reviewer_stage(stage) -> bool:
     return "reviewer" in stage_agents(stage)
 
 
+def is_single_reviewer_stage(stage) -> bool:
+    return stage_agents(stage) == ["reviewer"]
+
+
 def is_tdd_capable_stage(stage) -> bool:
     agents = stage_agents(stage)
     if "test-writer" in agents:
@@ -129,6 +133,10 @@ def pipeline_shape(pipeline: dict) -> dict:
     implementer_indexes = [idx for idx, stage in enumerate(stages) if is_implementation_stage(stage)]
     reviewer_indexes = [idx for idx, stage in enumerate(stages) if is_reviewer_stage(stage)]
     tdd_indexes = [idx for idx, stage in enumerate(stages) if is_tdd_capable_stage(stage)]
+    implementer_indexes_without_immediate_reviewer = [
+        idx for idx in implementer_indexes
+        if idx + 1 >= len(stages) or not is_single_reviewer_stage(stages[idx + 1])
+    ]
 
     reviewer_after_implementer = any(
         reviewer_idx > implementer_idx
@@ -144,6 +152,8 @@ def pipeline_shape(pipeline: dict) -> dict:
         "has_reviewer_stage": bool(reviewer_indexes),
         "has_tdd_stage": bool(tdd_indexes),
         "has_reviewer_after_implementer": reviewer_after_implementer,
+        "implementer_indexes_without_immediate_reviewer": implementer_indexes_without_immediate_reviewer,
+        "has_reviewer_after_each_implementer": not implementer_indexes_without_immediate_reviewer,
     }
 
 
@@ -310,6 +320,8 @@ def check_quality_loop(
             failures.append("missing_pipeline_reviewer_stage")
         if not shape["has_reviewer_after_implementer"]:
             failures.append("missing_pipeline_reviewer_after_implementer")
+        if not shape["has_reviewer_after_each_implementer"]:
+            failures.append("missing_pipeline_reviewer_after_each_implementer")
         if not events:
             failures.append("missing_progress_events")
         if events and not any(event_is_implementer_done(row) for row in events):

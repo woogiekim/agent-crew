@@ -175,6 +175,37 @@ def test_quality_loop_checker_blocks_stale_attempt_rework(tmp_path: Path):
     assert payload["rejection_followups"][0]["tdd_retry"] is False
 
 
+def test_quality_loop_checker_blocks_implementation_stage_without_immediate_reviewer(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=2),
+            row("STAGE_DONE", "frontend", "frontend - N/A", stage=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=3),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement production full-stack behavior",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                {"agents": ["frontend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 3,
+        },
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_pipeline_reviewer_after_each_implementer" in payload["failures"]
+    assert payload["pipeline_shape"]["implementer_indexes_without_immediate_reviewer"] == [0]
+
+
 def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(

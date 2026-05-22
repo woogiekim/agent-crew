@@ -69,16 +69,18 @@ frontend consumes: design-spec.md + OpenAPI contract
 Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
 run sequentially. Every code implementation stage must use the object form
 `{ "agents": ["backend"], "tdd_parallel": true }` (or frontend/custom
-equivalent). Do not emit bare code stages for new implementation work.
+equivalent) and must be followed immediately by a solo `["reviewer"]` stage.
+Do not emit bare code stages for new implementation work, and do not batch
+multiple code implementation stages before one reviewer.
 
 | Scope | stages |
 |---|---|
 | Backend API | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | UI only | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | CI/CD / infra | `[["devops"], ["reviewer"]]` |
-| Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
+| Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 
 Only place agents in the same inner array when their outputs are **independent**
 and the stage is not a code implementation stage that needs a TDD partner. If
@@ -92,6 +94,7 @@ both changes touch different files.
   "stages": [
     ["designer"],
     { "agents": ["backend"], "tdd_parallel": true },
+    ["reviewer"],
     { "agents": ["frontend"], "tdd_parallel": true },
     ["reviewer"]
   ],

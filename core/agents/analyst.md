@@ -145,7 +145,7 @@ Default grouping:
 Always sequential (never group with others in the same stage):
 - `devops` — depends on prior stage artifacts; always its own sequential stage.
 - `resolver` — depends on prior stage artifacts; always its own sequential stage.
-- **MANDATORY: `reviewer` — always the final sequential stage; never grouped with others. Every pipeline MUST end with `["reviewer"]`. Omitting the reviewer is a pipeline composition error.**
+- **MANDATORY: `reviewer` — immediately after every code implementation stage and as the final sequential stage. Never group reviewer with others. Omitting the reviewer after a TDD implementation stage is a pipeline composition error.**
 
 When uncertain: **prefer parallel**. File-level merge conflicts, if any arise from
 parallel writes, are resolved by the resolver agent — that is its purpose.
@@ -154,12 +154,12 @@ Choosing sequential to avoid conflicts is the wrong trade-off.
 | Request Type | stages |
 |---|---|
 | Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | Analysis only | `[]` |
 
@@ -202,6 +202,11 @@ implementer). If the task lacks enough input/output contract for
 test-writer to derive tests, stop in requirements collection or write
 the missing contract into `context/prd.md`; do not silently emit a
 non-TDD implementation stage.
+
+Every TDD implementation stage must be followed immediately by a solo
+`["reviewer"]` stage. Do not place another implementation stage, devops stage,
+or resolver stage between a code implementer and its reviewer; otherwise reviewer
+rejection cannot deterministically re-enter the stage that produced the defect.
 
 Before handing off, validate the emitted pipeline:
 
@@ -335,7 +340,7 @@ Return inline so supervisor can proceed directly to Phase 1d (plan approval):
 ANALYSIS:
   intent: {one-line intent summary}
   risks: {total count} identified ({high_count} high)
-  pipeline: {stages summary e.g. [designer] → [backend+tdd] → [frontend+tdd] → [reviewer]}
+  pipeline: {stages summary e.g. [designer] → [backend+tdd] → [reviewer] → [frontend+tdd] → [reviewer]}
   readiness: {READY | NEEDS_CLARIFICATION | BLOCKED}
 PIPELINE: {stages summary}
 HANDOFF: {TASK_DIR}/handoff.md

@@ -172,7 +172,8 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 `stages` is a 2D array:
 - Agents inside the same array are executed **in parallel**
 - Arrays themselves are executed **sequentially**
-- `reviewer` is always the final stage for any pipeline that produces implementation output
+- `reviewer` immediately follows every code implementation stage and is also
+  the final stage for any pipeline that produces implementation output.
 
 **Parallelism guidance**: Prefer grouping independent agents in the same stage
 to reduce total wall-clock time:
@@ -187,12 +188,12 @@ to reduce total wall-clock time:
 | Request Type | stages |
 |---|---|
 | Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["frontend"], "tdd_parallel": true }, ["devops"], ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Design / Analysis only | `[]` |
 | Matches custom agent role | Include the custom agent in an appropriate stage, then `["reviewer"]` last |
 
@@ -202,6 +203,7 @@ to reduce total wall-clock time:
   "stages": [
     ["designer"],
     { "agents": ["backend"], "tdd_parallel": true },
+    ["reviewer"],
     { "agents": ["frontend"], "tdd_parallel": true },
     ["reviewer"]
   ],
@@ -232,6 +234,12 @@ frontend, or a generic implementer custom agent). For mutating code
 work this is not an optimization knob; it is the pipeline's quality
 contract: implementation runs with a TDD partner, then reviewer output
 can drive a TDD remediation pass and re-review.
+
+Place a solo `["reviewer"]` stage immediately after each TDD implementation
+stage. Do not batch multiple code implementation stages before one reviewer.
+The reviewer loop-back rule assumes reviewer rejection targets the immediately
+preceding implementation stage; batching implementation stages makes the TDD
+remediation target ambiguous.
 
 After emitting `pipeline.json`, run the planning-time gate:
 
@@ -543,7 +551,7 @@ Write the handoff content for the next agent to read in `{TASK_DIR}/handoff.md`:
 Return only the following format (do not include long explanations or re-quote file contents):
 
 ```text
-PIPELINE: {stages summary ex) [designer] → [backend+tdd] → [frontend+tdd] → [reviewer]}
+PIPELINE: {stages summary ex) [designer] → [backend+tdd] → [reviewer] → [frontend+tdd] → [reviewer]}
 HANDOFF: {TASK_DIR}/handoff.md
 PRD: {TASK_DIR}/context/prd.md
 ```

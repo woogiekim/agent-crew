@@ -87,6 +87,8 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
             failures.append("missing_pipeline_reviewer_stage")
         if not shape["has_reviewer_after_implementer"]:
             failures.append("missing_pipeline_reviewer_after_implementer")
+        if not shape["has_reviewer_after_each_implementer"]:
+            failures.append("missing_pipeline_reviewer_after_each_implementer")
 
     return {
         "passed": not failures,

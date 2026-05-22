@@ -202,9 +202,10 @@ block); when absent (defensive default), the check measures from
 
 ### Reviewer Loop-Back Rule (Issue #3)
 
-When the reviewer stage returns either `STATUS: REJECTED` or
-`REVIEW: NEEDS_CHANGES`, the supervisor MUST re-loop to the **most
-recent implementer/TDD stage** instead of advancing `completed_stages`.
+When a reviewer stage that immediately follows a code implementation stage
+returns either `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES`, the supervisor
+MUST re-loop to that **immediately preceding implementer/TDD stage** instead of
+advancing `completed_stages`.
 This is the core commercial quality loop: implement through TDD,
 review, remediate/refactor through TDD, re-review, and repeat until
 approval or budget exhaustion.
@@ -260,9 +261,9 @@ if decision.action == "retry":
         return  # halts pipeline; Phase 3 close-out runs as normal
 
     # Append the directive matching `reason` to handoff.md and decrement
-    # completed_stages back to the most recent implementer stage so the
-    # outer stage loop re-spawns it instead of advancing.
-    impl_stage_index = find_most_recent_implementer_stage_index()
+    # completed_stages back to the immediately preceding implementation stage
+    # so the outer stage loop re-spawns it instead of advancing.
+    impl_stage_index = find_preceding_implementation_stage_index()
     append_directive_to_handoff(decision.directive)
     pipeline.completed_stages = impl_stage_index - 1
     pipeline.stage_agent_status.pop(str(impl_stage_index), None)  # clear so retry re-runs
@@ -271,11 +272,14 @@ if decision.action == "retry":
     continue  # re-enter the stage loop at the implementer index
 ```
 
-The `find_most_recent_implementer_stage_index()` helper walks
-`pipeline.stages` backwards from the reviewer stage's index and
-returns the first non-reviewer / non-devops / non-resolver index.
-When no implementer is found (degenerate pipeline of `[["reviewer"]]`
-only), the supervisor halts with
+The `find_preceding_implementation_stage_index()` helper inspects only the
+stage immediately before the reviewer and requires it to be an implementation
+stage. The planner must emit a solo reviewer immediately after every code
+implementation stage; if a reviewer rejects after multiple implementation
+stages were batched, the supervisor must halt with
+`BLOCKER: quality_loop_ambiguous_rework_target` rather than guessing. When no
+implementer is found (degenerate pipeline of `[["reviewer"]]` only), the
+supervisor halts with
 `BLOCKER: quality_loop_no_implementer_to_retry` — re-running an empty
 pipeline cannot produce a different verdict.
 

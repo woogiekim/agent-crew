@@ -93,6 +93,7 @@ def test_plan_checker_accepts_split_tdd_implementation_stages(tmp_path: Path):
             "stages": [
                 "designer",
                 {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
                 {"agents": ["frontend"], "tdd_parallel": True},
                 "reviewer",
             ],
@@ -105,6 +106,51 @@ def test_plan_checker_accepts_split_tdd_implementation_stages(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["required"] is True
+
+
+def test_plan_checker_blocks_implementation_stage_without_immediate_reviewer(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a full-stack feature",
+            "stages": [
+                "designer",
+                {"agents": ["backend"], "tdd_parallel": True},
+                {"agents": ["frontend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_pipeline_reviewer_after_each_implementer" in payload["failures"]
+    assert payload["pipeline_shape"]["implementer_indexes_without_immediate_reviewer"] == [1]
+
+
+def test_plan_checker_accepts_feature_deploy_after_code_review(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement and deploy a backend feature",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+                "devops",
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_plan_checker_blocks_missing_reviewer_after_tdd_stage(tmp_path: Path):

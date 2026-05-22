@@ -50,8 +50,8 @@ DIRECTIVES = {
     ),
     "review_needs_changes": (
         "Reviewer requested changes in ${TASK_DIR}/context/review.md. Return "
-        "to the most recent implementer/TDD stage, remediate every listed "
-        "issue, run the relevant tests, and then re-run reviewer."
+        "to the immediately preceding implementation/TDD stage, remediate every "
+        "listed issue, run the relevant tests, and then re-run reviewer."
     ),
 }
 
