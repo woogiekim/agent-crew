@@ -140,6 +140,28 @@
       "type": "string",
       "description": "Operator command to reconcile state after a current-session manual handoff fallback."
     },
+    "host_bridge_status": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "not_invoked",
+        "pending",
+        "failed",
+        "auto_completed",
+        "fake_completed",
+        "manual_fallback_completed",
+        "manual_fallback_blocked"
+      ],
+      "description": "Host bridge execution classification for distinguishing automatic completion, manual fallback, and true blocked handoffs."
+    },
+    "host_bridge_completion_path": {
+      "type": "string",
+      "description": "Path to host bridge invocation/completion evidence when an adapter bridge was attempted."
+    },
+    "host_bridge_completed_at": {
+      "type": "string",
+      "description": "UTC timestamp when an automatic host bridge completion was recorded."
+    },
     "manual_fallback_repaired_at": {
       "type": "string",
       "description": "UTC timestamp when crew repair reconciled a manual host-handoff fallback."

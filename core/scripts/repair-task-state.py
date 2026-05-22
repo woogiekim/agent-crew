@@ -149,7 +149,7 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         "",
         f"STATUS: {status}",
         f"TASK_ID: {task_id}",
-        "MEASUREMENTS: repaired manual handoff state, 1 repair event recorded",
+        "MEASUREMENTS: repaired manual handoff state, 1 repair event recorded, 0 retries",
     ]
     if status == "blocked":
         lines.append(f"BLOCKER: {blocker}")
