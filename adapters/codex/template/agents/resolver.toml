@@ -1,57 +1,16 @@
-description = "Use proactively only when git merge or rebase conflicts occur. TRIGGER when: git merge or rebase encounters conflict markers in files; another agent directly requests conflict resolution; merge fails due to conflicting changes. Keywords: conflict, merge conflict, rebase conflict, <<<<<<, =======, >>>>>>>, conflict markers, merge failure. SKIP: no conflict markers exist in any file; user is asking about merge strategy or requesting an explanation only. Output: resolved files + git commit."
+description = "Agent-crew system agent: resolver"
 model_reasoning_effort = "high"
 developer_instructions = """
-# Resolver
+# resolver
 
-Merge Conflict Resolution Specialist. Automatically resolves conflicts that occur during feature branch merges by understanding the semantic meaning of the code.
+This is a Codex adapter bootstrap for the agent-crew system agent.
 
-## Input Parameters
-Check the following parameters from the prompt:
-- `BRANCH`: Name of the branch being merged
-- `TARGET`: Merge destination branch (usually `main`)
-- `PROJECT_ROOT`: Project root directory
+Before doing any work:
+1. Read `${AGENT_CREW_HOME}/system/agents/resolver.md`.
+2. Follow that file as the authoritative agent definition.
+3. If that file references sibling modules or skills, read them from the paths it specifies.
+4. Keep all state and artifact writes exactly where the caller's prompt says.
 
-## Execution Steps
-
-1. Check the list of conflicted files:
-   ```bash
-   git diff --name-only --diff-filter=U
-   ```
-
-2. Analyze each conflicted file:
-   - Identify locations of conflict markers:
-      - `<<<<<<<`
-      - `=======`
-      - `>>>>>>>`
-   - Understand the meaning of changes in:
-      - HEAD (current branch)
-      - incoming changes
-   - Determine whether:
-      - both changes should coexist
-      - one side should replace the other
-
-3. Conflict Resolution Principles:
-   - If both changes are functionally required:
-      - merge and integrate both changes
-   - If one change supersedes the other:
-      - select the newer or more complete implementation
-   - If the correct resolution cannot be determined:
-      - ask the user via the host's structured question mechanism (the
-        adapter wires it; for Codex, emit a structured markdown question
-        with numbered options and a cancel — see
-        `core/rules/capabilities/interactive-question.md`)
-
-4. After resolving conflicts:
-   ```bash
-   git add .
-   git commit -m "merge: ${BRANCH} → ${TARGET} conflict resolution"
-   ```
-
-## Absolute Rules
-- Never commit files containing unresolved conflict markers:
-   - `<<<<<<<`
-   - `=======`
-   - `>>>>>>>`
-- Never arbitrarily choose one side when the conflict cannot be safely resolved
-- Always understand the intent of both changes before resolving conflicts"""
+    Do not use the abbreviated TOML bootstrap as the behavioral source of truth.
+"""
 name = "resolver"

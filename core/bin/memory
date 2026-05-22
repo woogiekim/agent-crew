@@ -120,6 +120,40 @@ def relaxed_match(value):
         tokens.append(sanitise(token))
     return " OR ".join(tokens)
 
+query_terms = []
+seen_terms = set()
+for token in re.findall(r"[A-Za-z0-9_:-]+", normalise_compounds(query.lower())):
+    if token in seen_terms:
+        continue
+    seen_terms.add(token)
+    query_terms.append(token)
+
+def row_score(row):
+    content = (row["content"] or "")
+    folded = content.lower()
+    score = sum(10 for token in query_terms if token in folded)
+    if folded.startswith("requirements collected"):
+        score += 8
+    if folded.startswith("implemented "):
+        score += 6
+    if folded.startswith("completed "):
+        score += 5
+    if " task " in folded:
+        score += 2
+    if " round " in folded:
+        score += 2
+    if "report-quality" in folded or "report quality" in folded:
+        score += 4
+    if "retrieval evaluation" in folded:
+        score += 4
+    if "telemetry" in folded:
+        score += 2
+    if folded.startswith("merged and pushed"):
+        score -= 10
+    if "probe" in folded:
+        score -= 4
+    return score
+
 results = []
 seen_ids = set()
 try:
@@ -127,8 +161,11 @@ try:
     conn.row_factory = sqlite3.Row
 
     match_variants = [sanitise(variant) for variant in variants]
-    for match_expr in [m for m in match_variants if m]:
-        rows = search_rows(conn, match_expr, max(limit * 3, limit))
+    relaxed_variants = [relaxed_match(variant) for variant in variants]
+    candidate_rows = []
+
+    for match_expr in [m for m in match_variants + relaxed_variants if m]:
+        rows = search_rows(conn, match_expr, max(limit * 8, limit))
         for row in rows:
             item_id = row["item_id"]
             if item_id in seen_ids:
@@ -141,39 +178,17 @@ try:
             if layers is not None and metadata.get("layer") not in layers:
                 continue
             seen_ids.add(item_id)
-            results.append({
+            candidate_rows.append({
                 "item_id": item_id,
                 "content": row["content"] or "",
+                "rank": row["rank"],
+                "score": row_score(row),
             })
-            if len(results) >= limit:
-                break
-        if len(results) >= limit:
-            break
 
-    if not results:
-        relaxed_variants = [relaxed_match(variant) for variant in variants]
-        for match_expr in [m for m in relaxed_variants if m]:
-            rows = search_rows(conn, match_expr, max(limit * 3, limit))
-            for row in rows:
-                item_id = row["item_id"]
-                if item_id in seen_ids:
-                    continue
-                metadata = {}
-                try:
-                    metadata = json.loads(row["metadata"] or "{}")
-                except Exception:
-                    metadata = {}
-                if layers is not None and metadata.get("layer") not in layers:
-                    continue
-                seen_ids.add(item_id)
-                results.append({
-                    "item_id": item_id,
-                    "content": row["content"] or "",
-                })
-                if len(results) >= limit:
-                    break
-            if len(results) >= limit:
-                break
+    results = sorted(
+        candidate_rows,
+        key=lambda row: (-row["score"], row["rank"], row["item_id"]),
+    )[:limit]
 except Exception:
     sys.exit(1)
 
@@ -247,10 +262,26 @@ run_mnemos() {
 }
 
 if [ "${1:-}" != "capture" ]; then
+  DEFAULT_BACKEND_ENV=""
+  if [ "${1:-}" = "read" ] \
+    && [ -z "${MNEMOS_BACKEND:-}" ] \
+    && [ "${AGENT_CREW_MEMORY_READ_BACKEND:-default}" = "default" ]; then
+    DEFAULT_BACKEND_ENV="MNEMOS_BACKEND=default"
+  fi
   if [ -n "${BOUNDED}" ]; then
-    AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+    if [ -n "${DEFAULT_BACKEND_ENV}" ]; then
+      exec env "${DEFAULT_BACKEND_ENV}" \
+        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+        MNEMOS_BIN="${MNEMOS_BIN}" \
+        bash "${BOUNDED}" "$@"
+    fi
+    exec env \
+      AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
       MNEMOS_BIN="${MNEMOS_BIN}" \
-      exec bash "${BOUNDED}" "$@"
+      bash "${BOUNDED}" "$@"
+  fi
+  if [ -n "${DEFAULT_BACKEND_ENV}" ]; then
+    exec env "${DEFAULT_BACKEND_ENV}" "${MNEMOS_BIN}" "$@"
   fi
   exec "${MNEMOS_BIN}" "$@"
 fi

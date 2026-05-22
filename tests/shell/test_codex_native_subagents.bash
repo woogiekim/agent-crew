@@ -10,8 +10,9 @@ setup_repo="${tmp}/setup-repo"
 
 mkdir -p "${ac_home}/setup" "${ac_home}/user/agents" "${repo}/.codex/agents"
 cp "${REPO_ROOT}/core/setup/common.sh" "${ac_home}/setup/common.sh"
-mkdir -p "${ac_home}/adapters/codex" "${ac_home}/hooks"
+mkdir -p "${ac_home}/adapters/codex" "${ac_home}/hooks" "${ac_home}/system"
 cp -R "${REPO_ROOT}/adapters/codex/template" "${ac_home}/adapters/codex/template"
+cp -R "${REPO_ROOT}/core/agents" "${ac_home}/system/agents"
 
 cat >"${ac_home}/user/agents/scout.md" <<'EOF'
 ---
@@ -143,5 +144,14 @@ if missing:
     raise SystemExit(f"missing required keys: {sorted(missing)}")
 PYEOF
 assert_exit 0 $?
+
+system_toml="${setup_repo}/.codex/agents/supervisor.toml"
+system_out="$(cat "${system_toml}")"
+
+it "Codex setup supervisor TOML delegates to canonical markdown"
+assert_contains "${system_out}" "/system/agents/supervisor.md"
+
+it "Codex setup supervisor TOML omits stale inline supervisor body"
+assert_not_contains "${system_out}" "### Phase 1: Spawn planner"
 
 end_report
