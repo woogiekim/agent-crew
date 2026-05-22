@@ -188,6 +188,20 @@ def event_is_reviewer_rejected(row: dict) -> bool:
     ) or "reviewer_rejected" in text
 
 
+def event_stage(row: dict) -> int | None:
+    try:
+        return int(row.get("stage"))
+    except Exception:
+        return None
+
+
+def event_attempt(row: dict) -> int:
+    try:
+        return int(row.get("attempt"))
+    except Exception:
+        return 0
+
+
 def task_description(task_dir: Path, register: dict, pipeline: dict, result_text: str) -> str:
     if register.get("task"):
         return str(register["task"])
@@ -204,17 +218,42 @@ def is_completed(target_status: str | None, register: dict, result_text: str) ->
 
 
 def rejection_followups(events: list[dict], rejected_index: int) -> dict:
+    rejected = events[rejected_index]
+    rejected_stage = event_stage(rejected)
+    rejected_attempt = event_attempt(rejected)
+    target_stage = rejected_stage - 1 if rejected_stage and rejected_stage > 1 else None
     later = events[rejected_index + 1:]
+    implementer_candidates = [
+        (idx, row)
+        for idx, row in enumerate(later)
+        if event_is_implementer_done(row)
+        and (target_stage is None or event_stage(row) == target_stage)
+        and event_attempt(row) > rejected_attempt
+    ]
+    tdd_candidates = [
+        (idx, row)
+        for idx, row in enumerate(later)
+        if event_is_tdd_done(row)
+        and (target_stage is None or event_stage(row) == target_stage)
+        and event_attempt(row) > rejected_attempt
+    ]
+    approval_candidates = [
+        (idx, row)
+        for idx, row in enumerate(later)
+        if event_is_reviewer_approved(row)
+        and (rejected_stage is None or event_stage(row) == rejected_stage)
+        and event_attempt(row) > rejected_attempt
+    ]
     implementer_index = next(
-        (idx for idx, row in enumerate(later) if event_is_implementer_done(row)),
+        (idx for idx, _row in implementer_candidates),
         None,
     )
     tdd_index = next(
-        (idx for idx, row in enumerate(later) if event_is_tdd_done(row)),
+        (idx for idx, _row in tdd_candidates),
         None,
     )
     approval_index = next(
-        (idx for idx, row in enumerate(later) if event_is_reviewer_approved(row)),
+        (idx for idx, _row in approval_candidates),
         None,
     )
     ordered = (
@@ -228,6 +267,9 @@ def rejection_followups(events: list[dict], rejected_index: int) -> dict:
         "tdd_retry": tdd_index is not None,
         "reviewer_reapproval": approval_index is not None,
         "ordered": ordered,
+        "rejected_stage": rejected_stage,
+        "rejected_attempt": rejected_attempt,
+        "target_implementation_stage": target_stage,
     }
 
 

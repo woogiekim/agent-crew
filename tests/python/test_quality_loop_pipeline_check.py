@@ -128,6 +128,53 @@ def test_quality_loop_checker_blocks_multi_agent_tdd_stage(tmp_path: Path):
     assert "missing_pipeline_tdd_stage" in payload["failures"]
 
 
+def test_quality_loop_checker_blocks_rework_on_wrong_stage(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: NEEDS_CHANGES", stage=2),
+            row("STAGE_DONE", "test-writer", "TDD REFACTOR, 6 tests passed", stage=3, attempt=2),
+            row("STAGE_DONE", "backend", "backend remediation - N/A", stage=3, attempt=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2, attempt=2),
+        ],
+    )
+
+    result = run_checker(task_dir, "--require-rework-cycle")
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_rework_after_review_rejection" in payload["failures"]
+    assert payload["rejection_followups"][0]["target_implementation_stage"] == 1
+    assert payload["rejection_followups"][0]["implementer_retry"] is False
+    assert payload["rejection_followups"][0]["tdd_retry"] is False
+
+
+def test_quality_loop_checker_blocks_stale_attempt_rework(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: NEEDS_CHANGES", stage=2),
+            row("STAGE_DONE", "test-writer", "TDD REFACTOR, 6 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend remediation - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2, attempt=2),
+        ],
+    )
+
+    result = run_checker(task_dir, "--require-rework-cycle")
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_rework_after_review_rejection" in payload["failures"]
+    assert payload["rejection_followups"][0]["implementer_retry"] is False
+    assert payload["rejection_followups"][0]["tdd_retry"] is False
+
+
 def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(

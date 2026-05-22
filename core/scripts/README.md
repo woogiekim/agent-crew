@@ -114,7 +114,9 @@ invocation in SKILL.md; generic adds guidance).
 - `quality-loop-check.py` — validates that completed mutating implementation
   tasks have a TDD-capable implementation stage, a later reviewer stage,
   implementer/TDD completion events, reviewer approval, and rework/re-review
-  after any reviewer rejection. The native `crew run` runtime uses this check
+  after any reviewer rejection. Rework evidence must be a later attempt on the
+  rejected reviewer's immediately preceding implementation stage, followed by a
+  later reviewer re-approval. The native `crew run` runtime uses this check
   before allowing mutating fake-host or host-bridge auto-completion.
 - `reviewer-loop-decision.py` — classifies reviewer output for the supervisor
   retry loop. Both `STATUS: REJECTED` and `REVIEW: NEEDS_CHANGES` return
