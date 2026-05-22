@@ -32,6 +32,11 @@ it "Codex setup honors the write-capabilities opt-out"
 codex_setup=$(cat "${REPO_ROOT}/adapters/codex/setup.sh")
 assert_contains "${codex_setup}" 'AGENT_CREW_WRITE_CAPABILITIES:-1' "Codex adapter must expose an opt-out guard"
 
+it "Codex setup honors CODEX_HOME for global skill paths"
+assert_contains "${codex_setup}" 'CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"' "Codex adapter must centralize Codex home resolution"
+assert_contains "${codex_setup}" '${CODEX_HOME}/agent-crew/skills' "Codex adapter must use CODEX_HOME for crew skill mirror"
+assert_not_contains "${codex_setup}" '${HOME}/.codex/agent-crew/skills' "dry-run updates must not leak into real HOME"
+
 it "Codex setup registers automatic issue reporter hooks"
 assert_contains "${codex_setup}" "auto-issue-report.sh" "Codex hooks must route agent-crew bug reports"
 

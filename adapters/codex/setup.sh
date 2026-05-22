@@ -3,6 +3,7 @@ set -euo pipefail
 
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 PROJECT_ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 # AGENT_CREW_MODE: "install" (default) or "update". Update mode never prompts
 # and never resets state; the copy operations below are idempotent in both
 # modes (cp -R overwrites but does not delete extraneous files).
@@ -114,7 +115,7 @@ sync_codex_template_static() {
 }
 
 install_codex_skills() {
-  local codex_home="${HOME}/.codex"
+  local codex_home="${CODEX_HOME}"
   local skill_root="${AGENT_CREW_HOME}/adapters/codex/skill"
   local skill_src
   local skill_name
@@ -416,7 +417,7 @@ install_user_agents_codex
 mkdir -p "${AGENT_CREW_HOME}/system/skills"
 mkdir -p "${AGENT_CREW_HOME}/user/skills"
 mkdir -p "${AGENT_CREW_HOME}/skills"
-mkdir -p "${HOME}/.codex/agent-crew/skills"
+mkdir -p "${CODEX_HOME}/agent-crew/skills"
 
 # Sync system skills from source repo when SOURCE_ROOT is available
 if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
@@ -432,7 +433,7 @@ merge_skills_to_discovery \
   "${AGENT_CREW_HOME}/skills"
 
 # Copy unified skills to Codex host discovery path
-sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${HOME}/.codex/agent-crew/skills"
+sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${CODEX_HOME}/agent-crew/skills"
 
 # Write user/skills README placeholder (idempotent)
 if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then

@@ -94,6 +94,63 @@ def test_update_slo_benchmark_fails_budget(tmp_path: Path):
     assert "latency" in payload["checks"][0]["failures"]
 
 
+def test_update_slo_benchmark_warms_noop_local_before_timing(tmp_path: Path):
+    calls = tmp_path / "calls"
+    crew = tmp_path / "crew"
+    crew.write_text(
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            f"calls_file={str(calls)!r}\n"
+            "calls=0\n"
+            "[ -f \"${calls_file}\" ] && calls=$(cat \"${calls_file}\")\n"
+            "calls=$((calls + 1))\n"
+            "printf '%s\\n' \"${calls}\" > \"${calls_file}\"\n"
+            "if [ \"${calls}\" = 1 ]; then\n"
+            "  python3 - <<'PY'\n"
+            "import time\n"
+            "time.sleep(0.15)\n"
+            "PY\n"
+            "  printf 'update_phase: adapter_setup=150ms\\n'\n"
+            "else\n"
+            "  printf 'update_phase: fingerprint_check=1ms\\n'\n"
+            "fi\n"
+            "printf 'update_phase: total=1ms\\n'\n"
+        ),
+        encoding="utf-8",
+    )
+    crew.chmod(crew.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(BENCHMARK),
+            "--project-root",
+            str(tmp_path),
+            "--source-root",
+            str(tmp_path),
+            "--crew-bin",
+            str(crew),
+            "--mode",
+            "noop-local",
+            "--noop-local-budget-ms",
+            "100",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    check = payload["checks"][0]
+    assert check["passed"] is True
+    assert check["warmup_returncode"] == 0
+    assert check["warmup_elapsed_ms"] > check["elapsed_ms"]
+    assert calls.read_text(encoding="utf-8").strip() == "2"
+
+
 def test_e2e_slo_can_include_update_benchmark_without_remote(tmp_path: Path):
     crew = fake_crew(tmp_path / "crew")
     memory = tmp_path / "memory"

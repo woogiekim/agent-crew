@@ -67,15 +67,21 @@ def budget_for(mode: str, args: argparse.Namespace, fixture: dict) -> int:
     return int(fixture.get(keys[mode], defaults[mode]))
 
 
-def evaluate(mode: str, result: dict, budget_ms: int) -> dict:
+def should_warm_noop(mode: str) -> bool:
+    return mode == "noop-local"
+
+
+def evaluate(mode: str, result: dict, budget_ms: int, *, warmup: dict | None = None) -> dict:
     failures = []
+    if warmup is not None and warmup["returncode"] != 0:
+        failures.append("warmup_returncode")
     if result["returncode"] != 0:
         failures.append("returncode")
     if result["elapsed_ms"] > budget_ms:
         failures.append("latency")
     if mode in {"noop-local", "cold-local"} and not result["phases_ms"]:
         failures.append("missing_phase_timings")
-    return {
+    check = {
         "mode": mode,
         "passed": not failures,
         "elapsed_ms": result["elapsed_ms"],
@@ -84,6 +90,10 @@ def evaluate(mode: str, result: dict, budget_ms: int) -> dict:
         "failures": failures,
         "phases_ms": result["phases_ms"],
     }
+    if warmup is not None:
+        check["warmup_elapsed_ms"] = warmup["elapsed_ms"]
+        check["warmup_returncode"] = warmup["returncode"]
+    return check
 
 
 def main() -> int:
@@ -113,8 +123,12 @@ def main() -> int:
         mode_env = env.copy()
         if mode == "cold-local":
             mode_env["AGENT_CREW_DISABLE_FAST_NOOP_UPDATE"] = "1"
-        result = run_timed(mode_command(mode, args.crew_bin, source_root), cwd=project_root, env=mode_env)
-        checks.append(evaluate(mode, result, budget_for(mode, args, fixture)))
+        command = mode_command(mode, args.crew_bin, source_root)
+        warmup = None
+        if should_warm_noop(mode):
+            warmup = run_timed(command, cwd=project_root, env=mode_env)
+        result = run_timed(command, cwd=project_root, env=mode_env)
+        checks.append(evaluate(mode, result, budget_for(mode, args, fixture), warmup=warmup))
 
     payload = {
         "schema_version": 1,
