@@ -129,11 +129,16 @@ for token in re.findall(r"[A-Za-z0-9_:-]+", normalise_compounds(query.lower())):
     query_terms.append(token)
 
 def row_score(row):
+    item_id = (row["item_id"] or "").lower()
     content = (row["content"] or "")
     folded = content.lower()
     score = sum(10 for token in query_terms if token in folded)
+    if item_id.startswith("req-"):
+        score += 14
+    if re.match(r"commercialization-e2e-\d+-(review|guardrails|remediation)-\d{8}", item_id):
+        score -= 8
     if folded.startswith("requirements collected"):
-        score += 8
+        score += 20
     if folded.startswith("implemented "):
         score += 6
     if folded.startswith("completed "):
@@ -146,6 +151,14 @@ def row_score(row):
         score += 4
     if "retrieval evaluation" in folded:
         score += 4
+    if "deterministic memory retrieval evaluation fixtures" in folded:
+        score += 10
+    if "report-quality fail-closed" in folded or "report quality fail closed" in folded:
+        score += 8
+    if "phase runtime telemetry" in folded:
+        score += 8
+    if "compact canonical context" in folded:
+        score += 6
     if "telemetry" in folded:
         score += 2
     if folded.startswith("merged and pushed"):

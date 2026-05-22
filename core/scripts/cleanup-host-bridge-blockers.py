@@ -91,6 +91,26 @@ def repair_task(script: Path, state_dir: Path, task_id: str, status: str, note: 
     return subprocess.run(command, text=True, capture_output=True).returncode
 
 
+def write_cleanup_evidence(task_dir: Path, register: dict, age: int, status: str, note: str) -> Path:
+    context_dir = task_dir / "context"
+    context_dir.mkdir(parents=True, exist_ok=True)
+    path = context_dir / "stale-host-bridge-cleanup.json"
+    payload = {
+        "schema_version": 1,
+        "task_id": task_dir.name,
+        "task": register.get("task", ""),
+        "age_seconds": age,
+        "cleanup_status": status,
+        "note": note,
+        "original_current_phase": register.get("current_phase", ""),
+        "original_blocked_by": register.get("blocked_by", []) or [],
+        "classified_blocker": "stale_host_bridge_not_invoked",
+        "written_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-dir", required=True)
@@ -108,7 +128,8 @@ def main() -> int:
     repair_script = Path(__file__).resolve().parent / "repair-task-state.py"
 
     if args.apply:
-        for task_dir, _register, _age in matches:
+        for task_dir, register, age in matches:
+            write_cleanup_evidence(task_dir, register, age, args.status, args.note)
             rc = repair_task(repair_script, state_dir, task_dir.name, args.status, args.note)
             if rc == 0:
                 repaired.append(task_dir.name)

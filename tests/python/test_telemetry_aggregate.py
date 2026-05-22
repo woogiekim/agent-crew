@@ -398,6 +398,45 @@ class TestTelemetryAggregate:
         ]
         assert payload["summary"]["by_blocker"] == {"host_bridge_not_invoked": 1}
 
+    def test_stale_host_bridge_blocker_is_separated_from_current_blockers(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Old host bridge fallback blockers should not pollute current blockers."""
+        task_id = "20260101-120454-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        reg = json.loads((td / "register.json").read_text())
+        reg["blocked_by"] = ["host_bridge_not_invoked"]
+        (td / "register.json").write_text(json.dumps(reg))
+        _write_progress_jsonl(td, [
+            {"ts": "2026-01-01T12:04:54Z", "trace_id": "x",
+             "task_id": task_id, "event": "STARTED"},
+        ])
+        env = dict(env_with_home)
+        env["AGENT_CREW_STALE_HOST_BRIDGE_SECONDS"] = "600"
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        assert task["status"] == "stale_blocked"
+        assert task["current_phase"] == "stale_host_bridge_fallback"
+        assert task["stale_blocker"] is True
+        assert task["blockers"] == ["stale_host_bridge_not_invoked"]
+        assert payload["summary"]["tasks_blocked"] == 0
+        assert payload["summary"]["tasks_stale_blocked"] == 1
+        assert payload["summary"]["by_blocker"] == {}
+        assert payload["summary"]["by_stale_blocker"] == {
+            "host_bridge_not_invoked": 1
+        }
+        assert "cleanup-host-bridge --apply" in task["guidance"][0]
+
     def test_recent_selector_limits_count(
         self, script_runner, env_with_home, state_dir
     ):
@@ -418,6 +457,28 @@ class TestTelemetryAggregate:
         assert r.returncode == 0
         payload = json.loads(r.stdout)
         assert payload["summary"]["tasks_total"] == 2
+
+    def test_since_filter_uses_task_id_date_without_type_error(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Date filters should not parse filesystem mtimes as ISO strings."""
+        old_id = "20250101-120000-0"
+        new_id = "20260101-120000-0"
+        for task_id in (old_id, new_id):
+            td = state_dir / "tasks" / task_id
+            td.mkdir(parents=True)
+            _write_register(td, task_id=task_id)
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--since", "2026-01-01",
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert [task["task_id"] for task in payload["tasks"]] == [new_id]
 
     def test_stray_tasks_subdirectory_is_ignored(
         self, script_runner, env_with_home, state_dir

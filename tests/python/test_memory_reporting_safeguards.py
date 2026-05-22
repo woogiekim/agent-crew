@@ -214,6 +214,92 @@ def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
     assert "missing_uncertainty" in payload["failures"]
 
 
+def test_report_quality_gate_blocks_unclassified_stale_blockers(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    telemetry = task_dir / "telemetry.json"
+    telemetry.write_text(
+        json.dumps({"summary": {"tasks_stale_blocked": 2}}),
+        encoding="utf-8",
+    )
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: status latency 42 ms\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown historical task outcome remains.\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--telemetry",
+            str(telemetry),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["stale_blocker_count"] == 2
+    assert "missing_stale_blocker_classification" in payload["failures"]
+
+
+def test_report_quality_gate_accepts_classified_stale_blockers(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    telemetry = task_dir / "telemetry.json"
+    telemetry.write_text(
+        json.dumps({"summary": {"tasks_stale_blocked": 2}}),
+        encoding="utf-8",
+    )
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "BLOCKER: stale_host_bridge_not_invoked\n"
+        "STALE_BLOCKERS: 2\n"
+        "MEASUREMENTS: status latency 42 ms\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown historical task outcome remains.\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--telemetry",
+            str(telemetry),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["stale_blocker_count"] == 2
+    assert "missing_stale_blocker_classification" not in payload["failures"]
+
+
 def test_report_quality_gate_blocks_low_value_blocked_handoff(tmp_path: Path):
     task_dir = tmp_path / "task"
     task_dir.mkdir()

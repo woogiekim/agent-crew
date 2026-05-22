@@ -288,6 +288,25 @@ def supervisor_boot_timeout_seconds():
     return max(value, 0)
 
 
+def stale_host_bridge_seconds():
+    raw = os.environ.get("AGENT_CREW_STALE_HOST_BRIDGE_SECONDS", "600")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 600
+    return max(value, 0)
+
+
+def task_age_seconds(task_dir, started_ts):
+    if started_ts:
+        return max(0, int((datetime.now(timezone.utc) - started_ts).total_seconds()))
+    try:
+        mtime = datetime.fromtimestamp(task_dir.stat().st_mtime, tz=timezone.utc)
+    except Exception:
+        return 0
+    return max(0, int((datetime.now(timezone.utc) - mtime).total_seconds()))
+
+
 def missing_supervisor_boot_state(task_dir, *, has_register, has_events,
                                   has_result):
     """Classify task dirs created before supervisor Phase 0 produced state."""
@@ -320,6 +339,14 @@ def missing_supervisor_boot_state(task_dir, *, has_register, has_events,
 
 def guidance_for(blockers, status, current_phase):
     guidance = []
+    if status == "stale_blocked" or current_phase == "stale_host_bridge_fallback":
+        guidance.append(
+            "This host bridge blocker is stale and is excluded from current "
+            "blocked-task totals. Run crew cleanup-host-bridge --apply after "
+            "confirming the manual fallback outcome, or inspect the task's "
+            "context/stale-host-bridge-cleanup.json evidence if cleanup already "
+            "ran."
+        )
     for blocker in blockers or []:
         b = str(blocker)
         if b == "host_bridge_not_invoked" or "host AI bridge" in b:
@@ -351,9 +378,15 @@ def guidance_for(blockers, status, current_phase):
 def canonical_blocker(blocker):
     """Normalize equivalent blocker labels for stable task/status summaries."""
     value = str(blocker or "").strip()
+    if value == "stale_host_bridge_not_invoked":
+        return "host_bridge_not_invoked"
     if value == "host_bridge_not_invoked" or "host AI bridge" in value:
         return "host_bridge_not_invoked"
     return value
+
+
+def has_host_bridge_blocker(blockers):
+    return any(canonical_blocker(blocker) == "host_bridge_not_invoked" for blocker in blockers)
 
 
 def aggregate_task(state_dir, task_dir):
@@ -430,6 +463,18 @@ def aggregate_task(state_dir, task_dir):
             end_ts = parse_iso_ts(terminal.get("ts", ""))
             if end_ts:
                 duration_seconds = (end_ts - started_ts).total_seconds()
+    age_seconds = task_age_seconds(task_dir, started_ts)
+    stale_seconds = stale_host_bridge_seconds()
+    stale_host_bridge = (
+        status == "blocked"
+        and stale_seconds > 0
+        and has_host_bridge_blocker(blocked_by)
+        and age_seconds >= stale_seconds
+    )
+    if stale_host_bridge:
+        status = "stale_blocked"
+        current_phase = "stale_host_bridge_fallback"
+        blocked_by = ["stale_host_bridge_not_invoked"]
 
     # Stage / retry counts from events.
     stages_total = sum(1 for e in events if e.get("event") == "STAGE")
@@ -467,6 +512,8 @@ def aggregate_task(state_dir, task_dir):
         "status":            status,
         "current_phase":     current_phase,
         "duration_seconds":  duration_seconds,
+        "age_seconds":       age_seconds,
+        "stale_blocker":     stale_host_bridge,
         "started":           started.get("ts") if started else None,
         "stages_total":      stages_total,
         "stages_completed":  stages_completed,
@@ -512,9 +559,6 @@ def list_task_dirs(state_dir, args):
     if since_dt or until_dt:
         kept = []
         for p in candidates:
-            reg = read_register(p)
-            ts = parse_iso_ts((reg or {}).get("schema_version", "") and
-                              p.stat().st_mtime)  # fallback to mtime
             # Use task_id's date prefix when available.
             try:
                 date_part = p.name.split("-")[0]
@@ -540,6 +584,7 @@ def aggregate_summary(rows):
     total = len(rows)
     completed = sum(1 for r in rows if r["status"] == "completed")
     blocked = sum(1 for r in rows if r["status"] == "blocked")
+    stale_blocked = sum(1 for r in rows if r["status"] == "stale_blocked")
     running = sum(1 for r in rows if r["status"] == "running")
 
     durations = [r["duration_seconds"] for r in rows
@@ -550,6 +595,7 @@ def aggregate_summary(rows):
 
     by_phase = Counter(r["current_phase"] for r in rows if r["current_phase"])
     by_blocker = Counter()
+    by_stale_blocker = Counter()
     for r in rows:
         seen_blockers = set()
         for b in r["blockers"]:
@@ -557,12 +603,16 @@ def aggregate_summary(rows):
             if not blocker or blocker in seen_blockers:
                 continue
             seen_blockers.add(blocker)
+            if r["status"] == "stale_blocked" or r.get("stale_blocker"):
+                by_stale_blocker[blocker] += 1
+                continue
             by_blocker[blocker] += 1
 
     return {
         "tasks_total":             total,
         "tasks_completed":         completed,
         "tasks_blocked":           blocked,
+        "tasks_stale_blocked":     stale_blocked,
         "tasks_running":           running,
         "mean_duration_seconds":   (statistics.mean(durations)
                                     if durations else None),
@@ -572,6 +622,7 @@ def aggregate_summary(rows):
         "total_tokens":            total_tokens,
         "by_phase":                dict(by_phase),
         "by_blocker":              dict(by_blocker),
+        "by_stale_blocker":        dict(by_stale_blocker),
     }
 
 
@@ -629,6 +680,7 @@ def render_text(rows, summary):
     print(f"Tasks: {summary['tasks_total']} total | "
           f"{summary['tasks_completed']} completed | "
           f"{summary['tasks_blocked']} blocked | "
+          f"{summary.get('tasks_stale_blocked', 0)} stale-blocked | "
           f"{summary['tasks_running']} running")
     print(f"Duration (completed): "
           f"mean={format_duration(summary['mean_duration_seconds'])}, "
@@ -638,6 +690,9 @@ def render_text(rows, summary):
     if summary["by_blocker"]:
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_blocker"].items())
         print(f"Blockers: {bk}")
+    if summary.get("by_stale_blocker"):
+        bk = ", ".join(f"{k}={v}" for k, v in summary["by_stale_blocker"].items())
+        print(f"Stale blockers: {bk}")
     guidance_rows = [
         (r["task_id"], r["guidance"])
         for r in rows

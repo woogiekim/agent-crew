@@ -108,16 +108,46 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
     }
 
 
+def stale_blocker_count_from_telemetry(path) -> int:
+    if not path:
+        return 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    summary = data.get("summary", {}) if isinstance(data, dict) else {}
+    try:
+        return int(summary.get("tasks_stale_blocked") or 0)
+    except Exception:
+        return 0
+
+
+def has_stale_blocker_classification(text: str) -> bool:
+    return (
+        "stale_host_bridge_not_invoked" in text
+        or re.search(r"^STALE_BLOCKERS\s*:\s*\d+", text, re.I | re.M) is not None
+    )
+
+
 def main() -> int:
     default_fixture = Path(__file__).resolve().parent.parent / "evaluations" / "answer-quality.json"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True)
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--fixture", default=str(default_fixture))
+    parser.add_argument("--telemetry", help="Optional telemetry JSON evidence used to require stale-blocker classification.")
     parser.add_argument("--format", choices=["json", "text"], default="text")
     args = parser.parse_args()
 
-    result = check_report(Path(args.report), Path(args.task_dir), load_json(Path(args.fixture)))
+    report_path = Path(args.report)
+    result = check_report(report_path, Path(args.task_dir), load_json(Path(args.fixture)))
+    stale_count = stale_blocker_count_from_telemetry(Path(args.telemetry) if args.telemetry else None)
+    result["stale_blocker_count"] = stale_count
+    if stale_count > 0:
+        text = report_path.read_text(encoding="utf-8", errors="replace")
+        if not has_stale_blocker_classification(text):
+            result["failures"].append("missing_stale_blocker_classification")
+            result["passed"] = False
     if args.format == "json":
         json.dump(result, sys.stdout, indent=2)
         sys.stdout.write("\n")

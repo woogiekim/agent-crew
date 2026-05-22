@@ -105,6 +105,8 @@ invocation in SKILL.md; generic adds guidance).
   fallback, keeping current telemetry from being dominated by old blockers.
 - `update-preservation-manifest.py` — writes before/after update manifests
   under state to prove user-owned agents and skills were not deleted.
+- `update-fingerprint.py` — records source, user, and generated-output hashes so
+  repeated no-op local updates can skip expensive adapter refreshes safely.
 - `verify-install-drift.py` — post-update source/install drift verifier for
   source-owned commands, hooks, scripts, evaluations, and binary entrypoints.
 

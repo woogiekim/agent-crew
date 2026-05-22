@@ -8,6 +8,7 @@
   ],
   "allowed_blockers": [
     "host_bridge_not_invoked",
+    "stale_host_bridge_not_invoked",
     "supervisor_handoff_not_started",
     "stage_timeout",
     "quality_loop_exhausted",

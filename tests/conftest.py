@@ -110,6 +110,7 @@ def env_with_home(agent_crew_home: Path, state_dir: Path) -> dict:
     for k in list(env.keys()):
         if k.startswith("AGENT_CREW_BUDGET_"):
             del env[k]
+    env["AGENT_CREW_STALE_HOST_BRIDGE_SECONDS"] = "0"
     return env
 
 

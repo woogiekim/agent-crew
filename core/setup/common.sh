@@ -9,6 +9,16 @@ copy_dir_contents() {
   find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
 }
 
+copy_file_if_changed() {
+  local src="$1" dest="$2"
+  [ -f "${src}" ] || return 0
+  mkdir -p "$(dirname "${dest}")"
+  if [ -f "${dest}" ] && cmp -s "${src}" "${dest}" 2>/dev/null; then
+    return 0
+  fi
+  cp -f "${src}" "${dest}"
+}
+
 sync_dir_contents_prune() {
   local src="$1" dest="$2"
   [ -d "${src}" ] || return 0

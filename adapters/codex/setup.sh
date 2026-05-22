@@ -82,8 +82,20 @@ settings = {
     }
 }
 dest.parent.mkdir(parents=True, exist_ok=True)
-dest.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+content = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+if not dest.exists() or dest.read_text(encoding="utf-8") != content:
+    dest.write_text(content, encoding="utf-8")
 PYEOF
+}
+
+sync_codex_template_static() {
+  local src="${AGENT_CREW_HOME}/adapters/codex/template"
+  local dest="${PROJECT_ROOT}/.codex"
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+
+  copy_file_if_changed "${src}/README.md" "${dest}/README.md"
+  copy_file_if_changed "${src}/config.toml" "${dest}/config.toml"
 }
 
 install_codex_skills() {
@@ -129,7 +141,79 @@ install_system_agents_codex() {
     return 1
   fi
 
-  python3 "${generator}" "${system_agents_dir}" "${dest_dir}"
+  local tmp_agents
+  tmp_agents="$(mktemp -d)"
+  python3 "${generator}" "${system_agents_dir}" "${tmp_agents}" >/dev/null
+  printf '[generate-codex-system-agents] %s system agent(s) converted to TOML in %s\n' \
+    "$(find "${tmp_agents}" -maxdepth 1 -name '*.toml' 2>/dev/null | wc -l | tr -d ' ')" \
+    "${dest_dir}"
+  python3 - "${tmp_agents}" "${dest_dir}" "${AGENT_CREW_HOME}/user/agents" <<'PYEOF'
+import re
+import shutil
+import sys
+from pathlib import Path
+
+tmp_agents = Path(sys.argv[1])
+dest_dir = Path(sys.argv[2])
+user_agents_dir = Path(sys.argv[3])
+
+def parse_user_toml_name(path: Path) -> str:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    match = re.match(r'^---\s*\n(.*?)\n---\s*\n', text, re.DOTALL)
+    name = path.stem
+    if match:
+        for line in match.group(1).splitlines():
+            kv = re.match(r'^(\w[\w_-]*):\s*(.*)', line)
+            if kv and kv.group(1) == "name":
+                name = kv.group(2).strip().strip('"\'') or name
+                break
+    return re.sub(r'[^\w-]', '-', name.lower()).strip('-') or 'unknown'
+
+dest_dir.mkdir(parents=True, exist_ok=True)
+system_names = {path.name for path in tmp_agents.glob("*.toml")}
+user_names = set()
+if user_agents_dir.is_dir():
+    for path in user_agents_dir.glob("*.md"):
+        if path.name.lower() == "readme.md":
+            continue
+        user_names.add(parse_user_toml_name(path) + ".toml")
+
+allowed = system_names | user_names
+system_marker = "This is a Codex adapter bootstrap for the agent-crew system agent."
+legacy_system_names = {
+    "analyst.toml",
+    "backend.toml",
+    "designer.toml",
+    "devops.toml",
+    "documenter.toml",
+    "frontend.toml",
+    "historian.toml",
+    "issuer.toml",
+    "korean-normalizer.toml",
+    "learning-mentor.toml",
+    "planner.toml",
+    "requirements.toml",
+    "resolver.toml",
+    "reviewer.toml",
+    "supervisor.toml",
+    "test-writer.toml",
+}
+for dest_path in sorted(dest_dir.glob("*.toml")):
+    if dest_path.name in allowed:
+        continue
+    text = dest_path.read_text(encoding="utf-8", errors="replace")
+    is_managed_system_agent = system_marker in text or dest_path.name in legacy_system_names
+    if is_managed_system_agent:
+        print(f"[install_system_agents_codex] Removing stale Codex agent: {dest_path.name}")
+        dest_path.unlink()
+
+for src_path in sorted(tmp_agents.glob("*.toml")):
+    dest_path = dest_dir / src_path.name
+    if dest_path.exists() and dest_path.read_text(encoding="utf-8", errors="replace") == src_path.read_text(encoding="utf-8"):
+        continue
+    shutil.copyfile(src_path, dest_path)
+PYEOF
+  rm -rf "${tmp_agents}"
 }
 
 # install_user_agents_codex — convert user agent .md files to Codex TOML stubs.
@@ -264,8 +348,13 @@ for fname in sorted(os.listdir(user_agents_dir)):
     toml_content = '\n'.join(lines) + '\n'
 
     try:
-        with open(dest_path, 'w', encoding='utf-8') as f:
-            f.write(toml_content)
+        current = ''
+        if os.path.exists(dest_path):
+            with open(dest_path, encoding='utf-8') as f:
+                current = f.read()
+        if current != toml_content:
+            with open(dest_path, 'w', encoding='utf-8') as f:
+                f.write(toml_content)
         converted += 1
     except OSError as e:
         skipped.append(f'{fname}: write error ({e})')
@@ -277,7 +366,7 @@ if skipped:
 PYEOF
 }
 
-sync_dir_contents_prune "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_ROOT}/.codex"
+sync_codex_template_static
 
 # Note: reasoning_tier is an agent-crew abstraction. Codex native custom
 # agents honor official per-agent TOML keys such as `model`,
@@ -286,9 +375,7 @@ sync_dir_contents_prune "${AGENT_CREW_HOME}/adapters/codex/template" "${PROJECT_
 # abstract tier to a concrete model because model availability is operator- and
 # profile-specific. See core/rules/capabilities/reasoning-tier.md.
 
-rm -rf "${PROJECT_ROOT}/.codex/hooks"
-mkdir -p "${PROJECT_ROOT}/.codex/hooks"
-copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
+sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
 
 # Detect old flat layout and warn
 if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
@@ -298,7 +385,7 @@ if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; t
   printf 'Then you can safely delete %s/agents/\n\n' "${AGENT_CREW_HOME}"
 fi
 chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
-cp "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md" 2>/dev/null || true
+copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md"
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
 install_codex_skills
 install_system_agents_codex

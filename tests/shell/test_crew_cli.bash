@@ -121,6 +121,16 @@ it "local sync writes update preservation manifest"
 manifest_count=$(find "${PATH_INSTALL}/state/$(basename "${PATH_PROJECT}")/update-preservation" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "1" "${manifest_count}"
 
+it "repeated local sync does not delete regenerated Codex agents or hooks"
+out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" CLAUDE_DIR="${PATH_HOME}/.claude" CODEX_HOME="${PATH_HOME}/.codex" \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${PATH_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "skipped adapter refresh"
+assert_not_contains "${out}" "Removing stale file from ${PATH_PROJECT}/.codex: agents/"
+assert_not_contains "${out}" "Removing stale file from ${PATH_PROJECT}/.codex: hooks/"
+assert_not_contains "${out}" "Removing stale file from ${PATH_PROJECT}/.codex: hooks.json"
+
 CUSTOM_HOME=$(make_tmp)
 CUSTOM_INSTALL=$(make_tmp)
 CUSTOM_PROJECT=$(make_tmp)
@@ -281,6 +291,10 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" "${CLEANUP_TASK_ID}"
+
+it "crew cleanup-host-bridge apply writes stale cleanup evidence"
+assert_file_exists "${CLEANUP_TASK_DIR}/context/stale-host-bridge-cleanup.json"
+
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${CLEANUP_TASK_ID}" 2>&1)
 assert_contains "${out}" "\"tasks_completed\": 1"
 assert_not_contains "${out}" "\"host_bridge_not_invoked\""

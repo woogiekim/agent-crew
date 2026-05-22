@@ -68,6 +68,8 @@ it "Codex TOML converts comma-separated nickname candidates"
 assert_contains "${out}" 'nickname_candidates = ["Scout One", "Scout Two"]'
 
 mkdir -p "${setup_repo}"
+mkdir -p "${setup_repo}/.codex/agents"
+printf 'name = "local-custom"\n' > "${setup_repo}/.codex/agents/local-custom.toml"
 (
   cd "${setup_repo}" || exit 2
   git init -q
@@ -80,6 +82,9 @@ setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
 
 it "Codex setup user-agent conversion omits reasoning_tier"
 assert_not_contains "${setup_out}" 'reasoning_tier ='
+
+it "Codex setup preserves project-local custom TOML agents"
+assert_file_exists "${setup_repo}/.codex/agents/local-custom.toml"
 
 it "Generated Codex TOML parses as valid TOML"
 python3 - "${toml}" <<'PYEOF'

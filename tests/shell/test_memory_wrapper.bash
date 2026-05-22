@@ -175,6 +175,22 @@ conn.execute(
         json.dumps({"layer": "session", "tags": []}),
     ),
 )
+conn.execute(
+    "INSERT INTO items_fts (item_id, content, metadata) VALUES (?, ?, ?)",
+    (
+        "req-commercialization-eval-test",
+        "Requirements collected for commercialization evaluation telemetry blockers Mnemos latency answer quality",
+        json.dumps({"layer": "ephemeral", "tags": ["requirements"]}),
+    ),
+)
+conn.execute(
+    "INSERT INTO items_fts (item_id, content, metadata) VALUES (?, ?, ?)",
+    (
+        "commercialization-e2e-99-review-20260101",
+        "Commercialization E2E round review telemetry blockers Mnemos latency answer quality summary context",
+        json.dumps({"layer": "session", "tags": []}),
+    ),
+)
 conn.commit()
 PY
 cat > "${TMP}/mnemos" <<'SH'
@@ -197,6 +213,13 @@ rc=$?
 assert_exit 0 "${rc}" "relaxed FTS search"
 assert_contains "${OUTPUT}" "fast-memory-2"
 assert_not_contains "${OUTPUT}" "slow backend invoked"
+
+it "memory search ranks requirements evidence before round summary context"
+OUTPUT=$(HOME="${FAST_HOME}" MNEMOS_REPO_ROOT="${FAST_HOME}/.mnemos" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "commercialization evaluation telemetry blockers Mnemos latency answer quality" --limit 1 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "requirements evidence ranking"
+assert_contains "${OUTPUT}" "req-commercialization-eval-test"
+assert_not_contains "${OUTPUT}" "commercialization-e2e-99-review-20260101"
 
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
