@@ -91,28 +91,44 @@ for candidate in (query, normalise_compounds(query)):
         variants.append(candidate)
         seen_variants.add(candidate)
 
+def search_rows(conn, match_expr, row_limit):
+    try:
+        return conn.execute(
+            """
+            SELECT item_id, content, metadata, rank
+            FROM items_fts
+            WHERE items_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+            """,
+            (match_expr, row_limit),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+
+def relaxed_match(value):
+    tokens = []
+    seen = set()
+    for token in re.findall(r"[^\s]+", normalise_compounds(value)):
+        token = token.strip()
+        if not token:
+            continue
+        folded = token.lower()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        tokens.append(sanitise(token))
+    return " OR ".join(tokens)
+
 results = []
 seen_ids = set()
 try:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    for variant in variants:
-        safe_variant = sanitise(variant)
-        if not safe_variant:
-            continue
-        try:
-            rows = conn.execute(
-                """
-                SELECT item_id, content, metadata, rank
-                FROM items_fts
-                WHERE items_fts MATCH ?
-                ORDER BY rank
-                LIMIT ?
-                """,
-                (safe_variant, max(limit * 3, limit)),
-            ).fetchall()
-        except sqlite3.Error:
-            continue
+
+    match_variants = [sanitise(variant) for variant in variants]
+    for match_expr in [m for m in match_variants if m]:
+        rows = search_rows(conn, match_expr, max(limit * 3, limit))
         for row in rows:
             item_id = row["item_id"]
             if item_id in seen_ids:
@@ -133,6 +149,31 @@ try:
                 break
         if len(results) >= limit:
             break
+
+    if not results:
+        relaxed_variants = [relaxed_match(variant) for variant in variants]
+        for match_expr in [m for m in relaxed_variants if m]:
+            rows = search_rows(conn, match_expr, max(limit * 3, limit))
+            for row in rows:
+                item_id = row["item_id"]
+                if item_id in seen_ids:
+                    continue
+                metadata = {}
+                try:
+                    metadata = json.loads(row["metadata"] or "{}")
+                except Exception:
+                    metadata = {}
+                if layers is not None and metadata.get("layer") not in layers:
+                    continue
+                seen_ids.add(item_id)
+                results.append({
+                    "item_id": item_id,
+                    "content": row["content"] or "",
+                })
+                if len(results) >= limit:
+                    break
+            if len(results) >= limit:
+                break
 except Exception:
     sys.exit(1)
 
