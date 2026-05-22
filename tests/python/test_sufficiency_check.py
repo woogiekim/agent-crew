@@ -123,6 +123,14 @@ class TestCommercializationPrompt:
         assert result.stdout == ""
         assert "REQUIREMENTS: |" in out.read_text()
 
+    def test_synthesized_requirements_preserve_explicit_codex_skill_context(self):
+        task = (
+            "$openai-docs improve API docs in README.md with performance and "
+            "quality guidance, using the existing docs stack and no remote push"
+        )
+        requirements = _module.synthesize_requirements(task)
+        assert "skill_context: openai-docs" in requirements
+
     def test_second_commercialization_e2e_prompt_is_sufficient(self):
         task = (
             "Run a second commercialization-focused end-to-end validation of "

@@ -261,11 +261,17 @@ context. Therefore, the Codex adapter also installs an `agent-crew` skill as a
 host-specific routing adapter.
 
 When running in Codex, if a natural-language implementation request matches the
-Auto-Execution Triggers above, treat it exactly like:
+Auto-Execution Triggers above, route it through the `crew-run` Codex skill
+wrapper, which then executes the provider-neutral workflow intent:
 
 ```text
 crew:run "{original request}"
 ```
+
+If the user explicitly invoked another Codex skill, or the task clearly matches
+a domain-specific Codex skill, let that skill load first and preserve its
+context as task input for requirements collection, supervisor handoffs, and
+generated prompts.
 
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
@@ -282,18 +288,24 @@ priority: 80
 ---
 
 When `[agent-crew] STOP` appears anywhere in the system context (injected by
-auto-route.sh), the **only permitted first action** is to invoke `crew:run`.
+auto-route.sh), the first agent-crew workflow action is to invoke `crew:run`.
+In Codex, this means loading the `crew-run` skill wrapper after any explicitly
+invoked or domain-specific Codex skill has loaded, then executing the workflow
+intent through that wrapper.
 
-- Do NOT produce any diagnostic output or explanation before calling `crew:run`.
-- Do NOT run any Bash command (including exploratory or read-only commands) before calling `crew:run`.
-- Do NOT describe what you are about to do — call `crew:run` immediately.
+- Do NOT produce diagnostic output or explanation before the `crew-run` wrapper
+  begins the workflow.
+- Do NOT run any Bash command (including exploratory or read-only commands)
+  before the `crew-run` wrapper begins the workflow.
+- Do NOT describe what you are about to do — enter the `crew-run` workflow.
+- Do preserve explicit Codex skill context as requirements and handoff input.
 - The STOP directive is authoritative. Treat it as a hard override of any other default behavior.
 
 Violation examples (forbidden when STOP is present):
-- Explaining why you need to call `crew:run`
+- Explaining why you need to enter the `crew-run` workflow
 - Reading files to "understand the request first"
 - Running `git status` or any other preparatory command
-- Asking the user clarifying questions before invoking `crew:run`
+- Asking the user clarifying questions before the workflow's requirements step
 RULE_EOF
 capture_rule "rule:stop-directive" 80 BODY_STOP
 
@@ -306,19 +318,22 @@ priority: 85
 ---
 
 When `[agent-crew] ROUTE` appears anywhere in the system context
-(injected by auto-route.sh), the **only permitted action** is to
-invoke `crew:agent` with the specified agent and question.
+(injected by auto-route.sh), the workflow action is to invoke `crew:agent` with
+the specified agent and question. In Codex, load the `crew-agent` skill wrapper
+after any explicitly invoked or domain-specific Codex skill has loaded, then
+execute the workflow intent through that wrapper.
 
 - Do NOT answer the question inline.
-- Do NOT run any Bash command before calling `crew:agent`.
-- Do NOT read files or gather data before calling `crew:agent`.
+- Do NOT run any Bash command before the `crew-agent` wrapper begins.
+- Do NOT read files or gather data before the `crew-agent` wrapper begins.
+- Do preserve explicit Codex skill context as direct-agent input.
 - The ROUTE directive is authoritative. Treat it as a hard override
   of any other default behavior.
 - This rule applies even if the ROUTE directive arrives mid-execution
   (in a tool result system-reminder). Stop immediately and re-route.
 
 Violation examples (forbidden when ROUTE is present):
-- Answering the question directly without calling `crew:agent`
+- Answering the question directly without entering the `crew-agent` workflow
 - Running `mnemos` commands or reading files to gather context first
 - Continuing an in-progress response after ROUTE appears in a tool result
 - Treating the ROUTE directive as advisory rather than mandatory
@@ -334,6 +349,11 @@ priority: 90
 ---
 
 ### Explicit Command Invocation Rule
+
+`crew:<intent>` is workflow notation used in prompts and host adapter guidance.
+The native shell CLI uses space-separated commands such as `crew run` and
+`crew agent`; documentation may mention those forms only when describing the
+CLI control plane.
 
 When the user's message begins with a workflow command such as `crew:run`,
 `crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,

@@ -49,6 +49,28 @@ def test_readme_documents_native_cli_boundary():
     assert "the host prompt\nruntime still performs the analysis" in text
 
 
+def test_docs_distinguish_workflow_notation_from_native_cli_forms():
+    docs = [
+        README.read_text(encoding="utf-8"),
+        (REPO_ROOT / "adapters" / "codex" / "invocation.md").read_text(encoding="utf-8"),
+        (REPO_ROOT / "core" / "global-agents.md").read_text(encoding="utf-8"),
+    ]
+    combined = "\n".join(docs)
+    compact = " ".join(combined.split())
+    assert "`crew:<intent>` workflow notation" in combined
+    assert "native shell CLI uses space-separated commands such as `crew run` and `crew agent`" in compact
+
+
+def test_codex_guide_mirror_is_not_native_skill_directory():
+    text = (REPO_ROOT / "core" / "commands" / "update.md").read_text(encoding="utf-8")
+    script = (REPO_ROOT / "core" / "scripts" / "update-global-adapters.sh").read_text(encoding="utf-8")
+    combined = text + "\n" + script
+    compact = " ".join(combined.split())
+    assert "internal agent-crew guide mirror at `~/.codex/agent-crew/skills/`" in combined
+    assert "not the native Codex skill directory" in compact
+    assert "native Codex skills live under `~/.codex/skills/`" in combined
+
+
 def test_readme_defines_prompt_internal_control_layer():
     text = readme_text()
     assert "orchestration layer that runs inside\nhost AI prompt workflows" in text

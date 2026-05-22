@@ -11,8 +11,9 @@
 # directory:
 #
 #   - Claude:  ~/.claude/agent-crew/  (via install_claude_compat)
-#   - Codex:   ~/.codex/skills/agent-crew/  (via install_codex_bootstrap_skill)
-#              ~/.codex/agent-crew/skills/
+#   - Codex:   ~/.codex/skills/agent-crew/  (native Codex bootstrap skill)
+#              ~/.codex/agent-crew/skills/  (internal agent-crew guide mirror,
+#                                            not the native Codex skill dir)
 #
 # Generic has no global scope (all paths are project-local), so it is not
 # handled here — setup-host.sh covers it for the current PROJECT_ROOT.

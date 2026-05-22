@@ -134,6 +134,31 @@ class TestIssue14ReproductionCase:
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert 'Invoke Skill("crew-agent")' in ctx
         assert 'Invoke Skill("agent")' not in ctx
+        assert "let any explicitly invoked or domain-specific Codex skill load first" in ctx
+        assert "preserve any loaded Codex skill context" in ctx
+
+    def test_stop_directive_uses_crew_run_wrapper_without_bypass_wording(self):
+        payload = {
+            "prompt": (
+                "$openai-docs update README.md with the current API guidance, "
+                "run tests, and commit locally without pushing"
+            )
+        }
+        proc = subprocess.run(
+            [str(HOOK_PATH)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        output = json.loads(proc.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] STOP" in ctx
+        assert 'Invoke Skill("crew-run")' in ctx
+        assert "without loading Skill" not in ctx
+        assert "execute directly" not in ctx
+        assert "let any explicitly invoked or domain-specific Codex skill load first" in ctx
+        assert "Preserve that skill context in" in ctx
 
 
 # ---------------------------------------------------------------------------

@@ -300,6 +300,8 @@ Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
 
 Write handoff content to `{TASK_DIR}/handoff.md`:
 - Summarized requirements
+- Preserved Codex skill context path when `requirements.md` contains
+  `skill_context` other than `(none)`
 - Key technical decisions from the PRD
 - Constraints and cautions
 - PRD path: `{TASK_DIR}/context/prd.md`

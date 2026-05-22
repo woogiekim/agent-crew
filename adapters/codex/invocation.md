@@ -1,6 +1,6 @@
 # Codex Invocation Guide
 
-Use the canonical `crew:<intent>` text form:
+Use the canonical `crew:<intent>` workflow notation in Codex prompts:
 
 ```text
 crew:setup
@@ -22,7 +22,9 @@ crew:run "Order API" | "Product API"
 The Codex adapter installs `.codex/` agent and hook configuration plus
 `AGENTS.md` guidance. Do not rely on custom slash command registration in Codex.
 Use plain `crew:<intent>` text. In Codex, `@` is interpreted as mention input,
-not as a custom command prefix.
+not as a custom command prefix. The native shell CLI uses space-separated
+commands such as `crew run` and `crew agent`; those are CLI forms, not the
+prompt workflow notation.
 
 ## crew:agent — Direct Agent Invocation
 

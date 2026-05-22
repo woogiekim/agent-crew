@@ -236,10 +236,13 @@ TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
 HANDOFF_PATH: {TASK_DIR}/handoff.md
 QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
+{CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md  ← include only when file exists}
 {MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  ← include only when MEM_CONTEXT non-empty}
 
 Read the handoff content directly from HANDOFF_PATH.
 Read the PRD directly from {TASK_DIR}/context/prd.md.
+If CODEX_SKILL_CONTEXT_PATH is present, preserve and apply that context while
+performing the assigned work.
 Read and apply the quality loop rule from QUALITY_RULE_PATH before reporting completion.
 Perform the assigned work.
 All file operations must be performed relative to {PROJECT_ROOT}.

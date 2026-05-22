@@ -231,6 +231,15 @@ def sufficiency_check(task: str) -> str:
     return "AMBIGUOUS"
 
 
+def codex_skill_context(task: str) -> str:
+    """Return a compact marker for explicit Codex skill mentions in TASK."""
+    skill_names = set(re.findall(r"(?<!\w)\$([A-Za-z][\w:-]*)", task))
+    skill_names.update(re.findall(r"Skill\([\"']([^\"']+)[\"']\)", task))
+    if not skill_names:
+        return "(none)"
+    return ", ".join(sorted(skill_names))
+
+
 def synthesize_requirements(task: str) -> str:
     """Return a requirements block compatible with the requirements agent."""
     signals = sufficiency_signals(task)
@@ -275,6 +284,7 @@ def synthesize_requirements(task: str) -> str:
         f"  scope: {scope}\n"
         f"  target: {target}\n"
         f"  constraints: {', '.join(constraints)}\n"
+        f"  skill_context: {codex_skill_context(task)}\n"
         "  followup: (none)\n"
         "  sufficiency: HIGH\n"
         "  inline_synthesis: true\n"

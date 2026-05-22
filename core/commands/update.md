@@ -322,7 +322,9 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
    **(a) Global-scope update** — runs all installed global-scope adapters
    (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/agent-crew/` and
-   `~/.codex/agent-crew/skills/`) without requiring PROJECT_ROOT context.
+   the internal agent-crew guide mirror at `~/.codex/agent-crew/skills/`)
+   without requiring PROJECT_ROOT context. The mirror is not the native Codex
+   skill directory; native Codex skills live under `~/.codex/skills/`.
    Only adapters whose installation directory already exists on this machine
    are updated (installation-presence guard):
 

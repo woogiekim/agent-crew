@@ -1,6 +1,6 @@
 ---
 name: agent-crew
-description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
+description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked or domain-specific Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
 ---
 
 # Agent Crew Command Bootstrap
@@ -31,10 +31,17 @@ Gradle, run npm, run CI, lint, test, or perform a host-default validation pass.
 
 ## Natural-Language Routing
 
+If the user explicitly invoked another Codex skill, or the request clearly
+matches a domain-specific Codex skill, let that skill load first. Preserve the
+skill name and any context it establishes when routing into `crew-run` or
+`crew-agent`; this context must remain visible to requirements collection,
+supervisor handoffs, and generated prompts.
+
 When the user asks Codex to build, implement, create, add, update, fix, remove,
 move, change, migrate, refactor, replace, extend, integrate, test, deploy,
 merge, roll back, or otherwise perform development work, route the request
-through `crew:run`.
+through the `crew-run` skill wrapper, which executes the `crew:run` workflow
+intent.
 
 `crew:agent` is read-only in Codex. Use it only for explanation, lookup,
 investigation, or normalization tasks that do not mutate files, docs, issues,
@@ -138,7 +145,8 @@ CI, repository validation, or direct implementation.
 
 ## Codex Auto-Route Fallback
 
-For a natural-language implementation request, behave as if the user had typed:
+For a natural-language implementation request, load the `crew-run` skill wrapper
+and behave as if the user had typed:
 
 ```text
 crew:run "{original request}"
@@ -146,7 +154,10 @@ crew:run "{original request}"
 
 Then execute the full `crew:run` workflow from `~/.agent-crew/commands/run.md`.
 Preserve the original user wording as the task input, subject to the command
-definition's required normalization and requirements-collection steps.
+definition's required normalization and requirements-collection steps. If a
+Codex skill was explicitly invoked or domain-selected before routing, preserve
+that skill context as task metadata and include it in requirements and handoff
+inputs.
 
 ## Capability fallbacks
 

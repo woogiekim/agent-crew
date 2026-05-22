@@ -163,7 +163,9 @@ printf 'CAPABILITIES: %s\n' "${STATE_DIR}/capabilities.json"
 A markdown document the host's model reads at session start. It tells
 the model:
 
-- The canonical command form (`crew:<intent>`).
+- The canonical prompt workflow notation (`crew:<intent>`), distinct from the
+  native CLI forms (`crew run`, `crew agent`, and other space-separated
+  `crew` commands).
 - Host-specific aliases or slash-command bindings (if any).
 - **The mapping from abstract capability intents to host tool names.**
 
@@ -172,7 +174,7 @@ Example skeleton:
 ```markdown
 # {Your-Host} Invocation Guide
 
-Use the canonical `crew:<intent>` text form:
+Use the canonical `crew:<intent>` workflow notation in prompts:
 
 \`\`\`text
 crew:setup

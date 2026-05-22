@@ -38,6 +38,9 @@ load them at agent startup:
   (legacy — preserves the original Round 1 + Round 2 flow). If `MODE` is
   unset, default to `two_round` for backward compatibility with any caller
   that has not been updated.
+- `CODEX_SKILL_CONTEXT_PATH` (optional): path to preserved Codex skill context
+  from the `crew-run` wrapper. If present, record the path in requirements
+  without erasing or summarizing away the original skill context.
 
 ## Mode Selection
 
@@ -316,11 +319,15 @@ Write `{TASK_DIR}/context/requirements.md`:
 ## Domain Details
 {r2 answers as key: value pairs, or "(none)" if Round 2 was skipped}
 
+## Codex Skill Context
+{CODEX_SKILL_CONTEXT_PATH, or "(none)" if not provided}
+
 ## REQUIREMENTS Block
 ```text
 scope: {r1_scope}
 target: {r1_target}
 constraints: {r1_constraints}
+skill_context: {CODEX_SKILL_CONTEXT_PATH, or "(none)"}
 followup:
   {key}: {value}
   ...
@@ -340,6 +347,7 @@ REQUIREMENTS: |
   scope: {r1_scope}
   target: {r1_target}
   constraints: {r1_constraints}
+  skill_context: {CODEX_SKILL_CONTEXT_PATH, or "(none)"}
   followup:
     {key}: {value}
 ```

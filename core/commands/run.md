@@ -1182,6 +1182,21 @@ printf '%s | ORCHESTRATOR_HANDOFF | task context prepared; requirements pending\
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${TASK_DIR}/progress.log"
 ```
 
+When Codex routed the request through a skill wrapper after another explicit or
+domain-specific Codex skill loaded, preserve that context as task metadata. Do
+not strip `$skill` mentions or app-provided context from `TASK`; additionally,
+when the wrapper provides a `CODEX_SKILL_CONTEXT` string, write it before
+requirements collection:
+
+```bash
+if [ -n "${CODEX_SKILL_CONTEXT:-}" ]; then
+  printf '%s\n' "${CODEX_SKILL_CONTEXT}" > "${TASK_DIR}/context/codex-skill-context.md"
+fi
+```
+
+Every later prompt that receives `TASK_DIR` must treat this file, when present,
+as part of the user request context.
+
 #### Session Registry Initialization (N > 1 only)
 
 For parallel runs, after all task contexts are prepared, create (or overwrite)
@@ -1286,7 +1301,10 @@ python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
 ```
 
 The written block must remain compatible with the requirements agent's
-`REQUIREMENTS: |` output.
+`REQUIREMENTS: |` output. If
+`{TASK_DIR}/context/codex-skill-context.md` exists, append a `skill_context:`
+field to the synthesized block that points at that file; do not inline large
+skill output into requirements.
 
 **If `SUFFICIENCY == "AMBIGUOUS"`:** Proceed to Step 5 (collect via agent) with
 `MODE: single_round`.
@@ -1317,11 +1335,14 @@ TASK: {task description}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
 MODE: single_round
+CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md
+  (include only when the file exists)
 
 Run a single-round structured user-choice interview (per
 `core/rules/capabilities/interactive-question.md`) (scope + target + constraints
 in one call), validate scope, detect ambiguities, write
-{TASK_DIR}/context/requirements.md, and return the REQUIREMENTS block.
+{TASK_DIR}/context/requirements.md, preserve CODEX_SKILL_CONTEXT_PATH in the
+requirements file when present, and return the REQUIREMENTS block.
 ```
 
 Wait for the agent to return. Extract the `REQUIREMENTS` block and record it.
@@ -1542,10 +1563,13 @@ PROJECT_ROOT: {execution root for this task}
 BRANCH: {BRANCH}
 EXECUTION_MODE: single or parallel
 SESSION_ID: {SESSION_ID}
+CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md
+  (include only when the file exists)
 REQUIREMENTS: |
   scope: {scope answer}
   target: {target answer}
   constraints: {constraints answer(s)}
+  skill_context: {TASK_DIR}/context/codex-skill-context.md, if present
   followup:
     {field_name}: {Round 2 answer A, if collected}
     {field_name}: {Round 2 answer B, if collected}

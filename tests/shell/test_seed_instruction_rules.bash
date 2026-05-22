@@ -137,6 +137,28 @@ assert_contains "$(cat "${stored}" 2>/dev/null || true)" "applies_to: [all]"
 it "code style context-break rule requires breaks on context changes"
 assert_contains "$(cat "${stored}" 2>/dev/null || true)" "break when the implementation context changes"
 
+it "stop directive rule preserves Codex skill loading"
+stored="${TMP}/mnemos-store/rule:stop-directive"
+assert_file_exists "${stored}"
+stop_rule="$(cat "${stored}" 2>/dev/null || true)"
+assert_contains "${stop_rule}" "loading the \`crew-run\` skill wrapper after any explicitly"
+assert_contains "${stop_rule}" "Do preserve explicit Codex skill context"
+assert_not_contains "${stop_rule}" "only permitted first action"
+
+it "route directive rule uses crew-agent skill wrapper"
+stored="${TMP}/mnemos-store/rule:route-directive"
+assert_file_exists "${stored}"
+route_rule="$(cat "${stored}" 2>/dev/null || true)"
+assert_contains "${route_rule}" "load the \`crew-agent\` skill wrapper"
+assert_contains "${route_rule}" "Do preserve explicit Codex skill context"
+
+it "workflow intents distinguish notation from native CLI"
+stored="${TMP}/mnemos-store/rule:workflow-intents"
+assert_file_exists "${stored}"
+workflow_rule="$(cat "${stored}" 2>/dev/null || true)"
+assert_contains "${workflow_rule}" "\`crew:<intent>\` is workflow notation"
+assert_contains "${workflow_rule}" "native shell CLI uses space-separated commands"
+
 # --------------------------------------------------------------------------- #
 # Re-run --apply with identical content: all skipped                          #
 # --------------------------------------------------------------------------- #

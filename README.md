@@ -69,7 +69,7 @@ measured during commercialization validation.
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
-- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; the AI must call `crew:run` immediately with no preamble, no file reads, no Bash commands, and no clarifying questions
+- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; after any explicitly invoked Codex skill loads, the AI must enter the `crew-run` workflow with no preamble, no file reads, no Bash commands, and no clarifying questions
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
 - **Reviewer always last** — every pipeline that produces implementation output ends with the `reviewer` agent, which verifies completeness against the PRD
 - **Conditional deployment gate** — after all supervisors complete, `crew:run` always displays a per-task summary; deployment approval via `AskUserQuestion` fires only when the pipeline included a `devops` stage
@@ -133,6 +133,11 @@ crew status
 # 5. Check cost summary
 crew:cost
 ```
+
+`crew:<intent>` is prompt workflow notation for host AI conversations. The
+native shell CLI uses space-separated commands such as `crew run` and
+`crew agent`; use those forms when you are calling the local `crew` binary from
+a terminal.
 
 `crew setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
 provider-neutral: it calls adapter-owned `detect.sh` scripts and delegates to the
@@ -678,7 +683,11 @@ If a stage reports `STATUS: BLOCKED`, the supervisor halts the pipeline immediat
 
 `auto-route.sh` is a `UserPromptSubmit` hook. When it detects a development request (backend, frontend, full-stack, file-level edits, project keywords), it injects `[agent-crew] STOP` into the system context.
 
-When `[agent-crew] STOP` is present, the **only permitted first action** is to invoke `crew:run`. All of the following are forbidden before `crew:run` is called:
+When `[agent-crew] STOP` is present, the first agent-crew workflow action is to
+invoke `crew:run`. In Codex, explicitly invoked or domain-specific Codex skills
+may load first; their context must be preserved for requirements collection,
+supervisor handoffs, and generated prompts. All of the following are forbidden
+before the `crew-run` workflow begins:
 
 - Producing any explanatory output
 - Running Bash commands (including read-only or exploratory commands like `git status`, `ls`, `cat`)

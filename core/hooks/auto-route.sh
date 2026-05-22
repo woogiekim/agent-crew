@@ -215,10 +215,13 @@ def match(pattern):
 def emit_question_route(target_agent: str, route_reason: str):
     question_directive = (
         f"[agent-crew] ROUTE — question detected, routing to {target_agent} ({route_reason}).\n\n"
-        f"Do NOT answer this question inline. Call crew:agent with the question.\n\n"
+        f"Do NOT answer this question inline. In Codex, let any explicitly invoked "
+        f"or domain-specific Codex skill load first, then invoke the crew-agent "
+        f"skill wrapper with the question.\n\n"
         f"REQUIRED action:\n"
         f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
-        f"Invoke Skill(\"crew-agent\") with the user's question and agent={target_agent}.\n"
+        f"Invoke Skill(\"crew-agent\") with the user's question and agent={target_agent}; "
+        f"preserve any loaded Codex skill context as direct-agent input.\n"
         f"Direct inline responses for questions are forbidden — even short ones.\n"
         f"The ONLY permitted inline response is a bare atomic fact: "
         f"literal yes/no, a bare file path, or a bare single number with no explanation."
@@ -403,14 +406,18 @@ else:
 
 directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
-IMMEDIATE ACTION REQUIRED: Call crew:run RIGHT NOW as your very first action.
-Do NOT explain, diagnose, analyze, investigate, read files, or run any command before calling crew:run.
-Any action other than crew:run is a system violation.
+IMMEDIATE WORKFLOW ACTION REQUIRED: enter the crew-run workflow.
+In Codex, let any explicitly invoked or domain-specific Codex skill load first,
+then invoke the crew-run skill wrapper. Preserve that skill context in
+requirements collection, supervisor handoffs, and generated prompts.
+
+Do NOT explain, diagnose, analyze, investigate, read files, or run any command before the crew-run wrapper begins the workflow.
+Any action other than skill loading followed by crew-run workflow execution is a system violation.
 
 REQUIRED action:
 {action_line}
 
-FORBIDDEN before crew:run (each one is a violation):
+FORBIDDEN before the crew-run wrapper begins (each one is a violation):
 - Running ANY Bash command (git status, ls, cat, grep, find, etc.)
 - Using the Read tool to read any file
 - Analyzing code, error messages, logs, or stack traces
@@ -421,14 +428,12 @@ FORBIDDEN before crew:run (each one is a violation):
 crew:run owns ALL investigation, analysis, and implementation.
 Delegate EVERYTHING to crew:run — including bug finding and root cause analysis.
 
-INLINE WORKFLOW (execute directly without loading Skill, if steps are clear):
-1. Invoke Skill("run") — loads the full crew:run spec automatically, OR
-2. Execute core steps directly:
-   a. Extract TASK from the user's message (apply Korean normalization if Hangul present)
-   b. Check live session: python3 -c "import json; s=json.load(open(\\\"$HOME/.agent-crew/state/$(basename $(git rev-parse --show-toplevel 2>/dev/null))/session.json\\\")); print(s.get('status',''))" 2>/dev/null
-   c. Spawn supervisor: Agent(subagent_type=\\\"supervisor\\\", prompt=\\\"TASK: {{task}}\\\\nTASK_ID: {{id}}\\\\nTASK_DIR: {{dir}}\\\\nPROJECT_ROOT: {{root}}\\\\nBRANCH: {{branch}}\\\\nREQUIREMENTS: ...\\\")
-   d. Full spec for edge cases: ~/.agent-crew/commands/run.md
-Call crew:run NOW."""
+CODEX SKILL WORKFLOW:
+1. Invoke Skill("crew-run") — loads the full crew:run wrapper and command spec.
+2. Pass the original request plus any explicit/domain-specific Codex skill context
+   into the workflow so Step 5 requirements and supervisor prompts retain it.
+
+Enter the crew-run workflow now."""
 
 output = {
     "hookSpecificOutput": {
