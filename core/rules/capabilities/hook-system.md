@@ -26,6 +26,14 @@ Consumers:
   This consumer runs inline in `crew:run` rather than through a
   PostToolUse hook, so it works on every adapter regardless of
   `hook_system`.
+- **Automatic issue reporting** (implemented). A `UserPromptSubmit`
+  observer and a `PostToolUse[Bash]` observer detect explicit
+  agent-crew bug/error reports or `crew` command payloads with explicit
+  bug/error output, then
+  publish a deduplicated GitHub issue to the agent-crew remote when
+  `gh` is available. Script: `core/scripts/auto-issue-reporter.py`.
+  Hook wrapper: `core/hooks/auto-issue-report.sh`. Contract:
+  `core/rules/auto-issue-reporting.md`.
 
 ## Required Adapter Surface (flag=true)
 
@@ -43,7 +51,7 @@ Adapter MUST provide:
 - The adapter MAY pre-register the canonical set of hooks that ship
   with agent-crew: `direct-edit-guard`, `cost-tracker`,
   `guard-dangerous-commands`, `agent-diff-pre` / `agent-diff-post`,
-  `auto-route`, `context-guard`, `verify-rules`.
+  `auto-route`, `auto-issue-report`, `context-guard`, `verify-rules`.
 
 ## Consumer Contract (core)
 
@@ -106,6 +114,7 @@ Consumer — current hook scripts:
 - `core/hooks/cost-tracker.sh`
 - `core/hooks/guard-dangerous-commands.sh`
 - `core/hooks/auto-route.sh`
+- `core/hooks/auto-issue-report.sh`
 - `core/hooks/context-guard.sh`
 - `core/hooks/verify-rules.sh`
 - `core/hooks/forbid-plaintext-approval.sh` (Phase G6)
@@ -113,6 +122,8 @@ Consumer — current hook scripts:
 Consumer — validator scripts:
 
 - `core/scripts/check-plaintext-approval.py` (Phase G6 — implemented)
+- `core/scripts/auto-issue-reporter.py` (implemented; advisory
+  UserPromptSubmit/PostToolUse issue publisher)
 - `core/scripts/detect-inject-intent.sh` (Phase J14 — implemented;
   invoked by `crew:run` Step 1.5 to auto-route on unambiguous
   inject-intent phrasing)

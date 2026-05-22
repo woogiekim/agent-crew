@@ -122,3 +122,10 @@ def test_active_work_docs_require_concise_operator_messages():
     assert "Active-work messages are concise by default" in combined
     assert "session id, task id" in combined
     assert "long policy narration" in combined
+
+
+def test_readme_documents_automatic_issue_reporting():
+    text = readme_text()
+    assert "Automatic issue reporting" in text
+    assert "core/hooks/auto-issue-report.sh" in text
+    assert "core/rules/auto-issue-reporting.md" in text

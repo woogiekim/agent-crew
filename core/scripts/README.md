@@ -95,6 +95,10 @@ invocation in SKILL.md; generic adds guidance).
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
 - `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
   telemetry, memory search, retrieval evaluation, and update dry-run budgets.
+- `auto-issue-reporter.py` — advisory hook classifier/publisher for explicit
+  agent-crew bug/error reports. It detects narrow agent-crew + error signals,
+  redacts common secrets, deduplicates locally/remotely, and creates GitHub
+  issues through `gh` when available.
 - `update-slo-benchmark.py` — benchmarks no-op local, cold local, and remote
   `crew update` modes against explicit latency budgets and phase timings.
 - `memory-evidence-trace.py` — writes `context/memory-evidence.{json,md}` so

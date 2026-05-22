@@ -10,6 +10,7 @@ source "$(dirname "$0")/../shell/_lib.bash"
 PYTHON_SCRIPTS=(
   "validate-state-schema.py"
   "check-plaintext-approval.py"
+  "auto-issue-reporter.py"
   "telemetry-aggregate.py"
   "cost-aggregate.py"
   "crew-runtime.py"

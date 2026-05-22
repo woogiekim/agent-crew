@@ -59,6 +59,16 @@ settings = {
         ],
         "PostToolUse": [
             {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"bash '{home}/hooks/auto-issue-report.sh'",
+                        "timeout": 10,
+                    }
+                ],
+            },
+            {
                 "matcher": "Edit|Write|MultiEdit|apply_patch",
                 "hooks": [
                     {
@@ -71,6 +81,11 @@ settings = {
         "UserPromptSubmit": [
             {
                 "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"bash '{home}/hooks/auto-issue-report.sh'",
+                        "timeout": 10,
+                    },
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/auto-route.sh'",
