@@ -1,0 +1,156 @@
+"""Tests for memory evaluation and report quality safeguards."""
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MEMORY_EVAL = REPO_ROOT / "core" / "scripts" / "memory-retrieval-eval.py"
+REPORT_CHECK = REPO_ROOT / "core" / "scripts" / "report-quality-check.py"
+CANONICAL_CONTEXT = REPO_ROOT / "core" / "scripts" / "canonical-context.py"
+MEMORY_FIXTURE = REPO_ROOT / "core" / "evaluations" / "memory-retrieval.json"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+memory_eval = _load_module(MEMORY_EVAL, "memory_retrieval_eval")
+
+
+def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
+    fixture = json.loads(MEMORY_FIXTURE.read_text(encoding="utf-8"))
+
+    assert fixture["expected_memory_ids"] == [
+        "31ec5287-1233-426e-8e1f-241adff08cb3",
+        "req-commercialization-eval-6-20260521",
+        "a1fc78d0-14fd-45ae-a3e5-1363e328f813",
+        "800f5868-9404-432c-b819-a3975f247161",
+        "d2d62df8-33c9-4d03-90b3-e2be9484f88f",
+    ]
+    assert fixture["latency_budget_ms"] > 0
+    assert fixture["noise_budget_count"] >= 0
+
+
+def test_memory_eval_reports_misses_noise_and_latency_separately():
+    fixture = {
+        "query": "probe",
+        "expected_memory_ids": ["expected-a", "expected-b"],
+        "latency_budget_ms": 10,
+        "noise_budget_count": 0,
+    }
+    result = memory_eval.evaluate(
+        fixture,
+        "  [fts] expected-a: useful\n  [fts] noisy-extra: unrelated\n",
+        20.0,
+    )
+
+    assert result["passed"] is False
+    assert result["misses"] == ["expected-b"]
+    assert result["failures"]["noise"] == ["noisy-extra"]
+    assert result["failures"]["latency_ms"] == 20.0
+
+
+def test_report_quality_gate_passes_with_measurements_evidence_blocker_and_memory(
+    tmp_path: Path,
+):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    (task_dir / "context" / "memory.md").write_text(
+        "31ec5287-1233-426e-8e1f-241adff08cb3 repeated latency conclusion\n",
+        encoding="utf-8",
+    )
+    evidence = task_dir / "progress.log"
+    evidence.write_text("ok\n", encoding="utf-8")
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: blocked\n"
+        "BLOCKER: stage_timeout\n"
+        "MEASUREMENTS: stage duration 42 seconds, retries 1\n"
+        "EVIDENCE: progress.log\n"
+        "UNCERTAINTY: Unknown host runtime variance remains.\n"
+        "Memory reused: 31ec5287-1233-426e-8e1f-241adff08cb3\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["reused_memory_context_ids"] == [
+        "31ec5287-1233-426e-8e1f-241adff08cb3"
+    ]
+
+
+def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    report = task_dir / "result.md"
+    report.write_text("STATUS: completed\nLooks good.\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_measurements" in payload["failures"]
+    assert "missing_evidence" in payload["failures"]
+    assert "missing_uncertainty" in payload["failures"]
+
+
+def test_canonical_context_compacts_repeated_prior_outcomes(tmp_path: Path):
+    first = tmp_path / "a.md"
+    second = tmp_path / "b.md"
+    output = tmp_path / "canonical-context.md"
+    first.write_text("CONCLUSION: Telemetry must expose retries.\n", encoding="utf-8")
+    second.write_text("CONCLUSION: Telemetry must expose retries.\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(CANONICAL_CONTEXT),
+            "--output",
+            str(output),
+            str(first),
+            str(second),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    text = output.read_text(encoding="utf-8")
+    assert "repeated=2: Telemetry must expose retries." in text

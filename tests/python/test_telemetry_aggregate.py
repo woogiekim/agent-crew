@@ -88,6 +88,85 @@ class TestTelemetryAggregate:
         assert task_row["duration_seconds"] == 300.0
         assert task_row["stages_completed"] == 2
 
+    def test_phase_runtime_metrics_include_retries_blocked_handoffs_and_wait(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Phase telemetry exposes stage duration, retries, blockers, and wait."""
+        task_id = "20260101-120050-0"
+        td = state_dir / "tasks" / task_id
+        (td / "context").mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        _write_progress_jsonl(td, [
+            {"ts": "2026-01-01T12:00:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "STARTED"},
+            {"ts": "2026-01-01T12:00:10Z", "trace_id": "x",
+             "task_id": task_id, "event": "STAGE", "stage": 1,
+             "agent": "backend", "detail": "1/1 — backend"},
+            {"ts": "2026-01-01T12:00:20Z", "trace_id": "x",
+             "task_id": task_id, "event": "RETRY", "stage": 1,
+             "agent": "backend"},
+            {"ts": "2026-01-01T12:00:25Z", "trace_id": "x",
+             "task_id": task_id, "event": "BLOCKED", "stage": 1,
+             "agent": "backend", "detail": "stage_timeout"},
+            {"ts": "2026-01-01T12:00:40Z", "trace_id": "x",
+             "task_id": task_id, "event": "STAGE_DONE", "stage": 1,
+             "agent": "backend"},
+        ])
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        metric = task["phase_metrics"][0]
+        assert metric["stage_duration_seconds"] == 30.0
+        assert metric["retries"] == 1
+        assert metric["blocked_handoffs"] == 1
+        assert metric["user_visible_wait_seconds"] == 30.0
+        assert task["blocked_handoffs"] == 1
+        assert task["user_visible_wait_seconds"] == 30.0
+
+    def test_phase_events_are_closed_by_next_phase(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Prompt-runtime phase spans are available before stage execution."""
+        task_id = "20260101-120055-0"
+        td = state_dir / "tasks" / task_id
+        (td / "context").mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="completed")
+        _write_progress_jsonl(td, [
+            {"ts": "2026-01-01T12:00:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "STARTED"},
+            {"ts": "2026-01-01T12:00:05Z", "trace_id": "x",
+             "task_id": task_id, "event": "PHASE", "stage": 0,
+             "agent": "", "detail": "1a — Requirement collection"},
+            {"ts": "2026-01-01T12:00:35Z", "trace_id": "x",
+             "task_id": task_id, "event": "PHASE", "stage": 0,
+             "agent": "", "detail": "1b — Planning"},
+            {"ts": "2026-01-01T12:01:00Z", "trace_id": "x",
+             "task_id": task_id, "event": "COMPLETED", "stage": 0,
+             "agent": ""},
+        ])
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        metrics = json.loads(r.stdout)["tasks"][0]["phase_metrics"]
+        assert metrics[0]["phase"] == "1a — Requirement collection"
+        assert metrics[0]["stage_duration_seconds"] == 30.0
+        assert metrics[1]["phase"] == "1b — Planning"
+        assert metrics[1]["stage_duration_seconds"] == 25.0
+
     def test_missing_register_shows_dash_status(
         self, script_runner, env_with_home, state_dir
     ):
