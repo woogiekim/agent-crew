@@ -6,10 +6,13 @@
   "latency_budget_ms": 1500,
   "noise_budget_count": 2,
   "expected_memory_ids": [
-    "31ec5287-1233-426e-8e1f-241adff08cb3",
+    "f6c6c59e-b4aa-4169-aa27-968de14a1e39",
+    "693036fb-febd-4d8a-b8c3-cf3a0d5c73f3",
+    "c004a271-d86c-4467-bf54-29927887bbd6",
+    "84ce5062-ea82-4552-84eb-6aaa2c4e9638",
     "req-commercialization-eval-6-20260521",
     "a1fc78d0-14fd-45ae-a3e5-1363e328f813",
-    "800f5868-9404-432c-b819-a3975f247161",
+    "31ec5287-1233-426e-8e1f-241adff08cb3",
     "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
   ]
 }
