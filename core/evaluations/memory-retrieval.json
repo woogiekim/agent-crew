@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "agent-crew memory retrieval regression",
+  "query": "commercialization evaluation memory reporting telemetry blockers",
+  "limit": 10,
+  "latency_budget_ms": 1500,
+  "noise_budget_count": 2,
+  "expected_memory_ids": [
+    "31ec5287-1233-426e-8e1f-241adff08cb3",
+    "req-commercialization-eval-6-20260521",
+    "a1fc78d0-14fd-45ae-a3e5-1363e328f813",
+    "800f5868-9404-432c-b819-a3975f247161",
+    "d2d62df8-33c9-4d03-90b3-e2be9484f88f"
+  ]
+}

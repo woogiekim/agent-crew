@@ -163,6 +163,12 @@ install_global() {
     log_info "Scripts installed → ${AGENT_CREW_DIR}/system/scripts/"
   fi
 
+  mkdir -p "${AGENT_CREW_DIR}/system/evaluations"
+  if [ -d "${SOURCE_DIR}/evaluations" ]; then
+    cp -r "${SOURCE_DIR}/evaluations/"* "${AGENT_CREW_DIR}/system/evaluations/" 2>/dev/null || true
+    log_info "Evaluation fixtures installed → ${AGENT_CREW_DIR}/system/evaluations/"
+  fi
+
   mkdir -p "${AGENT_CREW_DIR}/system/schemas"
   if [ -d "${SOURCE_DIR}/schemas" ]; then
     cp -r "${SOURCE_DIR}/schemas/"* "${AGENT_CREW_DIR}/system/schemas/" 2>/dev/null || true
@@ -239,6 +245,11 @@ install_global() {
     cp -r "${SOURCE_DIR}/scripts/"* "${AGENT_CREW_DIR}/scripts/" 2>/dev/null || true
     chmod +x "${AGENT_CREW_DIR}/scripts/"*.sh 2>/dev/null || true
     chmod +x "${AGENT_CREW_DIR}/scripts/"*.py 2>/dev/null || true
+  fi
+
+  mkdir -p "${AGENT_CREW_DIR}/evaluations"
+  if [ -d "${SOURCE_DIR}/evaluations" ]; then
+    cp -r "${SOURCE_DIR}/evaluations/"* "${AGENT_CREW_DIR}/evaluations/" 2>/dev/null || true
   fi
 
   mkdir -p "${AGENT_CREW_DIR}/schemas"

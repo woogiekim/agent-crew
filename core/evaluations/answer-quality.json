@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "agent-crew report answer-quality regression",
+  "required_sections": [
+    "MEASUREMENTS",
+    "EVIDENCE",
+    "UNCERTAINTY"
+  ],
+  "allowed_blockers": [
+    "host_bridge_not_invoked",
+    "supervisor_handoff_not_started",
+    "stage_timeout",
+    "quality_loop_exhausted",
+    "cost_exceeded",
+    "cancelled"
+  ],
+  "memory_context_path": "context/memory.md",
+  "canonical_context_path": "context/canonical-context.md"
+}

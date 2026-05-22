@@ -153,6 +153,67 @@ def read_cost_file(state_dir, task_id):
             "tokens_total": total_in + total_out}
 
 
+def phase_runtime_metrics(events):
+    """Compute per-phase runtime telemetry from progress buffer events."""
+    metrics = []
+    active = {}
+
+    def close_metric(key, event, ts):
+        current = active.pop(key, None)
+        if not current:
+            return
+        duration = (ts - current["started_ts"]).total_seconds()
+        metrics.append({
+            "phase": current["phase"],
+            "stage": current["stage"],
+            "agent": current["agent"],
+            "started": current["started"],
+            "ended": event.get("ts"),
+            "stage_duration_seconds": duration,
+            "retries": current["retries"],
+            "blocked_handoffs": current["blocked_handoffs"],
+            "user_visible_wait_seconds": duration,
+        })
+
+    for event in events:
+        name = event.get("event")
+        ts = parse_iso_ts(event.get("ts", ""))
+        if not ts:
+            continue
+
+        stage = int(event.get("stage") or 0)
+        agent = event.get("agent") or ""
+        key = (stage, agent)
+
+        if name in ("STAGE", "PHASE"):
+            if name == "PHASE":
+                close_metric(key, event, ts)
+            active[key] = {
+                "phase": event.get("detail", "") or name.lower(),
+                "stage": stage,
+                "agent": agent,
+                "started": event.get("ts"),
+                "started_ts": ts,
+                "retries": 0,
+                "blocked_handoffs": 0,
+            }
+            continue
+
+        current = active.get(key)
+        if not current:
+            continue
+
+        if name == "RETRY":
+            current["retries"] += 1
+        elif name in ("BLOCKED", "COST_BLOCKED", "STAGE_TIMEOUT",
+                      "STAGE_FANOUT_BLOCKED"):
+            current["blocked_handoffs"] += 1
+        elif name in ("STAGE_DONE", "COMPLETED", "STATUS"):
+            close_metric(key, event, ts)
+
+    return metrics
+
+
 TASK_ID_RE = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
 
 
@@ -369,6 +430,12 @@ def aggregate_task(state_dir, task_dir):
     # Stage / retry counts from events.
     stages_total = sum(1 for e in events if e.get("event") == "STAGE")
     retries = sum(1 for e in events if e.get("event") == "RETRY")
+    phase_metrics = phase_runtime_metrics(events)
+    blocked_handoffs = sum(m["blocked_handoffs"] for m in phase_metrics)
+    user_visible_wait_seconds = sum(
+        m["user_visible_wait_seconds"] for m in phase_metrics
+        if m["user_visible_wait_seconds"] is not None
+    ) if phase_metrics else duration_seconds
 
     # Stages completed from pipeline.json (more reliable than counting events).
     pipeline_path = task_dir / "pipeline.json"
@@ -400,6 +467,9 @@ def aggregate_task(state_dir, task_dir):
         "stages_total":      stages_total,
         "stages_completed":  stages_completed,
         "retries":           retries,
+        "phase_metrics":     phase_metrics,
+        "blocked_handoffs":  blocked_handoffs,
+        "user_visible_wait_seconds": user_visible_wait_seconds,
         "blockers":          blocked_by,
         "guidance":          guidance_for(blocked_by, status, current_phase),
         "tokens_in":         (cost or {}).get("tokens_in"),
