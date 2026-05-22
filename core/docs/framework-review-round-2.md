@@ -40,8 +40,8 @@ on gaps that remained after Round 1 operational readiness checks.
 ## Remaining Work
 
 - Enforce the capability manifest at runtime before each stage agent receives
-  tools. Round 2 adds static governance; runtime capability binding is still a
-  follow-up.
+  tools. Resolved in Round 3 with `pipeline-capability-check.py` and supervisor
+  preflight gates.
 - Add deterministic replay/golden tool-flow fixtures for end-to-end workflow
   verification.
 - Add a memory GC/eviction command that operationalizes the memory lifecycle

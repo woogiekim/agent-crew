@@ -500,6 +500,39 @@ Resume rules:
 
 This prevents restarting already-finished agents when resuming after an interrupt.
 
+#### Phase 0 resume capability preflight
+
+When `PIPELINE_PATH` already exists at Phase 0, run the same capability
+preflight used after fresh planning before jumping to Phase 2. This prevents an
+interrupted or externally edited `pipeline.json` from bypassing role/tool
+boundaries on resume.
+
+```bash
+if [ -f "${PIPELINE_PATH}" ]; then
+  CAPABILITY_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
+    --pipeline "${PIPELINE_PATH}" \
+    --manifest "${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
+    --agent-dir "${AGENT_CREW_HOME}/system/agents" \
+    --agent-dir "${AGENT_CREW_HOME}/user/agents" \
+    --format text 2>&1)
+  CAPABILITY_CHECK_RC=$?
+
+  if [ "${CAPABILITY_CHECK_RC}" -ne 0 ]; then
+    log_progress "BLOCKED" "pipeline capability preflight failed on resume: ${CAPABILITY_CHECK_OUTPUT}"
+    register_update current_phase blocked
+    register_update blocked_by pipeline_capability_preflight_failed
+    cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: BLOCKED
+BLOCKER: pipeline_capability_preflight_failed
+DETAIL: existing pipeline.json violates the agent capability manifest.
+
+${CAPABILITY_CHECK_OUTPUT}
+EOF
+    exit 1
+  fi
+fi
+```
+
 ### Phase 1: Analysis + Planning
 
 > **Skip this entire Phase 1 (1a, 1b+1c, 1d) and Phase 1.5 when resuming** (i.e.,
@@ -791,6 +824,40 @@ Common remediation: rewrite bare code stages such as `["backend"]` or
 `["designer", "backend"]` into separate object stages with
 `{ "agents": ["backend"], "tdd_parallel": true }`, then keep a later solo
 `["reviewer"]` stage.
+
+#### Phase 1b pipeline capability gate: runtime role/tool preflight
+
+After the quality-plan gate passes, validate the planned runtime stages against
+the agent capability manifest before Phase 1d plan approval and before any
+stage agent receives tools. This gate blocks recursive delegation, workflow
+state mutation by stage agents, non-solo reviewer/devops stages, unknown agents
+without a custom-agent file or `needs_creation` plan, and custom agents whose
+names imply destructive authority without a manifest-managed role.
+
+```bash
+CAPABILITY_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
+  --pipeline "${PIPELINE_PATH}" \
+  --manifest "${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
+  --agent-dir "${AGENT_CREW_HOME}/system/agents" \
+  --agent-dir "${AGENT_CREW_HOME}/user/agents" \
+  --format text 2>&1)
+CAPABILITY_CHECK_RC=$?
+
+if [ "${CAPABILITY_CHECK_RC}" -ne 0 ]; then
+  log_progress "BLOCKED" "pipeline capability preflight failed: ${CAPABILITY_CHECK_OUTPUT}"
+  register_update current_phase blocked
+  register_update blocked_by pipeline_capability_preflight_failed
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: BLOCKED
+BLOCKER: pipeline_capability_preflight_failed
+DETAIL: pipeline.json violates the agent capability manifest or custom-agent
+        safety defaults.
+
+${CAPABILITY_CHECK_OUTPUT}
+EOF
+  exit 1
+fi
+```
 
 #### Phase 1c-bis: Per-stage host task DAG mirror (P3 — capability-gated)
 

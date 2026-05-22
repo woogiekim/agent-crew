@@ -49,6 +49,7 @@ def evaluate_repo(root: Path) -> dict:
     pipeline_schema = read_text(root / "core/schemas/pipeline.schema.json")
     pipeline_rule = read_text(root / "core/rules/state-files/pipeline-json.md")
     supervisor = read_text(root / "core/agents/supervisor.md")
+    supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
     supervisor_retry = read_text(root / "core/agents/supervisor-retry.md")
     reviewer = read_text(root / "core/agents/reviewer.md")
     memory_rule = read_text(root / "core/rules/memory-governance.md")
@@ -60,6 +61,7 @@ def evaluate_repo(root: Path) -> dict:
     agent_manifest_text = read_text(root / "core/policies/agent-capabilities.json")
     prompt_injection_rule = read_text(root / "core/rules/prompt-injection-defense.md")
     capability_check = read_text(root / "core/scripts/agent-capability-check.py")
+    pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
     agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
     model_tiers = {
@@ -103,6 +105,29 @@ def evaluate_repo(root: Path) -> dict:
             and has_all(capability_check, ["planner_orchestrator_boundary", "worker_boundary", "reviewer_read_only_boundary"])
             and {"supervisor", "planner", "backend", "frontend", "devops", "reviewer"}.issubset(agent_entries),
             "Agent role separation and tool permissions must be enforced by a machine-readable manifest.",
+        ),
+        control(
+            "architecture",
+            "pipeline_capability_preflight",
+            "high",
+            exists(root, "core/scripts/pipeline-capability-check.py")
+            and has_all(
+                supervisor_bootstrap,
+                [
+                    "pipeline-capability-check.py",
+                    "pipeline capability preflight failed",
+                    "pipeline_capability_preflight_failed",
+                ],
+            )
+            and has_all(
+                pipeline_capability_check,
+                [
+                    "delegating_agent_in_runtime_stage",
+                    "reviewer_stage_must_be_solo",
+                    "unknown_agent_without_policy_or_creation_plan",
+                ],
+            ),
+            "Planned pipeline stages must be checked against agent capability policy before runtime execution.",
         ),
         control(
             "performance",

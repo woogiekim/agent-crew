@@ -15,6 +15,7 @@ PYTHON_SCRIPTS=(
   "cost-aggregate.py"
   "framework-review-check.py"
   "agent-capability-check.py"
+  "pipeline-capability-check.py"
   "crew-runtime.py"
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"

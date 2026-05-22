@@ -248,6 +248,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/auto-issue-reporter.py"
 it "crew run installs agent capability checker during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/agent-capability-check.py"
 
+it "crew run installs pipeline capability checker during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-capability-check.py"
+
 it "crew run installs agent capability policy during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/policies/agent-capabilities.json"
 

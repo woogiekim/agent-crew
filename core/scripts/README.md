@@ -103,6 +103,11 @@ invocation in SKILL.md; generic adds guidance).
   `core/policies/agent-capabilities.json` manifest against agent markdown files,
   role boundaries, destructive-operation approval requirements, reviewer
   read-only constraints, and cost-aware model tier distribution.
+- `pipeline-capability-check.py` — validates a planned `pipeline.json` against
+  the capability manifest before runtime execution. It blocks recursive
+  delegation agents, workflow-state mutation agents, unsafe reviewer/devops
+  stage shapes, unknown agents without custom-agent files or `needs_creation`,
+  and custom agents whose names imply destructive authority.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and
