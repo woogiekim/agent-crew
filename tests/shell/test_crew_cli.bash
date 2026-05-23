@@ -257,11 +257,17 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-capability-check.py"
 it "crew run installs workflow replay checker during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/workflow-replay-check.py"
 
+it "crew run installs retry chaos checker during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/retry-chaos-check.py"
+
 it "crew run installs agent capability policy during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/policies/agent-capabilities.json"
 
 it "crew run installs workflow replay fixture during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/evaluations/workflow-replay.json"
+
+it "crew run installs retry chaos fixture during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/evaluations/retry-chaos.json"
 
 it "crew run refreshes managed PATH crew CLI during auto-refresh"
 cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"

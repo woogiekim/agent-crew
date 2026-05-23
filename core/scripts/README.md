@@ -117,6 +117,10 @@ invocation in SKILL.md; generic adds guidance).
   validators and expected state transitions. It verifies deterministic tool
   flow for schema validation, quality planning, capability preflight, blocked
   outcomes, and happy-path completion without calling an LLM.
+- `retry-chaos-check.py` — replays deterministic retry-chaos fixtures without
+  an LLM. It simulates token-limit resumes, host tool crashes, reviewer
+  loop-back, quality-loop exhaustion, and host blocked/cancelled outcomes
+  against explicit retry budgets.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and

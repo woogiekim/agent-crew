@@ -34,7 +34,7 @@ def test_framework_review_passes_current_repository():
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
     assert payload["summary"]["failed"] == 0
-    assert payload["summary"]["controls"] >= 26
+    assert payload["summary"]["controls"] >= 27
 
 
 def test_framework_review_covers_operational_categories():

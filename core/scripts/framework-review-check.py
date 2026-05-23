@@ -57,6 +57,7 @@ def evaluate_repo(root: Path) -> dict:
     memory_gc = read_text(root / "core/scripts/memory-gc.py")
     memory_fixture = read_text(root / "core/evaluations/memory-retrieval.json")
     workflow_replay_fixture = read_text(root / "core/evaluations/workflow-replay.json")
+    retry_chaos_fixture = read_text(root / "core/evaluations/retry-chaos.json")
     answer_quality = read_text(root / "core/evaluations/answer-quality.json")
     slo_fixture = read_text(root / "core/evaluations/e2e-slo.json")
     update_benchmark = read_text(root / "core/scripts/update-slo-benchmark.py")
@@ -66,6 +67,7 @@ def evaluate_repo(root: Path) -> dict:
     capability_check = read_text(root / "core/scripts/agent-capability-check.py")
     pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
     workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
+    retry_chaos_check = read_text(root / "core/scripts/retry-chaos-check.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
     agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
     model_tiers = {
@@ -198,6 +200,23 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             ),
             "Golden workflow replay must pin expected tool flow, failures, and state transitions.",
+        ),
+        control(
+            "reliability",
+            "retry_chaos_recovery",
+            "high",
+            exists(root, "core/scripts/retry-chaos-check.py")
+            and has_all(retry_chaos_fixture, ["max_crash_retries", "max_validation_retries", "max_token_truncation_resumes"])
+            and has_all(
+                retry_chaos_check,
+                [
+                    "reviewer-loop-decision.py",
+                    "token_truncation",
+                    "agent_crashed_after_retry_budget",
+                    "quality_loop_exhausted",
+                ],
+            ),
+            "Retry chaos tests must simulate crash, token truncation, reviewer loop-back, and host-blocked recovery.",
         ),
         control(
             "memory_governance",

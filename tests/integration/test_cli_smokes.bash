@@ -18,6 +18,7 @@ PYTHON_SCRIPTS=(
   "agent-capability-check.py"
   "pipeline-capability-check.py"
   "workflow-replay-check.py"
+  "retry-chaos-check.py"
   "crew-runtime.py"
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"

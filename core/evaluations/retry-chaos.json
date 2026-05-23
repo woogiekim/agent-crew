@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "name": "agent-crew retry chaos and tool simulation",
+  "budgets": {
+    "max_crash_retries": 5,
+    "max_validation_retries": 3,
+    "max_token_truncation_resumes": 1
+  },
+  "cases": [
+    {
+      "id": "token_truncation_resume_then_success",
+      "description": "A host-completed response without STATUS is treated as token truncation once, then resumes successfully.",
+      "events": [
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "partial implementation output without a status line",
+          "host_status": "completed"
+        },
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "STATUS: completed\nSUMMARY: resumed from checkpoint",
+          "host_status": "completed"
+        }
+      ],
+      "expected": {
+        "final_status": "completed",
+        "blocked_by": [],
+        "invocations": 2,
+        "crash_failures": 0,
+        "token_resumes": 1,
+        "validation_retries": 0,
+        "retry_reasons": [
+          "token_truncation"
+        ]
+      }
+    },
+    {
+      "id": "crash_budget_exhaustion_blocks",
+      "description": "A repeated no-STATUS host error burns the crash retry budget and blocks deterministically.",
+      "events": [
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "traceback without status",
+          "host_status": "error"
+        },
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "traceback without status",
+          "host_status": "error"
+        },
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "traceback without status",
+          "host_status": "error"
+        },
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "traceback without status",
+          "host_status": "error"
+        },
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "traceback without status",
+          "host_status": "error"
+        },
+        {
+          "kind": "agent_result",
+          "agent": "backend",
+          "response": "traceback without status",
+          "host_status": "error"
+        }
+      ],
+      "expected": {
+        "final_status": "blocked",
+        "blocked_by": [
+          "agent_crashed_after_retry_budget"
+        ],
+        "invocations": 6,
+        "crash_failures": 6,
+        "token_resumes": 0,
+        "validation_retries": 0,
+        "retry_reasons": [
+          "crash",
+          "crash",
+          "crash",
+          "crash",
+          "crash",
+          "crash"
+        ]
+      }
+    },
+    {
+      "id": "reviewer_rejections_retry_then_approval",
+      "description": "Reviewer rejection and needs-changes responses loop back through validation retries before approval.",
+      "events": [
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "STATUS: REJECTED\nREASON: tests_failed\nDETAIL: pytest failed"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "REVIEW: NEEDS_CHANGES\nREPORT: context/review.md\nISSUES: 2"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "REVIEW: APPROVED\nISSUES: 0"
+        }
+      ],
+      "expected": {
+        "final_status": "completed",
+        "blocked_by": [],
+        "invocations": 3,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 2,
+        "retry_reasons": [
+          "tests_failed",
+          "review_needs_changes"
+        ]
+      }
+    },
+    {
+      "id": "quality_loop_exhaustion_blocks",
+      "description": "Four consecutive reviewer retries exceed the validation budget and block as quality_loop_exhausted.",
+      "events": [
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "STATUS: REJECTED\nREASON: tests_failed"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "STATUS: REJECTED\nREASON: tests_failed"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "STATUS: REJECTED\nREASON: tests_failed"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "STATUS: REJECTED\nREASON: tests_failed"
+        }
+      ],
+      "expected": {
+        "final_status": "blocked",
+        "blocked_by": [
+          "quality_loop_exhausted"
+        ],
+        "invocations": 4,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 4,
+        "retry_reasons": [
+          "tests_failed",
+          "tests_failed",
+          "tests_failed",
+          "tests_failed"
+        ]
+      }
+    },
+    {
+      "id": "host_blocked_halts_without_retry",
+      "description": "A host-level blocked status halts immediately and does not consume crash retries.",
+      "events": [
+        {
+          "kind": "agent_result",
+          "agent": "devops",
+          "response": "no status because host blocked approval",
+          "host_status": "blocked"
+        }
+      ],
+      "expected": {
+        "final_status": "blocked",
+        "blocked_by": [
+          "host_blocked"
+        ],
+        "invocations": 1,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 0,
+        "retry_reasons": []
+      }
+    },
+    {
+      "id": "host_cancelled_halts_without_retry",
+      "description": "A host-level cancelled status halts immediately and does not consume crash retries.",
+      "events": [
+        {
+          "kind": "agent_result",
+          "agent": "devops",
+          "response": "no status because operator cancelled",
+          "host_status": "cancelled"
+        }
+      ],
+      "expected": {
+        "final_status": "blocked",
+        "blocked_by": [
+          "cancelled"
+        ],
+        "invocations": 1,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 0,
+        "retry_reasons": []
+      }
+    }
+  ]
+}

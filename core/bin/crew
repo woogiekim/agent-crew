@@ -147,6 +147,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/agent-capability-check.py:${AGENT_CREW_HOME}/scripts/agent-capability-check.py" \
     "core/scripts/pipeline-capability-check.py:${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
     "core/scripts/workflow-replay-check.py:${AGENT_CREW_HOME}/scripts/workflow-replay-check.py" \
+    "core/scripts/retry-chaos-check.py:${AGENT_CREW_HOME}/scripts/retry-chaos-check.py" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
@@ -155,6 +156,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/rules/prompt-injection-defense.md:${AGENT_CREW_HOME}/rules/prompt-injection-defense.md" \
     "core/evaluations/memory-retrieval.json:${AGENT_CREW_HOME}/evaluations/memory-retrieval.json" \
     "core/evaluations/workflow-replay.json:${AGENT_CREW_HOME}/evaluations/workflow-replay.json" \
+    "core/evaluations/retry-chaos.json:${AGENT_CREW_HOME}/evaluations/retry-chaos.json" \
     "core/policies/agent-capabilities.json:${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
     "core/schemas/agent-capabilities.schema.json:${AGENT_CREW_HOME}/schemas/agent-capabilities.schema.json"; do
     local src_rel="${check%%:*}" dest="${check#*:}"
