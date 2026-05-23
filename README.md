@@ -835,6 +835,16 @@ Completed: 3 / 5 stages
 
 `crew:status` is read-only. When a task has been created but the supervisor has not produced progress artifacts, status reports a stalled supervisor handoff instead of a silent wait and includes next-step guidance.
 
+### Host Bridge Handoff Recovery
+
+If a run is blocked with:
+
+`BLOCKER: host AI bridge has not completed this handoff`
+
+see the one-page SOP for operator recovery and diagnostics:
+
+- [Host Bridge Handoff SOP](core/docs/host-bridge-handoff-sop.md)
+
 ## State Layout
 
 All state is stored outside your project directory:
