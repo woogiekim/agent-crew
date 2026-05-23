@@ -237,6 +237,25 @@ def emit_question_route(target_agent: str, route_reason: str):
     sys.exit(0)
 
 
+def emit_inline_no_bridge_note(reason: str):
+    """Handle questions inline when host bridge is unavailable."""
+    inline_directive = (
+        f"[agent-crew] INLINE — non-bridged runtime for {reason}.\\n\\n"
+        "Host bridge is not configured (AGENT_CREW_HOST_BRIDGE_COMMAND is empty).\\n"
+        "Handle the request inline in the current model turn.\\n\\n"
+        "If the prompt contains Hangul, normalize it first per "
+        "core/rules/korean-input.md before planning or answering."
+    )
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": inline_directive,
+        }
+    }
+    print(json.dumps(output, ensure_ascii=True))
+    sys.exit(0)
+
+
 if (
     match(QUESTION_PAT)
     and match(READONLY_REVIEW_PAT)
@@ -247,7 +266,7 @@ if (
     # If a host bridge is not configured, prefer in-model response.
     if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
         # Skip hard route in this host runtime when no bridge is configured.
-        sys.exit(0)
+        emit_inline_no_bridge_note("read-only review request")
 
     emit_question_route("analyst", "read-only review/evaluation Q")
 
@@ -260,7 +279,7 @@ if match(READONLY_REVIEW_PAT) and re.search(
     if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
         # In non-bridged runtime, avoid hard-routing read-only questions.
         # Inline handling is safer and prevents handoff stalls.
-        sys.exit(0)
+        emit_inline_no_bridge_note("read-only explicit request")
 
     emit_question_route("analyst", "read-only review/evaluation Q")
 
@@ -271,7 +290,7 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
     if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
         # If a host bridge is not configured, answer/handle questions inline.
         # This avoids [agent-crew] ROUTE dead-ends in plain model sessions.
-        sys.exit(0)
+        emit_inline_no_bridge_note("question")
 
     if re.search(TRIVIAL_ATOMIC_PAT, prompt.strip(), re.IGNORECASE):
         sys.exit(0)  # bare atomic fact — inline is fine
