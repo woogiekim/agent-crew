@@ -28,7 +28,7 @@ adapter.
 |---|---|---|
 | `deep` | Strategic, multi-step reasoning over trade-offs; defect or risk detection; semantic ambiguity resolution. Rare invocation acceptable; quality dominates cost. | analyst, planner, reviewer, resolver |
 | `balanced` | Substantive but bounded work within a defined domain. Moderate invocation frequency; quality / cost balanced. | supervisor, requirements, backend, frontend, devops, designer, learning-mentor |
-| `light` | Deterministic, high-volume synthesis or transformation. Quality requirements are modest; cost dominates. | documenter, korean-normalizer (exempt — see "Frontmatter Exemption") |
+| `light` | Deterministic, high-volume synthesis or transformation. Quality requirements are modest; cost dominates. | documenter, input-normalizer, korean-normalizer (exempt — see "Frontmatter Exemption") |
 
 ## Required Adapter Surface (install-time)
 

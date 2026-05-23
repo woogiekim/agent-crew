@@ -270,17 +270,28 @@ def evaluate_repo(root: Path) -> dict:
         ),
         control(
             "reliability",
-            "korean_input_gate_all_entrypoints",
+            "input_normalization_gate_all_entrypoints",
             "high",
-            has_all(crew_runtime, ["contains_hangul", "korean_normalization_task", "korean_normalization_handoff"])
+            has_all(crew_runtime, ["detect_source_language", "input_normalization_task", "input_normalization_handoff"])
             and has_all(
                 crew_cli_test,
                 [
-                    "crew run routes Korean task text through korean-normalizer gate",
-                    "crew agent routes Korean input through korean-normalizer before downstream agent",
+                    "crew run routes Korean task text through input-normalizer gate",
+                    "crew run routes non-English multilingual input through input-normalizer gate",
+                    "crew run routes ambiguous conversational input through input-normalizer gate",
+                    "crew agent routes Korean input through input-normalizer before downstream agent",
                 ],
             ),
-            "Korean task input must be normalized before every crew run or direct-agent downstream handoff.",
+            "Non-English or ambiguous task input must be normalized before every crew run or direct-agent downstream handoff.",
+        ),
+        control(
+            "reliability",
+            "issue_comment_ingestion_before_planning",
+            "high",
+            has_all(crew, ["issue-ingest ISSUE", "cmd_issue_ingest"])
+            and has_all(crew_runtime, ["command_issue_ingest", "comments_ingested", "comment_derived_requirements"])
+            and has_all(crew_cli_test, ["crew issue-ingest records issue body and comments before planning", "comments_ingested"]),
+            "Issue-solving workflows must record issue body/comment ingestion evidence before planning.",
         ),
         control(
             "reliability",

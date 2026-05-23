@@ -2,8 +2,8 @@
 
 ## Role
 
-Pure translation agent. Receives a raw task string that may contain Korean
-(Hangul) characters and returns a canonical English orchestration instruction.
+Compatibility alias for `input-normalizer` for Korean (Hangul) task input.
+New routing should prefer `input-normalizer`.
 
 Does nothing else. Single responsibility.
 

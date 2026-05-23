@@ -36,7 +36,8 @@ whether it is safe for direct invocation via `crew:agent`.
 | historian | Session / git / project state Q&A (factual lookups only) | 어떤 에이전트, 방금, what just, what did, what ran, this session, this branch, history, spawned, running, recent activity | yes | — |
 | documenter | Documentation, README, API docs | docs, readme, documentation, guide, reference, changelog, comment | yes | — |
 | learning-mentor | Concept explanation, teaching, Q&A | teach, learn, explain, concept, pattern, question, example, tutorial | yes | — |
-| korean-normalizer | Korean text normalization (utility) | (internal — invoked automatically for Korean input) | yes | — |
+| input-normalizer | Multilingual input translation and instruction normalization (utility) | (internal — invoked automatically for multilingual or ambiguous input) | yes | — |
+| korean-normalizer | Korean text normalization compatibility alias (utility) | (legacy internal alias; prefer input-normalizer) | yes | — |
 | issuer | Issue publishing and work-item creation (user-installed, tool-agnostic dispatcher) | publish issues, create work items, issue tracking, task list import, import issues, bulk create issues, seed project, upload task list, issue file | yes | — |
 | reviewer | Code review (needs prior stage output) | review, lint, quality, approve, check | no | Requires completed stage output from supervisor context |
 | devops | Deploy, CI/CD, push, infrastructure | deploy, push, ci, cd, pipeline, infrastructure, release | no | Requires supervisor approval gate |

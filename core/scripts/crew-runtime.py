@@ -24,6 +24,25 @@ SECRET_PATTERNS = [
 ]
 
 HANGUL_PATTERN = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]")
+JAPANESE_PATTERN = re.compile(r"[\u3040-\u30ff]")
+HAN_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+CYRILLIC_PATTERN = re.compile(r"[\u0400-\u04ff]")
+ARABIC_PATTERN = re.compile(r"[\u0600-\u06ff]")
+LATIN_EXTENDED_PATTERN = re.compile(r"[\u00c0-\u024f]")
+NON_ASCII_PATTERN = re.compile(r"[^\x00-\x7f]")
+AMBIGUOUS_TASKS = {
+    "go",
+    "yes",
+    "ok",
+    "okay",
+    "continue",
+    "proceed",
+    "resume",
+    "do it",
+    "fix this",
+    "do the thing",
+    "do the thing from before",
+}
 
 
 def utc_now_z() -> str:
@@ -440,15 +459,81 @@ def contains_hangul(text: str) -> bool:
     return bool(HANGUL_PATTERN.search(text or ""))
 
 
-def korean_normalization_task(raw_task: str, *, next_target: str) -> str:
+def detect_source_language(text: str) -> str:
+    value = text or ""
+    if HANGUL_PATTERN.search(value):
+        return "ko"
+    if JAPANESE_PATTERN.search(value):
+        return "ja"
+    if HAN_PATTERN.search(value):
+        return "zh"
+    if CYRILLIC_PATTERN.search(value):
+        return "cyrillic"
+    if ARABIC_PATTERN.search(value):
+        return "arabic"
+    if LATIN_EXTENDED_PATTERN.search(value):
+        return "latin-extended"
+    if NON_ASCII_PATTERN.search(value):
+        return "unknown"
+    return "en"
+
+
+def ambiguous_input_reason(text: str) -> str:
+    value = " ".join((text or "").strip().lower().split())
+    if value in AMBIGUOUS_TASKS:
+        return "short conversational shorthand requires prior-context binding"
+    if len(value.split()) <= 3 and re.search(r"\b(this|that|it|before|again)\b", value):
+        return "short ambiguous reference requires missing-context annotation"
+    return ""
+
+
+def input_normalization_metadata(raw_task: str, *, next_target: str) -> dict:
+    source_language = detect_source_language(raw_task)
+    ambiguity = ambiguous_input_reason(raw_task)
+    translation_required = source_language != "en"
+    normalization_required = translation_required or bool(ambiguity)
+    confidence = 0.9 if source_language == "en" and not ambiguity else 0.55
+    reason = []
+    if translation_required:
+        reason.append(f"source_language={source_language}")
+    if ambiguity:
+        reason.append(ambiguity)
+    return {
+        "schema_version": 1,
+        "normalization_required": normalization_required,
+        "source_language": source_language,
+        "translation_required": translation_required,
+        "ambiguity_flags": [ambiguity] if ambiguity else [],
+        "confidence": confidence,
+        "raw_input_ref": "handoff.md#RAW_INPUT",
+        "downstream_route_hint": next_target,
+        "normalization_sources": [
+            "OpenAI prompting guide",
+            "Anthropic prompt engineering overview",
+            "Google Gemini prompting intro",
+            "Microsoft Azure OpenAI prompt engineering",
+        ],
+        "reason": "; ".join(reason) if reason else "input is already a specific English instruction",
+    }
+
+
+def needs_input_normalization(raw_task: str) -> bool:
+    return bool(input_normalization_metadata(raw_task, next_target="").get("normalization_required"))
+
+
+def input_normalization_task(raw_task: str, *, next_target: str) -> str:
+    metadata = input_normalization_metadata(raw_task, next_target=next_target)
     return (
-        "Normalize Korean input for an agent-crew workflow request. Return only "
-        "NORMALIZED_TASK and RATIONALE, then re-route the normalized English "
-        f"task to {next_target}."
+        "Normalize raw user input into a canonical English agent-crew workflow "
+        "instruction. Return structured NORMALIZED_TASK metadata with objective, "
+        "scope, constraints, acceptance criteria, missing context, risk flags, "
+        f"and confidence, then re-route the normalized instruction to {next_target}. "
+        f"Detected source_language={metadata['source_language']}; "
+        f"translation_required={str(metadata['translation_required']).lower()}."
     )
 
 
-def korean_normalization_handoff(
+def input_normalization_handoff(
     *,
     request_id: str,
     project_root: Path,
@@ -456,22 +541,43 @@ def korean_normalization_handoff(
     raw_task: str,
     next_target: str,
     status: str,
+    metadata: dict,
 ) -> str:
+    raw_label = "RAW_TASK" if metadata.get("source_language") == "ko" else "RAW_INPUT"
     return (
-        "# Korean Normalization Handoff\n\n"
+        "# Input Normalization Handoff\n\n"
         f"REQUEST_ID: {request_id}\n"
-        "AGENT: korean-normalizer\n"
+        "AGENT: input-normalizer\n"
         f"TASK: {normalized_task}\n"
         f"PROJECT_ROOT: {project_root}\n"
         "MODE: normalization-gate\n"
         f"STATUS: {status}\n\n"
         "NORMALIZATION_GATE: required\n"
+        f"SOURCE_LANGUAGE: {metadata.get('source_language', 'unknown')}\n"
+        f"TRANSLATION_REQUIRED: {str(bool(metadata.get('translation_required'))).lower()}\n"
+        f"CONFIDENCE: {metadata.get('confidence', 0.0)}\n"
         f"INTENDED_TARGET_AFTER_NORMALIZATION: {next_target}\n"
-        f"RAW_TASK: {raw_task}\n"
-        "OUTPUT_CONTRACT: Return NORMALIZED_TASK and RATIONALE only. "
-        "Do not execute the downstream workflow until the normalized English "
-        "task is available.\n"
+        f"{raw_label}: {raw_task}\n"
+        "OUTPUT_CONTRACT: Return JSON with source_language, translation_required, "
+        "raw_input_ref, normalized_task, objective, scope, out_of_scope, "
+        "constraints, acceptance_criteria, missing_context, risk_flags, "
+        "downstream_route_hint, confidence, and normalization_sources. Do not "
+        "execute the downstream workflow until the normalized English instruction "
+        "is available.\n"
     )
+
+
+def korean_normalization_task(raw_task: str, *, next_target: str) -> str:
+    return input_normalization_task(raw_task, next_target=next_target)
+
+
+def korean_normalization_handoff(**kwargs) -> str:
+    if "metadata" not in kwargs:
+        kwargs["metadata"] = input_normalization_metadata(
+            kwargs.get("raw_task", ""),
+            next_target=kwargs.get("next_target", ""),
+        )
+    return input_normalization_handoff(**kwargs)
 
 
 def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
@@ -514,8 +620,9 @@ def command_run(args: argparse.Namespace) -> int:
     context_dir.mkdir(parents=True, exist_ok=True)
 
     raw_task = args.task
-    normalization_required = contains_hangul(raw_task)
-    task = korean_normalization_task(raw_task, next_target="crew run supervisor") if normalization_required else raw_task
+    normalization_metadata = input_normalization_metadata(raw_task, next_target="crew run supervisor")
+    normalization_required = bool(normalization_metadata["normalization_required"])
+    task = input_normalization_task(raw_task, next_target="crew run supervisor") if normalization_required else raw_task
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
@@ -573,24 +680,25 @@ def command_run(args: argparse.Namespace) -> int:
     pipeline = {
         "schema_version": 1,
         "task": task,
-        "stages": ["korean-normalizer"] if normalization_required else ["supervisor"],
+        "stages": ["input-normalizer"] if normalization_required else ["supervisor"],
         "completed_stages": 1 if result_status == "completed" else 0,
         "stage_agent_status": {
             "1": {
-                ("korean-normalizer" if normalization_required else "supervisor"):
+                ("input-normalizer" if normalization_required else "supervisor"):
                     "completed" if result_status == "completed" else "blocked"
             }
         },
     }
 
     if normalization_required:
-        handoff = korean_normalization_handoff(
+        handoff = input_normalization_handoff(
             request_id=task_id,
             project_root=project_root,
             normalized_task=task,
             raw_task=raw_task,
             next_target="crew run supervisor",
             status=result_status,
+            metadata=normalization_metadata,
         )
     else:
         handoff = (
@@ -635,6 +743,8 @@ def command_run(args: argparse.Namespace) -> int:
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
+    if normalization_required:
+        write_json(task_dir / "context" / "input-normalization.json", normalization_metadata)
     (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
     (task_dir / "result.md").write_text(result, encoding="utf-8")
     progress_status = "completed" if result_status == "completed" else "in_progress"
@@ -814,19 +924,26 @@ def command_agent(args: argparse.Namespace) -> int:
         print("crew agent: task description is required", file=sys.stderr)
         return 2
 
-    normalization_required = contains_hangul(task) and agent_name != "korean-normalizer"
     intended_agent_name = agent_name
+    normalization_metadata = input_normalization_metadata(
+        task,
+        next_target=intended_agent_name or "direct-agent auto-routing",
+    )
+    normalization_required = (
+        bool(normalization_metadata["normalization_required"])
+        and agent_name not in {"input-normalizer", "korean-normalizer"}
+    )
     raw_task_for_normalizer = task if normalization_required else ""
     if normalization_required:
-        agent_name = "korean-normalizer"
+        normalization_metadata = input_normalization_metadata(task, next_target=intended_agent_name or "direct-agent auto-routing")
+        agent_name = "input-normalizer"
         route_reason = (
-            "korean normalization gate before "
+            "input normalization gate before "
             f"{intended_agent_name or 'direct-agent auto-routing'}"
         )
-        task = (
-            "Normalize Korean input for a direct-agent request. Return only "
-            "NORMALIZED_TASK and RATIONALE, then re-route the normalized task "
-            f"to {intended_agent_name or 'the appropriate direct agent'}."
+        task = input_normalization_task(
+            raw_task_for_normalizer,
+            next_target=intended_agent_name or "the appropriate direct agent",
         )
 
     if looks_mutating(task):
@@ -878,6 +995,9 @@ def command_agent(args: argparse.Namespace) -> int:
         request.update(
             {
                 "normalization_status": "required",
+                "source_language": normalization_metadata.get("source_language", "unknown"),
+                "translation_required": normalization_metadata.get("translation_required", False),
+                "confidence": normalization_metadata.get("confidence", 0.0),
                 "intended_agent_after_normalization": intended_agent_name or "",
             }
         )
@@ -894,14 +1014,20 @@ def command_agent(args: argparse.Namespace) -> int:
     if normalization_required:
         handoff += (
             "\nNORMALIZATION_GATE: required\n"
+            f"SOURCE_LANGUAGE: {normalization_metadata.get('source_language', 'unknown')}\n"
+            f"TRANSLATION_REQUIRED: {str(bool(normalization_metadata.get('translation_required'))).lower()}\n"
             f"INTENDED_AGENT_AFTER_NORMALIZATION: {intended_agent_name or 'auto-route'}\n"
             f"RAW_TASK: {raw_task_for_normalizer}\n"
-            "OUTPUT_CONTRACT: Return NORMALIZED_TASK and RATIONALE only. "
-            "Do not execute the downstream agent until the normalized English "
-            "task is available.\n"
+            "OUTPUT_CONTRACT: Return JSON with source_language, translation_required, "
+            "raw_input_ref, normalized_task, objective, scope, constraints, "
+            "acceptance_criteria, missing_context, risk_flags, downstream_route_hint, "
+            "confidence, and normalization_sources. Do not execute the downstream "
+            "agent until the normalized English instruction is available.\n"
         )
 
     write_json(request_dir / "request.json", request)
+    if normalization_required:
+        write_json(request_dir / "context" / "input-normalization.json", normalization_metadata)
     (request_dir / "handoff.md").write_text(handoff, encoding="utf-8")
 
     print(f"AGENT_REQUEST_ID: {request_id}")
@@ -959,6 +1085,101 @@ def command_agent(args: argparse.Namespace) -> int:
     return 0
 
 
+def extract_comment_requirements(comments: list[dict]) -> list[str]:
+    requirements: list[str] = []
+    for comment in comments:
+        body = str(comment.get("body", ""))
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(("-", "*")):
+                continue
+            text = stripped.lstrip("-* ").strip()
+            lowered = text.lower()
+            if any(token in lowered for token in ("must", "should", "acceptance", "required", "supports", "records", "handles")):
+                requirements.append(text)
+    return requirements[:50]
+
+
+def command_issue_ingest(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    project_name = project_root.name
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    state_dir = agent_crew_home / "state" / project_name
+
+    cmd = [
+        "gh",
+        "issue",
+        "view",
+        str(args.issue_number),
+        "--comments",
+        "--json",
+        "number,title,body,comments,labels,url",
+    ]
+    if args.repo:
+        cmd.extend(["--repo", args.repo])
+
+    try:
+        raw = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
+        issue = json.loads(raw)
+    except subprocess.CalledProcessError as exc:
+        print(exc.stderr.strip() or "gh issue view failed", file=sys.stderr)
+        return exc.returncode or 1
+    except Exception as exc:
+        print(f"crew issue-ingest: failed to parse issue payload: {exc}", file=sys.stderr)
+        return 1
+
+    all_comments = issue.get("comments") if isinstance(issue.get("comments"), list) else []
+    comments = [
+        comment
+        for comment in all_comments
+        if not comment.get("isMinimized") and not comment.get("minimizedReason")
+    ]
+    latest_comment_at = ""
+    for comment in comments:
+        created_at = str(comment.get("createdAt", ""))
+        if created_at > latest_comment_at:
+            latest_comment_at = created_at
+
+    evidence = {
+        "schema_version": 1,
+        "issue_number": issue.get("number", args.issue_number),
+        "issue_url": issue.get("url", ""),
+        "issue_title": issue.get("title", ""),
+        "comments_ingested": True,
+        "comment_count": len(comments),
+        "latest_comment_at": latest_comment_at,
+        "labels": [label.get("name", "") for label in issue.get("labels", []) if isinstance(label, dict)],
+        "body_sha256": "",
+        "comment_urls": [comment.get("url", "") for comment in comments if comment.get("url")],
+        "comment_derived_requirements": extract_comment_requirements(comments),
+        "contradiction_review_required": len(comments) > 0,
+        "planning_gate": "issue body and all non-minimized comments ingested before planning",
+    }
+
+    import hashlib
+
+    evidence["body_sha256"] = hashlib.sha256(str(issue.get("body", "")).encode("utf-8")).hexdigest()
+
+    output_path = None
+    if args.task_id:
+        output_path = state_dir / "tasks" / args.task_id / "context" / f"issue-{args.issue_number}-ingestion.json"
+        write_json(output_path, evidence)
+    elif args.output:
+        output_path = Path(args.output)
+        write_json(output_path, evidence)
+
+    if args.format == "json":
+        print(json.dumps(evidence, ensure_ascii=False, indent=2))
+    else:
+        print(f"ISSUE: {evidence['issue_number']}")
+        print(f"COMMENTS_INGESTED: {str(evidence['comments_ingested']).lower()}")
+        print(f"COMMENT_COUNT: {evidence['comment_count']}")
+        print(f"LATEST_COMMENT_AT: {evidence['latest_comment_at']}")
+        if output_path:
+            print(f"EVIDENCE: {output_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="agent-crew deterministic runtime")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -978,6 +1199,15 @@ def build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--routing", action="store_true")
     agent.add_argument("agent_args", nargs=argparse.REMAINDER)
     agent.set_defaults(func=command_agent)
+
+    issue_ingest = sub.add_parser("issue-ingest", help="record issue body/comment ingestion evidence")
+    issue_ingest.add_argument("issue_number")
+    issue_ingest.add_argument("--project-root")
+    issue_ingest.add_argument("--task-id", default="")
+    issue_ingest.add_argument("--repo", default="")
+    issue_ingest.add_argument("--output", default="")
+    issue_ingest.add_argument("--format", choices=["text", "json"], default="text")
+    issue_ingest.set_defaults(func=command_issue_ingest)
 
     return parser
 

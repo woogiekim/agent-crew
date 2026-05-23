@@ -154,21 +154,44 @@ Normalize the input into a task list with cardinality `N >= 1`.
 
 #### Input Normalization
 
-If any task description contains Hangul characters, delegate to the
-**korean-normalizer agent** before proceeding:
+If any task description is non-English, ambiguous, or conversational shorthand,
+delegate to the **input-normalizer agent** before proceeding:
 
 ```text
-RAW_TASK: {original Korean string}
-Apply core/rules/korean-input.md normalization and return NORMALIZED_TASK.
+RAW_INPUT: {original user input}
+Apply core/rules/normalization-adapter.md and return the structured
+NORMALIZED_TASK contract.
 ```
 
 Use the returned `NORMALIZED_TASK` as the canonical TASK for all downstream
 agents and state files. See `core/rules/normalization-adapter.md` for the full
 adapter contract.
 
-> **Hard gate**: If Hangul is detected, do not proceed to Step 2 until
-> `NORMALIZED_TASK` is confirmed. The original Korean string must not appear
-> in any agent prompt, `pipeline.json`, or `result.md`.
+> **Hard gate**: If normalization is required, do not proceed to Step 2 until
+> `NORMALIZED_TASK` is confirmed. The raw input must not appear as canonical
+> downstream task text in any agent prompt, `pipeline.json`, or `result.md`.
+
+#### Issue Comment Ingestion
+
+If the task references a GitHub issue, read the issue body and all
+non-minimized comments before planning or implementation. Treat later comments
+as potential requirement updates. If comments contradict the body, surface the
+contradiction before implementation.
+
+Record ingestion evidence in task context before planning:
+
+```text
+comments_ingested: true
+comment_count: {N}
+latest_comment_at: {timestamp}
+comment_derived_requirements: [...]
+```
+
+The native helper is:
+
+```bash
+crew issue-ingest ISSUE_NUMBER --task-id TASK_ID --repo OWNER/REPO
+```
 
 ### 1.5. Injection Detection
 

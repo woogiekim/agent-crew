@@ -143,7 +143,8 @@ Available agents  (source: core/rules/agent-routing.md)
     crew:agent historian "…"  — Session / git / project state Q&A
     crew:agent issuer     "…"   — Issue publishing and work-item creation
     crew:agent learning-mentor "…" — Concept explanation, teaching, Q&A
-    crew:agent korean-normalizer "…" — Korean text normalization (utility)
+    crew:agent input-normalizer "…" — Multilingual instruction normalization (utility)
+    crew:agent korean-normalizer "…" — Korean normalization compatibility alias
 
   Requires supervisor context — use crew:run instead:
     reviewer       Requires completed stage output from supervisor context
@@ -496,18 +497,19 @@ crew routing already fired and the inner call is purely mechanical.
 
 ---
 
-### Step 5 — Korean input normalization
+### Step 5 — Input normalization
 
-If TASK_STRING contains Korean text, normalize it to English before
-proceeding (per `core/rules/korean-input.md`). Invoke the `korean-normalizer`
-agent with the raw text and substitute its output for TASK_STRING. Then
-re-evaluate from Step 3 or Step 4 as appropriate with the normalized string.
+If TASK_STRING is non-English, ambiguous, or conversational shorthand, normalize
+it to a canonical English workflow instruction before proceeding (per
+`core/rules/normalization-adapter.md`). Invoke the `input-normalizer` agent with
+the raw text and substitute its output for TASK_STRING. Then re-evaluate from
+Step 3 or Step 4 as appropriate with the normalized string.
 
 This is a hard runtime gate for every direct-agent path. If the selected target
-is not `korean-normalizer`, the runtime MUST write a `korean-normalizer`
-handoff first and MUST NOT pass the raw Korean TASK to the intended downstream
-agent. The handoff records `INTENDED_AGENT_AFTER_NORMALIZATION` so the normalized
-English task can be re-routed after `NORMALIZED_TASK` is produced.
+is not `input-normalizer`, the runtime MUST write an `input-normalizer` handoff
+first and MUST NOT pass the raw TASK to the intended downstream agent. The
+handoff records `INTENDED_AGENT_AFTER_NORMALIZATION` so the normalized English
+task can be re-routed after `NORMALIZED_TASK` is produced.
 
 ### Step 6 — Emit visibility line (mandatory)
 

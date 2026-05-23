@@ -4,9 +4,9 @@
 
 **User-facing output should appear in the AI's natural response language
 for the conversation** (which, in practice, means the language the user
-used in their input). This is the counterpart to the Korean Input
-Normalization rule (`core/rules/korean-input.md`): inputs are
-normalized to English for internal artifacts, but the AI's
+used in their input). This is the counterpart to the Input
+Normalization rule (`core/rules/normalization-adapter.md`): inputs are
+normalized to canonical English for internal artifacts, but the AI's
 communication back to the user is **not** forced into English.
 
 This rule is intentionally permissive on output and strict on internal
@@ -40,7 +40,7 @@ artifacts. A Korean-speaking user submitting `crew:run "주문 API
 - All structured state files: `pipeline.json`, `register.json`,
   `session.json`, `capabilities.json`, `progress.buffer.jsonl`
 - The `task` field in any state file (normalized per
-  `core/rules/korean-input.md` before write)
+  `core/rules/normalization-adapter.md` before write)
 - Agent prompts (inter-agent handoff text, system preambles)
 - `handoff.md` content (agents read each other's output as English)
 - All status keywords and structured-block headers (see invariant)

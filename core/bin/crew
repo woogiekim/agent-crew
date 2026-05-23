@@ -44,6 +44,7 @@ Commands:
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
   report auto|publish [args]       Store/publish native agent-crew reports
+  issue-ingest ISSUE [args]        Record issue body/comment ingestion evidence
   repair [args] TASK_ID            Repair a manually completed handoff task
   cleanup-host-bridge [args]       Bulk repair stale host bridge blockers
   cleanup-state [args]             Dry-run task-state cleanup/archive plan
@@ -825,6 +826,12 @@ EOF
   python3 "${reporter}" "$@"
 }
 
+cmd_issue_ingest() {
+  local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
+  require_file "${runtime}" "crew runtime"
+  python3 "${runtime}" issue-ingest --project-root "${PROJECT_ROOT}" "$@"
+}
+
 cmd_cleanup_host_bridge() {
   local helper="${ASSET_ROOT}/scripts/crew-cli-cleanup.sh"
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -885,6 +892,7 @@ main() {
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
     report) cmd_report "$@" ;;
+    issue-ingest) cmd_issue_ingest "$@" ;;
     repair) cmd_repair "$@" ;;
     cleanup-host-bridge) cmd_cleanup_host_bridge "$@" ;;
     cleanup-state) cmd_cleanup_state "$@" ;;

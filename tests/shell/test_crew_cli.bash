@@ -14,7 +14,7 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/resume/update/report"
+it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/resume/update/report/issue-ingest"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
 assert_contains "${out}" "trace [args]"
@@ -24,6 +24,7 @@ assert_contains "${out}" "config doctor|dump"
 assert_contains "${out}" "debug [args]"
 assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
+assert_contains "${out}" "issue-ingest ISSUE"
 
 it "crew help states prompt-workflow control plane"
 assert_contains "${out}" "local control plane for AI-host prompt workflows"
@@ -443,7 +444,7 @@ assert_contains "${result}" "agent-crew recorded a resumable internal handoff."
 it "crew run handoff-ready result does not require shell profile bridge configuration"
 assert_not_contains "${result}" "set AGENT_CREW_HOST_BRIDGE_COMMAND"
 
-it "crew run routes Korean task text through korean-normalizer gate"
+it "crew run routes Korean task text through input-normalizer gate"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "방금 멈춤 현상을 검증해주세요" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
@@ -451,13 +452,35 @@ KOREAN_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $
 register_json=$(cat "${KOREAN_RUN_TASK_DIR}/register.json")
 pipeline_json=$(cat "${KOREAN_RUN_TASK_DIR}/pipeline.json")
 run_result=$(cat "${KOREAN_RUN_TASK_DIR}/result.md")
-assert_contains "${register_json}" '"task": "Normalize Korean input for an agent-crew workflow request.'
-assert_contains "${pipeline_json}" '"korean-normalizer"'
+assert_contains "${register_json}" '"task": "Normalize raw user input into a canonical English agent-crew workflow instruction.'
+assert_contains "${pipeline_json}" '"input-normalizer"'
 assert_contains "${run_result}" "NORMALIZATION_GATE: required"
 assert_not_contains "${register_json}" "방금"
 assert_not_contains "${pipeline_json}" "방금"
 assert_not_contains "${run_result}" "방금"
 assert_contains "$(cat "${KOREAN_RUN_TASK_DIR}/handoff.md")" "RAW_TASK: 방금 멈춤 현상을 검증해주세요"
+assert_contains "$(cat "${KOREAN_RUN_TASK_DIR}/context/input-normalization.json")" '"source_language": "ko"'
+
+it "crew run routes non-English multilingual input through input-normalizer gate"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "Corrigez ce problème" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+MULTI_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+multi_register_json=$(cat "${MULTI_RUN_TASK_DIR}/register.json")
+multi_pipeline_json=$(cat "${MULTI_RUN_TASK_DIR}/pipeline.json")
+assert_contains "${multi_register_json}" '"task": "Normalize raw user input into a canonical English agent-crew workflow instruction.'
+assert_contains "${multi_pipeline_json}" '"input-normalizer"'
+assert_not_contains "${multi_register_json}" "Corrigez"
+assert_contains "$(cat "${MULTI_RUN_TASK_DIR}/context/input-normalization.json")" '"translation_required": true'
+
+it "crew run routes ambiguous conversational input through input-normalizer gate"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "go" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+AMBIGUOUS_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+ambiguous_pipeline_json=$(cat "${AMBIGUOUS_RUN_TASK_DIR}/pipeline.json")
+assert_contains "${ambiguous_pipeline_json}" '"input-normalizer"'
+assert_contains "$(cat "${AMBIGUOUS_RUN_TASK_DIR}/context/input-normalization.json")" "short conversational shorthand"
 
 it "crew run blocked result avoids verbose fallback narration"
 assert_not_contains "${result}" "If the host bridge is unavailable"
@@ -630,17 +653,54 @@ assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
 it "crew agent writes direct handoff"
 assert_file_exists "${AGENT_REQUEST_DIR}/handoff.md"
 
-it "crew agent routes Korean input through korean-normalizer before downstream agent"
+it "crew agent routes Korean input through input-normalizer before downstream agent"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "방금 질문을 설명해주세요" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 KOREAN_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
 request_json=$(cat "${KOREAN_REQUEST_DIR}/request.json")
-assert_contains "${request_json}" '"agent": "korean-normalizer"'
+assert_contains "${request_json}" '"agent": "input-normalizer"'
 assert_contains "${request_json}" '"normalization_status": "required"'
 assert_contains "${request_json}" '"intended_agent_after_normalization": "analyst"'
 assert_not_contains "${request_json}" "방금"
 assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 방금 질문을 설명해주세요"
+
+ISSUE_BIN=$(make_tmp)
+mkdir -p "${ISSUE_BIN}"
+cat > "${ISSUE_BIN}/gh" <<'GH'
+#!/usr/bin/env bash
+cat <<'JSON'
+{
+  "number": 77,
+  "title": "Body misses comment requirement",
+  "url": "https://github.com/example/repo/issues/77",
+  "body": "Fix the normalizer.",
+  "labels": [{"name": "enhancement"}],
+  "comments": [
+    {
+      "body": "- must ingest comments before planning\n- should record comments_ingested evidence",
+      "createdAt": "2026-05-24T00:00:00Z",
+      "url": "https://github.com/example/repo/issues/77#issuecomment-1",
+      "isMinimized": false,
+      "minimizedReason": ""
+    }
+  ]
+}
+JSON
+GH
+chmod +x "${ISSUE_BIN}/gh"
+ISSUE_TASK_ID="20260101-010101-0"
+ISSUE_TASK_DIR="${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks/${ISSUE_TASK_ID}"
+mkdir -p "${ISSUE_TASK_DIR}/context"
+
+it "crew issue-ingest records issue body and comments before planning"
+out=$(PATH="${ISSUE_BIN}:${PATH}" AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" issue-ingest 77 --task-id "${ISSUE_TASK_ID}" --repo example/repo --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"comments_ingested": true'
+assert_contains "${out}" '"comment_count": 1'
+assert_contains "${out}" "must ingest comments before planning"
+assert_file_exists "${ISSUE_TASK_DIR}/context/issue-77-ingestion.json"
 
 it "crew agent blocks mutating direct requests"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "fix the bug" 2>&1)
