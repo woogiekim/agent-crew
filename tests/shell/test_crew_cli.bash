@@ -614,6 +614,18 @@ assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
 it "crew agent writes direct handoff"
 assert_file_exists "${AGENT_REQUEST_DIR}/handoff.md"
 
+it "crew agent routes Korean input through korean-normalizer before downstream agent"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "방금 질문을 설명해주세요" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+KOREAN_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+request_json=$(cat "${KOREAN_REQUEST_DIR}/request.json")
+assert_contains "${request_json}" '"agent": "korean-normalizer"'
+assert_contains "${request_json}" '"normalization_status": "required"'
+assert_contains "${request_json}" '"intended_agent_after_normalization": "analyst"'
+assert_not_contains "${request_json}" "방금"
+assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 방금 질문을 설명해주세요"
+
 it "crew agent blocks mutating direct requests"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "fix the bug" 2>&1)
 rc=$?

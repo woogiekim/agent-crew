@@ -23,6 +23,8 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)\b(token|password|passwd|secret|api[_-]?key)=\S+"),
 ]
 
+HANGUL_PATTERN = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]")
+
 
 def utc_now_z() -> str:
     """Return the progress-buffer timestamp format used by supervisor."""
@@ -434,6 +436,10 @@ def looks_mutating(task: str) -> bool:
     )
 
 
+def contains_hangul(text: str) -> bool:
+    return bool(HANGUL_PATTERN.search(text or ""))
+
+
 def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
     lowered = task.lower()
     route_patterns = [
@@ -755,6 +761,21 @@ def command_agent(args: argparse.Namespace) -> int:
         print("crew agent: task description is required", file=sys.stderr)
         return 2
 
+    normalization_required = contains_hangul(task) and agent_name != "korean-normalizer"
+    intended_agent_name = agent_name
+    raw_task_for_normalizer = task if normalization_required else ""
+    if normalization_required:
+        agent_name = "korean-normalizer"
+        route_reason = (
+            "korean normalization gate before "
+            f"{intended_agent_name or 'direct-agent auto-routing'}"
+        )
+        task = (
+            "Normalize Korean input for a direct-agent request. Return only "
+            "NORMALIZED_TASK and RATIONALE, then re-route the normalized task "
+            f"to {intended_agent_name or 'the appropriate direct agent'}."
+        )
+
     if looks_mutating(task):
         print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
         return 2
@@ -800,6 +821,13 @@ def command_agent(args: argparse.Namespace) -> int:
         "host_bridge_status": "pending" if bridge_command else "not_invoked",
         "created_at": now.isoformat(),
     }
+    if normalization_required:
+        request.update(
+            {
+                "normalization_status": "required",
+                "intended_agent_after_normalization": intended_agent_name or "",
+            }
+        )
     handoff = (
         f"# Direct Agent Handoff\n\n"
         f"REQUEST_ID: {request_id}\n"
@@ -810,6 +838,15 @@ def command_agent(args: argparse.Namespace) -> int:
         f"STATUS: handoff_ready\n"
         f"NEXT: Invoke crew:agent {agent_name!r} with this task inside the host prompt runtime.\n"
     )
+    if normalization_required:
+        handoff += (
+            "\nNORMALIZATION_GATE: required\n"
+            f"INTENDED_AGENT_AFTER_NORMALIZATION: {intended_agent_name or 'auto-route'}\n"
+            f"RAW_TASK: {raw_task_for_normalizer}\n"
+            "OUTPUT_CONTRACT: Return NORMALIZED_TASK and RATIONALE only. "
+            "Do not execute the downstream agent until the normalized English "
+            "task is available.\n"
+        )
 
     write_json(request_dir / "request.json", request)
     (request_dir / "handoff.md").write_text(handoff, encoding="utf-8")

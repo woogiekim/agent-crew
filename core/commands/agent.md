@@ -503,6 +503,12 @@ proceeding (per `core/rules/korean-input.md`). Invoke the `korean-normalizer`
 agent with the raw text and substitute its output for TASK_STRING. Then
 re-evaluate from Step 3 or Step 4 as appropriate with the normalized string.
 
+This is a hard runtime gate for every direct-agent path. If the selected target
+is not `korean-normalizer`, the runtime MUST write a `korean-normalizer`
+handoff first and MUST NOT pass the raw Korean TASK to the intended downstream
+agent. The handoff records `INTENDED_AGENT_AFTER_NORMALIZATION` so the normalized
+English task can be re-routed after `NORMALIZED_TASK` is produced.
+
 ### Step 6 — Emit visibility line (mandatory)
 
 Always emit this line before invoking the agent:
