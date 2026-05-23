@@ -32,6 +32,7 @@ CLASSIFIABLE_EVENTS = {
     "STAGE_FANOUT_BLOCKED",
     "STATUS",
 }
+COVERAGE_CATEGORIES = ("tool", "delegation", "token")
 
 
 def load_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -195,14 +196,53 @@ def evaluate_task(task_dir: Path, taxonomy: set[str]) -> dict[str, Any]:
                 "unknown_labels": sorted(event_unknown),
             })
 
+    coverage = telemetry_coverage(task_dir, events)
+
     return {
         "task_id": task_dir.name,
         "task_dir": str(task_dir),
         "events": len(events),
         "classified_events": len(classified),
+        "coverage": coverage,
         "labels": sorted(labels),
         "unknown_labels": sorted(unknown_labels),
         "classified": classified,
+    }
+
+
+def _jsonl_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    count = 0
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        count += 1
+    return count
+
+
+def telemetry_coverage(task_dir: Path, events: list[dict[str, Any]]) -> dict[str, Any]:
+    tool_events = _jsonl_count(task_dir / "tool-events.jsonl")
+    delegation_events = _jsonl_count(task_dir / "delegation.jsonl")
+    token_events = _jsonl_count(task_dir.parent.parent / "cost" / f"{task_dir.name}.jsonl")
+    weak = []
+    if tool_events == 0:
+        weak.append("tool")
+    if delegation_events == 0:
+        weak.append("delegation")
+    if token_events == 0:
+        weak.append("token")
+    return {
+        "events_present": len(events) > 0,
+        "tool_events": tool_events,
+        "delegation_events": delegation_events,
+        "token_events": token_events,
+        "weak_categories": weak,
     }
 
 
@@ -232,6 +272,25 @@ def evaluate(
     invalid_required = sorted(label for label in required_labels if label not in taxonomy)
 
     failures: list[dict[str, Any] | str] = []
+    if not tasks:
+        failures.append({
+            "code": "insufficient_telemetry_coverage",
+            "detail": "no task telemetry streams were found",
+        })
+    for task in tasks:
+        coverage = task["coverage"]
+        if not coverage["events_present"]:
+            failures.append({
+                "task_id": task["task_id"],
+                "code": "insufficient_telemetry_coverage",
+                "detail": "progress.buffer.jsonl has zero usable telemetry events",
+            })
+        elif coverage["weak_categories"]:
+            failures.append({
+                "task_id": task["task_id"],
+                "code": "weak_telemetry_coverage",
+                "weak_categories": coverage["weak_categories"],
+            })
     for task in tasks:
         if task["unknown_labels"]:
             failures.append({
@@ -255,6 +314,10 @@ def evaluate(
             "classified_events": sum(task["classified_events"] for task in tasks),
             "unknown_labels": len(unknown_labels),
             "required_labels_present": len(required_labels) - len(missing_required),
+            "tasks_with_events": sum(1 for task in tasks if task["coverage"]["events_present"]),
+            "weak_tool_coverage": sum(1 for task in tasks if "tool" in task["coverage"]["weak_categories"]),
+            "weak_delegation_coverage": sum(1 for task in tasks if "delegation" in task["coverage"]["weak_categories"]),
+            "weak_token_coverage": sum(1 for task in tasks if "token" in task["coverage"]["weak_categories"]),
         },
         "tasks": tasks,
         "failures": failures,

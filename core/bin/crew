@@ -46,6 +46,7 @@ Commands:
   report auto|publish [args]       Store/publish native agent-crew reports
   repair [args] TASK_ID            Repair a manually completed handoff task
   cleanup-host-bridge [args]       Bulk repair stale host bridge blockers
+  cleanup-state [args]             Dry-run task-state cleanup/archive plan
   agent [name] [question]          Write direct-agent host handoff state
   help                             Show this help
 
@@ -147,6 +148,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/quality_loop_lib.py:${AGENT_CREW_HOME}/scripts/quality_loop_lib.py" \
     "core/scripts/reviewer-loop-decision.py:${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
     "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
+    "core/scripts/cleanup-task-state.py:${AGENT_CREW_HOME}/scripts/cleanup-task-state.py" \
     "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
     "core/scripts/memory-gc.py:${AGENT_CREW_HOME}/scripts/memory-gc.py" \
     "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
@@ -825,6 +827,22 @@ EOF
   python3 "${cleanup}" --state-dir "${STATE_DIR}" "$@"
 }
 
+cmd_cleanup_state() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew cleanup-state [--apply] [--min-age-seconds N] [--format text|json]
+
+Dry-run-first cleanup and archival plan for stale active markers,
+supervisor-pending sentinels, and blocked/repaired task-state retention.
+EOF
+    return 0
+  fi
+  sync_source_runtime_assets_if_drifted
+  local cleanup="${ASSET_ROOT}/scripts/cleanup-task-state.py"
+  require_file "${cleanup}" "task-state cleanup script"
+  python3 "${cleanup}" --state-dir "${STATE_DIR}" "$@"
+}
+
 cmd_agent() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -860,6 +878,7 @@ main() {
     report) cmd_report "$@" ;;
     repair) cmd_repair "$@" ;;
     cleanup-host-bridge) cmd_cleanup_host_bridge "$@" ;;
+    cleanup-state) cmd_cleanup_state "$@" ;;
     agent) cmd_agent "$@" ;;
     help|-h|--help) usage ;;
     *) die "unknown command: ${command}" ;;

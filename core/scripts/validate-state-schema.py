@@ -299,6 +299,45 @@ def validate_file(path, schema, severity, findings):
     for entry in sub_findings.warnings:
         findings.warnings.append(entry)
 
+    if path.name == "pipeline.json" and isinstance(instance, dict):
+        validate_pipeline_artifact_policy(path, instance, findings)
+
+
+def stage_agents(stage):
+    """Return executable agents from the pipeline stage shapes."""
+    if isinstance(stage, str):
+        return [stage]
+    if isinstance(stage, list):
+        return [item for item in stage if isinstance(item, str)]
+    if isinstance(stage, dict):
+        agents = stage.get("agents")
+        if isinstance(agents, list):
+            return [item for item in agents if isinstance(item, str)]
+        if isinstance(agents, str):
+            return [agents]
+    return []
+
+
+def validate_pipeline_artifact_policy(path, pipeline, findings):
+    """Warn when completed artifacts drift from current runtime policy."""
+    stages = pipeline.get("stages")
+    if not isinstance(stages, list):
+        return
+
+    completed = int(pipeline.get("completed_stages") or 0)
+    if completed <= 0:
+        return
+
+    for index, stage in enumerate(stages):
+        if "planner" in stage_agents(stage):
+            findings.add(
+                "warn",
+                path,
+                f"$.stages[{index}]",
+                "completed pipeline artifact contains planner as a runtime stage; "
+                "current capability policy treats planner as a non-runtime planning role",
+            )
+
 
 def validate_jsonl_file(path, schema, severity, findings):
     """Validate progress.buffer.jsonl — one JSON object per line."""

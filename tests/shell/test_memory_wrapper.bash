@@ -205,6 +205,7 @@ OUTPUT=$(HOME="${FAST_HOME}" MNEMOS_REPO_ROOT="${FAST_HOME}/.mnemos" MNEMOS_BIN=
 rc=$?
 assert_exit 0 "${rc}" "fast FTS search"
 assert_contains "${OUTPUT}" "fast-memory-1"
+assert_contains "${OUTPUT}" "score="
 assert_not_contains "${OUTPUT}" "slow backend invoked"
 
 it "memory search relaxes over-specific FTS queries when strict matching is empty"
@@ -282,6 +283,18 @@ rc=$?
 assert_exit 0 "${rc}" "memory search after gc"
 assert_contains "${OUTPUT}" "duplicate-memory-canonical"
 assert_not_contains "${OUTPUT}" "duplicate-memory-copy"
+
+it "memory search reports unsupported score support for non-FTS backend"
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+printf 'mnemos %s\n' "$*"
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+OUTPUT=$(AGENT_CREW_MEMORY_FAST_SEARCH=0 AGENT_CREW_MEMORY_REPORT_SCORE_SUPPORT=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "unsupported score reporting"
+assert_contains "${OUTPUT}" "score_support=unsupported"
 
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash

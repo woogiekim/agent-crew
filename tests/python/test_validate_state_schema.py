@@ -175,6 +175,28 @@ class TestValidateStateSchema:
             f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
         )
 
+    def test_completed_pipeline_with_planner_runtime_stage_warns(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """Completed historical artifacts warn when planner appears as runtime."""
+        pipeline = _valid_pipeline()
+        pipeline["completed_stages"] = 1
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(pipeline))
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 1, r.stdout + r.stderr
+        payload = json.loads(r.stdout)
+        messages = [item["message"] for item in payload["findings"]]
+        assert any("planner as a runtime stage" in message for message in messages)
+
     def test_strict_mode_promotes_warnings_to_errors(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

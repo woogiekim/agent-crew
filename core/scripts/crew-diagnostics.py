@@ -69,12 +69,31 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
         "hook_system": bool(capabilities.get("hook_system")),
         "interactive_question": bool(capabilities.get("interactive_question")),
     }
+    active_adapter = capabilities.get("adapter") or capabilities.get("host") or os.environ.get("AGENT_CREW_HOST", "unknown")
+    capability_reports = []
+    for name, enabled in flags.items():
+        if enabled:
+            status = "runtime-enforced"
+            detail = "active adapter advertises this runtime capability"
+        elif active_adapter == "codex" and name in {"hook_system", "interactive_question", "task_tools", "agent_background", "monitor_tool", "cost_tracking"}:
+            status = "policy-only"
+            detail = "Codex uses prompt/file fallbacks; this capability is not runtime-enforced"
+        else:
+            status = "unavailable"
+            detail = "active adapter does not advertise this runtime capability"
+        capability_reports.append({
+            "name": name,
+            "enabled": enabled,
+            "status": status,
+            "detail": detail,
+        })
     report_publish = os.environ.get("AGENT_CREW_REPORT_PUBLISH") or os.environ.get("AGENT_CREW_AUTO_ISSUE_PUBLISH") or "none"
     return {
         "project_root": str(project_root),
         "state_dir": str(state_dir),
-        "active_adapter": capabilities.get("adapter") or capabilities.get("host") or os.environ.get("AGENT_CREW_HOST", "unknown"),
+        "active_adapter": active_adapter,
         "capability_flags": flags,
+        "capability_reports": capability_reports,
         "budgets": {
             "stage_timeout_seconds": int(os.environ.get("AGENT_CREW_STAGE_TIMEOUT_SECONDS") or 0),
             "task_token_budget": os.environ.get("AGENT_CREW_TASK_TOKEN_BUDGET", ""),
@@ -200,6 +219,14 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
         print_status("active adapter visible", bool(cfg["active_adapter"]), str(cfg["active_adapter"]), emit=args.format == "text"),
         print_status("install drift status", cfg["install_drift"]["status"] != "warn", cfg["install_drift"]["detail"], emit=args.format == "text"),
     ]
+    for report in cfg["capability_reports"]:
+        ok = report["status"] == "runtime-enforced"
+        findings.append(print_status(
+            f"capability {report['name']} {report['status']}",
+            ok,
+            report["detail"],
+            emit=args.format == "text",
+        ))
     codex_invocation = Path(args.asset_root).parent / "adapters" / "codex" / "invocation.md"
     text = codex_invocation.read_text(encoding="utf-8", errors="replace") if codex_invocation.is_file() else ""
     findings.append(print_status("slash command vocabulary documented", "slash command" in text and "crew:<intent>" in text, str(codex_invocation), emit=args.format == "text"))
@@ -234,7 +261,8 @@ def cmd_config(args: argparse.Namespace) -> int:
             print(f"memory_backend: {cfg['memory_backend']}")
             print(f"install_drift: {cfg['install_drift']['status']} ({cfg['install_drift']['detail']})")
             for key, value in cfg["capability_flags"].items():
-                print(f"capability.{key}: {str(value).lower()}")
+                report = next(item for item in cfg["capability_reports"] if item["name"] == key)
+                print(f"capability.{key}: {str(value).lower()} ({report['status']}; {report['detail']})")
             for group in ("budgets", "timeouts", "report_settings"):
                 for key, value in cfg[group].items():
                     print(f"{group}.{key}: {value}")

@@ -37,9 +37,10 @@ if [ "${HAS_COST}" != "1" ]; then
   echo "Capabilities file: ${CAPABILITIES_PATH}"
   echo
   echo "On Claude: cost-tracking is enabled when crew:setup runs against the"
-  echo "claude adapter. On Codex or generic: token usage is not surfaced by"
-  echo "the host, so this command has no data. Use the host's native cost UI."
-  exit 0
+  echo "claude adapter. On Codex or generic: exact token usage is not surfaced"
+  echo "by the host. The aggregator may still report labeled proxy metrics from"
+  echo "local progress, tool, or delegation telemetry; if none exist it prints"
+  echo "an explicit unavailable reason instead of implying zero measured usage."
 fi
 
 # Build the aggregator invocation from the user's flags
@@ -85,8 +86,10 @@ task's pipeline.
 ## Absence behavior
 
 When the active adapter advertises `cost_tracking=false` (Codex,
-generic), this command prints a one-paragraph note explaining that
-cost data is not available and falls back silently. It never errors.
+generic), exact host token telemetry is unavailable. The aggregator labels
+measured token data separately from proxy metrics. If neither measured token
+records nor proxy telemetry are available, output includes an explicit
+unavailable reason instead of implying zero usage.
 
 ## Related
 

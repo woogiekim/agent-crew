@@ -208,7 +208,7 @@ try:
                 "item_id": item_id,
                 "content": row["content"] or "",
                 "rank": row["rank"],
-                "score": row_score(row),
+                "score": min(1.0, row_score(row) / 100.0),
             })
 
     results = sorted(
@@ -224,7 +224,7 @@ else:
     for result in results:
         content = result["content"]
         preview = content if full or len(content) <= width else content[:width] + "..."
-        print(f"  [fts] {result['item_id']}: {preview}")
+        print(f"  [fts score={result['score']:.2f}] {result['item_id']}: {preview}")
 print(f"[mnemos] Retrieved {len(results)} memories")
 PY
 }
@@ -293,6 +293,9 @@ run_mnemos() {
 }
 
 if [ "${1:-}" != "capture" ]; then
+  if [ "${1:-}" = "search" ] && [ "${AGENT_CREW_MEMORY_REPORT_SCORE_SUPPORT:-0}" = "1" ]; then
+    printf '[memory] score_support=unsupported backend=mnemos scale=0..1 field=score\n' >&2
+  fi
   DEFAULT_BACKEND_ENV=""
   if [ "${1:-}" = "read" ] \
     && [ -z "${MNEMOS_BACKEND:-}" ] \

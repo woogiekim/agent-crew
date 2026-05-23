@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Dry-run-first cleanup and archival plan for stale task state."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def load_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def age_seconds(path: Path) -> int:
+    try:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except Exception:
+        return 0
+    return max(0, int((datetime.now(timezone.utc) - mtime).total_seconds()))
+
+
+def discover(state_dir: Path, min_age_seconds: int) -> list[dict]:
+    tasks_root = state_dir / "tasks"
+    if not tasks_root.is_dir():
+        return []
+
+    items: list[dict] = []
+    for path in sorted(tasks_root.glob("active*")):
+        if path.is_file() and age_seconds(path) >= min_age_seconds:
+            items.append({
+                "kind": "stale_active_marker",
+                "path": str(path),
+                "age_seconds": age_seconds(path),
+                "planned_action": "archive_marker",
+                "destructive": False,
+            })
+
+    for pending in sorted(tasks_root.glob("*/supervisor-pending.txt")):
+        if age_seconds(pending) >= min_age_seconds:
+            items.append({
+                "kind": "stale_supervisor_pending",
+                "task_id": pending.parent.name,
+                "path": str(pending),
+                "age_seconds": age_seconds(pending),
+                "planned_action": "archive_sentinel",
+                "destructive": False,
+            })
+
+    for task_dir in sorted(path for path in tasks_root.iterdir() if path.is_dir()):
+        register = load_json(task_dir / "register.json")
+        result = (task_dir / "result.md").read_text(encoding="utf-8", errors="replace") if (task_dir / "result.md").is_file() else ""
+        repaired = bool(register.get("manual_fallback_repaired_at") or "REPAIR" in result)
+        blocked = register.get("current_phase") == "blocked" or "STATUS: blocked" in result
+        if blocked or repaired:
+            items.append({
+                "kind": "task_retention_policy",
+                "task_id": task_dir.name,
+                "path": str(task_dir),
+                "state": "repaired" if repaired else "blocked",
+                "planned_action": "retain_task_artifacts_and_archive_cleanup_metadata",
+                "retained": ["result.md", "register.json", "pipeline.json", "progress.log", "context/"],
+                "removed": [],
+                "destructive": False,
+            })
+    return items
+
+
+def archive_item(state_dir: Path, item: dict) -> str:
+    source = Path(item["path"])
+    archive_root = state_dir / "archive" / "task-state-cleanup"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    target = archive_root / source.name
+    if source.is_file():
+        suffix = 1
+        while target.exists():
+            target = archive_root / f"{source.name}.{suffix}"
+            suffix += 1
+        shutil.move(str(source), str(target))
+    return str(target)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state-dir", required=True)
+    parser.add_argument("--min-age-seconds", type=int, default=0)
+    parser.add_argument("--apply", action="store_true", help="Archive stale markers/sentinels. Dry-run is the default.")
+    parser.add_argument("--format", choices=["text", "json"], default="text")
+    args = parser.parse_args()
+
+    state_dir = Path(args.state_dir).expanduser().resolve()
+    items = discover(state_dir, max(args.min_age_seconds, 0))
+    archived = []
+    if args.apply:
+        for item in items:
+            if item["kind"] in {"stale_active_marker", "stale_supervisor_pending"}:
+                item["archived_to"] = archive_item(state_dir, item)
+                archived.append(item["archived_to"])
+
+    payload = {
+        "schema_version": 1,
+        "mode": "apply" if args.apply else "dry-run",
+        "state_dir": str(state_dir),
+        "planned_changes": items,
+        "archived": archived,
+        "policy": {
+            "archival": "stale active markers and supervisor-pending sentinels are moved under archive/task-state-cleanup on apply",
+            "retention": "blocked and repaired task directories are retained with result, register, pipeline, progress, and context evidence",
+            "destructive_deletion": "not performed by this command",
+        },
+    }
+
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"mode: {payload['mode']}")
+        print(f"planned_changes: {len(items)}")
+        print("policy: archival moves markers; blocked/repaired task evidence is retained; destructive deletion is not performed")
+        for item in items:
+            label = item.get("task_id") or Path(item["path"]).name
+            print(f"- {item['kind']} {label}: {item['planned_action']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
