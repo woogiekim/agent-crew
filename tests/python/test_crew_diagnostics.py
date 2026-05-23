@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -41,6 +42,37 @@ def test_auto_issue_reporting_blocker_probe_exercises_hook_path(tmp_path: Path):
 
     assert ok is True
     assert "native blocker report" in detail
+
+
+def test_host_bridge_blocker_probe_exercises_cleanup_script(tmp_path: Path):
+    state_dir = tmp_path / "home" / "state" / "agent-crew" / "tasks"
+    task_id = "20260101-120000-0"
+    task_dir = state_dir / task_id
+    task_dir.mkdir(parents=True)
+    register = {
+        "current_phase": "blocked",
+        "blocked_by": ["host_bridge_not_invoked"],
+    }
+    (task_dir / "register.json").write_text(json.dumps(register), encoding="utf-8")
+    (task_dir / "progress.buffer.jsonl").write_text(
+        json.dumps({
+            "ts": "2024-01-01T00:00:00Z",
+            "event": "STARTED",
+            "agent": "",
+            "status": "started",
+            "detail": "task started",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    ok, detail, matches = diagnostics.host_bridge_blocker_probe(
+        state_dir.parent,
+        0,
+    )
+
+    assert ok is False
+    assert matches == 1
+    assert task_id in detail
 
 
 def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):

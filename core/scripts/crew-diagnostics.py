@@ -168,6 +168,42 @@ def auto_issue_reporting_probe(asset_root: Path, agent_crew_home: Path, project_
         return True, "hook smoke created native report and outbox record"
 
 
+def host_bridge_blocker_probe(state_dir: Path, min_age_seconds: int) -> tuple[bool, str, int]:
+    script = Path(__file__).resolve().parent / "cleanup-host-bridge-blockers.py"
+    if not script.is_file():
+        return False, "host-bridge cleanup helper not found", 0
+
+    rc, out = run_cmd(
+        [
+            sys.executable,
+            str(script),
+            "--state-dir",
+            str(state_dir),
+            "--format",
+            "json",
+            "--min-age-seconds",
+            str(min_age_seconds),
+        ]
+    )
+    if rc != 0:
+        return False, f"host-bridge stale blocker probe rc={rc}", 0
+    try:
+        payload = json.loads(out)
+    except Exception:
+        return False, "host-bridge stale blocker probe returned invalid json", 0
+    matches = payload.get("matched") or []
+    if not isinstance(matches, list):
+        return False, "host-bridge stale blocker probe format invalid", 0
+    if not matches:
+        return True, "no stale host-bridge blocker tasks", 0
+    task_ids = ", ".join(item.get("task_id", "unknown") for item in matches[:3])
+    detail = (
+        f"host_bridge_not_invoked tasks={len(matches)} "
+        f"(sample={task_ids})"
+    )
+    return False, detail, len(matches)
+
+
 def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
     hook = asset_root / "hooks" / "auto-issue-report.sh"
     if not hook.is_file():
@@ -303,6 +339,16 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
     if stale.get("recommendation"):
         stale_detail = f"{stale_detail}; {stale['recommendation']}"
     findings.append(print_status("stale state markers", stale["status"] == "pass", stale_detail, emit=args.format == "text"))
+
+    stale_bridge_secs = int(os.environ.get("AGENT_CREW_STALE_HOST_BRIDGE_SECONDS") or 3600)
+    ok, detail, count = host_bridge_blocker_probe(state_dir, stale_bridge_secs)
+    bridge_detail = detail
+    if not ok and count:
+        bridge_detail = (
+            f"{detail}; run crew cleanup-host-bridge --status completed --note \""
+            f"host_bridge_not_invoked cleanup for {count} tasks\""
+        )
+    findings.append(print_status("stale host-bridge blockers", ok, bridge_detail, emit=args.format == "text"))
     cap_schema = agent_crew_home / "schemas" / "capabilities.schema.json"
     cap_file = state_dir / "capabilities.json"
     findings.append(print_status("capability file consistency", cap_schema.is_file() and cap_file.exists(), str(cap_file), emit=args.format == "text"))
