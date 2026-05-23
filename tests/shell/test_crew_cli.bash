@@ -14,11 +14,15 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/cost/doctor/update/report"
+it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/resume/update/report"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
+assert_contains "${out}" "trace [args]"
 assert_contains "${out}" "cost [args]"
 assert_contains "${out}" "doctor [args]"
+assert_contains "${out}" "config doctor|dump"
+assert_contains "${out}" "debug [args]"
+assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 
 it "crew help states prompt-workflow control plane"
@@ -74,11 +78,97 @@ assert_exit 0 "${rc}"
 it "crew doctor reports framework review status"
 assert_contains "${out}" "PASS: framework review check"
 
+it "crew doctor supports split runtime mode"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${REPO_ROOT}" bash "${CREW}" doctor --mode runtime 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "schema validation"
+assert_contains "${out}" "trace rendering"
+assert_contains "${out}" "report outbox creation"
+
+it "crew config dump --effective exposes central runtime settings"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" config dump --effective 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "active_adapter:"
+assert_contains "${out}" "capability.task_tools:"
+assert_contains "${out}" "report_settings.publish:"
+assert_contains "${out}" "memory_backend:"
+assert_contains "${out}" "install_drift:"
+
 it "crew doctor --help documents readiness checks"
 out=$(bash "${CREW}" doctor --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "operational readiness checks"
+assert_contains "${out}" "static|runtime|host|all"
+
+it "crew trace exits 0 with empty task directory"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" trace 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew trace empty state explains no events"
+assert_contains "${out}" "No trace events found."
+
+TRACE_HOME=$(make_tmp)
+TRACE_PROJECT=$(make_tmp)
+mkdir -p "${TRACE_PROJECT}"
+
+it "crew run records provider-neutral delegation lineage"
+out=$(AGENT_CREW_HOME="${TRACE_HOME}" PROJECT_ROOT="${TRACE_PROJECT}" bash "${CREW}" run "read docs" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+TRACE_TASK_ID=$(printf '%s\n' "${out}" | awk '/^TASK_ID:/ {print $2; exit}')
+TRACE_TASK_DIR=$(printf '%s\n' "${out}" | awk '/^TASK_DIR:/ {print $2; exit}')
+assert_file_exists "${TRACE_TASK_DIR}/delegation.jsonl"
+assert_contains "$(cat "${TRACE_TASK_DIR}/delegation.jsonl")" "\"agent_role\": \"supervisor\""
+
+it "crew resume default records RESUME_REQUESTED and --print stays read-only"
+before_lines=$(wc -l < "${TRACE_TASK_DIR}/progress.buffer.jsonl" | tr -d ' ')
+out=$(AGENT_CREW_HOME="${TRACE_HOME}" PROJECT_ROOT="${TRACE_PROJECT}" bash "${CREW}" resume "${TRACE_TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "TASK_ID: ${TRACE_TASK_ID}"
+assert_contains "$(cat "${TRACE_TASK_DIR}/progress.buffer.jsonl")" "RESUME_REQUESTED"
+after_request_lines=$(wc -l < "${TRACE_TASK_DIR}/progress.buffer.jsonl" | tr -d ' ')
+out=$(AGENT_CREW_HOME="${TRACE_HOME}" PROJECT_ROOT="${TRACE_PROJECT}" bash "${CREW}" resume --print "${TRACE_TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+after_print_lines=$(wc -l < "${TRACE_TASK_DIR}/progress.buffer.jsonl" | tr -d ' ')
+assert_eq "${after_request_lines}" "${after_print_lines}"
+test "${after_request_lines}" -gt "${before_lines}"
+assert_true "$?" "resume appended a state event"
+
+TOOL_HOME=$(make_tmp)
+TOOL_PROJECT=$(make_tmp)
+mkdir -p "${TOOL_PROJECT}"
+
+it "host bridge command failures create redacted tool-events and trace can include tools"
+out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" bash "${CREW}" run --host-bridge-command "printf token=secret123 >&2; exit 7" "read-only host bridge" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+TOOL_TASK_ID=$(printf '%s\n' "${out}" | awk '/^TASK_ID:/ {print $2; exit}')
+TOOL_TASK_DIR=$(printf '%s\n' "${out}" | awk '/^TASK_DIR:/ {print $2; exit}')
+assert_file_exists "${TOOL_TASK_DIR}/tool-events.jsonl"
+tool_json=$(cat "${TOOL_TASK_DIR}/tool-events.jsonl")
+assert_contains "${tool_json}" "\"tool_name\": \"host_bridge_command\""
+assert_contains "${tool_json}" "\"failure_class\": \"host_bridge_command_failed\""
+assert_not_contains "${tool_json}" "token=secret123"
+out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" bash "${CREW}" trace --task-id "${TOOL_TASK_ID}" --include-tools 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "Tools:"
+assert_contains "${out}" "host_bridge_command"
+
+it "crew debug exits 0 with empty task directory"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" debug --recent 1 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew debug includes doctor, telemetry, and cost sections"
+assert_contains "${out}" "== doctor =="
+assert_contains "${out}" "== telemetry =="
+assert_contains "${out}" "== cost =="
 
 it "e2e SLO checker supports CI latency budgets without external memory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" \
@@ -359,6 +449,21 @@ assert_contains "${out}" "\"host_bridge_not_invoked\""
 assert_contains "${out}" "\"tasks_blocked\": 1"
 
 TASK_ID=$(basename "${TASK_DIR}")
+
+it "crew trace shows blocked run progress events"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" trace --task-id "${TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "Task: ${TASK_ID}"
+assert_contains "${out}" "STATUS"
+
+it "crew resume prints handoff coordinates"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" resume "${TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "TASK_ID: ${TASK_ID}"
+assert_contains "${out}" "HANDOFF:"
+assert_contains "${out}" "NEXT: Continue in the host prompt runtime"
 
 it "crew repair marks a manually completed handoff as completed"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status completed --note "manual fallback done" "${TASK_ID}" 2>&1)

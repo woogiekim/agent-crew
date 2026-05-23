@@ -23,6 +23,15 @@ the existing `progress.log` in the per-task directory. Created on first
 by `crew:setup` reset (same path glob as `progress.log`); preserved by
 `crew:update`.
 
+Related trace files live in the same task directory:
+
+- `tool-events.jsonl` — native tool calls keyed by `trace_id`, with redacted
+  action summaries, start/end timestamps, exit/status, token usage reference,
+  and failure class.
+- `delegation.jsonl` — provider-neutral delegation lineage with `span_id`,
+  `parent_span_id`, `agent_role`, `unit_id`, and `delegated_by`. Host task DAGs
+  mirror this state; they are not the source of truth.
+
 ## Line Schema
 
 Canonical shape:
@@ -93,7 +102,7 @@ The `event` field uses the supervisor's documented event catalog. See
 Phase 3.5 the vocabulary is:
 
 - `STARTED`, `PHASE`, `STAGE`, `STAGE_DONE`, `BLOCKED`, `RETRY`,
-  `COMPLETED`
+  `COMPLETED`, `RESUME_REQUESTED`
 - `COST_WARN`, `COST_BLOCKED` (Phase 3.3)
 - `HANDOFF_PAGEOUT`, `HANDOFF_PAGEDOUT`, `HANDOFF_PAGEOUT_FAILED`,
   `HANDOFF_PAGEOUT_SKIPPED` (Phase 3.5)

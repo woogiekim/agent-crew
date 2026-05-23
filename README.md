@@ -81,9 +81,10 @@ measured during commercialization validation.
 - **Cost circuit breaker** — when the `cost_tracking` capability is advertised, the supervisor checks per-task token usage before every stage spawn and halts with `BLOCKER: cost_budget_exceeded` at 100% of the per-tier budget. Configure via `AGENT_CREW_BUDGET_DEEP|BALANCED|LIGHT`.
 - **Opt-in stage timeout** — set `AGENT_CREW_STAGE_TIMEOUT_SECONDS=1800` to halt any stage that exceeds a wall-clock budget (mirrors the cost-breaker pattern; off by default).
 - **Structured state files with schema validation** — `register.json` (per-task pointer state), `pipeline.json` (execution graph), `session.json` (multi-task registry), and `progress.buffer.jsonl` (one JSON event per line) all validate against JSON schemas under `core/schemas/` at supervisor Phase 0.
-- **Pipeline telemetry** — `crew:telemetry` aggregates wall-clock duration, stage/retry counts, token totals, and blocker histograms across recent runs (read-only; works on every adapter).
+- **Pipeline telemetry** — `crew:telemetry` aggregates wall-clock duration, stage/retry counts, tool-event counts, token totals, and blocker histograms across recent runs (read-only; works on every adapter).
+- **Traceable runtime events** — `tool-events.jsonl` records native tool calls keyed by `trace_id` with redacted action summaries, timestamps, exit/status, token-usage references, and failure class; `delegation.jsonl` records provider-neutral span lineage (`span_id`, `parent_span_id`, `agent_role`, `unit_id`, `delegated_by`) while host task DAGs remain mirrors of local state.
 - **Forbid plain-text approval** — when `hook_system` is advertised (Claude), a `PostToolUse[Agent]` validator blocks free-text yes/no prompts ("Shall I merge?" / "...진행할까요?") and feeds the violation back to the model. Hook script: `core/hooks/forbid-plaintext-approval.sh`.
-- **Native issue reporting** — installed hooks detect explicit agent-crew bug/error reports or failed `crew` Bash payloads, redact common secrets, deduplicate by fingerprint, and store a local report/outbox entry through `crew report auto`. GitHub publication is an optional backend via `crew report publish`. Hook script: `core/hooks/auto-issue-report.sh`; contract: `core/rules/auto-issue-reporting.md`.
+- **Native issue reporting** — installed hooks detect explicit agent-crew bug/error reports, failed `crew` Bash payloads, and unexpected supervisor infrastructure blockers, redact common secrets, deduplicate by fingerprint, and store a local report/outbox entry through `crew report auto`. GitHub publication is an optional backend via `crew report publish`. Hook script: `core/hooks/auto-issue-report.sh`; contract: `core/rules/auto-issue-reporting.md`.
 - **Autonomous task injection** — when a session is already running and the user submits "추가로 해줘", "이것도 부탁해", "Also do...", "While you're at it..." etc., `crew:run` Step 1.5 auto-routes the new task into the live session without prompting.
 - **Bilingual input + localized output** — Korean task descriptions are normalized to English for internal artifacts (pipeline.json, register.json, handoff.md, agent prompts) per `core/rules/korean-input.md`, while user-facing output (progress messages, approval prompts, result narratives) follows the user's input language per `core/rules/output-language.md`. Structured status tokens (`STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`) remain English as a parser invariant.
 
@@ -136,6 +137,13 @@ crew cost
 
 # 6. Run framework readiness diagnostics
 crew doctor
+crew doctor --mode runtime
+crew config dump --effective
+
+# 7. Inspect a task trace or resume coordinates
+crew trace --task-id 20260523-103403-0 --include-tools
+crew resume --print 20260523-103403-0
+crew resume 20260523-103403-0   # records RESUME_REQUESTED
 ```
 
 `crew:<intent>` is prompt workflow notation for host AI conversations. The
@@ -143,13 +151,18 @@ native shell CLI uses space-separated commands such as `crew run` and
 `crew agent`; use those forms when you are calling the local `crew` binary from
 a terminal.
 
+Slash-style commands are host-specific aliases only. Use them only in adapters
+that explicitly register slash commands; otherwise use plain `crew:<intent>`
+prompt notation or the native `crew <command>` shell form.
+
 `crew setup` runs `~/.agent-crew/setup/setup-host.sh`. That dispatcher is
 provider-neutral: it calls adapter-owned `detect.sh` scripts and delegates to the
 matching `setup.sh`. Host-specific detection, paths, and file formats live only
 inside adapter implementations.
 
 `crew` is the native shell entrypoint. Today, `crew setup`, `crew status`,
-`crew cost`, `crew doctor`, `crew update --local`, and the initial `crew run` / `crew agent` state
+`crew trace`, `crew cost`, `crew doctor`, `crew config`, `crew debug`, `crew resume`,
+`crew update --local`, and the initial `crew run` / `crew agent` state
 transitions are deterministic CLI paths. `crew run` writes task state and a
 supervisor handoff; until the host AI prompt runtime completes that handoff,
 non-fake-host runs end with `STATUS: blocked`. `crew agent` validates a
@@ -760,8 +773,13 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 |---|---|
 | `crew setup` | Native shell command: install the current host adapter and initialize the project workspace |
 | `crew status` | Native shell command: deterministic snapshot of local task state |
+| `crew trace` | Native shell command: read-only progress trace from `progress.buffer.jsonl` or `progress.log` |
 | `crew cost` | Native shell command: token/cost aggregates from local cost JSONL state |
-| `crew doctor` | Native shell command: operational readiness checks for architecture, performance, quality, memory, security, observability, cost, DX, and scalability |
+| `crew doctor` | Native shell command: split operational checks via `--mode static`, `--mode runtime`, `--mode host`, or `--mode all` |
+| `crew config doctor` | Native shell command: runtime config visibility checks |
+| `crew config dump --effective` | Native shell command: capability flags, active adapter, budgets, timeouts, report settings, memory backend, state directory, and install drift |
+| `crew debug` | Native shell command: combined read-only doctor, telemetry, and cost snapshot |
+| `crew resume [TASK_ID]` | Native shell command: request host-runtime continuation and record `RESUME_REQUESTED`; use `--print` or `--dry-run` for read-only coordinates |
 | `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
 | `crew run "task"` | Native shell command: create deterministic task state and supervisor handoff; currently blocks until a host AI prompt runtime completes the handoff |
 | `crew agent ...` | Native shell command: validate a read-only direct-agent request and write host handoff state |

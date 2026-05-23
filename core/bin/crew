@@ -34,8 +34,13 @@ Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json] [--recent N]     Show deterministic local task state
   telemetry [args]                 Show timing, retry, blocker, and token metrics
+  trace [args]                     Show per-task progress trace events
   cost [args]                      Show token/cost aggregate metrics
   doctor [args]                    Run framework operational readiness checks
+  config doctor|dump [args]        Show effective configuration and drift
+  debug [args]                     Run doctor + recent telemetry + cost snapshot
+  resume [--print|--dry-run] TASK_ID
+                                    Request or print deterministic resume state
   update [--local [SOURCE_ROOT]]   Refresh installed assets
   run "task"                       Write state and host handoff for a task
   report auto|publish [args]       Store/publish native agent-crew reports
@@ -135,6 +140,7 @@ sync_source_runtime_assets_if_drifted() {
   for check in \
     "core/bin/crew:${AGENT_CREW_HOME}/bin/crew" \
     "core/scripts/crew-runtime.py:${AGENT_CREW_HOME}/scripts/crew-runtime.py" \
+    "core/scripts/crew-diagnostics.py:${AGENT_CREW_HOME}/scripts/crew-diagnostics.py" \
     "core/scripts/repair-task-state.py:${AGENT_CREW_HOME}/scripts/repair-task-state.py" \
     "core/scripts/pipeline-quality-plan-check.py:${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
     "core/scripts/quality-loop-check.py:${AGENT_CREW_HOME}/scripts/quality-loop-check.py" \
@@ -336,6 +342,169 @@ EOF
   python3 "${telemetry}" --state-dir "${STATE_DIR}" "$@"
 }
 
+cmd_trace() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew trace [--task-id ID] [--recent N] [--format text|json] [--include-tools]
+
+Prints structured progress events from progress.buffer.jsonl, falling back to
+progress.log for pre-trace task state. With --include-tools, also prints
+tool-events.jsonl entries keyed by trace_id. Read-only.
+EOF
+    return 0
+  fi
+
+  local task_id=""
+  local recent="1"
+  local format="text"
+  local include_tools="0"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --task-id)
+        [ -n "${2:-}" ] || die "--task-id requires an id"
+        task_id="$2"
+        shift 2
+        ;;
+      --recent)
+        [ -n "${2:-}" ] || die "--recent requires a number"
+        recent="$2"
+        shift 2
+        ;;
+      --format)
+        [ -n "${2:-}" ] || die "--format requires text or json"
+        format="$2"
+        shift 2
+        ;;
+      --include-tools) include_tools="1"; shift ;;
+      *) die "unknown trace argument: $1" ;;
+    esac
+  done
+  case "${format}" in text|json) ;; *) die "--format must be text or json" ;; esac
+
+  python3 - "${STATE_DIR}" "${task_id}" "${recent}" "${format}" "${include_tools}" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+state_dir = Path(sys.argv[1])
+task_id = sys.argv[2]
+try:
+    recent = max(1, int(sys.argv[3]))
+except Exception:
+    recent = 1
+fmt = sys.argv[4]
+include_tools = sys.argv[5] == "1"
+tasks_root = state_dir / "tasks"
+
+def task_dirs():
+    if not tasks_root.is_dir():
+        return []
+    if task_id:
+        p = tasks_root / task_id
+        return [p] if p.is_dir() else []
+    dirs = [p for p in tasks_root.iterdir() if p.is_dir()]
+    dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return dirs[:recent]
+
+def read_buffer(path):
+    rows = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        rows.append({
+            "ts": row.get("ts", ""),
+            "task_id": row.get("task_id", ""),
+            "trace_id": row.get("trace_id", ""),
+            "event": row.get("event", ""),
+            "stage": row.get("stage", 0),
+            "agent": row.get("agent", ""),
+            "attempt": row.get("attempt", 0),
+            "status": row.get("status", ""),
+            "detail": row.get("detail", ""),
+        })
+    return rows
+
+def read_log(path, tid):
+    rows = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = [p.strip() for p in line.split("|", 2)]
+        if len(parts) == 3:
+            ts, event, detail = parts
+        else:
+            ts, event, detail = "", "LOG", line.strip()
+        rows.append({
+            "ts": ts,
+            "task_id": tid,
+            "trace_id": "",
+            "event": event,
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "",
+            "detail": detail,
+        })
+    return rows
+
+def read_tool_events(path):
+    rows = []
+    if not path.is_file():
+        return rows
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        rows.append({
+            "trace_id": row.get("trace_id", ""),
+            "tool_name": row.get("tool_name", ""),
+            "action_summary": row.get("action_summary", ""),
+            "started_at": row.get("started_at", ""),
+            "ended_at": row.get("ended_at", ""),
+            "status": row.get("status", ""),
+            "exit_code": row.get("exit_code"),
+            "token_usage_ref": row.get("token_usage_ref", ""),
+            "failure_class": row.get("failure_class", ""),
+        })
+    return rows
+
+payload = []
+for td in task_dirs():
+    buffer = td / "progress.buffer.jsonl"
+    log = td / "progress.log"
+    rows = read_buffer(buffer) if buffer.is_file() else (read_log(log, td.name) if log.is_file() else [])
+    item = {"task_id": td.name, "task_dir": str(td), "events": rows}
+    if include_tools:
+        item["tools"] = read_tool_events(td / "tool-events.jsonl")
+    payload.append(item)
+
+if fmt == "json":
+    print(json.dumps({"state_dir": str(state_dir), "tasks": payload}, ensure_ascii=False, indent=2))
+else:
+    if not payload:
+        print("No trace events found.")
+    for item in payload:
+        print(f"Task: {item['task_id']}")
+        print(f"Dir : {item['task_dir']}")
+        if not item["events"]:
+            print("  (no events)")
+            continue
+        for row in item["events"]:
+            trace = f" trace={row['trace_id']}" if row["trace_id"] else ""
+            agent = f" agent={row['agent']}" if row["agent"] else ""
+            print(f"  {row['ts']} {row['event']} status={row['status']} stage={row['stage']} attempt={row['attempt']}{agent}{trace} | {row['detail']}")
+        if include_tools:
+            tools = item.get("tools", [])
+            print("  Tools:")
+            if not tools:
+                print("    (no tool events)")
+            for row in tools:
+                exit_part = "" if row["exit_code"] is None else f" exit={row['exit_code']}"
+                failure = f" failure={row['failure_class']}" if row["failure_class"] else ""
+                print(f"    {row['started_at']} {row['tool_name']} status={row['status']}{exit_part}{failure} trace={row['trace_id']} | {row['action_summary']}")
+PYEOF
+}
+
 cmd_cost() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -355,18 +524,173 @@ EOF
 cmd_doctor() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
-usage: crew doctor [--format text|json]
+usage: crew doctor [--mode static|runtime|host|all] [--format text|json]
 
-Runs static operational readiness checks for architecture, performance,
-quality, memory governance, security, observability, cost, DX, and long-term
-scalability controls.
+Runs split operational checks. static delegates to framework review, runtime
+uses safe local probes, and host checks adapter/config visibility.
 EOF
     return 0
   fi
 
-  local doctor="${ASSET_ROOT}/scripts/framework-review-check.py"
-  require_file "${doctor}" "framework review checker"
-  python3 "${doctor}" --project-root "${PROJECT_ROOT}" "$@"
+  local diagnostics="${ASSET_ROOT}/scripts/crew-diagnostics.py"
+  require_file "${diagnostics}" "diagnostics helper"
+  python3 "${diagnostics}" --project-root "${PROJECT_ROOT}" --asset-root "${ASSET_ROOT}" --agent-crew-home "${AGENT_CREW_HOME}" doctor "$@"
+}
+
+cmd_config() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew config doctor [--format text|json]
+       crew config dump --effective [--format text|json]
+
+Shows centralized effective configuration: capability flags, active adapter,
+budgets, timeouts, report settings, memory backend, state directory, and
+install drift status.
+EOF
+    return 0
+  fi
+
+  local diagnostics="${ASSET_ROOT}/scripts/crew-diagnostics.py"
+  require_file "${diagnostics}" "diagnostics helper"
+  python3 "${diagnostics}" --project-root "${PROJECT_ROOT}" --asset-root "${ASSET_ROOT}" --agent-crew-home "${AGENT_CREW_HOME}" config "$@"
+}
+
+cmd_debug() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew debug [--recent N]
+
+Runs read-only operator diagnostics: doctor, recent telemetry, and recent cost
+summary. It never mutates workflow state.
+EOF
+    return 0
+  fi
+
+  local recent="5"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --recent)
+        [ -n "${2:-}" ] || die "--recent requires a number"
+        recent="$2"
+        shift 2
+        ;;
+      *) die "unknown debug argument: $1" ;;
+    esac
+  done
+
+  printf '== doctor ==\n'
+  cmd_doctor || true
+  printf '\n== telemetry ==\n'
+  cmd_telemetry --recent "${recent}" || true
+  printf '\n== cost ==\n'
+  cmd_cost --recent "${recent}" --format table || true
+}
+
+cmd_resume() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew resume [--print|--dry-run] TASK_ID
+
+Default mode records a RESUME_REQUESTED state event, then prints deterministic
+resume coordinates for the host prompt runtime. --print and --dry-run preserve
+the read-only behavior.
+EOF
+    return 0
+  fi
+
+  local task_id="" mode="request"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --print|--dry-run) mode="print"; shift ;;
+      *)
+        [ -z "${task_id}" ] || die "resume accepts one TASK_ID"
+        task_id="$1"
+        shift
+        ;;
+    esac
+  done
+  python3 - "${STATE_DIR}" "${task_id}" "${mode}" <<'PYEOF'
+import json, re, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+state_dir = Path(sys.argv[1])
+requested = sys.argv[2]
+mode = sys.argv[3]
+tasks_root = state_dir / "tasks"
+
+def read_json(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+def result_status(task_dir):
+    text = (task_dir / "result.md").read_text(encoding="utf-8", errors="replace") if (task_dir / "result.md").is_file() else ""
+    m = re.search(r"^STATUS:\s*(\w+)", text, re.I | re.M)
+    return m.group(1).lower() if m else ""
+
+if not tasks_root.is_dir():
+    print("No tasks found. Run crew setup first, then use crew run in your host runtime.")
+    raise SystemExit(0)
+
+if requested:
+    candidates = [tasks_root / requested]
+else:
+    candidates = [p for p in tasks_root.iterdir() if p.is_dir()]
+    def key(path):
+        status = result_status(path)
+        active = 0 if status == "completed" else 1
+        return (active, path.stat().st_mtime)
+    candidates.sort(key=key, reverse=True)
+
+task_dir = next((p for p in candidates if p.is_dir()), None)
+if task_dir is None:
+    print(f"Task not found: {requested}")
+    raise SystemExit(2)
+
+register = read_json(task_dir / "register.json")
+pipeline = read_json(task_dir / "pipeline.json")
+status = result_status(task_dir) or register.get("current_phase") or "unknown"
+task = register.get("task") or ""
+if not task and (task_dir / "task.txt").is_file():
+    task = (task_dir / "task.txt").read_text(encoding="utf-8", errors="replace").strip()
+handoff = register.get("handoff_path") or str(task_dir / "handoff.md")
+completed = pipeline.get("completed_stages", "unknown")
+stages = pipeline.get("stages") or []
+
+if mode == "request":
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    session_id = register.get("session_id") or task_dir.name.rsplit("-", 1)[0]
+    trace_id = f"{session_id}.{task_dir.name}.0.0"
+    event = {
+        "ts": now,
+        "trace_id": trace_id,
+        "task_id": task_dir.name,
+        "session_id": session_id,
+        "event": "RESUME_REQUESTED",
+        "stage": 0,
+        "agent": "",
+        "attempt": 0,
+        "status": "in_progress",
+        "detail": "resume requested via crew resume",
+        "files": ["handoff.md"],
+    }
+    with (task_dir / "progress.buffer.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as f:
+        f.write(f"{now} | RESUME_REQUESTED | resume requested via crew resume\n")
+
+print(f"TASK_ID: {task_dir.name}")
+print(f"TASK_DIR: {task_dir}")
+print(f"STATUS: {status}")
+print(f"STAGES: {completed}/{len(stages) if isinstance(stages, list) else 'unknown'}")
+if task:
+    print(f"TASK: {task}")
+print(f"HANDOFF: {handoff}")
+print(f"NEXT: Continue in the host prompt runtime from {handoff}.")
+PYEOF
 }
 
 cmd_update() {
@@ -513,8 +837,12 @@ main() {
     setup) cmd_setup "$@" ;;
     status) cmd_status "$@" ;;
     telemetry) cmd_telemetry "$@" ;;
+    trace) cmd_trace "$@" ;;
     cost) cmd_cost "$@" ;;
     doctor) cmd_doctor "$@" ;;
+    config) cmd_config "$@" ;;
+    debug) cmd_debug "$@" ;;
+    resume) cmd_resume "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
     report) cmd_report "$@" ;;
