@@ -188,14 +188,14 @@ def host_bridge_next_line(task_dir: Path, task_id: str, bridge_command_present: 
     lines = [
         f"NEXT: Continue with {handoff_path}, then run "
         f"`crew repair {task_id} --status completed --note \"<summary>\"`.",
-        "DETAIL: host bridge command was not invoked automatically in this runtime.",
     ]
     if not bridge_command_present:
         lines.append(
-            "DETAIL: set AGENT_CREW_HOST_BRIDGE_COMMAND to the host adapter's "
-            "bridge command, or pass --host-bridge-command for one-off runs."
+            "DETAIL: no external bridge command is required for this state; "
+            "agent-crew recorded a resumable internal handoff."
         )
-    lines.append("DETAIL: if this is a deliberate manual run, this is expected.")
+    else:
+        lines.append("DETAIL: the configured host bridge did not complete this handoff.")
     return "\n".join(lines) + "\n"
 
 
@@ -475,12 +475,18 @@ def command_run(args: argparse.Namespace) -> int:
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(args.task)
-    result_status = "completed" if fake_completed_requested and not fake_quality_blocked else "blocked"
-    current_phase = "completed" if result_status == "completed" else "blocked"
+    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
+    if fake_completed_requested and not fake_quality_blocked:
+        result_status = "completed"
+    elif bridge_command or fake_quality_blocked:
+        result_status = "blocked"
+    else:
+        result_status = "handoff_ready"
+    current_phase = result_status
     blocked_by = []
     if fake_quality_blocked:
         blocked_by = ["missing_quality_loop_pipeline"]
-    elif result_status != "completed":
+    elif result_status == "blocked":
         blocked_by = ["host_bridge_not_invoked"]
     quality_next = (
         "NEXT: A mutating implementation task can only be auto-completed after "
@@ -488,11 +494,12 @@ def command_run(args: argparse.Namespace) -> int:
         "pipeline.json and progress.buffer.jsonl.\n"
     )
 
-    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
     if fake_quality_blocked:
         host_bridge_status = "quality_blocked"
     elif result_status == "completed":
         host_bridge_status = "fake_completed"
+    elif result_status == "handoff_ready":
+        host_bridge_status = "internal_handoff_ready"
     else:
         host_bridge_status = "pending" if bridge_command else "not_invoked"
     blocked_next = host_bridge_next_line(task_dir, task_id, bool(bridge_command))
@@ -540,10 +547,11 @@ def command_run(args: argparse.Namespace) -> int:
         f"TASK: {args.task}\n"
         f"PROJECT_ROOT: {project_root}\n"
         f"MODE: native-cli\n"
-        f"STATUS: blocked\n"
-        f"BLOCKER: host AI bridge has not completed this handoff\n"
+        f"STATUS: {result_status}\n"
         f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
     )
+    if result_status == "blocked":
+        handoff += "BLOCKER: host AI bridge has not completed this handoff\n"
 
     result = (
         f"# {args.task}\n\n"
@@ -551,7 +559,10 @@ def command_run(args: argparse.Namespace) -> int:
         f"TASK_ID: {task_id}\n"
         f"BRANCH: {register['branch']}\n"
     )
-    if result_status == "blocked":
+    if result_status == "handoff_ready":
+        result += "HOST_BRIDGE: internal_handoff_ready\n"
+        result += blocked_next
+    elif result_status == "blocked":
         if fake_quality_blocked:
             result += "BLOCKER: missing_quality_loop_pipeline\n"
             result += (
@@ -567,7 +578,9 @@ def command_run(args: argparse.Namespace) -> int:
     write_json(task_dir / "pipeline.json", pipeline)
     (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
     (task_dir / "result.md").write_text(result, encoding="utf-8")
-    progress_status = "completed" if result_status == "completed" else "failed"
+    progress_status = "completed" if result_status == "completed" else "in_progress"
+    if result_status == "blocked":
+        progress_status = "failed"
     (task_dir / "progress.log").write_text(
         f"{now_z} | STARTED | {args.task}\n"
         f"{now_z} | STATUS | {result_status}\n",
@@ -691,6 +704,10 @@ def command_run(args: argparse.Namespace) -> int:
     print(f"TASK_ID: {task_id}")
     print(f"TASK_DIR: {task_dir}")
     print(f"STATUS: {result_status}")
+    if result_status == "handoff_ready":
+        print("HOST_BRIDGE: internal_handoff_ready")
+        print(blocked_next.rstrip())
+        return 0
     if result_status == "blocked":
         if fake_quality_blocked:
             print("BLOCKER: missing_quality_loop_pipeline")

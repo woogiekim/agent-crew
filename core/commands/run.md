@@ -2315,13 +2315,14 @@ crew:run "resolve merge conflicts"
   "implement", "fix", etc.) falls through to the regular pipeline. See
   Step 1.7 for the full pattern list, exclusion rules, and per-intent
   dispatch table.
-- If a run is blocked with host bridge handoff issues, follow the documented SOP:
+- If a run is `handoff_ready` or blocked with host bridge handoff issues, follow the documented SOP:
   [Host Bridge Handoff Recovery SOP](core/docs/host-bridge-handoff-sop.md)
 
 ### Host Bridge Handoff Recovery
 
-When a run is blocked with:
+When a run returns:
 
+- `STATUS: handoff_ready`
 - `BLOCKER: host AI bridge has not completed this handoff`
 
 use this sequence:
@@ -2329,12 +2330,13 @@ use this sequence:
 1. Open the task output:
    - `TASK_DIR` from run output
    - `cat "${TASK_DIR}/result.md"`
-2. In non-hosted/native runs, this is normal. Complete manually:
+2. In non-hosted/native runs, `STATUS: handoff_ready` is normal. Continue from
+   `handoff.md`, then complete manually:
    - `crew repair <TASK_ID> --status completed --note "<summary>"`
 3. For auto-completion:
-   - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` to your host adapter's bridge
-     command, or
-   - Pass `--host-bridge-command "<command>"` on `crew run`.
+   - Pass `--host-bridge-command "<command>"` on `crew run`, or
+   - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.
+   `.zshrc` is not required; it is only one optional place to persist env.
 4. Re-check task state:
    - `crew status --json --task-id <TASK_ID>`
    - `crew telemetry --format json --task-id <TASK_ID>`

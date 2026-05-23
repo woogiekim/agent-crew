@@ -769,10 +769,10 @@ cmd_run() {
     cat <<'EOF'
 usage: crew run [--fake-host-result completed] [--host-bridge-command CMD] "task"
 
-Creates deterministic local task state and a supervisor handoff. Without a host
-AI bridge completing that handoff, normal runs end as STATUS: blocked after
-writing state. Tests may use --fake-host-result completed to exercise the E2E
-state path. Hosts may set AGENT_CREW_HOST_BRIDGE_COMMAND, or pass
+Creates deterministic local task state and a supervisor handoff. If no external
+host bridge is configured, the run ends as STATUS: handoff_ready after writing
+resumable state. Tests may use --fake-host-result completed to exercise the E2E
+state path. Hosts may still set AGENT_CREW_HOST_BRIDGE_COMMAND, or pass
 --host-bridge-command, to invoke an adapter bridge after handoff creation; a
 zero exit status marks the run auto-completed with host bridge evidence.
 EOF

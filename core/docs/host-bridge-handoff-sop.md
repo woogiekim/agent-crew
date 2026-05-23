@@ -2,17 +2,22 @@
 
 Date: 2026-05-23
 
-This SOP covers the common runtime state:
+This SOP covers the common runtime states:
 
-`BLOCKER: host AI bridge has not completed this handoff`
+- `STATUS: handoff_ready`
+- `BLOCKER: host AI bridge has not completed this handoff`
 
 ## 1) What happened?
 
-This means `crew run` finished writing supervisor handoff state, but the host
-bridge did not auto-complete the task to `completed` in this execution context.
+`STATUS: handoff_ready` means `crew run` finished writing supervisor handoff
+state and no external host bridge command was needed or configured. This is a
+normal resumable state, not an infrastructure failure.
 
-- This is normal in non-hosted/native runtime contexts.
-- The same task can be marked complete manually (`crew repair`).
+`BLOCKER: host AI bridge has not completed this handoff` now means an external
+bridge command was configured or expected but did not complete successfully.
+
+- In non-hosted/native runtime contexts, `handoff_ready` is expected.
+- The same task can be marked complete manually after execution (`crew repair`).
 
 ## 2) Immediate operator flow (recommended)
 
@@ -40,10 +45,14 @@ crew repair "${TASK_ID}" --status completed --note "<summary>"
 
 ## 3) Auto-complete setup
 
-If you expect host auto-completion:
+agent-crew does not require users to put bridge configuration in `.zshrc`.
+Shell profile configuration is only one optional way to make an external bridge
+available to every shell.
+
+If you expect external host auto-completion:
 
 ```bash
-# Option A: persistent env in runtime shell profile
+# Option A: process-local env
 export AGENT_CREW_HOST_BRIDGE_COMMAND="your-host-bridge-command"
 ```
 
@@ -89,6 +98,7 @@ Use this to verify:
 
 ## 5) Escalation policy
 
+- If the run is `handoff_ready`: continue from `handoff.md`.
 - If there is no task-impacting data loss and the run is blocked: execute
   `crew repair`.
 - If this appears after code changes: re-run the task with `--host-bridge-command`

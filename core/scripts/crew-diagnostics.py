@@ -234,6 +234,8 @@ def host_bridge_command_probe(asset_root: Path, *, env: dict[str, str] | None = 
 
     if payload.get("ready"):
         return True, f"host bridge ready: {payload.get('command_head', '')}"
+    if payload.get("status") in {"missing", "empty"}:
+        return True, payload.get("reason", "internal handoff fallback available")
     return False, payload.get("reason", "unknown host bridge status")
 
 

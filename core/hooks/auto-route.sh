@@ -256,8 +256,8 @@ def emit_question_route(target_agent: str, route_reason: str):
         question_directive += (
             "\n\nHost bridge is unavailable ("
             f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
-            "\nIf this blocks downstream handoff completion, set "
-            "AGENT_CREW_HOST_BRIDGE_COMMAND or pass --host-bridge-command before re-running."
+            "\nThe runtime will record a resumable internal handoff when no "
+            "external bridge command is configured."
         )
     question_output = {
         "hookSpecificOutput": {
@@ -488,9 +488,9 @@ Enter the crew-run workflow now."""
 if not HOST_BRIDGE_READY:
     directive += (
         "\n\nHost bridge is unavailable ("
-        f"{HOST_BRIDGE_REASON}). Crew handoff will require manual follow-up."
-        "\nIf this blocks downstream completion, set AGENT_CREW_HOST_BRIDGE_COMMAND "
-        "or pass --host-bridge-command before re-running."
+        f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
+        "\nThe runtime will record a resumable internal handoff when no "
+        "external bridge command is configured."
     )
 
 output = {

@@ -71,6 +71,7 @@
         "phase_2",
         "phase_2_5",
         "phase_3",
+        "handoff_ready",
         "completed",
         "blocked"
       ],
@@ -147,6 +148,7 @@
         "not_invoked",
         "pending",
         "failed",
+        "internal_handoff_ready",
         "auto_completed",
         "fake_completed",
         "manual_fallback_completed",

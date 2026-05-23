@@ -123,7 +123,7 @@ mkdir -p "${TRACE_PROJECT}"
 it "crew run records provider-neutral delegation lineage"
 out=$(AGENT_CREW_HOME="${TRACE_HOME}" PROJECT_ROOT="${TRACE_PROJECT}" bash "${CREW}" run "read docs" 2>&1)
 rc=$?
-assert_exit 3 "${rc}"
+assert_exit 0 "${rc}"
 TRACE_TASK_ID=$(printf '%s\n' "${out}" | awk '/^TASK_ID:/ {print $2; exit}')
 TRACE_TASK_DIR=$(printf '%s\n' "${out}" | awk '/^TASK_DIR:/ {print $2; exit}')
 assert_file_exists "${TRACE_TASK_DIR}/delegation.jsonl"
@@ -329,7 +329,7 @@ printf 'stale runtime\n' > "${RUNTIME_SYNC_HOME}/scripts/crew-runtime.py"
 it "crew run auto-refreshes drifted runtime assets from local source"
 out=$(PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" "${RUNTIME_SYNC_BIN}/crew" run "runtime sync task" 2>&1)
 rc=$?
-assert_exit 3 "${rc}"
+assert_exit 0 "${rc}"
 assert_contains "${out}" "refreshed runtime assets"
 
 it "crew run installs missing runtime repair script during auto-refresh"
@@ -389,7 +389,7 @@ printf 'stale hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
 it "crew run auto-refreshes drifted hooks from source checkout"
 out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo hook sync task" 2>&1)
 rc=$?
-assert_exit 3 "${rc}"
+assert_exit 0 "${rc}"
 
 it "crew run reports hook drift repair"
 assert_contains "${out}" "refreshed auto-route hooks"
@@ -405,16 +405,16 @@ printf 'stale project hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh
 it "crew run detects project-local hook drift even when global hook is fresh"
 out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo project hook sync task" 2>&1)
 rc=$?
-assert_exit 3 "${rc}"
+assert_exit 0 "${rc}"
 assert_contains "${out}" "refreshed auto-route hooks"
 
 it "crew run refreshes stale project-local hook after global hook is fresh"
 assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
 
-it "crew run writes deterministic state then exits blocked"
+it "crew run writes deterministic state then exits handoff_ready"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
 rc=$?
-assert_exit 3 "${rc}"
+assert_exit 0 "${rc}"
 
 it "crew run output includes task directory"
 assert_contains "${out}" "TASK_DIR:"
@@ -427,42 +427,41 @@ assert_file_exists "${TASK_DIR}/register.json"
 it "crew run writes supervisor handoff"
 assert_file_exists "${TASK_DIR}/handoff.md"
 
-it "crew run writes blocked result"
+it "crew run writes handoff-ready result"
 result=$(cat "${TASK_DIR}/result.md")
-assert_contains "${result}" "STATUS: blocked"
+assert_contains "${result}" "STATUS: handoff_ready"
 
-it "crew run blocked result references host bridge"
-assert_contains "${result}" "host AI bridge has not completed this handoff"
+it "crew run handoff-ready result references internal bridge fallback"
+assert_contains "${result}" "HOST_BRIDGE: internal_handoff_ready"
 
 it "crew run blocked result includes concise next step guidance"
 assert_contains "${result}" "NEXT: Continue with"
 
-it "crew run blocked result explains native runtime bridge behavior"
-assert_contains "${result}" "DETAIL: host bridge command was not invoked automatically in this runtime."
+it "crew run handoff-ready result explains internal handoff behavior"
+assert_contains "${result}" "agent-crew recorded a resumable internal handoff."
 
-it "crew run blocked result suggests bridge command configuration"
-assert_contains "${result}" "set AGENT_CREW_HOST_BRIDGE_COMMAND"
+it "crew run handoff-ready result does not require shell profile bridge configuration"
+assert_not_contains "${result}" "set AGENT_CREW_HOST_BRIDGE_COMMAND"
 
 it "crew run blocked result avoids verbose fallback narration"
 assert_not_contains "${result}" "If the host bridge is unavailable"
 assert_not_contains "${result}" "so `crew telemetry` no longer reports"
 
-it "crew status --json reports blocked run blocker"
+it "crew status --json reports handoff-ready run state"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)
-assert_contains "${out}" "\"host AI bridge has not completed this handoff\""
-assert_contains "${out}" "\"host_bridge_not_invoked\""
-assert_contains "${out}" "\"guidance\""
+assert_contains "${out}" "\"handoff_ready\""
+assert_contains "${out}" "\"internal_handoff_ready\""
 
-it "crew telemetry --format json reports blocked run blocker"
+it "crew telemetry --format json reports handoff-ready run as running"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "\"host_bridge_not_invoked\""
-assert_contains "${out}" "\"tasks_blocked\": 1"
+assert_contains "${out}" "\"internal_handoff_ready\""
+assert_contains "${out}" "\"tasks_running\": 1"
 
 TASK_ID=$(basename "${TASK_DIR}")
 
-it "crew trace shows blocked run progress events"
+it "crew trace shows handoff-ready run progress events"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" trace --task-id "${TASK_ID}" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
@@ -502,7 +501,7 @@ assert_contains "${out}" "\"tasks_completed\": 1"
 assert_not_contains "${out}" "\"host_bridge_not_invoked\""
 
 it "crew cleanup-host-bridge dry-run finds stale host bridge task"
-out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "cleanup stale host bridge task" 2>&1)
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --host-bridge-command "exit 7" "cleanup stale host bridge task" 2>&1)
 rc=$?
 assert_exit 3 "${rc}"
 CLEANUP_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')

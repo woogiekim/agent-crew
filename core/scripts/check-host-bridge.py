@@ -13,7 +13,7 @@ Inputs:
 
 Exit codes:
   0 — command is configured and executable
-  1 — soft warning (missing/disabled command)
+  1 — soft notice (missing/disabled external command; internal handoff still works)
   2 — hard invalid configuration (parse failure, missing executable, non-executable)
 """
 
@@ -33,7 +33,7 @@ def _resolve_executable(raw: str):
     # Accepts tokenized executable tokens like /usr/bin/bridge or bridge.
     executable = raw
     if not executable:
-        return "", "AGENT_CREW_HOST_BRIDGE_COMMAND is not set.", "missing"
+        return "", "external bridge command is not set; internal handoff fallback is available.", "missing"
 
     if "/" in executable:
         path = Path(executable).expanduser()
@@ -71,7 +71,7 @@ def inspect_bridge_command(command: str) -> dict:
 
     if not command.strip():
         payload["status"] = "missing"
-        payload["reason"] = "AGENT_CREW_HOST_BRIDGE_COMMAND is not set."
+        payload["reason"] = "external bridge command is not set; internal handoff fallback is available."
         return payload
 
     try:
