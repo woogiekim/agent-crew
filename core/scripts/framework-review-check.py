@@ -70,6 +70,10 @@ def evaluate_repo(root: Path) -> dict:
     retry_chaos_check = read_text(root / "core/scripts/retry-chaos-check.py")
     telemetry_taxonomy_check = read_text(root / "core/scripts/telemetry-taxonomy-check.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
+    auto_issue_reporter = read_text(root / "core/scripts/auto-issue-reporter.py")
+    auto_issue_rule = read_text(root / "core/rules/auto-issue-reporting.md")
+    auto_issue_hook = read_text(root / "core/hooks/auto-issue-report.sh")
+    auto_issue_test = read_text(root / "tests/shell/test_auto_issue_reporter.bash")
     agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
     model_tiers = {
         entry.get("model_tier")
@@ -305,6 +309,64 @@ def evaluate_repo(root: Path) -> dict:
                 ["retry-chaos.json", "progress.buffer.jsonl", "unknown_labels", "require-label"],
             ),
             "Live retry/blocker telemetry must correlate with the retry-chaos failure taxonomy.",
+        ),
+        control(
+            "observability",
+            "automatic_issue_reporting_surface",
+            "high",
+            exists(root, "core/scripts/auto-issue-reporter.py")
+            and exists(root, "core/hooks/auto-issue-report.sh")
+            and has_all(crew, ["report auto|publish", "cmd_report()", "auto-issue-reporter.py"])
+            and has_all(auto_issue_hook, ["crew", "report", "auto"]),
+            "Native automatic issue reporting must be reachable from hooks and the crew CLI.",
+        ),
+        control(
+            "observability",
+            "automatic_issue_reporting_governance",
+            "high",
+            has_all(
+                auto_issue_reporter,
+                [
+                    "write_outbox",
+                    "duplicate_record",
+                    "redact",
+                    "remote_duplicate",
+                    "return 0",
+                    "supervisor_blocked",
+                    "PostToolUse:Bash",
+                    "has_infrastructure_failure_signal",
+                ],
+            )
+            and has_all(
+                auto_issue_rule,
+                [
+                    "Native Report Outbox",
+                    "Local deduplication",
+                    "Remote deduplication",
+                    "Secret redaction",
+                    "Advisory failure mode",
+                ],
+            ),
+            "Automatic issue reporting must preserve local reports, dedupe, redact secrets, detect infrastructure blockers, and never block workflow execution.",
+        ),
+        control(
+            "observability",
+            "automatic_issue_reporting_regression_tests",
+            "medium",
+            has_all(
+                auto_issue_test,
+                [
+                    "records agent-crew error prompts locally",
+                    "redacts secrets in native outbox",
+                    "skips duplicate prompt reports locally",
+                    "handles Bash tool failures involving crew",
+                    "records structured infrastructure blockers from Bash crew output",
+                    "ignores normal host bridge blocked handoffs",
+                    "recognizes hook and missing-asset supervisor blockers",
+                    "auto issue hook wrapper is advisory",
+                ],
+            ),
+            "Automatic issue reporting must have regression coverage for real hook surfaces and non-blocking behavior.",
         ),
         control(
             "cost_efficiency",

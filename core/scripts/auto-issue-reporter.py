@@ -51,6 +51,20 @@ BUG_RE = re.compile(
     r"오류|에러|버그|실패|크래시|안됨|안\s*됨|문제",
     re.IGNORECASE,
 )
+INFRASTRUCTURE_FAILURE_RE = re.compile(
+    r"schema|validator|capabilit|host[_ -]?bridge|task[_ -]?tool|"
+    r"monitor[_ -]?tool|state[_ -]?schema|runtime|install[_ -]?drift|"
+    r"hook|crash[_ -]?budget|missing[_ -]?asset|asset[_ -]?missing",
+    re.IGNORECASE,
+)
+STRUCTURED_BLOCKED_RE = re.compile(
+    r"STATUS:\s*blocked|BLOCKER:\s*[A-Za-z0-9_. -]+|blocked_by",
+    re.IGNORECASE,
+)
+NORMAL_HOST_BRIDGE_RE = re.compile(
+    r"host\s+AI\s+bridge\s+has\s+not\s+completed\s+this\s+handoff",
+    re.IGNORECASE,
+)
 SECRET_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]+"),
     re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}"),
@@ -136,19 +150,19 @@ def has_bug_signal(text: str) -> bool:
     return bool(BUG_RE.search(text))
 
 
+def has_infrastructure_failure_signal(text: str) -> bool:
+    return bool(STRUCTURED_BLOCKED_RE.search(text) and INFRASTRUCTURE_FAILURE_RE.search(text))
+
+
+def is_normal_host_bridge_blocker(text: str) -> bool:
+    return bool(NORMAL_HOST_BRIDGE_RE.search(text))
+
+
 def detect_signal(payload: dict[str, Any]) -> Signal | None:
     source = str(payload.get("source") or "")
     status = str(payload.get("status") or "")
     blocker = str(payload.get("blocker") or payload.get("blocked_by") or "")
-    infrastructure_failure = bool(
-        re.search(
-            r"schema|validator|capabilit|host[_ -]?bridge|task[_ -]?tool|"
-            r"monitor[_ -]?tool|state[_ -]?schema|runtime|install[_ -]?drift|"
-            r"hook|crash[_ -]?budget|missing[_ -]?asset|asset[_ -]?missing",
-            blocker,
-            re.IGNORECASE,
-        )
-    )
+    infrastructure_failure = bool(INFRASTRUCTURE_FAILURE_RE.search(blocker))
     if source == "supervisor_blocked" and status.lower() == "blocked" and infrastructure_failure:
         evidence = "\n".join(flatten_strings(payload))
         return Signal(
@@ -178,7 +192,13 @@ def detect_signal(payload: dict[str, Any]) -> Signal | None:
 
     command_is_crew = bool(command and has_agent_crew_signal(command))
     output_has_bug = has_bug_signal(response_text)
-    if tool_name == "Bash" and command_is_crew and output_has_bug:
+    output_has_infrastructure_failure = has_infrastructure_failure_signal(response_text)
+    if (
+        tool_name == "Bash"
+        and command_is_crew
+        and (output_has_bug or output_has_infrastructure_failure)
+        and not is_normal_host_bridge_blocker(response_text)
+    ):
         summary_source = command or combined
         return Signal(
             source="PostToolUse:Bash",
