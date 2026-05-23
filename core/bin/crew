@@ -852,10 +852,13 @@ cmd_cleanup_state() {
 cmd_agent() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
-usage: crew agent [agent-name] [question]
+usage: crew agent [--host-bridge-command CMD] [agent-name] [question]
 
 Validates the direct-agent request and writes deterministic host handoff state.
 The host prompt runtime still performs the actual read-only analysis.
+Hosts may set AGENT_CREW_HOST_BRIDGE_COMMAND, or pass --host-bridge-command,
+to execute a configured adapter bridge command after handoff creation.
+If the bridge returns zero, command output is marked auto-completed.
 EOF
     return 0
   fi

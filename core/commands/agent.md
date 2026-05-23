@@ -26,10 +26,10 @@ environment state, use `crew:run`.
 ## Syntax
 
 ```text
-crew:agent <agent-name> "task description"   # explicit mode
-crew:agent "task description"                # auto-routing mode
-crew:agent --list                            # list available agents (from agent-routing.md)
-crew:agent --routing                         # show auto-routing rules table
+crew:agent [--host-bridge-command CMD] <agent-name> "task description"   # explicit mode
+crew:agent [--host-bridge-command CMD] "task description"                # auto-routing mode
+crew:agent --list                                                       # list available agents (from agent-routing.md)
+crew:agent --routing                                                    # show auto-routing rules table
 ```
 
 ### Examples
@@ -54,6 +54,19 @@ In **explicit mode**:
               mode: explicit
               task: "explain the current domain model"
 ```
+
+### Host bridge support
+
+You can configure direct-agent auto-resume in one of two ways:
+
+```text
+AGENT_CREW_HOST_BRIDGE_COMMAND="your-host-bridge-command"
+crew:agent --host-bridge-command "your-host-bridge-command" analyst "question"
+```
+
+When a bridge command is configured, the runtime invokes it immediately after
+creating the handoff. A zero exit status marks the request as:
+`HOST_BRIDGE: auto_completed`.
 
 In **auto-routing mode**:
 ```

@@ -338,8 +338,14 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
     )
 
 
-def invoke_host_bridge(command: str, *, task_dir: Path, register: dict,
-                       project_root: Path) -> dict:
+def invoke_host_bridge(
+    command: str,
+    *,
+    task_dir: Path,
+    register: dict,
+    project_root: Path,
+    extra_env: dict | None = None,
+) -> dict:
     env = os.environ.copy()
     env.update({
         "AGENT_CREW_TASK_ID": register["task_id"],
@@ -348,6 +354,8 @@ def invoke_host_bridge(command: str, *, task_dir: Path, register: dict,
         "AGENT_CREW_RESULT_PATH": str(task_dir / "result.md"),
         "AGENT_CREW_PROJECT_ROOT": str(project_root),
     })
+    if extra_env:
+        env.update(extra_env)
     started = datetime.now(timezone.utc)
     proc = subprocess.run(command, shell=True, text=True, capture_output=True, env=env)
     finished = datetime.now(timezone.utc)
@@ -790,6 +798,35 @@ def command_agent(args: argparse.Namespace) -> int:
     print(f"AGENT_REQUEST_ID: {request_id}")
     print(f"AGENT: {agent_name}")
     print(f"REQUEST_DIR: {request_dir}")
+
+    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
+    if bridge_command:
+        bridge_record = invoke_host_bridge(
+            bridge_command,
+            task_dir=request_dir,
+            register={"task_id": request_id},
+            project_root=project_root,
+            extra_env={
+                "AGENT_CREW_AGENT_NAME": agent_name,
+                "AGENT_CREW_AGENT_REQUEST_ID": request_id,
+                "AGENT_CREW_REQUEST_DIR": str(request_dir),
+            },
+        )
+        write_json(request_dir / "context" / "host-bridge-invocation.json", bridge_record)
+        if bridge_record["returncode"] == 0:
+            request["status"] = "auto_completed"
+            write_json(request_dir / "request.json", request)
+            print("STATUS: completed")
+            print("HOST_BRIDGE: auto_completed")
+            return 0
+
+        print("BLOCKER: host AI bridge has not completed this agent request")
+        print(
+            "NEXT: Continue with "
+            f"{request_dir / 'handoff.md'} using your host bridge or run --host-bridge-command for one-off execution."
+        )
+        return 3
+
     print("STATUS: handoff_ready")
     return 0
 
@@ -808,6 +845,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent = sub.add_parser("agent", help="create deterministic direct-agent handoff")
     agent.add_argument("--project-root")
     agent.add_argument("--asset-root")
+    agent.add_argument("--host-bridge-command", default=None)
     agent.add_argument("--list", action="store_true")
     agent.add_argument("--routing", action="store_true")
     agent.add_argument("agent_args", nargs=argparse.REMAINDER)

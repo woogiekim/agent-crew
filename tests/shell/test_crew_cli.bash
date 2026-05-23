@@ -557,6 +557,25 @@ assert_contains "${out}" "\"tasks_completed\": 1"
 assert_contains "${out}" "\"host_bridge_status\": \"auto_completed\""
 assert_contains "${out}" "\"auto_completed\": 1"
 
+it "crew agent host bridge command can auto-complete direct requests"
+AGENT_BRIDGE_LOG="$(make_tmp)/agent-host-bridge.log"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_BRIDGE_LOG="${AGENT_BRIDGE_LOG}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "$AGENT_CREW_AGENT_REQUEST_ID" > "$AGENT_CREW_BRIDGE_LOG"' \
+    bash "${CREW}" agent analyst "direct bridge agent" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "HOST_BRIDGE: auto_completed"
+assert_contains "${out}" "STATUS: completed"
+AGENT_REQUEST_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^AGENT_REQUEST_ID:/ {print $2; exit}')
+AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
+assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
+assert_eq "${AGENT_REQUEST_ID}" "$(cat "${AGENT_BRIDGE_LOG}")"
+
 it "crew agent writes deterministic direct-agent handoff"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "what changed?" 2>&1)
 rc=$?
