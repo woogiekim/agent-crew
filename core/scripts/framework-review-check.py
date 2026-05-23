@@ -69,6 +69,7 @@ def evaluate_repo(root: Path) -> dict:
     workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
     retry_chaos_check = read_text(root / "core/scripts/retry-chaos-check.py")
     telemetry_taxonomy_check = read_text(root / "core/scripts/telemetry-taxonomy-check.py")
+    crew_diagnostics = read_text(root / "core/scripts/crew-diagnostics.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
     auto_issue_reporter = read_text(root / "core/scripts/auto-issue-reporter.py")
     auto_issue_rule = read_text(root / "core/rules/auto-issue-reporting.md")
@@ -367,6 +368,21 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             ),
             "Automatic issue reporting must have regression coverage for real hook surfaces and non-blocking behavior.",
+        ),
+        control(
+            "observability",
+            "automatic_issue_reporting_runtime_smoke",
+            "high",
+            has_all(
+                crew_diagnostics,
+                [
+                    "auto_issue_reporting_probe",
+                    "auto-issue-report.sh",
+                    "UserPromptSubmit",
+                    "hook smoke created native report and outbox record",
+                ],
+            ),
+            "Runtime diagnostics must exercise the real hook-facing automatic issue reporting path.",
         ),
         control(
             "cost_efficiency",
