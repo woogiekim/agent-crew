@@ -7,6 +7,7 @@ python3 - "$INPUT" <<'PYEOF'
 import json
 import re
 import sys
+import os
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
 
@@ -239,22 +240,39 @@ def emit_question_route(target_agent: str, route_reason: str):
 if (
     match(QUESTION_PAT)
     and match(READONLY_REVIEW_PAT)
-    and not match(REVIEW_MUTATION_PAT)
+    and not match(ACTION_PAT)
     and not (match(CONDITIONAL_REVIEW_FIX_PAT) and match(FOLLOWUP_EXECUTION_PAT))
 ):
+    # In non-bridged Codex runtimes, forcing ROUTE here can stall user flow.
+    # If a host bridge is not configured, prefer in-model response.
+    if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
+        # Skip hard route in this host runtime when no bridge is configured.
+        sys.exit(0)
+
     emit_question_route("analyst", "read-only review/evaluation Q")
+
 
 if match(READONLY_REVIEW_PAT) and re.search(
     r"do\s+not\s+edit|read[- ]only|no\s+files?\s+edited|수정하지\s*마|읽기\s*전용",
     prompt,
     re.IGNORECASE,
 ):
+    if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
+        # In non-bridged runtime, avoid hard-routing read-only questions.
+        # Inline handling is safer and prevents handoff stalls.
+        sys.exit(0)
+
     emit_question_route("analyst", "read-only review/evaluation Q")
 
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     # Questions and explanations must go through crew:agent — not inline.
     # Exception: truly atomic facts (bare yes/no, bare path, bare number)
     # that need no explanation are allowed inline.
+    if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
+        # If a host bridge is not configured, answer/handle questions inline.
+        # This avoids [agent-crew] ROUTE dead-ends in plain model sessions.
+        sys.exit(0)
+
     if re.search(TRIVIAL_ATOMIC_PAT, prompt.strip(), re.IGNORECASE):
         sys.exit(0)  # bare atomic fact — inline is fine
 
