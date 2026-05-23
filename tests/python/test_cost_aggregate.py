@@ -52,6 +52,8 @@ class TestCostAggregate:
         assert payload["mode"] == "summary"
         assert payload["task_count"] == 0
         assert payload["total_tokens"] == 0
+        assert payload["telemetry_source"] == "unavailable"
+        assert "no measured token records" in payload["unavailable_reason"]
 
     def test_single_task_aggregated_total_matches(
         self, script_runner, env_with_home, state_dir
@@ -222,6 +224,104 @@ class TestCostAggregate:
         # Table for mode=task starts with "Task:"
         assert "Task:" in r.stdout
         assert "tokens=" in r.stdout
+
+    def test_missing_task_cost_uses_proxy_metrics_when_progress_exists(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """No measured token file: task mode reports proxy telemetry explicitly."""
+        task_id = "20260101-120000-0"
+        task_dir = state_dir / "tasks" / task_id
+        task_dir.mkdir(parents=True)
+        (task_dir / "progress.buffer.jsonl").write_text('{"event":"STARTED"}\n')
+        (task_dir / "tool-events.jsonl").write_text('{"tool":"bash"}\n')
+
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["task"]["telemetry_source"] == "proxy"
+        assert payload["task"]["proxy_metrics"]["progress_events"] == 1
+        assert payload["task"]["proxy_metrics"]["tool_events"] == 1
+
+    def test_missing_task_cost_without_proxy_reports_unavailable_reason(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """No measured or proxy telemetry does not imply zero measured usage."""
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", "20260101-120000-0",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["task"]["telemetry_source"] == "unavailable"
+        assert "no measured token records" in payload["task"]["unavailable_reason"]
+
+    def test_summary_mode_reports_proxy_metrics_without_expanding_all_task_dirs(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Default summary reports proxy availability without noisy task expansion."""
+        task_id = "20260101-120000-0"
+        task_dir = state_dir / "tasks" / task_id
+        task_dir.mkdir(parents=True)
+        (task_dir / "progress.buffer.jsonl").write_text('{"event":"STARTED"}\n')
+
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["task_count"] == 0
+        assert payload["tasks"] == {}
+        assert payload["telemetry_source"] == "proxy"
+        assert payload["proxy_metrics"]["tasks_with_proxy_events"] == 1
+
+    def test_recent_mode_uses_proxy_task_dirs_when_cost_files_are_absent(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Recent cost output still reports proxy telemetry without token JSONL."""
+        task_id = "20260101-120000-0"
+        task_dir = state_dir / "tasks" / task_id
+        task_dir.mkdir(parents=True)
+        (task_dir / "progress.buffer.jsonl").write_text('{"event":"STARTED"}\n')
+
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--recent", "3",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["tasks"][task_id]["telemetry_source"] == "proxy"
+        assert payload["tasks"][task_id]["proxy_metrics"]["progress_events"] == 1
+
+    def test_recent_mode_without_cost_or_proxy_reports_unavailable_reason(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Recent mode with no telemetry does not silently imply zero usage."""
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--recent", "3",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["telemetry_source"] == "unavailable"
+        assert "no measured token records" in payload["unavailable_reason"]
 
     def test_malformed_jsonl_line_skipped(
         self, script_runner, env_with_home, state_dir

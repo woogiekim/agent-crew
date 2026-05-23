@@ -204,6 +204,63 @@
         ],
         "final_phase": "blocked"
       }
+    },
+    {
+      "id": "normal_use_structured_blocker_reports_issue",
+      "task": "Collect status for a task that hit a state schema blocker",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Collect status for a task that hit a state schema blocker",
+        "stages": [
+          "reviewer"
+        ],
+        "completed_stages": 0,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_2",
+        "blocked"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay start"
+        },
+        {
+          "event": "BLOCKED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "blocked",
+          "detail": "state_schema_invalid"
+        }
+      ],
+      "auto_issue_payload": {
+        "source": "supervisor_blocked",
+        "status": "blocked",
+        "blocker": "state_schema_invalid",
+        "task_id": "20260101-000001-0",
+        "detail": "validate-state-schema.py failed during normal status collection"
+      },
+      "expected": {
+        "passed": false,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "auto-issue-reporter.py",
+            "returncode": 0,
+            "status": "recorded",
+            "failures": []
+          }
+        ],
+        "final_phase": "blocked"
+      }
     }
   ]
 }

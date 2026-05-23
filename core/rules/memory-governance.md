@@ -42,9 +42,15 @@ Retrieval must be bounded and auditable:
 
 - fixed latency budget
 - fixed noise budget
+- optional minimum relevance score when the retrieval backend exposes scores
 - expected memory IDs for critical workflows
 - accepted successor IDs when a newer canonical memory supersedes an older one
 - evidence trace recording which memory IDs were reused in the final answer
+
+When scores are available, evaluation fixtures should record the threshold as
+`min_expected_score`. Missing scores for expected or accepted-successor memory
+IDs are a regression in scored retrieval mode because downstream prompts cannot
+distinguish high-confidence recall from keyword coincidence.
 
 ## Prompt Injection Boundary
 

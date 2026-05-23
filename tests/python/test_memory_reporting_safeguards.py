@@ -82,6 +82,26 @@ def test_memory_eval_reports_misses_noise_and_latency_separately():
     assert result["failures"]["latency_ms"] == 20.0
 
 
+def test_memory_eval_enforces_optional_relevance_scores():
+    fixture = {
+        "query": "probe",
+        "expected_memory_ids": ["expected-a", "expected-b"],
+        "latency_budget_ms": 10,
+        "noise_budget_count": 0,
+        "min_expected_score": 0.75,
+    }
+    result = memory_eval.evaluate(
+        fixture,
+        "  [fts] expected-a: useful score=0.74\n"
+        "  [fts] expected-b: useful\n",
+        5.0,
+    )
+
+    assert result["passed"] is False
+    assert result["failures"]["low_scores"] == {"expected-a": 0.74}
+    assert result["failures"]["missing_scores"] == ["expected-b"]
+
+
 def test_memory_eval_accepts_explicit_successor_memories():
     fixture = {
         "query": "probe",

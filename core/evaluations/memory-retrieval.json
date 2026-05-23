@@ -6,6 +6,7 @@
   "accepted_context_headroom": 5,
   "latency_budget_ms": 1500,
   "noise_budget_count": 2,
+  "min_expected_score": 0.1,
   "accepted_context_memory_id_patterns": [
     "commercialization-e2e-[0-9]+-(review|guardrails|remediation|risk-remediation)-[0-9]{8}"
   ],

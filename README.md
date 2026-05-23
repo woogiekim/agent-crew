@@ -189,9 +189,23 @@ paths depending on the active host adapter:
   advisory prompt-workflow guardrails. Treat those as installed compatibility
   assets, not as enforced `hook_system=true` guarantees unless the active
   adapter writes that capability flag.
+- `crew doctor` and `crew config dump --effective` report each capability as
+  `runtime-enforced`, `policy-only`, or `unavailable`. A false capability is not
+  operational support; it means agent-crew will use documented fallback behavior
+  or report the feature as unavailable.
 
 Always inspect `~/.agent-crew/state/{PROJECT_NAME}/capabilities.json` when
 debugging host-specific behavior.
+
+### Task-State Cleanup
+
+Use `crew cleanup-state` to inspect stale active markers, supervisor-pending
+sentinels, and blocked or repaired task-state retention. Dry-run is the default:
+it lists planned archival moves without mutating state. `--apply` archives stale
+marker/sentinel files under `archive/task-state-cleanup`; it does not delete
+blocked or repaired task directories. Those task artifacts are retained as
+diagnostic evidence (`result.md`, `register.json`, `pipeline.json`, progress,
+and `context/`).
 
 ## Testing
 

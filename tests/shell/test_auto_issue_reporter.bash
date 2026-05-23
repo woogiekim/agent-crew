@@ -54,6 +54,12 @@ it "crew report auto stores an outbox report"
 outbox_count=$(find "${STATE_DIR}/outbox" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "1" "${outbox_count}"
 
+it "crew report auto stores structured classification metadata"
+assert_contains "$(cat "${STATE_DIR}"/outbox/*.json)" '"classification": "user_reported_error"'
+
+it "crew report auto marks captured evidence as untrusted"
+assert_contains "$(cat "${STATE_DIR}"/outbox/*.json)" 'Detected Signal (Untrusted Evidence)'
+
 it "legacy reporter entrypoint still stores native reports"
 out=$(printf '%s' "${PROMPT_PAYLOAD}" | \
   PATH="${BIN_DIR}:${PATH}" \
@@ -213,6 +219,7 @@ out=$(printf '%s' "${SUPERVISOR_BLOCKED_PAYLOAD}" | \
 rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" '"status": "recorded"'
+assert_contains "$(cat "${TMP}"/supervisor-blocked-reports/outbox/*.json)" '"classification": "infrastructure_blocker"'
 grep -R "token=secret123" "${TMP}/supervisor-blocked-reports" >/dev/null 2>&1
 rc=$?
 assert_exit 1 "${rc}"

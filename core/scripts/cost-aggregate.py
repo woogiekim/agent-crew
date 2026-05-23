@@ -124,6 +124,38 @@ def read_task_file(path):
     return rows
 
 
+def read_jsonl_count(path):
+    if not path.is_file():
+        return 0
+    count = 0
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        count += 1
+    return count
+
+
+def proxy_metrics_for_task(state_dir, task_id):
+    task_dir = state_dir / "tasks" / task_id
+    progress_events = read_jsonl_count(task_dir / "progress.buffer.jsonl")
+    tool_events = read_jsonl_count(task_dir / "tool-events.jsonl")
+    delegation_events = read_jsonl_count(task_dir / "delegation.jsonl")
+    total_proxy = progress_events + tool_events + delegation_events
+    metrics = {
+        "progress_events": progress_events,
+        "tool_events": tool_events,
+        "delegation_events": delegation_events,
+        "total_proxy_events": total_proxy,
+    }
+    if total_proxy:
+        return "proxy", metrics, ""
+    return "unavailable", metrics, "no measured token records or proxy telemetry events were found"
+
+
 def summarize_rows(rows):
     """Reduce a list of normalized rows to a summary dict."""
     total_in = sum(r["in"]      for r in rows)
@@ -165,51 +197,121 @@ def iter_task_files(state_dir):
     return sorted(cost_dir.glob("*.jsonl"))
 
 
-def mode_task(state_dir, task_id):
-    path = state_dir / "cost" / f"{task_id}.jsonl"
-    rows = read_task_file(path)
+def iter_task_dirs(state_dir):
+    tasks_dir = state_dir / "tasks"
+    if not tasks_dir.is_dir():
+        return []
+    return sorted(path for path in tasks_dir.iterdir() if path.is_dir())
+
+
+def recent_task_ids(state_dir, n):
+    candidates = {}
+    for path in iter_task_files(state_dir):
+        candidates[path.stem] = max(candidates.get(path.stem, 0), path.stat().st_mtime)
+    for path in iter_task_dirs(state_dir):
+        candidates[path.name] = max(candidates.get(path.name, 0), path.stat().st_mtime)
+    return [
+        task_id for task_id, _ in sorted(candidates.items(), key=lambda item: item[1], reverse=True)[:n]
+    ]
+
+
+def summarize_task(state_dir, task_id):
+    rows = read_task_file(state_dir / "cost" / f"{task_id}.jsonl")
     summary = summarize_rows(rows)
     summary["task_id"] = task_id
+    source, proxy, reason = proxy_metrics_for_task(state_dir, task_id)
+    summary["telemetry_source"] = "measured" if rows else source
+    summary["proxy_metrics"] = proxy
+    if not rows and reason:
+        summary["unavailable_reason"] = reason
+    return summary
+
+
+def aggregate_proxy_metrics(state_dir):
+    totals = {
+        "progress_events": 0,
+        "tool_events": 0,
+        "delegation_events": 0,
+        "total_proxy_events": 0,
+        "tasks_with_proxy_events": 0,
+    }
+    for task_dir in iter_task_dirs(state_dir):
+        _, metrics, _ = proxy_metrics_for_task(state_dir, task_dir.name)
+        if metrics["total_proxy_events"]:
+            totals["tasks_with_proxy_events"] += 1
+        for key in ("progress_events", "tool_events", "delegation_events", "total_proxy_events"):
+            totals[key] += metrics[key]
+    return totals
+
+
+def mode_task(state_dir, task_id):
+    summary = summarize_task(state_dir, task_id)
     return {"mode": "task", "task": summary}
 
 
 def mode_session(state_dir, session_id):
     tasks = {}
+    session_task_ids = set()
     for f in iter_task_files(state_dir):
         rows = [r for r in read_task_file(f) if r["session_id"] == session_id]
         if not rows:
             continue
         s = summarize_rows(rows)
         s["task_id"] = f.stem
+        s["telemetry_source"] = "measured"
+        s["proxy_metrics"] = proxy_metrics_for_task(state_dir, f.stem)[1]
         tasks[f.stem] = s
-    return {"mode": "session", "session_id": session_id, "tasks": tasks}
+        session_task_ids.add(f.stem)
+
+    session_file = state_dir / "session.json"
+    try:
+        session = json.loads(session_file.read_text(encoding="utf-8"))
+    except Exception:
+        session = {}
+    if isinstance(session, dict) and session.get("session_id") == session_id:
+        for item in session.get("tasks", []):
+            if isinstance(item, dict) and item.get("task_id"):
+                session_task_ids.add(str(item["task_id"]))
+
+    for task_id in sorted(session_task_ids):
+        tasks.setdefault(task_id, summarize_task(state_dir, task_id))
+
+    result = {"mode": "session", "session_id": session_id, "tasks": tasks}
+    if not tasks:
+        result["telemetry_source"] = "unavailable"
+        result["unavailable_reason"] = "no measured token records or session task proxy telemetry were found"
+    return result
 
 
 def mode_recent(state_dir, n):
-    files = iter_task_files(state_dir)
-    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     out = {}
-    for f in files[:n]:
-        s = summarize_rows(read_task_file(f))
-        s["task_id"] = f.stem
-        out[f.stem] = s
-    return {"mode": "recent", "n": n, "tasks": out}
+    for task_id in recent_task_ids(state_dir, n):
+        out[task_id] = summarize_task(state_dir, task_id)
+    result = {"mode": "recent", "n": n, "tasks": out}
+    if not out:
+        result["telemetry_source"] = "unavailable"
+        result["unavailable_reason"] = "no measured token records or task proxy telemetry were found"
+    return result
 
 
 def mode_default(state_dir):
     tasks = {}
-    for f in iter_task_files(state_dir):
-        s = summarize_rows(read_task_file(f))
-        s["task_id"] = f.stem
-        tasks[f.stem] = s
+    for task_id in sorted(path.stem for path in iter_task_files(state_dir)):
+        tasks[task_id] = summarize_task(state_dir, task_id)
     grand_in  = sum(t["input_tokens"]  for t in tasks.values())
     grand_out = sum(t["output_tokens"] for t in tasks.values())
+    measured = any(t["telemetry_source"] == "measured" for t in tasks.values())
+    proxy_metrics = aggregate_proxy_metrics(state_dir)
+    proxy = proxy_metrics["total_proxy_events"] > 0
     return {
         "mode": "summary",
         "task_count": len(tasks),
         "input_tokens": grand_in,
         "output_tokens": grand_out,
         "total_tokens": grand_in + grand_out,
+        "telemetry_source": "measured" if measured else "proxy" if proxy else "unavailable",
+        "proxy_metrics": proxy_metrics,
+        "unavailable_reason": "" if measured or proxy else "no measured token records or task proxy telemetry were found",
         "tasks": tasks,
     }
 
@@ -224,6 +326,17 @@ def format_table(result):
         lines.append(f"  calls={t['calls']}  tokens={t['total_tokens']:,}"
                      f"  ({t['input_tokens']:,} in / {t['output_tokens']:,} out)")
         lines.append(f"  budget={t['task_budget']:,}  consumed={t['pct_consumed']}%")
+        lines.append(f"  telemetry_source={t.get('telemetry_source', 'measured')}")
+        if t.get("telemetry_source") == "proxy":
+            proxy = t.get("proxy_metrics", {})
+            lines.append(
+                "  proxy_metrics="
+                f"progress_events={proxy.get('progress_events', 0)} "
+                f"tool_events={proxy.get('tool_events', 0)} "
+                f"delegation_events={proxy.get('delegation_events', 0)}"
+            )
+        elif t.get("telemetry_source") == "unavailable":
+            lines.append(f"  unavailable_reason={t.get('unavailable_reason', 'unknown')}")
         if t["by_agent"]:
             lines.append("  by agent:")
             for agent, d in sorted(t["by_agent"].items()):
@@ -232,13 +345,39 @@ def format_table(result):
     elif mode in ("session", "recent", "summary"):
         if mode == "summary":
             lines.append(f"Tasks: {result['task_count']}  tokens={result['total_tokens']:,}")
+            lines.append(f"telemetry_source={result.get('telemetry_source', 'measured')}")
+            if result.get("telemetry_source") == "proxy":
+                proxy = result.get("proxy_metrics", {})
+                lines.append(
+                    "proxy_metrics="
+                    f"tasks_with_proxy_events={proxy.get('tasks_with_proxy_events', 0)} "
+                    f"progress_events={proxy.get('progress_events', 0)} "
+                    f"tool_events={proxy.get('tool_events', 0)} "
+                    f"delegation_events={proxy.get('delegation_events', 0)}"
+                )
+            elif result.get("telemetry_source") == "unavailable":
+                lines.append(f"unavailable_reason={result.get('unavailable_reason', 'unknown')}")
         elif mode == "session":
             lines.append(f"Session: {result['session_id']}")
         else:
             lines.append(f"Recent {result['n']} tasks:")
+        if not result.get("tasks") and result.get("telemetry_source") == "unavailable":
+            lines.append(f"  telemetry_source=unavailable")
+            lines.append(f"  unavailable_reason={result.get('unavailable_reason', 'unknown')}")
         for tid, t in sorted(result.get("tasks", {}).items(), reverse=True):
             lines.append(f"  {tid}  tokens={t['total_tokens']:>9,}"
-                         f"  budget={t['task_budget']:>9,}  ({t['pct_consumed']}%)")
+                         f"  budget={t['task_budget']:>9,}  ({t['pct_consumed']}%)"
+                         f"  telemetry_source={t.get('telemetry_source', 'measured')}")
+            if t.get("telemetry_source") == "proxy":
+                proxy = t.get("proxy_metrics", {})
+                lines.append(
+                    "    proxy_metrics="
+                    f"progress_events={proxy.get('progress_events', 0)} "
+                    f"tool_events={proxy.get('tool_events', 0)} "
+                    f"delegation_events={proxy.get('delegation_events', 0)}"
+                )
+            elif t.get("telemetry_source") == "unavailable":
+                lines.append(f"    unavailable_reason={t.get('unavailable_reason', 'unknown')}")
     return "\n".join(lines) + "\n"
 
 

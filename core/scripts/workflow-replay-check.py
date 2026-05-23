@@ -55,8 +55,8 @@ def load_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     return data, None
 
 
-def run_tool(command: list[str], *, cwd: Path, env: dict[str, str]) -> dict[str, Any]:
-    proc = subprocess.run(command, cwd=str(cwd), env=env, text=True, capture_output=True)
+def run_tool(command: list[str], *, cwd: Path, env: dict[str, str], stdin: str = "") -> dict[str, Any]:
+    proc = subprocess.run(command, cwd=str(cwd), env=env, input=stdin, text=True, capture_output=True)
     payload: dict[str, Any] = {}
     if proc.stdout.strip():
         try:
@@ -231,6 +231,13 @@ def replay_case(case: dict[str, Any], repo_root: Path) -> dict[str, Any]:
                 "--format",
                 "json",
             ],
+            "auto-issue-reporter.py": [
+                sys.executable,
+                str(repo_root / "core" / "scripts" / "auto-issue-reporter.py"),
+                "auto",
+                "--format",
+                "json",
+            ],
         }
 
         tool_results: list[dict[str, Any]] = []
@@ -240,15 +247,29 @@ def replay_case(case: dict[str, Any], repo_root: Path) -> dict[str, Any]:
             if command is None:
                 failures.append(f"unknown_expected_tool:{tool_name}")
                 continue
-            result = run_tool(command, cwd=repo_root, env=env)
+            stdin = ""
+            if tool_name == "auto-issue-reporter.py":
+                payload = expected_tool.get("payload")
+                if payload is None:
+                    payload = case.get("auto_issue_payload")
+                stdin = json.dumps(payload or {}, ensure_ascii=False)
+                env["AGENT_CREW_AUTO_ISSUE_STATE_DIR"] = str(state_dir / "reports")
+                env["AGENT_CREW_REPORT_PUBLISH"] = "none"
+                env["AGENT_CREW_TASK_ID"] = "20260101-000001-0"
+            result = run_tool(command, cwd=repo_root, env=env, stdin=stdin)
             codes = failure_codes(result)
             expected_rc = expected_tool.get("returncode")
             expected_failure_codes = [str(item) for item in expected_tool.get("failures", [])]
+            expected_status = expected_tool.get("status")
             if expected_rc is not None and result["returncode"] != expected_rc:
                 failures.append(f"{tool_name}:returncode:{result['returncode']}!=expected:{expected_rc}")
             if not compare_list_exact(expected_failure_codes, codes):
                 failures.append(
                     f"{tool_name}:failure_codes:{sorted(codes)}!=expected:{sorted(expected_failure_codes)}"
+                )
+            if expected_status is not None and str(result["payload"].get("status")) != str(expected_status):
+                failures.append(
+                    f"{tool_name}:status:{result['payload'].get('status')}!=expected:{expected_status}"
                 )
             tool_results.append({
                 "tool": tool_name,
@@ -256,6 +277,8 @@ def replay_case(case: dict[str, Any], repo_root: Path) -> dict[str, Any]:
                 "expected_returncode": expected_rc,
                 "failure_codes": codes,
                 "expected_failures": expected_failure_codes,
+                "status": result["payload"].get("status"),
+                "expected_status": expected_status,
             })
 
     transitions = [str(item) for item in case.get("state_transitions") or []]

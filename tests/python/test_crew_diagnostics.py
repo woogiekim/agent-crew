@@ -30,3 +30,26 @@ def test_auto_issue_reporting_probe_exercises_hook_path(tmp_path: Path):
 
     assert ok is True
     assert "hook smoke created native report" in detail
+
+
+def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / "home"
+    state = home / "state" / project.name
+    state.mkdir(parents=True)
+    (state / "capabilities.json").write_text(
+        '{"adapter":"codex","task_tools":false,"cost_tracking":false}\n',
+        encoding="utf-8",
+    )
+    args = type("Args", (), {
+        "project_root": str(project),
+        "asset_root": str(REPO_ROOT / "core"),
+        "agent_crew_home": str(home),
+    })()
+
+    cfg = diagnostics.effective_config(args)
+
+    reports = {item["name"]: item for item in cfg["capability_reports"]}
+    assert reports["task_tools"]["status"] == "policy-only"
+    assert reports["cost_tracking"]["status"] == "policy-only"
