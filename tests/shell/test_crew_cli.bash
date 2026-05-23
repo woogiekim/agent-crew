@@ -437,6 +437,12 @@ assert_contains "${result}" "host AI bridge has not completed this handoff"
 it "crew run blocked result includes concise next step guidance"
 assert_contains "${result}" "NEXT: Continue with"
 
+it "crew run blocked result explains native runtime bridge behavior"
+assert_contains "${result}" "DETAIL: host bridge command was not invoked automatically in this runtime."
+
+it "crew run blocked result suggests bridge command configuration"
+assert_contains "${result}" "set AGENT_CREW_HOST_BRIDGE_COMMAND"
+
 it "crew run blocked result avoids verbose fallback narration"
 assert_not_contains "${result}" "If the host bridge is unavailable"
 assert_not_contains "${result}" "so `crew telemetry` no longer reports"

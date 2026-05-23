@@ -183,11 +183,20 @@ def render_quality_loop_blocked_result(
     )
 
 
-def host_bridge_next_line(task_dir: Path, task_id: str) -> str:
-    return (
-        f"NEXT: Continue with {task_dir / 'handoff.md'}, then run "
-        f"`crew repair {task_id} --status completed --note \"<summary>\"`.\n"
-    )
+def host_bridge_next_line(task_dir: Path, task_id: str, bridge_command_present: bool) -> str:
+    handoff_path = str(task_dir / "handoff.md")
+    lines = [
+        f"NEXT: Continue with {handoff_path}, then run "
+        f"`crew repair {task_id} --status completed --note \"<summary>\"`.",
+        "DETAIL: host bridge command was not invoked automatically in this runtime.",
+    ]
+    if not bridge_command_present:
+        lines.append(
+            "DETAIL: set AGENT_CREW_HOST_BRIDGE_COMMAND to the host adapter's "
+            "bridge command, or pass --host-bridge-command for one-off runs."
+        )
+    lines.append("DETAIL: if this is a deliberate manual run, this is expected.")
+    return "\n".join(lines) + "\n"
 
 
 def mark_quality_loop_blocked(
@@ -465,7 +474,6 @@ def command_run(args: argparse.Namespace) -> int:
         blocked_by = ["missing_quality_loop_pipeline"]
     elif result_status != "completed":
         blocked_by = ["host_bridge_not_invoked"]
-    blocked_next = host_bridge_next_line(task_dir, task_id)
     quality_next = (
         "NEXT: A mutating implementation task can only be auto-completed after "
         "the host runtime leaves pipeline-level quality-loop evidence in "
@@ -479,6 +487,7 @@ def command_run(args: argparse.Namespace) -> int:
         host_bridge_status = "fake_completed"
     else:
         host_bridge_status = "pending" if bridge_command else "not_invoked"
+    blocked_next = host_bridge_next_line(task_dir, task_id, bool(bridge_command))
 
     register = {
         "schema_version": 1,
@@ -544,7 +553,7 @@ def command_run(args: argparse.Namespace) -> int:
             result += quality_next
         else:
             result += "BLOCKER: host AI bridge has not completed this handoff\n"
-            result += blocked_next
+        result += blocked_next
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)

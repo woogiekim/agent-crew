@@ -2315,3 +2315,29 @@ crew:run "resolve merge conflicts"
   "implement", "fix", etc.) falls through to the regular pipeline. See
   Step 1.7 for the full pattern list, exclusion rules, and per-intent
   dispatch table.
+
+### Host Bridge Handoff Troubleshooting
+
+When a run is blocked with:
+
+- `BLOCKER: host AI bridge has not completed this handoff`
+
+use this sequence:
+
+1. Open the task output:
+   - `TASK_DIR` from run output
+   - `cat "${TASK_DIR}/result.md"`
+2. In non-hosted/native runs, this is normal. Complete manually:
+   - `crew repair <TASK_ID> --status completed --note "<summary>"`
+3. For auto-completion:
+   - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` to your host adapter's bridge
+     command, or
+   - Pass `--host-bridge-command "<command>"` on `crew run`.
+4. Re-check task state:
+   - `crew status --json --task-id <TASK_ID>`
+   - `crew telemetry --format json --task-id <TASK_ID>`
+5. If bridge blockers keep recurring in normal hosted runs, collect diagnostics:
+   - `crew report auto --summary "host bridge blocker pattern"`
+
+This section exists for operator troubleshooting; normal run output intentionally
+stays concise.
