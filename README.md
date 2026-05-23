@@ -841,9 +841,9 @@ If a run is blocked with:
 
 `BLOCKER: host AI bridge has not completed this handoff`
 
-see the one-page SOP for operator recovery and diagnostics:
+follow the one-page recovery SOP:
 
-- [Host Bridge Handoff SOP](core/docs/host-bridge-handoff-sop.md)
+- [Host Bridge Handoff Recovery SOP](core/docs/host-bridge-handoff-sop.md)
 
 ## State Layout
 
