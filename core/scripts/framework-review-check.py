@@ -50,6 +50,7 @@ def evaluate_repo(root: Path) -> dict:
     pipeline_rule = read_text(root / "core/rules/state-files/pipeline-json.md")
     supervisor = read_text(root / "core/agents/supervisor.md")
     supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
+    supervisor_stages = read_text(root / "core/agents/supervisor-stages.md")
     supervisor_retry = read_text(root / "core/agents/supervisor-retry.md")
     reviewer = read_text(root / "core/agents/reviewer.md")
     memory_wrapper = read_text(root / "core/bin/memory")
@@ -64,6 +65,10 @@ def evaluate_repo(root: Path) -> dict:
     agent_manifest = read_json(root / "core/policies/agent-capabilities.json")
     agent_manifest_text = read_text(root / "core/policies/agent-capabilities.json")
     prompt_injection_rule = read_text(root / "core/rules/prompt-injection-defense.md")
+    runtime_governance_rule = read_text(root / "core/rules/runtime-governance.md")
+    tool_sandboxing_rule = read_text(root / "core/rules/tool-sandboxing.md")
+    progress_buffer_rule = read_text(root / "core/rules/state-files/progress-buffer-jsonl.md")
+    register_rule = read_text(root / "core/rules/state-files/register-json.md")
     capability_check = read_text(root / "core/scripts/agent-capability-check.py")
     pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
     workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
@@ -151,6 +156,25 @@ def evaluate_repo(root: Path) -> dict:
             "User-owned agents must have safe default and explicit non-default capability profiles enforced by preflight.",
         ),
         control(
+            "architecture",
+            "runtime_governance_contract",
+            "high",
+            exists(root, "core/rules/runtime-governance.md")
+            and has_all(
+                runtime_governance_rule,
+                [
+                    "pipeline.json",
+                    "register.json",
+                    "progress.buffer.jsonl",
+                    "tool-events.jsonl",
+                    "delegation.jsonl",
+                    "result.md",
+                    "Machine decisions must prefer the structured",
+                ],
+            ),
+            "Runtime governance must identify the authoritative state, trace, delegation, and terminal-output surfaces.",
+        ),
+        control(
             "performance",
             "slo_fixture_present",
             "high",
@@ -209,6 +233,15 @@ def evaluate_repo(root: Path) -> dict:
         ),
         control(
             "reliability",
+            "explicit_state_transition_replay_contract",
+            "high",
+            has_all(runtime_governance_rule, ["finite state machine", "Unknown states are a governance failure"])
+            and has_all(register_rule, ["current_phase", "approval_status", "verification_status", "blocked_by"])
+            and has_all(workflow_replay_check, ["ALLOWED_TRANSITIONS", "invalid_transition", "non_terminal_final_state"]),
+            "Workflow states must be explicit enough for replay to reject unknown, invalid, or non-terminal transitions.",
+        ),
+        control(
+            "reliability",
             "retry_chaos_recovery",
             "high",
             exists(root, "core/scripts/retry-chaos-check.py")
@@ -223,6 +256,23 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             ),
             "Retry chaos tests must simulate crash, token truncation, reviewer loop-back, and host-blocked recovery.",
+        ),
+        control(
+            "reliability",
+            "context_compression_pageout",
+            "high",
+            has_all(
+                supervisor,
+                [
+                    "Do not keep file contents inline in context",
+                    "Immediately compact when context usage reaches 60%",
+                    "Token-Limit Recovery Rule",
+                ],
+            )
+            and has_all(supervisor, ["HANDOFF_PAGEOUT", "HANDOFF_PAGEDOUT"])
+            and has_all(supervisor_stages, ["AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD", "archive/handoff"])
+            and has_all(runtime_governance_rule, ["Context Compression", "archived handoff files"]),
+            "Supervisors must page out large context and preserve replay coordinates instead of carrying inline file contents.",
         ),
         control(
             "memory_governance",
@@ -256,6 +306,16 @@ def evaluate_repo(root: Path) -> dict:
             "Memory lifecycle must be operationalized by a dry-run-first GC and retrieval eviction command.",
         ),
         control(
+            "memory_governance",
+            "retrieval_scoring_contract",
+            "high",
+            has_all(memory_rule, ["relevance", "recency", "trust", "task", "similarity"])
+            and has_all(memory_gc, ["trust_score", "score", "duplicate", "low_score"])
+            and has_all(memory_fixture, ["accepted_successor_memory_ids", "noise_budget_count", "latency_budget_ms"])
+            and has_all(runtime_governance_rule, ["Retrieval Scoring", "recall", "precision", "freshness", "performance"]),
+            "Retrieval must score by relevance/recency/trust/task similarity and test recall, precision, freshness, and latency budgets.",
+        ),
+        control(
             "security",
             "forbidden_tool_policy",
             "high",
@@ -278,6 +338,27 @@ def evaluate_repo(root: Path) -> dict:
         ),
         control(
             "security",
+            "tool_sandboxing_contract",
+            "high",
+            exists(root, "core/rules/tool-sandboxing.md")
+            and has_all(
+                tool_sandboxing_rule,
+                [
+                    "Capability manifest",
+                    "Pipeline preflight",
+                    "Direct-edit guard",
+                    "Dangerous-command guard",
+                    "Forbidden-command guard",
+                    "Command-Bound Approval",
+                    "does not claim to provide an operating-system sandbox",
+                ],
+            )
+            and has_all(agent_manifest_text, ["allowed_capabilities", "denied_capabilities", "destructive_requires_approval"])
+            and has_all(guard, ["audit(event)", "approval_command_mismatch", "FORBIDDEN_PATTERNS"]),
+            "Tool sandboxing must be explicit about workflow policy layers, command-bound approval, and the host/OS boundary.",
+        ),
+        control(
+            "security",
             "prompt_injection_defense",
             "high",
             has_all(
@@ -292,6 +373,15 @@ def evaluate_repo(root: Path) -> dict:
             "Retrieved and external context must be isolated from executable instructions.",
         ),
         control(
+            "security",
+            "prompt_injection_runtime_boundary",
+            "high",
+            has_all(runtime_governance_rule, ["External content", "retrieved memory", "tool output", "untrusted data"])
+            and has_all(prompt_injection_rule, ["Trust Order", "untrusted data", "must not execute instructions"])
+            and has_all(auto_issue_reporter, ["redact", "compact_text", "SECRET_PATTERNS"]),
+            "Runtime issue text, memory, and external content must remain non-executable and redacted when reported.",
+        ),
+        control(
             "observability",
             "telemetry_and_trace",
             "high",
@@ -299,6 +389,18 @@ def evaluate_repo(root: Path) -> dict:
             and "progress.buffer.jsonl" in supervisor
             and "trace_id" in supervisor,
             "Workflow timing, retry, blocker, token, and trace state must be observable.",
+        ),
+        control(
+            "observability",
+            "structured_output_traceability",
+            "high",
+            has_all(
+                progress_buffer_rule,
+                ["trace_id", "tool-events.jsonl", "delegation.jsonl", "Consumer Contract", "Schema validator"]
+            )
+            and has_all(runtime_governance_rule, ["Structured Outputs", "STATUS:", "PLAN:", "REVIEW:", "JSONL"])
+            and has_all(supervisor_bootstrap, ["progress.buffer.jsonl", "json.dumps", "trace_id"]),
+            "Runtime outputs that drive status, approvals, review, and telemetry must be structured and trace-correlated.",
         ),
         control(
             "observability",
@@ -349,6 +451,15 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             ),
             "Automatic issue reporting must preserve local reports, dedupe, redact secrets, detect infrastructure blockers, and never block workflow execution.",
+        ),
+        control(
+            "observability",
+            "automatic_issue_reporting_runtime_issue_contract",
+            "high",
+            has_all(runtime_governance_rule, ["Automatic Issue Reporting", "Unexpected runtime infrastructure blockers"])
+            and has_all(auto_issue_reporter, ["supervisor_blocked", "STRUCTURED_BLOCKED_RE", "INFRASTRUCTURE_FAILURE_RE"])
+            and has_all(auto_issue_rule, ["infrastructure blocker", "must not block", "outbox"]),
+            "Runtime infrastructure blockers must be reportable without fabricating publication success or blocking execution.",
         ),
         control(
             "observability",
