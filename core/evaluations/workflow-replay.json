@@ -261,6 +261,297 @@
         ],
         "final_phase": "blocked"
       }
+    },
+    {
+      "id": "interrupted_supervisor_resume_state",
+      "task": "Resume an interrupted supervisor after Phase 2 started",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Resume an interrupted supervisor after Phase 2 started",
+        "stages": [
+          {
+            "agents": [
+              "backend"
+            ],
+            "tdd_parallel": true
+          },
+          "reviewer"
+        ],
+        "completed_stages": 1,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1bc",
+        "phase_2",
+        "phase_3",
+        "completed"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay interrupted supervisor"
+        },
+        {
+          "event": "RESUME_REQUESTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "in_progress",
+          "detail": "resume requested"
+        },
+        {
+          "event": "STAGE_DONE",
+          "stage": 2,
+          "agent": "reviewer",
+          "status": "completed",
+          "detail": "REVIEW: APPROVED"
+        }
+      ],
+      "expected": {
+        "passed": true,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          },
+          {
+            "tool": "pipeline-capability-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "completed"
+      }
+    },
+    {
+      "id": "stale_host_bridge_state_is_blocked",
+      "task": "Detect stale host bridge fallback state",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Detect stale host bridge fallback state",
+        "stages": [
+          "reviewer"
+        ],
+        "completed_stages": 0,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_2",
+        "blocked"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay stale host bridge"
+        },
+        {
+          "event": "BLOCKED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "blocked",
+          "detail": "blocker=host_bridge_not_invoked"
+        }
+      ],
+      "expected": {
+        "passed": false,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "blocked"
+      }
+    },
+    {
+      "id": "failed_reviewer_retry_blocks_quality_loop",
+      "task": "Implement backend code with reviewer retry exhaustion",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Implement backend code with reviewer retry exhaustion",
+        "stages": [
+          {
+            "agents": [
+              "backend"
+            ],
+            "tdd_parallel": true
+          },
+          "reviewer"
+        ],
+        "completed_stages": 1,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1bc",
+        "phase_2",
+        "blocked"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay failed reviewer retry"
+        },
+        {
+          "event": "RETRY",
+          "stage": 2,
+          "agent": "reviewer",
+          "attempt": 2,
+          "status": "retry",
+          "detail": "reviewer_rejected reason=tests_failed"
+        },
+        {
+          "event": "BLOCKED",
+          "stage": 2,
+          "agent": "reviewer",
+          "status": "blocked",
+          "detail": "quality_loop_exhausted"
+        }
+      ],
+      "expected": {
+        "passed": false,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "blocked"
+      }
+    },
+    {
+      "id": "dynamic_agent_creation_is_replayed",
+      "task": "Create and run a custom docs auditor agent",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Create and run a custom docs auditor agent",
+        "stages": [
+          "planner",
+          "docs-auditor"
+        ],
+        "completed_stages": 0,
+        "needs_creation": [
+          "docs-auditor"
+        ]
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1bc",
+        "phase_1d",
+        "phase_1_5",
+        "phase_2",
+        "phase_3",
+        "completed"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay dynamic agent creation"
+        },
+        {
+          "event": "STAGE_DONE",
+          "stage": 2,
+          "agent": "docs-auditor",
+          "status": "completed",
+          "detail": "custom agent completed"
+        }
+      ],
+      "expected": {
+        "passed": true,
+        "tool_flow": [],
+        "final_phase": "completed"
+      }
+    },
+    {
+      "id": "cleanup_archive_then_resume",
+      "task": "Resume after cleanup archived stale markers",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Resume after cleanup archived stale markers",
+        "stages": [
+          {
+            "agents": [
+              "backend"
+            ],
+            "tdd_parallel": true
+          },
+          "reviewer"
+        ],
+        "completed_stages": 1,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_2",
+        "phase_3",
+        "completed"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay cleanup archive resume"
+        },
+        {
+          "event": "RESUME_REQUESTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "in_progress",
+          "detail": "resume after cleanup archive"
+        },
+        {
+          "event": "STAGE_DONE",
+          "stage": 2,
+          "agent": "reviewer",
+          "status": "completed",
+          "detail": "REVIEW: APPROVED"
+        }
+      ],
+      "expected": {
+        "passed": true,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "completed"
+      }
     }
   ]
 }

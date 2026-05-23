@@ -72,6 +72,29 @@ def discover(state_dir: Path, min_age_seconds: int) -> list[dict]:
     return items
 
 
+def summarize(items: list[dict]) -> dict:
+    counts = {
+        "stale_active_markers": 0,
+        "stale_supervisor_pending_sentinels": 0,
+        "retained_task_directories": 0,
+        "planned_archival_targets": 0,
+        "destructive_deletions": 0,
+    }
+    for item in items:
+        kind = item.get("kind")
+        if kind == "stale_active_marker":
+            counts["stale_active_markers"] += 1
+            counts["planned_archival_targets"] += 1
+        elif kind == "stale_supervisor_pending":
+            counts["stale_supervisor_pending_sentinels"] += 1
+            counts["planned_archival_targets"] += 1
+        elif kind == "task_retention_policy":
+            counts["retained_task_directories"] += 1
+        if item.get("destructive"):
+            counts["destructive_deletions"] += 1
+    return counts
+
+
 def archive_item(state_dir: Path, item: dict) -> str:
     source = Path(item["path"])
     archive_root = state_dir / "archive" / "task-state-cleanup"
@@ -107,6 +130,7 @@ def main() -> int:
         "schema_version": 1,
         "mode": "apply" if args.apply else "dry-run",
         "state_dir": str(state_dir),
+        "summary": summarize(items),
         "planned_changes": items,
         "archived": archived,
         "policy": {
@@ -121,6 +145,14 @@ def main() -> int:
     else:
         print(f"mode: {payload['mode']}")
         print(f"planned_changes: {len(items)}")
+        summary = payload["summary"]
+        print(
+            "stale_counts: "
+            f"active_markers={summary['stale_active_markers']} "
+            f"supervisor_pending={summary['stale_supervisor_pending_sentinels']} "
+            f"archival_targets={summary['planned_archival_targets']} "
+            f"retained_tasks={summary['retained_task_directories']}"
+        )
         print("policy: archival moves markers; blocked/repaired task evidence is retained; destructive deletion is not performed")
         for item in items:
             label = item.get("task_id") or Path(item["path"]).name

@@ -26,6 +26,13 @@ def _write_coverage_files(state_dir: Path, task_id: str) -> None:
     (cost_dir / f"{task_id}.jsonl").write_text('{"input_tokens":1,"output_tokens":1}\n', encoding="utf-8")
 
 
+def _mark_current_contract(task_dir: Path) -> None:
+    (task_dir / "register.json").write_text(
+        json.dumps({"schema_version": 1, "telemetry_schema_version": 1}) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _run(state_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -53,6 +60,7 @@ def test_telemetry_taxonomy_check_accepts_known_retry_labels(tmp_path: Path):
             {"event": "BLOCKED", "detail": "quality_loop_exhausted"},
         ],
     )
+    _mark_current_contract(task_dir)
     _write_coverage_files(state_dir, "20260523-010203-0")
 
     result = _run(state_dir)
@@ -107,6 +115,7 @@ def test_telemetry_taxonomy_check_rejects_empty_event_stream(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_dir = state_dir / "tasks" / "20260523-010203-0"
     task_dir.mkdir(parents=True)
+    _mark_current_contract(task_dir)
     (task_dir / "progress.buffer.jsonl").write_text("", encoding="utf-8")
 
     result = _run(state_dir)
@@ -131,6 +140,7 @@ def test_telemetry_taxonomy_check_reports_weak_coverage_categories(tmp_path: Pat
     state_dir = tmp_path / "state"
     task_dir = state_dir / "tasks" / "20260523-010203-0"
     _write_progress(task_dir, [{"event": "RETRY", "detail": "token_truncation"}])
+    _mark_current_contract(task_dir)
 
     result = _run(state_dir)
 
@@ -138,3 +148,35 @@ def test_telemetry_taxonomy_check_reports_weak_coverage_categories(tmp_path: Pat
     payload = json.loads(result.stdout)
     assert payload["failures"][0]["code"] == "weak_telemetry_coverage"
     assert set(payload["failures"][0]["weak_categories"]) == {"tool", "delegation", "token"}
+
+
+def test_telemetry_taxonomy_check_separates_legacy_warnings(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = state_dir / "tasks" / "legacy-task"
+    task_dir.mkdir(parents=True)
+    (task_dir / "progress.log").write_text("2026-01-01T00:00:00 | STARTED | legacy\n", encoding="utf-8")
+
+    result = _run(state_dir)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["summary"]["legacy_compatible_tasks"] == 1
+    assert payload["historical_compatibility_warnings"][0]["code"] == "insufficient_telemetry_coverage"
+    assert payload["current_schema_failures"] == []
+
+
+def test_telemetry_taxonomy_check_treats_unmarked_weak_stream_as_legacy_warning(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "state"
+    task_dir = state_dir / "tasks" / "20260523-010203-0"
+    _write_progress(task_dir, [{"event": "RETRY", "detail": "token_truncation"}])
+
+    result = _run(state_dir)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["historical_compatibility_warnings"][0]["code"] == "weak_telemetry_coverage"
+    assert payload["current_schema_failures"] == []

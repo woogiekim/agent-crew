@@ -29,6 +29,9 @@ def test_cleanup_task_state_dry_run_lists_stale_markers_without_mutation(
     payload = json.loads(r.stdout)
     kinds = {item["kind"] for item in payload["planned_changes"]}
     assert {"stale_active_marker", "stale_supervisor_pending"}.issubset(kinds)
+    assert payload["summary"]["stale_active_markers"] == 1
+    assert payload["summary"]["stale_supervisor_pending_sentinels"] == 1
+    assert payload["summary"]["planned_archival_targets"] == 2
     assert marker.exists()
     assert pending.exists()
     assert payload["policy"]["destructive_deletion"] == "not performed by this command"
