@@ -123,3 +123,32 @@ def test_stale_state_summary_passes_when_no_cleanup_targets(tmp_path: Path):
     assert summary["status"] == "pass"
     assert summary["summary"]["planned_archival_targets"] == 0
     assert summary["recommendation"] == ""
+
+
+def test_host_bridge_command_probe_is_reflected_in_diagnostics(monkeypatch):
+    monkeypatch.delenv("AGENT_CREW_HOST_BRIDGE_COMMAND", raising=False)
+
+    args = type("Args", (), {
+        "project_root": str(Path(__file__).resolve().parent.parent.parent),
+        "asset_root": str(Path(__file__).resolve().parent.parent.parent / "core"),
+        "agent_crew_home": str(Path(__file__).resolve().parent.parent.parent),
+        "format": "text",
+    })()
+    findings = diagnostics.doctor_host(args)
+    status_line = [item for item in findings if item["label"] == "host bridge command readiness"][0]
+    assert status_line["status"] == "warn"
+
+
+def test_host_bridge_command_probe_prefers_env_var(tmp_path: Path):
+    tmp_bridge = tmp_path / "bridge.sh"
+    tmp_bridge.write_text("#!/bin/sh\necho bridge\n", encoding="utf-8")
+    tmp_bridge.chmod(0o755)
+
+    ok, detail = diagnostics.host_bridge_command_probe(
+        Path(__file__).resolve().parent.parent.parent / "core",
+        env={
+            "AGENT_CREW_HOST_BRIDGE_COMMAND": str(tmp_bridge),
+        },
+    )
+    assert ok is True
+    assert "host bridge ready" in detail

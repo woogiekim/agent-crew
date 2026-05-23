@@ -252,6 +252,13 @@ def emit_question_route(target_agent: str, route_reason: str):
         f"The ONLY permitted inline response is a bare atomic fact: "
         f"literal yes/no, a bare file path, or a bare single number with no explanation."
     )
+    if not HOST_BRIDGE_READY:
+        question_directive += (
+            "\n\nHost bridge is unavailable ("
+            f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
+            "\nIf this blocks downstream handoff completion, set "
+            "AGENT_CREW_HOST_BRIDGE_COMMAND or pass --host-bridge-command before re-running."
+        )
     question_output = {
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
@@ -262,31 +269,9 @@ def emit_question_route(target_agent: str, route_reason: str):
     sys.exit(0)
 
 
-def emit_inline_no_bridge_note(reason: str, issue: str):
-    """Handle questions inline when host bridge is unavailable."""
-    inline_directive = (
-        f"[agent-crew] INLINE — non-bridged runtime for {reason}.\\n\\n"
-        f"Host bridge is unavailable ({issue}).\\n"
-        "Handle the request inline in the current model turn.\\n\\n"
-        "If the prompt contains Hangul, normalize it first per "
-        "core/rules/korean-input.md before planning or answering."
-    )
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": inline_directive,
-        }
-    }
-    print(json.dumps(output, ensure_ascii=True))
-    sys.exit(0)
-
-
 def emit_no_bridge_inline_fallback(reason: str):
-    """If host bridge is unavailable, process inline and stop routing."""
-    if not HOST_BRIDGE_READY:
-        emit_inline_no_bridge_note(reason, HOST_BRIDGE_REASON)
-        return True
-    return False
+    """Compatibility shim for callsites that previously short-circuited inline."""
+    return not HOST_BRIDGE_READY
 
 
 if (
@@ -500,6 +485,13 @@ CODEX SKILL WORKFLOW:
    into the workflow so Step 5 requirements and supervisor prompts retain it.
 
 Enter the crew-run workflow now."""
+if not HOST_BRIDGE_READY:
+    directive += (
+        "\n\nHost bridge is unavailable ("
+        f"{HOST_BRIDGE_REASON}). Crew handoff will require manual follow-up."
+        "\nIf this blocks downstream completion, set AGENT_CREW_HOST_BRIDGE_COMMAND "
+        "or pass --host-bridge-command before re-running."
+    )
 
 output = {
     "hookSpecificOutput": {

@@ -303,27 +303,30 @@ class TestEnglishQuestionPatterns:
 
 
 class TestNonBridgedAutoRouteFallback:
-    def test_question_prompt_returns_inline_in_non_bridged_runtime(self):
+    def test_question_prompt_routes_when_bridge_is_not_configured(self):
         payload = {"prompt": "버그가 왜 계속 나죠?"}
         output = _run_hook(payload)
         ctx = output["hookSpecificOutput"]["additionalContext"]
-        assert "[agent-crew] INLINE" in ctx
+        assert "[agent-crew] ROUTE" in ctx
+        assert "routing to analyst" in ctx
         assert "Host bridge is unavailable" in ctx
         assert "question" in ctx
+        assert "[agent-crew] STOP" not in ctx
 
-    def test_implementation_prompt_returns_inline_in_non_bridged_runtime(self):
+    def test_implementation_prompt_still_emits_stop_with_bridge_warning(self):
         payload = {"prompt": "구현에서 생긴 멈춤 이슈를 고쳐줘"}
         output = _run_hook(payload)
         ctx = output["hookSpecificOutput"]["additionalContext"]
-        assert "[agent-crew] INLINE" in ctx
+        assert "[agent-crew] STOP" in ctx
         assert "Host bridge is unavailable" in ctx
         assert "implementation request" in ctx
+        assert "[agent-crew] ROUTE" not in ctx
 
-    def test_invalid_bridge_command_value_falls_back_to_inline(self):
+    def test_invalid_bridge_command_value_still_routes_with_warning(self):
         payload = {"prompt": "버그 원인 분석해서 알려줘"}
         output = _run_hook(payload, bridge_configured="/no/such/bridge/cmd")
         ctx = output["hookSpecificOutput"]["additionalContext"]
-        assert "[agent-crew] INLINE" in ctx
+        assert "[agent-crew] ROUTE" in ctx
         assert "Host bridge is unavailable" in ctx
         assert "bridge executable" in ctx
 

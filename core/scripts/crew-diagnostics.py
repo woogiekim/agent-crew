@@ -22,9 +22,17 @@ def load_json(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def run_cmd(args: list[str], *, cwd: Path | None = None) -> tuple[int, str]:
+def run_cmd(args: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> tuple[int, str]:
     try:
-        proc = subprocess.run(args, cwd=cwd, text=True, capture_output=True, check=False, timeout=15)
+        proc = subprocess.run(
+            args,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+            env=env,
+        )
     except Exception as exc:
         return 127, str(exc)
     return proc.returncode, (proc.stdout + proc.stderr).strip()
@@ -204,6 +212,31 @@ def host_bridge_blocker_probe(state_dir: Path, min_age_seconds: int) -> tuple[bo
     return False, detail, len(matches)
 
 
+def host_bridge_command_probe(asset_root: Path, *, env: dict[str, str] | None = None) -> tuple[bool, str]:
+    script = Path(__file__).resolve().parent / "check-host-bridge.py"
+    if not script.is_file():
+        return False, "host-bridge command checker not found"
+
+    probe_env = os.environ.copy()
+    if env:
+        probe_env.update(env)
+
+    rc, out = run_cmd([sys.executable, str(script), "--json"], env=probe_env)
+    if rc == 127:
+        return False, "host-bridge checker could not run"
+    if rc not in (0, 1, 2):
+        return False, f"host-bridge checker returned unexpected rc={rc}"
+
+    try:
+        payload = json.loads(out)
+    except Exception:
+        return False, f"host-bridge checker returned invalid json (rc={rc})"
+
+    if payload.get("ready"):
+        return True, f"host bridge ready: {payload.get('command_head', '')}"
+    return False, payload.get("reason", "unknown host bridge status")
+
+
 def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
     hook = asset_root / "hooks" / "auto-issue-report.sh"
     if not hook.is_file():
@@ -357,6 +390,7 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
     cfg = effective_config(args)
+    cfg["command_check"] = host_bridge_command_probe(Path(args.asset_root))
     findings = [
         print_status("active adapter visible", bool(cfg["active_adapter"]), str(cfg["active_adapter"]), emit=args.format == "text"),
         print_status("install drift status", cfg["install_drift"]["status"] != "warn", cfg["install_drift"]["detail"], emit=args.format == "text"),
@@ -369,6 +403,14 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
             report["detail"],
             emit=args.format == "text",
         ))
+    findings.append(
+        print_status(
+            "host bridge command readiness",
+            cfg["command_check"][0],
+            cfg["command_check"][1],
+            emit=args.format == "text",
+        )
+    )
     codex_invocation = Path(args.asset_root).parent / "adapters" / "codex" / "invocation.md"
     text = codex_invocation.read_text(encoding="utf-8", errors="replace") if codex_invocation.is_file() else ""
     findings.append(print_status("slash command vocabulary documented", "slash command" in text and "crew:<intent>" in text, str(codex_invocation), emit=args.format == "text"))

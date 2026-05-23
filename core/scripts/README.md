@@ -103,6 +103,9 @@ invocation in SKILL.md; generic adds guidance).
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term
   scalability controls. The native `crew doctor` command runs this check.
+- `check-host-bridge.py` — validates `AGENT_CREW_HOST_BRIDGE_COMMAND` presence,
+  shell-token parseability, and executable discoverability/permissions. `crew
+  doctor` includes this as a host-bridge readiness probe in host diagnostics.
 - `agent-capability-check.py` — validates the machine-readable
   `core/policies/agent-capabilities.json` manifest against agent markdown files,
   role boundaries, destructive-operation approval requirements, reviewer
