@@ -65,6 +65,18 @@ def test_stale_state_summary_counts_markers(tmp_path: Path):
 
     summary = diagnostics.stale_state_summary(REPO_ROOT / "core", state_dir)
 
-    assert summary["status"] == "pass"
+    assert summary["status"] == "warn"
     assert summary["summary"]["stale_active_markers"] == 1
     assert summary["summary"]["stale_supervisor_pending_sentinels"] == 1
+    assert "crew cleanup-state --apply" in summary["recommendation"]
+
+
+def test_stale_state_summary_passes_when_no_cleanup_targets(tmp_path: Path):
+    state_dir = tmp_path / "home" / "state" / "project"
+    (state_dir / "tasks").mkdir(parents=True)
+
+    summary = diagnostics.stale_state_summary(REPO_ROOT / "core", state_dir)
+
+    assert summary["status"] == "pass"
+    assert summary["summary"]["planned_archival_targets"] == 0
+    assert summary["recommendation"] == ""
