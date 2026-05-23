@@ -2315,6 +2315,8 @@ crew:run "resolve merge conflicts"
   "implement", "fix", etc.) falls through to the regular pipeline. See
   Step 1.7 for the full pattern list, exclusion rules, and per-intent
   dispatch table.
+- If a run is blocked with host bridge handoff issues, follow the documented SOP:
+  [Host Bridge Handoff SOP](core/docs/host-bridge-handoff-sop.md)
 
 ### Host Bridge Handoff Troubleshooting
 
