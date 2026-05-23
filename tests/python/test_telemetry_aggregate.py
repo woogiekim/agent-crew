@@ -7,11 +7,13 @@ Exit code contract:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 
 def _write_register(task_dir: Path, *, task_id: str,
-                    current_phase: str = "completed") -> None:
+                    current_phase: str = "completed",
+                    project_root: str = "/tmp/proj") -> None:
     session_id = task_id.rsplit("-", 1)[0]
     reg = {
         "schema_version": 1,
@@ -19,7 +21,7 @@ def _write_register(task_dir: Path, *, task_id: str,
         "session_id": session_id,
         "task": "telemetry test task",
         "branch": "test/example",
-        "project_root": "/tmp/proj",
+        "project_root": project_root,
         "task_dir": str(task_dir),
         "execution_mode": "single",
         "current_phase": current_phase,
@@ -397,6 +399,138 @@ class TestTelemetryAggregate:
             "host_bridge_not_invoked",
         ]
         assert payload["summary"]["by_blocker"] == {"host_bridge_not_invoked": 1}
+
+    def test_completed_result_md_suppresses_stale_host_bridge_register(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Completed result.md evidence wins over stale blocked register state."""
+        task_id = "20260101-120453-1"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        reg = json.loads((td / "register.json").read_text())
+        reg["blocked_by"] = ["host_bridge_not_invoked"]
+        (td / "register.json").write_text(json.dumps(reg))
+        (td / "result.md").write_text(
+            "# Completed native handoff\n\n"
+            "STATUS: completed\n"
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        assert task["status"] == "completed"
+        assert task["current_phase"] == "completed"
+        assert task["blockers"] == []
+        assert task["guidance"] == []
+        assert payload["summary"]["by_blocker"] == {}
+
+    def test_recent_selection_ignores_stale_latest_task_id_file(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--recent selection uses task mtimes, not stale latest-task-id.txt."""
+        old_id = "20260101-120453-2"
+        new_id = "20260101-120453-3"
+        old_td = state_dir / "tasks" / old_id
+        new_td = state_dir / "tasks" / new_id
+        old_td.mkdir(parents=True)
+        new_td.mkdir(parents=True)
+        _write_register(old_td, task_id=old_id, current_phase="blocked")
+        old_reg = json.loads((old_td / "register.json").read_text())
+        old_reg["blocked_by"] = ["host_bridge_not_invoked"]
+        (old_td / "register.json").write_text(json.dumps(old_reg))
+        (old_td / "result.md").write_text("STATUS: blocked\n")
+        _write_register(new_td, task_id=new_id, current_phase="completed")
+        (new_td / "result.md").write_text("STATUS: completed\n")
+        (state_dir / "latest-task-id.txt").write_text(old_id)
+        os.utime(old_td, (1000, 1000))
+        os.utime(new_td, (2000, 2000))
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--recent", "1",
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert [task["task_id"] for task in payload["tasks"]] == [new_id]
+        assert payload["tasks"][0]["guidance"] == []
+
+    def test_project_root_filter_excludes_same_basename_foreign_checkout(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Current-project status should not inherit same-basename state noise."""
+        current_id = "20260101-120453-4"
+        foreign_id = "20260101-120453-5"
+        current_td = state_dir / "tasks" / current_id
+        foreign_td = state_dir / "tasks" / foreign_id
+        current_td.mkdir(parents=True)
+        foreign_td.mkdir(parents=True)
+        current_root = "/tmp/danawa/shopping-frontend"
+        foreign_root = "/tmp/connect-wave/shopping-frontend"
+        _write_register(
+            current_td,
+            task_id=current_id,
+            current_phase="completed",
+            project_root=current_root,
+        )
+        _write_register(
+            foreign_td,
+            task_id=foreign_id,
+            current_phase="blocked",
+            project_root=foreign_root,
+        )
+        foreign_reg = json.loads((foreign_td / "register.json").read_text())
+        foreign_reg["blocked_by"] = ["host_bridge_not_invoked"]
+        (foreign_td / "register.json").write_text(json.dumps(foreign_reg))
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--project-root", current_root,
+            "--recent", "10",
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert [task["task_id"] for task in payload["tasks"]] == [current_id]
+        assert payload["summary"]["by_blocker"] == {}
+
+    def test_project_root_filter_keeps_current_project_worktrees(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Parallel worktree task roots still belong to the parent project."""
+        task_id = "20260101-120453-6"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        current_root = "/tmp/danawa/shopping-frontend"
+        worktree_root = f"{current_root}/.crew-worktrees/{task_id}"
+        _write_register(
+            td,
+            task_id=task_id,
+            current_phase="completed",
+            project_root=worktree_root,
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--project-root", current_root,
+            "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert [task["task_id"] for task in payload["tasks"]] == [task_id]
 
     def test_stale_host_bridge_blocker_is_separated_from_current_blockers(
         self, script_runner, env_with_home, state_dir

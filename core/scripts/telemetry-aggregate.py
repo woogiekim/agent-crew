@@ -117,6 +117,50 @@ def read_register(task_dir):
         return None
 
 
+def read_task_project_root(task_dir):
+    reg = read_register(task_dir) or {}
+    value = str(reg.get("project_root") or "").strip()
+    if value:
+        return value
+    return read_text_file(task_dir / "project-root.txt")
+
+
+def normalize_project_root(value):
+    if not value:
+        return ""
+    return os.path.realpath(os.path.abspath(os.path.expanduser(str(value))))
+
+
+def path_is_relative_to(path, parent):
+    try:
+        Path(path).relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def task_matches_project_root(task_dir, project_root):
+    """Keep legacy unknown-root tasks, but drop explicit foreign checkouts."""
+    if not project_root:
+        return True
+
+    task_root = normalize_project_root(read_task_project_root(task_dir))
+    if not task_root:
+        return True
+
+    current_root = normalize_project_root(project_root)
+    if task_root == current_root:
+        return True
+
+    # Parallel supervisors can record their isolated worktree root while the
+    # operator runs status from the main project checkout.
+    crew_worktrees = Path(current_root) / ".crew-worktrees"
+    if path_is_relative_to(task_root, crew_worktrees):
+        return True
+
+    return False
+
+
 def read_progress_buffer(task_dir):
     """Yield normalized event rows from progress.buffer.jsonl."""
     p = task_dir / "progress.buffer.jsonl"
@@ -436,7 +480,15 @@ def aggregate_task(state_dir, task_dir):
         current_phase = missing_boot["current_phase"]
         blocked_by = missing_boot["blockers"]
         stages_completed = None
-    elif result.get("status") in ("completed", "blocked"):
+    elif result.get("status") == "completed":
+        status = "completed"
+        current_phase = result.get("current_phase", status)
+        # A completed result.md is authoritative. Older runs can leave
+        # register.json stuck at blocked with stale blocker labels; carrying
+        # those forward produces false host-bridge guidance.
+        blocked_by = list(result.get("blockers", []))
+        stages_completed = None
+    elif result.get("status") == "blocked":
         status = result["status"]
         current_phase = result.get("current_phase", status)
         blocked_by = list(result.get("blockers", []))
@@ -566,6 +618,12 @@ def list_task_dirs(state_dir, args):
 
     # Sort by mtime descending for --recent and stable ordering.
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    if args.project_root:
+        candidates = [
+            p for p in candidates
+            if task_matches_project_root(p, args.project_root)
+        ]
 
     if args.task_id:
         return [p for p in candidates if p.name == args.task_id]
@@ -756,6 +814,10 @@ def main():
     p.add_argument("--recent", type=int, default=10,
                    help="N most-recent task directories (default 10; "
                         "ignored when --task-id or --session-id given)")
+    p.add_argument("--project-root",
+                   help="Current project root; excludes task records that "
+                        "explicitly belong to another checkout with the same "
+                        "basename")
     p.add_argument("--since", help="YYYY-MM-DD lower bound on task start date")
     p.add_argument("--until", help="YYYY-MM-DD upper bound on task start date")
     p.add_argument("--format", choices=["text", "json"], default="text")
