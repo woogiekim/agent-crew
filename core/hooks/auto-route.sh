@@ -6,11 +6,35 @@ INPUT=$(cat)
 python3 - "$INPUT" <<'PYEOF'
 import json
 import re
+import shlex
 import sys
 import os
+import shutil
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
-HOST_BRIDGE_CONFIGURED = bool(os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"))
+def _bridge_status():
+    raw = os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "").strip()
+    if not raw:
+        return (False, "AGENT_CREW_HOST_BRIDGE_COMMAND is not set.")
+    try:
+        argv = shlex.split(raw)
+    except ValueError as error:
+        return (False, f"AGENT_BRIDGE command is not parseable ({error}).")
+    if not argv:
+        return (False, "AGENT_CREW_HOST_BRIDGE_COMMAND is empty.")
+
+    executable = argv[0]
+    if os.path.isabs(executable) or "/" in executable:
+        if os.path.isfile(executable) and os.access(executable, os.X_OK):
+            return (True, "bridge executable is available.")
+        return (False, f"bridge executable is not runnable: {executable}")
+
+    if shutil.which(executable):
+        return (True, "bridge executable is available.")
+    return (False, f"bridge executable is not in PATH: {executable}")
+
+
+HOST_BRIDGE_READY, HOST_BRIDGE_REASON = _bridge_status()
 
 try:
     data = json.loads(raw_input)
@@ -238,11 +262,11 @@ def emit_question_route(target_agent: str, route_reason: str):
     sys.exit(0)
 
 
-def emit_inline_no_bridge_note(reason: str):
+def emit_inline_no_bridge_note(reason: str, issue: str):
     """Handle questions inline when host bridge is unavailable."""
     inline_directive = (
         f"[agent-crew] INLINE — non-bridged runtime for {reason}.\\n\\n"
-        "Host bridge is not configured (AGENT_CREW_HOST_BRIDGE_COMMAND is empty).\\n"
+        f"Host bridge is unavailable ({issue}).\\n"
         "Handle the request inline in the current model turn.\\n\\n"
         "If the prompt contains Hangul, normalize it first per "
         "core/rules/korean-input.md before planning or answering."
@@ -259,8 +283,8 @@ def emit_inline_no_bridge_note(reason: str):
 
 def emit_no_bridge_inline_fallback(reason: str):
     """If host bridge is unavailable, process inline and stop routing."""
-    if not HOST_BRIDGE_CONFIGURED:
-        emit_inline_no_bridge_note(reason)
+    if not HOST_BRIDGE_READY:
+        emit_inline_no_bridge_note(reason, HOST_BRIDGE_REASON)
         return True
     return False
 

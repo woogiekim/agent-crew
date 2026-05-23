@@ -58,10 +58,13 @@ def matches(text: str) -> bool:
     return bool(_compiled.search(text))
 
 
-def _run_hook(payload: dict, *, bridge_configured: bool = False) -> dict:
+def _run_hook(payload: dict, *, bridge_configured: bool | str = False) -> dict:
     env = os.environ.copy()
     if bridge_configured:
-        env["AGENT_CREW_HOST_BRIDGE_COMMAND"] = "true"
+        if isinstance(bridge_configured, str):
+            env["AGENT_CREW_HOST_BRIDGE_COMMAND"] = bridge_configured
+        else:
+            env["AGENT_CREW_HOST_BRIDGE_COMMAND"] = "true"
     else:
         env.pop("AGENT_CREW_HOST_BRIDGE_COMMAND", None)
 
@@ -305,7 +308,7 @@ class TestNonBridgedAutoRouteFallback:
         output = _run_hook(payload)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] INLINE" in ctx
-        assert "Host bridge is not configured" in ctx
+        assert "Host bridge is unavailable" in ctx
         assert "question" in ctx
 
     def test_implementation_prompt_returns_inline_in_non_bridged_runtime(self):
@@ -313,8 +316,16 @@ class TestNonBridgedAutoRouteFallback:
         output = _run_hook(payload)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] INLINE" in ctx
-        assert "Host bridge is not configured" in ctx
+        assert "Host bridge is unavailable" in ctx
         assert "implementation request" in ctx
+
+    def test_invalid_bridge_command_value_falls_back_to_inline(self):
+        payload = {"prompt": "버그 원인 분석해서 알려줘"}
+        output = _run_hook(payload, bridge_configured="/no/such/bridge/cmd")
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] INLINE" in ctx
+        assert "Host bridge is unavailable" in ctx
+        assert "bridge executable" in ctx
 
 
 # ---------------------------------------------------------------------------
