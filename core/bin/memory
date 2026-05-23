@@ -2,6 +2,7 @@
 # Thin memory backend wrapper — graceful degradation when mnemos is absent or slow.
 # Usage: memory capture --quiet --layer session --content "..."
 #        memory search "query"
+#        memory gc --format json [--apply]
 #
 # Sub-agents must use `memory capture` (not `mnemos capture` directly) so that
 # pipelines work even when no memory backend is installed.
@@ -19,14 +20,17 @@ fast_search() {
   local fts_db="${mnemos_root}/.agent/state/fts.db"
   [ -f "${fts_db}" ] || return 1
 
-  python3 - "$fts_db" "$@" <<'PY'
+  local evicted_path="${AGENT_CREW_MEMORY_GC_EVICTED:-${HOME}/.agent-crew/memory-gc/evicted-ids.txt}"
+  python3 - "$fts_db" "$evicted_path" "$@" <<'PY'
 import json
+import os
 import re
 import sqlite3
 import sys
 
 db_path = sys.argv[1]
-args = sys.argv[2:]
+evicted_path = sys.argv[2]
+args = sys.argv[3:]
 
 query = ""
 limit = 20
@@ -169,6 +173,13 @@ def row_score(row):
 
 results = []
 seen_ids = set()
+evicted_ids = set()
+try:
+    with open(os.path.expanduser(evicted_path), encoding="utf-8") as handle:
+        evicted_ids = {line.strip() for line in handle if line.strip()}
+except Exception:
+    evicted_ids = set()
+
 try:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -181,6 +192,8 @@ try:
         rows = search_rows(conn, match_expr, max(limit * 8, limit))
         for row in rows:
             item_id = row["item_id"]
+            if item_id in evicted_ids:
+                continue
             if item_id in seen_ids:
                 continue
             metadata = {}
@@ -215,6 +228,11 @@ else:
 print(f"[mnemos] Retrieved {len(results)} memories")
 PY
 }
+
+if [ "${1:-}" = "gc" ]; then
+  shift
+  exec python3 "${AGENT_CREW_HOME}/scripts/memory-gc.py" "$@"
+fi
 
 if [ "${1:-}" = "search" ]; then
   if fast_search "$@"; then

@@ -245,6 +245,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-quality-plan-check.py"
 it "crew run installs automatic issue reporter during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/auto-issue-reporter.py"
 
+it "crew run installs memory GC command during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/memory-gc.py"
+
 it "crew run installs agent capability checker during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/agent-capability-check.py"
 

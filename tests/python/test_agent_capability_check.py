@@ -89,3 +89,36 @@ def test_agent_capability_check_enforces_cost_tier_distribution(tmp_path: Path):
     payload = json.loads(result.stdout)
     failed_names = {failure["name"] for failure in payload["failures"]}
     assert "routing.cost_aware_model_tiers" in failed_names
+
+
+def test_agent_capability_check_requires_safe_default_custom_profile(tmp_path: Path):
+    project = _make_project(tmp_path)
+    manifest_path = project / "core" / "policies" / "agent-capabilities.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["default_custom_profile"] = "custom-devops-approved"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = _run(project)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    failed_names = {failure["name"] for failure in payload["failures"]}
+    assert "custom_profiles.default_safe_worker" in failed_names
+
+
+def test_agent_capability_check_blocks_recursive_custom_profile(tmp_path: Path):
+    project = _make_project(tmp_path)
+    manifest_path = project / "core" / "policies" / "agent-capabilities.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    profile = dict(manifest["custom_profiles"]["custom-worker"])
+    profile["role"] = "planner"
+    profile["may_delegate"] = True
+    manifest["custom_profiles"]["custom-planner"] = profile
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = _run(project)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    failed_names = {failure["name"] for failure in payload["failures"]}
+    assert "profile.custom-planner.no_recursive_orchestrator_role" in failed_names

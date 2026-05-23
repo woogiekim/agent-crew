@@ -203,3 +203,109 @@ def test_pipeline_capability_check_blocks_destructive_custom_agent_name(tmp_path
     assert result.returncode == 1
     payload = json.loads(result.stdout)
     assert "custom_agent_name_implies_destructive_authority" in failure_codes(payload)
+
+
+def test_pipeline_capability_check_accepts_explicit_custom_devops_profile(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Release workflow",
+            "stages": [
+                "release-worker",
+                "reviewer",
+            ],
+            "needs_creation": [
+                {
+                    "name": "release-worker",
+                    "role": "devops",
+                    "capability_profile": "custom-devops-approved",
+                    "reason": "approval-gated release operations",
+                }
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+
+
+def test_pipeline_capability_check_blocks_unknown_custom_profile(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement specialized workflow",
+            "stages": [
+                {"agents": ["domain-worker"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "needs_creation": [
+                {
+                    "name": "domain-worker",
+                    "role": "worker",
+                    "capability_profile": "unknown-profile",
+                    "reason": "specialized implementation",
+                }
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "unknown_custom_capability_profile" in failure_codes(payload)
+
+
+def test_pipeline_capability_check_reads_custom_agent_frontmatter_profile(tmp_path: Path):
+    custom_dir = tmp_path / "user-agents"
+    custom_dir.mkdir()
+    (custom_dir / "release-worker.md").write_text(
+        "---\ncapability_profile: custom-devops-approved\n---\n# Agent: release-worker\n",
+        encoding="utf-8",
+    )
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Release workflow",
+            "stages": ["release-worker"],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path, "--agent-dir", str(custom_dir))
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "devops_stage_requires_followup_reviewer" in failure_codes(payload)
+
+
+def test_pipeline_capability_check_reads_codex_toml_custom_agent_profile(tmp_path: Path):
+    custom_dir = tmp_path / "codex-agents"
+    custom_dir.mkdir()
+    (custom_dir / "release-worker.toml").write_text(
+        'name = "release-worker"\ncapability_profile = "custom-devops-approved"\n',
+        encoding="utf-8",
+    )
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Release workflow",
+            "stages": ["release-worker", "reviewer"],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path, "--agent-dir", str(custom_dir))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True

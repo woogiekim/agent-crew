@@ -52,7 +52,9 @@ def evaluate_repo(root: Path) -> dict:
     supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
     supervisor_retry = read_text(root / "core/agents/supervisor-retry.md")
     reviewer = read_text(root / "core/agents/reviewer.md")
+    memory_wrapper = read_text(root / "core/bin/memory")
     memory_rule = read_text(root / "core/rules/memory-governance.md")
+    memory_gc = read_text(root / "core/scripts/memory-gc.py")
     memory_fixture = read_text(root / "core/evaluations/memory-retrieval.json")
     workflow_replay_fixture = read_text(root / "core/evaluations/workflow-replay.json")
     answer_quality = read_text(root / "core/evaluations/answer-quality.json")
@@ -132,6 +134,15 @@ def evaluate_repo(root: Path) -> dict:
             "Planned pipeline stages must be checked against agent capability policy before runtime execution.",
         ),
         control(
+            "architecture",
+            "custom_agent_capability_profiles",
+            "high",
+            has_all(agent_manifest_text, ["default_custom_profile", "custom_profiles", "custom-devops-approved"])
+            and has_all(agent_capability_schema, ["default_custom_profile", "custom_profiles"])
+            and has_all(pipeline_capability_check, ["capability_profile", "unknown_custom_capability_profile"]),
+            "User-owned agents must have safe default and explicit non-default capability profiles enforced by preflight.",
+        ),
+        control(
             "performance",
             "slo_fixture_present",
             "high",
@@ -209,6 +220,15 @@ def evaluate_repo(root: Path) -> dict:
             exists(root, "core/scripts/memory-evidence-trace.py")
             and "memory_evidence_trace_path" in answer_quality,
             "Final reports must be able to prove which memory context was reused.",
+        ),
+        control(
+            "memory_governance",
+            "memory_gc_eviction_command",
+            "high",
+            exists(root, "core/scripts/memory-gc.py")
+            and has_all(memory_gc, ["capture -> classify -> summarize -> score -> archive -> evict", "evicted-ids.txt"])
+            and has_all(memory_wrapper, ["memory-gc.py", "AGENT_CREW_MEMORY_GC_EVICTED"]),
+            "Memory lifecycle must be operationalized by a dry-run-first GC and retrieval eviction command.",
         ),
         control(
             "security",

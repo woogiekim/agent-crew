@@ -37,6 +37,9 @@ on deterministic replay and golden workflow testing.
 ## Remaining Work
 
 - Add a memory GC/eviction command that operationalizes the memory lifecycle
-  beyond policy and retrieval SLO checks.
+  beyond policy and retrieval SLO checks. Resolved in the follow-up structural
+  improvement with `memory gc` and `core/scripts/memory-gc.py`.
 - Consider a richer custom-agent capability declaration format so user-owned
-  agents can opt into explicit non-default capability profiles.
+  agents can opt into explicit non-default capability profiles. Resolved in the
+  follow-up structural improvement with `custom_profiles` and
+  `capability_profile`.

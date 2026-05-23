@@ -1,5 +1,79 @@
 {
   "schema_version": 1,
+  "default_custom_profile": "custom-worker",
+  "custom_profiles": {
+    "custom-worker": {
+      "role": "worker",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "edit_file",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": true,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Safe default profile for user-owned custom implementation agents."
+    },
+    "custom-readonly": {
+      "role": "readonly",
+      "model_tier": "cheap",
+      "reasoning_tier": "light",
+      "allowed_capabilities": [
+        "memory_read",
+        "read_file",
+        "structured_output",
+        "summarize_context"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Read-only profile for custom research or analysis agents."
+    },
+    "custom-devops-approved": {
+      "role": "devops",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "approval_bound_destructive_command",
+        "deployment_plan",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command_without_approval",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": true,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": true,
+      "destructive_requires_approval": true,
+      "notes": "Explicit opt-in profile for custom DevOps agents that still require orchestrator approval and reviewer follow-up."
+    }
+  },
   "agents": {
     "supervisor": {
       "role": "orchestrator",

@@ -221,6 +221,68 @@ assert_exit 0 "${rc}" "requirements evidence ranking"
 assert_contains "${OUTPUT}" "req-commercialization-eval-test"
 assert_not_contains "${OUTPUT}" "commercialization-e2e-99-review-20260101"
 
+GC_HOME=$(make_tmp)
+mkdir -p "${GC_HOME}/.mnemos/.agent/state"
+python3 - "${GC_HOME}/.mnemos/.agent/state/fts.db" <<'PY'
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+conn.execute(
+    """
+    CREATE VIRTUAL TABLE items_fts
+    USING fts5(item_id UNINDEXED, content, metadata)
+    """
+)
+rows = [
+    (
+        "duplicate-memory-canonical",
+        "valuable duplicate content for memory gc retention",
+        {"layer": "session", "created_at": "2026-01-01T00:00:00Z"},
+    ),
+    (
+        "duplicate-memory-copy",
+        "valuable duplicate content for memory gc retention",
+        {"layer": "ephemeral", "created_at": "2025-01-01T00:00:00Z"},
+    ),
+    (
+        "stale-probe-memory",
+        "probe",
+        {"layer": "ephemeral", "created_at": "2024-01-01T00:00:00Z"},
+    ),
+]
+for item_id, content, metadata in rows:
+    conn.execute(
+        "INSERT INTO items_fts (item_id, content, metadata) VALUES (?, ?, ?)",
+        (item_id, content, json.dumps(metadata)),
+    )
+conn.commit()
+PY
+
+it "memory gc dry-run reports duplicate and low-value candidates"
+OUTPUT=$(HOME="${GC_HOME}" bash "${MEMORY}" gc --format json --mnemos-root "${GC_HOME}/.mnemos" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "memory gc dry run"
+assert_contains "${OUTPUT}" "duplicate-memory-copy"
+assert_contains "${OUTPUT}" "stale-probe-memory"
+
+it "memory gc apply writes archive and evicted id list"
+OUTPUT=$(HOME="${GC_HOME}" bash "${MEMORY}" gc --format json --apply --mnemos-root "${GC_HOME}/.mnemos" --archive-path "${GC_HOME}/archive.jsonl" --evicted-path "${GC_HOME}/evicted-ids.txt" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "memory gc apply"
+assert_file_exists "${GC_HOME}/archive.jsonl"
+assert_file_exists "${GC_HOME}/evicted-ids.txt"
+EVICTED_TEXT=$(cat "${GC_HOME}/evicted-ids.txt")
+assert_contains "${EVICTED_TEXT}" "duplicate-memory-copy"
+
+it "memory search omits IDs evicted by memory gc"
+OUTPUT=$(HOME="${GC_HOME}" MNEMOS_REPO_ROOT="${GC_HOME}/.mnemos" AGENT_CREW_MEMORY_GC_EVICTED="${GC_HOME}/evicted-ids.txt" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "valuable duplicate content memory gc retention" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "memory search after gc"
+assert_contains "${OUTPUT}" "duplicate-memory-canonical"
+assert_not_contains "${OUTPUT}" "duplicate-memory-copy"
+
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 sleep 5

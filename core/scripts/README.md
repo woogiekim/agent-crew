@@ -95,6 +95,10 @@ invocation in SKILL.md; generic adds guidance).
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
 - `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
   telemetry, memory search, retrieval evaluation, and update dry-run budgets.
+- `memory-gc.py` — dry-run-first memory lifecycle GC. It reads the mnemos FTS
+  index, classifies duplicate/stale/low-value candidates, scores trust, archives
+  selected metadata, and writes an agent-crew eviction list used by fast memory
+  search without deleting the underlying vault.
 - `framework-review-check.py` — static operational readiness gate for
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term
@@ -107,7 +111,8 @@ invocation in SKILL.md; generic adds guidance).
   the capability manifest before runtime execution. It blocks recursive
   delegation agents, workflow-state mutation agents, unsafe reviewer/devops
   stage shapes, unknown agents without custom-agent files or `needs_creation`,
-  and custom agents whose names imply destructive authority.
+  custom capability-profile violations, and custom agents whose names imply
+  destructive authority without an explicit approved profile.
 - `workflow-replay-check.py` — replays golden workflow fixtures against local
   validators and expected state transitions. It verifies deterministic tool
   flow for schema validation, quality planning, capability preflight, blocked

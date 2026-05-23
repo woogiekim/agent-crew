@@ -53,6 +53,7 @@ VALID_ROLES = {
     "readonly",
     "component",
 }
+CUSTOM_PROFILE_FORBIDDEN_ROLES = {"orchestrator", "planner", "component"}
 
 VALID_MODEL_TIERS = {"high", "medium", "cheap"}
 VALID_REASONING_TIERS = {"deep", "balanced", "light"}
@@ -259,6 +260,62 @@ def validate_role_policy(name: str, data: dict[str, Any]) -> list[dict[str, Any]
     return checks
 
 
+def validate_custom_profiles(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    profiles = manifest.get("custom_profiles")
+    default_profile = manifest.get("default_custom_profile")
+
+    checks.append(
+        check(
+            "custom_profiles.object",
+            isinstance(profiles, dict) and bool(profiles),
+            "custom_profiles must define at least one safe profile.",
+        )
+    )
+    if not isinstance(profiles, dict):
+        return checks
+
+    checks.append(
+        check(
+            "custom_profiles.default_exists",
+            isinstance(default_profile, str) and default_profile in profiles,
+            f"default_custom_profile={default_profile!r}",
+        )
+    )
+
+    default_data = profiles.get(default_profile) if isinstance(default_profile, str) else None
+    checks.append(
+        check(
+            "custom_profiles.default_safe_worker",
+            isinstance(default_data, dict)
+            and default_data.get("role") == "worker"
+            and default_data.get("may_delegate") is False
+            and default_data.get("may_execute_destructive") is False
+            and default_data.get("may_mutate_workflow_state") is False
+            and "destructive_command" in set(default_data.get("denied_capabilities") or []),
+            "default custom profile must be a non-delegating, non-destructive worker.",
+        )
+    )
+
+    for profile_name in sorted(profiles):
+        data = profiles.get(profile_name)
+        checks.extend(validate_agent_shape(f"profile.{profile_name}", data))
+        if not isinstance(data, dict):
+            continue
+
+        checks.extend(validate_role_policy(f"profile.{profile_name}", data))
+        checks.append(
+            check(
+                f"profile.{profile_name}.no_recursive_orchestrator_role",
+                data.get("role") not in CUSTOM_PROFILE_FORBIDDEN_ROLES
+                and data.get("may_mutate_workflow_state") is False,
+                "custom profiles must not grant orchestrator/planner/component or workflow-state authority.",
+            )
+        )
+
+    return checks
+
+
 def evaluate(root: Path, manifest_path: Path) -> dict[str, Any]:
     root = root.resolve()
     manifest_path = manifest_path.resolve()
@@ -291,6 +348,7 @@ def evaluate(root: Path, manifest_path: Path) -> dict[str, Any]:
     agents = manifest.get("agents")
     checks.append(check("manifest.schema_version", manifest.get("schema_version") == 1, "schema_version must be 1."))
     checks.append(check("manifest.agents_object", isinstance(agents, dict) and bool(agents), "agents must be a non-empty object."))
+    checks.extend(validate_custom_profiles(manifest))
     if not isinstance(agents, dict):
         return build_result(root, manifest_path, checks)
 
