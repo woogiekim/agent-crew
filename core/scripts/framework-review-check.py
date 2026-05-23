@@ -68,6 +68,7 @@ def evaluate_repo(root: Path) -> dict:
     pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
     workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
     retry_chaos_check = read_text(root / "core/scripts/retry-chaos-check.py")
+    telemetry_taxonomy_check = read_text(root / "core/scripts/telemetry-taxonomy-check.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
     agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
     model_tiers = {
@@ -293,6 +294,17 @@ def evaluate_repo(root: Path) -> dict:
             and "progress.buffer.jsonl" in supervisor
             and "trace_id" in supervisor,
             "Workflow timing, retry, blocker, token, and trace state must be observable.",
+        ),
+        control(
+            "observability",
+            "telemetry_retry_taxonomy_correlation",
+            "high",
+            exists(root, "core/scripts/telemetry-taxonomy-check.py")
+            and has_all(
+                telemetry_taxonomy_check,
+                ["retry-chaos.json", "progress.buffer.jsonl", "unknown_labels", "require-label"],
+            ),
+            "Live retry/blocker telemetry must correlate with the retry-chaos failure taxonomy.",
         ),
         control(
             "cost_efficiency",

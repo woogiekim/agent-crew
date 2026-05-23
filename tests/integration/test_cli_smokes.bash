@@ -19,6 +19,7 @@ PYTHON_SCRIPTS=(
   "pipeline-capability-check.py"
   "workflow-replay-check.py"
   "retry-chaos-check.py"
+  "telemetry-taxonomy-check.py"
   "crew-runtime.py"
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"

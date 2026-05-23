@@ -260,6 +260,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/workflow-replay-check.py"
 it "crew run installs retry chaos checker during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/retry-chaos-check.py"
 
+it "crew run installs telemetry taxonomy checker during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/telemetry-taxonomy-check.py"
+
 it "crew run installs agent capability policy during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/policies/agent-capabilities.json"
 

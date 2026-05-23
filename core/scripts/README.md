@@ -121,6 +121,10 @@ invocation in SKILL.md; generic adds guidance).
   an LLM. It simulates token-limit resumes, host tool crashes, reviewer
   loop-back, quality-loop exhaustion, and host blocked/cancelled outcomes
   against explicit retry budgets.
+- `telemetry-taxonomy-check.py` — correlates live `progress.buffer.jsonl`
+  retry/blocker labels with the retry-chaos fixture taxonomy. It rejects
+  unknown explicit retry reasons and can require specific labels for focused
+  production-run validation.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and
