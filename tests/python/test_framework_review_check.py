@@ -40,6 +40,7 @@ def test_framework_review_passes_current_repository():
 def test_framework_review_covers_operational_categories():
     payload = framework_review.evaluate_repo(REPO_ROOT)
     categories = set(payload["summary"]["categories"])
+    controls = {item["name"] for item in payload["controls"]}
 
     assert {
         "architecture",
@@ -53,6 +54,11 @@ def test_framework_review_covers_operational_categories():
         "developer_experience",
         "long_term_scalability",
     }.issubset(categories)
+    assert {
+        "automatic_issue_reporting_surface",
+        "automatic_issue_reporting_governance",
+        "automatic_issue_reporting_regression_tests",
+    }.issubset(controls)
 
 
 def test_framework_review_fails_when_security_policy_missing(tmp_path: Path):

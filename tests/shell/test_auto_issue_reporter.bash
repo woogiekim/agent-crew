@@ -190,6 +190,18 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" '"status": "ignored"'
 
+STRUCTURED_BLOCKER_PAYLOAD='{"hook_event_name":"PostToolUse","status":"failed","tool_name":"Bash","tool_input":{"command":"crew status"},"tool_response":{"stderr":"STATUS: blocked\nBLOCKER: state_schema_invalid","returncode":3}}'
+
+it "crew report auto records structured infrastructure blockers from Bash crew output"
+out=$(printf '%s' "${STRUCTURED_BLOCKER_PAYLOAD}" | \
+  PATH="${BIN_DIR}:${PATH}" \
+  GH_LOG="${TMP}/structured-blocker-gh.log" \
+  AGENT_CREW_AUTO_ISSUE_STATE_DIR="${TMP}/structured-blocker-reports" \
+  bash "${CREW_BIN}" report auto --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"status": "recorded"'
+
 SUPERVISOR_BLOCKED_PAYLOAD='{"source":"supervisor_blocked","status":"blocked","blocker":"state_schema_invalid","task_id":"20260523-000000-0","detail":"validate-state-schema.py failed with token=secret123"}'
 
 it "crew report auto records sanitized supervisor infrastructure blocked reports"
