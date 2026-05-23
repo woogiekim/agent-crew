@@ -58,7 +58,39 @@ def test_framework_review_covers_operational_categories():
         "automatic_issue_reporting_surface",
         "automatic_issue_reporting_governance",
         "automatic_issue_reporting_regression_tests",
+        "runtime_governance_contract",
+        "context_compression_pageout",
+        "structured_output_traceability",
+        "tool_sandboxing_contract",
+        "retrieval_scoring_contract",
+        "explicit_state_transition_replay_contract",
+        "prompt_injection_runtime_boundary",
+        "automatic_issue_reporting_runtime_issue_contract",
     }.issubset(controls)
+
+
+def test_framework_review_round_10_priorities_are_enforced():
+    payload = framework_review.evaluate_repo(REPO_ROOT)
+    controls = {item["name"]: item for item in payload["controls"]}
+    required = [
+        "runtime_governance_contract",
+        "tool_sandboxing_contract",
+        "context_compression_pageout",
+        "structured_output_traceability",
+        "explicit_state_transition_replay_contract",
+        "retrieval_scoring_contract",
+        "deterministic_workflow_replay",
+        "telemetry_and_trace",
+        "cost_aware_role_tiers",
+        "prompt_injection_runtime_boundary",
+        "automatic_issue_reporting_runtime_issue_contract",
+    ]
+
+    missing = [name for name in required if name not in controls]
+    failed = [name for name in required if name in controls and not controls[name]["passed"]]
+
+    assert missing == []
+    assert failed == []
 
 
 def test_framework_review_fails_when_security_policy_missing(tmp_path: Path):
