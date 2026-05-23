@@ -574,7 +574,30 @@ AGENT_REQUEST_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^AGENT_REQUEST_ID:/ {pr
 AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
 assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
 assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
+assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-completion.json"
 assert_eq "${AGENT_REQUEST_ID}" "$(cat "${AGENT_BRIDGE_LOG}")"
+
+REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
+assert_contains "${REQUEST_JSON}" '"status": "auto_completed"'
+assert_contains "${REQUEST_JSON}" '"host_bridge_status": "auto_completed"'
+
+it "crew agent host bridge command failure keeps request resumable"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND='exit 42' \
+    bash "${CREW}" agent analyst "failing bridge agent" 2>&1
+)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "BLOCKER: host AI bridge has not completed this agent request"
+assert_contains "${out}" "STATUS: blocked"
+AGENT_REQUEST_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^AGENT_REQUEST_ID:/ {print $2; exit}')
+AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
+assert_contains "${REQUEST_JSON}" '"status": "handoff_ready"'
+assert_contains "${REQUEST_JSON}" '"host_bridge_status": "failed"'
+assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
 
 it "crew agent writes deterministic direct-agent handoff"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "what changed?" 2>&1)

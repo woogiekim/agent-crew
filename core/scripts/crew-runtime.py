@@ -770,6 +770,7 @@ def command_agent(args: argparse.Namespace) -> int:
         request_id = f"agent-{now.strftime('%Y%m%d-%H%M%S')}-{index}"
 
     request_dir = requests_dir / request_id
+    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
     request = {
         "schema_version": 1,
         "request_id": request_id,
@@ -779,6 +780,7 @@ def command_agent(args: argparse.Namespace) -> int:
         "project_root": str(project_root),
         "request_dir": str(request_dir),
         "status": "handoff_ready",
+        "host_bridge_status": "pending" if bridge_command else "not_invoked",
         "created_at": now.isoformat(),
     }
     handoff = (
@@ -799,7 +801,8 @@ def command_agent(args: argparse.Namespace) -> int:
     print(f"AGENT: {agent_name}")
     print(f"REQUEST_DIR: {request_dir}")
 
-    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
+    bridge_invocation_path = request_dir / "context" / "host-bridge-invocation.json"
+    bridge_completion_path = request_dir / "context" / "host-bridge-completion.json"
     if bridge_command:
         bridge_record = invoke_host_bridge(
             bridge_command,
@@ -812,14 +815,32 @@ def command_agent(args: argparse.Namespace) -> int:
                 "AGENT_CREW_REQUEST_DIR": str(request_dir),
             },
         )
-        write_json(request_dir / "context" / "host-bridge-invocation.json", bridge_record)
+        write_json(bridge_invocation_path, bridge_record)
         if bridge_record["returncode"] == 0:
-            request["status"] = "auto_completed"
+            now = utc_now_z()
+            write_json(bridge_completion_path, bridge_record)
+            request.update(
+                {
+                    "status": "auto_completed",
+                    "host_bridge_status": "auto_completed",
+                    "host_bridge_completion_path": str(bridge_completion_path),
+                    "host_bridge_completed_at": now,
+                }
+            )
             write_json(request_dir / "request.json", request)
             print("STATUS: completed")
             print("HOST_BRIDGE: auto_completed")
             return 0
 
+        request.update(
+            {
+                "host_bridge_status": "failed",
+                "host_bridge_completion_path": str(bridge_invocation_path),
+                "host_bridge_completed_at": utc_now_z(),
+            }
+        )
+        write_json(request_dir / "request.json", request)
+        print("STATUS: blocked")
         print("BLOCKER: host AI bridge has not completed this agent request")
         print(
             "NEXT: Continue with "
