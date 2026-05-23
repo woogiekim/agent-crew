@@ -443,6 +443,22 @@ assert_contains "${result}" "agent-crew recorded a resumable internal handoff."
 it "crew run handoff-ready result does not require shell profile bridge configuration"
 assert_not_contains "${result}" "set AGENT_CREW_HOST_BRIDGE_COMMAND"
 
+it "crew run routes Korean task text through korean-normalizer gate"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "방금 멈춤 현상을 검증해주세요" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+KOREAN_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+register_json=$(cat "${KOREAN_RUN_TASK_DIR}/register.json")
+pipeline_json=$(cat "${KOREAN_RUN_TASK_DIR}/pipeline.json")
+run_result=$(cat "${KOREAN_RUN_TASK_DIR}/result.md")
+assert_contains "${register_json}" '"task": "Normalize Korean input for an agent-crew workflow request.'
+assert_contains "${pipeline_json}" '"korean-normalizer"'
+assert_contains "${run_result}" "NORMALIZATION_GATE: required"
+assert_not_contains "${register_json}" "방금"
+assert_not_contains "${pipeline_json}" "방금"
+assert_not_contains "${run_result}" "방금"
+assert_contains "$(cat "${KOREAN_RUN_TASK_DIR}/handoff.md")" "RAW_TASK: 방금 멈춤 현상을 검증해주세요"
+
 it "crew run blocked result avoids verbose fallback narration"
 assert_not_contains "${result}" "If the host bridge is unavailable"
 assert_not_contains "${result}" "so `crew telemetry` no longer reports"
@@ -452,14 +468,14 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 assert_contains "${out}" "\"handoff_ready\""
 assert_contains "${out}" "\"internal_handoff_ready\""
 
+TASK_ID=$(basename "${TASK_DIR}")
+
 it "crew telemetry --format json reports handoff-ready run as running"
-out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json 2>&1)
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${TASK_ID}" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" "\"internal_handoff_ready\""
 assert_contains "${out}" "\"tasks_running\": 1"
-
-TASK_ID=$(basename "${TASK_DIR}")
 
 it "crew trace shows handoff-ready run progress events"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" trace --task-id "${TASK_ID}" 2>&1)

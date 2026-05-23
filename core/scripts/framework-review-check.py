@@ -75,11 +75,13 @@ def evaluate_repo(root: Path) -> dict:
     retry_chaos_check = read_text(root / "core/scripts/retry-chaos-check.py")
     telemetry_taxonomy_check = read_text(root / "core/scripts/telemetry-taxonomy-check.py")
     crew_diagnostics = read_text(root / "core/scripts/crew-diagnostics.py")
+    crew_runtime = read_text(root / "core/scripts/crew-runtime.py")
     agent_capability_schema = read_text(root / "core/schemas/agent-capabilities.schema.json")
     auto_issue_reporter = read_text(root / "core/scripts/auto-issue-reporter.py")
     auto_issue_rule = read_text(root / "core/rules/auto-issue-reporting.md")
     auto_issue_hook = read_text(root / "core/hooks/auto-issue-report.sh")
     auto_issue_test = read_text(root / "tests/shell/test_auto_issue_reporter.bash")
+    crew_cli_test = read_text(root / "tests/shell/test_crew_cli.bash")
     agent_entries = agent_manifest.get("agents", {}) if isinstance(agent_manifest.get("agents"), dict) else {}
     model_tiers = {
         entry.get("model_tier")
@@ -256,6 +258,29 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             ),
             "Retry chaos tests must simulate crash, token truncation, reviewer loop-back, and host-blocked recovery.",
+        ),
+        control(
+            "reliability",
+            "no_bridge_handoff_ready_fallback",
+            "high",
+            has_all(crew_runtime, ["handoff_ready", "internal_handoff_ready", "no external bridge command is required"])
+            and has_all(crew_cli_test, ["crew run writes deterministic state then exits handoff_ready", "tasks_running"])
+            and has_all(crew_diagnostics, ["internal handoff fallback available", "host bridge command readiness"]),
+            "Missing external host bridge configuration must produce resumable handoff state, not a failed/stalled run.",
+        ),
+        control(
+            "reliability",
+            "korean_input_gate_all_entrypoints",
+            "high",
+            has_all(crew_runtime, ["contains_hangul", "korean_normalization_task", "korean_normalization_handoff"])
+            and has_all(
+                crew_cli_test,
+                [
+                    "crew run routes Korean task text through korean-normalizer gate",
+                    "crew agent routes Korean input through korean-normalizer before downstream agent",
+                ],
+            ),
+            "Korean task input must be normalized before every crew run or direct-agent downstream handoff.",
         ),
         control(
             "reliability",
@@ -474,6 +499,7 @@ def evaluate_repo(root: Path) -> dict:
                     "handles Bash tool failures involving crew",
                     "records structured infrastructure blockers from Bash crew output",
                     "ignores normal host bridge blocked handoffs",
+                    "ignores resumable internal handoff-ready runs",
                     "recognizes hook and missing-asset supervisor blockers",
                     "auto issue hook wrapper is advisory",
                 ],

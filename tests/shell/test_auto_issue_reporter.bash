@@ -196,6 +196,18 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" '"status": "ignored"'
 
+HANDOFF_READY_PAYLOAD='{"hook_event_name":"PostToolUse","status":"completed","tool_name":"Bash","tool_input":{"command":"crew run \"demo\""},"tool_response":{"stdout":"STATUS: handoff_ready\nHOST_BRIDGE: internal_handoff_ready","returncode":0}}'
+
+it "crew report auto ignores resumable internal handoff-ready runs"
+out=$(printf '%s' "${HANDOFF_READY_PAYLOAD}" | \
+  PATH="${BIN_DIR}:${PATH}" \
+  GH_LOG="${TMP}/handoff-ready-gh.log" \
+  AGENT_CREW_AUTO_ISSUE_STATE_DIR="${TMP}/handoff-ready-reports" \
+  bash "${CREW_BIN}" report auto --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"status": "ignored"'
+
 STRUCTURED_BLOCKER_PAYLOAD='{"hook_event_name":"PostToolUse","status":"failed","tool_name":"Bash","tool_input":{"command":"crew status"},"tool_response":{"stderr":"STATUS: blocked\nBLOCKER: state_schema_invalid","returncode":3}}'
 
 it "crew report auto records structured infrastructure blockers from Bash crew output"

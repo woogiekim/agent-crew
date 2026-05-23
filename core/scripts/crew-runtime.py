@@ -440,6 +440,40 @@ def contains_hangul(text: str) -> bool:
     return bool(HANGUL_PATTERN.search(text or ""))
 
 
+def korean_normalization_task(raw_task: str, *, next_target: str) -> str:
+    return (
+        "Normalize Korean input for an agent-crew workflow request. Return only "
+        "NORMALIZED_TASK and RATIONALE, then re-route the normalized English "
+        f"task to {next_target}."
+    )
+
+
+def korean_normalization_handoff(
+    *,
+    request_id: str,
+    project_root: Path,
+    normalized_task: str,
+    raw_task: str,
+    next_target: str,
+    status: str,
+) -> str:
+    return (
+        "# Korean Normalization Handoff\n\n"
+        f"REQUEST_ID: {request_id}\n"
+        "AGENT: korean-normalizer\n"
+        f"TASK: {normalized_task}\n"
+        f"PROJECT_ROOT: {project_root}\n"
+        "MODE: normalization-gate\n"
+        f"STATUS: {status}\n\n"
+        "NORMALIZATION_GATE: required\n"
+        f"INTENDED_TARGET_AFTER_NORMALIZATION: {next_target}\n"
+        f"RAW_TASK: {raw_task}\n"
+        "OUTPUT_CONTRACT: Return NORMALIZED_TASK and RATIONALE only. "
+        "Do not execute the downstream workflow until the normalized English "
+        "task is available.\n"
+    )
+
+
 def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
     lowered = task.lower()
     route_patterns = [
@@ -479,8 +513,12 @@ def command_run(args: argparse.Namespace) -> int:
     context_dir = task_dir / "context"
     context_dir.mkdir(parents=True, exist_ok=True)
 
+    raw_task = args.task
+    normalization_required = contains_hangul(raw_task)
+    task = korean_normalization_task(raw_task, next_target="crew run supervisor") if normalization_required else raw_task
+
     fake_completed_requested = args.fake_host_result == "completed"
-    fake_quality_blocked = fake_completed_requested and looks_mutating_task(args.task)
+    fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
     bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
     if fake_completed_requested and not fake_quality_blocked:
         result_status = "completed"
@@ -514,8 +552,8 @@ def command_run(args: argparse.Namespace) -> int:
         "schema_version": 1,
         "task_id": task_id,
         "session_id": session_id,
-        "task": args.task,
-        "branch": f"crew/{slug(args.task)}",
+        "task": task,
+        "branch": f"crew/{slug(task)}",
         "project_root": str(project_root),
         "task_dir": str(task_dir),
         "execution_mode": "single",
@@ -534,37 +572,52 @@ def command_run(args: argparse.Namespace) -> int:
 
     pipeline = {
         "schema_version": 1,
-        "task": args.task,
-        "stages": ["supervisor"],
+        "task": task,
+        "stages": ["korean-normalizer"] if normalization_required else ["supervisor"],
         "completed_stages": 1 if result_status == "completed" else 0,
         "stage_agent_status": {
-            "1": {"supervisor": "completed" if result_status == "completed" else "blocked"}
+            "1": {
+                ("korean-normalizer" if normalization_required else "supervisor"):
+                    "completed" if result_status == "completed" else "blocked"
+            }
         },
     }
 
-    handoff = (
-        f"# Supervisor Handoff\n\n"
-        f"TASK_ID: {task_id}\n"
-        f"TASK: {args.task}\n"
-        f"PROJECT_ROOT: {project_root}\n"
-        f"MODE: fake-host\n" if args.fake_host_result else
-        f"# Supervisor Handoff\n\n"
-        f"TASK_ID: {task_id}\n"
-        f"TASK: {args.task}\n"
-        f"PROJECT_ROOT: {project_root}\n"
-        f"MODE: native-cli\n"
-        f"STATUS: {result_status}\n"
-        f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
-    )
+    if normalization_required:
+        handoff = korean_normalization_handoff(
+            request_id=task_id,
+            project_root=project_root,
+            normalized_task=task,
+            raw_task=raw_task,
+            next_target="crew run supervisor",
+            status=result_status,
+        )
+    else:
+        handoff = (
+            f"# Supervisor Handoff\n\n"
+            f"TASK_ID: {task_id}\n"
+            f"TASK: {task}\n"
+            f"PROJECT_ROOT: {project_root}\n"
+            f"MODE: fake-host\n" if args.fake_host_result else
+            f"# Supervisor Handoff\n\n"
+            f"TASK_ID: {task_id}\n"
+            f"TASK: {task}\n"
+            f"PROJECT_ROOT: {project_root}\n"
+            f"MODE: native-cli\n"
+            f"STATUS: {result_status}\n"
+            f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
+        )
     if result_status == "blocked":
         handoff += "BLOCKER: host AI bridge has not completed this handoff\n"
 
     result = (
-        f"# {args.task}\n\n"
+        f"# {task}\n\n"
         f"STATUS: {result_status}\n"
         f"TASK_ID: {task_id}\n"
         f"BRANCH: {register['branch']}\n"
     )
+    if normalization_required:
+        result += "NORMALIZATION_GATE: required\n"
     if result_status == "handoff_ready":
         result += "HOST_BRIDGE: internal_handoff_ready\n"
         result += blocked_next
@@ -588,7 +641,7 @@ def command_run(args: argparse.Namespace) -> int:
     if result_status == "blocked":
         progress_status = "failed"
     (task_dir / "progress.log").write_text(
-        f"{now_z} | STARTED | {args.task}\n"
+        f"{now_z} | STARTED | {task}\n"
         f"{now_z} | STATUS | {result_status}\n",
         encoding="utf-8",
     )
@@ -604,7 +657,7 @@ def command_run(args: argparse.Namespace) -> int:
             "agent": "",
             "attempt": 0,
             "status": "started",
-            "detail": args.task,
+            "detail": task,
             "files": [],
         },
     )
