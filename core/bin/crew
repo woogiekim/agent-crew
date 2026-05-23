@@ -268,7 +268,11 @@ cmd_status_json() {
   local recent="${1:-10}"
   local telemetry="${ASSET_ROOT}/scripts/telemetry-aggregate.py"
   if [ -f "${telemetry}" ]; then
-    python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format json
+    if grep -q -- "--project-root" "${telemetry}" 2>/dev/null; then
+      python3 "${telemetry}" --state-dir "${STATE_DIR}" --project-root "${PROJECT_ROOT}" --recent "${recent}" --format json
+    else
+      python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format json
+    fi
     return
   fi
   printf '{"project":"%s","state_dir":"%s","error":"telemetry script not found"}\n' \
@@ -314,7 +318,11 @@ EOF
 
   local telemetry="${ASSET_ROOT}/scripts/telemetry-aggregate.py"
   if [ -f "${telemetry}" ]; then
-    python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format text
+    if grep -q -- "--project-root" "${telemetry}" 2>/dev/null; then
+      python3 "${telemetry}" --state-dir "${STATE_DIR}" --project-root "${PROJECT_ROOT}" --recent "${recent}" --format text
+    else
+      python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format text
+    fi
   else
     find "${STATE_DIR}/tasks" -mindepth 1 -maxdepth 1 -type d | sort | tail -"${recent}"
   fi
@@ -339,7 +347,11 @@ EOF
     return 0
   fi
 
-  python3 "${telemetry}" --state-dir "${STATE_DIR}" "$@"
+  if grep -q -- "--project-root" "${telemetry}" 2>/dev/null; then
+    python3 "${telemetry}" --state-dir "${STATE_DIR}" --project-root "${PROJECT_ROOT}" "$@"
+  else
+    python3 "${telemetry}" --state-dir "${STATE_DIR}" "$@"
+  fi
 }
 
 cmd_trace() {
