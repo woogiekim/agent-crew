@@ -26,7 +26,7 @@ def test_workflow_replay_check_passes_current_fixture():
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
-    assert payload["summary"] == {"cases": 3, "passed": 3, "failed": 0}
+    assert payload["summary"] == {"cases": 4, "passed": 4, "failed": 0}
 
 
 def test_workflow_replay_check_detects_tool_flow_regression(tmp_path: Path):
@@ -72,6 +72,24 @@ def test_workflow_replay_check_detects_extra_failure_code(tmp_path: Path):
     first_failure = payload["failures"][0]
     assert first_failure["id"] == "missing_tdd_is_rejected"
     assert any("pipeline-quality-plan-check.py:failure_codes" in item for item in first_failure["failures"])
+
+
+def test_workflow_replay_check_detects_issue_reporting_regression(tmp_path: Path):
+    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    case = next(item for item in fixture["cases"] if item["id"] == "normal_use_structured_blocker_reports_issue")
+    case["auto_issue_payload"]["blocker"] = "ordinary_user_cancellation"
+    path = tmp_path / "workflow-replay.json"
+    path.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
+
+    result = _run("--fixture", str(path))
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    issue_failure = next(
+        failure for failure in payload["failures"]
+        if failure["id"] == "normal_use_structured_blocker_reports_issue"
+    )
+    assert any("auto-issue-reporter.py:status:ignored!=expected:recorded" in item for item in issue_failure["failures"])
 
 
 def test_workflow_replay_check_rejects_invalid_fixture(tmp_path: Path):

@@ -58,6 +58,23 @@ Each accepted report has a dedup record under `reported/` and a publishable
 JSON document under `outbox/`. This keeps reporting reliable when the operator
 is offline, unauthenticated, or using a non-GitHub workflow.
 
+Each outbox document includes stable structured fields:
+
+```text
+schema_version
+fingerprint
+source
+classification
+title
+evidence
+body
+```
+
+`classification` is one of `user_reported_error`, `crew_command_failure`, or
+`infrastructure_blocker`. The report body must label captured text as untrusted
+diagnostic evidence so copied prompts, logs, or tool output cannot become
+workflow instructions during triage.
+
 ## Optional GitHub Publisher
 
 Default GitHub repository:
@@ -122,3 +139,10 @@ crew report publish --backend github
 printf '{"prompt":"agent-crew error: traceback"}' \
   | crew report auto --format json
 ```
+
+## Replay Verification
+
+`core/evaluations/workflow-replay.json` contains a normal-use structured blocker
+case that expects `auto-issue-reporter.py` to return `status=recorded`. This
+keeps issue-reporting coverage in the deterministic replay suite instead of
+only in isolated hook tests.

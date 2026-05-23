@@ -16,6 +16,7 @@ from pathlib import Path
 
 
 ID_RE = re.compile(r"\b(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-z0-9][a-z0-9_.:-]{5,})\b", re.I)
+SCORE_RE = re.compile(r"\b(?:score|relevance|rank_score)=([0-9]+(?:\.[0-9]+)?)\b", re.I)
 
 
 def load_fixture(path: Path) -> dict:
@@ -41,6 +42,23 @@ def extract_ids(text: str) -> list[str]:
     return ids
 
 
+def extract_scores(text: str) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    for line in text.splitlines():
+        if line.startswith("[mnemos]") or line.startswith("[memory]"):
+            continue
+        id_match = ID_RE.search(line)
+        score_match = SCORE_RE.search(line)
+        if not id_match or not score_match:
+            continue
+        mid = id_match.group(0).strip().rstrip(":")
+        try:
+            scores[mid] = float(score_match.group(1))
+        except ValueError:
+            continue
+    return scores
+
+
 def run_memory(memory_bin: Path, query: str, limit: int) -> tuple[str, int, float]:
     started = time.perf_counter()
     proc = subprocess.run(
@@ -59,6 +77,7 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         for key, value in fixture.get("accepted_successor_memory_ids", {}).items()
     }
     returned = extract_ids(output)
+    scores = extract_scores(output)
     expected_set = set(expected)
     accepted_successor_ids = {
         successor
@@ -99,18 +118,38 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
     ]
     latency_budget_ms = int(fixture["latency_budget_ms"])
     noise_budget_count = int(fixture["noise_budget_count"])
+    min_expected_score = fixture.get("min_expected_score")
+    min_expected_score = float(min_expected_score) if min_expected_score is not None else None
+    missing_scores: list[str] = []
+    low_scores: dict[str, float] = {}
+    if min_expected_score is not None:
+        for mid in evaluation_returned:
+            if mid in expected_set or mid in accepted_successor_ids:
+                if mid not in scores:
+                    missing_scores.append(mid)
+                elif scores[mid] < min_expected_score:
+                    low_scores[mid] = scores[mid]
 
     failures = {
         "misses": misses,
         "noise": noise if len(noise) > noise_budget_count else [],
         "latency_ms": elapsed_ms if elapsed_ms > latency_budget_ms else None,
+        "missing_scores": missing_scores,
+        "low_scores": low_scores,
     }
-    passed = not failures["misses"] and not failures["noise"] and failures["latency_ms"] is None
+    passed = (
+        not failures["misses"]
+        and not failures["noise"]
+        and failures["latency_ms"] is None
+        and not failures["missing_scores"]
+        and not failures["low_scores"]
+    )
     return {
         "passed": passed,
         "query": fixture["query"],
         "expected_memory_ids": expected,
         "returned_memory_ids": returned,
+        "returned_memory_scores": scores,
         "evaluated_memory_ids": evaluation_returned,
         "misses": misses,
         "noise": noise,
@@ -123,6 +162,7 @@ def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
         },
         "latency_ms": round(elapsed_ms, 3),
         "latency_budget_ms": latency_budget_ms,
+        "min_expected_score": min_expected_score,
         "noise_budget_count": noise_budget_count,
         "failures": failures,
     }
