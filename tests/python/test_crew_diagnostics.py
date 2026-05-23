@@ -32,6 +32,17 @@ def test_auto_issue_reporting_probe_exercises_hook_path(tmp_path: Path):
     assert "hook smoke created native report" in detail
 
 
+def test_auto_issue_reporting_blocker_probe_exercises_hook_path(tmp_path: Path):
+    ok, detail = diagnostics.auto_issue_reporting_blocker_probe(
+        REPO_ROOT / "core",
+        tmp_path / "missing-agent-crew-home",
+        REPO_ROOT,
+    )
+
+    assert ok is True
+    assert "native blocker report" in detail
+
+
 def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()

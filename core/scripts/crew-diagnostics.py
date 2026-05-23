@@ -168,6 +168,56 @@ def auto_issue_reporting_probe(asset_root: Path, agent_crew_home: Path, project_
         return True, "hook smoke created native report and outbox record"
 
 
+def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
+    hook = asset_root / "hooks" / "auto-issue-report.sh"
+    if not hook.is_file():
+        return False, "auto issue hook not found"
+
+    hook_home = agent_crew_home
+    if not (hook_home / "bin" / "crew").is_file() and (asset_root / "bin" / "crew").is_file():
+        hook_home = asset_root
+
+    with tempfile.TemporaryDirectory(prefix="agent-crew-report-blocker-probe-") as tmp:
+        report_root = Path(tmp) / "reports"
+        payload = {
+            "source": "supervisor_blocked",
+            "status": "blocked",
+            "blocker": "state_schema_invalid",
+            "task_id": "20260523-000000-0",
+            "detail": "validate-state-schema.py failed during runtime doctor smoke",
+        }
+        env = os.environ.copy()
+        env.update(
+            {
+                "AGENT_CREW_HOME": str(hook_home),
+                "AGENT_CREW_REPORT_STATE_DIR": str(report_root),
+                "AGENT_CREW_AUTO_ISSUE_STATE_DIR": str(report_root),
+                "AGENT_CREW_AUTO_ISSUE_DRY_RUN": "0",
+                "AGENT_CREW_AUTO_ISSUE_REPORT": "1",
+                "AGENT_CREW_AUTO_ISSUE_REPORT_DISABLED": "0",
+                "AGENT_CREW_REPORT_PUBLISH": "none",
+                "AGENT_CREW_AUTO_ISSUE_PUBLISH": "none",
+                "PROJECT_ROOT": str(project_root),
+            }
+        )
+        proc = subprocess.run(
+            ["bash", str(hook)],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+            env=env,
+        )
+        reported = list((report_root / "reported").glob("*.json"))
+        outbox = list((report_root / "outbox").glob("*.json"))
+        if proc.returncode != 0:
+            return False, f"hook rc={proc.returncode}"
+        if not reported or not outbox:
+            return False, "hook completed but no native blocker report/outbox record was created"
+        return True, "hook smoke created native blocker report and outbox record"
+
+
 def stale_state_summary(asset_root: Path, state_dir: Path) -> dict[str, Any]:
     cleanup = asset_root / "scripts" / "cleanup-task-state.py"
     if not cleanup.is_file():
@@ -246,6 +296,8 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
         findings.append(print_status("report outbox creation", False, str(exc), emit=args.format == "text"))
     ok, detail = auto_issue_reporting_probe(asset_root, agent_crew_home, project_root)
     findings.append(print_status("automatic issue reporting smoke", ok, detail, emit=args.format == "text"))
+    ok, detail = auto_issue_reporting_blocker_probe(asset_root, agent_crew_home, project_root)
+    findings.append(print_status("automatic issue blocker smoke", ok, detail, emit=args.format == "text"))
     stale = stale_state_summary(asset_root, state_dir)
     stale_detail = stale["detail"]
     if stale.get("recommendation"):
