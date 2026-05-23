@@ -16,9 +16,29 @@ from pathlib import Path
 from quality_loop_lib import check_quality_loop, looks_mutating_task
 
 
+SECRET_PATTERNS = [
+    re.compile(r"gh[pousr]_[A-Za-z0-9_]+"),
+    re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}"),
+    re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)\b(token|password|passwd|secret|api[_-]?key)=\S+"),
+]
+
+
 def utc_now_z() -> str:
     """Return the progress-buffer timestamp format used by supervisor."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def redact(text: str) -> str:
+    redacted = text
+    for pattern in SECRET_PATTERNS:
+        redacted = pattern.sub("[REDACTED]", redacted)
+    return redacted
+
+
+def trace_id_for(register: dict, task_dir: Path, stage: int = 0, attempt: int = 0) -> str:
+    session_id = register.get("session_id", task_dir.name)
+    return f"{session_id}.{task_dir.name}.{stage}.{attempt}"
 
 
 def git_root() -> Path:
@@ -68,6 +88,61 @@ def load_text(path: Path) -> str:
 
 def append_progress(task_dir: Path, row: dict) -> None:
     append_jsonl(task_dir / "progress.buffer.jsonl", row)
+
+
+def append_delegation(
+    task_dir: Path,
+    *,
+    trace_id: str,
+    span_id: str,
+    parent_span_id: str,
+    agent_role: str,
+    unit_id: str,
+    delegated_by: str,
+    status: str,
+) -> None:
+    append_jsonl(
+        task_dir / "delegation.jsonl",
+        {
+            "ts": utc_now_z(),
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "parent_span_id": parent_span_id,
+            "agent_role": agent_role,
+            "unit_id": unit_id,
+            "delegated_by": delegated_by,
+            "status": status,
+        },
+    )
+
+
+def append_tool_event(
+    task_dir: Path,
+    *,
+    trace_id: str,
+    tool_name: str,
+    action_summary: str,
+    started_at: str,
+    ended_at: str,
+    status: str,
+    exit_code: int | None,
+    failure_class: str,
+) -> None:
+    append_jsonl(
+        task_dir / "tool-events.jsonl",
+        {
+            "schema_version": 1,
+            "trace_id": trace_id,
+            "tool_name": tool_name,
+            "action_summary": redact(action_summary)[:500],
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "status": status,
+            "exit_code": exit_code,
+            "token_usage_ref": f"cost/{task_dir.name}.jsonl",
+            "failure_class": failure_class,
+        },
+    )
 
 
 def render_completed_result(task: str, task_id: str, completion_path: str, note: str) -> str:
@@ -267,6 +342,17 @@ def invoke_host_bridge(command: str, *, task_dir: Path, register: dict,
     started = datetime.now(timezone.utc)
     proc = subprocess.run(command, shell=True, text=True, capture_output=True, env=env)
     finished = datetime.now(timezone.utc)
+    append_tool_event(
+        task_dir,
+        trace_id=trace_id_for(register, task_dir),
+        tool_name="host_bridge_command",
+        action_summary=command,
+        started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        status="completed" if proc.returncode == 0 else "failed",
+        exit_code=proc.returncode,
+        failure_class="" if proc.returncode == 0 else "host_bridge_command_failed",
+    )
     return {
         "schema_version": 1,
         "task_id": register["task_id"],
@@ -501,6 +587,16 @@ def command_run(args: argparse.Namespace) -> int:
             "detail": result_status,
             "files": [],
         },
+    )
+    append_delegation(
+        task_dir,
+        trace_id=f"{session_id}.{task_id}.0.0",
+        span_id=f"{task_id}:supervisor",
+        parent_span_id="",
+        agent_role="supervisor",
+        unit_id=task_id,
+        delegated_by="crew-runtime",
+        status=result_status,
     )
 
     if fake_quality_blocked:

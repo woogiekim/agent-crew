@@ -21,10 +21,11 @@ crew:run "Order API" | "Product API"
 
 The Codex adapter installs `.codex/` agent and hook configuration plus
 `AGENTS.md` guidance. Do not rely on custom slash command registration in Codex.
-Use plain `crew:<intent>` text. In Codex, `@` is interpreted as mention input,
-not as a custom command prefix. The native shell CLI uses space-separated
-commands such as `crew run` and `crew agent`; those are CLI forms, not the
-prompt workflow notation.
+Slash-style commands are host-specific aliases, and this adapter does not create
+adapter-owned slash aliases. Use plain `crew:<intent>` text. In Codex, `@` is
+interpreted as mention input, not as a custom command prefix. The native shell
+CLI uses space-separated commands such as `crew run` and `crew agent`; those are
+CLI forms, not the prompt workflow notation.
 
 ## crew:agent — Direct Agent Invocation
 

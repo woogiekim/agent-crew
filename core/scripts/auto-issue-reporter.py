@@ -137,6 +137,26 @@ def has_bug_signal(text: str) -> bool:
 
 
 def detect_signal(payload: dict[str, Any]) -> Signal | None:
+    source = str(payload.get("source") or "")
+    status = str(payload.get("status") or "")
+    blocker = str(payload.get("blocker") or payload.get("blocked_by") or "")
+    infrastructure_failure = bool(
+        re.search(
+            r"schema|validator|capabilit|host[_ -]?bridge|task[_ -]?tool|"
+            r"monitor[_ -]?tool|state[_ -]?schema|runtime|install[_ -]?drift|"
+            r"hook|crash[_ -]?budget|missing[_ -]?asset|asset[_ -]?missing",
+            blocker,
+            re.IGNORECASE,
+        )
+    )
+    if source == "supervisor_blocked" and status.lower() == "blocked" and infrastructure_failure:
+        evidence = "\n".join(flatten_strings(payload))
+        return Signal(
+            source="supervisor_blocked",
+            summary=first_line(blocker or evidence),
+            evidence=compact_text(evidence),
+        )
+
     prompt = str(payload.get("prompt") or "")
     if prompt and has_agent_crew_signal(prompt) and has_bug_signal(prompt):
         summary = first_line(prompt)

@@ -42,7 +42,7 @@ def test_readme_documents_codex_capability_fallbacks():
 def test_readme_documents_native_cli_boundary():
     text = readme_text()
     assert "`crew` is the native shell entrypoint" in text
-    assert "`crew setup`, `crew status`,\n`crew cost`, `crew doctor`, `crew update --local`, and the initial `crew run` / `crew agent` state\ntransitions are deterministic CLI paths" in text
+    assert "`crew setup`, `crew status`,\n`crew trace`, `crew cost`, `crew doctor`, `crew config`, `crew debug`, `crew resume`,\n`crew update --local`, and the initial `crew run` / `crew agent` state\ntransitions are deterministic CLI paths" in text
     assert "`crew run` writes task state and a\nsupervisor handoff" in text
     assert "until the host AI prompt runtime completes that handoff" in text
     assert "`crew agent` validates a\nread-only direct-agent request" in text
@@ -59,6 +59,8 @@ def test_docs_distinguish_workflow_notation_from_native_cli_forms():
     compact = " ".join(combined.split())
     assert "`crew:<intent>` workflow notation" in combined
     assert "native shell CLI uses space-separated commands such as `crew run` and `crew agent`" in compact
+    assert "Slash-style commands are host-specific aliases" in combined
+    assert "this adapter does not create adapter-owned slash aliases" in compact
 
 
 def test_codex_guide_mirror_is_not_native_skill_directory():
@@ -128,5 +130,15 @@ def test_readme_documents_automatic_issue_reporting():
     text = readme_text()
     assert "Native issue reporting" in text
     assert "crew report auto" in text
+    assert "unexpected supervisor infrastructure blockers" in text
     assert "core/hooks/auto-issue-report.sh" in text
     assert "core/rules/auto-issue-reporting.md" in text
+
+
+def test_readme_documents_trace_resume_and_config_improvements():
+    text = readme_text()
+    assert "`tool-events.jsonl` records native tool calls keyed by `trace_id`" in text
+    assert "`delegation.jsonl` records provider-neutral span lineage" in text
+    assert "`crew config dump --effective`" in text
+    assert "`crew doctor` | Native shell command: split operational checks" in text
+    assert "records RESUME_REQUESTED" in text

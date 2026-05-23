@@ -153,6 +153,23 @@ def read_cost_file(state_dir, task_id):
             "tokens_total": total_in + total_out}
 
 
+def read_tool_events(task_dir):
+    p = task_dir / "tool-events.jsonl"
+    if not p.is_file():
+        return []
+    rows = []
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        rows.append(row)
+    return rows
+
+
 def phase_runtime_metrics(events):
     """Compute per-phase runtime telemetry from progress buffer events."""
     metrics = []
@@ -397,6 +414,7 @@ def aggregate_task(state_dir, task_dir):
     task_id = task_dir.name
     reg = read_register(task_dir)
     events = read_progress_buffer(task_dir)
+    tool_events = read_tool_events(task_dir)
     cost = read_cost_file(state_dir, task_id)
     result = read_result_md(task_dir)
     missing_boot = missing_supervisor_boot_state(
@@ -527,6 +545,8 @@ def aggregate_task(state_dir, task_dir):
         "blockers":          blocked_by,
         "guidance":          guidance_for(blocked_by, status, current_phase),
         "host_bridge_status": host_bridge_status(reg),
+        "tool_events_total": len(tool_events),
+        "tool_failures_total": sum(1 for e in tool_events if e.get("status") == "failed"),
         "tokens_in":         (cost or {}).get("tokens_in"),
         "tokens_out":        (cost or {}).get("tokens_out"),
         "tokens_total":      (cost or {}).get("tokens_total"),
@@ -596,6 +616,8 @@ def aggregate_summary(rows):
     total_retries = sum(r["retries"] for r in rows)
     total_tokens = sum(r["tokens_total"] for r in rows
                        if r["tokens_total"] is not None)
+    total_tool_events = sum(r.get("tool_events_total", 0) for r in rows)
+    total_tool_failures = sum(r.get("tool_failures_total", 0) for r in rows)
 
     by_phase = Counter(r["current_phase"] for r in rows if r["current_phase"])
     by_host_bridge_status = Counter(
@@ -629,6 +651,8 @@ def aggregate_summary(rows):
                                     if durations else None),
         "total_retries":           total_retries,
         "total_tokens":            total_tokens,
+        "total_tool_events":       total_tool_events,
+        "total_tool_failures":     total_tool_failures,
         "by_phase":                dict(by_phase),
         "by_host_bridge_status":   dict(by_host_bridge_status),
         "by_blocker":              dict(by_blocker),
@@ -697,6 +721,8 @@ def render_text(rows, summary):
           f"median={format_duration(summary['median_duration_seconds'])}")
     print(f"Retries: {summary['total_retries']} total | "
           f"Tokens: {format_tokens(summary['total_tokens'])} total")
+    print(f"Tool events: {summary.get('total_tool_events', 0)} total | "
+          f"{summary.get('total_tool_failures', 0)} failed")
     if summary["by_blocker"]:
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_blocker"].items())
         print(f"Blockers: {bk}")

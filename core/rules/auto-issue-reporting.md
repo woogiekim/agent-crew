@@ -2,10 +2,11 @@
 
 ## Purpose
 
-When an operator explicitly reports an agent-crew bug/error, or a `crew`
-command emits explicit bug/error output through a host hook payload, agent-crew
-stores a native local report. GitHub publication is an optional publisher
-backend, not part of the hook contract.
+When an operator explicitly reports an agent-crew bug/error, a `crew` command
+emits explicit bug/error output through a host hook payload, or the supervisor
+halts on an unexpected infrastructure blocker, agent-crew stores a native local
+report. GitHub publication is an optional publisher backend, not part of the
+hook contract.
 
 This is an advisory reporting path. It must not block the user's current
 prompt, tool call, or pipeline execution.
@@ -38,6 +39,10 @@ Adapters wire it into:
   agent-crew command and whose output contains an explicit bug/error signal.
   A non-zero return code alone is not enough because normal host handoff
   blockers also use non-zero exits.
+- `source=supervisor_blocked` payloads — detects unexpected supervisor
+  infrastructure blockers such as schema validation, capability, runtime,
+  host-tool, or install drift failures. Normal host bridge handoff blockers
+  remain ignored.
 
 ## Native Report Outbox
 

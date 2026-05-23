@@ -190,6 +190,33 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" '"status": "ignored"'
 
+SUPERVISOR_BLOCKED_PAYLOAD='{"source":"supervisor_blocked","status":"blocked","blocker":"state_schema_invalid","task_id":"20260523-000000-0","detail":"validate-state-schema.py failed with token=secret123"}'
+
+it "crew report auto records sanitized supervisor infrastructure blocked reports"
+out=$(printf '%s' "${SUPERVISOR_BLOCKED_PAYLOAD}" | \
+  PATH="${BIN_DIR}:${PATH}" \
+  GH_LOG="${TMP}/supervisor-blocked-gh.log" \
+  AGENT_CREW_AUTO_ISSUE_STATE_DIR="${TMP}/supervisor-blocked-reports" \
+  bash "${CREW_BIN}" report auto --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"status": "recorded"'
+grep -R "token=secret123" "${TMP}/supervisor-blocked-reports" >/dev/null 2>&1
+rc=$?
+assert_exit 1 "${rc}"
+
+SUPERVISOR_HOOK_BLOCKED_PAYLOAD='{"source":"supervisor_blocked","status":"blocked","blocker":"hook_failure_missing_asset","task_id":"20260523-000001-0","detail":"hook failed because runtime asset is missing"}'
+
+it "crew report auto recognizes hook and missing-asset supervisor blockers"
+out=$(printf '%s' "${SUPERVISOR_HOOK_BLOCKED_PAYLOAD}" | \
+  PATH="${BIN_DIR}:${PATH}" \
+  GH_LOG="${TMP}/supervisor-hook-blocked-gh.log" \
+  AGENT_CREW_AUTO_ISSUE_STATE_DIR="${TMP}/supervisor-hook-blocked-reports" \
+  bash "${CREW_BIN}" report auto --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"status": "recorded"'
+
 FAKE_HOME="${TMP}/fake-home"
 FAKE_CREW_LOG="${TMP}/fake-crew.log"
 mkdir -p "${FAKE_HOME}/bin"
