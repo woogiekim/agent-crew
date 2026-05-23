@@ -10,6 +10,7 @@ import sys
 import os
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+HOST_BRIDGE_CONFIGURED = bool(os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"))
 
 try:
     data = json.loads(raw_input)
@@ -256,17 +257,22 @@ def emit_inline_no_bridge_note(reason: str):
     sys.exit(0)
 
 
+def emit_no_bridge_inline_fallback(reason: str):
+    """If host bridge is unavailable, process inline and stop routing."""
+    if not HOST_BRIDGE_CONFIGURED:
+        emit_inline_no_bridge_note(reason)
+        return True
+    return False
+
+
 if (
     match(QUESTION_PAT)
     and match(READONLY_REVIEW_PAT)
     and not match(ACTION_PAT)
     and not (match(CONDITIONAL_REVIEW_FIX_PAT) and match(FOLLOWUP_EXECUTION_PAT))
 ):
-    # In non-bridged Codex runtimes, forcing ROUTE here can stall user flow.
-    # If a host bridge is not configured, prefer in-model response.
-    if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
-        # Skip hard route in this host runtime when no bridge is configured.
-        emit_inline_no_bridge_note("read-only review request")
+    if emit_no_bridge_inline_fallback("read-only review request"):
+        pass
 
     emit_question_route("analyst", "read-only review/evaluation Q")
 
@@ -276,10 +282,8 @@ if match(READONLY_REVIEW_PAT) and re.search(
     prompt,
     re.IGNORECASE,
 ):
-    if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
-        # In non-bridged runtime, avoid hard-routing read-only questions.
-        # Inline handling is safer and prevents handoff stalls.
-        emit_inline_no_bridge_note("read-only explicit request")
+    if emit_no_bridge_inline_fallback("read-only explicit request"):
+        pass
 
     emit_question_route("analyst", "read-only review/evaluation Q")
 
@@ -287,10 +291,8 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
     # Questions and explanations must go through crew:agent — not inline.
     # Exception: truly atomic facts (bare yes/no, bare path, bare number)
     # that need no explanation are allowed inline.
-    if not os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND"):
-        # If a host bridge is not configured, answer/handle questions inline.
-        # This avoids [agent-crew] ROUTE dead-ends in plain model sessions.
-        emit_inline_no_bridge_note("question")
+    if emit_no_bridge_inline_fallback("question"):
+        pass
 
     if re.search(TRIVIAL_ATOMIC_PAT, prompt.strip(), re.IGNORECASE):
         sys.exit(0)  # bare atomic fact — inline is fine
@@ -429,6 +431,9 @@ if not detected_type:
 
 if not detected_type:
     sys.exit(0)
+
+if emit_no_bridge_inline_fallback("implementation request"):
+    pass
 
 # Both "project implementation" (generic) and domain-specific routes produce
 # the same STOP directive. The only difference is the REQUIRED action line.

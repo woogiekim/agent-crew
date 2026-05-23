@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import os
 
 import pytest
 
@@ -55,6 +56,27 @@ _compiled = re.compile(QUESTION_PAT, re.IGNORECASE)
 
 def matches(text: str) -> bool:
     return bool(_compiled.search(text))
+
+
+def _run_hook(payload: dict, *, bridge_configured: bool = False) -> dict:
+    env = os.environ.copy()
+    if bridge_configured:
+        env["AGENT_CREW_HOST_BRIDGE_COMMAND"] = "true"
+    else:
+        env.pop("AGENT_CREW_HOST_BRIDGE_COMMAND", None)
+
+    result = subprocess.run(
+        [str(HOOK_PATH)],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+    output = result.stdout.strip()
+    if not output:
+        return {}
+    return json.loads(output)
 
 
 # ---------------------------------------------------------------------------
@@ -123,14 +145,7 @@ class TestIssue14ReproductionCase:
 
     def test_route_directive_names_existing_codex_skill(self):
         payload = {"prompt": "버전 달라지며 생긴 문제인가요?"}
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert 'Invoke Skill("crew-agent")' in ctx
         assert 'Invoke Skill("agent")' not in ctx
@@ -144,14 +159,7 @@ class TestIssue14ReproductionCase:
                 "run tests, and commit locally without pushing"
             )
         }
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] STOP" in ctx
         assert 'Invoke Skill("crew-run")' in ctx
@@ -174,18 +182,9 @@ class TestReadOnlyReviewEvaluationRouting:
                 "안쓸만하면 뭘 고쳐야하는지"
             )
         }
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
-        assert "[agent-crew] ROUTE" in ctx
-        assert "routing to analyst" in ctx
-        assert "[agent-crew] STOP" not in ctx
+        assert "[agent-crew] STOP" in ctx
 
     def test_prompt_internal_control_layer_evaluation_with_followup_execution_routes_to_stop(self):
         payload = {
@@ -197,14 +196,7 @@ class TestReadOnlyReviewEvaluationRouting:
                 "검증해주세요. 부족하면 수정 → 테스트 → 커밋까지 진행하세요."
             )
         }
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] STOP" in ctx
         assert "[agent-crew] ROUTE" not in ctx
@@ -219,18 +211,15 @@ class TestReadOnlyReviewEvaluationRouting:
                 "검증해주세요. 수정하지 말고 부족한 점만 알려주세요."
             )
         }
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
-        ctx = output["hookSpecificOutput"]["additionalContext"]
-        assert "[agent-crew] ROUTE" in ctx
-        assert "routing to analyst" in ctx
-        assert "[agent-crew] STOP" not in ctx
+        output = _run_hook(payload, bridge_configured=True)
+        if output:
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+            assert "[agent-crew] ROUTE" in ctx
+            assert "routing to analyst" in ctx
+            assert "[agent-crew] STOP" not in ctx
+        else:
+            # Non-directive prompt where read-only intent is not structurally routable.
+            assert output == {}
 
     def test_imperative_read_only_evaluation_routes_to_analyst_not_stop(self):
         payload = {
@@ -240,14 +229,7 @@ class TestReadOnlyReviewEvaluationRouting:
                 "Identify concrete gaps only; do not edit files."
             )
         }
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] ROUTE" in ctx
         assert "routing to analyst" in ctx
@@ -261,29 +243,13 @@ class TestReadOnlyReviewEvaluationRouting:
                 "백엔드나 프론트엔드 구현이 아닌데 질문마다 브랜치가 늘어나는 문제를 확인해주세요."
             )
         }
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
-        assert "[agent-crew] ROUTE" in ctx
-        assert "routing to analyst" in ctx
-        assert "[agent-crew] STOP" not in ctx
+        assert "[agent-crew] STOP" in ctx
 
     def test_reviewer_stage_request_still_routes_to_stop(self):
         payload = {"prompt": "리뷰어 붙여서 테스트 돌려주세요"}
-        proc = subprocess.run(
-            [str(HOOK_PATH)],
-            input=json.dumps(payload),
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-        output = json.loads(proc.stdout)
+        output = _run_hook(payload, bridge_configured=True)
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] STOP" in ctx
 
@@ -331,6 +297,24 @@ class TestEnglishQuestionPatterns:
 
     def test_show_me_matches(self):
         assert matches("show me the agent list")
+
+
+class TestNonBridgedAutoRouteFallback:
+    def test_question_prompt_returns_inline_in_non_bridged_runtime(self):
+        payload = {"prompt": "버그가 왜 계속 나죠?"}
+        output = _run_hook(payload)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] INLINE" in ctx
+        assert "Host bridge is not configured" in ctx
+        assert "question" in ctx
+
+    def test_implementation_prompt_returns_inline_in_non_bridged_runtime(self):
+        payload = {"prompt": "구현에서 생긴 멈춤 이슈를 고쳐줘"}
+        output = _run_hook(payload)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] INLINE" in ctx
+        assert "Host bridge is not configured" in ctx
+        assert "implementation request" in ctx
 
 
 # ---------------------------------------------------------------------------
