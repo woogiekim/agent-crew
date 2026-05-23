@@ -68,6 +68,19 @@ When the same blocker repeats in normal hosted runs, collect evidence first:
 crew report auto --summary "host bridge blocker pattern"
 ```
 
+### 4.1) Stale bridge-state remediation
+
+If bridge-blocked tasks are accumulating across many runs, clean stale handoff
+state first to reset scheduler visibility:
+
+```bash
+crew cleanup-host-bridge --dry-run
+crew cleanup-host-bridge --apply
+```
+
+Use this after backing up any out-of-band task evidence you need from
+`~/.agent-crew/state/agent-crew/tasks/*/result.md`.
+
 Use this to verify:
 
 - is host bridge command valid in the current shell/runtime,

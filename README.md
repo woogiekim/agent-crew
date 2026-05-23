@@ -207,6 +207,20 @@ blocked or repaired task directories. Those task artifacts are retained as
 diagnostic evidence (`result.md`, `register.json`, `pipeline.json`, progress,
 and `context/`).
 
+### Host Bridge Troubleshooting
+
+If tasks stop at `STATUS: blocked` with `host AI bridge has not completed this handoff`,
+use the recovery SOP and lightweight diagnostics:
+
+- `cat ${TASK_DIR}/result.md`
+- `crew status --json --task-id ${TASK_ID}`
+- `crew telemetry --format json --task-id ${TASK_ID}`
+- `crew report auto --summary "host bridge blocker pattern"`
+- `crew cleanup-host-bridge --dry-run`
+- `crew cleanup-host-bridge --apply`
+
+`TASK_ID` and `TASK_DIR` are printed in the `crew run` output.
+
 ## Testing
 
 The repository ships with a real test suite under `tests/` covering the Python
