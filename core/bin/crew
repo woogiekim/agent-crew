@@ -149,6 +149,8 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/reviewer-loop-decision.py:${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
     "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
     "core/scripts/cleanup-task-state.py:${AGENT_CREW_HOME}/scripts/cleanup-task-state.py" \
+    "core/scripts/codex-workflow-guard.py:${AGENT_CREW_HOME}/scripts/codex-workflow-guard.py" \
+    "core/scripts/crew-cli-cleanup.sh:${AGENT_CREW_HOME}/scripts/crew-cli-cleanup.sh" \
     "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
     "core/scripts/memory-gc.py:${AGENT_CREW_HOME}/scripts/memory-gc.py" \
     "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
@@ -645,6 +647,10 @@ def result_status(task_dir):
     m = re.search(r"^STATUS:\s*(\w+)", text, re.I | re.M)
     return m.group(1).lower() if m else ""
 
+def missing_required_markers(task_dir):
+    required = ("handoff.md", "pipeline.json", "register.json")
+    return [name for name in required if not (task_dir / name).is_file()]
+
 if not tasks_root.is_dir():
     print("No tasks found. Run crew setup first, then use crew run in your host runtime.")
     raise SystemExit(0)
@@ -663,6 +669,16 @@ task_dir = next((p for p in candidates if p.is_dir()), None)
 if task_dir is None:
     print(f"Task not found: {requested}")
     raise SystemExit(2)
+
+if mode == "request":
+    missing = missing_required_markers(task_dir)
+    if missing:
+        print("STATUS: blocked")
+        print("BLOCKER: missing_required_state_markers")
+        print(f"TASK_DIR: {task_dir}")
+        print(f"MISSING: {', '.join(missing)}")
+        print("NEXT: Run crew run to create workflow state, or resume from a valid TASK_DIR.")
+        raise SystemExit(2)
 
 register = read_json(task_dir / "register.json")
 pipeline = read_json(task_dir / "pipeline.json")
@@ -810,37 +826,27 @@ EOF
 }
 
 cmd_cleanup_host_bridge() {
+  local helper="${ASSET_ROOT}/scripts/crew-cli-cleanup.sh"
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    cat <<'EOF'
-usage: crew cleanup-host-bridge [--apply] [--status completed|blocked] [--min-age-seconds N]
-
-Finds stale host_bridge_not_invoked tasks. Without --apply, prints a dry-run
-list. With --apply, rewrites matched task state via crew repair so current
-telemetry is not polluted by already-handled manual fallback handoffs.
-EOF
-    return 0
+    require_file "${helper}" "cleanup command helper"
+    ASSET_ROOT="${ASSET_ROOT}" STATE_DIR="${STATE_DIR}" bash "${helper}" cleanup-host-bridge "$@"
+    return
   fi
-
   sync_source_runtime_assets_if_drifted
-  local cleanup="${ASSET_ROOT}/scripts/cleanup-host-bridge-blockers.py"
-  require_file "${cleanup}" "host bridge cleanup script"
-  python3 "${cleanup}" --state-dir "${STATE_DIR}" "$@"
+  require_file "${helper}" "cleanup command helper"
+  ASSET_ROOT="${ASSET_ROOT}" STATE_DIR="${STATE_DIR}" bash "${helper}" cleanup-host-bridge "$@"
 }
 
 cmd_cleanup_state() {
+  local helper="${ASSET_ROOT}/scripts/crew-cli-cleanup.sh"
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    cat <<'EOF'
-usage: crew cleanup-state [--apply] [--min-age-seconds N] [--format text|json]
-
-Dry-run-first cleanup and archival plan for stale active markers,
-supervisor-pending sentinels, and blocked/repaired task-state retention.
-EOF
-    return 0
+    require_file "${helper}" "cleanup command helper"
+    ASSET_ROOT="${ASSET_ROOT}" STATE_DIR="${STATE_DIR}" bash "${helper}" cleanup-state "$@"
+    return
   fi
   sync_source_runtime_assets_if_drifted
-  local cleanup="${ASSET_ROOT}/scripts/cleanup-task-state.py"
-  require_file "${cleanup}" "task-state cleanup script"
-  python3 "${cleanup}" --state-dir "${STATE_DIR}" "$@"
+  require_file "${helper}" "cleanup command helper"
+  ASSET_ROOT="${ASSET_ROOT}" STATE_DIR="${STATE_DIR}" bash "${helper}" cleanup-state "$@"
 }
 
 cmd_agent() {

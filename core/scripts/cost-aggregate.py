@@ -156,6 +156,45 @@ def proxy_metrics_for_task(state_dir, task_id):
     return "unavailable", metrics, "no measured token records or proxy telemetry events were found"
 
 
+def task_complexity_estimate(state_dir, task_id):
+    """Estimate task complexity from available workflow metadata only."""
+    task_dir = state_dir / "tasks" / task_id
+    progress_events = read_jsonl_count(task_dir / "progress.buffer.jsonl")
+    tool_events = read_jsonl_count(task_dir / "tool-events.jsonl")
+    delegation_events = read_jsonl_count(task_dir / "delegation.jsonl")
+    score = progress_events + (2 * tool_events) + (3 * delegation_events)
+    if score >= 25:
+        level = "high"
+    elif score >= 8:
+        level = "medium"
+    elif score > 0:
+        level = "low"
+    else:
+        level = "unavailable"
+    return {
+        "level": level,
+        "score": score,
+        "basis": {
+            "progress_events": progress_events,
+            "tool_events": tool_events,
+            "delegation_events": delegation_events,
+        },
+    }
+
+
+def routing_audit(rows):
+    decisions = []
+    for row in rows:
+        decisions.append({
+            "agent": row["agent"],
+            "stage": row["stage"],
+            "model": row["model"],
+            "tier": row["tier"],
+            "source": "measured_cost_record",
+        })
+    return decisions
+
+
 def summarize_rows(rows):
     """Reduce a list of normalized rows to a summary dict."""
     total_in = sum(r["in"]      for r in rows)
@@ -187,6 +226,7 @@ def summarize_rows(rows):
         "by_agent":         dict(by_agent),
         "by_tier":          dict(by_tier),
         "by_model":         dict(by_model),
+        "routing_audit":    routing_audit(rows),
     }
 
 
@@ -222,6 +262,7 @@ def summarize_task(state_dir, task_id):
     source, proxy, reason = proxy_metrics_for_task(state_dir, task_id)
     summary["telemetry_source"] = "measured" if rows else source
     summary["proxy_metrics"] = proxy
+    summary["task_complexity_estimate"] = task_complexity_estimate(state_dir, task_id)
     if not rows and reason:
         summary["unavailable_reason"] = reason
     return summary

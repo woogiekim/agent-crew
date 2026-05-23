@@ -64,6 +64,12 @@ assert_exit 0 "${rc}"
 it "crew cost reports zero tokens with empty cost directory"
 assert_contains "${out}" '"total_tokens": 0'
 
+it "crew cleanup-state helper exits 0 through extracted dispatcher"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" cleanup-state --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"summary"'
+
 it "crew cost --help documents aggregate metrics"
 out=$(bash "${CREW}" cost --help 2>&1)
 rc=$?
@@ -464,6 +470,16 @@ assert_exit 0 "${rc}"
 assert_contains "${out}" "TASK_ID: ${TASK_ID}"
 assert_contains "${out}" "HANDOFF:"
 assert_contains "${out}" "NEXT: Continue in the host prompt runtime"
+
+it "crew resume blocks missing required workflow state markers"
+BROKEN_TASK_ID="20260101-999999-0"
+BROKEN_TASK_DIR="${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks/${BROKEN_TASK_ID}"
+mkdir -p "${BROKEN_TASK_DIR}"
+printf 'broken resume fixture\n' > "${BROKEN_TASK_DIR}/task.txt"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" resume "${BROKEN_TASK_ID}" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "BLOCKER: missing_required_state_markers"
 
 it "crew repair marks a manually completed handoff as completed"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status completed --note "manual fallback done" "${TASK_ID}" 2>&1)

@@ -718,6 +718,23 @@ def aggregate_summary(rows):
     }
 
 
+def stale_state_counts(state_dir):
+    tasks_root = state_dir / "tasks"
+    counts = {
+        "stale_active_markers": 0,
+        "stale_supervisor_pending_sentinels": 0,
+    }
+    if not tasks_root.is_dir():
+        return counts
+    counts["stale_active_markers"] = sum(
+        1 for path in tasks_root.glob("active*") if path.is_file()
+    )
+    counts["stale_supervisor_pending_sentinels"] = sum(
+        1 for path in tasks_root.glob("*/supervisor-pending.txt") if path.is_file()
+    )
+    return counts
+
+
 # --------------------------------------------------------------------------- #
 # Output                                                                      #
 # --------------------------------------------------------------------------- #
@@ -781,6 +798,13 @@ def render_text(rows, summary):
           f"Tokens: {format_tokens(summary['total_tokens'])} total")
     print(f"Tool events: {summary.get('total_tool_events', 0)} total | "
           f"{summary.get('total_tool_failures', 0)} failed")
+    stale_counts = summary.get("stale_state_counts") or {}
+    if stale_counts:
+        print(
+            "Stale state markers: "
+            f"active={stale_counts.get('stale_active_markers', 0)} | "
+            f"supervisor-pending={stale_counts.get('stale_supervisor_pending_sentinels', 0)}"
+        )
     if summary["by_blocker"]:
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_blocker"].items())
         print(f"Blockers: {bk}")
@@ -833,6 +857,7 @@ def main():
     # Order by start time ascending in output (most chronologically natural).
     rows.sort(key=lambda r: r["started"] or "")
     summary = aggregate_summary(rows)
+    summary["stale_state_counts"] = stale_state_counts(state_dir)
 
     if args.format == "json":
         payload = {

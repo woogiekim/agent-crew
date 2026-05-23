@@ -53,3 +53,18 @@ def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):
     reports = {item["name"]: item for item in cfg["capability_reports"]}
     assert reports["task_tools"]["status"] == "policy-only"
     assert reports["cost_tracking"]["status"] == "policy-only"
+
+
+def test_stale_state_summary_counts_markers(tmp_path: Path):
+    state_dir = tmp_path / "home" / "state" / "project"
+    tasks = state_dir / "tasks"
+    task_dir = tasks / "20260101-120000-0"
+    task_dir.mkdir(parents=True)
+    (tasks / "active.20260101-120000-0").write_text("active\n", encoding="utf-8")
+    (task_dir / "supervisor-pending.txt").write_text("pending\n", encoding="utf-8")
+
+    summary = diagnostics.stale_state_summary(REPO_ROOT / "core", state_dir)
+
+    assert summary["status"] == "pass"
+    assert summary["summary"]["stale_active_markers"] == 1
+    assert summary["summary"]["stale_supervisor_pending_sentinels"] == 1

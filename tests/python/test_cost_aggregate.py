@@ -75,6 +75,9 @@ class TestCostAggregate:
         # 1000+500 + 2000+800 = 4300
         assert payload["task"]["total_tokens"] == 4300
         assert payload["task"]["calls"] == 2
+        assert payload["task"]["telemetry_source"] == "measured"
+        assert payload["task"]["routing_audit"][0]["tier"] == "balanced"
+        assert payload["task"]["task_complexity_estimate"]["level"] == "unavailable"
 
     def test_per_tier_breakdown(
         self, script_runner, env_with_home, state_dir
@@ -247,6 +250,7 @@ class TestCostAggregate:
         assert payload["task"]["telemetry_source"] == "proxy"
         assert payload["task"]["proxy_metrics"]["progress_events"] == 1
         assert payload["task"]["proxy_metrics"]["tool_events"] == 1
+        assert payload["task"]["task_complexity_estimate"]["level"] == "low"
 
     def test_missing_task_cost_without_proxy_reports_unavailable_reason(
         self, script_runner, env_with_home, state_dir

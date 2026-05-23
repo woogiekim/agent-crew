@@ -111,7 +111,7 @@ def resolve_state_dir(override: str | None) -> Path:
 def is_task_dir(path: Path) -> bool:
     if TASK_ID_RE.match(path.name):
         return True
-    return any((path / marker).exists() for marker in ("register.json", "pipeline.json", "progress.buffer.jsonl"))
+    return any((path / marker).exists() for marker in ("register.json", "pipeline.json", "progress.buffer.jsonl", "progress.log", "result.md"))
 
 
 def discover_task_dirs(state_dir: Path, explicit_task_dirs: list[str]) -> list[Path]:
@@ -198,9 +198,12 @@ def evaluate_task(task_dir: Path, taxonomy: set[str]) -> dict[str, Any]:
 
     coverage = telemetry_coverage(task_dir, events)
 
+    legacy_compatible = is_legacy_compatible_task(task_dir, events)
+
     return {
         "task_id": task_dir.name,
         "task_dir": str(task_dir),
+        "legacy_compatible": legacy_compatible,
         "events": len(events),
         "classified_events": len(classified),
         "coverage": coverage,
@@ -208,6 +211,38 @@ def evaluate_task(task_dir: Path, taxonomy: set[str]) -> dict[str, Any]:
         "unknown_labels": sorted(unknown_labels),
         "classified": classified,
     }
+
+
+def is_current_telemetry_contract_task(task_dir: Path) -> bool:
+    """Return true only when task state explicitly opts into current telemetry."""
+    register_path = task_dir / "register.json"
+    if register_path.is_file():
+        try:
+            register = json.loads(register_path.read_text(encoding="utf-8"))
+        except Exception:
+            register = {}
+        if isinstance(register, dict) and register.get("telemetry_schema_version"):
+            return True
+    return (task_dir / "telemetry-contract.current").is_file()
+
+
+def is_legacy_compatible_task(task_dir: Path, events: list[dict[str, Any]]) -> bool:
+    """Older task state can predate required runtime telemetry streams."""
+    _ = events
+    if is_current_telemetry_contract_task(task_dir):
+        return False
+    return any(
+        (task_dir / marker).is_file()
+        for marker in (
+            "progress.buffer.jsonl",
+            "progress.log",
+            "result.md",
+            "task.txt",
+            "handoff.md",
+            "register.json",
+            "pipeline.json",
+        )
+    )
 
 
 def _jsonl_count(path: Path) -> int:
@@ -271,43 +306,45 @@ def evaluate(
     missing_required = sorted(label for label in required_labels if label not in observed_labels)
     invalid_required = sorted(label for label in required_labels if label not in taxonomy)
 
-    failures: list[dict[str, Any] | str] = []
+    current_schema_failures: list[dict[str, Any] | str] = []
+    historical_compatibility_warnings: list[dict[str, Any] | str] = []
     if not tasks:
-        failures.append({
+        current_schema_failures.append({
             "code": "insufficient_telemetry_coverage",
             "detail": "no task telemetry streams were found",
         })
     for task in tasks:
         coverage = task["coverage"]
+        target = historical_compatibility_warnings if task["legacy_compatible"] else current_schema_failures
         if not coverage["events_present"]:
-            failures.append({
+            target.append({
                 "task_id": task["task_id"],
                 "code": "insufficient_telemetry_coverage",
                 "detail": "progress.buffer.jsonl has zero usable telemetry events",
             })
         elif coverage["weak_categories"]:
-            failures.append({
+            target.append({
                 "task_id": task["task_id"],
                 "code": "weak_telemetry_coverage",
                 "weak_categories": coverage["weak_categories"],
             })
     for task in tasks:
         if task["unknown_labels"]:
-            failures.append({
+            current_schema_failures.append({
                 "task_id": task["task_id"],
                 "unknown_labels": task["unknown_labels"],
             })
     if invalid_required:
-        failures.append({"invalid_required_labels": invalid_required})
+        current_schema_failures.append({"invalid_required_labels": invalid_required})
     if missing_required:
-        failures.append({"missing_required_labels": missing_required})
+        current_schema_failures.append({"missing_required_labels": missing_required})
 
     return {
         "schema_version": 1,
         "fixture": str(fixture_path),
         "state_dir": str(state_dir),
         "taxonomy": sorted(taxonomy),
-        "passed": not failures,
+        "passed": not current_schema_failures,
         "summary": {
             "tasks": len(tasks),
             "events": sum(task["events"] for task in tasks),
@@ -318,9 +355,14 @@ def evaluate(
             "weak_tool_coverage": sum(1 for task in tasks if "tool" in task["coverage"]["weak_categories"]),
             "weak_delegation_coverage": sum(1 for task in tasks if "delegation" in task["coverage"]["weak_categories"]),
             "weak_token_coverage": sum(1 for task in tasks if "token" in task["coverage"]["weak_categories"]),
+            "legacy_compatible_tasks": sum(1 for task in tasks if task["legacy_compatible"]),
+            "current_schema_failures": len(current_schema_failures),
+            "historical_compatibility_warnings": len(historical_compatibility_warnings),
         },
         "tasks": tasks,
-        "failures": failures,
+        "current_schema_failures": current_schema_failures,
+        "historical_compatibility_warnings": historical_compatibility_warnings,
+        "failures": current_schema_failures,
     }
 
 
@@ -329,7 +371,8 @@ def print_text(result: dict[str, Any]) -> None:
     summary = result["summary"]
     print(
         "tasks={tasks} events={events} classified_events={classified_events} "
-        "unknown_labels={unknown_labels}".format(**summary)
+        "unknown_labels={unknown_labels} current_schema_failures={current_schema_failures} "
+        "historical_compatibility_warnings={historical_compatibility_warnings}".format(**summary)
     )
     for task in result["tasks"]:
         if task["labels"] or task["unknown_labels"]:
@@ -339,6 +382,15 @@ def print_text(result: dict[str, Any]) -> None:
             )
     for failure in result["failures"]:
         print(f"- {failure}")
+    warnings = result.get("historical_compatibility_warnings", [])
+    warning_limit = 10
+    for warning in warnings[:warning_limit]:
+        print(f"- legacy-compatible warning: {warning}")
+    if len(warnings) > warning_limit:
+        print(
+            f"- legacy-compatible warnings truncated: {len(warnings) - warning_limit} more "
+            "(use --format json for full details)"
+        )
 
 
 def main() -> int:

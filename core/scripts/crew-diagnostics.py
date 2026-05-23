@@ -168,6 +168,38 @@ def auto_issue_reporting_probe(asset_root: Path, agent_crew_home: Path, project_
         return True, "hook smoke created native report and outbox record"
 
 
+def stale_state_summary(asset_root: Path, state_dir: Path) -> dict[str, Any]:
+    cleanup = asset_root / "scripts" / "cleanup-task-state.py"
+    if not cleanup.is_file():
+        return {"status": "unknown", "detail": "cleanup-task-state.py not found"}
+    rc, out = run_cmd(
+        [
+            sys.executable,
+            str(cleanup),
+            "--state-dir",
+            str(state_dir),
+            "--format",
+            "json",
+        ]
+    )
+    if rc != 0:
+        return {"status": "warn", "detail": f"cleanup probe rc={rc}"}
+    try:
+        payload = json.loads(out)
+    except Exception:
+        return {"status": "warn", "detail": "cleanup probe returned invalid json"}
+    summary = payload.get("summary") or {}
+    return {
+        "status": "pass",
+        "summary": summary,
+        "detail": (
+            f"active_markers={summary.get('stale_active_markers', 0)} "
+            f"supervisor_pending={summary.get('stale_supervisor_pending_sentinels', 0)} "
+            f"archival_targets={summary.get('planned_archival_targets', 0)}"
+        ),
+    }
+
+
 def doctor_static(args: argparse.Namespace) -> list[dict[str, Any]]:
     checker = Path(args.asset_root) / "scripts" / "framework-review-check.py"
     if not checker.is_file():
@@ -207,6 +239,8 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
         findings.append(print_status("report outbox creation", False, str(exc), emit=args.format == "text"))
     ok, detail = auto_issue_reporting_probe(asset_root, agent_crew_home, project_root)
     findings.append(print_status("automatic issue reporting smoke", ok, detail, emit=args.format == "text"))
+    stale = stale_state_summary(asset_root, state_dir)
+    findings.append(print_status("stale state markers", stale["status"] == "pass", stale["detail"], emit=args.format == "text"))
     cap_schema = agent_crew_home / "schemas" / "capabilities.schema.json"
     cap_file = state_dir / "capabilities.json"
     findings.append(print_status("capability file consistency", cap_schema.is_file() and cap_file.exists(), str(cap_file), emit=args.format == "text"))
