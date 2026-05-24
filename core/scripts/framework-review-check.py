@@ -289,9 +289,25 @@ def evaluate_repo(root: Path) -> dict:
             "issue_comment_ingestion_before_planning",
             "high",
             has_all(crew, ["issue-ingest ISSUE", "cmd_issue_ingest"])
-            and has_all(crew_runtime, ["command_issue_ingest", "comments_ingested", "comment_derived_requirements"])
-            and has_all(crew_cli_test, ["crew issue-ingest records issue body and comments before planning", "comments_ingested"]),
-            "Issue-solving workflows must record issue body/comment ingestion evidence before planning.",
+            and has_all(
+                crew_runtime,
+                [
+                    "command_issue_ingest",
+                    "record_issue_ingestion_evidence",
+                    "detect_issue_references",
+                    "comments_ingested",
+                    "comment_derived_requirements",
+                ],
+            )
+            and has_all(
+                crew_cli_test,
+                [
+                    "crew issue-ingest records issue body and comments before planning",
+                    "crew run automatically ingests referenced issue comments before planning",
+                    "comments_ingested",
+                ],
+            ),
+            "Issue-solving workflows must automatically record issue body/comment ingestion evidence before planning.",
         ),
         control(
             "reliability",

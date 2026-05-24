@@ -702,6 +702,18 @@ assert_contains "${out}" '"comment_count": 1'
 assert_contains "${out}" "must ingest comments before planning"
 assert_file_exists "${ISSUE_TASK_DIR}/context/issue-77-ingestion.json"
 
+it "crew run automatically ingests referenced issue comments before planning"
+out=$(PATH="${ISSUE_BIN}:${PATH}" AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "resolve #77" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+ISSUE_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+assert_file_exists "${ISSUE_RUN_TASK_DIR}/context/issue-77-ingestion.json"
+issue_run_register=$(cat "${ISSUE_RUN_TASK_DIR}/register.json")
+issue_run_ingestion=$(cat "${ISSUE_RUN_TASK_DIR}/context/issue-77-ingestion.json")
+assert_contains "${issue_run_register}" '"issue_comment_ingestion"'
+assert_contains "${issue_run_ingestion}" '"comments_ingested": true'
+assert_contains "${issue_run_ingestion}" "should record comments_ingested evidence"
+
 it "crew agent blocks mutating direct requests"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "fix the bug" 2>&1)
 rc=$?

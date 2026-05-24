@@ -459,6 +459,16 @@ def contains_hangul(text: str) -> bool:
     return bool(HANGUL_PATTERN.search(text or ""))
 
 
+def detect_issue_references(text: str) -> list[str]:
+    refs: list[str] = []
+    for pattern in (r"(?<![\w/])#(\d+)\b", r"/issues/(\d+)\b"):
+        for match in re.finditer(pattern, text or ""):
+            value = match.group(1)
+            if value not in refs:
+                refs.append(value)
+    return refs
+
+
 def detect_source_language(text: str) -> str:
     value = text or ""
     if HANGUL_PATTERN.search(value):
@@ -578,6 +588,102 @@ def korean_normalization_handoff(**kwargs) -> str:
             next_target=kwargs.get("next_target", ""),
         )
     return input_normalization_handoff(**kwargs)
+
+
+def extract_comment_requirements(comments: list[dict]) -> list[str]:
+    requirements: list[str] = []
+    for comment in comments:
+        body = str(comment.get("body", ""))
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(("-", "*")):
+                continue
+            text = stripped.lstrip("-* ").strip()
+            lowered = text.lower()
+            if any(token in lowered for token in ("must", "should", "acceptance", "required", "supports", "records", "handles")):
+                requirements.append(text)
+    return requirements[:50]
+
+
+def build_issue_ingestion_evidence(issue: dict, issue_number: str) -> dict:
+    import hashlib
+
+    all_comments = issue.get("comments") if isinstance(issue.get("comments"), list) else []
+    comments = [
+        comment
+        for comment in all_comments
+        if not comment.get("isMinimized") and not comment.get("minimizedReason")
+    ]
+    latest_comment_at = ""
+    for comment in comments:
+        created_at = str(comment.get("createdAt", ""))
+        if created_at > latest_comment_at:
+            latest_comment_at = created_at
+
+    return {
+        "schema_version": 1,
+        "issue_number": issue.get("number", issue_number),
+        "issue_url": issue.get("url", ""),
+        "issue_title": issue.get("title", ""),
+        "comments_ingested": True,
+        "comment_count": len(comments),
+        "latest_comment_at": latest_comment_at,
+        "labels": [label.get("name", "") for label in issue.get("labels", []) if isinstance(label, dict)],
+        "body_sha256": hashlib.sha256(str(issue.get("body", "")).encode("utf-8")).hexdigest(),
+        "comment_urls": [comment.get("url", "") for comment in comments if comment.get("url")],
+        "comment_derived_requirements": extract_comment_requirements(comments),
+        "contradiction_review_required": len(comments) > 0,
+        "planning_gate": "issue body and all non-minimized comments ingested before planning",
+    }
+
+
+def load_issue_payload(issue_number: str, repo: str = "") -> tuple[dict | None, str]:
+    cmd = [
+        "gh",
+        "issue",
+        "view",
+        str(issue_number),
+        "--comments",
+        "--json",
+        "number,title,body,comments,labels,url",
+    ]
+    if repo:
+        cmd.extend(["--repo", repo])
+    try:
+        raw = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
+        data = json.loads(raw)
+    except FileNotFoundError:
+        return None, "gh executable not found"
+    except subprocess.CalledProcessError as exc:
+        return None, exc.stderr.strip() or "gh issue view failed"
+    except Exception as exc:
+        return None, f"failed to parse issue payload: {exc}"
+    return data if isinstance(data, dict) else {}, ""
+
+
+def record_issue_ingestion_evidence(task_dir: Path, raw_task: str) -> list[dict]:
+    records: list[dict] = []
+    for issue_number in detect_issue_references(raw_task):
+        issue, error = load_issue_payload(issue_number)
+        if issue is None:
+            evidence = {
+                "schema_version": 1,
+                "issue_number": issue_number,
+                "comments_ingested": False,
+                "error": error,
+                "planning_gate": "issue comment ingestion attempted before planning",
+            }
+        else:
+            evidence = build_issue_ingestion_evidence(issue, issue_number)
+        evidence_path = task_dir / "context" / f"issue-{issue_number}-ingestion.json"
+        write_json(evidence_path, evidence)
+        records.append({
+            "issue_number": str(issue_number),
+            "path": str(evidence_path),
+            "comments_ingested": bool(evidence.get("comments_ingested")),
+            "comment_count": int(evidence.get("comment_count") or 0),
+        })
+    return records
 
 
 def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
@@ -745,6 +851,10 @@ def command_run(args: argparse.Namespace) -> int:
     write_json(task_dir / "pipeline.json", pipeline)
     if normalization_required:
         write_json(task_dir / "context" / "input-normalization.json", normalization_metadata)
+    issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
+    if issue_ingestions:
+        register["issue_comment_ingestion"] = issue_ingestions
+        write_json(task_dir / "register.json", register)
     (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
     (task_dir / "result.md").write_text(result, encoding="utf-8")
     progress_status = "completed" if result_status == "completed" else "in_progress"
@@ -1085,80 +1195,18 @@ def command_agent(args: argparse.Namespace) -> int:
     return 0
 
 
-def extract_comment_requirements(comments: list[dict]) -> list[str]:
-    requirements: list[str] = []
-    for comment in comments:
-        body = str(comment.get("body", ""))
-        for line in body.splitlines():
-            stripped = line.strip()
-            if not stripped.startswith(("-", "*")):
-                continue
-            text = stripped.lstrip("-* ").strip()
-            lowered = text.lower()
-            if any(token in lowered for token in ("must", "should", "acceptance", "required", "supports", "records", "handles")):
-                requirements.append(text)
-    return requirements[:50]
-
-
 def command_issue_ingest(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
     project_name = project_root.name
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
     state_dir = agent_crew_home / "state" / project_name
 
-    cmd = [
-        "gh",
-        "issue",
-        "view",
-        str(args.issue_number),
-        "--comments",
-        "--json",
-        "number,title,body,comments,labels,url",
-    ]
-    if args.repo:
-        cmd.extend(["--repo", args.repo])
-
-    try:
-        raw = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
-        issue = json.loads(raw)
-    except subprocess.CalledProcessError as exc:
-        print(exc.stderr.strip() or "gh issue view failed", file=sys.stderr)
-        return exc.returncode or 1
-    except Exception as exc:
-        print(f"crew issue-ingest: failed to parse issue payload: {exc}", file=sys.stderr)
+    issue, error = load_issue_payload(str(args.issue_number), repo=args.repo)
+    if issue is None:
+        print(f"crew issue-ingest: {error}", file=sys.stderr)
         return 1
 
-    all_comments = issue.get("comments") if isinstance(issue.get("comments"), list) else []
-    comments = [
-        comment
-        for comment in all_comments
-        if not comment.get("isMinimized") and not comment.get("minimizedReason")
-    ]
-    latest_comment_at = ""
-    for comment in comments:
-        created_at = str(comment.get("createdAt", ""))
-        if created_at > latest_comment_at:
-            latest_comment_at = created_at
-
-    evidence = {
-        "schema_version": 1,
-        "issue_number": issue.get("number", args.issue_number),
-        "issue_url": issue.get("url", ""),
-        "issue_title": issue.get("title", ""),
-        "comments_ingested": True,
-        "comment_count": len(comments),
-        "latest_comment_at": latest_comment_at,
-        "labels": [label.get("name", "") for label in issue.get("labels", []) if isinstance(label, dict)],
-        "body_sha256": "",
-        "comment_urls": [comment.get("url", "") for comment in comments if comment.get("url")],
-        "comment_derived_requirements": extract_comment_requirements(comments),
-        "contradiction_review_required": len(comments) > 0,
-        "planning_gate": "issue body and all non-minimized comments ingested before planning",
-    }
-
-    import hashlib
-
-    evidence["body_sha256"] = hashlib.sha256(str(issue.get("body", "")).encode("utf-8")).hexdigest()
+    evidence = build_issue_ingestion_evidence(issue, str(args.issue_number))
 
     output_path = None
     if args.task_id:
