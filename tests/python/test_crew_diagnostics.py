@@ -153,3 +153,35 @@ def test_host_bridge_command_probe_prefers_env_var(tmp_path: Path):
     )
     assert ok is True
     assert "host bridge ready" in detail
+
+
+def test_claude_performance_probe_reports_budget_summary(tmp_path: Path):
+    claude_dir = tmp_path / ".claude"
+    (claude_dir / "agent-crew" / "hooks").mkdir(parents=True)
+    (claude_dir / "agents").mkdir(parents=True)
+    (claude_dir / "agent-crew" / "hooks" / "auto-route.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (claude_dir / "agents" / "planner.md").write_text("---\nname: planner\n---\n", encoding="utf-8")
+    (claude_dir / "settings.json").write_text(
+        json.dumps({
+            "hooks": {
+                "UserPromptSubmit": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": f"bash {claude_dir}/agent-crew/hooks/auto-route.sh",
+                                "timeout": 5,
+                            }
+                        ],
+                    }
+                ]
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    ok, detail = diagnostics.claude_performance_probe(REPO_ROOT / "core", claude_dir)
+
+    assert ok is True
+    assert "hook_timeout_total=5s" in detail

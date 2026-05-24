@@ -103,6 +103,9 @@ invocation in SKILL.md; generic adds guidance).
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term
   scalability controls. The native `crew doctor` command runs this check.
+- `claude-performance-check.py` — checks Claude adapter asset-size, file-count,
+  largest-agent, and hook-timeout budgets so Claude slowness is diagnosable
+  from host diagnostics instead of anecdotal observation.
 - `check-host-bridge.py` — validates an optional external
   `AGENT_CREW_HOST_BRIDGE_COMMAND` for shell-token parseability and executable
   discoverability/permissions. Missing external bridge configuration is a soft

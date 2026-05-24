@@ -268,6 +268,20 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "$(cat "${FAKE_CREW_LOG}")" "report auto"
 
+it "auto issue hook wrapper fast-rejects unrelated prompts"
+cat > "${FAKE_HOME}/bin/crew" <<'EOF'
+#!/usr/bin/env bash
+printf 'crew should not run\n' >&2
+exit 88
+EOF
+chmod +x "${FAKE_HOME}/bin/crew"
+printf '{"hook_event_name":"UserPromptSubmit","prompt":"hello"}' | \
+  AGENT_CREW_HOME="${FAKE_HOME}" \
+  bash "${HOOKS_DIR}/auto-issue-report.sh" >"${TMP}/hook-fast.out" 2>&1
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "$(cat "${TMP}/hook-fast.out")"
+
 it "auto issue hook wrapper is advisory and exits 0 when reporting fails"
 cat > "${FAKE_HOME}/bin/crew" <<'EOF'
 #!/usr/bin/env bash

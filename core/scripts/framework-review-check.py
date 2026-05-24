@@ -62,6 +62,7 @@ def evaluate_repo(root: Path) -> dict:
     answer_quality = read_text(root / "core/evaluations/answer-quality.json")
     slo_fixture = read_text(root / "core/evaluations/e2e-slo.json")
     update_benchmark = read_text(root / "core/scripts/update-slo-benchmark.py")
+    claude_performance_check = read_text(root / "core/scripts/claude-performance-check.py")
     agent_manifest = read_json(root / "core/policies/agent-capabilities.json")
     agent_manifest_text = read_text(root / "core/policies/agent-capabilities.json")
     prompt_injection_rule = read_text(root / "core/rules/prompt-injection-defense.md")
@@ -182,9 +183,27 @@ def evaluate_repo(root: Path) -> dict:
             "high",
             has_all(
                 slo_fixture,
-                ["status_budget_ms", "telemetry_budget_ms", "memory_search_budget_ms", "update_noop_local_budget_ms"],
+                [
+                    "status_budget_ms",
+                    "telemetry_budget_ms",
+                    "memory_search_budget_ms",
+                    "update_noop_local_budget_ms",
+                    "claude_hook_timeout_budget_seconds",
+                ],
             ),
             "Performance budgets must be checked by a fixture, not only by ad hoc observation.",
+        ),
+        control(
+            "performance",
+            "claude_performance_budget_probe",
+            "high",
+            exists(root, "core/scripts/claude-performance-check.py")
+            and has_all(
+                claude_performance_check,
+                ["hook_timeout_seconds", "largest_agent_kb", "agent_crew_kb", "file_count"],
+            )
+            and has_all(crew_diagnostics, ["claude_performance_probe", "claude performance budgets"]),
+            "Claude adapter slowness must be diagnosable by asset-size and hook-timeout budgets.",
         ),
         control(
             "performance",

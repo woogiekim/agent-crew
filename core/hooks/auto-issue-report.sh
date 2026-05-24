@@ -7,6 +7,14 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 CREW_BIN="${AGENT_CREW_HOME}/bin/crew"
 SCRIPT="${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py"
 
+# Fast reject the overwhelmingly common no-signal path before starting the
+# native crew CLI. Claude runs this hook for every prompt and Bash result, so
+# the idle path must stay cheap and independent from Python/CLI startup.
+if ! printf '%s' "${INPUT}" | grep -Eiq \
+  'agent[-_[:space:]]?crew|(^|[^[:alnum:]_])crew([^[:alnum:]_]|$)|[$]crew|에이전트[[:space:]]*크루|에이전트크루|supervisor_blocked|blocked_by|STATUS:[[:space:]]*blocked|BLOCKER:'; then
+  exit 0
+fi
+
 if [ -x "${CREW_BIN}" ]; then
   printf '%s' "${INPUT}" | "${CREW_BIN}" report auto >/dev/null 2>&1 || true
   exit 0

@@ -7,5 +7,10 @@
   "update_dry_run_budget_ms": 5000,
   "update_noop_local_budget_ms": 1000,
   "update_cold_local_budget_ms": 10000,
-  "update_remote_budget_ms": 30000
+  "update_remote_budget_ms": 30000,
+  "claude_agent_crew_budget_kb": 4096,
+  "claude_agents_budget_kb": 2048,
+  "claude_file_count_budget": 400,
+  "claude_largest_agent_budget_kb": 96,
+  "claude_hook_timeout_budget_seconds": 75
 }

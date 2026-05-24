@@ -239,6 +239,24 @@ def host_bridge_command_probe(asset_root: Path, *, env: dict[str, str] | None = 
     return False, payload.get("reason", "unknown host bridge status")
 
 
+def claude_performance_probe(asset_root: Path, claude_dir: Path | None = None) -> tuple[bool, str]:
+    script = asset_root / "scripts" / "claude-performance-check.py"
+    if not script.is_file():
+        return False, "claude performance checker not found"
+
+    target_dir = claude_dir or Path(os.environ.get("CLAUDE_DIR", str(Path.home() / ".claude"))).expanduser()
+    if not (target_dir / "agent-crew").is_dir() and not (target_dir / "agents").is_dir():
+        return True, f"Claude adapter not installed at {target_dir}; skipped"
+
+    rc, out = run_cmd([sys.executable, str(script), "--claude-dir", str(target_dir), "--format", "json"])
+    try:
+        payload = json.loads(out)
+    except Exception:
+        return False, f"claude performance checker returned invalid json (rc={rc})"
+    summary = payload.get("summary", f"rc={rc}")
+    return rc == 0, str(summary)
+
+
 def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
     hook = asset_root / "hooks" / "auto-issue-report.sh"
     if not hook.is_file():
@@ -413,6 +431,8 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
             emit=args.format == "text",
         )
     )
+    claude_ok, claude_detail = claude_performance_probe(Path(args.asset_root))
+    findings.append(print_status("claude performance budgets", claude_ok, claude_detail, emit=args.format == "text"))
     codex_invocation = Path(args.asset_root).parent / "adapters" / "codex" / "invocation.md"
     text = codex_invocation.read_text(encoding="utf-8", errors="replace") if codex_invocation.is_file() else ""
     findings.append(print_status("slash command vocabulary documented", "slash command" in text and "crew:<intent>" in text, str(codex_invocation), emit=args.format == "text"))
