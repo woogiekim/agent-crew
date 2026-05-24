@@ -323,6 +323,23 @@ def evaluate_repo(root: Path) -> dict:
             "Completed mutating tasks must not count reviewer approval unless progress evidence points at an existing quality-metrics artifact.",
         ),
         control(
+            "quality",
+            "pipeline_quality_metrics_schema_gate",
+            "high",
+            has_all(
+                quality_loop_lib,
+                [
+                    "quality_metrics_schema_errors",
+                    "malformed_quality_metrics_json",
+                    "invalid_reviewer_quality_metrics_artifact",
+                    "unexpected_quality_metrics_fields",
+                ],
+            )
+            and "test_quality_loop_checker_blocks_malformed_quality_metrics_artifact" in read_text(root / "tests/python/test_quality_loop_pipeline_check.py")
+            and "test_quality_loop_checker_blocks_schema_invalid_quality_metrics_artifact" in read_text(root / "tests/python/test_quality_loop_pipeline_check.py"),
+            "Completed mutating tasks must not count reviewer approval when the referenced quality-metrics artifact is malformed or schema-invalid.",
+        ),
+        control(
             "reliability",
             "retry_governance",
             "high",

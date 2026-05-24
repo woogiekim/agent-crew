@@ -200,12 +200,71 @@ def resolve_event_quality_metrics_path(path_text: str, task_dir: Path | None) ->
     return task_dir / path.name
 
 
-def event_has_quality_metrics(row: dict, task_dir: Path | None = None) -> bool:
+def quality_metrics_schema_errors(path: Path) -> list[str]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ["malformed_quality_metrics_json"]
+    except Exception:
+        return ["unreadable_quality_metrics_artifact"]
+
+    if not isinstance(payload, dict):
+        return ["quality_metrics_not_object"]
+
+    allowed_fields = {
+        "schema_version",
+        "hallucination_detected",
+        "rollback_performed",
+        "human_intervention_required",
+        "factuality_review",
+        "evidence_paths",
+        "notes",
+    }
+    errors: list[str] = []
+    if payload.get("schema_version") != 1 or isinstance(payload.get("schema_version"), bool):
+        errors.append("invalid_quality_metrics_schema_version")
+
+    unexpected = sorted(set(payload) - allowed_fields)
+    if unexpected:
+        errors.append("unexpected_quality_metrics_fields")
+
+    for key in ("hallucination_detected", "rollback_performed", "human_intervention_required"):
+        if key in payload and not isinstance(payload[key], bool):
+            errors.append(f"invalid_quality_metrics_{key}")
+
+    if "factuality_review" in payload and payload["factuality_review"] not in {
+        "not_applicable",
+        "passed",
+        "failed",
+        "inconclusive",
+    }:
+        errors.append("invalid_quality_metrics_factuality_review")
+
+    if "evidence_paths" in payload:
+        evidence_paths = payload["evidence_paths"]
+        if not isinstance(evidence_paths, list) or not all(isinstance(item, str) for item in evidence_paths):
+            errors.append("invalid_quality_metrics_evidence_paths")
+
+    if "notes" in payload and not isinstance(payload["notes"], str):
+        errors.append("invalid_quality_metrics_notes")
+
+    return errors
+
+
+def event_quality_metrics_errors(row: dict, task_dir: Path | None = None) -> list[str]:
     path_text = event_quality_metrics_path(row)
     if not path_text:
-        return False
+        return ["missing_quality_metrics_pointer"]
     resolved = resolve_event_quality_metrics_path(path_text, task_dir)
-    return True if resolved is None else resolved.is_file()
+    if resolved is None:
+        return []
+    if not resolved.is_file():
+        return ["missing_quality_metrics_artifact"]
+    return quality_metrics_schema_errors(resolved)
+
+
+def event_has_quality_metrics(row: dict, task_dir: Path | None = None) -> bool:
+    return not event_quality_metrics_errors(row, task_dir)
 
 
 def event_is_reviewer_approved(row: dict, task_dir: Path | None = None) -> bool:
@@ -344,6 +403,11 @@ def check_quality_loop(
         row for row in approved_events
         if event_is_reviewer_approved(row, task_dir)
     ]
+    approval_metric_errors = [
+        error
+        for row in approved_events
+        for error in event_quality_metrics_errors(row, task_dir)
+    ]
 
     failures: list[str] = []
     if required:
@@ -367,6 +431,13 @@ def check_quality_loop(
             failures.append("missing_pipeline_tdd_event")
         if events and approved_events and not valid_approval_events:
             failures.append("missing_reviewer_quality_metrics_artifact")
+        if any(error.startswith("invalid_") or error in {
+            "malformed_quality_metrics_json",
+            "quality_metrics_not_object",
+            "unexpected_quality_metrics_fields",
+            "unreadable_quality_metrics_artifact",
+        } for error in approval_metric_errors):
+            failures.append("invalid_reviewer_quality_metrics_artifact")
         if events and not valid_approval_events:
             failures.append("missing_pipeline_reviewer_approval")
         if require_rework_cycle and not rejection_indexes:
@@ -388,4 +459,5 @@ def check_quality_loop(
         "tdd_event_count": sum(1 for row in events if event_is_tdd_done(row)),
         "reviewer_approval_count": len(valid_approval_events),
         "reviewer_approved_without_quality_metrics_count": len(approved_events) - len(valid_approval_events),
+        "reviewer_quality_metrics_errors": sorted(set(approval_metric_errors)),
     }
