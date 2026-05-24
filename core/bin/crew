@@ -164,6 +164,8 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
+    "core/scripts/generate-release-checksums.py:${AGENT_CREW_HOME}/scripts/generate-release-checksums.py" \
+    "core/scripts/readiness-metrics.py:${AGENT_CREW_HOME}/scripts/readiness-metrics.py" \
     "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
     "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
     "core/rules/prompt-injection-defense.md:${AGENT_CREW_HOME}/rules/prompt-injection-defense.md" \

@@ -58,6 +58,25 @@ print_update_total() {
   printf 'update_phase: total=%sms\n' "${elapsed_ms}"
 }
 
+write_update_integrity_manifest() {
+  local integrity_dir="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/integrity"
+
+  [ "${AGENT_CREW_WRITE_INSTALL_MANIFEST:-1}" = "1" ] || return 0
+  [ -f "${AGENT_CREW_HOME}/system/scripts/generate-release-checksums.py" ] || return 0
+
+  mkdir -p "${integrity_dir}"
+  python3 "${AGENT_CREW_HOME}/system/scripts/generate-release-checksums.py" \
+    --project-root "${SOURCE_ROOT}" \
+    --output "${integrity_dir}/update-integrity.json" \
+    --sha256sums "${integrity_dir}/SHA256SUMS" \
+    install.sh \
+    core/bin/crew \
+    core/commands/update.md \
+    core/scripts/sync-local-install.sh >/dev/null
+  printf 'sync-local-install: wrote update integrity manifest at %s\n' \
+    "${integrity_dir}/update-integrity.json"
+}
+
 if [ ! -d "${SOURCE_ROOT}/core" ] || [ ! -d "${SOURCE_ROOT}/adapters" ]; then
   printf 'sync-local-install: SOURCE_ROOT is not an agent-crew checkout: %s\n' "${SOURCE_ROOT}" >&2
   exit 2
@@ -106,6 +125,7 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     fi
     python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
     print_update_phase "drift_verification"
+    write_update_integrity_manifest
     print_update_total
     printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
     exit 0
@@ -255,3 +275,5 @@ fi
 
 print_update_total
 printf 'sync-local-install: refreshed installed assets from %s\n' "${SOURCE_ROOT}"
+
+write_update_integrity_manifest
