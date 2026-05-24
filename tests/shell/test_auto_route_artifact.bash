@@ -91,6 +91,30 @@ PAYLOAD="$(make_prompt_payload 'save this to the issue draft')"
 CTX="$(run_hook_ctx "${PAYLOAD}")"
 assert_contains "${CTX}" "[agent-crew] STOP" "English save-to-draft triggers STOP"
 
+it "issue publication requests route through issuer pipeline"
+PAYLOAD="$(make_prompt_payload 'publish these issues to Plane')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "implementation request detected (issue publication)" "issue publication detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "issuer pipeline suggested"
+
+it "direct Plane MCP work item calls are blocked into crew:run issuer"
+PAYLOAD="$(make_prompt_payload 'use mcp__plane__create_work_item to create these tasks')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "[agent-crew] STOP" "direct MCP work item call triggers STOP"
+assert_contains "${CTX}" 'crew:run "issuer task"' "direct MCP call routes to issuer"
+
+it "work item title updates route through issuer pipeline"
+PAYLOAD="$(make_prompt_payload 'update the work item title for ENRTC-236')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "issue publication" "work item update detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "work item update routes to issuer"
+
+it "Korean issue publication request routes through issuer pipeline"
+PAYLOAD="$(make_prompt_payload 'ENRTC-236 하위 작업 26건 이슈 발행해줘')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "issue publication" "Korean issue publication detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "Korean request routes to issuer"
+
 # --------------------------------------------------------------------------- #
 # Negative cases: pure questions must NOT emit STOP                           #
 # --------------------------------------------------------------------------- #

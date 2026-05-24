@@ -62,6 +62,79 @@ def install_drift(asset_root: Path, project_root: Path, agent_crew_home: Path) -
     return {"status": "pass" if rc == 0 else "warn", "detail": out.splitlines()[-1] if out else f"rc={rc}"}
 
 
+def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
+    probe_env = os.environ.copy()
+    if env:
+        probe_env.update(env)
+
+    configured = probe_env.get("MNEMOS_BIN") or str(Path.home() / ".local" / "bin" / "mnemos")
+    path = Path(configured).expanduser()
+    if not path.is_file() or not os.access(path, os.X_OK):
+        discovered = shutil.which("mnemos", path=probe_env.get("PATH"))
+        if discovered:
+            path = Path(discovered)
+        else:
+            return {
+                "available": False,
+                "path": configured,
+                "version": "unavailable",
+                "status": "missing",
+                "stable_fast_search": False,
+                "detail": "mnemos CLI not found; memory provider will degrade to no-backend mode",
+            }
+
+    rc, version_out = run_cmd([str(path), "--version"], env=probe_env)
+    version = version_out.splitlines()[0] if rc == 0 and version_out else "unknown"
+
+    stable_fast_search = False
+    caps_status = "unknown"
+    caps_detail = ""
+    caps_rc, caps_out = run_cmd([str(path), "capabilities", "--json"], env=probe_env)
+    if caps_rc == 0 and caps_out:
+        try:
+            caps = json.loads(caps_out)
+            features = caps.get("features") or {}
+            commands = caps.get("commands") or {}
+            search = commands.get("search") if isinstance(commands, dict) else {}
+            stable_fast_search = bool(
+                caps.get("search_fast") is True
+                or caps.get("fast_search") is True
+                or features.get("search_fast") is True
+                or features.get("fast_search") is True
+                or (isinstance(search, dict) and search.get("fast") is True and search.get("json") is True)
+            )
+            caps_status = "supported" if stable_fast_search else "partial"
+            caps_detail = "stable fast JSON search advertised" if stable_fast_search else "capabilities detected without stable fast JSON search"
+        except Exception:
+            caps_status = "unknown"
+            caps_detail = "capabilities output was not valid JSON"
+    else:
+        caps_status = "legacy"
+        caps_detail = "capabilities --json unavailable; regular search and deprecated fallback may be used"
+
+    if version == "unknown":
+        status = "unknown"
+        detail = f"mnemos version unknown; {caps_detail}"
+    elif caps_status == "supported":
+        status = "supported"
+        detail = f"{version}; {caps_detail}"
+    elif caps_status == "legacy":
+        status = "legacy"
+        detail = f"{version}; {caps_detail}"
+    else:
+        status = "partial"
+        detail = f"{version}; {caps_detail}"
+
+    return {
+        "available": True,
+        "path": str(path),
+        "version": version,
+        "status": status,
+        "stable_fast_search": stable_fast_search,
+        "detail": detail,
+    }
+
+
 def effective_config(args: argparse.Namespace) -> dict[str, Any]:
     project_root = Path(args.project_root).resolve()
     asset_root = Path(args.asset_root).resolve()
@@ -115,6 +188,7 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
             "state_dir": os.environ.get("AGENT_CREW_REPORT_STATE_DIR", str(agent_crew_home / "state" / "reports")),
         },
         "memory_backend": os.environ.get("AGENT_CREW_MEMORY_BACKEND", "mnemos"),
+        "mnemos": mnemos_status(),
         "install_drift": install_drift(asset_root, project_root, agent_crew_home),
     }
 
@@ -405,6 +479,13 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
     cap_schema = agent_crew_home / "schemas" / "capabilities.schema.json"
     cap_file = state_dir / "capabilities.json"
     findings.append(print_status("capability file consistency", cap_schema.is_file() and cap_file.exists(), str(cap_file), emit=args.format == "text"))
+    mnemos = mnemos_status()
+    findings.append(print_status(
+        "mnemos compatibility",
+        mnemos["status"] in {"supported", "legacy", "missing"},
+        mnemos["detail"],
+        emit=args.format == "text",
+    ))
     return findings
 
 
@@ -465,6 +546,7 @@ def cmd_config(args: argparse.Namespace) -> int:
             print(f"active_adapter: {cfg['active_adapter']}")
             print(f"state_dir: {cfg['state_dir']}")
             print(f"memory_backend: {cfg['memory_backend']}")
+            print(f"mnemos.status: {cfg['mnemos']['status']} ({cfg['mnemos']['detail']})")
             print(f"install_drift: {cfg['install_drift']['status']} ({cfg['install_drift']['detail']})")
             for key, value in cfg["capability_flags"].items():
                 report = next(item for item in cfg["capability_reports"] if item["name"] == key)

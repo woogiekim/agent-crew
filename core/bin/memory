@@ -4,16 +4,121 @@
 #        memory search "query"
 #        memory gc --format json [--apply]
 #
-# Sub-agents must use `memory capture` (not `mnemos capture` directly) so that
-# pipelines work even when no memory backend is installed.
+# Sub-agents must use this wrapper (not `mnemos` directly) so that pipelines
+# depend on the stable memory provider contract, not backend internals.
 # See: https://github.com/woogiekim/agent-crew/issues/15
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+MNEMOS_BIN="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
+if [ ! -x "${MNEMOS_BIN}" ]; then
+  MNEMOS_PATH="$(command -v mnemos 2>/dev/null || true)"
+  if [ -n "${MNEMOS_PATH}" ]; then
+    MNEMOS_BIN="${MNEMOS_PATH}"
+  fi
+fi
+
+stable_fast_search() {
+  [ "${AGENT_CREW_MEMORY_FAST_SEARCH:-1}" = "1" ] || return 1
+  [ "${1:-}" = "search" ] || return 1
+  [ -x "${MNEMOS_BIN}" ] || return 1
+
+  local caps
+  caps="$("${MNEMOS_BIN}" capabilities --json 2>/dev/null)" || return 1
+  printf '%s' "${caps}" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+
+features = data.get("features") or {}
+commands = data.get("commands") or {}
+search = commands.get("search") if isinstance(commands, dict) else {}
+ok = (
+    data.get("search_fast") is True
+    or data.get("fast_search") is True
+    or features.get("search_fast") is True
+    or features.get("fast_search") is True
+    or (isinstance(search, dict) and search.get("fast") is True and search.get("json") is True)
+)
+sys.exit(0 if ok else 1)
+' || return 1
+
+  local output rc
+  output="$("${MNEMOS_BIN}" search --fast --json "${@:2}" 2>/dev/null)"
+  rc=$?
+  [ "${rc}" -eq 0 ] || return 1
+
+  python3 -c '
+import json
+import sys
+
+payload_text = sys.argv[1]
+args = sys.argv[2:]
+width = 80
+full = False
+i = 1
+while i < len(args):
+    arg = args[i]
+    if arg == "--width" and i + 1 < len(args):
+        try:
+            width = int(args[i + 1])
+        except ValueError:
+            width = 80
+        i += 2
+    elif arg == "--full":
+        full = True
+        i += 1
+    else:
+        i += 1
+
+try:
+    payload = json.loads(payload_text)
+except Exception:
+    sys.exit(1)
+
+if isinstance(payload, list):
+    rows = payload
+elif isinstance(payload, dict):
+    rows = payload.get("results") or payload.get("items") or []
+else:
+    rows = []
+
+if not isinstance(rows, list):
+    rows = []
+
+rendered = []
+for row in rows:
+    if not isinstance(row, dict):
+        continue
+    item_id = row.get("item_id") or row.get("id") or row.get("memory_id") or ""
+    content = row.get("content") or row.get("text") or row.get("preview") or row.get("snippet") or ""
+    score = row.get("score")
+    item_id = str(item_id)
+    content = str(content)
+    preview = content if full or len(content) <= width else content[:width] + "..."
+    if score is None:
+        rendered.append(f"  [mnemos-fast] {item_id}: {preview}")
+    else:
+        try:
+            score_text = f"{float(score):.2f}"
+        except Exception:
+            score_text = str(score)
+        rendered.append(f"  [mnemos-fast score={score_text}] {item_id}: {preview}")
+
+if not rendered:
+    print("no results found")
+else:
+    print("\n".join(rendered))
+print(f"[mnemos] Retrieved {len(rendered)} memories")
+' "${output}" "$@"
+}
 
 fast_search() {
   [ "${AGENT_CREW_MEMORY_FAST_SEARCH:-1}" = "1" ] || return 1
+  [ "${AGENT_CREW_MEMORY_LEGACY_FTS_FALLBACK:-1}" = "1" ] || return 1
   [ "${1:-}" = "search" ] || return 1
 
   local mnemos_root="${MNEMOS_REPO_ROOT:-${HOME}/.mnemos}"
@@ -21,6 +126,7 @@ fast_search() {
   [ -f "${fts_db}" ] || return 1
 
   local evicted_path="${AGENT_CREW_MEMORY_GC_EVICTED:-${HOME}/.agent-crew/memory-gc/evicted-ids.txt}"
+  printf '[memory] warning: legacy direct FTS fallback is deprecated; upgrade mnemos for `mnemos search --fast --json`\n' >&2
   python3 - "$fts_db" "$evicted_path" "$@" <<'PY'
 import json
 import os
@@ -235,16 +341,11 @@ if [ "${1:-}" = "gc" ]; then
 fi
 
 if [ "${1:-}" = "search" ]; then
-  if fast_search "$@"; then
+  if stable_fast_search "$@"; then
     exit 0
   fi
-fi
-
-MNEMOS_BIN="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
-if [ ! -x "${MNEMOS_BIN}" ]; then
-  MNEMOS_PATH="$(command -v mnemos 2>/dev/null || true)"
-  if [ -n "${MNEMOS_PATH}" ]; then
-    MNEMOS_BIN="${MNEMOS_PATH}"
+  if fast_search "$@"; then
+    exit 0
   fi
 fi
 

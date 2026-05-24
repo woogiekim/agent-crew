@@ -212,6 +212,22 @@ ARTIFACT_NOUN_PAT = (
     r"saved\s+file|the\s+(?:file|doc|issue|draft)|"
     r"\.md\b|\.txt\b|docs?/"
 )
+ISSUE_PUBLICATION_PAT = (
+    r"publish\s+(?:(?:the|these|those)\s+)?issues?|create\s+(?:(?:the|these|those)\s+)?(?:work\s+items?|issues?)|"
+    r"update\s+(?:(?:the|these|those)\s+)?(?:work\s+items?|issues?)|rename\s+(?:(?:the|these|those)\s+)?(?:work\s+items?|issues?)|"
+    r"change\s+(?:the\s+)?(?:work\s+item|issue)\s+title|"
+    r"bulk\s+create\s+(?:work\s+items?|issues?)|import\s+(?:issues?|task\s+list)|"
+    r"seed\s+(?:the\s+)?project|upload\s+(?:the\s+)?task\s+list|"
+    r"issue\s+publication|work\s+item\s+creation|"
+    r"이슈\s*(?:발행|생성|등록|업로드|수정|변경)|작업\s*항목\s*(?:생성|등록|수정|변경)|"
+    r"업무\s*항목\s*(?:생성|등록|수정|변경)|제목\s*변경|태스크\s*목록\s*(?:가져오기|업로드)"
+)
+DIRECT_TRACKER_TOOL_PAT = (
+    r"mcp__plane__(?:create|update|delete)_work_item|"
+    r"mcp__gitlab__(?:create|update|delete)_issue|"
+    r"gh\s+issue\s+create|"
+    r"curl\s+.*(?:/issues|/work-items|/work_items)"
+)
 READONLY_REVIEW_PAT = (
     r"review|evaluate|assess|compare|honest\s+review|check|diagnos(?:e|is)|"
     r"inspect|determine|identify\s+(?:gaps|issues|problems|fixes)|"
@@ -399,7 +415,11 @@ suggested_agent = ""
 
 # --- Existing domain-specific routing ---
 
-if match(ACTION_PAT):
+if match(ISSUE_PUBLICATION_PAT) or match(DIRECT_TRACKER_TOOL_PAT):
+    detected_type = "issue publication"
+    suggested_pipeline = "issuer"
+    suggested_agent = "issuer"
+elif match(ACTION_PAT):
     if match(FULLSTACK_PAT):
         detected_type = "full-stack development"
         suggested_pipeline = "planner -> [designer || backend] -> frontend"

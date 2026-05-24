@@ -145,6 +145,64 @@ rc=$?
 assert_exit 124 "${rc}" "search timeout"
 assert_contains "${OUTPUT}" "mnemos-bounded: timed out after 1s"
 
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"commands":{"search":{"fast":true,"json":true}}}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "search" ] && [ "${2:-}" = "--fast" ] && [ "${3:-}" = "--json" ]; then
+  cat <<'JSON'
+{"results":[{"id":"stable-memory-1","content":"stable provider search result","score":0.91}]}
+JSON
+  exit 0
+fi
+echo "unexpected mnemos $*"
+exit 9
+SH
+chmod +x "${TMP}/mnemos"
+
+NO_FTS_HOME=$(make_tmp)
+it "memory search uses stable mnemos fast JSON API without direct FTS DB access"
+OUTPUT=$(HOME="${NO_FTS_HOME}" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "stable provider" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "stable fast search"
+assert_contains "${OUTPUT}" "stable-memory-1"
+
+FAST_HOME=$(make_tmp)
+mkdir -p "${FAST_HOME}/.mnemos/.agent/state"
+python3 - "${FAST_HOME}/.mnemos/.agent/state/fts.db" <<'PY'
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+conn.execute(
+    """
+    CREATE VIRTUAL TABLE items_fts
+    USING fts5(item_id UNINDEXED, content, metadata)
+    """
+)
+conn.execute(
+    "INSERT INTO items_fts (item_id, content, metadata) VALUES (?, ?, ?)",
+    (
+        "legacy-memory-should-not-appear",
+        "stable provider legacy fallback result",
+        json.dumps({"layer": "session", "tags": []}),
+    ),
+)
+conn.commit()
+PY
+
+it "memory search prefers stable mnemos API over deprecated direct FTS fallback"
+OUTPUT=$(HOME="${FAST_HOME}" MNEMOS_REPO_ROOT="${FAST_HOME}/.mnemos" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "stable provider" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "stable API preferred"
+assert_contains "${OUTPUT}" "stable-memory-1"
+assert_not_contains "${OUTPUT}" "legacy-memory-should-not-appear"
+
 FAST_HOME=$(make_tmp)
 mkdir -p "${FAST_HOME}/.mnemos/.agent/state"
 python3 - "${FAST_HOME}/.mnemos/.agent/state/fts.db" <<'PY'
