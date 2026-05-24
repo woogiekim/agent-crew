@@ -111,6 +111,95 @@ def append_progress(task_dir: Path, row: dict) -> None:
     append_jsonl(task_dir / "progress.buffer.jsonl", row)
 
 
+def agent_uuid_for_display() -> str:
+    for name in (
+        "AGENT_CREW_AGENT_UUID",
+        "AGENT_CREW_HOST_AGENT_UUID",
+        "CODEX_THREAD_ID",
+        "CODEX_SESSION_ID",
+    ):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return "unavailable"
+
+
+def render_start_banner(register: dict, task_dir: Path) -> str:
+    task = str(register.get("task") or "").strip()
+    if len(task) > 96:
+        task = task[:93].rstrip() + "..."
+    agent_uuid = agent_uuid_for_display()
+    task_id = register.get("task_id", task_dir.name)
+    lines = [
+        "[crew] START",
+        f"  mapping:    {agent_uuid} -> {task_id}",
+        f"  agent_uuid: {agent_uuid}",
+        f"  task_id:    {task_id}",
+        f"  title:      {task or '(untitled)'}",
+        f"  branch:     {register.get('branch', '')}",
+        f"  state:      {task_dir}",
+        "  monitor:    crew:status (CLI: crew status)",
+    ]
+    return "\n".join(lines)
+
+
+def latest_progress_event(task_dir: Path) -> dict:
+    buffer = task_dir / "progress.buffer.jsonl"
+    if buffer.is_file():
+        for line in reversed(buffer.read_text(encoding="utf-8", errors="replace").splitlines()):
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            return {
+                "ts": row.get("ts", ""),
+                "event": row.get("event", ""),
+                "stage": row.get("stage", 0),
+                "agent": row.get("agent", ""),
+                "detail": row.get("detail", ""),
+            }
+
+    log = task_dir / "progress.log"
+    if log.is_file():
+        for line in reversed(log.read_text(encoding="utf-8", errors="replace").splitlines()):
+            parts = [p.strip() for p in line.split("|", 2)]
+            if len(parts) == 3:
+                return {"ts": parts[0], "event": parts[1], "stage": 0, "agent": "", "detail": parts[2]}
+            if line.strip():
+                return {"ts": "", "event": "LOG", "stage": 0, "agent": "", "detail": line.strip()}
+
+    return {"ts": "", "event": "", "stage": 0, "agent": "", "detail": "no progress events yet"}
+
+
+def progress_age_seconds(event: dict) -> int | None:
+    ts = str(event.get("ts") or "").strip().rstrip("Z")
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+            return max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
+        except ValueError:
+            continue
+    return None
+
+
+def render_wait_progress(register: dict, task_dir: Path) -> str:
+    latest = latest_progress_event(task_dir)
+    age = progress_age_seconds(latest)
+    stage_value = latest.get("agent") or latest.get("stage")
+    stage = f"stage={stage_value}" if stage_value not in ("", None) else "stage=0"
+    age_text = "unknown" if age is None else f"{age}s"
+    detail = str(latest.get("detail") or "").strip()
+    if len(detail) > 120:
+        detail = detail[:117].rstrip() + "..."
+    return (
+        f"[crew] WAIT | task_id={register.get('task_id', task_dir.name)} "
+        f"phase={latest.get('event') or 'unknown'} {stage} "
+        f"last_update_age={age_text} detail={detail}"
+    )
+
+
 def append_delegation(
     task_dir: Path,
     *,
@@ -378,7 +467,34 @@ def invoke_host_bridge(
     if extra_env:
         env.update(extra_env)
     started = datetime.now(timezone.utc)
-    proc = subprocess.run(command, shell=True, text=True, capture_output=True, env=env)
+    interval_raw = os.environ.get("AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS", "10")
+    try:
+        interval = max(0.0, float(interval_raw))
+    except ValueError:
+        interval = 10.0
+
+    if interval <= 0:
+        proc = subprocess.run(command, shell=True, text=True, capture_output=True, env=env)
+        stdout = proc.stdout
+        stderr = proc.stderr
+        returncode = proc.returncode
+    else:
+        proc = subprocess.Popen(
+            command,
+            shell=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        while True:
+            try:
+                stdout, stderr = proc.communicate(timeout=interval)
+                returncode = proc.returncode
+                break
+            except subprocess.TimeoutExpired:
+                print(render_wait_progress(register, task_dir), file=sys.stderr)
+
     finished = datetime.now(timezone.utc)
     append_tool_event(
         task_dir,
@@ -387,9 +503,9 @@ def invoke_host_bridge(
         action_summary=command,
         started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
         ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        status="completed" if proc.returncode == 0 else "failed",
-        exit_code=proc.returncode,
-        failure_class="" if proc.returncode == 0 else "host_bridge_command_failed",
+        status="completed" if returncode == 0 else "failed",
+        exit_code=returncode,
+        failure_class="" if returncode == 0 else "host_bridge_command_failed",
     )
     return {
         "schema_version": 1,
@@ -398,9 +514,9 @@ def invoke_host_bridge(
         "command_display": shlex.split(command)[0] if command.strip() else "",
         "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "returncode": proc.returncode,
-        "stdout": proc.stdout[-4000:],
-        "stderr": proc.stderr[-4000:],
+        "returncode": returncode,
+        "stdout": stdout[-4000:],
+        "stderr": stderr[-4000:],
     }
 
 
@@ -907,6 +1023,8 @@ def command_run(args: argparse.Namespace) -> int:
         delegated_by="crew-runtime",
         status=result_status,
     )
+
+    print(render_start_banner(register, task_dir), flush=True)
 
     if fake_quality_blocked:
         quality_result = check_quality_loop(task_dir, target_status="completed")
