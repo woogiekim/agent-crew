@@ -125,6 +125,40 @@ def test_stale_state_summary_passes_when_no_cleanup_targets(tmp_path: Path):
     assert summary["recommendation"] == ""
 
 
+def test_mnemos_status_reports_missing_backend(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("MNEMOS_BIN", str(tmp_path / "missing-mnemos"))
+
+    status = diagnostics.mnemos_status(env={"PATH": str(tmp_path)})
+
+    assert status["status"] == "missing"
+    assert status["available"] is False
+
+
+def test_mnemos_status_detects_stable_fast_json_search(tmp_path: Path):
+    mnemos = tmp_path / "mnemos"
+    mnemos.write_text(
+        """#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+  echo "mnemos 1.2.3"
+  exit 0
+fi
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  echo '{"commands":{"search":{"fast":true,"json":true}}}'
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    mnemos.chmod(0o755)
+
+    status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
+
+    assert status["status"] == "supported"
+    assert status["stable_fast_search"] is True
+    assert status["version"] == "mnemos 1.2.3"
+
+
 def test_host_bridge_command_probe_is_reflected_in_diagnostics(monkeypatch):
     monkeypatch.delenv("AGENT_CREW_HOST_BRIDGE_COMMAND", raising=False)
 

@@ -9,7 +9,7 @@
 
 PYTEST ?= pytest
 
-.PHONY: help test test-python test-shell test-integration
+.PHONY: help test test-python test-shell test-integration phase-1-validation
 
 help:
 	@echo "agent-crew Makefile targets:"
@@ -17,6 +17,7 @@ help:
 	@echo "  make test-python        run pytest (tests/python/)"
 	@echo "  make test-shell         run shell tests (tests/shell/)"
 	@echo "  make test-integration   run integration tests (tests/integration/)"
+	@echo "  make phase-1-validation run first-phase validation framework"
 
 test:
 	@bash tests/run-all.sh
@@ -29,3 +30,6 @@ test-shell:
 
 test-integration:
 	@bash tests/run-all.sh integration
+
+phase-1-validation:
+	@python3 core/scripts/phase-1-validation.py

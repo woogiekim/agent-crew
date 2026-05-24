@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Codex host bridge for agent-crew native handoffs.
+#
+# The core runtime invokes this command through AGENT_CREW_HOST_BRIDGE_COMMAND
+# after it has written deterministic handoff state. This adapter does not
+# bypass agent-crew routing; it asks Codex to continue from the existing handoff
+# paths and lets the normal crew:run / crew:agent instructions drive execution.
+
+fail() {
+  printf 'codex-host-bridge: %s\n' "$*" >&2
+  exit 2
+}
+
+require_env() {
+  local name="$1"
+  local value="${!name:-}"
+  [ -n "${value}" ] || fail "missing required environment variable: ${name}"
+}
+
+require_env AGENT_CREW_TASK_ID
+require_env AGENT_CREW_TASK_DIR
+require_env AGENT_CREW_HANDOFF_PATH
+require_env AGENT_CREW_RESULT_PATH
+require_env AGENT_CREW_PROJECT_ROOT
+
+if [ "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-0}" = "1" ]; then
+  fail "refusing recursive host bridge invocation"
+fi
+
+CODEX_BIN="${AGENT_CREW_CODEX_BIN:-codex}"
+if ! command -v "${CODEX_BIN}" >/dev/null 2>&1; then
+  printf 'codex-host-bridge: Codex executable not found: %s\n' "${CODEX_BIN}" >&2
+  exit 127
+fi
+
+TASK_ID="${AGENT_CREW_TASK_ID}"
+TASK_DIR="${AGENT_CREW_TASK_DIR}"
+HANDOFF_PATH="${AGENT_CREW_HANDOFF_PATH}"
+RESULT_PATH="${AGENT_CREW_RESULT_PATH}"
+PROJECT_ROOT="${AGENT_CREW_PROJECT_ROOT}"
+CONTEXT_DIR="${TASK_DIR}/context"
+mkdir -p "${CONTEXT_DIR}"
+
+PROMPT_PATH="${CONTEXT_DIR}/codex-host-bridge-prompt.md"
+LAST_MESSAGE_PATH="${CONTEXT_DIR}/codex-host-bridge-last-message.md"
+
+if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
+  cat > "${PROMPT_PATH}" <<EOF
+Resume this existing agent-crew direct-agent handoff in Codex.
+
+Do not create a new crew:run task. Preserve existing agent-crew ROUTE and crew:agent routing semantics. Read the handoff and request artifacts from the paths below, then complete or update the existing request state according to the installed agent-crew workflow.
+
+AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
+AGENT_CREW_AGENT_REQUEST_ID: ${AGENT_CREW_AGENT_REQUEST_ID}
+AGENT_CREW_REQUEST_DIR: ${AGENT_CREW_REQUEST_DIR:-${TASK_DIR}}
+AGENT_CREW_TASK_ID: ${TASK_ID}
+AGENT_CREW_TASK_DIR: ${TASK_DIR}
+AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
+AGENT_CREW_RESULT_PATH: ${RESULT_PATH}
+AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
+EOF
+else
+  cat > "${PROMPT_PATH}" <<EOF
+Resume this existing agent-crew crew:run handoff in Codex.
+
+Do not create a new crew:run task. Preserve the installed agent-crew STOP behavior, command wrappers, and crew:run routing semantics. Continue from the existing handoff artifacts below and complete or update the existing task state according to the installed agent-crew supervisor workflow.
+
+AGENT_CREW_TASK_ID: ${TASK_ID}
+AGENT_CREW_TASK_DIR: ${TASK_DIR}
+AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
+AGENT_CREW_RESULT_PATH: ${RESULT_PATH}
+AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
+EOF
+fi
+
+printf 'codex-host-bridge: invoking Codex for task %s\n' "${TASK_ID}" >&2
+
+AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
+  "${CODEX_BIN}" exec \
+    -C "${PROJECT_ROOT}" \
+    -a never \
+    -o "${LAST_MESSAGE_PATH}" \
+    - < "${PROMPT_PATH}"

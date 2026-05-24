@@ -262,6 +262,62 @@ def test_quality_loop_checker_blocks_approval_without_quality_metrics_file(tmp_p
     assert "missing_reviewer_quality_metrics_artifact" in payload["failures"]
     assert "missing_pipeline_reviewer_approval" in payload["failures"]
     assert payload["reviewer_approved_without_quality_metrics_count"] == 1
+    assert payload["reviewer_quality_metrics_errors"] == ["missing_quality_metrics_artifact"]
+
+
+def test_quality_loop_checker_blocks_malformed_quality_metrics_artifact(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+    (task_dir / "context" / "quality-metrics.json").write_text("{not json", encoding="utf-8")
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_reviewer_quality_metrics_artifact" in payload["failures"]
+    assert "missing_pipeline_reviewer_approval" in payload["failures"]
+    assert payload["reviewer_quality_metrics_errors"] == ["malformed_quality_metrics_json"]
+
+
+def test_quality_loop_checker_blocks_schema_invalid_quality_metrics_artifact(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+    (task_dir / "context" / "quality-metrics.json").write_text(
+        json.dumps({
+            "schema_version": 2,
+            "hallucination_detected": "no",
+            "factuality_review": "maybe",
+            "extra": True,
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_reviewer_quality_metrics_artifact" in payload["failures"]
+    assert "missing_pipeline_reviewer_approval" in payload["failures"]
+    assert set(payload["reviewer_quality_metrics_errors"]) == {
+        "invalid_quality_metrics_factuality_review",
+        "invalid_quality_metrics_hallucination_detected",
+        "invalid_quality_metrics_schema_version",
+        "unexpected_quality_metrics_fields",
+    }
 
 
 def test_report_quality_fails_when_only_evidence_files_exist(tmp_path: Path):

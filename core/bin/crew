@@ -728,6 +728,27 @@ PYEOF
 cmd_update() {
   local mode="${1:-}"
   local source="${2:-}"
+  run_mnemos_update_check() {
+    local diagnostics="${ASSET_ROOT}/scripts/crew-diagnostics.py"
+    if [ -f "${diagnostics}" ]; then
+      python3 "${diagnostics}" \
+        --project-root "${PROJECT_ROOT}" \
+        --asset-root "${ASSET_ROOT}" \
+        --agent-crew-home "${AGENT_CREW_HOME}" \
+        config dump --effective --format json 2>/dev/null \
+        | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    mnemos = data.get("mnemos") or {}
+except Exception:
+    sys.exit(0)
+status = mnemos.get("status", "unknown")
+detail = mnemos.get("detail", "")
+print(f"update_check: mnemos={status} {detail}".rstrip())
+' || true
+    fi
+  }
 
   case "${mode}" in
     -h|--help)
@@ -744,6 +765,7 @@ EOF
       local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
       require_file "${sync_script}" "local sync script"
       bash "${sync_script}" "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+      run_mnemos_update_check
       ;;
     "")
       command -v git >/dev/null 2>&1 || die "git is required for native remote update"
@@ -758,6 +780,7 @@ EOF
       require_file "${sync_script}" "remote local sync script"
       bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"
       printf 'update_phase: remote_sync=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
+      run_mnemos_update_check
       printf 'update_phase: remote_total=%sms\n' "$(( (SECONDS - update_total_start) * 1000 ))"
       ;;
     *)

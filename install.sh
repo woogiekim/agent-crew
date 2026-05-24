@@ -213,6 +213,7 @@ install_global() {
   mkdir -p "${AGENT_CREW_DIR}/system/adapters"
   cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/system/adapters/"
   chmod +x "${AGENT_CREW_DIR}/system/adapters/"*/*.sh 2>/dev/null || true
+  chmod +x "${AGENT_CREW_DIR}/system/adapters/"*/bin/* 2>/dev/null || true
   find "${AGENT_CREW_DIR}/system" -name ".DS_Store" -delete 2>/dev/null || true
   log_info "Host adapters installed → ${AGENT_CREW_DIR}/system/adapters/"
 
@@ -233,6 +234,7 @@ install_global() {
   mkdir -p "${AGENT_CREW_DIR}/adapters"
   cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/adapters/"
   chmod +x "${AGENT_CREW_DIR}/adapters/"*/*.sh 2>/dev/null || true
+  chmod +x "${AGENT_CREW_DIR}/adapters/"*/bin/* 2>/dev/null || true
 
   mkdir -p "${AGENT_CREW_DIR}/commands"
   cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_DIR}/commands/"
