@@ -35,6 +35,15 @@ assert_exit 0 "${rc}"
 assert_contains "${out}" "STATUS: completed"
 assert_not_contains "${out}" "missing_quality_loop_pipeline"
 
+it "fake-host can complete read-only validation with non-mutating constraints"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run \
+  --fake-host-result completed \
+  "Hosted Codex E2E validation: complete this existing agent-crew handoff as a read-only workflow, verify repository status only, do not edit files, do not commit, do not push, and record completion evidence without crew repair." 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "STATUS: completed"
+assert_not_contains "${out}" "missing_quality_loop_pipeline"
+
 it "zero-exit host bridge cannot complete mutating task without quality loop"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" \
   AGENT_CREW_HOST_BRIDGE_COMMAND=true \

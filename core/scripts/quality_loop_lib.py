@@ -36,6 +36,16 @@ READ_ONLY_TASK_RE = re.compile(
     r"읽기\s*전용|조회|분석|검토|확인|진단",
     re.IGNORECASE,
 )
+NON_MUTATING_CONSTRAINT_RE = re.compile(
+    r"\b("
+    r"do\s+not|don't|dont|must\s+not|should\s+not|never|without|no"
+    r")\s+("
+    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|"
+    r"save|edit|publish|commit|push|resolve|close|mutate"
+    r")\b",
+    re.IGNORECASE,
+)
 STATUS_COMPLETED_RE = re.compile(r"^STATUS\s*:\s*completed\b", re.I | re.M)
 QUALITY_BYPASS_RE = re.compile(r"^QUALITY_BYPASS_REASON\s*:", re.I | re.M)
 TDD_EVENT_RE = re.compile(
@@ -102,9 +112,10 @@ def load_jsonl(path: Path) -> list[dict]:
 
 def looks_mutating_task(text: str) -> bool:
     value = text or ""
-    if READ_ONLY_TASK_RE.search(value) and not STRONG_MUTATING_TASK_RE.search(value):
+    constrained_value = NON_MUTATING_CONSTRAINT_RE.sub("", value)
+    if READ_ONLY_TASK_RE.search(value) and not STRONG_MUTATING_TASK_RE.search(constrained_value):
         return False
-    return bool(MUTATING_TASK_RE.search(value))
+    return bool(MUTATING_TASK_RE.search(constrained_value))
 
 
 def stage_agents(stage) -> list[str]:
