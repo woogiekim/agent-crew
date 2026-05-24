@@ -52,6 +52,8 @@ Resume this existing agent-crew direct-agent handoff in Codex.
 
 Do not create a new crew:run task. Preserve existing agent-crew ROUTE and crew:agent routing semantics. Read the handoff and request artifacts from the paths below, then complete or update the existing request state according to the installed agent-crew workflow.
 
+Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
+
 AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
 AGENT_CREW_AGENT_REQUEST_ID: ${AGENT_CREW_AGENT_REQUEST_ID}
 AGENT_CREW_REQUEST_DIR: ${AGENT_CREW_REQUEST_DIR:-${TASK_DIR}}
@@ -66,6 +68,8 @@ else
 Resume this existing agent-crew crew:run handoff in Codex.
 
 Do not create a new crew:run task. Preserve the installed agent-crew STOP behavior, command wrappers, and crew:run routing semantics. Continue from the existing handoff artifacts below and complete or update the existing task state according to the installed agent-crew supervisor workflow.
+
+Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
 
 AGENT_CREW_TASK_ID: ${TASK_ID}
 AGENT_CREW_TASK_DIR: ${TASK_DIR}

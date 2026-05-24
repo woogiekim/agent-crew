@@ -701,6 +701,8 @@ assert_contains "$(cat "${FAKE_CODEX_LOG}")" "RESULT:${CODEX_AUTO_TASK_DIR}/resu
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROJECT_ROOT:${RESOLVED_TMP_PROJECT}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ACTIVE:1"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Resume this existing agent-crew crew:run handoff in Codex."
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Do not run crew repair for normal bridge completion."
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "Use repair guidance only when the task is genuinely blocked"
 
 it "crew agent host bridge command can auto-complete direct requests"
 AGENT_BRIDGE_LOG="$(make_tmp)/agent-host-bridge.log"
