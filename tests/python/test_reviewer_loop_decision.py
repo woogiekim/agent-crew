@@ -20,6 +20,15 @@ def run_decision(text: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_decision_with_task_dir(text: str, task_dir: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(SCRIPT), "--format", "json", "--task-dir", str(task_dir)],
+        input=text,
+        text=True,
+        capture_output=True,
+    )
+
+
 def test_status_rejected_triggers_retry_with_reason():
     result = run_decision(
         "STATUS: REJECTED\n"
@@ -55,6 +64,54 @@ def test_review_approved_does_not_retry():
         "REVIEW: APPROVED\n"
         "REPORT: context/review.md\n"
         "ISSUES: 0\n"
+        "QUALITY_METRICS: context/quality-metrics.json\n"
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "approve"
+    assert payload["quality_metrics"] == "context/quality-metrics.json"
+
+
+def test_review_approved_without_quality_metrics_retries_reviewer():
+    result = run_decision(
+        "REVIEW: APPROVED\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 0\n"
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "quality_metrics_missing"
+    assert "QUALITY_METRICS" in payload["directive"]
+
+
+def test_review_approved_missing_quality_metrics_file_retries(tmp_path: Path):
+    result = run_decision_with_task_dir(
+        "REVIEW: APPROVED\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 0\n"
+        "QUALITY_METRICS: context/quality-metrics.json\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "quality_metrics_file_missing"
+
+
+def test_review_approved_existing_quality_metrics_file_approves(tmp_path: Path):
+    (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "quality-metrics.json").write_text("{}", encoding="utf-8")
+
+    result = run_decision_with_task_dir(
+        "REVIEW: APPROVED\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 0\n"
+        "QUALITY_METRICS: context/quality-metrics.json\n",
+        tmp_path,
     )
 
     assert result.returncode == 0

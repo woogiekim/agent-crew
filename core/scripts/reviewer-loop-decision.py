@@ -30,6 +30,7 @@ REVIEW_APPROVED_RE = re.compile(r"^REVIEW\s*:\s*APPROVED\b", re.I | re.M)
 REASON_RE = re.compile(r"^REASON\s*:\s*([a-zA-Z0-9_.:-]+)", re.I | re.M)
 ISSUES_RE = re.compile(r"^ISSUES\s*:\s*(\d+)", re.I | re.M)
 REPORT_RE = re.compile(r"^REPORT\s*:\s*(.+)$", re.I | re.M)
+QUALITY_METRICS_RE = re.compile(r"^QUALITY_METRICS\s*:\s*(.+)$", re.I | re.M)
 
 
 DIRECTIVES = {
@@ -53,6 +54,16 @@ DIRECTIVES = {
         "to the immediately preceding implementation/TDD stage, remediate every "
         "listed issue, run the relevant tests, and then re-run reviewer."
     ),
+    "quality_metrics_missing": (
+        "Reviewer approved without the required QUALITY_METRICS line. Re-run "
+        "the reviewer stage and require it to write "
+        "${TASK_DIR}/context/quality-metrics.json before approval."
+    ),
+    "quality_metrics_file_missing": (
+        "Reviewer returned a QUALITY_METRICS path, but the referenced file was "
+        "not found. Re-run the reviewer stage and require it to write the "
+        "quality metrics artifact before approval."
+    ),
 }
 
 
@@ -70,7 +81,25 @@ def report_path(text: str) -> str:
     return match.group(1).strip() if match else "${TASK_DIR}/context/review.md"
 
 
-def classify(text: str) -> dict:
+def quality_metrics_path(text: str) -> str:
+    match = QUALITY_METRICS_RE.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def resolve_quality_metrics_path(path_text: str, task_dir: str | None) -> Path | None:
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if path.is_absolute():
+        return path
+    if task_dir:
+        if path_text.startswith("context/"):
+            return Path(task_dir) / path_text
+        return Path(task_dir) / path.name
+    return None
+
+
+def classify(text: str, task_dir: str | None = None) -> dict:
     if STATUS_REJECTED_RE.search(text):
         reason_match = REASON_RE.search(text)
         reason = reason_match.group(1) if reason_match else "reviewer_rejected"
@@ -99,11 +128,29 @@ def classify(text: str) -> dict:
         }
 
     if REVIEW_APPROVED_RE.search(text):
+        metrics_path = quality_metrics_path(text)
+        if not metrics_path:
+            return {
+                "action": "retry",
+                "trigger": "REVIEW: APPROVED",
+                "reason": "quality_metrics_missing",
+                "directive": DIRECTIVES["quality_metrics_missing"],
+            }
+        resolved = resolve_quality_metrics_path(metrics_path, task_dir)
+        if resolved is not None and not resolved.is_file():
+            return {
+                "action": "retry",
+                "trigger": "REVIEW: APPROVED",
+                "reason": "quality_metrics_file_missing",
+                "directive": DIRECTIVES["quality_metrics_file_missing"],
+                "quality_metrics": metrics_path,
+            }
         return {
             "action": "approve",
             "trigger": "REVIEW: APPROVED",
             "reason": "review_approved",
             "directive": "",
+            "quality_metrics": metrics_path,
         }
 
     return {
@@ -117,6 +164,7 @@ def classify(text: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--response")
+    parser.add_argument("--task-dir")
     parser.add_argument("--format", choices=["json", "text"], default="text")
     args = parser.parse_args()
 
@@ -125,7 +173,7 @@ def main() -> int:
         print(error, file=sys.stderr)
         return 2
 
-    result = classify(text)
+    result = classify(text, task_dir=args.task_dir)
     if args.format == "json":
         json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")

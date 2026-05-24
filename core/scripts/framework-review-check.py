@@ -281,8 +281,28 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             )
             and "quality-metrics.schema.json" in read_text(root / "core/scripts/validate-state-schema.py")
+            and has_all(
+                read_text(root / "core/scripts/reviewer-loop-decision.py"),
+                ["QUALITY_METRICS", "quality_metrics_missing", "quality_metrics_file_missing"],
+            )
             and "test_invalid_quality_metrics_exits_2" in read_text(root / "tests/python/test_validate_state_schema.py"),
-            "Reviewer output and state validation must enforce evaluator-labeled quality metrics when the artifact is present.",
+            "Reviewer output, supervisor approval classification, and state validation must enforce evaluator-labeled quality metrics.",
+        ),
+        control(
+            "quality",
+            "reviewer_quality_metrics_approval_gate",
+            "high",
+            has_all(
+                read_text(root / "core/scripts/reviewer-loop-decision.py"),
+                ["QUALITY_METRICS_RE", "quality_metrics_missing", "quality_metrics_file_missing", "--task-dir"],
+            )
+            and has_all(
+                supervisor_retry,
+                ["QUALITY_METRICS:", "quality_metrics_missing", "quality_metrics_file_missing", "--task-dir"],
+            )
+            and "QUALITY_METRICS: context/quality-metrics.json" in retry_chaos_fixture
+            and "test_review_approved_without_quality_metrics_retries_reviewer" in read_text(root / "tests/python/test_reviewer_loop_decision.py"),
+            "Reviewer approval must be blocked when evaluator-labeled quality metrics are omitted or point at a missing file.",
         ),
         control(
             "reliability",

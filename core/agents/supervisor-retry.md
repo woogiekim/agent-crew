@@ -218,6 +218,8 @@ Both reviewer rejection forms are mandatory loop triggers:
 | `STATUS: REJECTED` + `REASON: tests_absent_for_code_change` | Code changed but no test runner was discoverable. | `tests_absent_for_code_change` |
 | `STATUS: REJECTED` + `REASON: cross_process_path_mismatch` | Cross-process path agreement failed. | `cross_process_path_mismatch` |
 | `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | `review_needs_changes` |
+| `REVIEW: APPROVED` without `QUALITY_METRICS:` | Reviewer omitted the required evaluator-labeled quality artifact pointer. | `quality_metrics_missing` |
+| `REVIEW: APPROVED` with missing quality metrics file | Reviewer returned a `QUALITY_METRICS:` path that does not exist. | `quality_metrics_file_missing` |
 
 Use the provider-neutral classifier before deciding whether to advance
 or re-loop:
@@ -225,6 +227,7 @@ or re-loop:
 ```bash
 REVIEW_DECISION=$(python3 "${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
   --response "${TASK_DIR}/context/reviewer-response.txt" \
+  --task-dir "${TASK_DIR}" \
   --format json)
 REVIEW_ACTION=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])")
 REVIEW_REASON=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin)['reason'])")
@@ -233,7 +236,8 @@ REVIEW_DIRECTIVE=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,jso
 
 The classifier maps both `STATUS: REJECTED` and `REVIEW:
 NEEDS_CHANGES` to `action=retry`. `REVIEW: APPROVED` maps to
-`action=approve`.
+`action=approve` only when the reviewer also returns `QUALITY_METRICS:` and
+the referenced quality-metrics artifact exists.
 
 Re-loop logic (executed by Phase 2's stage loop wrapper around the
 reviewer stage spawn — runs at the same point in the dispatch flow as

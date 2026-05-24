@@ -171,7 +171,9 @@ invocation in SKILL.md; generic adds guidance).
   before allowing mutating fake-host or host-bridge auto-completion.
 - `reviewer-loop-decision.py` — classifies reviewer output for the supervisor
   retry loop. Both `STATUS: REJECTED` and `REVIEW: NEEDS_CHANGES` return
-  `action=retry`; `REVIEW: APPROVED` returns `action=approve`.
+  `action=retry`; `REVIEW: APPROVED` returns `action=approve` only when the
+  required `QUALITY_METRICS:` artifact pointer is present and, when a task dir
+  is provided, resolves to an existing file.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.

@@ -113,7 +113,7 @@
         {
           "kind": "reviewer_result",
           "agent": "reviewer",
-          "response": "REVIEW: APPROVED\nISSUES: 0"
+          "response": "REVIEW: APPROVED\nISSUES: 0\nQUALITY_METRICS: context/quality-metrics.json"
         }
       ],
       "expected": {
