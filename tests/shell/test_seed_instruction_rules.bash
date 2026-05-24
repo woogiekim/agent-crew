@@ -49,8 +49,19 @@ while [ \$# -gt 0 ]; do
 done
 
 case "\$cmd" in
+  capabilities)
+    if [ "\${POS[0]:-}" = "--json" ]; then
+      echo '{"capabilities":{"read_json":true}}'
+    fi
+    ;;
   read)
-    rid="\${POS[0]:-}"
+    if [ "\${POS[0]:-}" = "--json" ]; then
+      shift_pos="\${POS[1]:-}"
+      rid="\${shift_pos}"
+    else
+      echo "read must use --json" >&2
+      exit 1
+    fi
     f="\${STORE}/\${rid//[\\/]/_}"
     if [ -f "\$f" ]; then
       python3 -c '

@@ -22,16 +22,24 @@ make_mock_mnemos() {
   local stub="${tmp}/mnemos"
   cat > "${stub}" <<'EOF'
 #!/usr/bin/env bash
-# Mock mnemos: list returns one rule line; read returns the rule JSON.
+# Mock mnemos: list returns one rule line; read --json returns provider JSON.
 case "$1" in
+  capabilities)
+    if [ "${2:-}" = "--json" ]; then
+      echo '{"capabilities":{"read_json":true}}'
+    fi
+    ;;
   list)
     echo "[global] rule:test-rule:"
     ;;
   read)
-    if [ "$2" = "rule:test-rule" ]; then
+    if [ "${2:-}" = "--json" ] && [ "${3:-}" = "rule:test-rule" ]; then
       cat <<'INNER'
 {"tags":["instruction-rule"],"content":"---\ntitle: Test Rule\nsection: Test Section\napplies_to: [all]\npriority: 50\n---\nThis is a test rule body.\n"}
 INNER
+    else
+      echo "read must use --json" >&2
+      exit 1
     fi
     ;;
   *)
