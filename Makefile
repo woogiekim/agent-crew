@@ -9,7 +9,7 @@
 
 PYTEST ?= pytest
 
-.PHONY: help test test-python test-shell test-integration phase-1-validation
+.PHONY: help test test-python test-shell test-integration phase-1-validation phase-2-validation release-checksums readiness-metrics commercialization-ci
 
 help:
 	@echo "agent-crew Makefile targets:"
@@ -18,6 +18,10 @@ help:
 	@echo "  make test-shell         run shell tests (tests/shell/)"
 	@echo "  make test-integration   run integration tests (tests/integration/)"
 	@echo "  make phase-1-validation run first-phase validation framework"
+	@echo "  make phase-2-validation run second-phase validation framework"
+	@echo "  make release-checksums  generate installer/update checksums"
+	@echo "  make readiness-metrics  aggregate commercial readiness metrics"
+	@echo "  make commercialization-ci run full suite + phase validations + checksums"
 
 test:
 	@bash tests/run-all.sh
@@ -33,3 +37,19 @@ test-integration:
 
 phase-1-validation:
 	@python3 core/scripts/phase-1-validation.py
+
+phase-2-validation:
+	@python3 core/scripts/phase-2-validation.py
+
+release-checksums:
+	@python3 core/scripts/generate-release-checksums.py \
+		--output dist/release-checksums.json \
+		--sha256sums dist/SHA256SUMS
+
+readiness-metrics:
+	@python3 core/scripts/readiness-metrics.py \
+		--format text
+
+commercialization-ci: test phase-1-validation phase-2-validation release-checksums
+	@python3 core/scripts/generate-release-checksums.py \
+		--verify dist/release-checksums.json

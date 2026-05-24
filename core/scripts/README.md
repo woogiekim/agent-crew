@@ -128,6 +128,12 @@ invocation in SKILL.md; generic adds guidance).
 - `validate-state-schema.py` — validates project/task state artifacts and
   schema-validates optional reviewer quality labels at
   `{TASK_DIR}/context/quality-metrics.json` when present.
+- `phase-2-validation.py` — runs or plans the second validation pass across
+  unit, smoke, integration, alpha, and beta levels, then emits structured
+  findings, gaps, and recommended follow-up actions for performance, quality,
+  usability/progress confidence, reusability/memory, reliability,
+  observability, regression safety, cost efficiency, compatibility,
+  security/privacy, and maintainability.
 - `retry-chaos-check.py` — replays deterministic retry-chaos fixtures without
   an LLM. It simulates token-limit resumes, host tool crashes, reviewer
   loop-back, quality-loop exhaustion, and host blocked/cancelled outcomes

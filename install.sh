@@ -47,6 +47,27 @@ install_path_crew_cli() {
   log_info "Native crew CLI installed → ${dest}"
 }
 
+write_install_integrity_manifest() {
+  local checksum_script="${SOURCE_ROOT}/core/scripts/generate-release-checksums.py"
+  local integrity_dir="${AGENT_CREW_HOME}/state/install-integrity"
+  local manifest="${integrity_dir}/install-integrity.json"
+  local sums="${integrity_dir}/SHA256SUMS"
+
+  [ "${AGENT_CREW_WRITE_INSTALL_MANIFEST:-1}" = "1" ] || return 0
+  [ -f "${checksum_script}" ] || return 0
+
+  mkdir -p "${integrity_dir}"
+  python3 "${checksum_script}" \
+    --project-root "${SOURCE_ROOT}" \
+    --output "${manifest}" \
+    --sha256sums "${sums}" \
+    install.sh \
+    core/bin/crew \
+    core/commands/update.md \
+    core/scripts/sync-local-install.sh >/dev/null
+  log_info "Install integrity manifest written → ${manifest}"
+}
+
 # Check for an existing installation.
 if [ -d "${AGENT_CREW_DIR}/system/agents" ] || [ -d "${AGENT_CREW_DIR}/agents" ]; then
   if [ "${AGENT_CREW_MODE}" = "update" ]; then
@@ -258,6 +279,8 @@ install_global() {
   if [ -d "${SOURCE_DIR}/schemas" ]; then
     cp -r "${SOURCE_DIR}/schemas/"* "${AGENT_CREW_DIR}/schemas/" 2>/dev/null || true
   fi
+
+  write_install_integrity_manifest
 
   # Auto-migrate legacy flat layout (pre-system/ era):
   # - Non-repo, non-exception agents → user/agents/

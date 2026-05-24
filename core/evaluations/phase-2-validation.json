@@ -1,0 +1,363 @@
+{
+  "schema_version": 2,
+  "name": "agent-crew phase 2 validation framework",
+  "objective": "Validate the next readiness pass across unit, smoke, integration, alpha, and beta levels with structured findings, gaps, and follow-up actions.",
+  "levels": [
+    {
+      "id": "unit",
+      "description": "Fast deterministic Python coverage for validation runners, validators, routing, telemetry, memory safeguards, cost aggregation, and maintainability checks.",
+      "commands": [
+        {
+          "id": "phase_2_runner_tests",
+          "label": "Phase-two validation runner tests",
+          "command": [
+            "{python}",
+            "-m",
+            "pytest",
+            "tests/python/test_phase_2_validation.py",
+            "-q"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "performance",
+            "quality",
+            "observability",
+            "compatibility",
+            "reliability",
+            "regression_safety",
+            "maintainability"
+          ]
+        },
+        {
+          "id": "python_suite",
+          "label": "Python unit suite",
+          "command": [
+            "{python}",
+            "-m",
+            "pytest",
+            "tests/python",
+            "-q"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "quality",
+            "reliability",
+            "security_privacy",
+            "cost_efficiency",
+            "reusability_memory",
+            "maintainability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smoke",
+      "description": "Shell-level CLI and hook smokes that exercise setup, routing, status rendering, guards, and local memory wrappers.",
+      "commands": [
+        {
+          "id": "shell_suite",
+          "label": "Shell smoke suite",
+          "command": [
+            "bash",
+            "tests/run-all.sh",
+            "shell"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "usability_progress_confidence",
+            "observability",
+            "security_privacy",
+            "compatibility",
+            "reliability",
+            "regression_safety"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integration",
+      "description": "Repository integration scenarios covering fake-host E2E flow, SSOT round-trip, status rendering, quality gates, and runtime enforcement.",
+      "commands": [
+        {
+          "id": "integration_suite",
+          "label": "Integration suite",
+          "command": [
+            "bash",
+            "tests/run-all.sh",
+            "integration"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "quality",
+            "observability",
+            "compatibility",
+            "reliability",
+            "regression_safety"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alpha",
+      "description": "Deterministic workflow simulations and static operational checks for quality loops, replay, retry behavior, and framework readiness.",
+      "commands": [
+        {
+          "id": "workflow_replay",
+          "label": "Workflow replay simulation",
+          "command": [
+            "{python}",
+            "core/scripts/workflow-replay-check.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "quality",
+            "reliability",
+            "usability_progress_confidence",
+            "compatibility",
+            "observability",
+            "regression_safety"
+          ]
+        },
+        {
+          "id": "retry_chaos",
+          "label": "Retry chaos simulation",
+          "command": [
+            "{python}",
+            "core/scripts/retry-chaos-check.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "reliability",
+            "quality",
+            "observability"
+          ]
+        },
+        {
+          "id": "framework_review",
+          "label": "Framework review check",
+          "command": [
+            "{python}",
+            "core/scripts/framework-review-check.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "performance",
+            "quality",
+            "reliability",
+            "reusability_memory",
+            "security_privacy",
+            "observability",
+            "cost_efficiency",
+            "maintainability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "beta",
+      "description": "Operator-readiness checks for latency SLOs, telemetry, memory retrieval, and cost impact under feasible local conditions.",
+      "commands": [
+        {
+          "id": "e2e_slo_light",
+          "label": "E2E SLO light check",
+          "command": [
+            "{python}",
+            "core/scripts/e2e-slo-check.py",
+            "--skip-retrieval-eval",
+            "--skip-update-dry-run",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "performance",
+            "usability_progress_confidence",
+            "observability",
+            "cost_efficiency"
+          ]
+        },
+        {
+          "id": "memory_retrieval_eval",
+          "label": "Memory retrieval evaluation",
+          "command": [
+            "{python}",
+            "core/scripts/memory-retrieval-eval.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "reusability_memory",
+            "performance",
+            "quality"
+          ],
+          "optional": true
+        }
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "performance",
+      "question": "Does agent-crew avoid noticeable startup/runtime overhead across ordinary AI interactions and workflow commands?",
+      "evidence": [
+        "E2E SLO latency checks",
+        "framework review performance controls",
+        "runner command elapsed_ms"
+      ],
+      "phase_2_threshold": "Required latency and performance-control checks pass or produce a specific action.",
+      "follow_up_if_failed": "Investigate the slowest required command and add a focused SLO regression test before beta expansion.",
+      "follow_up_if_provisional": "Capture memory retrieval timing on a representative local memory store."
+    },
+    {
+      "id": "quality",
+      "question": "Does agent-crew preserve or improve task-processing quality across planning, execution, review, and validation loops?",
+      "evidence": [
+        "phase-two runner tests",
+        "Python unit suite",
+        "workflow replay",
+        "retry chaos",
+        "framework review"
+      ],
+      "phase_2_threshold": "Required quality and deterministic workflow checks pass.",
+      "follow_up_if_failed": "Fix failed quality commands first, then rerun unit and alpha levels together."
+    },
+    {
+      "id": "usability_progress_confidence",
+      "question": "Does the system clearly communicate progress, blocked states, and next operator actions while workflows are running?",
+      "evidence": [
+        "shell status smokes",
+        "progress rendering tests",
+        "E2E SLO light check"
+      ],
+      "phase_2_threshold": "Required status, progress, and operator-readiness checks pass.",
+      "follow_up_if_failed": "Add a focused status-render fixture for the failed workflow state."
+    },
+    {
+      "id": "reusability_memory",
+      "question": "Does the system persist, recall, and reuse useful context without treating raw non-normalized input as canonical task state?",
+      "evidence": [
+        "memory safeguards",
+        "memory retrieval evaluation",
+        "framework review memory controls"
+      ],
+      "phase_2_threshold": "Required memory safeguards pass; optional retrieval evidence is recorded when local memory state is available.",
+      "follow_up_if_failed": "Inspect memory safeguard failures and add evidence tracing for any missing reuse path.",
+      "follow_up_if_provisional": "Run memory retrieval evaluation against a populated local memory store and attach the JSON report."
+    },
+    {
+      "id": "reliability",
+      "question": "Are routing, validation, retry, and completion outcomes repeatable across deterministic checks?",
+      "evidence": [
+        "unit tests",
+        "shell smokes",
+        "integration suite",
+        "workflow replay",
+        "retry chaos"
+      ],
+      "phase_2_threshold": "Required deterministic checks pass.",
+      "follow_up_if_failed": "Triage the first failing deterministic level and add a replay fixture for the failure."
+    },
+    {
+      "id": "observability",
+      "question": "Are logs, status artifacts, telemetry, evidence reports, and diagnostics sufficient to explain workflow state?",
+      "evidence": [
+        "progress buffer validation",
+        "telemetry aggregation",
+        "status render tests",
+        "phase-two evidence JSON"
+      ],
+      "phase_2_threshold": "Required status, telemetry, and evidence checks pass.",
+      "follow_up_if_failed": "Add or repair the missing evidence artifact before expanding beta checks."
+    },
+    {
+      "id": "regression_safety",
+      "question": "Does the validation program protect known workflow and host-adapter behavior from regressions?",
+      "evidence": [
+        "phase-two runner self-tests",
+        "shell suite",
+        "integration suite",
+        "workflow replay"
+      ],
+      "phase_2_threshold": "Required regression suites pass across unit, smoke, integration, and alpha levels.",
+      "follow_up_if_failed": "Create a minimal regression fixture for the failing command before changing behavior."
+    },
+    {
+      "id": "cost_efficiency",
+      "question": "Is workflow overhead measurable, bounded, and explainable across local checks?",
+      "evidence": [
+        "cost aggregation tests",
+        "telemetry token fields",
+        "E2E SLO timings",
+        "framework review cost controls"
+      ],
+      "phase_2_threshold": "Required cost and telemetry checks pass and report no unexplained overhead.",
+      "follow_up_if_failed": "Compare elapsed_ms and cost telemetry for the failed command against the previous evidence report."
+    },
+    {
+      "id": "compatibility",
+      "question": "Do supported host, adapter, and workflow paths behave consistently in feasible in-repo tests?",
+      "evidence": [
+        "adapter setup tests",
+        "Codex workflow guard tests",
+        "generic CLI smokes",
+        "fake-host integration"
+      ],
+      "phase_2_threshold": "Required compatibility checks pass.",
+      "follow_up_if_failed": "Isolate the failing host path and update the compatibility matrix with the gap."
+    },
+    {
+      "id": "security_privacy",
+      "question": "Do tested paths avoid unsafe destructive behavior, approval bypass, prompt-injection leakage, and obvious secret or permission risks?",
+      "evidence": [
+        "dangerous-command guard tests",
+        "direct-edit guard tests",
+        "plaintext approval checks",
+        "framework review security controls"
+      ],
+      "phase_2_threshold": "Required guard, approval, and privacy checks pass.",
+      "follow_up_if_failed": "Treat security/privacy failures as release blockers and add a focused guard regression."
+    },
+    {
+      "id": "maintainability",
+      "question": "Is the validation framework easy to extend without duplicating host-specific logic or weakening existing conventions?",
+      "evidence": [
+        "phase-two runner tests",
+        "framework review maintainability controls",
+        "provider-neutral script conventions"
+      ],
+      "phase_2_threshold": "Required maintainability checks pass and new validation assets remain provider-neutral.",
+      "follow_up_if_failed": "Refactor duplicated validation logic or document the intentional exception before adding more levels."
+    }
+  ],
+  "conclusion_rules": {
+    "required_command_failure": "Criterion is needs_attention when any non-optional command mapped to it fails.",
+    "optional_command_failure": "Criterion is provisional when only optional commands fail or are skipped.",
+    "unmeasured": "Criterion is unmeasured when no selected command maps to it.",
+    "plan_only": "Criterion is planned when selected commands map to it but execution was intentionally skipped."
+  }
+}

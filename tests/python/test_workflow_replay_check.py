@@ -26,7 +26,7 @@ def test_workflow_replay_check_passes_current_fixture():
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
-    assert payload["summary"] == {"cases": 9, "passed": 9, "failed": 0}
+    assert payload["summary"] == {"cases": 11, "passed": 11, "failed": 0}
 
 
 def test_workflow_replay_check_detects_tool_flow_regression(tmp_path: Path):
