@@ -14,7 +14,7 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/resume/update/report/issue-ingest"
+it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/resume/update/report/issue-ingest/cancel"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
 assert_contains "${out}" "trace [args]"
@@ -25,6 +25,7 @@ assert_contains "${out}" "debug [args]"
 assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
+assert_contains "${out}" "cancel [--note TEXT] TASK_ID"
 
 it "crew help states prompt-workflow control plane"
 assert_contains "${out}" "local control plane for AI-host prompt workflows"
@@ -555,6 +556,20 @@ assert_contains "${cancel_result}" "BLOCKER: manual_fallback_cancelled"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${CANCEL_TASK_ID}" 2>&1)
 assert_contains "${out}" "\"tasks_blocked\": 1"
 assert_contains "${out}" "\"cancelled\""
+
+it "crew cancel is a concise wrapper for superseded handoffs"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "operator cancelled handoff" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+OP_CANCEL_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+OP_CANCEL_TASK_ID=$(basename "${OP_CANCEL_TASK_DIR}")
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" cancel --note "operator superseded task" "${OP_CANCEL_TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "STATUS: cancelled"
+assert_contains "$(cat "${OP_CANCEL_TASK_DIR}/result.md")" "operator superseded task"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${OP_CANCEL_TASK_ID}" 2>&1)
+assert_contains "${out}" "\"manual_fallback_cancelled\""
 
 it "crew cleanup-host-bridge dry-run finds stale host bridge task"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --host-bridge-command "exit 7" "cleanup stale host bridge task" 2>&1)

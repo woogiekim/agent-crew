@@ -45,6 +45,7 @@ Commands:
   run "task"                       Write state and host handoff for a task
   report auto|publish [args]       Store/publish native agent-crew reports
   issue-ingest ISSUE [args]        Record issue body/comment ingestion evidence
+  cancel [--note TEXT] TASK_ID     Mark a superseded handoff as cancelled
   repair [args] TASK_ID            Repair a manually completed handoff task
   cleanup-host-bridge [args]       Bulk repair stale host bridge blockers
   cleanup-state [args]             Dry-run task-state cleanup/archive plan
@@ -811,6 +812,40 @@ EOF
   python3 "${repair}" --state-dir "${STATE_DIR}" "$@"
 }
 
+cmd_cancel() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew cancel [--note TEXT] TASK_ID
+
+Marks an intentionally superseded or user-aborted handoff as cancelled. This is
+a concise operator-facing wrapper around `crew repair --status cancelled` so
+stale handoff-ready work stops appearing as running without being mislabeled as
+completed or blocked.
+EOF
+    return 0
+  fi
+
+  local note="cancelled by operator"
+  local task_id=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --note)
+        [ -n "${2:-}" ] || die "--note requires text"
+        note="$2"
+        shift 2
+        ;;
+      *)
+        [ -z "${task_id}" ] || die "cancel accepts one TASK_ID"
+        task_id="$1"
+        shift
+        ;;
+    esac
+  done
+  [ -n "${task_id}" ] || die "cancel requires TASK_ID"
+
+  cmd_repair --status cancelled --note "${note}" "${task_id}"
+}
+
 cmd_report() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -895,6 +930,7 @@ main() {
     run) cmd_run "$@" ;;
     report) cmd_report "$@" ;;
     issue-ingest) cmd_issue_ingest "$@" ;;
+    cancel) cmd_cancel "$@" ;;
     repair) cmd_repair "$@" ;;
     cleanup-host-bridge) cmd_cleanup_host_bridge "$@" ;;
     cleanup-state) cmd_cleanup_state "$@" ;;

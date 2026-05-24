@@ -62,6 +62,7 @@ Expected outcomes:
 
 ## Residual Risk
 
-- Cancellation is currently explicit via `crew repair --status cancelled`.
-  Future work could add a dedicated `crew cancel TASK_ID` wrapper for a shorter
-  operator-facing command.
+- Resolved in follow-up: added `crew cancel [--note TEXT] TASK_ID` as the
+  operator-facing wrapper for `crew repair --status cancelled`, with CLI
+  regression coverage. Superseded handoffs no longer require operators to know
+  the lower-level repair command.
