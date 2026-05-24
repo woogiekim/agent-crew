@@ -45,9 +45,13 @@ argv=$(cat "${ARGV_PATH}")
 first_arg=$(sed -n '1p' "${ARGV_PATH}")
 second_arg=$(sed -n '2p' "${ARGV_PATH}")
 third_arg=$(sed -n '3p' "${ARGV_PATH}")
+sixth_arg=$(sed -n '6p' "${ARGV_PATH}")
+seventh_arg=$(sed -n '7p' "${ARGV_PATH}")
 assert_eq "--ask-for-approval" "${first_arg}"
 assert_eq "never" "${second_arg}"
 assert_eq "exec" "${third_arg}"
+assert_eq "--add-dir" "${sixth_arg}"
+assert_eq "${TASK_DIR}" "${seventh_arg}"
 assert_not_contains "${argv}" $'exec\n-a'
 
 it "codex host bridge still writes and pipes the resume prompt"

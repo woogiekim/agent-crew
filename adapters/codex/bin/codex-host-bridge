@@ -82,5 +82,6 @@ AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
     --ask-for-approval never \
     exec \
     -C "${PROJECT_ROOT}" \
+    --add-dir "${TASK_DIR}" \
     -o "${LAST_MESSAGE_PATH}" \
     - < "${PROMPT_PATH}"
