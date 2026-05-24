@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "name": "agent-crew phase 1 validation framework",
+  "objective": "Validate first-phase readiness across repository-level tests, deterministic workflow simulations, and operator-facing evaluation criteria.",
+  "levels": [
+    {
+      "id": "unit",
+      "description": "Fast deterministic Python coverage for validators, parsers, routing helpers, telemetry, memory safeguards, and cost aggregation.",
+      "commands": [
+        {
+          "id": "pytest_python",
+          "label": "Python unit suite",
+          "command": [
+            "{python}",
+            "-m",
+            "pytest",
+            "tests/python",
+            "-q"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "quality",
+            "reliability",
+            "security",
+            "cost",
+            "memory"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smoke",
+      "description": "Shell-level CLI and hook smokes that exercise setup, routing, status rendering, guards, and local memory wrappers.",
+      "commands": [
+        {
+          "id": "shell_suite",
+          "label": "Shell smoke suite",
+          "command": [
+            "bash",
+            "tests/run-all.sh",
+            "shell"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "usability",
+            "observability",
+            "security",
+            "compatibility",
+            "reliability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "integration",
+      "description": "Repository integration scenarios covering fake-host E2E flow, SSOT round-trip, status rendering, quality gates, and runtime enforcement.",
+      "commands": [
+        {
+          "id": "integration_suite",
+          "label": "Integration suite",
+          "command": [
+            "bash",
+            "tests/run-all.sh",
+            "integration"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "quality",
+            "observability",
+            "compatibility",
+            "recovery",
+            "reliability"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alpha",
+      "description": "Deterministic workflow simulations for task routing, pipeline validation, progress/state artifacts, retry behavior, and non-destructive recovery.",
+      "commands": [
+        {
+          "id": "workflow_replay",
+          "label": "Workflow replay simulation",
+          "command": [
+            "{python}",
+            "core/scripts/workflow-replay-check.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "quality",
+            "reliability",
+            "observability",
+            "recovery"
+          ]
+        },
+        {
+          "id": "retry_chaos",
+          "label": "Retry chaos simulation",
+          "command": [
+            "{python}",
+            "core/scripts/retry-chaos-check.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "reliability",
+            "recovery",
+            "quality"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "beta",
+      "description": "Operator-readiness checks for latency SLOs, telemetry, memory retrieval, and cost impact under feasible local conditions.",
+      "commands": [
+        {
+          "id": "e2e_slo_light",
+          "label": "E2E SLO light check",
+          "command": [
+            "{python}",
+            "core/scripts/e2e-slo-check.py",
+            "--skip-retrieval-eval",
+            "--skip-update-dry-run",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "performance",
+            "usability",
+            "observability",
+            "cost"
+          ]
+        },
+        {
+          "id": "memory_retrieval_eval",
+          "label": "Memory retrieval evaluation",
+          "command": [
+            "{python}",
+            "core/scripts/memory-retrieval-eval.py",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "memory",
+            "performance",
+            "quality"
+          ],
+          "optional": true
+        }
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "performance",
+      "question": "Does agent-crew avoid adding noticeable startup/runtime overhead to ordinary AI interactions and workflow commands?",
+      "evidence": [
+        "E2E SLO latency checks",
+        "test runner wall-clock timing",
+        "telemetry command latency"
+      ],
+      "phase_1_threshold": "All required latency checks pass their fixture budgets or produce an actionable failure."
+    },
+    {
+      "id": "quality",
+      "question": "Does agent-crew preserve or improve response quality and task-processing quality?",
+      "evidence": [
+        "quality-loop gates",
+        "workflow replay fixtures",
+        "reviewer-loop simulation",
+        "unit and integration tests"
+      ],
+      "phase_1_threshold": "Required quality and replay checks pass."
+    },
+    {
+      "id": "usability",
+      "question": "Does the system clearly communicate progress while workflows are running?",
+      "evidence": [
+        "crew status rendering tests",
+        "progress.log and progress.buffer.jsonl validation",
+        "operator-facing SLO checks"
+      ],
+      "phase_1_threshold": "Status and progress rendering checks pass."
+    },
+    {
+      "id": "memory",
+      "question": "Does the system persist, recall, and reuse useful context beyond short-lived session context?",
+      "evidence": [
+        "memory wrapper tests",
+        "memory retrieval evaluation",
+        "answer-quality memory evidence checks"
+      ],
+      "phase_1_threshold": "Required memory safeguards pass; retrieval eval is recorded when local memory state is available."
+    },
+    {
+      "id": "reliability",
+      "question": "Are workflow routing and validation outcomes repeatable and stable?",
+      "evidence": [
+        "unit tests",
+        "shell smokes",
+        "integration suite",
+        "workflow replay"
+      ],
+      "phase_1_threshold": "Required deterministic checks pass."
+    },
+    {
+      "id": "observability",
+      "question": "Are logs, status artifacts, evidence, and diagnostics sufficient to explain workflow state?",
+      "evidence": [
+        "telemetry aggregation tests",
+        "status render tests",
+        "state schema validation",
+        "phase-one evidence JSON"
+      ],
+      "phase_1_threshold": "Required status, telemetry, and state checks pass."
+    },
+    {
+      "id": "recovery",
+      "question": "Do interrupted or failed workflows resume or report actionable recovery steps?",
+      "evidence": [
+        "retry chaos simulation",
+        "workflow replay blockers",
+        "repair/cleanup task-state tests"
+      ],
+      "phase_1_threshold": "Required recovery and retry simulations pass."
+    },
+    {
+      "id": "compatibility",
+      "question": "Do supported host and workflow paths behave consistently in feasible in-repo tests?",
+      "evidence": [
+        "adapter setup tests",
+        "Codex workflow guard tests",
+        "generic CLI smokes",
+        "fake-host integration"
+      ],
+      "phase_1_threshold": "Required compatibility checks pass."
+    },
+    {
+      "id": "security",
+      "question": "Do tested paths avoid unsafe destructive behavior and obvious secret or permission risks?",
+      "evidence": [
+        "dangerous-command guard tests",
+        "direct-edit guard tests",
+        "plaintext approval checks",
+        "hook smokes"
+      ],
+      "phase_1_threshold": "Required guard and approval checks pass."
+    },
+    {
+      "id": "cost",
+      "question": "Is workflow overhead measurable, bounded, and explainable?",
+      "evidence": [
+        "cost aggregation tests",
+        "telemetry token fields",
+        "SLO command timings"
+      ],
+      "phase_1_threshold": "Required cost/telemetry checks pass and report no unexplained overhead."
+    }
+  ],
+  "conclusion_rules": {
+    "required_command_failure": "Criterion is needs_attention when any non-optional command mapped to it fails.",
+    "optional_command_failure": "Criterion remains provisional when only optional commands fail or are skipped.",
+    "unmeasured": "Criterion is unmeasured when no command maps to it."
+  }
+}
