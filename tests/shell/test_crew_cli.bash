@@ -168,6 +168,14 @@ assert_exit 0 "${rc}"
 assert_contains "${out}" "Tools:"
 assert_contains "${out}" "host_bridge_command"
 
+it "host bridge wait surfaces latest progress while command is running"
+out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS=0.1 bash "${CREW}" run --host-bridge-command "sleep 0.25; exit 7" "read-only wait monitor" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "[crew] START"
+assert_contains "${out}" "[crew] WAIT | task_id="
+assert_contains "${out}" "last_update_age="
+
 it "crew debug exits 0 with empty task directory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" debug --recent 1 2>&1)
 rc=$?
@@ -421,6 +429,14 @@ assert_exit 0 "${rc}"
 it "crew run output includes task directory"
 assert_contains "${out}" "TASK_DIR:"
 
+it "crew run prints concise start banner"
+assert_contains "${out}" "[crew] START"
+assert_contains "${out}" "agent_uuid:"
+assert_contains "${out}" "task_id:"
+assert_contains "${out}" "branch:"
+assert_contains "${out}" "state:"
+assert_contains "${out}" "crew:status"
+
 TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 
 it "crew run writes register.json"
@@ -491,6 +507,9 @@ it "crew status --json reports handoff-ready run state"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)
 assert_contains "${out}" "\"handoff_ready\""
 assert_contains "${out}" "\"internal_handoff_ready\""
+assert_contains "${out}" "\"health\""
+assert_contains "${out}" "\"latest_progress\""
+assert_contains "${out}" "\"last_update_age_seconds\""
 
 TASK_ID=$(basename "${TASK_DIR}")
 
@@ -500,6 +519,16 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" "\"internal_handoff_ready\""
 assert_contains "${out}" "\"tasks_running\": 1"
+assert_contains "${out}" "\"health\": \"running\""
+assert_contains "${out}" "\"latest_progress\""
+
+it "crew status text surfaces latest progress and health"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "HEALTH"
+assert_contains "${out}" "Latest progress:"
+assert_contains "${out}" "${TASK_ID}: STATUS"
 
 it "crew trace shows handoff-ready run progress events"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" trace --task-id "${TASK_ID}" 2>&1)

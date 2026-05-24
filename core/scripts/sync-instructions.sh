@@ -68,6 +68,19 @@ END_MARKER="<!-- agent-crew-end -->"
 echo "[sync-instructions] mode=${MODE} mnemos=${MNEMOS_BIN}"
 echo "[sync-instructions] hosts=${HOSTS}"
 
+MNEMOS_READ_JSON=0
+if "${MNEMOS_BIN}" capabilities --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+caps = payload.get("capabilities") or {}
+sys.exit(0 if caps.get("read_json") is True else 1)
+' >/dev/null 2>&1; then
+  MNEMOS_READ_JSON=1
+fi
+
 # Collect rules from mnemos as JSON-list on stdout.
 # Each row: {"id":..., "tags":[...], "content":..., "front":..., "applies_to":[], "priority":..., "title":..., "section":...}
 # NOTE on shell wiring: we cannot use `cmd | python3 - "$ARG" <<EOF ... EOF`
@@ -82,18 +95,35 @@ RULE_IDS="$(
 )"
 
 COLLECTED_JSON="$(
-  python3 - "${MNEMOS_BIN}" "${RULE_IDS}" <<'PYEOF'
+  python3 - "${MNEMOS_BIN}" "${RULE_IDS}" "${MNEMOS_READ_JSON}" <<'PYEOF'
 import json, re, subprocess, sys
 mnemos = sys.argv[1]
 ids = [line.strip().rstrip(":") for line in sys.argv[2].splitlines() if line.strip()]
+use_read_json = sys.argv[3] == "1"
+
+def read_rule(rid):
+    cmd = [mnemos, "read"]
+    if use_read_json:
+        cmd.append("--json")
+    cmd.append(rid)
+    try:
+        raw = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
+        return json.loads(raw)
+    except Exception:
+        if not use_read_json:
+            return None
+    try:
+        raw = subprocess.check_output([mnemos, "read", rid], stderr=subprocess.DEVNULL, text=True)
+        return json.loads(raw)
+    except Exception:
+        return None
+
 out = []
 for rid in ids:
     if not rid.startswith("rule:"):
         continue
-    try:
-        raw = subprocess.check_output([mnemos, "read", rid], stderr=subprocess.DEVNULL, text=True)
-        data = json.loads(raw)
-    except Exception:
+    data = read_rule(rid)
+    if not isinstance(data, dict):
         continue
     if "instruction-rule" not in (data.get("tags") or []):
         continue

@@ -31,6 +31,19 @@ if [ ! -x "${MNEMOS_BIN}" ]; then
   exit 1
 fi
 
+MNEMOS_READ_JSON=0
+if "${MNEMOS_BIN}" capabilities --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+caps = payload.get("capabilities") or {}
+sys.exit(0 if caps.get("read_json") is True else 1)
+' >/dev/null 2>&1; then
+  MNEMOS_READ_JSON=1
+fi
+
 TAG="instruction-rule"
 LAYER="global"
 
@@ -50,7 +63,8 @@ capture_rule() {
   local body="${!varname}"
 
   local current
-  current="$("${MNEMOS_BIN}" read "${id}" 2>/dev/null | python3 -c '
+  if [ "${MNEMOS_READ_JSON}" = "1" ]; then
+    current="$("${MNEMOS_BIN}" read --json "${id}" 2>/dev/null | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -58,6 +72,26 @@ try:
 except Exception:
     print("__MISSING__", end="")
 ' 2>/dev/null)"
+    if [ "${current}" = "__MISSING__" ]; then
+      current="$("${MNEMOS_BIN}" read "${id}" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get("content", ""), end="")
+except Exception:
+    print("__MISSING__", end="")
+' 2>/dev/null)"
+    fi
+  else
+    current="$("${MNEMOS_BIN}" read "${id}" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get("content", ""), end="")
+except Exception:
+    print("__MISSING__", end="")
+' 2>/dev/null)"
+  fi
 
   if [ "${current}" = "__MISSING__" ] || [ -z "${current}" ]; then
     echo "  + CREATE ${id} (priority=${prio}, ${#body} bytes)"

@@ -180,6 +180,51 @@ def read_progress_buffer(task_dir):
     return rows
 
 
+def read_progress_log(task_dir):
+    """Yield normalized rows from legacy progress.log."""
+    p = task_dir / "progress.log"
+    if not p.is_file():
+        return []
+    rows = []
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = [part.strip() for part in line.split("|", 2)]
+        if len(parts) == 3:
+            ts, event, detail = parts
+        else:
+            ts, event, detail = "", "LOG", line.strip()
+        rows.append({
+            "ts": ts,
+            "trace_id": "",
+            "task_id": task_dir.name,
+            "session_id": "",
+            "event": event,
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "",
+            "detail": detail,
+            "files": [],
+        })
+    return rows
+
+
+def latest_progress_event(task_dir, events):
+    """Return the latest structured progress row, falling back to progress.log."""
+    if events:
+        latest = events[-1]
+    else:
+        log_rows = read_progress_log(task_dir)
+        latest = log_rows[-1] if log_rows else {}
+    return {
+        "ts": latest.get("ts", ""),
+        "event": latest.get("event", ""),
+        "stage": latest.get("stage", 0),
+        "agent": latest.get("agent", ""),
+        "status": latest.get("status", ""),
+        "detail": latest.get("detail", ""),
+    }
+
+
 def read_cost_file(state_dir, task_id):
     p = state_dir / "cost" / f"{task_id}.jsonl"
     if not p.is_file():
@@ -371,6 +416,15 @@ def stale_host_bridge_seconds():
     return max(value, 0)
 
 
+def stalled_progress_seconds():
+    raw = os.environ.get("AGENT_CREW_STALLED_PROGRESS_SECONDS", "300")
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 300
+    return max(value, 0)
+
+
 def task_age_seconds(task_dir, started_ts):
     if started_ts:
         return max(0, int((datetime.now(timezone.utc) - started_ts).total_seconds()))
@@ -379,6 +433,29 @@ def task_age_seconds(task_dir, started_ts):
     except Exception:
         return 0
     return max(0, int((datetime.now(timezone.utc) - mtime).total_seconds()))
+
+
+def event_age_seconds(event, task_dir):
+    ts = parse_iso_ts(event.get("ts", ""))
+    if ts:
+        return max(0, int((datetime.now(timezone.utc) - ts).total_seconds()))
+    return task_age_seconds(task_dir, None)
+
+
+def health_classification(status, current_phase, blockers, latest_event, task_dir):
+    """Map task state to booting/running/stalled/blocked/completed."""
+    if status == "completed":
+        return "completed"
+    if status in ("blocked", "stale_blocked") or blockers:
+        return "blocked"
+    if current_phase == "supervisor_handoff_pending":
+        return "booting"
+
+    age = event_age_seconds(latest_event, task_dir)
+    threshold = stalled_progress_seconds()
+    if threshold > 0 and age >= threshold:
+        return "stalled"
+    return "running"
 
 
 def missing_supervisor_boot_state(task_dir, *, has_register, has_events,
@@ -471,6 +548,7 @@ def aggregate_task(state_dir, task_dir):
     task_id = task_dir.name
     reg = read_register(task_dir)
     events = read_progress_buffer(task_dir)
+    latest_event = latest_progress_event(task_dir, events)
     tool_events = read_tool_events(task_dir)
     quality_metrics = read_quality_metrics(task_dir)
     cost = read_cost_file(state_dir, task_id)
@@ -562,6 +640,14 @@ def aggregate_task(state_dir, task_dir):
         status = "stale_blocked"
         current_phase = "stale_host_bridge_fallback"
         blocked_by = ["stale_host_bridge_not_invoked"]
+    latest_event_age_seconds = event_age_seconds(latest_event, task_dir)
+    health = health_classification(
+        status,
+        current_phase,
+        blocked_by,
+        latest_event,
+        task_dir,
+    )
 
     # Stage / retry counts from events.
     stages_total = sum(1 for e in events if e.get("event") == "STAGE")
@@ -600,6 +686,9 @@ def aggregate_task(state_dir, task_dir):
         "current_phase":     current_phase,
         "duration_seconds":  duration_seconds,
         "age_seconds":       age_seconds,
+        "health":            health,
+        "last_update_age_seconds": latest_event_age_seconds,
+        "latest_progress":   latest_event,
         "stale_blocker":     stale_host_bridge,
         "started":           started.get("ts") if started else None,
         "stages_total":      stages_total,
@@ -856,13 +945,25 @@ def format_rate(value):
     return f"{value * 100:.1f}%"
 
 
+def format_progress_event(row):
+    latest = row.get("latest_progress") or {}
+    event = latest.get("event") or "unknown"
+    stage = latest.get("agent") or latest.get("stage") or "0"
+    age = row.get("last_update_age_seconds")
+    age_text = "unknown" if age is None else format_duration(age)
+    detail = str(latest.get("detail") or "").strip()
+    if len(detail) > 80:
+        detail = detail[:77].rstrip() + "..."
+    return f"{event} stage={stage} age={age_text} | {detail}"
+
+
 def render_text(rows, summary):
     if not rows:
         print("(no tasks matched)")
         return
 
     header = (
-        f"{'TASK ID':<24}  {'STATUS':<10}  {'PHASE':<14}  "
+        f"{'TASK ID':<24}  {'STATUS':<10}  {'HEALTH':<9}  {'PHASE':<14}  "
         f"{'DUR':>8}  {'STAGES':>7}  {'RETRY':>5}  {'TOKENS':>7}  "
         f"TASK"
     )
@@ -875,6 +976,7 @@ def render_text(rows, summary):
         print(
             f"{r['task_id']:<24}  "
             f"{r['status']:<10}  "
+            f"{r.get('health', 'unknown'):<9}  "
             f"{(r['current_phase'] or '—'):<14}  "
             f"{format_duration(r['duration_seconds']):>8}  "
             f"{stages_disp:>7}  "
@@ -882,6 +984,10 @@ def render_text(rows, summary):
             f"{format_tokens(r['tokens_total']):>7}  "
             f"{task_disp}"
         )
+    print()
+    print("Latest progress:")
+    for r in rows:
+        print(f"  {r['task_id']}: {format_progress_event(r)}")
     print()
     print(f"Tasks: {summary['tasks_total']} total | "
           f"{summary['tasks_completed']} completed | "
