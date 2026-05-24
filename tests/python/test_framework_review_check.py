@@ -71,6 +71,7 @@ def test_framework_review_covers_operational_categories():
         "evaluator_labeled_quality_metrics",
         "reviewer_quality_metrics_emission_contract",
         "reviewer_quality_metrics_approval_gate",
+        "pipeline_quality_metrics_completion_gate",
     }.issubset(controls)
 
 

@@ -71,6 +71,7 @@ def evaluate_repo(root: Path) -> dict:
     progress_buffer_rule = read_text(root / "core/rules/state-files/progress-buffer-jsonl.md")
     register_rule = read_text(root / "core/rules/state-files/register-json.md")
     quality_metrics_schema = read_text(root / "core/schemas/quality-metrics.schema.json")
+    quality_loop_lib = read_text(root / "core/scripts/quality_loop_lib.py")
     capability_check = read_text(root / "core/scripts/agent-capability-check.py")
     pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
     workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
@@ -303,6 +304,23 @@ def evaluate_repo(root: Path) -> dict:
             and "QUALITY_METRICS: context/quality-metrics.json" in retry_chaos_fixture
             and "test_review_approved_without_quality_metrics_retries_reviewer" in read_text(root / "tests/python/test_reviewer_loop_decision.py"),
             "Reviewer approval must be blocked when evaluator-labeled quality metrics are omitted or point at a missing file.",
+        ),
+        control(
+            "quality",
+            "pipeline_quality_metrics_completion_gate",
+            "high",
+            has_all(
+                quality_loop_lib,
+                [
+                    "QUALITY_METRICS_RE",
+                    "event_has_quality_metrics",
+                    "missing_reviewer_quality_metrics_artifact",
+                    "reviewer_approved_without_quality_metrics_count",
+                ],
+            )
+            and "test_quality_loop_checker_blocks_approval_without_quality_metrics_file" in read_text(root / "tests/python/test_quality_loop_pipeline_check.py")
+            and "QUALITY_METRICS: context/quality-metrics.json" in read_text(root / "tests/integration/test_runtime_quality_loop_enforcement.bash"),
+            "Completed mutating tasks must not count reviewer approval unless progress evidence points at an existing quality-metrics artifact.",
         ),
         control(
             "reliability",

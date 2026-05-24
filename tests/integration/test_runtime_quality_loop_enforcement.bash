@@ -58,9 +58,17 @@ context.mkdir(parents=True, exist_ok=True)
     encoding="utf-8",
 )
 (context / "review.md").write_text(
-    "REVIEW: APPROVED after remediation.\n",
+    "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.\n",
     encoding="utf-8",
 )
+(context / "quality-metrics.json").write_text(json.dumps({
+    "schema_version": 1,
+    "hallucination_detected": False,
+    "rollback_performed": False,
+    "human_intervention_required": False,
+    "factuality_review": "passed",
+    "evidence_paths": ["context/review.md"],
+}) + "\n", encoding="utf-8")
 
 (task_dir / "pipeline.json").write_text(json.dumps({
     "schema_version": 1,
@@ -82,7 +90,7 @@ rows = [
     ("STAGE_DONE", 2, "reviewer", 1, "REVIEW: NEEDS_CHANGES"),
     ("STAGE_DONE", 1, "test-writer", 2, "TDD REFACTOR, 6 tests passed"),
     ("STAGE_DONE", 1, "backend", 2, "backend remediation - N/A"),
-    ("STAGE_DONE", 2, "reviewer", 2, "REVIEW: APPROVED"),
+    ("STAGE_DONE", 2, "reviewer", 2, "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json"),
 ]
 with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
     for idx, (event, stage, agent, attempt, detail) in enumerate(rows):

@@ -87,13 +87,24 @@ def write_quality_loop_trace(task_dir: Path) -> None:
             "agent": "reviewer",
             "attempt": 1,
             "status": "completed",
-            "detail": "reviewer - REVIEW: APPROVED",
+            "detail": "reviewer - REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
             "files": [],
         },
     ]
     with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row) + "\n")
+    (task_dir / "context" / "quality-metrics.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "hallucination_detected": False,
+            "rollback_performed": False,
+            "human_intervention_required": False,
+            "factuality_review": "passed",
+            "evidence_paths": ["context/review.md"],
+        }),
+        encoding="utf-8",
+    )
 
 
 def run_repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedProcess[str]:
@@ -131,7 +142,18 @@ def test_repair_blocks_evidence_only_without_pipeline_quality_loop(tmp_path: Pat
         encoding="utf-8",
     )
     (task_dir / "context" / "review.md").write_text(
-        "REVIEW: APPROVED after refactor.\n",
+        "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "quality-metrics.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "hallucination_detected": False,
+            "rollback_performed": False,
+            "human_intervention_required": False,
+            "factuality_review": "passed",
+            "evidence_paths": ["context/review.md"],
+        }),
         encoding="utf-8",
     )
 
@@ -150,7 +172,7 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
         encoding="utf-8",
     )
     (task_dir / "context" / "review.md").write_text(
-        "REVIEW: APPROVED after refactor.\n",
+        "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
         encoding="utf-8",
     )
 

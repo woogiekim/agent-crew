@@ -365,7 +365,7 @@ def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementati
             "agent": "reviewer",
             "attempt": 1,
             "status": "completed",
-            "detail": "reviewer - REVIEW: APPROVED",
+            "detail": "reviewer - REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
             "files": [],
         },
     ]
@@ -377,7 +377,18 @@ def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementati
         encoding="utf-8",
     )
     (task_dir / "context" / "review.md").write_text(
-        "REVIEW: APPROVED after refactor.\n",
+        "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "quality-metrics.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "hallucination_detected": False,
+            "rollback_performed": False,
+            "human_intervention_required": False,
+            "factuality_review": "passed",
+            "evidence_paths": ["context/review.md"],
+        }),
         encoding="utf-8",
     )
     evidence = task_dir / "progress.log"

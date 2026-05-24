@@ -49,7 +49,18 @@ def write_task(task_dir: Path, rows: list[dict], pipeline: dict | None = None) -
         encoding="utf-8",
     )
     (task_dir / "context" / "review.md").write_text(
-        "REVIEW: APPROVED after remediation.\n",
+        "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "quality-metrics.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "hallucination_detected": False,
+            "rollback_performed": False,
+            "human_intervention_required": False,
+            "factuality_review": "passed",
+            "evidence_paths": ["context/review.md"],
+        }),
         encoding="utf-8",
     )
     with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
@@ -108,7 +119,7 @@ def test_quality_loop_checker_blocks_multi_agent_tdd_stage(tmp_path: Path):
             row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
             row("STAGE_DONE", "backend", "backend - N/A", stage=1),
             row("STAGE_DONE", "frontend", "frontend - N/A", stage=1),
-            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
         ],
         pipeline={
             "schema_version": 1,
@@ -138,7 +149,7 @@ def test_quality_loop_checker_blocks_rework_on_wrong_stage(tmp_path: Path):
             row("STAGE_DONE", "reviewer", "REVIEW: NEEDS_CHANGES", stage=2),
             row("STAGE_DONE", "test-writer", "TDD REFACTOR, 6 tests passed", stage=3, attempt=2),
             row("STAGE_DONE", "backend", "backend remediation - N/A", stage=3, attempt=2),
-            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2, attempt=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2, attempt=2),
         ],
     )
 
@@ -162,7 +173,7 @@ def test_quality_loop_checker_blocks_stale_attempt_rework(tmp_path: Path):
             row("STAGE_DONE", "reviewer", "REVIEW: NEEDS_CHANGES", stage=2),
             row("STAGE_DONE", "test-writer", "TDD REFACTOR, 6 tests passed", stage=1),
             row("STAGE_DONE", "backend", "backend remediation - N/A", stage=1),
-            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2, attempt=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2, attempt=2),
         ],
     )
 
@@ -184,7 +195,7 @@ def test_quality_loop_checker_blocks_implementation_stage_without_immediate_revi
             row("STAGE_DONE", "backend", "backend - N/A", stage=1),
             row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=2),
             row("STAGE_DONE", "frontend", "frontend - N/A", stage=2),
-            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=3),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=3),
         ],
         pipeline={
             "schema_version": 1,
@@ -216,7 +227,7 @@ def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
             row("STAGE_DONE", "reviewer", "REVIEW: NEEDS_CHANGES", stage=2),
             row("STAGE_DONE", "test-writer", "TDD REFACTOR, 6 tests passed", stage=1, attempt=2),
             row("STAGE_DONE", "backend", "backend remediation - N/A", stage=1, attempt=2),
-            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED", stage=2, attempt=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2, attempt=2),
         ],
     )
 
@@ -226,6 +237,31 @@ def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["rejection_followups"][0]["ordered"] is True
     assert payload["reviewer_approval_count"] == 1
+
+
+def test_quality_loop_checker_blocks_approval_without_quality_metrics_file(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/missing-quality-metrics.json",
+                stage=2,
+            ),
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_reviewer_quality_metrics_artifact" in payload["failures"]
+    assert "missing_pipeline_reviewer_approval" in payload["failures"]
+    assert payload["reviewer_approved_without_quality_metrics_count"] == 1
 
 
 def test_report_quality_fails_when_only_evidence_files_exist(tmp_path: Path):

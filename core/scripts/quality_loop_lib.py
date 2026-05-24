@@ -28,6 +28,7 @@ REVIEW_APPROVED_RE = re.compile(
     r"\b(REVIEW:\s*APPROVED|APPROVED|REVIEW_APPROVED|final_verdict=ok)\b",
     re.I,
 )
+QUALITY_METRICS_RE = re.compile(r"\bQUALITY_METRICS\s*:\s*(\S+)", re.I)
 REVIEW_REJECTED_RE = re.compile(
     r"\b(STATUS:\s*REJECTED|REVIEW:\s*NEEDS_CHANGES|NEEDS_CHANGES|"
     r"reviewer_rejected|CHANGES_REQUESTED)\b",
@@ -181,13 +182,40 @@ def event_is_tdd_done(row: dict) -> bool:
     return bool(TDD_EVENT_RE.search(event_text(row)))
 
 
-def event_is_reviewer_approved(row: dict) -> bool:
+def event_quality_metrics_path(row: dict) -> str:
+    match = QUALITY_METRICS_RE.search(event_text(row))
+    return match.group(1).strip() if match else ""
+
+
+def resolve_event_quality_metrics_path(path_text: str, task_dir: Path | None) -> Path | None:
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if path.is_absolute():
+        return path
+    if task_dir is None:
+        return None
+    if path_text.startswith("context/"):
+        return task_dir / path_text
+    return task_dir / path.name
+
+
+def event_has_quality_metrics(row: dict, task_dir: Path | None = None) -> bool:
+    path_text = event_quality_metrics_path(row)
+    if not path_text:
+        return False
+    resolved = resolve_event_quality_metrics_path(path_text, task_dir)
+    return True if resolved is None else resolved.is_file()
+
+
+def event_is_reviewer_approved(row: dict, task_dir: Path | None = None) -> bool:
     agent = str(row.get("agent", ""))
     text = event_text(row)
-    return (
+    approved = (
         (agent == "reviewer" and bool(REVIEW_APPROVED_RE.search(text)))
         or "STAGE_STREAMING_REVIEW_DONE" in text and "final_verdict=ok" in text
     )
+    return approved and event_has_quality_metrics(row, task_dir)
 
 
 def event_is_reviewer_rejected(row: dict) -> bool:
@@ -250,7 +278,7 @@ def rejection_followups(events: list[dict], rejected_index: int) -> dict:
     approval_candidates = [
         (idx, row)
         for idx, row in enumerate(later)
-        if event_is_reviewer_approved(row)
+        if event_is_reviewer_approved(row, None)
         and (rejected_stage is None or event_stage(row) == rejected_stage)
         and event_attempt(row) > rejected_attempt
     ]
@@ -307,6 +335,15 @@ def check_quality_loop(
         {"event_index": idx, **rejection_followups(events, idx)}
         for idx in rejection_indexes
     ]
+    approved_events = [
+        row for row in events
+        if str(row.get("agent", "")) == "reviewer"
+        and bool(REVIEW_APPROVED_RE.search(event_text(row)))
+    ]
+    valid_approval_events = [
+        row for row in approved_events
+        if event_is_reviewer_approved(row, task_dir)
+    ]
 
     failures: list[str] = []
     if required:
@@ -328,7 +365,9 @@ def check_quality_loop(
             failures.append("missing_pipeline_implementation_completion")
         if events and not any(event_is_tdd_done(row) for row in events):
             failures.append("missing_pipeline_tdd_event")
-        if events and not any(event_is_reviewer_approved(row) for row in events):
+        if events and approved_events and not valid_approval_events:
+            failures.append("missing_reviewer_quality_metrics_artifact")
+        if events and not valid_approval_events:
             failures.append("missing_pipeline_reviewer_approval")
         if require_rework_cycle and not rejection_indexes:
             failures.append("missing_rework_cycle")
@@ -347,5 +386,6 @@ def check_quality_loop(
         "rejection_followups": followups,
         "implementer_event_count": sum(1 for row in events if event_is_implementer_done(row)),
         "tdd_event_count": sum(1 for row in events if event_is_tdd_done(row)),
-        "reviewer_approval_count": sum(1 for row in events if event_is_reviewer_approved(row)),
+        "reviewer_approval_count": len(valid_approval_events),
+        "reviewer_approved_without_quality_metrics_count": len(approved_events) - len(valid_approval_events),
     }
