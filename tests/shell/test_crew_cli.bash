@@ -539,6 +539,23 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 assert_contains "${out}" "\"tasks_completed\": 1"
 assert_not_contains "${out}" "\"host_bridge_not_invoked\""
 
+it "crew repair can mark an intentionally superseded handoff as cancelled"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "superseded handoff cleanup" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+CANCEL_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+CANCEL_TASK_ID=$(basename "${CANCEL_TASK_DIR}")
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status cancelled --note "user started a newer task" "${CANCEL_TASK_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "STATUS: cancelled"
+cancel_result=$(cat "${CANCEL_TASK_DIR}/result.md")
+assert_contains "${cancel_result}" "STATUS: cancelled"
+assert_contains "${cancel_result}" "BLOCKER: manual_fallback_cancelled"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${CANCEL_TASK_ID}" 2>&1)
+assert_contains "${out}" "\"tasks_blocked\": 1"
+assert_contains "${out}" "\"cancelled\""
+
 it "crew cleanup-host-bridge dry-run finds stale host bridge task"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --host-bridge-command "exit 7" "cleanup stale host bridge task" 2>&1)
 rc=$?

@@ -169,8 +169,8 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         f"TASK_ID: {task_id}",
         "MEASUREMENTS: repaired manual handoff state, 1 repair event recorded, 0 retries",
     ]
-    if status == "blocked":
-        lines.append(f"BLOCKER: {blocker}")
+    if status in {"blocked", "cancelled"}:
+        lines.append(f"BLOCKER: {blocker or status}")
     lines.append(f"EVIDENCE: context/manual-fallback-repair.json")
     for path in evidence_paths:
         lines.append(f"EVIDENCE: {path}")
@@ -214,13 +214,22 @@ def repair(args: argparse.Namespace) -> dict:
     }
 
     status = args.status
-    blocker = args.blocker or ("manual_fallback_blocked" if status == "blocked" else "")
-    blocked_by = [blocker] if status == "blocked" and blocker else []
+    blocker = args.blocker or (
+        "manual_fallback_cancelled" if status == "cancelled"
+        else "manual_fallback_blocked" if status == "blocked"
+        else ""
+    )
+    blocked_by = [blocker] if status in {"blocked", "cancelled"} and blocker else []
+    host_bridge_status = {
+        "completed": "manual_fallback_completed",
+        "blocked": "manual_fallback_blocked",
+        "cancelled": "manual_fallback_cancelled",
+    }[status]
 
     register.update({
         "current_phase": status,
         "blocked_by": blocked_by,
-        "host_bridge_status": "manual_fallback_completed" if status == "completed" else "manual_fallback_blocked",
+        "host_bridge_status": host_bridge_status,
         "manual_fallback_repaired_at": now,
         "manual_fallback_repair_path": str(task_dir / "context" / "manual-fallback-repair.json"),
     })
@@ -268,6 +277,11 @@ def repair(args: argparse.Namespace) -> dict:
     with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
         handle.write(f"{now} | REPAIR | manual fallback marked {status}\n")
         handle.write(f"{now} | STATUS | {status}\n")
+    terminal_event = {
+        "completed": "COMPLETED",
+        "blocked": "BLOCKED",
+        "cancelled": "CANCELLED",
+    }[status]
     append_jsonl(
         task_dir / "progress.buffer.jsonl",
         {
@@ -291,7 +305,7 @@ def repair(args: argparse.Namespace) -> dict:
             "trace_id": f"{register.get('session_id', args.task_id)}.{args.task_id}.0.0",
             "task_id": args.task_id,
             "session_id": register.get("session_id", ""),
-            "event": "COMPLETED" if status == "completed" else "BLOCKED",
+            "event": terminal_event,
             "stage": 0,
             "agent": "",
             "attempt": 0,
@@ -306,7 +320,7 @@ def repair(args: argparse.Namespace) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-dir", required=True)
-    parser.add_argument("--status", choices=["completed", "blocked"], default="completed")
+    parser.add_argument("--status", choices=["completed", "blocked", "cancelled"], default="completed")
     parser.add_argument("--note", default="")
     parser.add_argument("--blocker", default="")
     parser.add_argument("--evidence", action="append", default=[])
