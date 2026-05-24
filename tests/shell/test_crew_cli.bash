@@ -693,7 +693,7 @@ CODEX_AUTO_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $
 CODEX_AUTO_TASK_ID=$(basename "${CODEX_AUTO_TASK_DIR}")
 RESOLVED_TMP_PROJECT=$(cd "${TMP_PROJECT}" && pwd -P)
 assert_file_exists "${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-prompt.md"
-assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ARGS:exec -C ${RESOLVED_TMP_PROJECT} -a never -o ${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-last-message.md -"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ARGS:--ask-for-approval never exec -C ${RESOLVED_TMP_PROJECT} -o ${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-last-message.md -"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "TASK_ID:${CODEX_AUTO_TASK_ID}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "TASK_DIR:${CODEX_AUTO_TASK_DIR}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "HANDOFF:${CODEX_AUTO_TASK_DIR}/handoff.md"

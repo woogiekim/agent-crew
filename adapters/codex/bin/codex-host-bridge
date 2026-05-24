@@ -78,8 +78,9 @@ fi
 printf 'codex-host-bridge: invoking Codex for task %s\n' "${TASK_ID}" >&2
 
 AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
-  "${CODEX_BIN}" exec \
+  "${CODEX_BIN}" \
+    --ask-for-approval never \
+    exec \
     -C "${PROJECT_ROOT}" \
-    -a never \
     -o "${LAST_MESSAGE_PATH}" \
     - < "${PROMPT_PATH}"
