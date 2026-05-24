@@ -197,6 +197,27 @@ class TestValidateStateSchema:
         messages = [item["message"] for item in payload["findings"]]
         assert any("planner as a runtime stage" in message for message in messages)
 
+    def test_cancelled_register_state_is_schema_valid(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """Manual cancellation is a first-class terminal register state."""
+        reg = _valid_register()
+        reg["current_phase"] = "cancelled"
+        reg["host_bridge_status"] = "manual_fallback_cancelled"
+        (task_dir / "register.json").write_text(json.dumps(reg))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl",
+                     [_valid_progress_row()])
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stdout + r.stderr
+
     def test_strict_mode_promotes_warnings_to_errors(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

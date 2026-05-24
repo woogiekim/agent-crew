@@ -70,6 +70,7 @@ def evaluate_repo(root: Path) -> dict:
     tool_sandboxing_rule = read_text(root / "core/rules/tool-sandboxing.md")
     progress_buffer_rule = read_text(root / "core/rules/state-files/progress-buffer-jsonl.md")
     register_rule = read_text(root / "core/rules/state-files/register-json.md")
+    quality_metrics_schema = read_text(root / "core/schemas/quality-metrics.schema.json")
     capability_check = read_text(root / "core/scripts/agent-capability-check.py")
     pipeline_capability_check = read_text(root / "core/scripts/pipeline-capability-check.py")
     workflow_replay_check = read_text(root / "core/scripts/workflow-replay-check.py")
@@ -244,6 +245,27 @@ def evaluate_repo(root: Path) -> dict:
                 ],
             ),
             "Runtime telemetry must expose required quality metrics as operational rates, not only raw task rows.",
+        ),
+        control(
+            "quality",
+            "evaluator_labeled_quality_metrics",
+            "high",
+            exists(root, "core/schemas/quality-metrics.schema.json")
+            and has_all(
+                quality_metrics_schema,
+                [
+                    "hallucination_detected",
+                    "rollback_performed",
+                    "human_intervention_required",
+                    "factuality_review",
+                ],
+            )
+            and has_all(
+                read_text(root / "core/scripts/telemetry-aggregate.py"),
+                ["read_quality_metrics", "quality_metrics", "explicit_quality_bool"],
+            )
+            and "quality-metrics.json" in read_text(root / "tests/python/test_telemetry_aggregate.py"),
+            "Operational quality metrics must support evaluator-labeled factuality, rollback, and human-intervention signals before text fallbacks.",
         ),
         control(
             "reliability",

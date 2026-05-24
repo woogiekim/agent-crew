@@ -215,6 +215,46 @@ class TestTelemetryAggregate:
         assert quality["human_intervention_rate"] == 0.3333
         assert quality["tool_failure_rate"] == 0.5
 
+    def test_operational_quality_prefers_evaluator_labeled_metrics(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """context/quality-metrics.json overrides weaker text-signal inference."""
+        task_id = "20260101-120054-0"
+        td = state_dir / "tasks" / task_id
+        (td / "context").mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="blocked")
+        reg = json.loads((td / "register.json").read_text())
+        reg["task"] = "rollback hallucination words appear but evaluator cleared them"
+        reg["blocked_by"] = ["manual review required"]
+        (td / "register.json").write_text(json.dumps(reg))
+        (td / "context" / "quality-metrics.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "hallucination_detected": False,
+                "rollback_performed": False,
+                "human_intervention_required": True,
+                "factuality_review": "passed",
+                "evidence_paths": ["context/review.md"],
+            }),
+            encoding="utf-8",
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        task = payload["tasks"][0]
+        quality = payload["summary"]["operational_quality"]
+        assert task["quality_metrics"]["factuality_review"] == "passed"
+        assert quality["hallucination_signal_rate"] == 0.0
+        assert quality["rollback_frequency"] == 0
+        assert quality["human_intervention_rate"] == 1.0
+
     def test_phase_events_are_closed_by_next_phase(
         self, script_runner, env_with_home, state_dir
     ):

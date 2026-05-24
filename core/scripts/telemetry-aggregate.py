@@ -216,6 +216,17 @@ def read_tool_events(task_dir):
     return rows
 
 
+def read_quality_metrics(task_dir):
+    p = task_dir / "context" / "quality-metrics.json"
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def phase_runtime_metrics(events):
     """Compute per-phase runtime telemetry from progress buffer events."""
     metrics = []
@@ -461,6 +472,7 @@ def aggregate_task(state_dir, task_dir):
     reg = read_register(task_dir)
     events = read_progress_buffer(task_dir)
     tool_events = read_tool_events(task_dir)
+    quality_metrics = read_quality_metrics(task_dir)
     cost = read_cost_file(state_dir, task_id)
     result = read_result_md(task_dir)
     missing_boot = missing_supervisor_boot_state(
@@ -599,6 +611,7 @@ def aggregate_task(state_dir, task_dir):
         "blockers":          blocked_by,
         "guidance":          guidance_for(blocked_by, status, current_phase),
         "host_bridge_status": host_bridge_status(reg),
+        "quality_metrics":    quality_metrics,
         "tool_events_total": len(tool_events),
         "tool_failures_total": sum(1 for e in tool_events if e.get("status") == "failed"),
         "tokens_in":         (cost or {}).get("tokens_in"),
@@ -734,18 +747,35 @@ def row_signal_text(row):
 
 
 def has_hallucination_signal(row):
+    explicit = explicit_quality_bool(row, "hallucination_detected")
+    if explicit is not None:
+        return explicit
     text = row_signal_text(row)
     return "hallucination" in text or "환각" in text
 
 
 def has_rollback_signal(row):
+    explicit = explicit_quality_bool(row, "rollback_performed")
+    if explicit is not None:
+        return explicit
     text = row_signal_text(row)
     return any(token in text for token in ("rollback", "roll back", "revert", "롤백", "되돌리"))
 
 
 def has_human_intervention_signal(row):
+    explicit = explicit_quality_bool(row, "human_intervention_required")
+    if explicit is not None:
+        return explicit
     host_status = str(row.get("host_bridge_status") or "")
     return host_status.startswith("manual_fallback_")
+
+
+def explicit_quality_bool(row, key):
+    metrics = row.get("quality_metrics")
+    if not isinstance(metrics, dict):
+        return None
+    value = metrics.get(key)
+    return value if isinstance(value, bool) else None
 
 
 def operational_quality_metrics(rows):

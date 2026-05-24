@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/quality-metrics.schema.json",
+  "title": "agent-crew task quality metrics",
+  "description": "Optional evaluator/reviewer-labeled quality signal file. Lives at {TASK_DIR}/context/quality-metrics.json and is consumed by telemetry operational_quality metrics before text-signal fallbacks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "hallucination_detected": {
+      "type": "boolean",
+      "description": "True only when a reviewer/evaluator explicitly found factual hallucination or unsupported factual claims."
+    },
+    "rollback_performed": {
+      "type": "boolean",
+      "description": "True when the workflow performed or required rollback/revert to recover from unsafe changes."
+    },
+    "human_intervention_required": {
+      "type": "boolean",
+      "description": "True when a human/operator intervention was required beyond normal approval gates."
+    },
+    "factuality_review": {
+      "type": "string",
+      "enum": ["not_applicable", "passed", "failed", "inconclusive"]
+    },
+    "evidence_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Relative paths under the task directory that support the labels."
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

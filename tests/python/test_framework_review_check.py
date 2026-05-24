@@ -68,6 +68,7 @@ def test_framework_review_covers_operational_categories():
         "automatic_issue_reporting_runtime_issue_contract",
         "claude_performance_budget_probe",
         "operational_quality_metrics",
+        "evaluator_labeled_quality_metrics",
     }.issubset(controls)
 
 

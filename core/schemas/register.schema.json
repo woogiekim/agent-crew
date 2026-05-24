@@ -73,9 +73,10 @@
         "phase_3",
         "handoff_ready",
         "completed",
-        "blocked"
+        "blocked",
+        "cancelled"
       ],
-      "description": "Current supervisor phase. Updated at each phase boundary via the register_update helper. Terminal values: completed, blocked."
+      "description": "Current supervisor phase. Updated at each phase boundary via the register_update helper. Terminal values: completed, blocked, cancelled."
     },
     "approval_status": {
       "type": "string",
@@ -152,7 +153,8 @@
         "auto_completed",
         "fake_completed",
         "manual_fallback_completed",
-        "manual_fallback_blocked"
+        "manual_fallback_blocked",
+        "manual_fallback_cancelled"
       ],
       "description": "Host bridge execution classification for distinguishing automatic completion, manual fallback, and true blocked handoffs."
     },

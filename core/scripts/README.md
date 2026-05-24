@@ -136,7 +136,8 @@ invocation in SKILL.md; generic adds guidance).
 - `telemetry-aggregate.py` — aggregates task status, retry, token, tool, phase,
   stale-state, and operational quality metrics including success rate, retry
   rate, hallucination-signal rate, rollback frequency, and human-intervention
-  rate.
+  rate. When `{TASK_DIR}/context/quality-metrics.json` exists, evaluator labels
+  take precedence over weaker task/blocker text-signal fallbacks.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and
