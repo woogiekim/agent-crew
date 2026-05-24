@@ -445,6 +445,138 @@
       }
     },
     {
+      "id": "progress_confidence_blocked_next_action",
+      "task": "Render operator guidance for a blocked scoped validation run",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Render operator guidance for a blocked scoped validation run",
+        "stages": [
+          {
+            "agents": [
+              "backend"
+            ],
+            "tdd_parallel": true
+          },
+          "reviewer"
+        ],
+        "completed_stages": 1,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_1bc",
+        "phase_2",
+        "blocked"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay progress confidence"
+        },
+        {
+          "event": "RETRY",
+          "stage": 2,
+          "agent": "reviewer",
+          "attempt": 2,
+          "status": "retry",
+          "detail": "attempt 2 - reviewer_rejected reason=tests_failed"
+        },
+        {
+          "event": "BLOCKED",
+          "stage": 2,
+          "agent": "reviewer",
+          "status": "blocked",
+          "detail": "quality_loop_exhausted; next=rerun unit and alpha after remediation"
+        }
+      ],
+      "expected": {
+        "passed": false,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "blocked"
+      }
+    },
+    {
+      "id": "codex_host_capability_fallback_compatibility",
+      "task": "Run through Codex host capability fallback without task tools",
+      "pipeline": {
+        "schema_version": 1,
+        "task": "Run through Codex host capability fallback without task tools",
+        "stages": [
+          {
+            "agents": [
+              "backend"
+            ],
+            "tdd_parallel": true
+          },
+          "reviewer"
+        ],
+        "completed_stages": 1,
+        "needs_creation": []
+      },
+      "state_transitions": [
+        "phase_0",
+        "phase_2",
+        "phase_3",
+        "completed"
+      ],
+      "progress_events": [
+        {
+          "event": "STARTED",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "running",
+          "detail": "replay codex compatibility fallback"
+        },
+        {
+          "event": "PHASE",
+          "stage": 0,
+          "agent": "supervisor",
+          "status": "in_progress",
+          "detail": "capabilities task_tools=false agent_background=false monitor_tool=false"
+        },
+        {
+          "event": "STAGE_DONE",
+          "stage": 2,
+          "agent": "reviewer",
+          "status": "completed",
+          "detail": "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json"
+        }
+      ],
+      "expected": {
+        "passed": true,
+        "tool_flow": [
+          {
+            "tool": "validate-state-schema.py",
+            "returncode": 0
+          },
+          {
+            "tool": "pipeline-quality-plan-check.py",
+            "returncode": 0,
+            "failures": []
+          },
+          {
+            "tool": "pipeline-capability-check.py",
+            "returncode": 0,
+            "failures": []
+          }
+        ],
+        "final_phase": "completed"
+      }
+    },
+    {
       "id": "dynamic_agent_creation_is_replayed",
       "task": "Create and run a custom docs auditor agent",
       "pipeline": {

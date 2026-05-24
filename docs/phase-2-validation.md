@@ -76,3 +76,21 @@ running inside a supervisor workflow.
 Canonical downstream task text must be normalized before it is written into
 pipeline state. The phase-two validation report should refer to the normalized
 task statement, not raw Korean input.
+
+### Scoped Runs and Unmeasured Criteria
+
+Scoped unit or alpha runs may report `unmeasured` criteria when the operator
+intentionally selects only commands that do not map to those criteria. This is
+acceptable when the run is a targeted regression check, the omitted criteria are
+covered by a recent broader phase-two report, and no selected command failed for
+the omitted dimension.
+
+Treat an unmeasured criterion as a required follow-up when the scoped run is
+being used as release evidence for that criterion, when the latest full
+phase-two report already identified it as a gap, or when the change modifies the
+code, policy, host path, or documentation that provides that criterion's
+evidence. In that case, run the smallest additional command or level that maps
+to the criterion and attach the resulting JSON under the task context.
+
+In short: scoped `unmeasured` is acceptable for intentionally out-of-scope
+criteria; it is not acceptable for criteria that the current decision depends on.

@@ -21,7 +21,10 @@
             0
           ],
           "criteria": [
+            "performance",
             "quality",
+            "observability",
+            "compatibility",
             "reliability",
             "regression_safety",
             "maintainability"
@@ -121,6 +124,8 @@
           "criteria": [
             "quality",
             "reliability",
+            "usability_progress_confidence",
+            "compatibility",
             "observability",
             "regression_safety"
           ]

@@ -9,6 +9,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "phase-2-validation.py"
+DEFAULT_FRAMEWORK = REPO_ROOT / "core" / "evaluations" / "phase-2-validation.json"
+WORKFLOW_REPLAY = REPO_ROOT / "core" / "evaluations" / "workflow-replay.json"
 
 
 def write_framework(path: Path) -> None:
@@ -146,3 +148,48 @@ def test_phase_2_validation_unmeasured_required_dimension_is_reported(tmp_path: 
     maintainability = next(item for item in payload["criteria"] if item["id"] == "maintainability")
     assert maintainability["status"] == "unmeasured"
     assert any(gap["criterion_id"] == "maintainability" for gap in payload["gaps"])
+
+
+def test_phase_2_unit_level_maps_lightweight_operational_assertions():
+    framework = json.loads(DEFAULT_FRAMEWORK.read_text(encoding="utf-8"))
+    unit_commands = {
+        command["id"]: set(command.get("criteria", []))
+        for level in framework["levels"]
+        if level["id"] == "unit"
+        for command in level["commands"]
+    }
+
+    runner_criteria = unit_commands["phase_2_runner_tests"]
+    assert {"performance", "observability", "compatibility"}.issubset(runner_criteria)
+    assert "runner command elapsed_ms" in _criterion(framework, "performance")["evidence"]
+    assert "phase-two evidence JSON" in _criterion(framework, "observability")["evidence"]
+    assert "Codex workflow guard tests" in _criterion(framework, "compatibility")["evidence"]
+
+
+def test_phase_2_alpha_maps_progress_confidence_and_host_compatibility_scenarios():
+    framework = json.loads(DEFAULT_FRAMEWORK.read_text(encoding="utf-8"))
+    workflow_replay = _command(framework, "alpha", "workflow_replay")
+    criteria = set(workflow_replay["criteria"])
+    fixture = json.loads(WORKFLOW_REPLAY.read_text(encoding="utf-8"))
+    case_ids = {case["id"] for case in fixture["cases"]}
+
+    assert {"usability_progress_confidence", "compatibility"}.issubset(criteria)
+    assert "progress_confidence_blocked_next_action" in case_ids
+    assert "codex_host_capability_fallback_compatibility" in case_ids
+
+
+def _command(framework: dict, level_id: str, command_id: str) -> dict:
+    for level in framework["levels"]:
+        if level["id"] != level_id:
+            continue
+        for command in level["commands"]:
+            if command["id"] == command_id:
+                return command
+    raise AssertionError(f"missing command {level_id}/{command_id}")
+
+
+def _criterion(framework: dict, criterion_id: str) -> dict:
+    for criterion in framework["criteria"]:
+        if criterion["id"] == criterion_id:
+            return criterion
+    raise AssertionError(f"missing criterion {criterion_id}")
