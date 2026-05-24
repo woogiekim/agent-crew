@@ -384,6 +384,9 @@ PYEOF
 
 sync_codex_template_static
 
+chmod +x "${AGENT_CREW_HOME}/adapters/codex/bin/"* 2>/dev/null || true
+chmod +x "${AGENT_CREW_HOME}/system/adapters/codex/bin/"* 2>/dev/null || true
+
 # Note: reasoning_tier is an agent-crew abstraction. Codex native custom
 # agents honor official per-agent TOML keys such as `model`,
 # `model_reasoning_effort`, and `sandbox_mode`; user agents may provide those

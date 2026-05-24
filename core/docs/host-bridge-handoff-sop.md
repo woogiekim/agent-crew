@@ -56,6 +56,12 @@ If you expect external host auto-completion:
 export AGENT_CREW_HOST_BRIDGE_COMMAND="your-host-bridge-command"
 ```
 
+For Codex, use the adapter bridge installed by `crew setup`:
+
+```bash
+export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/codex/bin/codex-host-bridge"
+```
+
 ```bash
 # Option B: one-off invocation
 crew run "your task" --host-bridge-command "your-host-bridge-command"

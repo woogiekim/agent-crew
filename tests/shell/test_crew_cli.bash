@@ -656,6 +656,52 @@ assert_contains "${out}" "\"tasks_completed\": 1"
 assert_contains "${out}" "\"host_bridge_status\": \"auto_completed\""
 assert_contains "${out}" "\"auto_completed\": 1"
 
+it "Codex host bridge command invokes codex exec with crew run handoff env"
+CODEX_BRIDGE="${REPO_ROOT}/adapters/codex/bin/codex-host-bridge"
+FAKE_CODEX_DIR="$(make_tmp)"
+FAKE_CODEX="${FAKE_CODEX_DIR}/codex"
+FAKE_CODEX_LOG="${FAKE_CODEX_DIR}/codex.log"
+cat > "${FAKE_CODEX}" <<'EOF'
+#!/usr/bin/env bash
+set -u
+{
+  printf 'ARGS:%s\n' "$*"
+  printf 'TASK_ID:%s\n' "${AGENT_CREW_TASK_ID:-}"
+  printf 'TASK_DIR:%s\n' "${AGENT_CREW_TASK_DIR:-}"
+  printf 'HANDOFF:%s\n' "${AGENT_CREW_HANDOFF_PATH:-}"
+  printf 'RESULT:%s\n' "${AGENT_CREW_RESULT_PATH:-}"
+  printf 'PROJECT_ROOT:%s\n' "${AGENT_CREW_PROJECT_ROOT:-}"
+  printf 'ACTIVE:%s\n' "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-}"
+  while IFS= read -r line; do
+    printf 'PROMPT:%s\n' "${line}"
+  done
+} > "${AGENT_CREW_FAKE_CODEX_LOG}"
+EOF
+chmod +x "${FAKE_CODEX}"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+  AGENT_CREW_FAKE_CODEX_LOG="${FAKE_CODEX_LOG}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="${CODEX_BRIDGE}" \
+    bash "${CREW}" run "read docs" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "HOST_BRIDGE: auto_completed"
+CODEX_AUTO_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+CODEX_AUTO_TASK_ID=$(basename "${CODEX_AUTO_TASK_DIR}")
+RESOLVED_TMP_PROJECT=$(cd "${TMP_PROJECT}" && pwd -P)
+assert_file_exists "${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-prompt.md"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ARGS:exec -C ${RESOLVED_TMP_PROJECT} -a never -o ${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-last-message.md -"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "TASK_ID:${CODEX_AUTO_TASK_ID}"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "TASK_DIR:${CODEX_AUTO_TASK_DIR}"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "HANDOFF:${CODEX_AUTO_TASK_DIR}/handoff.md"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "RESULT:${CODEX_AUTO_TASK_DIR}/result.md"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROJECT_ROOT:${RESOLVED_TMP_PROJECT}"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ACTIVE:1"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Resume this existing agent-crew crew:run handoff in Codex."
+
 it "crew agent host bridge command can auto-complete direct requests"
 AGENT_BRIDGE_LOG="$(make_tmp)/agent-host-bridge.log"
 out=$(
@@ -679,6 +725,31 @@ assert_eq "${AGENT_REQUEST_ID}" "$(cat "${AGENT_BRIDGE_LOG}")"
 REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
 assert_contains "${REQUEST_JSON}" '"status": "auto_completed"'
 assert_contains "${REQUEST_JSON}" '"host_bridge_status": "auto_completed"'
+
+it "Codex host bridge command passes direct-agent request env"
+FAKE_AGENT_CODEX_LOG="${FAKE_CODEX_DIR}/agent-codex.log"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+  AGENT_CREW_FAKE_CODEX_LOG="${FAKE_AGENT_CODEX_LOG}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="${CODEX_BRIDGE}" \
+    bash "${CREW}" agent analyst "explain routing" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "HOST_BRIDGE: auto_completed"
+CODEX_AGENT_REQUEST_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^AGENT_REQUEST_ID:/ {print $2; exit}')
+CODEX_AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+assert_file_exists "${CODEX_AGENT_REQUEST_DIR}/context/codex-host-bridge-prompt.md"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "TASK_ID:${CODEX_AGENT_REQUEST_ID}"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "TASK_DIR:${CODEX_AGENT_REQUEST_DIR}"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "HANDOFF:${CODEX_AGENT_REQUEST_DIR}/handoff.md"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "RESULT:${CODEX_AGENT_REQUEST_DIR}/result.md"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:Resume this existing agent-crew direct-agent handoff in Codex."
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:AGENT_CREW_AGENT_NAME: analyst"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:AGENT_CREW_AGENT_REQUEST_ID: ${CODEX_AGENT_REQUEST_ID}"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:AGENT_CREW_REQUEST_DIR: ${CODEX_AGENT_REQUEST_DIR}"
 
 it "crew agent host bridge command failure keeps request resumable"
 out=$(

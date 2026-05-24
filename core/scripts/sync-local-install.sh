@@ -189,6 +189,7 @@ chmod +x \
   "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.sh \
   "${AGENT_CREW_HOME}/system/scripts/"*.py "${AGENT_CREW_HOME}/scripts/"*.py \
   "${AGENT_CREW_HOME}/system/setup/"*.sh "${AGENT_CREW_HOME}/setup/"*.sh \
+  "${AGENT_CREW_HOME}/system/adapters/"*/bin/* "${AGENT_CREW_HOME}/adapters/"*/bin/* \
   "${AGENT_CREW_HOME}/bin/"* \
   2>/dev/null || true
 

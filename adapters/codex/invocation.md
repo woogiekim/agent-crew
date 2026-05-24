@@ -100,6 +100,38 @@ can be monitored later. In tool-backed Codex sessions where no callable
 subagent surface is exposed to agent-crew, the adapter must keep
 `agent_background=false` and use the file-based fallback.
 
+## Host Bridge Command
+
+The Codex adapter includes an executable bridge command for native CLI handoffs:
+
+```bash
+export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/codex/bin/codex-host-bridge"
+```
+
+When `crew run` or `crew agent` creates a handoff and this variable is set, the
+core runtime invokes the bridge with the provider-neutral handoff coordinates:
+
+- `AGENT_CREW_TASK_ID`
+- `AGENT_CREW_TASK_DIR`
+- `AGENT_CREW_HANDOFF_PATH`
+- `AGENT_CREW_RESULT_PATH`
+- `AGENT_CREW_PROJECT_ROOT`
+
+For direct-agent handoffs, the runtime also passes:
+
+- `AGENT_CREW_AGENT_NAME`
+- `AGENT_CREW_AGENT_REQUEST_ID`
+- `AGENT_CREW_REQUEST_DIR`
+
+The bridge runs `codex exec` in the project root and prompts Codex to resume the
+existing handoff. It does not create a new `crew:run`, and it does not change
+STOP / ROUTE / `crew:run` / `crew:agent` semantics. If `codex` is unavailable or
+the command fails, the core runtime leaves the existing resumable handoff state
+intact for `crew resume` or manual repair.
+
+Use `AGENT_CREW_CODEX_BIN=/path/to/codex` when the `codex` executable is not on
+`PATH`.
+
 ## Limitations
 
 ### Task injection is not available in Codex

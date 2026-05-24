@@ -221,6 +221,17 @@ use the recovery SOP and lightweight diagnostics:
 
 `TASK_ID` and `TASK_DIR` are printed in the `crew run` output.
 
+For Codex native CLI handoffs, the adapter installs a concrete bridge command:
+
+```bash
+export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/codex/bin/codex-host-bridge"
+```
+
+With that variable set, `crew run` / `crew agent` pass the task, handoff, result,
+project, and direct-agent request environment to the bridge. The bridge invokes
+`codex exec` to resume the existing handoff in Codex. If the variable is unset,
+agent-crew keeps using the internal resumable `STATUS: handoff_ready` fallback.
+
 ## Testing
 
 The repository ships with a real test suite under `tests/` covering the Python
