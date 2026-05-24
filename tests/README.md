@@ -14,7 +14,8 @@ tests/
 │   ├── test_validate_state_schema.py
 │   ├── test_check_plaintext_approval.py
 │   ├── test_telemetry_aggregate.py
-│   └── test_cost_aggregate.py
+│   ├── test_cost_aggregate.py
+│   └── test_phase_2_validation.py
 ├── shell/               # bash tests (one file per script)
 │   ├── _lib.bash        # shared bash assertion harness
 │   ├── test_common_sh.bash
@@ -55,6 +56,13 @@ bash tests/integration/test_pipeline_schema_validity.bash
 ### Single test (pytest)
 ```bash
 pytest tests/python/test_cost_aggregate.py::TestCostAggregate::test_check_breaker_exceeded -v
+```
+
+### Validation passes
+```bash
+python3 core/scripts/phase-1-validation.py --plan-only
+python3 core/scripts/phase-2-validation.py --plan-only
+python3 core/scripts/phase-2-validation.py --level unit --format text
 ```
 
 ## Requirements
