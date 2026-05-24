@@ -17,6 +17,35 @@ MUTATING_TASK_RE = re.compile(
     r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
     re.IGNORECASE,
 )
+STRONG_MUTATING_TASK_RE = re.compile(
+    r"\b("
+    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|"
+    r"save|edit|publish|commit|resolve|close"
+    r")\b|"
+    r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"리팩터|배포|머지|롤백|반영|저장|발행|고쳐|해결",
+    re.IGNORECASE,
+)
+READ_ONLY_TASK_RE = re.compile(
+    r"\b("
+    r"read-only|readonly|non-mutating|nonmutating|no[- ]write|"
+    r"inspect|investigate|analyze|analyse|review|validate|validation|"
+    r"check|audit|status|diagnostic|diagnostics"
+    r")\b|"
+    r"읽기\s*전용|조회|분석|검토|확인|진단",
+    re.IGNORECASE,
+)
+NON_MUTATING_CONSTRAINT_RE = re.compile(
+    r"\b("
+    r"do\s+not|don't|dont|must\s+not|should\s+not|never|without|no"
+    r")\s+("
+    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|"
+    r"save|edit|publish|commit|push|resolve|close|mutate"
+    r")\b",
+    re.IGNORECASE,
+)
 STATUS_COMPLETED_RE = re.compile(r"^STATUS\s*:\s*completed\b", re.I | re.M)
 QUALITY_BYPASS_RE = re.compile(r"^QUALITY_BYPASS_REASON\s*:", re.I | re.M)
 TDD_EVENT_RE = re.compile(
@@ -82,7 +111,11 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def looks_mutating_task(text: str) -> bool:
-    return bool(MUTATING_TASK_RE.search(text or ""))
+    value = text or ""
+    constrained_value = NON_MUTATING_CONSTRAINT_RE.sub("", value)
+    if READ_ONLY_TASK_RE.search(value) and not STRONG_MUTATING_TASK_RE.search(constrained_value):
+        return False
+    return bool(MUTATING_TASK_RE.search(constrained_value))
 
 
 def stage_agents(stage) -> list[str]:

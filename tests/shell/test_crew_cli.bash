@@ -693,7 +693,7 @@ CODEX_AUTO_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $
 CODEX_AUTO_TASK_ID=$(basename "${CODEX_AUTO_TASK_DIR}")
 RESOLVED_TMP_PROJECT=$(cd "${TMP_PROJECT}" && pwd -P)
 assert_file_exists "${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-prompt.md"
-assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ARGS:exec -C ${RESOLVED_TMP_PROJECT} -a never -o ${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-last-message.md -"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ARGS:--ask-for-approval never exec -C ${RESOLVED_TMP_PROJECT} --add-dir ${CODEX_AUTO_TASK_DIR} -o ${CODEX_AUTO_TASK_DIR}/context/codex-host-bridge-last-message.md -"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "TASK_ID:${CODEX_AUTO_TASK_ID}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "TASK_DIR:${CODEX_AUTO_TASK_DIR}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "HANDOFF:${CODEX_AUTO_TASK_DIR}/handoff.md"
@@ -701,6 +701,8 @@ assert_contains "$(cat "${FAKE_CODEX_LOG}")" "RESULT:${CODEX_AUTO_TASK_DIR}/resu
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROJECT_ROOT:${RESOLVED_TMP_PROJECT}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ACTIVE:1"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Resume this existing agent-crew crew:run handoff in Codex."
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Do not run crew repair for normal bridge completion."
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "Use repair guidance only when the task is genuinely blocked"
 
 it "crew agent host bridge command can auto-complete direct requests"
 AGENT_BRIDGE_LOG="$(make_tmp)/agent-host-bridge.log"
