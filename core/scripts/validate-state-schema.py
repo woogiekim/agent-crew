@@ -75,6 +75,11 @@ TASK_FILES = [
     ("progress.buffer.jsonl",  "progress-buffer.schema.json",  "error", True),
 ]
 
+# Optional task files are validated when present, but absence is not a finding.
+OPTIONAL_TASK_FILES = [
+    ("context/quality-metrics.json", "quality-metrics.schema.json", "error", False),
+]
+
 
 # --------------------------------------------------------------------------- #
 # Findings buffer                                                             #
@@ -371,6 +376,13 @@ def validate_jsonl_file(path, schema, severity, findings):
                      f"{skipped} malformed JSONL line(s) skipped")
 
 
+def validate_optional_file(path, schema, severity, findings):
+    """Validate an optional JSON task artifact only when it exists."""
+    if not path.is_file():
+        return
+    validate_file(path, schema, severity, findings)
+
+
 # --------------------------------------------------------------------------- #
 # Driver                                                                      #
 # --------------------------------------------------------------------------- #
@@ -416,6 +428,15 @@ def main():
                 continue
             path = task_dir / fname
             (validate_jsonl_file if is_jsonl else validate_file)(
+                path, schema, severity, findings)
+        for fname, schema_name, severity, is_jsonl in OPTIONAL_TASK_FILES:
+            try:
+                schema = load_schema(schemas_dir, schema_name)
+            except FileNotFoundError as exc:
+                findings.add("error", schemas_dir / schema_name, "$", str(exc))
+                continue
+            path = task_dir / fname
+            (validate_jsonl_file if is_jsonl else validate_optional_file)(
                 path, schema, severity, findings)
 
     # Report

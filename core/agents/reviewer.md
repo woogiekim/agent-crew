@@ -377,12 +377,52 @@ APPROVED | NEEDS_CHANGES
 {next step if NEEDS_CHANGES, or "Ready to merge." if APPROVED}
 ```
 
+### Step 3.5: Save Quality Metrics
+
+Save evaluator-labeled operational quality metrics to
+`{TASK_DIR}/context/quality-metrics.json` before returning. This file is an
+explicit reviewer/evaluator label source for telemetry and takes precedence
+over weak task/blocker text-signal inference.
+
+Use the schema in `core/schemas/quality-metrics.schema.json`:
+
+```json
+{
+  "schema_version": 1,
+  "hallucination_detected": false,
+  "rollback_performed": false,
+  "human_intervention_required": false,
+  "factuality_review": "passed",
+  "evidence_paths": [
+    "context/review.md",
+    "context/review-tests.md"
+  ],
+  "notes": "Reviewer found no unsupported factual claims, no rollback, and no abnormal human intervention."
+}
+```
+
+Set the labels conservatively:
+
+- `hallucination_detected`: `true` only when the reviewer explicitly found an
+  unsupported factual claim or fabricated execution/result/source claim.
+- `rollback_performed`: `true` when the workflow performed or required a
+  rollback/revert to recover from unsafe changes.
+- `human_intervention_required`: `true` only when human/operator intervention
+  was required beyond normal approval gates.
+- `factuality_review`: `passed`, `failed`, `inconclusive`, or
+  `not_applicable`.
+
+The reviewer may still return `NEEDS_CHANGES` for ordinary code quality,
+test, architecture, or security issues without setting
+`hallucination_detected=true`.
+
 ### Step 4: Return
 ```text
 REVIEW: {APPROVED | NEEDS_CHANGES}
 REPORT: {TASK_DIR}/context/review.md
 ISSUES: {issue count}
 TEST_RUN_RESULT: {one of: passed | skipped_opt_out | skipped_no_runner_docs_only | rejected_short_circuit_above}
+QUALITY_METRICS: {TASK_DIR}/context/quality-metrics.json
 ```
 
 `REVIEW: NEEDS_CHANGES` is a loop-triggering rejection, not advisory text.
@@ -626,9 +666,9 @@ implementer/TDD stage, then re-run reviewer until approval or budget exhaustion.
 - Streaming mode: append to `review-stream.md` per commit; idempotent
   on commit SHA so a retry from the same `PRE_STAGE_HEAD` does not
   duplicate findings
-- Return within 5 lines for `final` mode (the optional
-  `TEST_RUN_RESULT:` line bumps the historical 4-line limit by one);
-  4 lines for `streaming` mode
+- Return within 6 lines for `final` mode (the optional `TEST_RUN_RESULT:` and
+  `QUALITY_METRICS:` lines extend the historical 4-line contract); 5 lines for
+  `streaming` mode
 
 ## On Completion — Capture to memory
 

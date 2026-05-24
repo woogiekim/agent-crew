@@ -125,6 +125,9 @@ invocation in SKILL.md; generic adds guidance).
   validators and expected state transitions. It verifies deterministic tool
   flow for schema validation, quality planning, capability preflight, blocked
   outcomes, and happy-path completion without calling an LLM.
+- `validate-state-schema.py` — validates project/task state artifacts and
+  schema-validates optional reviewer quality labels at
+  `{TASK_DIR}/context/quality-metrics.json` when present.
 - `retry-chaos-check.py` — replays deterministic retry-chaos fixtures without
   an LLM. It simulates token-limit resumes, host tool crashes, reviewer
   loop-back, quality-loop exhaustion, and host blocked/cancelled outcomes

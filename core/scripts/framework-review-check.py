@@ -268,6 +268,23 @@ def evaluate_repo(root: Path) -> dict:
             "Operational quality metrics must support evaluator-labeled factuality, rollback, and human-intervention signals before text fallbacks.",
         ),
         control(
+            "quality",
+            "reviewer_quality_metrics_emission_contract",
+            "high",
+            has_all(
+                reviewer,
+                [
+                    "context/quality-metrics.json",
+                    "QUALITY_METRICS:",
+                    "hallucination_detected",
+                    "factuality_review",
+                ],
+            )
+            and "quality-metrics.schema.json" in read_text(root / "core/scripts/validate-state-schema.py")
+            and "test_invalid_quality_metrics_exits_2" in read_text(root / "tests/python/test_validate_state_schema.py"),
+            "Reviewer output and state validation must enforce evaluator-labeled quality metrics when the artifact is present.",
+        ),
+        control(
             "reliability",
             "retry_governance",
             "high",
