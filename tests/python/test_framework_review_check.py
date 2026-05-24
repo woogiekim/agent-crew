@@ -67,6 +67,7 @@ def test_framework_review_covers_operational_categories():
         "prompt_injection_runtime_boundary",
         "automatic_issue_reporting_runtime_issue_contract",
         "claude_performance_budget_probe",
+        "operational_quality_metrics",
     }.issubset(controls)
 
 

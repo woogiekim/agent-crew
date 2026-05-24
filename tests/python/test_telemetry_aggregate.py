@@ -157,6 +157,64 @@ class TestTelemetryAggregate:
         assert task["blocked_handoffs"] == 1
         assert task["user_visible_wait_seconds"] == 30.0
 
+    def test_summary_reports_operational_quality_metrics(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Required quality metrics are surfaced as stable summary rates."""
+        completed_id = "20260101-120051-0"
+        completed_dir = state_dir / "tasks" / completed_id
+        completed_dir.mkdir(parents=True)
+        _write_register(completed_dir, task_id=completed_id, current_phase="completed")
+
+        blocked_id = "20260101-120052-0"
+        blocked_dir = state_dir / "tasks" / blocked_id
+        blocked_dir.mkdir(parents=True)
+        _write_register(blocked_dir, task_id=blocked_id, current_phase="blocked")
+        blocked_reg = json.loads((blocked_dir / "register.json").read_text())
+        blocked_reg["task"] = "rollback failed hallucination remediation"
+        blocked_reg["blocked_by"] = ["hallucination suspected"]
+        (blocked_dir / "register.json").write_text(json.dumps(blocked_reg))
+        _write_progress_jsonl(blocked_dir, [
+            {"ts": "2026-01-01T12:00:00Z", "trace_id": "x",
+             "task_id": blocked_id, "event": "STARTED"},
+            {"ts": "2026-01-01T12:00:10Z", "trace_id": "x",
+             "task_id": blocked_id, "event": "STAGE", "stage": 1,
+             "agent": "backend"},
+            {"ts": "2026-01-01T12:00:20Z", "trace_id": "x",
+             "task_id": blocked_id, "event": "RETRY", "stage": 1,
+             "agent": "backend"},
+        ])
+        (blocked_dir / "tool-events.jsonl").write_text(
+            json.dumps({"status": "failed"}) + "\n" +
+            json.dumps({"status": "completed"}) + "\n",
+            encoding="utf-8",
+        )
+
+        manual_id = "20260101-120053-0"
+        manual_dir = state_dir / "tasks" / manual_id
+        manual_dir.mkdir(parents=True)
+        _write_register(manual_dir, task_id=manual_id, current_phase="completed")
+        manual_reg = json.loads((manual_dir / "register.json").read_text())
+        manual_reg["host_bridge_status"] = "manual_fallback_completed"
+        (manual_dir / "register.json").write_text(json.dumps(manual_reg))
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        quality = json.loads(r.stdout)["summary"]["operational_quality"]
+        assert quality["denominator_tasks"] == 3
+        assert quality["success_rate"] == 0.6667
+        assert quality["retry_rate"] == 0.3333
+        assert quality["hallucination_signal_rate"] == 0.3333
+        assert quality["rollback_frequency"] == 1
+        assert quality["human_intervention_rate"] == 0.3333
+        assert quality["tool_failure_rate"] == 0.5
+
     def test_phase_events_are_closed_by_next_phase(
         self, script_runner, env_with_home, state_dir
     ):

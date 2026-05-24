@@ -51,6 +51,8 @@ Metrics computed:
     - tasks_total, tasks_completed, tasks_blocked, tasks_running
     - mean_duration_seconds, median_duration_seconds
     - total_retries, total_tokens
+    - operational_quality: success/retry/hallucination-signal/rollback/
+      human-intervention/tool-failure rates
     - by_phase_distribution (current_phase histogram)
     - by_blocker (blocked_by counter)
 """
@@ -715,6 +717,65 @@ def aggregate_summary(rows):
         "by_host_bridge_status":   dict(by_host_bridge_status),
         "by_blocker":              dict(by_blocker),
         "by_stale_blocker":        dict(by_stale_blocker),
+        "operational_quality":     operational_quality_metrics(rows),
+    }
+
+
+def rate(numerator, denominator):
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 4)
+
+
+def row_signal_text(row):
+    return " ".join(
+        [str(row.get("task") or ""), *[str(b) for b in row.get("blockers", [])]]
+    ).lower()
+
+
+def has_hallucination_signal(row):
+    text = row_signal_text(row)
+    return "hallucination" in text or "환각" in text
+
+
+def has_rollback_signal(row):
+    text = row_signal_text(row)
+    return any(token in text for token in ("rollback", "roll back", "revert", "롤백", "되돌리"))
+
+
+def has_human_intervention_signal(row):
+    host_status = str(row.get("host_bridge_status") or "")
+    return host_status.startswith("manual_fallback_")
+
+
+def operational_quality_metrics(rows):
+    current_rows = [
+        r for r in rows
+        if r.get("status") not in {"running", "stale_blocked"}
+    ]
+    denominator = len(current_rows)
+    completed = sum(1 for r in current_rows if r.get("status") == "completed")
+    retried = sum(1 for r in current_rows if int(r.get("retries") or 0) > 0)
+    hallucination = sum(1 for r in current_rows if has_hallucination_signal(r))
+    rollback = sum(1 for r in current_rows if has_rollback_signal(r))
+    human = sum(1 for r in current_rows if has_human_intervention_signal(r))
+    tool_failures = sum(int(r.get("tool_failures_total") or 0) for r in current_rows)
+    tool_events = sum(int(r.get("tool_events_total") or 0) for r in current_rows)
+
+    return {
+        "denominator_tasks": denominator,
+        "success_rate": rate(completed, denominator),
+        "retry_rate": rate(retried, denominator),
+        "hallucination_signal_rate": rate(hallucination, denominator),
+        "rollback_frequency": rollback,
+        "rollback_rate": rate(rollback, denominator),
+        "human_intervention_rate": rate(human, denominator),
+        "tool_failure_rate": rate(tool_failures, tool_events),
+        "tasks_with_retry": retried,
+        "hallucination_signal_tasks": hallucination,
+        "human_intervention_tasks": human,
+        "tool_failures": tool_failures,
+        "tool_events": tool_events,
     }
 
 
@@ -759,6 +820,12 @@ def format_tokens(n):
     return str(n)
 
 
+def format_rate(value):
+    if value is None:
+        return "—"
+    return f"{value * 100:.1f}%"
+
+
 def render_text(rows, summary):
     if not rows:
         print("(no tasks matched)")
@@ -798,6 +865,16 @@ def render_text(rows, summary):
           f"Tokens: {format_tokens(summary['total_tokens'])} total")
     print(f"Tool events: {summary.get('total_tool_events', 0)} total | "
           f"{summary.get('total_tool_failures', 0)} failed")
+    quality = summary.get("operational_quality") or {}
+    if quality:
+        print(
+            "Operational quality: "
+            f"success_rate={format_rate(quality.get('success_rate'))} | "
+            f"retry_rate={format_rate(quality.get('retry_rate'))} | "
+            f"human_intervention_rate={format_rate(quality.get('human_intervention_rate'))} | "
+            f"rollback_frequency={quality.get('rollback_frequency', 0)} | "
+            f"hallucination_signal_rate={format_rate(quality.get('hallucination_signal_rate'))}"
+        )
     stale_counts = summary.get("stale_state_counts") or {}
     if stale_counts:
         print(

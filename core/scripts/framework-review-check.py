@@ -229,6 +229,23 @@ def evaluate_repo(root: Path) -> dict:
             "Reports must include evidence, blocker classification, and memory reuse traceability.",
         ),
         control(
+            "quality",
+            "operational_quality_metrics",
+            "high",
+            has_all(
+                telemetry_taxonomy_check + read_text(root / "core/scripts/telemetry-aggregate.py"),
+                [
+                    "operational_quality",
+                    "success_rate",
+                    "retry_rate",
+                    "hallucination_signal_rate",
+                    "rollback_frequency",
+                    "human_intervention_rate",
+                ],
+            ),
+            "Runtime telemetry must expose required quality metrics as operational rates, not only raw task rows.",
+        ),
+        control(
             "reliability",
             "retry_governance",
             "high",

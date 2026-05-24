@@ -133,6 +133,10 @@ invocation in SKILL.md; generic adds guidance).
   retry/blocker labels with the retry-chaos fixture taxonomy. It rejects
   unknown explicit retry reasons and can require specific labels for focused
   production-run validation.
+- `telemetry-aggregate.py` — aggregates task status, retry, token, tool, phase,
+  stale-state, and operational quality metrics including success rate, retry
+  rate, hallucination-signal rate, rollback frequency, and human-intervention
+  rate.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and
