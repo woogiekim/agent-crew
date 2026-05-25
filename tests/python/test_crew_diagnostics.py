@@ -125,6 +125,29 @@ def test_stale_state_summary_passes_when_no_cleanup_targets(tmp_path: Path):
     assert summary["recommendation"] == ""
 
 
+def test_install_drift_prefers_project_source_checkout_for_installed_assets(tmp_path: Path):
+    asset_root = tmp_path / ".agent-crew"
+    (asset_root / "scripts").mkdir(parents=True)
+
+    root = diagnostics.install_drift_source_root(asset_root, REPO_ROOT)
+
+    assert root == REPO_ROOT
+
+
+def test_install_drift_is_unknown_without_source_checkout(tmp_path: Path):
+    asset_root = tmp_path / ".agent-crew"
+    script = asset_root / "scripts" / "verify-install-drift.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/usr/bin/env python3\nraise SystemExit(1)\n", encoding="utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+
+    status = diagnostics.install_drift(asset_root, project, asset_root)
+
+    assert status["status"] == "unknown"
+    assert "source checkout unavailable" in status["detail"]
+
+
 def test_mnemos_status_reports_missing_backend(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("MNEMOS_BIN", str(tmp_path / "missing-mnemos"))
 

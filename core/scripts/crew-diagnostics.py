@@ -67,6 +67,21 @@ def source_root(asset_root: Path) -> Path:
     return asset_root.parent if asset_root.name == "core" and (asset_root.parent / "adapters").is_dir() else asset_root
 
 
+def is_source_checkout(path: Path) -> bool:
+    return (path / "core").is_dir() and (path / "adapters").is_dir()
+
+
+def install_drift_source_root(asset_root: Path, project_root: Path) -> Path | None:
+    if is_source_checkout(project_root):
+        return project_root
+
+    root = source_root(asset_root)
+    if is_source_checkout(root):
+        return root
+
+    return None
+
+
 def adapter_doc_path(asset_root: Path, agent_crew_home: Path, adapter: str, filename: str) -> Path:
     for candidate in (
         source_root(asset_root) / "adapters" / adapter / filename,
@@ -80,10 +95,14 @@ def adapter_doc_path(asset_root: Path, agent_crew_home: Path, adapter: str, file
 
 def install_drift(asset_root: Path, project_root: Path, agent_crew_home: Path) -> dict[str, Any]:
     script = asset_root / "scripts" / "verify-install-drift.py"
-    root = source_root(asset_root)
+    root = install_drift_source_root(asset_root, project_root)
     if not script.is_file():
         return {"status": "unknown", "detail": "verify-install-drift.py not found"}
-    _ = project_root
+    if root is None:
+        return {
+            "status": "unknown",
+            "detail": "source checkout unavailable; run crew update for deterministic drift verification",
+        }
     rc, out = run_cmd(
         [
             sys.executable,
