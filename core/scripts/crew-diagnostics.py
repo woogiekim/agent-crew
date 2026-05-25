@@ -38,6 +38,31 @@ def run_cmd(args: list[str], *, cwd: Path | None = None, env: dict[str, str] | N
     return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
+def provider_capability_supported(value: Any) -> bool:
+    return value is True or (isinstance(value, str) and value.lower() == "supported")
+
+
+def provider_payload_supports_fast_search(payload: dict[str, Any]) -> bool:
+    features = payload.get("features") if isinstance(payload.get("features"), dict) else {}
+    commands = payload.get("commands") if isinstance(payload.get("commands"), dict) else {}
+    capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+    capability_status = payload.get("capability_status") if isinstance(payload.get("capability_status"), dict) else {}
+    search = commands.get("search") if isinstance(commands.get("search"), dict) else {}
+
+    capability_maps = (payload, features, capabilities, capability_status)
+    return bool(
+        any(
+            provider_capability_supported(mapping.get(name))
+            for mapping in capability_maps
+            for name in ("search_fast", "fast_search")
+        )
+        or (
+            provider_capability_supported(search.get("fast"))
+            and provider_capability_supported(search.get("json"))
+        )
+    )
+
+
 def source_root(asset_root: Path) -> Path:
     return asset_root.parent if asset_root.name == "core" and (asset_root.parent / "adapters").is_dir() else asset_root
 
@@ -83,8 +108,23 @@ def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
                 "detail": "mnemos CLI not found; memory provider will degrade to no-backend mode",
             }
 
-    rc, version_out = run_cmd([str(path), "--version"], env=probe_env)
-    version = version_out.splitlines()[0] if rc == 0 and version_out else "unknown"
+    version = "unknown"
+    version_payload: dict[str, Any] = {}
+    rc, version_out = run_cmd([str(path), "version", "--json"], env=probe_env)
+    if rc == 0 and version_out:
+        try:
+            parsed = json.loads(version_out)
+            if isinstance(parsed, dict):
+                version_payload = parsed
+                detected_version = parsed.get("version")
+                if isinstance(detected_version, str) and detected_version:
+                    version = detected_version
+        except Exception:
+            version_payload = {}
+
+    if version == "unknown":
+        rc, version_out = run_cmd([str(path), "--version"], env=probe_env)
+        version = version_out.splitlines()[0] if rc == 0 and version_out else "unknown"
 
     stable_fast_search = False
     caps_status = "unknown"
@@ -93,21 +133,17 @@ def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
     if caps_rc == 0 and caps_out:
         try:
             caps = json.loads(caps_out)
-            features = caps.get("features") or {}
-            commands = caps.get("commands") or {}
-            search = commands.get("search") if isinstance(commands, dict) else {}
-            stable_fast_search = bool(
-                caps.get("search_fast") is True
-                or caps.get("fast_search") is True
-                or features.get("search_fast") is True
-                or features.get("fast_search") is True
-                or (isinstance(search, dict) and search.get("fast") is True and search.get("json") is True)
-            )
+            caps = caps if isinstance(caps, dict) else {}
+            stable_fast_search = provider_payload_supports_fast_search(caps)
             caps_status = "supported" if stable_fast_search else "partial"
             caps_detail = "stable fast JSON search advertised" if stable_fast_search else "capabilities detected without stable fast JSON search"
         except Exception:
             caps_status = "unknown"
             caps_detail = "capabilities output was not valid JSON"
+    elif version_payload:
+        stable_fast_search = provider_payload_supports_fast_search(version_payload)
+        caps_status = "supported" if stable_fast_search else "partial"
+        caps_detail = "stable fast JSON search advertised" if stable_fast_search else "version metadata detected without stable fast JSON search"
     else:
         caps_status = "legacy"
         caps_detail = "capabilities --json unavailable; regular search and deprecated fallback may be used"

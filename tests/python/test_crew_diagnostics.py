@@ -159,6 +159,57 @@ exit 1
     assert status["version"] == "mnemos 1.2.3"
 
 
+def test_mnemos_status_detects_current_provider_contract(tmp_path: Path):
+    mnemos = tmp_path / "mnemos"
+    mnemos.write_text(
+        """#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+  echo "no legacy version" >&2
+  exit 2
+fi
+if [ "${1:-}" = "version" ] && [ "${2:-}" = "--json" ]; then
+  echo '{"provider":"mnemos","version":"0.1.0","provider_contract_version":"1.0","capabilities":{"fast_search":true},"capability_status":{"fast_search":"supported"}}'
+  exit 0
+fi
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  echo '{"provider":"mnemos","capabilities":{"fast_search":true},"capability_status":{"fast_search":"supported"}}'
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    mnemos.chmod(0o755)
+
+    status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
+
+    assert status["status"] == "supported"
+    assert status["stable_fast_search"] is True
+    assert status["version"] == "0.1.0"
+    assert status["detail"] == "0.1.0; stable fast JSON search advertised"
+
+
+def test_mnemos_status_uses_version_payload_when_capabilities_command_is_missing(tmp_path: Path):
+    mnemos = tmp_path / "mnemos"
+    mnemos.write_text(
+        """#!/usr/bin/env bash
+if [ "${1:-}" = "version" ] && [ "${2:-}" = "--json" ]; then
+  echo '{"version":"0.2.0","capabilities":{"fast_search":true}}'
+  exit 0
+fi
+exit 1
+""",
+        encoding="utf-8",
+    )
+    mnemos.chmod(0o755)
+
+    status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
+
+    assert status["status"] == "supported"
+    assert status["stable_fast_search"] is True
+    assert status["version"] == "0.2.0"
+
+
 def test_host_bridge_command_probe_is_reflected_in_diagnostics(monkeypatch):
     monkeypatch.delenv("AGENT_CREW_HOST_BRIDGE_COMMAND", raising=False)
 
