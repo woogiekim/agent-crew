@@ -51,6 +51,8 @@ Resume this existing agent-crew direct-agent handoff in Claude Code.
 
 Do not create a new crew:run task. Do not invoke crew:run or any slash command. Read the existing handoff/request artifacts from the paths below, then complete or update the existing request state according to the installed agent-crew workflow.
 
+If the handoff contains NORMALIZATION_MODE: inline_direct_bridge, perform the input-normalizer contract inline in this same bridge session, then continue as AGENT_CREW_AGENT_NAME. Do not spawn input-normalizer, korean-normalizer, a background agent, or a nested crew:agent/crew:run command for this normalization step.
+
 Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
 
 AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
@@ -116,6 +118,7 @@ trap cleanup EXIT
 printf 'claude-host-bridge: invoking Claude for task %s\n' "${TASK_ID}" >&2
 
 AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
+AGENT_CREW_AUTO_ROUTE_DISABLED=1 \
   bash -c 'cd "$1" && shift && exec "$@"' \
     bash "${BRIDGE_CWD}" "${CLAUDE_BIN}" "${CLAUDE_ARGS[@]}" "$(cat "${PROMPT_PATH}")" \
     > "${LAST_MESSAGE_PATH}"

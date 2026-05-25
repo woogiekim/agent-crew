@@ -15,6 +15,7 @@ FAKE_CLAUDE="${TMP_ROOT}/claude"
 ARGV_PATH="${TMP_ROOT}/argv.txt"
 CWD_PATH="${TMP_ROOT}/cwd.txt"
 ACTIVE_PATH="${TMP_ROOT}/active.txt"
+AUTO_ROUTE_DISABLED_PATH="${TMP_ROOT}/auto-route-disabled.txt"
 
 mkdir -p "${TASK_DIR}" "${PROJECT_ROOT}"
 printf 'handoff\n' > "${TMP_ROOT}/handoff.md"
@@ -24,6 +25,7 @@ cat > "${FAKE_CLAUDE}" <<'EOF'
 printf '%s\n' "$@" > "${FAKE_CLAUDE_ARGV_PATH}"
 pwd > "${FAKE_CLAUDE_CWD_PATH}"
 printf '%s\n' "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-}" > "${FAKE_CLAUDE_ACTIVE_PATH}"
+printf '%s\n' "${AGENT_CREW_AUTO_ROUTE_DISABLED:-}" > "${FAKE_CLAUDE_AUTO_ROUTE_DISABLED_PATH}"
 printf '{"type":"result","subtype":"success","result":"STATUS: completed"}\n'
 exit 0
 EOF
@@ -35,6 +37,7 @@ out=$(
   FAKE_CLAUDE_ARGV_PATH="${ARGV_PATH}" \
   FAKE_CLAUDE_CWD_PATH="${CWD_PATH}" \
   FAKE_CLAUDE_ACTIVE_PATH="${ACTIVE_PATH}" \
+  FAKE_CLAUDE_AUTO_ROUTE_DISABLED_PATH="${AUTO_ROUTE_DISABLED_PATH}" \
   AGENT_CREW_TASK_ID="task-1" \
   AGENT_CREW_TASK_DIR="${TASK_DIR}" \
   AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
@@ -74,10 +77,35 @@ fi
 
 it "claude host bridge marks recursive invocation guard for child process"
 assert_eq "1" "$(cat "${ACTIVE_PATH}")"
+assert_eq "1" "$(cat "${AUTO_ROUTE_DISABLED_PATH}")"
 
 it "claude host bridge writes prompt and last message evidence"
 assert_file_exists "${TASK_DIR}/context/claude-host-bridge-prompt.md"
 assert_file_exists "${TASK_DIR}/context/claude-host-bridge-last-message.json"
 assert_contains "$(cat "${TASK_DIR}/context/claude-host-bridge-prompt.md")" "AGENT_CREW_TASK_ID: task-1"
+
+it "claude direct-agent bridge forbids normalizer subagent spawn"
+out=$(
+  AGENT_CREW_CLAUDE_BIN="${FAKE_CLAUDE}" \
+  FAKE_CLAUDE_ARGV_PATH="${ARGV_PATH}" \
+  FAKE_CLAUDE_CWD_PATH="${CWD_PATH}" \
+  FAKE_CLAUDE_ACTIVE_PATH="${ACTIVE_PATH}" \
+  FAKE_CLAUDE_AUTO_ROUTE_DISABLED_PATH="${AUTO_ROUTE_DISABLED_PATH}" \
+  AGENT_CREW_TASK_ID="agent-task-1" \
+  AGENT_CREW_TASK_DIR="${TASK_DIR}" \
+  AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
+  AGENT_CREW_RESULT_PATH="${TMP_ROOT}/result.md" \
+  AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
+  AGENT_CREW_AGENT_REQUEST_ID="agent-request-1" \
+  AGENT_CREW_AGENT_NAME="analyst" \
+  bash "${BRIDGE}" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+argv=$(cat "${ARGV_PATH}")
+assert_contains "${argv}" "Resume this existing agent-crew direct-agent handoff in Claude Code."
+assert_contains "${argv}" "perform the input-normalizer contract inline"
+assert_contains "${argv}" "Do not spawn input-normalizer"
+assert_contains "${argv}" "AGENT_CREW_AGENT_NAME: analyst"
 
 end_report

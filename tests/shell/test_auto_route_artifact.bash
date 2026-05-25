@@ -34,7 +34,10 @@ run_hook_ctx() {
   local payload="$1"
   python3 -c "
 import json, sys
-data = json.load(sys.stdin)
+raw = sys.stdin.read().strip()
+if not raw:
+    sys.exit(0)
+data = json.loads(raw)
 ctx = data.get('hookSpecificOutput', {}).get('additionalContext', '')
 print(ctx)
 " < <(printf '%s' "${payload}" | bash "${HOOK}" 2>/dev/null)
@@ -55,6 +58,11 @@ it "AC1: Korean reproduction prompt emits [agent-crew] STOP"
 PAYLOAD="$(make_prompt_payload '네 여기까지 내용 정리해서 클로드가 저장했던 파일에 수정해주세요')"
 CTX="$(run_hook_ctx "${PAYLOAD}")"
 assert_contains "${CTX}" "[agent-crew] STOP" "STOP directive present in additionalContext"
+
+it "host bridge child processes disable auto-route directives"
+PAYLOAD="$(make_prompt_payload '네 여기까지 내용 정리해서 클로드가 저장했던 파일에 수정해주세요')"
+CTX="$(AGENT_CREW_HOST_BRIDGE_ACTIVE=1 run_hook_ctx "${PAYLOAD}")"
+assert_eq "" "${CTX}"
 
 it "AC1: Korean reproduction prompt identifies as 'project implementation'"
 PAYLOAD="$(make_prompt_payload '네 여기까지 내용 정리해서 클로드가 저장했던 파일에 수정해주세요')"

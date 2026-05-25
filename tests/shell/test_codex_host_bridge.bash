@@ -14,6 +14,7 @@ PROJECT_ROOT="${TMP_ROOT}/project"
 FAKE_CODEX="${TMP_ROOT}/codex"
 ARGV_PATH="${TMP_ROOT}/argv.txt"
 STDIN_PATH="${TMP_ROOT}/stdin.txt"
+ENV_PATH="${TMP_ROOT}/env.txt"
 
 mkdir -p "${TASK_DIR}" "${PROJECT_ROOT}"
 printf 'handoff\n' > "${TMP_ROOT}/handoff.md"
@@ -21,6 +22,10 @@ printf 'handoff\n' > "${TMP_ROOT}/handoff.md"
 cat > "${FAKE_CODEX}" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "${FAKE_CODEX_ARGV_PATH}"
+{
+  printf 'ACTIVE:%s\n' "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-}"
+  printf 'AUTO_ROUTE_DISABLED:%s\n' "${AGENT_CREW_AUTO_ROUTE_DISABLED:-}"
+} > "${FAKE_CODEX_ENV_PATH}"
 cat > "${FAKE_CODEX_STDIN_PATH}"
 exit 0
 EOF
@@ -31,6 +36,7 @@ out=$(
   AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
   FAKE_CODEX_ARGV_PATH="${ARGV_PATH}" \
   FAKE_CODEX_STDIN_PATH="${STDIN_PATH}" \
+  FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
   AGENT_CREW_TASK_ID="task-1" \
   AGENT_CREW_TASK_DIR="${TASK_DIR}" \
   AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
@@ -53,10 +59,44 @@ assert_eq "exec" "${third_arg}"
 assert_eq "--add-dir" "${sixth_arg}"
 assert_eq "${TASK_DIR}" "${seventh_arg}"
 assert_not_contains "${argv}" $'exec\n-a'
+assert_contains "$(cat "${ENV_PATH}")" "ACTIVE:1"
+assert_contains "$(cat "${ENV_PATH}")" "AUTO_ROUTE_DISABLED:1"
 
 it "codex host bridge still writes and pipes the resume prompt"
 stdin_payload=$(cat "${STDIN_PATH}")
 assert_contains "${stdin_payload}" "Resume this existing agent-crew crew:run handoff in Codex."
 assert_contains "${stdin_payload}" "AGENT_CREW_TASK_ID: task-1"
+
+it "codex direct-agent bridge forbids normalizer subagent spawn"
+out=$(
+  AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+  FAKE_CODEX_ARGV_PATH="${ARGV_PATH}" \
+  FAKE_CODEX_STDIN_PATH="${STDIN_PATH}" \
+  FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
+  AGENT_CREW_TASK_ID="agent-task-1" \
+  AGENT_CREW_TASK_DIR="${TASK_DIR}" \
+  AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
+  AGENT_CREW_RESULT_PATH="${TMP_ROOT}/result.md" \
+  AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
+  AGENT_CREW_AGENT_REQUEST_ID="agent-request-1" \
+  AGENT_CREW_AGENT_NAME="analyst" \
+  bash "${BRIDGE}" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+stdin_payload=$(cat "${STDIN_PATH}")
+argv=$(cat "${ARGV_PATH}")
+assert_contains "${argv}" "--sandbox"
+assert_contains "${argv}" "read-only"
+assert_contains "${argv}" "-C"
+assert_contains "${argv}" "${TASK_DIR}"
+assert_contains "${argv}" "--skip-git-repo-check"
+assert_not_contains "${argv}" "--add-dir"
+assert_not_contains "${argv}" "${PROJECT_ROOT}"
+assert_contains "${stdin_payload}" "Resume this existing agent-crew direct-agent handoff in Codex."
+assert_contains "${stdin_payload}" "perform the input-normalizer contract inline"
+assert_contains "${stdin_payload}" "Do not spawn input-normalizer"
+assert_contains "${stdin_payload}" "Direct-agent bridges run with a read-only project sandbox."
+assert_contains "${stdin_payload}" "AGENT_CREW_AGENT_NAME: analyst"
 
 end_report

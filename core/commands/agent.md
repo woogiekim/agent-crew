@@ -500,16 +500,20 @@ crew routing already fired and the inner call is purely mechanical.
 ### Step 5 — Input normalization
 
 If TASK_STRING is non-English, ambiguous, or conversational shorthand, normalize
-it to a canonical English workflow instruction before proceeding (per
-`core/rules/normalization-adapter.md`). Invoke the `input-normalizer` agent with
-the raw text and substitute its output for TASK_STRING. Then re-evaluate from
-Step 3 or Step 4 as appropriate with the normalized string.
+it to a canonical English workflow instruction before the intended direct agent
+answers (per `core/rules/normalization-adapter.md`).
 
-This is a hard runtime gate for every direct-agent path. If the selected target
-is not `input-normalizer`, the runtime MUST write an `input-normalizer` handoff
-first and MUST NOT pass the raw TASK to the intended downstream agent. The
-handoff records `INTENDED_AGENT_AFTER_NORMALIZATION` so the normalized English
-task can be re-routed after `NORMALIZED_TASK` is produced.
+This is a hard runtime gate for every direct-agent path. For lightweight
+`MODE=direct` host-bridge requests, normalization is an inline utility step
+inside the same bridge session, not a separate native agent spawn. The runtime
+MUST keep the intended direct agent as `AGENT`, write
+`NORMALIZATION_MODE: inline_direct_bridge`, and store the raw input only as
+`RAW_TASK` provenance. The bridge then performs the input-normalizer contract
+inline and continues as `INTENDED_AGENT_AFTER_NORMALIZATION`.
+
+The runtime MUST NOT pass raw non-English or ambiguous text as canonical TASK
+to the intended downstream agent. It must also not ask the host to spawn
+`input-normalizer` or `korean-normalizer` while already in `MODE=direct`.
 
 ### Step 6 — Emit visibility line (mandatory)
 
