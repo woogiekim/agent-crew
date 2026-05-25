@@ -4,7 +4,7 @@ description: >
   Final pipeline stage. Reviews implementation completeness and quality against the PRD.
   Spawned by supervisor as the last stage of every pipeline.
   SKIP: do not invoke directly; always spawned by supervisor.
-reasoning_tier: deep
+reasoning_tier: xhigh
 model: inherit
 ---
 

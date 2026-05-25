@@ -86,6 +86,15 @@ assert_not_contains "${setup_out}" 'reasoning_tier ='
 it "Codex setup preserves project-local custom TOML agents"
 assert_file_exists "${setup_repo}/.codex/agents/local-custom.toml"
 
+it "Codex setup maps xhigh system agents to xhigh effort"
+assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model_reasoning_effort = "xhigh"'
+
+it "Codex setup maps deep implementation agents to high effort"
+assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model_reasoning_effort = "high"'
+
+it "Codex setup maps light utility agents to low effort"
+assert_contains "$(cat "${setup_repo}/.codex/agents/input-normalizer.toml")" 'model_reasoning_effort = "low"'
+
 it "Generated Codex TOML parses as valid TOML"
 python3 - "${toml}" <<'PYEOF'
 import ast

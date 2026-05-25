@@ -50,6 +50,7 @@ from pathlib import Path
 
 # Defaults — overridable via AGENT_CREW_BUDGET_{TIER}.
 DEFAULT_BUDGETS = {
+    "xhigh":    300_000,
     "deep":     200_000,
     "balanced": 150_000,
     "light":    100_000,
@@ -58,7 +59,7 @@ DEFAULT_BUDGETS = {
 # Fallback when a line records tier="unknown". Keep in sync with
 # adapters/claude/setup.sh's TIER_TO_MODEL.
 MODEL_TIER_FALLBACK = {
-    "claude-opus-4-7":   "deep",
+    "claude-opus-4-7":   "xhigh",
     "claude-sonnet-4-6": "balanced",
     "claude-haiku-4-5":  "light",
 }

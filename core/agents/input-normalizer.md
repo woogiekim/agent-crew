@@ -1,3 +1,12 @@
+---
+name: input-normalizer
+description: >
+  Multilingual instruction-normalization utility. Converts raw user input into
+  canonical English workflow instructions without implementation authority.
+reasoning_tier: light
+model: inherit
+---
+
 # Agent: input-normalizer
 
 ## Role

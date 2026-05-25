@@ -68,15 +68,17 @@ retry attempt.
 
 | Tier      | Default budget (tokens) | Env override                  |
 |-----------|------------------------:|-------------------------------|
+| `xhigh`   |                 300,000 | `AGENT_CREW_BUDGET_XHIGH`     |
 | `deep`    |                 200,000 | `AGENT_CREW_BUDGET_DEEP`      |
 | `balanced`|                 150,000 | `AGENT_CREW_BUDGET_BALANCED`  |
 | `light`   |                 100,000 | `AGENT_CREW_BUDGET_LIGHT`     |
 
 The **task-level budget** is `max(tier_budget)` over the tiers of all
 agents that have been invoked for the task so far. A pipeline running
-`analyst (deep) + backend (balanced) + reviewer (deep)` therefore gets
-the deep budget (200,000). Rationale: a small backend stage should not
-shrink the headroom of the surrounding deep analysis and review work.
+`analyst (xhigh) + backend (deep) + reviewer (xhigh)` therefore gets
+the xhigh budget (300,000). Rationale: a lower-tier implementation stage
+should not shrink the headroom of the surrounding highest-impact analysis
+and review work.
 
 ### Thresholds
 

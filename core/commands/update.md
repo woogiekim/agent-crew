@@ -483,8 +483,8 @@ bash "${AGENT_CREW_HOME}/scripts/migrate-rm-stale.sh" \
 
 ### Phase 3.2 — `reasoning_tier` materialization
 
-System agents now declare a `reasoning_tier` (`deep` / `balanced` /
-`light`) in their frontmatter. On `crew:update`, the Claude adapter
+System agents now declare a `reasoning_tier` (`xhigh` / `deep` /
+`balanced` / `light`) in their frontmatter. On `crew:update`, the Claude adapter
 rewrites the `model:` line of each installed agent at
 `~/.claude/agents/*.md` to a concrete model identifier based on the
 declared tier (see `core/rules/capabilities/reasoning-tier.md`).
@@ -492,8 +492,7 @@ declared tier (see `core/rules/capabilities/reasoning-tier.md`).
 Source files under `core/agents/` keep `model: inherit` and are not
 changed. User agents under `~/.agent-crew/user/agents/` are left
 untouched — user-owned files retain whatever `model:` value they
-have. Agents without YAML frontmatter (e.g. `korean-normalizer.md`)
-are silently skipped.
+have. Agents without YAML frontmatter are silently skipped.
 
 If you previously hand-edited `~/.claude/agents/*.md` to set a custom
 `model:` for a system agent, your edit will be overwritten on the
@@ -501,13 +500,12 @@ next update. Move the agent to `~/.agent-crew/user/agents/` (and
 rename it to avoid the system filename collision) to preserve a
 manual model choice.
 
-The Codex adapter does NOT auto-map `reasoning_tier` to a concrete
-model. Codex custom-agent TOML supports official per-agent keys such as
+The Codex adapter maps system-agent `reasoning_tier` to
+`model_reasoning_effort`, but does NOT auto-map it to a concrete model.
+Codex custom-agent TOML supports official per-agent keys such as
 `model`, `model_reasoning_effort`, and `sandbox_mode`; when users put
 those keys in `~/.agent-crew/user/agents/*.md` frontmatter, the Codex
-adapter preserves them in generated `.codex/agents/*.toml`. The abstract
-`reasoning_tier` remains advisory unless the user supplies concrete
-Codex model settings.
+adapter preserves them in generated `.codex/agents/*.toml`.
 
 ### Phase 3.3 — `cost_tracking` capability + cost circuit breaker
 
@@ -537,9 +535,10 @@ hook in `~/.claude/settings.json`. On the next `crew:update`:
 
 User-facing config:
 
-- `AGENT_CREW_BUDGET_DEEP`, `AGENT_CREW_BUDGET_BALANCED`,
-  `AGENT_CREW_BUDGET_LIGHT` env vars override per-tier budgets.
-  Defaults: 200,000 / 150,000 / 100,000 tokens. See
+- `AGENT_CREW_BUDGET_XHIGH`, `AGENT_CREW_BUDGET_DEEP`,
+  `AGENT_CREW_BUDGET_BALANCED`, `AGENT_CREW_BUDGET_LIGHT` env vars
+  override per-tier budgets.
+  Defaults: 300,000 / 200,000 / 150,000 / 100,000 tokens. See
   `core/rules/quality-loop.md` § Cost Circuit Breaker.
 
 Codex and generic adapters: no change. `cost_tracking` remains

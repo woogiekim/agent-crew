@@ -16,6 +16,7 @@ SKIP = {
 }
 
 REASONING_MAP = {
+    "xhigh": "xhigh",
     "deep": "high",
     "balanced": "medium",
     "light": "low",

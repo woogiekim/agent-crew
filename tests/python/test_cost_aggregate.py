@@ -87,6 +87,7 @@ class TestCostAggregate:
         _write_cost_jsonl(
             state_dir / "cost" / f"{task_id}.jsonl",
             [
+                _record(task_id, tier="xhigh",    input_tokens=50, output_tokens=25),
                 _record(task_id, tier="deep",     input_tokens=100, output_tokens=50),
                 _record(task_id, tier="balanced", input_tokens=200, output_tokens=100),
                 _record(task_id, tier="light",    input_tokens=300, output_tokens=150),
@@ -101,14 +102,36 @@ class TestCostAggregate:
         assert r.returncode == 0
         payload = json.loads(r.stdout)
         by_tier = payload["task"]["by_tier"]
+        assert by_tier["xhigh"]["in"] == 50
+        assert by_tier["xhigh"]["out"] == 25
         assert by_tier["deep"]["in"] == 100
         assert by_tier["deep"]["out"] == 50
         assert by_tier["balanced"]["in"] == 200
         assert by_tier["light"]["in"] == 300
         # Each tier got 1 call
+        assert by_tier["xhigh"]["calls"] == 1
         assert by_tier["deep"]["calls"] == 1
         assert by_tier["balanced"]["calls"] == 1
         assert by_tier["light"]["calls"] == 1
+
+    def test_unknown_tier_falls_back_to_xhigh_for_opus(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Unknown tier with the strongest Claude model maps to xhigh."""
+        task_id = "20260101-120000-0"
+        _write_cost_jsonl(
+            state_dir / "cost" / f"{task_id}.jsonl",
+            [_record(task_id, tier="unknown", model="claude-opus-4-7")],
+        )
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["task"]["routing_audit"][0]["tier"] == "xhigh"
 
     def test_multiple_task_files_summary(
         self, script_runner, env_with_home, state_dir

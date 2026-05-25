@@ -5,7 +5,7 @@ description: >
   TRIGGER when: design-spec.md exists and frontend code implementation is the next step; user requests a UI component, page, or form implementation; planner pipeline includes a frontend stage. Keywords: frontend, UI implementation, component, React, Vue, Next.js, page, button, form, CSS.
   SKIP: only a design spec (no code) is needed — use designer instead; request is backend API only with no UI; user asks for an explanation or review only.
   Output: test code + UI source code + type check passed + git commit. Runs after designer; implements UI directly if design-spec.md is absent. Uses TDD.
-reasoning_tier: balanced
+reasoning_tier: deep
 model: inherit
 ---
 
