@@ -152,7 +152,8 @@ crew cost
 crew doctor
 crew doctor --mode runtime
 crew config dump --effective
-crew readiness gate --validation-report dist/phase-2-validation.json
+crew readiness workload --output dist/readiness-workload.json
+crew readiness gate --validation-report dist/phase-2-validation.json --workload-evidence dist/readiness-workload.json
 
 # 7. Inspect a task trace or resume coordinates
 crew trace --task-id 20260523-103403-0 --include-tools
@@ -837,6 +838,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew config dump --effective` | Native shell command: capability flags, active adapter, budgets, timeouts, report settings, memory backend, state directory, and install drift |
 | `crew debug` | Native shell command: combined read-only doctor, telemetry, and cost snapshot |
 | `crew readiness gate` | Native shell command: default-threshold readiness gate with blocker reporting |
+| `crew readiness workload` | Native shell command: deterministic temporary host-bridge workload evidence generator |
 | `crew resume [TASK_ID]` | Native shell command: request host-runtime continuation and record `RESUME_REQUESTED`; use `--print` or `--dry-run` for read-only coordinates |
 | `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
 | `crew run "task"` | Native shell command: create deterministic task state and supervisor handoff; currently blocks until a host AI prompt runtime completes the handoff |

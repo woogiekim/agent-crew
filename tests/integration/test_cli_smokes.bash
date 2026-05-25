@@ -28,6 +28,7 @@ PYTHON_SCRIPTS=(
   "hosted-workload-evidence.py"
   "readiness-metrics.py"
   "readiness-gate.py"
+  "readiness-workload-validate.py"
 )
 
 # Shell scripts in core/scripts/ — exclude smoke-test-state which is itself

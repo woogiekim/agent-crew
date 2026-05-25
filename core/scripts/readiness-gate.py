@@ -116,7 +116,7 @@ def metric_blocker(metric: dict[str, Any], *, validation_reports_supplied: bool)
             "value": metric.get("value"),
             "threshold": metric.get("threshold"),
             "reason": "The metric has no measurable evidence.",
-            "next_action": "Provide workload evidence or generate it from local state.",
+            "next_action": "Run crew readiness workload --output PATH, or provide explicit --workload-evidence PATH.",
         }
 
     direction = str(metric.get("direction") or "at_least")
@@ -136,6 +136,8 @@ def build_gate_report(
     validation_reports: list[dict[str, Any]],
     workload_evidence: list[dict[str, Any]],
     thresholds: dict[str, float],
+    *,
+    evidence_mode: str = "unknown",
 ) -> dict[str, Any]:
     metrics_module = load_script_module("readiness-metrics.py", "readiness_metrics")
     metrics = metrics_module.build_report(validation_reports, workload_evidence, thresholds)
@@ -149,6 +151,17 @@ def build_gate_report(
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "passed": not blockers,
+        "evidence_mode": evidence_mode,
+        "evidence_sources": [
+            {
+                "source": str(item.get("source") or "unknown"),
+                "adapter": str(item.get("adapter") or "unknown"),
+                "tasks": int(item.get("tasks", item.get("total_tasks", 0)) or 0),
+                "generated_at": item.get("generated_at"),
+                "validation_mode": item.get("validation_mode"),
+            }
+            for item in workload_evidence
+        ],
         "thresholds": thresholds,
         "metrics": metrics,
         "blockers": blockers,
@@ -158,6 +171,7 @@ def build_gate_report(
 def text_report(report: dict[str, Any]) -> str:
     lines = [
         "PASS: readiness gate" if report["passed"] else "FAIL: readiness gate",
+        f"evidence_mode={report.get('evidence_mode', 'unknown')}",
         f"blockers={len(report['blockers'])}",
     ]
     for blocker in report["blockers"]:
@@ -190,6 +204,7 @@ def main() -> int:
     try:
         validation_reports = [load_json(Path(path).expanduser()) for path in args.validation_report]
         workload_evidence = [load_json(Path(path).expanduser()) for path in args.workload_evidence]
+        evidence_mode = "explicit_workload_evidence" if workload_evidence else "generated_local_state"
         state_dir = Path(args.state_dir).expanduser().resolve() if args.state_dir else None
         if not workload_evidence:
             local_evidence = generated_workload_evidence(
@@ -199,8 +214,15 @@ def main() -> int:
             )
             if local_evidence is not None:
                 workload_evidence.append(local_evidence)
+            else:
+                evidence_mode = "missing_workload_evidence"
         thresholds = load_thresholds(Path(args.thresholds).expanduser() if args.thresholds else None)
-        report = build_gate_report(validation_reports, workload_evidence, thresholds)
+        report = build_gate_report(
+            validation_reports,
+            workload_evidence,
+            thresholds,
+            evidence_mode=evidence_mode,
+        )
     except ValueError as exc:
         print(f"readiness-gate: {exc}", file=sys.stderr)
         return 2

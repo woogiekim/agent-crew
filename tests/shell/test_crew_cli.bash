@@ -22,7 +22,7 @@ assert_contains "${out}" "cost [args]"
 assert_contains "${out}" "doctor [args]"
 assert_contains "${out}" "config doctor|dump"
 assert_contains "${out}" "debug [args]"
-assert_contains "${out}" "readiness evidence|metrics|gate"
+assert_contains "${out}" "readiness evidence|metrics|gate|workload"
 assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
@@ -131,6 +131,15 @@ rc=$?
 assert_exit 1 "${rc}"
 assert_contains "${out}" '"passed": false'
 assert_contains "${out}" '"missing_validation_report"'
+
+it "crew readiness workload generates explicit validation evidence"
+WORKLOAD_OUTPUT="$(make_tmp)/workload.json"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" readiness workload --output "${WORKLOAD_OUTPUT}" --format text 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "PASS: readiness workload validation"
+assert_file_exists "${WORKLOAD_OUTPUT}"
+assert_contains "$(cat "${WORKLOAD_OUTPUT}")" '"source": "agent-crew-readiness-validation-workload"'
 
 TRACE_HOME=$(make_tmp)
 TRACE_PROJECT=$(make_tmp)
@@ -367,6 +376,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/auto-issue-reporter.py"
 
 it "crew run installs readiness gate during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/readiness-gate.py"
+
+it "crew run installs readiness workload validation during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/readiness-workload-validate.py"
 
 it "crew run installs memory GC command during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/memory-gc.py"

@@ -122,6 +122,10 @@ invocation in SKILL.md; generic adds guidance).
 - `readiness-gate.py` — operator go/no-go gate that combines validation reports,
   generated or supplied workload evidence, default readiness thresholds, and
   blocker reporting for missing, unmeasured, or below-threshold metrics.
+- `readiness-workload-validate.py` — deterministic host-bridge smoke workload
+  runner. It executes temporary `crew run` and `crew agent` scenarios through
+  the real native CLI with an explicit bridge command, then emits clean
+  workload evidence for `readiness-gate.py`.
 - `agent-capability-check.py` — validates the machine-readable
   `core/policies/agent-capabilities.json` manifest against agent markdown files,
   role boundaries, destructive-operation approval requirements, reviewer

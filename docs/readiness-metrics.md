@@ -51,6 +51,21 @@ default it counts workflow task directories only. Add
 `--include-agent-requests` when readiness should also include read-only
 direct-agent requests under `agent-requests/`.
 
+Purpose-built validation workload evidence should be generated separately from
+ad-hoc local development history:
+
+```bash
+crew readiness workload \
+  --output dist/readiness-workload.json \
+  --format text
+```
+
+This runs deterministic temporary `crew run` and `crew agent` host-bridge smoke
+scenarios through the native CLI and writes a workload evidence file with
+`source: agent-crew-readiness-validation-workload`. Use this file for go/no-go
+readiness decisions when recent local task history contains manual repairs,
+cancelled handoffs, or unrelated exploratory runs.
+
 Thresholds are intentionally supplied as a JSON file so commercial targets can
 be raised without changing the aggregator:
 
@@ -99,13 +114,18 @@ For operator go/no-go checks, use the default-threshold gate:
 crew readiness gate \
   --validation-report dist/phase-1-validation.json \
   --validation-report dist/phase-2-validation.json \
-  --include-agent-requests \
-  --recent 20 \
+  --workload-evidence dist/readiness-workload.json \
   --format text
 ```
 
-`crew readiness gate` generates local workload evidence from the project state
-when no `--workload-evidence` file is supplied. It applies default thresholds
-and prints blockers such as `missing_validation_report`,
-`unmeasured:host_bridge_completion_rate`, or `threshold:task_success_rate`.
-Pass `--thresholds dist/readiness-thresholds.json` to override the defaults.
+`crew readiness gate` prefers explicit `--workload-evidence` files. If none are
+supplied, it falls back to generated local workload evidence from project state
+and reports `evidence_mode=generated_local_state`. That fallback is useful for
+diagnosis, but it can be intentionally stricter because it includes real local
+handoffs and repairs. The explicit workload path keeps validation evidence
+separate from polluted ad-hoc history without hiding failures.
+
+The gate applies default thresholds and prints blockers such as
+`missing_validation_report`, `unmeasured:host_bridge_completion_rate`, or
+`threshold:task_success_rate`. Pass `--thresholds dist/readiness-thresholds.json`
+to override the defaults.
