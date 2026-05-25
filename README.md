@@ -70,6 +70,7 @@ Workforce System:
 - [Workflow-first architecture direction](docs/workflow-first-architecture-direction.md)
 - [Persistent AI Workforce vision](docs/persistent-ai-workforce-vision.md)
 - [Durable workflow architecture](docs/durable-workflow-architecture.md)
+- [Persistent workflow test strategy](docs/persistent-workflow-test-strategy.md)
 
 ## Key Features
 

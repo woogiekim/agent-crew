@@ -51,6 +51,9 @@ def evaluate_repo(root: Path) -> dict:
     durable_workflow_doc = read_text(root / "docs/durable-workflow-architecture.md")
     durable_workflow_fixture = read_text(root / "core/evaluations/durable-workflow-architecture.json")
     durable_workflow_check = read_text(root / "core/scripts/durable-workflow-architecture-check.py")
+    persistent_workflow_test_doc = read_text(root / "docs/persistent-workflow-test-strategy.md")
+    persistent_workflow_test_fixture = read_text(root / "core/evaluations/persistent-workflow-test-strategy.json")
+    persistent_workflow_test_check = read_text(root / "core/scripts/persistent-workflow-test-check.py")
     pipeline_rule = read_text(root / "core/rules/state-files/pipeline-json.md")
     supervisor = read_text(root / "core/agents/supervisor.md")
     supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
@@ -152,6 +155,43 @@ def evaluate_repo(root: Path) -> dict:
             )
             and "REQUIRED_STATES" in durable_workflow_check,
             "Durable workflow architecture must bind state machine, checkpoints, roles, approvals, observability, extensions, and protocol semantics to a checked contract.",
+        ),
+        control(
+            "reliability",
+            "persistent_workflow_test_strategy_contract",
+            "high",
+            has_all(
+                persistent_workflow_test_doc,
+                [
+                    "Persistent AI Workforce System",
+                    "Can this AI continue working tomorrow?",
+                    "Can the workflow survive and continue safely?",
+                    "Workflow durability",
+                    "Resume and recovery",
+                    "Human approval integrity",
+                    "Workflow determinism",
+                    "Workflow observability",
+                    "Plugin isolation",
+                    "Long-running operational tests",
+                ],
+            )
+            and has_all(
+                persistent_workflow_test_fixture,
+                [
+                    "workflow_durability",
+                    "resume_and_recovery",
+                    "human_approval_integrity",
+                    "workflow_determinism",
+                    "workflow_observability",
+                    "plugin_isolation",
+                    "long_running_operational",
+                    "token exhaustion",
+                    "memory corruption",
+                    "Workflow Continuity Score",
+                ],
+            )
+            and "REQUIRED_CATEGORIES" in persistent_workflow_test_check,
+            "Persistent workflow testing must validate durability, resume/recovery, approval integrity, determinism, observability, plugin isolation, and long-running operations.",
         ),
         control(
             "architecture",

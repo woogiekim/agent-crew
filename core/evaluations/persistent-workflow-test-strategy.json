@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "round": 1,
+  "system_identity": "Persistent AI Workforce System",
+  "objective": [
+    "workflow durability",
+    "execution continuity",
+    "resumability",
+    "operational safety",
+    "deterministic orchestration"
+  ],
+  "critical_questions": [
+    "Can workflows survive interruption?",
+    "Can workflows resume safely?",
+    "Does human supervision remain authoritative?",
+    "Does workflow determinism remain stable?",
+    "Can external extensions safely coexist?",
+    "Can this AI continue working tomorrow?"
+  ],
+  "test_categories": {
+    "workflow_durability": {
+      "validates": [
+        "long-running execution",
+        "interruption survival",
+        "persistent orchestration",
+        "workflow continuity"
+      ],
+      "round_1_evidence": [
+        "core/scripts/durable-workflow-architecture-check.py",
+        "core/scripts/workflow-replay-check.py"
+      ]
+    },
+    "resume_and_recovery": {
+      "validates": [
+        "checkpoint restoration",
+        "workflow rehydration",
+        "state integrity",
+        "execution continuation"
+      ],
+      "round_1_evidence": [
+        "core/schemas/durable-workflow.schema.json",
+        "core/evaluations/retry-chaos.json"
+      ]
+    },
+    "human_approval_integrity": {
+      "validates": [
+        "approval enforcement",
+        "dangerous operation blocking",
+        "manual override safety"
+      ],
+      "round_1_evidence": [
+        "core/hooks/guard-dangerous-commands.sh",
+        "tests/shell/test_guard_dangerous_commands.bash"
+      ]
+    },
+    "workflow_determinism": {
+      "validates": [
+        "stable transitions",
+        "predictable orchestration",
+        "consistent recovery behavior"
+      ],
+      "round_1_evidence": [
+        "core/evaluations/workflow-replay.json",
+        "core/scripts/workflow-replay-check.py"
+      ]
+    },
+    "workflow_observability": {
+      "validates": [
+        "operational visibility",
+        "continuity monitoring",
+        "recovery diagnostics"
+      ],
+      "round_1_evidence": [
+        "core/rules/state-files/progress-buffer-jsonl.md",
+        "core/scripts/telemetry-taxonomy-check.py"
+      ]
+    },
+    "plugin_isolation": {
+      "validates": [
+        "plugin failure isolation",
+        "workflow survival",
+        "runtime durability"
+      ],
+      "round_1_evidence": [
+        "docs/durable-workflow-architecture.md",
+        "core/scripts/pipeline-capability-check.py"
+      ]
+    },
+    "long_running_operational": {
+      "validates": [
+        "operational endurance",
+        "sustained execution",
+        "workflow continuity over time"
+      ],
+      "round_1_evidence": [
+        "docs/hosted-validation-evidence.md",
+        "docs/readiness-metrics.md"
+      ],
+      "future_evidence_required": true
+    }
+  },
+  "chaos_requirements": [
+    "process crash",
+    "runtime restart",
+    "partial persistence failure",
+    "plugin failure",
+    "token exhaustion",
+    "memory corruption",
+    "infrastructure interruption"
+  ],
+  "success_metrics": [
+    "Resume Success Rate",
+    "Workflow Survival Rate",
+    "Recovery Accuracy",
+    "Approval Integrity",
+    "Deterministic Stability",
+    "Workflow Continuity Score"
+  ],
+  "anti_goals": [
+    "raw token speed",
+    "prompt throughput",
+    "benchmark scoring",
+    "superficial latency metrics"
+  ],
+  "round_1_commands": [
+    "python3 core/scripts/persistent-workflow-test-check.py --format text",
+    "python3 core/scripts/durable-workflow-architecture-check.py --format text",
+    "python3 core/scripts/workflow-replay-check.py --format text",
+    "python3 core/scripts/retry-chaos-check.py --format text",
+    "python3 core/scripts/framework-review-check.py --format text"
+  ]
+}
