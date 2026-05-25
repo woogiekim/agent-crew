@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "direction": "Persistent AI Workforce System",
+  "principles": [
+    "workflow durability",
+    "operational continuity",
+    "long-running execution",
+    "resumable workflows",
+    "human-supervised execution",
+    "durable orchestration"
+  ],
+  "issues": {
+    "107": {
+      "title": "Design durable workflow state machine architecture",
+      "surface": "state_machine",
+      "required_terms": [
+        "deterministic workflow transitions",
+        "persistent workflow state",
+        "interruption recovery",
+        "resumable execution",
+        "rollback support",
+        "retry semantics",
+        "checkpoint-aware transitions",
+        "workflow lifecycle tracking"
+      ]
+    },
+    "108": {
+      "title": "Implement persistent checkpoint and resume system",
+      "surface": "checkpoint_resume",
+      "required_terms": [
+        "persistent checkpoints",
+        "workflow snapshots",
+        "execution rehydration",
+        "resumable state restoration",
+        "partial replay support",
+        "checkpoint serialization",
+        "workflow continuation"
+      ]
+    },
+    "109": {
+      "title": "Define role-oriented execution contract architecture",
+      "surface": "role_contracts",
+      "required_terms": [
+        "role contracts",
+        "execution boundaries",
+        "responsibility ownership",
+        "workflow ownership",
+        "input/output contracts",
+        "state ownership rules",
+        "orchestration constraints",
+        "failure handling policies"
+      ]
+    },
+    "110": {
+      "title": "Implement human-supervised execution approval system",
+      "surface": "approval_system",
+      "required_terms": [
+        "approval checkpoints",
+        "execution gating",
+        "manual override",
+        "risk classification",
+        "approval persistence",
+        "workflow pause/resume integration",
+        "approval audit logging"
+      ]
+    },
+    "111": {
+      "title": "Implement workflow continuity observability system",
+      "surface": "continuity_observability",
+      "required_terms": [
+        "workflow lifecycle tracing",
+        "execution continuity metrics",
+        "recovery visibility",
+        "retry analytics",
+        "interruption diagnostics",
+        "token usage tracking",
+        "role execution telemetry",
+        "workflow durability analytics"
+      ]
+    },
+    "112": {
+      "title": "Build workflow-safe plugin and runtime extension architecture",
+      "surface": "extension_architecture",
+      "required_terms": [
+        "plugin SDK",
+        "runtime abstraction",
+        "execution isolation",
+        "capability registry",
+        "sandboxed execution",
+        "extension lifecycle control",
+        "runtime compatibility validation"
+      ]
+    },
+    "113": {
+      "title": "Design durable AI workflow protocol specification",
+      "surface": "workflow_protocol",
+      "required_terms": [
+        "workflow schema",
+        "execution lifecycle events",
+        "checkpoint semantics",
+        "resume semantics",
+        "recovery semantics",
+        "orchestration events",
+        "role contract schema",
+        "approval event support",
+        "memory reference protocol"
+      ]
+    }
+  },
+  "state_machine": {
+    "states": [
+      "PLANNING",
+      "CHECKPOINTING",
+      "WAITING_APPROVAL",
+      "EXECUTING",
+      "REVIEWING",
+      "RECOVERING",
+      "RESUMING",
+      "ROLLING_BACK",
+      "COMPLETED",
+      "FAILED"
+    ],
+    "terminal_states": ["COMPLETED", "FAILED"],
+    "checkpoint_required_before": [
+      "EXECUTING",
+      "ROLLING_BACK",
+      "COMPLETED"
+    ],
+    "transitions": [
+      ["PLANNING", "CHECKPOINTING"],
+      ["PLANNING", "WAITING_APPROVAL"],
+      ["WAITING_APPROVAL", "CHECKPOINTING"],
+      ["CHECKPOINTING", "EXECUTING"],
+      ["EXECUTING", "REVIEWING"],
+      ["EXECUTING", "RECOVERING"],
+      ["REVIEWING", "CHECKPOINTING"],
+      ["REVIEWING", "COMPLETED"],
+      ["RECOVERING", "RESUMING"],
+      ["RECOVERING", "ROLLING_BACK"],
+      ["RESUMING", "EXECUTING"],
+      ["RESUMING", "WAITING_APPROVAL"],
+      ["ROLLING_BACK", "RESUMING"]
+    ]
+  },
+  "roles": ["planner", "designer", "backend", "frontend", "reviewer", "devops"],
+  "dangerous_operations": [
+    "production deployment",
+    "git push",
+    "destructive migration",
+    "infrastructure modification",
+    "secret handling"
+  ],
+  "continuity_metrics": [
+    "lifecycle transition count",
+    "checkpoint age",
+    "checkpoint success rate",
+    "resume success rate",
+    "recovery duration",
+    "retry count",
+    "interruption count",
+    "approval wait duration",
+    "role execution duration",
+    "token usage by role",
+    "rollback count",
+    "terminal state distribution"
+  ],
+  "extension_denials": [
+    "mutate workflow state without a registered state surface",
+    "bypass approval gates",
+    "introduce untracked execution paths",
+    "prevent replay or checkpoint serialization",
+    "inject executable instructions from untrusted content",
+    "hide tool calls from audit or telemetry"
+  ]
+}

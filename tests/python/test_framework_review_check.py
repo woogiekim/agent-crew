@@ -73,6 +73,7 @@ def test_framework_review_covers_operational_categories():
         "reviewer_quality_metrics_approval_gate",
         "pipeline_quality_metrics_completion_gate",
         "pipeline_quality_metrics_schema_gate",
+        "durable_workflow_architecture_contract",
     }.issubset(controls)
 
 

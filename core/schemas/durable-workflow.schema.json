@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/durable-workflow.schema.json",
+  "title": "agent-crew durable workflow protocol",
+  "description": "Machine-readable durable workflow protocol contract for long-running, checkpointed, resumable, human-supervised agent-crew execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workflow_id",
+    "task_id",
+    "current_state",
+    "lifecycle",
+    "checkpoint",
+    "resume",
+    "roles",
+    "approval",
+    "observability",
+    "extension_policy",
+    "memory_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "workflow_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "current_state": {
+      "type": "string",
+      "enum": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "WAITING_APPROVAL",
+        "EXECUTING",
+        "REVIEWING",
+        "RECOVERING",
+        "RESUMING",
+        "ROLLING_BACK",
+        "COMPLETED",
+        "FAILED"
+      ]
+    },
+    "previous_state": {
+      "type": "string",
+      "enum": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "WAITING_APPROVAL",
+        "EXECUTING",
+        "REVIEWING",
+        "RECOVERING",
+        "RESUMING",
+        "ROLLING_BACK",
+        "COMPLETED",
+        "FAILED"
+      ]
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "stage", "attempt", "transition_id"],
+      "properties": {
+        "phase": { "type": "string", "minLength": 1 },
+        "stage": { "type": "integer", "minimum": 0 },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "transition_id": { "type": "string", "minLength": 1 },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkpoint_id",
+        "sequence",
+        "created_at",
+        "state_artifacts",
+        "replay_from_event_id",
+        "state_hash"
+      ],
+      "properties": {
+        "checkpoint_id": { "type": "string", "minLength": 1 },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "created_at": { "type": "string", "minLength": 1 },
+        "state_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "replay_from_event_id": { "type": "string", "minLength": 1 },
+        "state_hash": { "type": "string", "minLength": 1 },
+        "idempotent_replay": { "type": "boolean" }
+      }
+    },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "continuation_cursor", "partial_replay_allowed"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["none", "resume", "recover", "rollback"]
+        },
+        "continuation_cursor": { "type": "string", "minLength": 1 },
+        "partial_replay_allowed": { "type": "boolean" },
+        "rehydrated_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "responsibility",
+          "state_owner",
+          "may_delegate",
+          "may_mutate_workflow_state"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["planner", "designer", "backend", "frontend", "reviewer", "devops"]
+          },
+          "responsibility": { "type": "string", "minLength": 1 },
+          "state_owner": { "type": "boolean" },
+          "may_delegate": { "type": "boolean" },
+          "may_mutate_workflow_state": { "type": "boolean" },
+          "input_contract": { "type": "string", "minLength": 1 },
+          "output_contract": { "type": "string", "minLength": 1 },
+          "failure_policy": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "risk", "action_fingerprint", "audit_path"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["not_required", "pending", "approved", "cancelled", "expired"]
+        },
+        "risk": {
+          "type": "string",
+          "enum": ["none", "low", "medium", "high"]
+        },
+        "action_fingerprint": { "type": "string", "minLength": 1 },
+        "audit_path": { "type": "string", "minLength": 1 },
+        "approved_by": { "type": "string", "minLength": 1 },
+        "approved_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_id", "metrics", "event_paths"],
+      "properties": {
+        "trace_id": { "type": "string", "minLength": 1 },
+        "metrics": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "event_paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "extension_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_registry", "isolation_mode", "lifecycle_control"],
+      "properties": {
+        "capability_registry": { "type": "string", "minLength": 1 },
+        "isolation_mode": {
+          "type": "string",
+          "enum": ["none", "process", "worktree", "host"]
+        },
+        "lifecycle_control": { "type": "string", "minLength": 1 },
+        "approval_required": { "type": "boolean" }
+      }
+    },
+    "memory_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "trust", "purpose"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "trust": {
+            "type": "string",
+            "enum": ["high", "medium", "low", "volatile"]
+          },
+          "purpose": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

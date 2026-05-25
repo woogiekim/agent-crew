@@ -47,6 +47,10 @@ def evaluate_repo(root: Path) -> dict:
     crew = read_text(root / "core/bin/crew")
     guard = read_text(root / "core/hooks/guard-dangerous-commands.sh")
     pipeline_schema = read_text(root / "core/schemas/pipeline.schema.json")
+    durable_workflow_schema = read_text(root / "core/schemas/durable-workflow.schema.json")
+    durable_workflow_doc = read_text(root / "docs/durable-workflow-architecture.md")
+    durable_workflow_fixture = read_text(root / "core/evaluations/durable-workflow-architecture.json")
+    durable_workflow_check = read_text(root / "core/scripts/durable-workflow-architecture-check.py")
     pipeline_rule = read_text(root / "core/rules/state-files/pipeline-json.md")
     supervisor = read_text(root / "core/agents/supervisor.md")
     supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
@@ -110,6 +114,44 @@ def evaluate_repo(root: Path) -> dict:
             has_all(pipeline_schema, ["stages", "completed_stages", "stage_agent_status"])
             and "pipeline.json" in pipeline_rule,
             "Workflow transitions must be represented by explicit pipeline state.",
+        ),
+        control(
+            "architecture",
+            "durable_workflow_architecture_contract",
+            "high",
+            has_all(
+                durable_workflow_doc,
+                [
+                    "Persistent AI Workforce System",
+                    "long-running durable AI execution",
+                    "State Machine",
+                    "Checkpoint And Resume",
+                    "Role Contracts",
+                    "Human-Supervised Approvals",
+                    "Continuity Observability",
+                    "Plugin And Runtime Extensions",
+                    "Durable Workflow Protocol",
+                ],
+            )
+            and has_all(
+                durable_workflow_schema,
+                [
+                    "workflow_id",
+                    "current_state",
+                    "checkpoint",
+                    "resume",
+                    "approval",
+                    "observability",
+                    "extension_policy",
+                    "memory_refs",
+                ],
+            )
+            and has_all(
+                durable_workflow_fixture,
+                ["107", "108", "109", "110", "111", "112", "113"],
+            )
+            and "REQUIRED_STATES" in durable_workflow_check,
+            "Durable workflow architecture must bind state machine, checkpoints, roles, approvals, observability, extensions, and protocol semantics to a checked contract.",
         ),
         control(
             "architecture",

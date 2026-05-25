@@ -69,6 +69,7 @@ Workforce System:
 - [Foundational philosophy and operational constitution](docs/foundational-philosophy-and-operational-constitution.md)
 - [Workflow-first architecture direction](docs/workflow-first-architecture-direction.md)
 - [Persistent AI Workforce vision](docs/persistent-ai-workforce-vision.md)
+- [Durable workflow architecture](docs/durable-workflow-architecture.md)
 
 ## Key Features
 
