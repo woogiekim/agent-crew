@@ -41,6 +41,8 @@ Commands:
   debug [args]                     Run doctor + recent telemetry + cost snapshot
   readiness evidence|metrics|gate|workload [args]
                                     Generate readiness evidence, metrics, or gate report
+  question key|record|resolve|render-markdown [args]
+                                    Persist structured question choices
   resume [--print|--dry-run] TASK_ID
                                     Request or print deterministic resume state
   update [--local [SOURCE_ROOT]]   Refresh installed assets
@@ -172,6 +174,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/readiness-gate.py:${AGENT_CREW_HOME}/scripts/readiness-gate.py" \
     "core/scripts/readiness-workload-validate.py:${AGENT_CREW_HOME}/scripts/readiness-workload-validate.py" \
     "core/scripts/hosted-workload-evidence.py:${AGENT_CREW_HOME}/scripts/hosted-workload-evidence.py" \
+    "core/scripts/interactive-question-state.py:${AGENT_CREW_HOME}/scripts/interactive-question-state.py" \
     "core/scripts/check-host-bridge.py:${AGENT_CREW_HOME}/scripts/check-host-bridge.py" \
     "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
     "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
@@ -657,6 +660,12 @@ EOF
   esac
 }
 
+cmd_question() {
+  local helper="${ASSET_ROOT}/scripts/interactive-question-state.py"
+  require_file "${helper}" "interactive question state helper"
+  python3 "${helper}" "$@"
+}
+
 cmd_resume() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -1002,6 +1011,7 @@ main() {
     config) cmd_config "$@" ;;
     debug) cmd_debug "$@" ;;
     readiness) cmd_readiness "$@" ;;
+    question) cmd_question "$@" ;;
     resume) cmd_resume "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;

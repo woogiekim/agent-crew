@@ -114,6 +114,10 @@ invocation in SKILL.md; generic adds guidance).
   default bridge is installed because `crew run` records `handoff_ready`
   through the internal fallback. `crew doctor` includes this probe in host
   diagnostics.
+- `interactive-question-state.py` — stores provider-neutral structured question
+  choices under task or project state so native host UI selections, such as
+  Codex Plan mode `request_user_input`, are auditable and not re-asked on
+  retry/resume.
 - `hosted-workload-evidence.py` — builds commercial readiness workload evidence
   from local task state and, when requested, direct-agent request state. It
   emits the task, success, auto bridge completion, manual repair, human

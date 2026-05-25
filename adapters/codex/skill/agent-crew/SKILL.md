@@ -161,15 +161,43 @@ inputs.
 
 ## Capability fallbacks
 
-Codex does not currently expose a native structured-question tool. The Codex
-adapter therefore advertises `interactive_question = false` in its
-`capabilities.json` (see `core/rules/host-capabilities.md` and
-`core/rules/capabilities/interactive-question.md`).
+Codex exposes a conditional structured-question path. In Plan mode, when the
+`request_user_input` tool is available in this session, it is the Codex binding
+for the provider-neutral `ask_question(prompt, options[])` intent. In Default
+mode, or whenever `request_user_input` is unavailable, the adapter MUST use the
+structured markdown fallback below.
+
+The Codex adapter still advertises `interactive_question = false` in
+`capabilities.json` because the capability is mode-dependent, but setup records:
+
+```json
+{
+  "interactive_question_mode": "codex_plan_mode_conditional",
+  "interactive_question_surface": "request_user_input",
+  "interactive_question_fallback": "structured_markdown"
+}
+```
+
+### Plan mode mapping
+
+When core emits an `ask_question(prompt, options[])` intent and
+`request_user_input` is available:
+
+1. Compute or reuse the question id with `crew question key`.
+2. Check for a cached answer with `crew question resolve`.
+3. If there is no cached answer, call `request_user_input` with the prompt and
+   labeled options. Include an explicit cancel/hold option when the core intent
+   is cancellable.
+4. Persist the selected label with `crew question record`, using
+   `source=codex_plan_mode` and `adapter=codex`.
+5. Continue with the selected label. Map user refusal/free-form cancellation to
+   `__cancelled__`.
 
 When core emits an `ask_question(prompt, options[])` intent — for example, at
 the `crew:run` Step 1.5 injection prompt, the supervisor Phase 1d plan
-approval gate, or the Phase 2.5 stage action gate — Codex MUST fall back to a
-**structured markdown question** in the chat. The format is:
+approval gate, or the Phase 2.5 stage action gate — and `request_user_input` is
+not available, Codex MUST fall back to a **structured markdown question** in the
+chat. The format is:
 
 ```markdown
 {prompt}
@@ -202,11 +230,7 @@ Rules for the markdown fallback:
   `core/rules/disambiguation.md` Implementation Requirements §4).
 
 This fallback is the operational path for every `ask_question` intent emitted
-by core when running under the Codex adapter. If a future Codex release
-exposes a native elicitation surface, `adapters/codex/setup.sh` may flip
-`interactive_question` to `true` and bind the intent to that surface in this
-file's "Capability mappings" section (currently absent — Codex has no other
-host-bound tool calls today, so no mapping table is yet warranted).
+by core when running under the Codex adapter outside Plan mode.
 
 ## Memory Contract
 

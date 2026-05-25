@@ -103,6 +103,37 @@ def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):
     assert cfg["core_objective"]["host_native_runtime_capability_rate"] < 1.0
 
 
+def test_codex_plan_mode_question_surface_is_reported_conditional(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / "home"
+    state = home / "state" / project.name
+    state.mkdir(parents=True)
+    (state / "capabilities.json").write_text(
+        json.dumps({
+            "adapter": "codex",
+            "interactive_question": False,
+            "interactive_question_mode": "codex_plan_mode_conditional",
+            "interactive_question_surface": "request_user_input",
+            "task_tools": False,
+        }),
+        encoding="utf-8",
+    )
+    args = type("Args", (), {
+        "project_root": str(project),
+        "asset_root": str(REPO_ROOT / "core"),
+        "agent_crew_home": str(home),
+    })()
+
+    cfg = diagnostics.effective_config(args)
+
+    reports = {item["name"]: item for item in cfg["capability_reports"]}
+    assert reports["interactive_question"]["status"] == "conditional-native"
+    assert reports["interactive_question"]["severity"] == "info"
+    assert "interactive_question" in cfg["core_objective"]["conditional_capabilities"]
+    assert "interactive_question" not in cfg["core_objective"]["policy_only_capabilities"]
+
+
 def test_doctor_host_reports_codex_policy_only_capabilities_as_info(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()

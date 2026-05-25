@@ -354,7 +354,12 @@ Present a structured user-choice intent
   - `[C] Cancel` — Stop and rephrase
     (append " (Recommended)" to the label for option A when `IS_REPEAT` is `True`)
 
-Absence behavior (flag=false): emit the structured markdown question format:
+Codex conditional native behavior: when the current Codex session exposes
+`request_user_input`, use it via the `askQuestion` mapping and persist the
+choice with `crew question record` before proceeding.
+
+Absence behavior (flag=false or no native surface in the current session): emit
+the structured markdown question format:
 
 ```
 No agent matched "{TASK_STRING}". How would you like to proceed?

@@ -26,6 +26,7 @@ PYTHON_SCRIPTS=(
   "reviewer-loop-decision.py"
   "check-host-bridge.py"
   "hosted-workload-evidence.py"
+  "interactive-question-state.py"
   "readiness-metrics.py"
   "readiness-gate.py"
   "readiness-workload-validate.py"

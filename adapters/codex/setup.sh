@@ -474,6 +474,9 @@ if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   "agent_background": false,
   "task_tools": false,
   "interactive_question": false,
+  "interactive_question_mode": "codex_plan_mode_conditional",
+  "interactive_question_surface": "request_user_input",
+  "interactive_question_fallback": "structured_markdown",
   "monitor_tool": false,
   "cost_tracking": false,
   "hook_system": false

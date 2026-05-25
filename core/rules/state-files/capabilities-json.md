@@ -35,7 +35,10 @@ Canonical shape (Phase 3.5 flag set):
   "monitor_tool":         true,
   "cost_tracking":        true,
   "hook_system":          true,
-  "interactive_question": false
+  "interactive_question": false,
+  "interactive_question_mode": "codex_plan_mode_conditional",
+  "interactive_question_surface": "request_user_input",
+  "interactive_question_fallback": "structured_markdown"
 }
 ```
 
@@ -56,6 +59,9 @@ require an exhaustive enumeration.
 | `cost_tracking` | boolean | optional | Per-task token usage reporting. |
 | `hook_system` | boolean | optional | Host enforces validators at lifecycle moments. Phase G6: true on Claude. |
 | `interactive_question` | boolean | optional (planned) | Structured user-choice prompts. |
+| `interactive_question_mode` | string | optional | Adapter-specific mode detail, e.g. `codex_plan_mode_conditional`. |
+| `interactive_question_surface` | string | optional | Adapter-specific native surface, e.g. `request_user_input`. |
+| `interactive_question_fallback` | string | optional | Fallback renderer, e.g. `structured_markdown`. |
 
 Note: `reasoning_tier` is **install-time** (see
 `host-capabilities.md` Capability Registry table); it does NOT appear

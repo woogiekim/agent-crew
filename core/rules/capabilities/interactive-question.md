@@ -45,10 +45,11 @@ Concrete call sites:
 - **`core/commands/agent-maker.md`** and other command-level "pick one
   of N" prompts as needed.
 
-All call sites today use the markdown fallback documented under
-"Absence Behavior" below (no adapter advertises `interactive_question:
-true` yet). Adapters that flip the flag pick up the native path
-automatically — call sites do not need to change.
+Call sites use the adapter mapping documented under
+`adapters/{host}/invocation.md`. Adapters that cannot expose a native
+surface use the markdown fallback documented under "Absence Behavior"
+below. Codex is conditional: Plan mode can expose a structured input
+surface, while Default mode uses markdown fallback.
 
 Input shape: a list of options. Output shape: the chosen label, or the
 cancellation sentinel. Core MUST handle the cancellation case
@@ -90,7 +91,7 @@ canonical label back to core unchanged.
 | Adapter | interactive_question | How it is implemented |
 |---|---|---|
 | claude  | true  | Native structured-question tool with labeled options and an implicit cancel. The adapter's `invocation.md` binds `askQuestion` to the native tool (mapping added in a later phase). |
-| codex   | false | No structured-question tool today. The markdown fallback is the operational path. Could flip to true if Codex ships an elicitation surface. |
+| codex   | conditional | Plan mode maps to `request_user_input` when that tool is available; Default mode uses markdown fallback. |
 | generic | false | Markdown fallback. |
 
 ## Related Files

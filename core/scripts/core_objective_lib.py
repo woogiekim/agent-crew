@@ -21,6 +21,12 @@ def _bool_capability(value: Any) -> bool:
     return bool(value)
 
 
+def _conditional_capability(payload: dict[str, Any], adapter: str, name: str) -> bool:
+    if adapter != "codex" or name != "interactive_question":
+        return False
+    return payload.get("interactive_question_mode") == "codex_plan_mode_conditional"
+
+
 def capability_ceiling(capabilities: dict[str, Any] | None) -> dict[str, Any]:
     """Summarize host-native runtime capability coverage.
 
@@ -32,12 +38,16 @@ def capability_ceiling(capabilities: dict[str, Any] | None) -> dict[str, Any]:
     payload = capabilities or {}
     adapter = str(payload.get("adapter") or payload.get("host") or "unknown")
     native: list[str] = []
+    conditional: list[str] = []
     policy_only: list[str] = []
     unavailable: list[str] = []
 
     for name in CORE_RUNTIME_CAPABILITIES:
         if _bool_capability(payload.get(name)):
             native.append(name)
+            continue
+        if _conditional_capability(payload, adapter, name):
+            conditional.append(name)
             continue
         if adapter == "codex" and name in CODEX_POLICY_FALLBACK_CAPABILITIES:
             policy_only.append(name)
@@ -48,26 +58,36 @@ def capability_ceiling(capabilities: dict[str, Any] | None) -> dict[str, Any]:
     native_ratio = round(len(native) / total, 4) if total else 1.0
     if len(native) == total:
         status = "native_runtime_ready"
-    elif policy_only:
+    elif policy_only or conditional:
         status = "host_limited_policy_fallback"
     else:
         status = "host_limited_unavailable"
+
+    summary = summary_for_status(status)
+    if conditional and status == "host_limited_policy_fallback":
+        summary = (
+            "Framework readiness can pass; some capabilities have "
+            "mode-conditional native surfaces, while remaining capabilities "
+            "use policy/file fallbacks."
+        )
 
     return {
         "schema_version": 1,
         "active_adapter": adapter,
         "status": status,
         "native_capabilities": native,
+        "conditional_capabilities": conditional,
         "policy_only_capabilities": policy_only,
         "unavailable_capabilities": unavailable,
         "native_capability_count": len(native),
+        "conditional_capability_count": len(conditional),
         "policy_only_capability_count": len(policy_only),
         "unavailable_capability_count": len(unavailable),
         "total_capabilities": total,
         "host_native_runtime_capability_rate": native_ratio,
         "framework_readiness_scope": "framework_controlled",
         "operational_autonomy_scope": "host_native_runtime",
-        "summary": summary_for_status(status),
+        "summary": summary,
     }
 
 
@@ -86,11 +106,12 @@ def summary_for_status(status: str) -> str:
 
 
 def format_ceiling_text(ceiling: dict[str, Any]) -> str:
+    conditional = ",".join(ceiling.get("conditional_capabilities") or []) or "none"
     policy = ",".join(ceiling.get("policy_only_capabilities") or []) or "none"
     unavailable = ",".join(ceiling.get("unavailable_capabilities") or []) or "none"
     return (
         f"status={ceiling.get('status')} "
         f"native={ceiling.get('native_capability_count')}/"
         f"{ceiling.get('total_capabilities')} "
-        f"policy_only={policy} unavailable={unavailable}"
+        f"conditional={conditional} policy_only={policy} unavailable={unavailable}"
     )

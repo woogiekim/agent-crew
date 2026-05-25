@@ -22,6 +22,18 @@
     "monitor_tool":         { "type": "boolean" },
     "cost_tracking":        { "type": "boolean" },
     "hook_system":          { "type": "boolean" },
-    "interactive_question": { "type": "boolean" }
+    "interactive_question": { "type": "boolean" },
+    "interactive_question_mode": {
+      "type": "string",
+      "description": "Optional adapter-specific mode detail, e.g. codex_plan_mode_conditional."
+    },
+    "interactive_question_surface": {
+      "type": "string",
+      "description": "Optional adapter-specific host UI/tool surface name."
+    },
+    "interactive_question_fallback": {
+      "type": "string",
+      "description": "Optional fallback renderer used when no native surface is available."
+    }
   }
 }

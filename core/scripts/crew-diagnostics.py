@@ -229,6 +229,17 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
             status = "runtime-enforced"
             severity = "pass"
             detail = "active adapter advertises this runtime capability"
+        elif (
+            active_adapter == "codex"
+            and name == "interactive_question"
+            and capabilities.get("interactive_question_mode") == "codex_plan_mode_conditional"
+        ):
+            status = "conditional-native"
+            severity = "info"
+            detail = (
+                "Codex can use request_user_input in Plan mode; Default mode "
+                "uses structured markdown fallback"
+            )
         elif active_adapter == "codex" and name in {"hook_system", "interactive_question", "task_tools", "agent_background", "monitor_tool", "cost_tracking"}:
             status = "policy-only"
             severity = "info"

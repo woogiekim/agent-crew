@@ -590,12 +590,14 @@ The fast path runs only when **all** of the following are true:
 3. The normalized TASK string matches one of the trivial-intent patterns below
    AND none of the exclusion phrases are present (see "Negative-match
    disambiguation").
-4. The host advertises `interactive_question = true` in capabilities.json
-   (required for destructive intents — see
-   `core/rules/capabilities/interactive-question.md`). When the flag is false
-   or the capability is absent, destructive fast-path intents fall through to
-   the regular pipeline; the read-only `status` and non-destructive
-   `commit_only` paths still run inline.
+4. The host advertises `interactive_question = true` in capabilities.json OR
+   the active adapter has a conditional native mapping available in the current
+   session (for example Codex Plan mode `request_user_input`). This is required
+   for destructive intents — see
+   `core/rules/capabilities/interactive-question.md`. When the flag is false,
+   no conditional surface is available, or the capability is absent,
+   destructive fast-path intents fall through to the regular pipeline; the
+   read-only `status` and non-destructive `commit_only` paths still run inline.
 
 If any of the above is false, **skip this step entirely and proceed to Step 2
 unchanged.** The fast path is purely additive — it never breaks the existing

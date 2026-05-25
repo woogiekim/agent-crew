@@ -14,7 +14,7 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/readiness/resume/update/report/issue-ingest/cancel"
+it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/readiness/question/resume/update/report/issue-ingest/cancel"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
 assert_contains "${out}" "trace [args]"
@@ -23,6 +23,7 @@ assert_contains "${out}" "doctor [args]"
 assert_contains "${out}" "config doctor|dump"
 assert_contains "${out}" "debug [args]"
 assert_contains "${out}" "readiness evidence|metrics|gate|workload"
+assert_contains "${out}" "question key|record|resolve|render-markdown"
 assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
@@ -143,6 +144,24 @@ assert_contains "${out}" "PASS: readiness workload validation"
 assert_file_exists "${WORKLOAD_OUTPUT}"
 assert_contains "$(cat "${WORKLOAD_OUTPUT}")" '"source": "agent-crew-readiness-validation-workload"'
 
+it "crew question records and resolves structured choices"
+QUESTION_TASK_DIR="${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks/20260101-120001-0"
+mkdir -p "${QUESTION_TASK_DIR}/context"
+QUESTION_OPTIONS='[{"label":"Approve","description":"Proceed"},{"label":"Cancel","description":"Stop"}]'
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" question key --prompt "Proceed?" --options-json "${QUESTION_OPTIONS}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+QUESTION_ID="$(printf '%s' "${out}" | tr -d '\n')"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" question record --task-dir "${QUESTION_TASK_DIR}" --question-id "${QUESTION_ID}" --prompt "Proceed?" --options-json "${QUESTION_OPTIONS}" --chosen-label "Approve" --source codex_plan_mode --adapter codex 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"chosen_label": "Approve"'
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" question resolve --task-dir "${QUESTION_TASK_DIR}" --question-id "${QUESTION_ID}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"found": true'
+assert_contains "${out}" '"source": "codex_plan_mode"'
+
 TRACE_HOME=$(make_tmp)
 TRACE_PROJECT=$(make_tmp)
 mkdir -p "${TRACE_PROJECT}"
@@ -262,6 +281,7 @@ assert_file_exists "${SETUP_HOME}/system/agents/skills/tdd.md"
 
 it "crew setup bootstrap initializes project capabilities"
 assert_file_exists "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capabilities.json"
+assert_contains "$(cat "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capabilities.json")" '"interactive_question_mode": "codex_plan_mode_conditional"'
 
 PATH_HOME=$(make_tmp)
 PATH_INSTALL=$(make_tmp)
@@ -405,6 +425,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/core_objective_lib.py"
 
 it "crew run installs readiness workload validation during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/readiness-workload-validate.py"
+
+it "crew run installs interactive question state helper during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/interactive-question-state.py"
 
 it "crew run installs memory GC command during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/memory-gc.py"

@@ -35,7 +35,7 @@ detailed contract for each flag lives at
 | `reasoning_tier`      | install-time  | Per-agent abstract compute tier; adapter materializes to a host model | `capabilities/reasoning-tier.md` |
 | `cost_tracking`       | implemented   | Per-task token usage reporting (powers cost circuit breaker, telemetry) | `capabilities/cost-tracking.md` |
 | `hook_system`         | implemented | Host enforces validators at lifecycle moments (PreToolUse, PostToolUse) | `capabilities/hook-system.md` |
-| `interactive_question`| planned     | Structured user-choice prompts (abstracts native question tools) | `capabilities/interactive-question.md` |
+| `interactive_question`| conditional | Structured user-choice prompts (abstracts native question tools) | `capabilities/interactive-question.md` |
 
 "Implemented" means the flag is consumed by current core code. "Planned"
 means the capability doc records the contract but consumers are
@@ -63,7 +63,8 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json
   "monitor_tool":         true,
   "cost_tracking":        false,
   "hook_system":          true,
-  "interactive_question": false
+  "interactive_question": false,
+  "interactive_question_mode": "codex_plan_mode_conditional"
 }
 ```
 
@@ -71,6 +72,7 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json
 |---|---|---|
 | `host` | string | Adapter name that wrote the file. Informational; never used for gating. |
 | `<flag>` | bool | See the per-flag detail doc in the Capability Registry table. |
+| `<flag>_mode` | string | Optional adapter-specific conditional mode detail. Boolean flags remain authoritative. |
 
 Any missing flag defaults to `false`. The `host` field is informational
 only — invariant 1 forbids gating any code path on `host`.

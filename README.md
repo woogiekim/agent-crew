@@ -198,16 +198,21 @@ paths depending on the active host adapter:
   `capabilities.json` may legitimately set `agent_background`, `task_tools`,
   `interactive_question`, `monitor_tool`, `cost_tracking`, and `hook_system` to
   `false`. In that mode, `crew:run` uses inline execution and markdown/file
-  fallbacks instead of claiming native background sessions, native structured
-  prompts, live monitor streams, or token-budget enforcement.
+  fallbacks instead of claiming native background sessions, unconditional native
+  structured prompts, live monitor streams, or token-budget enforcement.
+- Codex Plan mode can expose `request_user_input`; in that mode the Codex
+  adapter maps provider-neutral `askQuestion(prompt, options[])` prompts to the
+  native structured input surface and records the selected option with
+  `crew question`. Default mode keeps the markdown fallback.
 - Codex may still materialize project-local hook files and `hooks.json` as
   advisory prompt-workflow guardrails. Treat those as installed compatibility
   assets, not as enforced `hook_system=true` guarantees unless the active
   adapter writes that capability flag.
 - `crew doctor` and `crew config dump --effective` report each capability as
-  `runtime-enforced`, `policy-only`, or `unavailable`. A false capability is not
-  operational support; it means agent-crew will use documented fallback behavior
-  or report the feature as unavailable.
+  `runtime-enforced`, `conditional-native`, `policy-only`, or `unavailable`. A
+  false capability is not unconditional operational support; it means
+  agent-crew will use documented fallback behavior, a mode-dependent native
+  surface, or report the feature as unavailable.
 
 Always inspect `~/.agent-crew/state/{PROJECT_NAME}/capabilities.json` when
 debugging host-specific behavior.

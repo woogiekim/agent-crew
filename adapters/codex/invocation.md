@@ -100,6 +100,38 @@ can be monitored later. In tool-backed Codex sessions where no callable
 subagent surface is exposed to agent-crew, the adapter must keep
 `agent_background=false` and use the file-based fallback.
 
+## Interactive Question Mapping
+
+Codex has a conditional mapping for agent-crew's provider-neutral
+`askQuestion(prompt, options[])` intent.
+
+When the current Codex session is in Plan mode and exposes the
+`request_user_input` tool, that tool is the adapter binding for structured
+questions. The Codex prompt runtime must:
+
+1. Compute a stable question id with `crew question key`.
+2. Resolve any cached decision with `crew question resolve`.
+3. If no decision exists, call `request_user_input` with the prompt and labeled
+   options.
+4. Persist the selected label with `crew question record` using
+   `source=codex_plan_mode` and `adapter=codex`.
+5. Continue with that selected label. User refusal or explicit cancellation maps
+   to `__cancelled__`.
+
+When `request_user_input` is not available, Codex uses the structured markdown
+fallback described in `core/rules/capabilities/interactive-question.md`.
+
+Because the native surface is session-mode dependent, `capabilities.json` keeps
+`interactive_question=false` and records the conditional surface separately:
+
+```json
+{
+  "interactive_question_mode": "codex_plan_mode_conditional",
+  "interactive_question_surface": "request_user_input",
+  "interactive_question_fallback": "structured_markdown"
+}
+```
+
 ## Host Bridge Command
 
 The Codex adapter includes an executable bridge command for native CLI handoffs:
