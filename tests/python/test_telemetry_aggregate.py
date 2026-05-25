@@ -113,6 +113,32 @@ class TestTelemetryAggregate:
         counts = json.loads(r.stdout)["summary"]["stale_state_counts"]
         assert counts["stale_active_markers"] == 1
         assert counts["stale_supervisor_pending_sentinels"] == 1
+        assert counts["terminal_active_markers"] == 0
+        assert counts["terminal_supervisor_pending_sentinels"] == 0
+
+    def test_completed_task_pending_sentinel_is_historical_cleanup_marker(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Completed tasks should not inflate current stale-pending counts."""
+        tasks = state_dir / "tasks"
+        task_id = "20260101-120002-0"
+        td = tasks / task_id
+        td.mkdir(parents=True)
+        (td / "supervisor-pending.txt").write_text("pending\n", encoding="utf-8")
+        _write_register(td, task_id=task_id, current_phase="completed")
+        (td / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        counts = json.loads(r.stdout)["summary"]["stale_state_counts"]
+        assert counts["stale_supervisor_pending_sentinels"] == 0
+        assert counts["terminal_supervisor_pending_sentinels"] == 1
 
     def test_phase_runtime_metrics_include_retries_blocked_handoffs_and_wait(
         self, script_runner, env_with_home, state_dir

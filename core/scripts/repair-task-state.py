@@ -260,6 +260,7 @@ def repair(args: argparse.Namespace) -> dict:
     write_json(register_path, register)
     write_json(pipeline_path, pipeline)
     write_json(task_dir / "context" / "manual-fallback-repair.json", repair_record)
+    (task_dir / "supervisor-pending.txt").unlink(missing_ok=True)
     (task_dir / "result.md").write_text(
         render_result(
             register.get("task", ""),

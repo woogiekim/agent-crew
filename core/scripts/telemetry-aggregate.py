@@ -898,20 +898,65 @@ def operational_quality_metrics(rows):
     }
 
 
+TERMINAL_TASK_STATES = {"completed", "blocked", "cancelled"}
+
+
+def terminal_task_state(task_dir):
+    """Return a terminal status for completed/blocked task dirs, if known."""
+    result_status = str(read_result_md(task_dir).get("status") or "").lower()
+    if result_status in TERMINAL_TASK_STATES:
+        return result_status
+
+    register = read_register(task_dir) or {}
+    phase = str(register.get("current_phase") or "").lower()
+    if phase in TERMINAL_TASK_STATES:
+        return phase
+
+    return ""
+
+
+def active_marker_task_dir(tasks_root, marker):
+    """Map active.<TASK_ID> markers to task dirs; legacy active has no owner."""
+    prefix = "active."
+    if not marker.name.startswith(prefix):
+        return None
+
+    task_id = marker.name[len(prefix):]
+    if not task_id:
+        return None
+
+    task_dir = tasks_root / task_id
+    return task_dir if task_dir.is_dir() else None
+
+
 def stale_state_counts(state_dir):
     tasks_root = state_dir / "tasks"
     counts = {
         "stale_active_markers": 0,
         "stale_supervisor_pending_sentinels": 0,
+        "terminal_active_markers": 0,
+        "terminal_supervisor_pending_sentinels": 0,
     }
     if not tasks_root.is_dir():
         return counts
-    counts["stale_active_markers"] = sum(
-        1 for path in tasks_root.glob("active*") if path.is_file()
-    )
-    counts["stale_supervisor_pending_sentinels"] = sum(
-        1 for path in tasks_root.glob("*/supervisor-pending.txt") if path.is_file()
-    )
+
+    for marker in sorted(tasks_root.glob("active*")):
+        if not marker.is_file():
+            continue
+        task_dir = active_marker_task_dir(tasks_root, marker)
+        if task_dir and terminal_task_state(task_dir):
+            counts["terminal_active_markers"] += 1
+        else:
+            counts["stale_active_markers"] += 1
+
+    for pending in sorted(tasks_root.glob("*/supervisor-pending.txt")):
+        if not pending.is_file():
+            continue
+        if terminal_task_state(pending.parent):
+            counts["terminal_supervisor_pending_sentinels"] += 1
+        else:
+            counts["stale_supervisor_pending_sentinels"] += 1
+
     return counts
 
 
@@ -1018,6 +1063,14 @@ def render_text(rows, summary):
             f"active={stale_counts.get('stale_active_markers', 0)} | "
             f"supervisor-pending={stale_counts.get('stale_supervisor_pending_sentinels', 0)}"
         )
+        terminal_active = stale_counts.get("terminal_active_markers", 0)
+        terminal_pending = stale_counts.get("terminal_supervisor_pending_sentinels", 0)
+        if terminal_active or terminal_pending:
+            print(
+                "Historical cleanup markers: "
+                f"active={terminal_active} | "
+                f"supervisor-pending={terminal_pending}"
+            )
     if summary["by_blocker"]:
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_blocker"].items())
         print(f"Blockers: {bk}")

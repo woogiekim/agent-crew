@@ -614,6 +614,9 @@ assert_contains "${out}" "STATUS: completed"
 it "crew repair writes repair evidence"
 assert_file_exists "${TASK_DIR}/context/manual-fallback-repair.json"
 
+it "crew repair clears supervisor boot sentinel"
+assert_file_absent "${TASK_DIR}/supervisor-pending.txt"
+
 it "crew repair removes stale host bridge blocker from task telemetry"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${TASK_ID}" 2>&1)
 assert_contains "${out}" "\"tasks_completed\": 1"
