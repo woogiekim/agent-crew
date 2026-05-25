@@ -8,8 +8,10 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -473,29 +475,68 @@ def invoke_host_bridge(
     except ValueError:
         interval = 10.0
 
-    if interval <= 0:
-        proc = subprocess.run(command, shell=True, text=True, capture_output=True, env=env)
-        stdout = proc.stdout
-        stderr = proc.stderr
-        returncode = proc.returncode
-    else:
-        proc = subprocess.Popen(
-            command,
-            shell=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-        )
-        while True:
-            try:
-                stdout, stderr = proc.communicate(timeout=interval)
-                returncode = proc.returncode
+    direct_agent = bool((extra_env or {}).get("AGENT_CREW_AGENT_REQUEST_ID"))
+    timeout_name = "AGENT_CREW_DIRECT_AGENT_BRIDGE_TIMEOUT_SECONDS" if direct_agent else "AGENT_CREW_BRIDGE_TIMEOUT_SECONDS"
+    timeout_default = "60" if direct_agent else "1800"
+    timeout_raw = os.environ.get(timeout_name) or os.environ.get("AGENT_CREW_BRIDGE_TIMEOUT_SECONDS") or timeout_default
+    try:
+        timeout_seconds = max(0.0, float(timeout_raw))
+    except ValueError:
+        timeout_seconds = float(timeout_default)
+
+    timed_out = False
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=True,
+    )
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
+    while True:
+        wait_for = interval if interval > 0 else None
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                stdout, stderr = terminate_host_bridge(proc)
+                returncode = 124
                 break
-            except subprocess.TimeoutExpired:
+            wait_for = min(wait_for, remaining) if wait_for is not None else remaining
+        try:
+            stdout, stderr = proc.communicate(timeout=wait_for)
+            returncode = proc.returncode
+            break
+        except subprocess.TimeoutExpired:
+            if deadline is not None and time.monotonic() >= deadline:
+                timed_out = True
+                stdout, stderr = terminate_host_bridge(proc)
+                returncode = 124
+                break
+            if interval > 0:
                 print(render_wait_progress(register, task_dir), file=sys.stderr)
 
     finished = datetime.now(timezone.utc)
+    if timed_out:
+        timeout_detail = f"host bridge exceeded {timeout_seconds:g}s timeout"
+        append_progress(
+            task_dir,
+            {
+                "ts": utc_now_z(),
+                "trace_id": trace_id_for(register, task_dir),
+                "task_id": register["task_id"],
+                "session_id": register.get("session_id", ""),
+                "event": "HOST_BRIDGE_TIMEOUT",
+                "stage": 0,
+                "agent": "",
+                "attempt": 0,
+                "status": "blocked",
+                "detail": timeout_detail,
+                "files": ["context/host-bridge-invocation.json"],
+            },
+        )
     append_tool_event(
         task_dir,
         trace_id=trace_id_for(register, task_dir),
@@ -505,7 +546,7 @@ def invoke_host_bridge(
         ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
         status="completed" if returncode == 0 else "failed",
         exit_code=returncode,
-        failure_class="" if returncode == 0 else "host_bridge_command_failed",
+        failure_class="" if returncode == 0 else ("host_bridge_timeout" if timed_out else "host_bridge_command_failed"),
     )
     return {
         "schema_version": 1,
@@ -517,7 +558,26 @@ def invoke_host_bridge(
         "returncode": returncode,
         "stdout": stdout[-4000:],
         "stderr": stderr[-4000:],
+        "timed_out": timed_out,
+        "timeout_seconds": timeout_seconds,
+        "failure_class": "host_bridge_timeout" if timed_out else ("" if returncode == 0 else "host_bridge_command_failed"),
     }
+
+
+def terminate_host_bridge(proc: subprocess.Popen) -> tuple[str, str]:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except Exception:
+        proc.terminate()
+    try:
+        stdout, stderr = proc.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            proc.kill()
+        stdout, stderr = proc.communicate()
+    return stdout or "", stderr or ""
 
 
 def host_bridge_reported_blocked(bridge_record: dict) -> bool:
@@ -1166,7 +1226,9 @@ def command_run(args: argparse.Namespace) -> int:
             return 0
 
         register["host_bridge_status"] = "failed"
-        if bridge_record["returncode"] == 0:
+        if bridge_record.get("timed_out"):
+            register["host_bridge_failure_reason"] = "bridge_timeout"
+        elif bridge_record["returncode"] == 0:
             register["host_bridge_failure_reason"] = "bridge_reported_blocked"
         register["host_bridge_completion_path"] = str(task_dir / "context" / "host-bridge-invocation.json")
         write_json(task_dir / "register.json", register)
@@ -1182,6 +1244,9 @@ def command_run(args: argparse.Namespace) -> int:
         if fake_quality_blocked:
             print("BLOCKER: missing_quality_loop_pipeline")
             print(quality_next.rstrip())
+        elif register.get("host_bridge_failure_reason") == "bridge_timeout":
+            print("BLOCKER: host AI bridge timed out before completing this handoff")
+            print("NEXT: Inspect context/host-bridge-invocation.json and resume or repair the handoff.")
         else:
             print("BLOCKER: host AI bridge has not completed this handoff")
             print(blocked_next.rstrip())
@@ -1397,11 +1462,16 @@ def command_agent(args: argparse.Namespace) -> int:
                 "host_bridge_completed_at": utc_now_z(),
             }
         )
-        if bridge_record["returncode"] == 0:
+        if bridge_record.get("timed_out"):
+            request["host_bridge_failure_reason"] = "bridge_timeout"
+        elif bridge_record["returncode"] == 0:
             request["host_bridge_failure_reason"] = "bridge_reported_blocked"
         write_json(request_dir / "request.json", request)
         print("STATUS: blocked")
-        print("BLOCKER: host AI bridge has not completed this agent request")
+        if bridge_record.get("timed_out"):
+            print("BLOCKER: host AI bridge timed out before completing this agent request")
+        else:
+            print("BLOCKER: host AI bridge has not completed this agent request")
         print(
             "NEXT: Continue with "
             f"{request_dir / 'handoff.md'} using your host bridge or run --host-bridge-command for one-off execution."

@@ -250,6 +250,14 @@ project, and direct-agent request environment and resumes the existing handoff
 in the host runtime. If no default or explicit bridge is available, agent-crew
 keeps using the internal resumable `STATUS: handoff_ready` fallback.
 
+Host bridge execution is bounded so a stalled host CLI cannot leave operators
+waiting forever. Workflow bridge commands default to
+`AGENT_CREW_BRIDGE_TIMEOUT_SECONDS=1800`; direct-agent bridge commands default
+to `AGENT_CREW_DIRECT_AGENT_BRIDGE_TIMEOUT_SECONDS=60`. A timeout records
+`host_bridge_failure_reason=bridge_timeout`,
+`failure_class=host_bridge_timeout`, and keeps the handoff/request resumable.
+Set either timeout to `0` only for deliberate unbounded debugging.
+
 ## Testing
 
 The repository ships with a real test suite under `tests/` covering the Python

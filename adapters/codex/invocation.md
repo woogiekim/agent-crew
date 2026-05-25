@@ -134,6 +134,13 @@ intact for `crew resume` or manual repair.
 Use `AGENT_CREW_CODEX_BIN=/path/to/codex` when the `codex` executable is not on
 `PATH`.
 
+The core runtime bounds bridge execution. Workflow handoffs use
+`AGENT_CREW_BRIDGE_TIMEOUT_SECONDS=1800` by default, and direct-agent handoffs
+use `AGENT_CREW_DIRECT_AGENT_BRIDGE_TIMEOUT_SECONDS=60` by default. When a
+bridge times out, the runtime records `host_bridge_failure_reason=bridge_timeout`
+and `failure_class=host_bridge_timeout`, then leaves the handoff/request
+resumable. Set either timeout to `0` only for deliberate unbounded debugging.
+
 ## Limitations
 
 ### Task injection is not available in Codex

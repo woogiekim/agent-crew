@@ -33,6 +33,12 @@ explicit access to the project root and task state directory with `--add-dir`.
 This prevents project-level instructions from turning a bridge validation back
 into a new `crew:run` request while preserving the existing handoff artifacts.
 
+The core runtime bounds bridge execution. Workflow handoffs use
+`AGENT_CREW_BRIDGE_TIMEOUT_SECONDS=1800` by default, and direct-agent handoffs
+use `AGENT_CREW_DIRECT_AGENT_BRIDGE_TIMEOUT_SECONDS=60` by default. A timeout is
+recorded as `host_bridge_failure_reason=bridge_timeout` and
+`failure_class=host_bridge_timeout` while preserving resumable handoff state.
+
 Optional tuning:
 
 ```bash
