@@ -680,6 +680,14 @@ def aggregate_task(state_dir, task_dir):
         latest_event,
         task_dir,
     )
+    tool_failures_total = sum(
+        1 for e in tool_events if e.get("status") == "failed"
+    )
+    tool_failures_unrecovered = (
+        tool_failures_total
+        if status in {"blocked", "stale_blocked"}
+        else 0
+    )
 
     # Stage / retry counts from events.
     stages_total = sum(1 for e in events if e.get("event") == "STAGE")
@@ -734,7 +742,8 @@ def aggregate_task(state_dir, task_dir):
         "host_bridge_status": host_bridge_status(reg),
         "quality_metrics":    quality_metrics,
         "tool_events_total": len(tool_events),
-        "tool_failures_total": sum(1 for e in tool_events if e.get("status") == "failed"),
+        "tool_failures_total": tool_failures_total,
+        "tool_failures_unrecovered": tool_failures_unrecovered,
         "tokens_in":         (cost or {}).get("tokens_in"),
         "tokens_out":        (cost or {}).get("tokens_out"),
         "tokens_total":      (cost or {}).get("tokens_total"),
@@ -813,6 +822,9 @@ def aggregate_summary(rows):
                        if r["tokens_total"] is not None)
     total_tool_events = sum(r.get("tool_events_total", 0) for r in rows)
     total_tool_failures = sum(r.get("tool_failures_total", 0) for r in rows)
+    total_tool_unrecovered_failures = sum(
+        r.get("tool_failures_unrecovered", 0) for r in rows
+    )
 
     by_phase = Counter(r["current_phase"] for r in rows if r["current_phase"])
     by_host_bridge_status = Counter(
@@ -849,6 +861,7 @@ def aggregate_summary(rows):
         "total_tokens":            total_tokens,
         "total_tool_events":       total_tool_events,
         "total_tool_failures":     total_tool_failures,
+        "total_tool_unrecovered_failures": total_tool_unrecovered_failures,
         "by_phase":                dict(by_phase),
         "by_host_bridge_status":   dict(by_host_bridge_status),
         "by_blocker":              dict(by_blocker),
@@ -914,6 +927,9 @@ def operational_quality_metrics(rows):
     rollback = sum(1 for r in current_rows if has_rollback_signal(r))
     human = sum(1 for r in current_rows if has_human_intervention_signal(r))
     tool_failures = sum(int(r.get("tool_failures_total") or 0) for r in current_rows)
+    tool_unrecovered_failures = sum(
+        int(r.get("tool_failures_unrecovered") or 0) for r in current_rows
+    )
     tool_events = sum(int(r.get("tool_events_total") or 0) for r in current_rows)
 
     return {
@@ -926,10 +942,12 @@ def operational_quality_metrics(rows):
         "rollback_rate": rate(rollback, denominator),
         "human_intervention_rate": rate(human, denominator),
         "tool_failure_rate": rate(tool_failures, tool_events),
+        "unrecovered_tool_failure_rate": rate(tool_unrecovered_failures, tool_events),
         "tasks_with_retry": retried,
         "hallucination_signal_tasks": hallucination,
         "human_intervention_tasks": human,
         "tool_failures": tool_failures,
+        "tool_failures_unrecovered": tool_unrecovered_failures,
         "tool_events": tool_events,
     }
 
@@ -1082,7 +1100,8 @@ def render_text(rows, summary):
     print(f"Retries: {summary['total_retries']} total | "
           f"Tokens: {format_tokens(summary['total_tokens'])} total")
     print(f"Tool events: {summary.get('total_tool_events', 0)} total | "
-          f"{summary.get('total_tool_failures', 0)} failed")
+          f"{summary.get('total_tool_failures', 0)} failed | "
+          f"{summary.get('total_tool_unrecovered_failures', 0)} unrecovered")
     quality = summary.get("operational_quality") or {}
     if quality:
         print(

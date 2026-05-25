@@ -274,6 +274,7 @@ class TestTelemetryAggregate:
         assert quality["rollback_frequency"] == 1
         assert quality["human_intervention_rate"] == 0.3333
         assert quality["tool_failure_rate"] == 0.5
+        assert quality["unrecovered_tool_failure_rate"] == 0.5
 
     def test_operational_quality_prefers_evaluator_labeled_metrics(
         self, script_runner, env_with_home, state_dir
@@ -427,6 +428,10 @@ class TestTelemetryAggregate:
             {"ts": "2026-01-01T12:04:00Z", "trace_id": "x",
              "task_id": task_id, "event": "COMPLETED"},
         ])
+        (td / "tool-events.jsonl").write_text(
+            json.dumps({"status": "failed"}) + "\n",
+            encoding="utf-8",
+        )
 
         r = script_runner(
             "telemetry-aggregate.py",
@@ -440,8 +445,12 @@ class TestTelemetryAggregate:
         assert task["status"] == "completed"
         assert task["current_phase"] == "completed"
         assert task["duration_seconds"] == 60.0
+        assert task["tool_failures_total"] == 1
+        assert task["tool_failures_unrecovered"] == 0
         assert payload["summary"]["tasks_completed"] == 1
         assert payload["summary"]["tasks_running"] == 0
+        assert payload["summary"]["total_tool_failures"] == 1
+        assert payload["summary"]["total_tool_unrecovered_failures"] == 0
 
     def test_cancelled_result_md_counts_as_terminal_cancelled(
         self, script_runner, env_with_home, state_dir

@@ -584,6 +584,7 @@ assert_exit 0 "${rc}"
 assert_contains "${out}" "HEALTH"
 assert_contains "${out}" "Latest progress:"
 assert_contains "${out}" "${TASK_ID}: STATUS"
+assert_contains "${out}" "unrecovered"
 
 it "crew trace shows handoff-ready run progress events"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" trace --task-id "${TASK_ID}" 2>&1)
