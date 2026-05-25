@@ -99,6 +99,8 @@ def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):
     assert reports["task_tools"]["non_blocking"] is True
     assert reports["cost_tracking"]["status"] == "policy-only"
     assert reports["cost_tracking"]["severity"] == "info"
+    assert cfg["core_objective"]["status"] == "host_limited_policy_fallback"
+    assert cfg["core_objective"]["host_native_runtime_capability_rate"] < 1.0
 
 
 def test_doctor_host_reports_codex_policy_only_capabilities_as_info(tmp_path: Path):
@@ -123,6 +125,7 @@ def test_doctor_host_reports_codex_policy_only_capabilities_as_info(tmp_path: Pa
 
     assert by_label["capability task_tools policy-only"]["status"] == "info"
     assert by_label["capability cost_tracking policy-only"]["status"] == "info"
+    assert by_label["core objective host autonomy ceiling"]["status"] == "info"
 
 
 def test_stale_state_summary_counts_markers(tmp_path: Path):

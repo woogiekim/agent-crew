@@ -140,6 +140,40 @@ class TestTelemetryAggregate:
         assert counts["stale_supervisor_pending_sentinels"] == 0
         assert counts["terminal_supervisor_pending_sentinels"] == 1
 
+    def test_summary_reports_core_objective_host_ceiling(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Status summaries expose host-native capability ceilings."""
+        task_id = "20260101-120003-0"
+        td = state_dir / "tasks" / task_id
+        td.mkdir(parents=True)
+        _write_register(td, task_id=task_id, current_phase="completed")
+        (state_dir / "capabilities.json").write_text(
+            json.dumps({
+                "adapter": "codex",
+                "task_tools": False,
+                "agent_background": False,
+                "monitor_tool": False,
+                "cost_tracking": False,
+                "hook_system": False,
+                "interactive_question": False,
+            }),
+            encoding="utf-8",
+        )
+
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--format", "json",
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        core_objective = json.loads(r.stdout)["summary"]["core_objective"]
+        assert core_objective["status"] == "host_limited_policy_fallback"
+        assert core_objective["native_capability_count"] == 0
+        assert "interactive_question" in core_objective["policy_only_capabilities"]
+
     def test_phase_runtime_metrics_include_retries_blocked_handoffs_and_wait(
         self, script_runner, env_with_home, state_dir
     ):

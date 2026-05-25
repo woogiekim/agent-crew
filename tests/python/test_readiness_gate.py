@@ -153,3 +153,51 @@ def test_readiness_gate_prefers_explicit_workload_evidence_over_local_state(tmp_
     assert payload["evidence_mode"] == "explicit_workload_evidence"
     assert payload["metrics"]["totals"]["manual_repairs"] == 0
     assert payload["evidence_sources"][0]["source"] == "agent-crew-readiness-validation-workload"
+
+
+def test_readiness_gate_reports_codex_core_objective_host_ceiling(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = state_dir / "tasks" / "20260101-120000-0"
+    task_dir.mkdir(parents=True)
+    (state_dir / "capabilities.json").write_text(
+        json.dumps({
+            "adapter": "codex",
+            "task_tools": False,
+            "agent_background": False,
+            "monitor_tool": False,
+            "cost_tracking": False,
+            "hook_system": False,
+            "interactive_question": False,
+        }),
+        encoding="utf-8",
+    )
+    (task_dir / "register.json").write_text(
+        json.dumps({"current_phase": "completed", "host_bridge_status": "auto_completed"}),
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    validation = tmp_path / "validation.json"
+    validation.write_text(json.dumps({"passed": True}), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--state-dir",
+            str(state_dir),
+            "--validation-report",
+            str(validation),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["core_objective"]["framework_gate_passed"] is True
+    assert payload["core_objective"]["status"] == "host_limited_policy_fallback"
+    assert payload["core_objective"]["host_native_runtime_capability_rate"] == 0.0
+    assert "agent_background" in payload["core_objective"]["policy_only_capabilities"]

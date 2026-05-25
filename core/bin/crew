@@ -153,6 +153,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/reviewer-loop-decision.py:${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
     "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
     "core/scripts/cleanup-task-state.py:${AGENT_CREW_HOME}/scripts/cleanup-task-state.py" \
+    "core/scripts/core_objective_lib.py:${AGENT_CREW_HOME}/scripts/core_objective_lib.py" \
     "core/scripts/codex-workflow-guard.py:${AGENT_CREW_HOME}/scripts/codex-workflow-guard.py" \
     "core/scripts/crew-cli-cleanup.sh:${AGENT_CREW_HOME}/scripts/crew-cli-cleanup.sh" \
     "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \

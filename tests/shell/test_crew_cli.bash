@@ -86,6 +86,7 @@ assert_exit 0 "${rc}"
 
 it "crew doctor reports framework review status"
 assert_contains "${out}" "PASS: framework review check"
+assert_contains "${out}" "core objective host autonomy ceiling"
 
 it "crew doctor supports split runtime mode"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${REPO_ROOT}" bash "${CREW}" doctor --mode runtime 2>&1)
@@ -104,6 +105,7 @@ assert_contains "${out}" "capability.task_tools:"
 assert_contains "${out}" "report_settings.publish:"
 assert_contains "${out}" "memory_backend:"
 assert_contains "${out}" "install_drift:"
+assert_contains "${out}" "core_objective.host_runtime_ceiling:"
 
 it "crew doctor --help documents readiness checks"
 out=$(bash "${CREW}" doctor --help 2>&1)
@@ -397,6 +399,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/auto-issue-reporter.py"
 
 it "crew run installs readiness gate during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/readiness-gate.py"
+
+it "crew run installs core objective helper during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/core_objective_lib.py"
 
 it "crew run installs readiness workload validation during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/readiness-workload-validate.py"

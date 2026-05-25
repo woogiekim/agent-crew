@@ -28,6 +28,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from core_objective_lib import capability_ceiling, format_ceiling_text
+
 
 DEFAULT_THRESHOLDS = {
     "consecutive_clean_full_validation_runs": 1.0,
@@ -92,6 +98,15 @@ def generated_workload_evidence(
     )
 
 
+def load_capabilities(state_dir: Path | None) -> dict[str, Any] | None:
+    if state_dir is None:
+        return None
+    path = state_dir / "capabilities.json"
+    if not path.is_file():
+        return None
+    return load_json(path)
+
+
 def metric_blocker(metric: dict[str, Any], *, validation_reports_supplied: bool) -> dict[str, Any] | None:
     if metric.get("status") == "passed":
         return None
@@ -138,6 +153,7 @@ def build_gate_report(
     thresholds: dict[str, float],
     *,
     evidence_mode: str = "unknown",
+    capabilities: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metrics_module = load_script_module("readiness-metrics.py", "readiness_metrics")
     metrics = metrics_module.build_report(validation_reports, workload_evidence, thresholds)
@@ -147,7 +163,7 @@ def build_gate_report(
         if (blocker := metric_blocker(metric, validation_reports_supplied=bool(validation_reports))) is not None
     ]
 
-    return {
+    report = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "passed": not blockers,
@@ -166,6 +182,11 @@ def build_gate_report(
         "metrics": metrics,
         "blockers": blockers,
     }
+    if capabilities is not None:
+        ceiling = capability_ceiling(capabilities)
+        ceiling["framework_gate_passed"] = report["passed"]
+        report["core_objective"] = ceiling
+    return report
 
 
 def text_report(report: dict[str, Any]) -> str:
@@ -186,6 +207,12 @@ def text_report(report: dict[str, Any]) -> str:
             f"- {metric['status']} {metric['id']}: "
             f"value={metric['value']} threshold={metric['threshold']}"
         )
+    core_objective = report.get("core_objective")
+    if core_objective:
+        lines.append("core_objective:")
+        lines.append(f"- framework_gate_passed={str(report['passed']).lower()}")
+        lines.append(f"- host_runtime_ceiling={format_ceiling_text(core_objective)}")
+        lines.append(f"- summary={core_objective.get('summary')}")
     return "\n".join(lines)
 
 
@@ -222,6 +249,7 @@ def main() -> int:
             workload_evidence,
             thresholds,
             evidence_mode=evidence_mode,
+            capabilities=load_capabilities(state_dir),
         )
     except ValueError as exc:
         print(f"readiness-gate: {exc}", file=sys.stderr)

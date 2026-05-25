@@ -67,6 +67,12 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from core_objective_lib import capability_ceiling, format_ceiling_text
+
 
 # --------------------------------------------------------------------------- #
 # Resolvers                                                                   #
@@ -270,6 +276,17 @@ def read_quality_metrics(task_dir):
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def read_capabilities(state_dir):
+    p = state_dir / "capabilities.json"
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def phase_runtime_metrics(events):
@@ -1077,6 +1094,9 @@ def render_text(rows, summary):
     if summary.get("by_host_bridge_status"):
         hb = ", ".join(f"{k}={v}" for k, v in summary["by_host_bridge_status"].items())
         print(f"Host bridge: {hb}")
+    core_objective = summary.get("core_objective")
+    if core_objective:
+        print(f"Core objective host ceiling: {format_ceiling_text(core_objective)}")
     if summary.get("by_stale_blocker"):
         bk = ", ".join(f"{k}={v}" for k, v in summary["by_stale_blocker"].items())
         print(f"Stale blockers: {bk}")
@@ -1124,6 +1144,9 @@ def main():
     rows.sort(key=lambda r: r["started"] or "")
     summary = aggregate_summary(rows)
     summary["stale_state_counts"] = stale_state_counts(state_dir)
+    capabilities = read_capabilities(state_dir)
+    if capabilities is not None:
+        summary["core_objective"] = capability_ceiling(capabilities)
 
     if args.format == "json":
         payload = {

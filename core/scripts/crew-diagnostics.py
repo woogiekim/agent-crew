@@ -13,6 +13,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from core_objective_lib import capability_ceiling, format_ceiling_text
+
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
@@ -246,6 +252,7 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
         "active_adapter": active_adapter,
         "capability_flags": flags,
         "capability_reports": capability_reports,
+        "core_objective": capability_ceiling(capabilities),
         "budgets": {
             "stage_timeout_seconds": int(os.environ.get("AGENT_CREW_STAGE_TIMEOUT_SECONDS") or 0),
             "task_token_budget": os.environ.get("AGENT_CREW_TASK_TOKEN_BUDGET", ""),
@@ -609,6 +616,13 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
             report["detail"],
             emit=args.format == "text",
         ))
+    core_objective = cfg["core_objective"]
+    findings.append(print_finding(
+        "core objective host autonomy ceiling",
+        "pass" if core_objective["status"] == "native_runtime_ready" else "info",
+        format_ceiling_text(core_objective),
+        emit=args.format == "text",
+    ))
     findings.append(
         print_status(
             "host bridge command readiness",
@@ -658,6 +672,7 @@ def cmd_config(args: argparse.Namespace) -> int:
             print(f"memory_backend: {cfg['memory_backend']}")
             print(f"mnemos.status: {cfg['mnemos']['status']} ({cfg['mnemos']['detail']})")
             print(f"install_drift: {cfg['install_drift']['status']} ({cfg['install_drift']['detail']})")
+            print(f"core_objective.host_runtime_ceiling: {format_ceiling_text(cfg['core_objective'])}")
             for key, value in cfg["capability_flags"].items():
                 report = next(item for item in cfg["capability_reports"] if item["name"] == key)
                 print(f"capability.{key}: {str(value).lower()} ({report['status']}; {report['detail']})")
