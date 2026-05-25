@@ -57,10 +57,15 @@ def evaluate_repo(root: Path) -> dict:
     persistent_workflow_chaos_fixture = read_text(root / "core/evaluations/persistent-workflow-chaos.json")
     persistent_workflow_chaos_check = read_text(root / "core/scripts/persistent-workflow-chaos-check.py")
     pipeline_rule = read_text(root / "core/rules/state-files/pipeline-json.md")
+    quality_loop_rule = read_text(root / "core/rules/quality-loop.md")
     supervisor = read_text(root / "core/agents/supervisor.md")
     supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
     supervisor_stages = read_text(root / "core/agents/supervisor-stages.md")
     supervisor_retry = read_text(root / "core/agents/supervisor-retry.md")
+    planner = read_text(root / "core/agents/planner.md")
+    backend = read_text(root / "core/agents/backend.md")
+    frontend = read_text(root / "core/agents/frontend.md")
+    test_writer = read_text(root / "core/agents/test-writer.md")
     reviewer = read_text(root / "core/agents/reviewer.md")
     memory_wrapper = read_text(root / "core/bin/memory")
     memory_rule = read_text(root / "core/rules/memory-governance.md")
@@ -341,6 +346,41 @@ def evaluate_repo(root: Path) -> dict:
             and exists(root, "core/scripts/pipeline-quality-plan-check.py")
             and "require_quality_loop_for_implementation_reports" in answer_quality,
             "Implementation completion must require TDD/reviewer evidence or an explicit bypass.",
+        ),
+        control(
+            "quality",
+            "coverage_ownership_contract",
+            "high",
+            has_all(
+                quality_loop_rule,
+                [
+                    "100% Test Coverage Ownership",
+                    "Test-writer",
+                    "Implementation agents",
+                    "Reviewer",
+                    "coverage_below_100",
+                    "missing_coverage_evidence",
+                ],
+            )
+            and has_all(
+                test_writer,
+                [
+                    "context/test-coverage.md",
+                    "Coverage target: 100% changed-surface coverage",
+                    "COVERAGE: 100% changed-surface coverage",
+                ],
+            )
+            and has_all(
+                reviewer,
+                [
+                    "Phase 1.6",
+                    "COVERAGE_RESULT",
+                    "coverage_exception_unjustified",
+                ],
+            )
+            and has_all(planner, ["100% changed-surface test coverage"])
+            and has_all(backend + frontend, ["100% changed executable coverage"]),
+            "100% changed-surface coverage must have explicit planner, test-writer, implementer, and reviewer ownership.",
         ),
         control(
             "quality",

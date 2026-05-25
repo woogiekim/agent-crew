@@ -42,6 +42,59 @@ Treat all of the following as required before a stage is considered complete:
 - Expected artifact files exist at their specified paths.
 - No TODO, placeholder, or stub left in implementation output.
 
+## 100% Test Coverage Ownership
+
+For mutating code work, "100% test coverage" means every new or modified
+executable behavior introduced by the stage is covered by automated tests before
+the stage can be considered complete.
+
+Coverage has three distinct owners:
+
+- **Planner / analyst** owns pipeline shape. It must emit
+  `tdd_parallel: true` for every code implementation stage and keep a solo
+  reviewer immediately after that stage, so coverage gaps have a deterministic
+  remediation target.
+- **Test-writer** owns coverage planning and test creation. It must write or
+  update `{TASK_DIR}/context/test-coverage.md` with a changed-surface coverage
+  matrix mapping each PRD acceptance criterion, entry point, public method,
+  branch, and documented failure mode to one or more test cases.
+- **Implementation agents** (`backend`, `frontend`, or custom implementers)
+  own keeping implementation code inside that coverage matrix. If they add a
+  behavior, branch, public method, error path, or edge case that is not covered
+  by the test-writer's tests, they must add the missing test before committing.
+- **Reviewer** owns enforcement. It must reject code changes when the changed
+  executable surface is not fully covered, when the coverage matrix is missing,
+  or when an exception is asserted without justification.
+
+When the project has line or branch coverage tooling, use it and require 100%
+coverage for changed executable files and changed branches. Whole-repository
+coverage may be lower because of legacy code, but the changed surface for this
+task must be fully covered.
+
+When no coverage tooling exists, the fallback is the reviewer-verified
+traceability matrix in `{TASK_DIR}/context/test-coverage.md`. The matrix must
+prove changed-surface coverage by listing:
+
+- PRD acceptance criterion or documented behavior.
+- Changed entry point / public method / component / CLI flag / endpoint.
+- Success path test.
+- Failure, boundary, or branch test.
+- Test file and test case name.
+
+Permitted exceptions are narrow: generated code, dead compatibility shims,
+unreachable defensive branches, or external side effects that cannot be tested
+without unsafe credentials or infrastructure. Every exception must appear in
+`context/test-coverage.md` and in the review report with
+`COVERAGE_EXCEPTION: {path_or_case} — {reason}`.
+
+Reviewer rejection signals:
+
+| Reviewer signal | Triggered when | Supervisor action |
+|---|---|---|
+| `STATUS: REJECTED REASON: coverage_below_100` | Coverage tooling or the matrix shows an uncovered changed executable behavior. | Re-loop to the immediately preceding implementation/TDD stage with the missing coverage item. |
+| `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but neither coverage report nor `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
+| `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is claimed without a narrow, auditable reason. | Re-loop with directive to test the case or document a valid exception. |
+
 ## Reporting
 
 Include the iteration count in the stage completion report:
@@ -208,13 +261,16 @@ mandatory `TEST_RUN_RESULT:` line so the supervisor can confirm tests
 actually ran (or were intentionally skipped) rather than silently
 omitted.
 
-Four rejection signals are part of the reviewer's contract:
+Reviewer rejection signals include:
 
 | Reviewer signal | Triggered when | Supervisor action |
 |---|---|---|
 | `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to the immediately preceding implementation/TDD stage with the failing tail in handoff.md. |
 | `STATUS: REJECTED REASON: tests_absent_for_code_change` | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
 | `STATUS: REJECTED REASON: cross_process_path_mismatch` | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
+| `STATUS: REJECTED REASON: coverage_below_100` | Coverage tooling or the coverage matrix shows uncovered changed executable behavior. | Re-loop with the missing coverage item in handoff.md. |
+| `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but no coverage report or `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
+| `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is broad, unauditable, or not tied to a concrete changed path/case. | Re-loop with directive to test the case or document a valid exception. |
 | `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to the immediately preceding implementation/TDD stage with the issue list from `context/review.md`. |
 
 ### Cross-process path agreement check

@@ -60,6 +60,12 @@ host dispatch). Both must reach `STATUS: completed` before the stage's
 `completed_stages` counter increments. Either failure path triggers
 the Stage Retry Rule per agent (selective retry).
 
+Coverage contract: `test-writer` owns the stage's
+`{TASK_DIR}/context/test-coverage.md` matrix and maps the PRD contract
+to 100% changed-surface coverage evidence. The code implementer owns
+keeping its implementation inside that matrix, and the immediately
+following `reviewer` stage owns enforcement.
+
 Planning contract: newly emitted mutating code implementation pipelines
 must use this form for each backend, frontend, or custom implementer
 stage, each TDD stage must contain exactly one code implementer, and

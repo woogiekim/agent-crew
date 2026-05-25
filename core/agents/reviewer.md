@@ -51,7 +51,8 @@ load them at agent startup:
   `streaming`, the agent executes the Streaming Mode workflow instead.
 - `REQUIRES_TEST_EXECUTION` _(optional, default `true`)_: when `false`,
   the reviewer SKIPS Phase 0 (test-runner detection) and Phase 1 (test
-  execution + cross-process path agreement check) and runs only the
+  execution), Phase 1.5 (cross-process path agreement check), and Phase 1.6
+  (100% changed-surface coverage enforcement), and runs only the
   static review from Step 1 onward. The supervisor extracts this flag
   from the reviewer stage's pipeline.json entry
   (`requires_test_execution: false` on the stage object). The planner
@@ -341,6 +342,52 @@ Paths are **NOT** considered provably equivalent when:
 When the check passes (or HAS_SH or HAS_CODE is 0), continue to
 Step 1 — static review.
 
+### Phase 1.6 — Enforce 100% changed-surface coverage
+
+If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to
+Step 1.
+
+For any code change, the reviewer owns final coverage enforcement. A code
+change is approveable only when the changed executable surface has 100%
+automated test coverage, proven by coverage tooling or by
+`${TASK_DIR}/context/test-coverage.md`.
+
+Priority order:
+
+1. If the project has coverage tooling for the discovered runner, execute or
+   inspect it and require 100% coverage for changed executable files and
+   changed branches. Whole-repository coverage may be lower for legacy code;
+   the task's changed surface must be fully covered.
+2. If no coverage tooling exists, validate
+   `${TASK_DIR}/context/test-coverage.md`. It must map every changed entry
+   point, public method, component, branch, PRD acceptance criterion, and
+   documented failure mode to at least one test case.
+3. If an exception is claimed, it must be narrow and auditable. The review
+   report must include `COVERAGE_EXCEPTION: {path_or_case} - {reason}`.
+
+Reject immediately when coverage evidence is missing or insufficient:
+
+```text
+STATUS: REJECTED
+REASON: missing_coverage_evidence
+COVERAGE_RESULT: missing
+REPORT: ${TASK_DIR}/context/review.md
+```
+
+```text
+STATUS: REJECTED
+REASON: coverage_below_100
+COVERAGE_RESULT: changed_surface_below_100
+REPORT: ${TASK_DIR}/context/review.md
+```
+
+```text
+STATUS: REJECTED
+REASON: coverage_exception_unjustified
+COVERAGE_RESULT: unjustified_exception
+REPORT: ${TASK_DIR}/context/review.md
+```
+
 ### Step 1: Gather Context
 
 > **MANDATORY: Before performing the PRD coverage check, read `~/.agent-crew/system/agents/skills/code-review.md`.**
@@ -369,6 +416,13 @@ APPROVED | NEEDS_CHANGES
 ## Coverage
 - [x] {feature}: implemented at {path}
 - [ ] {feature}: missing — {reason}
+
+## Test Coverage
+- Target: 100% changed-surface coverage
+- Evidence: {coverage tool report or TASK_DIR/context/test-coverage.md}
+- Result: {passed | below_100 | missing_evidence | exception_unjustified}
+- Exceptions:
+  - COVERAGE_EXCEPTION: {path_or_case} - {reason}
 
 ## Issues
 - {issue description} — {file:line}
@@ -422,6 +476,7 @@ REVIEW: {APPROVED | NEEDS_CHANGES}
 REPORT: {TASK_DIR}/context/review.md
 ISSUES: {issue count}
 TEST_RUN_RESULT: {one of: passed | skipped_opt_out | skipped_no_runner_docs_only | rejected_short_circuit_above}
+COVERAGE_RESULT: {one of: passed_100_changed_surface | skipped_opt_out | skipped_no_code_change | rejected_short_circuit_above}
 QUALITY_METRICS: {TASK_DIR}/context/quality-metrics.json
 ```
 
@@ -435,13 +490,14 @@ confirm tests actually ran (or were intentionally skipped) — never
 silently omitted. Acceptable values:
 
 - `passed` — Phase 0 + Phase 1 ran, all runners returned exit 0,
-  Phase 1.5 cross-process check passed.
+  Phase 1.5 cross-process check passed, and Phase 1.6 coverage enforcement
+  passed.
 - `skipped_opt_out` — `REQUIRES_TEST_EXECUTION: false` was passed by
   the supervisor (planner opted out for a docs-only stage).
 - `skipped_no_runner_docs_only` — no runner discovered AND no code
   files in the diff.
 - `rejected_short_circuit_above` — short-circuited with
-  `STATUS: REJECTED` in Phase 0, Phase 1, or Phase 1.5; the
+  `STATUS: REJECTED` in Phase 0, Phase 1, Phase 1.5, or Phase 1.6; the
   short-circuit return above is the authoritative output.
 
 ## Execution Flow — `MODE: streaming`

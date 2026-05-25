@@ -528,6 +528,9 @@ EOF
    supervisor's only obligation is to pass `TASK_DIR`, `PROJECT_ROOT`,
    `HANDOFF_PATH`, `QUALITY_RULE_PATH`, `STAGE_INDEX`, and
    `IMPLEMENTER_AGENT` so the agent has the inputs it needs.
+   The test-writer owns `{TASK_DIR}/context/test-coverage.md`, which
+   maps the PRD contract to 100% changed-surface coverage evidence for
+   the reviewer.
 
 5. Wait for **both** agent calls to return. Per-agent status writes
    into `pipeline.json.stage_agent_status["${i}"]` use the same

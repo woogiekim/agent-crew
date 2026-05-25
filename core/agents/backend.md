@@ -113,6 +113,10 @@ REFACTOR → Remove duplication, improve design → ./gradlew test → confirm s
 - Test files MUST be committed in the same commit as the implementation they cover.
 - Test naming convention: `{ClassName}Test.kt` for unit tests, `{ClassName}IntegrationTest.kt` for integration tests.
 - Minimum test coverage per cycle: happy path + at least one failure/edge case.
+- Coverage target: 100% changed executable coverage. Every new or modified
+  public method, branch, domain rule, endpoint behavior, and documented failure
+  mode must be covered by an automated test or listed as a narrow exception in
+  `{TASK_DIR}/context/test-coverage.md`.
 
 Update `{TASK_DIR}/context/tdd_log.md` after each RED → GREEN → REFACTOR cycle, recording:
 - What test was written
@@ -122,6 +126,8 @@ Update `{TASK_DIR}/context/tdd_log.md` after each RED → GREEN → REFACTOR cyc
 ### Phase 3: Verification
 - [ ] Every new/modified class has a corresponding test file
 - [ ] All tests ran and are GREEN (`./gradlew test`)
+- [ ] 100% changed executable coverage is satisfied or every exception is
+      narrowly justified in `{TASK_DIR}/context/test-coverage.md`
 - [ ] Object Calisthenics — no violations
 - [ ] Tell, Don't Ask — followed
 - [ ] DDD tactical patterns — applied correctly
@@ -143,11 +149,16 @@ Update `handoff.md` only when running standalone (skip when prompt says "do not 
 Read and apply `QUALITY_RULE_PATH` before returning.
 
 Return: `STATUS: completed` | `COMMIT: {hash}` | `APIS: {endpoint list}` | `TESTS: {test file list}`
+Include `COVERAGE: 100% changed executable coverage; evidence={TASK_DIR}/context/test-coverage.md`
+when code was changed.
 
 ## Absolute Rules
 - **Test file MUST be written and confirmed failing BEFORE implementation code is written** — no exceptions
 - **No commit without test files** — implementation-only commits are forbidden
 - Every public method must be covered by at least one test
+- Every changed executable branch or behavior must be covered by a test before
+  completion; reviewer owns final enforcement, but backend owns fixing coverage
+  gaps it introduces
 - No `else` keyword (Object Calisthenics rule #2)
 - No getter-based decision logic (Tell, Don't Ask)
 - If no test framework is available in the project, halt and report BLOCKED — do not implement without tests

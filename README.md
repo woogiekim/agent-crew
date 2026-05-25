@@ -514,8 +514,9 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **designer** | UI/UX spec design |
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
+| **test-writer** | TDD parallel partner — owns `context/test-coverage.md` and writes tests for 100% changed-surface coverage |
 | **devops** | CI/CD pipelines, infrastructure, containers, IaC; writes PLAN block and waits for approval before executing destructive actions |
-| **reviewer** | Final stage — verifies implementation completeness against the PRD (read-only) |
+| **reviewer** | Final stage — verifies implementation completeness, runs tests, and enforces 100% changed-surface coverage against the PRD (read-only) |
 | **resolver** | Automatic merge conflict resolution after parallel runs |
 | **documenter** | Internal repo documentation — synthesizes `{TASK_DIR}/result.md`, drafts side-car README / CHANGELOG patches (opt-in via `--to-readme` for repo-tracked writes), and archives stage outputs to `{TASK_DIR}/archive/` |
 | **mentor** | Mentoring and coaching agent — handles concept teaching, growth feedback, engineering guidance, and 6-Phase structured tutoring sessions for learning requests |

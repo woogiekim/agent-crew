@@ -8,7 +8,8 @@ description: >
   SKIP when: no stage in the pipeline carries `tdd_parallel: true`, or the
   task is non-code work with no implementation stage.
   Output: test files under the project's test directory (per project
-  convention), one or more commits, and a STATUS: completed line.
+  convention), context/test-coverage.md, one or more commits, and a
+  STATUS: completed line.
 reasoning_tier: deep
 model: inherit
 allowed-tools: Read, Write, Edit, Bash
@@ -137,6 +138,9 @@ From the spec, enumerate:
   expected behavior, what are the edge cases, what failure modes are
   documented in the PRD or analysis risks table.
 - **Acceptance criteria** if present in the PRD.
+- **Coverage target** — every new or modified executable behavior,
+  public method, branch, and documented failure mode that must be
+  covered before the reviewer can approve.
 
 Build a per-entry-point test plan as an inline list. Do not write it to
 a file — the next step writes the tests directly.
@@ -165,9 +169,35 @@ Edge-case checklist (apply per entry point, if relevant):
 - Happy path — minimal valid input → documented output.
 - Boundary inputs (empty, single element, maximum size from PRD if specified).
 - Documented failure modes (each one becomes one test).
+- Branches and conditional behavior introduced by the PRD.
 - Idempotence / re-entry behavior if documented.
 
-### Step 5 — Quality loop + commit
+### Step 5 — Coverage matrix, quality loop, and commit
+
+Write `{TASK_DIR}/context/test-coverage.md` before returning. This file is the
+test-writer's coverage evidence and the reviewer's enforcement input.
+
+Minimum shape:
+
+```markdown
+# Test Coverage Matrix
+
+Coverage target: 100% changed-surface coverage
+Owner: test-writer
+
+| Acceptance criterion / behavior | Changed surface | Success test | Failure / branch test | Evidence |
+|---|---|---|---|---|
+| ... | ... | ... | ... | tests/...::test_name |
+
+## Exceptions
+
+- none
+```
+
+Use `Exceptions` only for generated code, dead compatibility shims,
+unreachable defensive branches, or unsafe external side effects. Each exception
+must include the path/case and a narrow reason; broad statements such as
+"not worth testing" are invalid.
 
 Read and apply `QUALITY_RULE_PATH` before declaring completion. The
 test-writer's quality criterion is:
@@ -175,7 +205,11 @@ test-writer's quality criterion is:
 1. Every documented entry point in Step 3 has at least one test.
 2. Every documented failure mode in the PRD risks table has at least
    one test.
-3. The test file parses (lint/AST check at minimum — actual run is the
+3. Every PRD acceptance criterion, public method, branch, and edge case in the
+   changed executable surface is represented in `context/test-coverage.md`.
+4. The coverage matrix states `Coverage target: 100% changed-surface coverage`
+   and has no unjustified exception.
+5. The test file parses (lint/AST check at minimum — actual run is the
    implementer's responsibility post-merge).
 
 If the spec is insufficient to write meaningful tests (no acceptance
@@ -212,6 +246,7 @@ Success form:
 TEST_FILES:
   - {test file 1}
   - {test file 2}
+COVERAGE: 100% changed-surface coverage; evidence={TASK_DIR}/context/test-coverage.md
 STATUS: completed
 ```
 

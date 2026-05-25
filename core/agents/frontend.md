@@ -89,6 +89,11 @@ REFACTOR → Improve component design, extract sub-components → run test comma
 - Test files MUST be committed in the same commit as the component they cover.
 - Test naming convention: `{ComponentName}.test.tsx` (or `.spec.tsx`) adjacent to the component file.
 - Minimum test coverage per component: renders without error + at least one interaction or prop variation test.
+- Coverage target: 100% changed executable coverage. Every new or modified
+  component branch, prop variation, state transition, user interaction,
+  rendering path, and documented failure mode must be covered by an automated
+  test or listed as a narrow exception in
+  `{TASK_DIR}/context/test-coverage.md`.
 - Test command: detect from project (`npm test`, `npx vitest`, `npx jest`, etc.) — run and confirm GREEN before committing.
 
 Update `{TASK_DIR}/context/tdd_log.md` after each RED → GREEN → REFACTOR cycle, recording:
@@ -99,6 +104,8 @@ Update `{TASK_DIR}/context/tdd_log.md` after each RED → GREEN → REFACTOR cyc
 ### Phase 3: Verify
 - [ ] Every new/modified component has a corresponding test file
 - [ ] All component tests pass (run test command — must exit 0)
+- [ ] 100% changed executable coverage is satisfied or every exception is
+      narrowly justified in `{TASK_DIR}/context/test-coverage.md`
 - [ ] All screens implemented per design-spec
 - [ ] Component specs from design-spec satisfied
 - [ ] Interaction flows correct
@@ -121,11 +128,16 @@ The commit MUST include both test files and component files. A commit containing
 Read and apply `QUALITY_RULE_PATH` before returning.
 
 Return: `STATUS: completed` | `COMMIT: {hash}` | `COMPONENTS: {list}` | `TESTS: {test file list}`
+Include `COVERAGE: 100% changed executable coverage; evidence={TASK_DIR}/context/test-coverage.md`
+when code was changed.
 
 ## Absolute Rules
 - **Test file MUST be written and confirmed failing BEFORE component code is written** — no exceptions
 - **No commit without test files** — implementation-only commits are forbidden
 - Every component must have at least one passing test before it is considered done
+- Every changed executable branch or behavior must be covered by a test before
+  completion; reviewer owns final enforcement, but frontend owns fixing
+  coverage gaps it introduces
 - No completion with type errors outstanding
 - No features beyond the design specification
 - Handoff update required when running standalone

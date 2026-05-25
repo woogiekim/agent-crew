@@ -67,6 +67,7 @@ def test_framework_review_covers_operational_categories():
         "prompt_injection_runtime_boundary",
         "automatic_issue_reporting_runtime_issue_contract",
         "claude_performance_budget_probe",
+        "coverage_ownership_contract",
         "operational_quality_metrics",
         "evaluator_labeled_quality_metrics",
         "reviewer_quality_metrics_emission_contract",

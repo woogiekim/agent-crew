@@ -235,6 +235,14 @@ work this is not an optimization knob; it is the pipeline's quality
 contract: implementation runs with a TDD partner, then reviewer output
 can drive a TDD remediation pass and re-review.
 
+Coverage responsibility: the planner owns creating a pipeline where
+100% changed-surface test coverage is achievable and enforceable. For every code
+implementation stage, the PRD must identify the executable surface and
+acceptance criteria that test-writer will map in
+`{TASK_DIR}/context/test-coverage.md`; the reviewer then enforces that matrix.
+Do not emit a code implementation stage whose contract is too vague to prove
+100% changed executable coverage.
+
 Place a solo `["reviewer"]` stage immediately after each TDD implementation
 stage. Do not batch multiple code implementation stages before one reviewer.
 The reviewer loop-back rule assumes reviewer rejection targets the immediately
