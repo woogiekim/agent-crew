@@ -47,6 +47,7 @@ running_under_codex() {
 }
 
 if [ "${AGENT_CREW_CODEX_ALLOW_NESTED:-0}" != "1" ] && running_under_codex; then
+  printf 'AGENT_CREW_BRIDGE_STATUS: current_session_required\n' >&2
   fail "refusing nested Codex exec from an active Codex session; continue ${AGENT_CREW_HANDOFF_PATH} in the current host session or set AGENT_CREW_CODEX_ALLOW_NESTED=1 to override"
 fi
 

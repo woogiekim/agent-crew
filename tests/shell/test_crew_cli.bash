@@ -824,6 +824,30 @@ REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
 assert_contains "${REQUEST_JSON}" '"status": "auto_completed"'
 assert_contains "${REQUEST_JSON}" '"host_bridge_status": "auto_completed"'
 
+it "crew agent treats nested Codex refusal as current-session handoff"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "AGENT_CREW_BRIDGE_STATUS: current_session_required" "codex-host-bridge: refusing nested Codex exec from an active Codex session" >&2; exit 2' \
+    bash "${CREW}" agent analyst "current session handoff" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "STATUS: handoff_ready"
+assert_contains "${out}" "HOST_BRIDGE: current_session_required"
+assert_not_contains "${out}" "BLOCKER:"
+CURRENT_SESSION_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+CURRENT_SESSION_REQUEST_JSON=$(cat "${CURRENT_SESSION_REQUEST_DIR}/request.json")
+CURRENT_SESSION_INVOCATION_JSON=$(cat "${CURRENT_SESSION_REQUEST_DIR}/context/host-bridge-invocation.json")
+CURRENT_SESSION_TOOL_EVENTS=$(cat "${CURRENT_SESSION_REQUEST_DIR}/tool-events.jsonl")
+assert_contains "${CURRENT_SESSION_REQUEST_JSON}" '"host_bridge_status": "current_session_required"'
+assert_contains "${CURRENT_SESSION_REQUEST_JSON}" '"host_bridge_failure_reason": "nested_codex_current_session_required"'
+assert_contains "${CURRENT_SESSION_INVOCATION_JSON}" '"failure_class": "current_session_required"'
+assert_contains "${CURRENT_SESSION_INVOCATION_JSON}" '"status": "current_session_required"'
+assert_contains "${CURRENT_SESSION_TOOL_EVENTS}" '"status": "completed"'
+assert_contains "$(cat "${CURRENT_SESSION_REQUEST_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_CURRENT_SESSION"
+assert_file_absent "${CURRENT_SESSION_REQUEST_DIR}/result.md"
+
 it "crew agent treats zero-exit blocked bridge output as failed"
 out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \

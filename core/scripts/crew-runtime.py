@@ -617,7 +617,13 @@ def invoke_host_bridge(
     stderr = stderr or ""
     output_observed = bool(stdout.strip() or stderr.strip())
     stall_class = "no_output_startup_stall" if timed_out and not output_observed else ""
+    current_session_required = host_bridge_current_session_required_output(
+        stdout,
+        stderr,
+    )
     failure_class = "host_bridge_timeout" if timed_out else ("" if returncode == 0 else "host_bridge_command_failed")
+    if current_session_required:
+        failure_class = "current_session_required"
     bridge_record = {
         **running_record,
         "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -626,7 +632,11 @@ def invoke_host_bridge(
         "stderr": stderr[-4000:],
         "timed_out": timed_out,
         "failure_class": failure_class,
-        "status": "completed" if returncode == 0 else "failed",
+        "status": (
+            "current_session_required"
+            if current_session_required
+            else ("completed" if returncode == 0 else "failed")
+        ),
         "output_observed": output_observed,
         "stall_class": stall_class,
     }
@@ -664,7 +674,11 @@ def invoke_host_bridge(
             "stage": 0,
             "agent": "",
             "attempt": 0,
-            "status": "completed" if returncode == 0 else "failed",
+            "status": (
+                "handoff_ready"
+                if current_session_required
+                else ("completed" if returncode == 0 else "failed")
+            ),
             "detail": stall_class or failure_class or "completed",
             "files": ["context/host-bridge-invocation.json"],
         },
@@ -676,7 +690,7 @@ def invoke_host_bridge(
         action_summary=command,
         started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
         ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        status="completed" if returncode == 0 else "failed",
+        status="completed" if returncode == 0 or current_session_required else "failed",
         exit_code=returncode,
         failure_class=failure_class,
     )
@@ -705,6 +719,26 @@ def host_bridge_reported_blocked(bridge_record: dict) -> bool:
         for key in ("stdout", "stderr")
     )
     return bool(re.search(r"(?im)^\s*(STATUS\s*:\s*blocked\b|BLOCKER\s*:)", output))
+
+
+def host_bridge_current_session_required_output(stdout: str, stderr: str) -> bool:
+    output = "\n".join([stdout or "", stderr or ""])
+    return bool(
+        re.search(
+            r"(?im)^\s*AGENT_CREW_BRIDGE_STATUS:\s*current_session_required\s*$",
+            output,
+        )
+        or "refusing nested Codex exec from an active Codex session" in output
+    )
+
+
+def host_bridge_current_session_required(bridge_record: dict) -> bool:
+    if bridge_record.get("failure_class") == "current_session_required":
+        return True
+    return host_bridge_current_session_required_output(
+        str(bridge_record.get("stdout", "") or ""),
+        str(bridge_record.get("stderr", "") or ""),
+    )
 
 
 def env_flag(name: str) -> bool:
@@ -1593,6 +1627,47 @@ def command_agent(args: argparse.Namespace) -> int:
             write_json(request_dir / "request.json", request)
             print("STATUS: completed")
             print("HOST_BRIDGE: auto_completed")
+            return 0
+
+        if host_bridge_current_session_required(bridge_record):
+            now = utc_now_z()
+            request.update(
+                {
+                    "status": "handoff_ready",
+                    "host_bridge_status": "current_session_required",
+                    "host_bridge_failure_reason": "nested_codex_current_session_required",
+                    "host_bridge_completion_path": str(bridge_invocation_path),
+                    "host_bridge_completed_at": now,
+                }
+            )
+            write_json(request_dir / "request.json", request)
+            append_progress_log(
+                request_dir,
+                "HOST_BRIDGE_CURRENT_SESSION",
+                "current Codex session must complete direct-agent handoff",
+            )
+            append_progress(
+                request_dir,
+                {
+                    "ts": now,
+                    "trace_id": trace_id_for({"task_id": request_id}, request_dir),
+                    "task_id": request_id,
+                    "session_id": "",
+                    "event": "HOST_BRIDGE_CURRENT_SESSION",
+                    "stage": 0,
+                    "agent": agent_name,
+                    "attempt": 0,
+                    "status": "handoff_ready",
+                    "detail": "current Codex session must complete direct-agent handoff",
+                    "files": ["handoff.md", "request.json"],
+                },
+            )
+            print("STATUS: handoff_ready")
+            print("HOST_BRIDGE: current_session_required")
+            print(
+                "NEXT: Continue this read-only direct-agent handoff in the current "
+                f"Codex session from {request_dir / 'handoff.md'}."
+            )
             return 0
 
         request.update(
