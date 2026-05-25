@@ -443,10 +443,10 @@ class TestTelemetryAggregate:
         assert payload["summary"]["tasks_completed"] == 1
         assert payload["summary"]["tasks_running"] == 0
 
-    def test_cancelled_result_md_counts_as_blocked(
+    def test_cancelled_result_md_counts_as_terminal_cancelled(
         self, script_runner, env_with_home, state_dir
     ):
-        """Plan-cancelled tasks are terminal, not long-running."""
+        """Plan-cancelled tasks are terminal, not blocked/running."""
         task_id = "20260101-120400-0"
         td = state_dir / "tasks" / task_id
         td.mkdir(parents=True)
@@ -464,10 +464,12 @@ class TestTelemetryAggregate:
         assert r.returncode == 0, r.stderr
         payload = json.loads(r.stdout)
         task = payload["tasks"][0]
-        assert task["status"] == "blocked"
-        assert task["current_phase"] == "blocked"
-        assert task["blockers"] == ["cancelled"]
-        assert payload["summary"]["tasks_blocked"] == 1
+        assert task["status"] == "cancelled"
+        assert task["current_phase"] == "cancelled"
+        assert task["health"] == "cancelled"
+        assert task["blockers"] == []
+        assert payload["summary"]["tasks_cancelled"] == 1
+        assert payload["summary"]["tasks_blocked"] == 0
 
     def test_supervisor_handoff_without_progress_is_actionable(
         self, script_runner, env_with_home, state_dir

@@ -387,11 +387,12 @@ def read_result_md(task_dir):
         if status == "completed":
             result["status"] = "completed"
             result["current_phase"] = "completed"
-        elif status in ("blocked", "cancelled"):
+        elif status == "blocked":
             result["status"] = "blocked"
             result["current_phase"] = "blocked"
-            if status == "cancelled":
-                result["blockers"] = ["cancelled"]
+        elif status == "cancelled":
+            result["status"] = "cancelled"
+            result["current_phase"] = "cancelled"
         else:
             result["status"] = status
 
@@ -463,6 +464,8 @@ def health_classification(status, current_phase, blockers, latest_event, task_di
     """Map task state to booting/running/stalled/blocked/completed."""
     if status == "completed":
         return "completed"
+    if status == "cancelled":
+        return "cancelled"
     if status in ("blocked", "stale_blocked") or blockers:
         return "blocked"
     if current_phase == "supervisor_handoff_pending":
@@ -579,7 +582,8 @@ def aggregate_task(state_dir, task_dir):
 
     terminal = next((e for e in reversed(events)
                      if e.get("event") in ("COMPLETED", "BLOCKED",
-                                           "COST_BLOCKED", "STATUS")), None)
+                                           "CANCELLED", "COST_BLOCKED",
+                                           "STATUS")), None)
 
     # Status / current phase. result.md is the strongest terminal signal:
     # older or interrupted runs can leave register.json stuck at phase_0 even
@@ -597,6 +601,11 @@ def aggregate_task(state_dir, task_dir):
         # those forward produces false host-bridge guidance.
         blocked_by = list(result.get("blockers", []))
         stages_completed = None
+    elif result.get("status") == "cancelled":
+        status = "cancelled"
+        current_phase = result.get("current_phase", status)
+        blocked_by = []
+        stages_completed = None
     elif result.get("status") == "blocked":
         status = result["status"]
         current_phase = result.get("current_phase", status)
@@ -610,6 +619,8 @@ def aggregate_task(state_dir, task_dir):
         status_value = reg.get("current_phase", "")
         if status_value == "completed":
             status = "completed"
+        elif status_value == "cancelled":
+            status = "cancelled"
         elif status_value == "blocked":
             status = "blocked"
         elif status_value:
@@ -623,6 +634,10 @@ def aggregate_task(state_dir, task_dir):
         if terminal["event"] == "COMPLETED":
             status = "completed"
             current_phase = "completed"
+            blocked_by = []
+        elif terminal["event"] == "CANCELLED":
+            status = "cancelled"
+            current_phase = "cancelled"
             blocked_by = []
         else:
             status = "blocked"
@@ -786,6 +801,7 @@ def list_task_dirs(state_dir, args):
 def aggregate_summary(rows):
     total = len(rows)
     completed = sum(1 for r in rows if r["status"] == "completed")
+    cancelled = sum(1 for r in rows if r["status"] == "cancelled")
     blocked = sum(1 for r in rows if r["status"] == "blocked")
     stale_blocked = sum(1 for r in rows if r["status"] == "stale_blocked")
     running = sum(1 for r in rows if r["status"] == "running")
@@ -821,6 +837,7 @@ def aggregate_summary(rows):
     return {
         "tasks_total":             total,
         "tasks_completed":         completed,
+        "tasks_cancelled":         cancelled,
         "tasks_blocked":           blocked,
         "tasks_stale_blocked":     stale_blocked,
         "tasks_running":           running,
@@ -1053,6 +1070,7 @@ def render_text(rows, summary):
     print()
     print(f"Tasks: {summary['tasks_total']} total | "
           f"{summary['tasks_completed']} completed | "
+          f"{summary.get('tasks_cancelled', 0)} cancelled | "
           f"{summary['tasks_blocked']} blocked | "
           f"{summary.get('tasks_stale_blocked', 0)} stale-blocked | "
           f"{summary['tasks_running']} running")
