@@ -197,7 +197,11 @@ rc=$?
 assert_exit 3 "${rc}"
 assert_contains "${out}" "[crew] START"
 assert_contains "${out}" "[crew] WAIT | task_id="
+assert_contains "${out}" "phase=HOST_BRIDGE_START"
 assert_contains "${out}" "last_update_age="
+WAIT_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+assert_contains "$(cat "${WAIT_TASK_DIR}/context/host-bridge-invocation.json")" '"status": "failed"'
+assert_contains "$(cat "${WAIT_TASK_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_START"
 
 it "host bridge timeout records terminal failure evidence"
 out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS=0.05 AGENT_CREW_BRIDGE_TIMEOUT_SECONDS=0.15 bash "${CREW}" run --host-bridge-command "sleep 2" "read-only bridge timeout" 2>&1)
@@ -886,8 +890,13 @@ TIMEOUT_REQUEST_JSON=$(cat "${TIMEOUT_AGENT_REQUEST_DIR}/request.json")
 TIMEOUT_INVOCATION_JSON=$(cat "${TIMEOUT_AGENT_REQUEST_DIR}/context/host-bridge-invocation.json")
 assert_contains "${TIMEOUT_REQUEST_JSON}" '"status": "handoff_ready"'
 assert_contains "${TIMEOUT_REQUEST_JSON}" '"host_bridge_failure_reason": "bridge_timeout"'
+assert_contains "${TIMEOUT_REQUEST_JSON}" '"host_bridge_stall_class": "no_output_startup_stall"'
 assert_contains "${TIMEOUT_INVOCATION_JSON}" '"timed_out": true'
+assert_contains "${TIMEOUT_INVOCATION_JSON}" '"stall_class": "no_output_startup_stall"'
 assert_contains "$(cat "${TIMEOUT_AGENT_REQUEST_DIR}/tool-events.jsonl")" '"failure_class": "host_bridge_timeout"'
+assert_contains "$(cat "${TIMEOUT_AGENT_REQUEST_DIR}/progress.buffer.jsonl")" "DIRECT_AGENT_REQUEST"
+assert_contains "$(cat "${TIMEOUT_AGENT_REQUEST_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_START"
+assert_not_contains "${out}" "no progress events yet"
 
 it "crew agent writes deterministic direct-agent handoff"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "what changed?" 2>&1)

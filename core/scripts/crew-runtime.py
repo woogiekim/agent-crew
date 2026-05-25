@@ -113,6 +113,11 @@ def append_progress(task_dir: Path, row: dict) -> None:
     append_jsonl(task_dir / "progress.buffer.jsonl", row)
 
 
+def append_progress_log(task_dir: Path, event: str, detail: str) -> None:
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
+        handle.write(f"{utc_now_z()} | {event} | {detail}\n")
+
+
 def agent_uuid_for_display() -> str:
     for name in (
         "AGENT_CREW_AGENT_UUID",
@@ -484,16 +489,105 @@ def invoke_host_bridge(
     except ValueError:
         timeout_seconds = float(timeout_default)
 
-    timed_out = False
-    proc = subprocess.Popen(
-        command,
-        shell=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-        start_new_session=True,
+    command_display = shlex.split(command)[0] if command.strip() else ""
+    invocation_path = task_dir / "context" / "host-bridge-invocation.json"
+    running_record = {
+        "schema_version": 1,
+        "task_id": register["task_id"],
+        "command": command,
+        "command_display": command_display,
+        "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "finished_at": "",
+        "returncode": None,
+        "stdout": "",
+        "stderr": "",
+        "timed_out": False,
+        "timeout_seconds": timeout_seconds,
+        "failure_class": "",
+        "status": "running",
+        "direct_agent": direct_agent,
+        "output_observed": False,
+        "stall_class": "",
+    }
+    write_json(invocation_path, running_record)
+    append_progress_log(
+        task_dir,
+        "HOST_BRIDGE_START",
+        f"{command_display or 'host_bridge_command'} timeout={timeout_seconds:g}s",
     )
+    append_progress(
+        task_dir,
+        {
+            "ts": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "trace_id": trace_id_for(register, task_dir),
+            "task_id": register["task_id"],
+            "session_id": register.get("session_id", ""),
+            "event": "HOST_BRIDGE_START",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "running",
+            "detail": (
+                f"host bridge started: {command_display or 'host_bridge_command'}; "
+                f"timeout={timeout_seconds:g}s"
+            ),
+            "files": ["context/host-bridge-invocation.json"],
+        },
+    )
+
+    timed_out = False
+    try:
+        proc = subprocess.Popen(
+            command,
+            shell=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+        )
+    except Exception as exc:
+        finished = datetime.now(timezone.utc)
+        stderr = str(exc)
+        bridge_record = {
+            **running_record,
+            "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "returncode": 127,
+            "stderr": stderr[-4000:],
+            "failure_class": "host_bridge_start_failed",
+            "status": "failed",
+        }
+        write_json(invocation_path, bridge_record)
+        append_progress_log(task_dir, "HOST_BRIDGE_FINISHED", "host_bridge_start_failed")
+        append_progress(
+            task_dir,
+            {
+                "ts": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "trace_id": trace_id_for(register, task_dir),
+                "task_id": register["task_id"],
+                "session_id": register.get("session_id", ""),
+                "event": "HOST_BRIDGE_FINISHED",
+                "stage": 0,
+                "agent": "",
+                "attempt": 0,
+                "status": "failed",
+                "detail": "host_bridge_start_failed",
+                "files": ["context/host-bridge-invocation.json"],
+            },
+        )
+        append_tool_event(
+            task_dir,
+            trace_id=trace_id_for(register, task_dir),
+            tool_name="host_bridge_command",
+            action_summary=command,
+            started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            status="failed",
+            exit_code=127,
+            failure_class="host_bridge_start_failed",
+        )
+        return bridge_record
+
     deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
     while True:
         wait_for = interval if interval > 0 else None
@@ -519,8 +613,29 @@ def invoke_host_bridge(
                 print(render_wait_progress(register, task_dir), file=sys.stderr)
 
     finished = datetime.now(timezone.utc)
+    stdout = stdout or ""
+    stderr = stderr or ""
+    output_observed = bool(stdout.strip() or stderr.strip())
+    stall_class = "no_output_startup_stall" if timed_out and not output_observed else ""
+    failure_class = "host_bridge_timeout" if timed_out else ("" if returncode == 0 else "host_bridge_command_failed")
+    bridge_record = {
+        **running_record,
+        "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "returncode": returncode,
+        "stdout": stdout[-4000:],
+        "stderr": stderr[-4000:],
+        "timed_out": timed_out,
+        "failure_class": failure_class,
+        "status": "completed" if returncode == 0 else "failed",
+        "output_observed": output_observed,
+        "stall_class": stall_class,
+    }
+    write_json(invocation_path, bridge_record)
+
     if timed_out:
         timeout_detail = f"host bridge exceeded {timeout_seconds:g}s timeout"
+        if stall_class:
+            timeout_detail += f"; stall_class={stall_class}"
         append_progress(
             task_dir,
             {
@@ -537,6 +652,23 @@ def invoke_host_bridge(
                 "files": ["context/host-bridge-invocation.json"],
             },
         )
+    append_progress_log(task_dir, "HOST_BRIDGE_FINISHED", failure_class or "completed")
+    append_progress(
+        task_dir,
+        {
+            "ts": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "trace_id": trace_id_for(register, task_dir),
+            "task_id": register["task_id"],
+            "session_id": register.get("session_id", ""),
+            "event": "HOST_BRIDGE_FINISHED",
+            "stage": 0,
+            "agent": "",
+            "attempt": 0,
+            "status": "completed" if returncode == 0 else "failed",
+            "detail": stall_class or failure_class or "completed",
+            "files": ["context/host-bridge-invocation.json"],
+        },
+    )
     append_tool_event(
         task_dir,
         trace_id=trace_id_for(register, task_dir),
@@ -546,22 +678,9 @@ def invoke_host_bridge(
         ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
         status="completed" if returncode == 0 else "failed",
         exit_code=returncode,
-        failure_class="" if returncode == 0 else ("host_bridge_timeout" if timed_out else "host_bridge_command_failed"),
+        failure_class=failure_class,
     )
-    return {
-        "schema_version": 1,
-        "task_id": register["task_id"],
-        "command": command,
-        "command_display": shlex.split(command)[0] if command.strip() else "",
-        "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "returncode": returncode,
-        "stdout": stdout[-4000:],
-        "stderr": stderr[-4000:],
-        "timed_out": timed_out,
-        "timeout_seconds": timeout_seconds,
-        "failure_class": "host_bridge_timeout" if timed_out else ("" if returncode == 0 else "host_bridge_command_failed"),
-    }
+    return bridge_record
 
 
 def terminate_host_bridge(proc: subprocess.Popen) -> tuple[str, str]:
@@ -1228,6 +1347,8 @@ def command_run(args: argparse.Namespace) -> int:
         register["host_bridge_status"] = "failed"
         if bridge_record.get("timed_out"):
             register["host_bridge_failure_reason"] = "bridge_timeout"
+            if bridge_record.get("stall_class"):
+                register["host_bridge_stall_class"] = bridge_record["stall_class"]
         elif bridge_record["returncode"] == 0:
             register["host_bridge_failure_reason"] = "bridge_reported_blocked"
         register["host_bridge_completion_path"] = str(task_dir / "context" / "host-bridge-invocation.json")
@@ -1361,6 +1482,8 @@ def command_agent(args: argparse.Namespace) -> int:
         "status": "handoff_ready",
         "host_bridge_status": "pending" if bridge_command else "not_invoked",
         "created_at": now.isoformat(),
+        "progress_log_path": str(request_dir / "progress.log"),
+        "progress_buffer_path": str(request_dir / "progress.buffer.jsonl"),
     }
     if normalization_required:
         request.update(
@@ -1405,6 +1528,23 @@ def command_agent(args: argparse.Namespace) -> int:
     if normalization_required:
         write_json(request_dir / "context" / "input-normalization.json", normalization_metadata)
     (request_dir / "handoff.md").write_text(handoff, encoding="utf-8")
+    append_progress_log(request_dir, "DIRECT_AGENT_REQUEST", f"{agent_name}: handoff_ready")
+    append_progress(
+        request_dir,
+        {
+            "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "trace_id": trace_id_for({"task_id": request_id}, request_dir),
+            "task_id": request_id,
+            "session_id": "",
+            "event": "DIRECT_AGENT_REQUEST",
+            "stage": 0,
+            "agent": agent_name,
+            "attempt": 0,
+            "status": "handoff_ready",
+            "detail": route_reason,
+            "files": ["request.json", "handoff.md"],
+        },
+    )
 
     print(f"AGENT_REQUEST_ID: {request_id}")
     print(f"AGENT: {agent_name}")
@@ -1464,6 +1604,8 @@ def command_agent(args: argparse.Namespace) -> int:
         )
         if bridge_record.get("timed_out"):
             request["host_bridge_failure_reason"] = "bridge_timeout"
+            if bridge_record.get("stall_class"):
+                request["host_bridge_stall_class"] = bridge_record["stall_class"]
         elif bridge_record["returncode"] == 0:
             request["host_bridge_failure_reason"] = "bridge_reported_blocked"
         write_json(request_dir / "request.json", request)

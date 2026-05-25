@@ -166,6 +166,14 @@
       "type": "string",
       "description": "UTC timestamp when an automatic host bridge completion was recorded."
     },
+    "host_bridge_failure_reason": {
+      "type": "string",
+      "description": "Machine-readable reason for host bridge failure, such as bridge_timeout or bridge_reported_blocked."
+    },
+    "host_bridge_stall_class": {
+      "type": "string",
+      "description": "Optional finer classification for host bridge stall modes, such as no_output_startup_stall."
+    },
     "manual_fallback_repaired_at": {
       "type": "string",
       "description": "UTC timestamp when crew repair reconciled a manual host-handoff fallback."
