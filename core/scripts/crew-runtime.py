@@ -316,6 +316,16 @@ def host_bridge_next_line(task_dir: Path, task_id: str, bridge_command_present: 
     return "\n".join(lines) + "\n"
 
 
+def host_bridge_current_session_next_line(task_dir: Path, task_id: str) -> str:
+    handoff_path = str(task_dir / "handoff.md")
+    lines = [
+        f"NEXT: Continue this existing crew:run handoff in the current Codex session from {handoff_path}.",
+        "DETAIL: Codex refused nested bridge execution because this command is already running inside Codex; no background bridge is still running.",
+        f"REPAIR: After completing the handoff, run `crew repair {task_id} --status completed --note \"<summary>\"`.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def mark_quality_loop_blocked(
     task_dir: Path,
     register: dict,
@@ -1328,6 +1338,85 @@ def command_run(args: argparse.Namespace) -> int:
             project_root=project_root,
         )
         write_json(task_dir / "context" / "host-bridge-invocation.json", bridge_record)
+        if host_bridge_current_session_required(bridge_record):
+            now = utc_now_z()
+            current_next = host_bridge_current_session_next_line(task_dir, task_id)
+            register.update(
+                {
+                    "current_phase": "handoff_ready",
+                    "blocked_by": [],
+                    "host_bridge_status": "current_session_required",
+                    "host_bridge_failure_reason": "nested_codex_current_session_required",
+                    "host_bridge_completion_path": str(task_dir / "context" / "host-bridge-invocation.json"),
+                    "host_bridge_completed_at": now,
+                }
+            )
+            write_json(task_dir / "register.json", register)
+
+            if normalization_required:
+                handoff = input_normalization_handoff(
+                    request_id=task_id,
+                    project_root=project_root,
+                    normalized_task=task,
+                    raw_task=raw_task,
+                    next_target="crew run supervisor",
+                    status="handoff_ready",
+                    metadata=normalization_metadata,
+                )
+            else:
+                handoff = (
+                    f"# Supervisor Handoff\n\n"
+                    f"TASK_ID: {task_id}\n"
+                    f"TASK: {task}\n"
+                    f"PROJECT_ROOT: {project_root}\n"
+                    f"MODE: native-cli\n"
+                    f"STATUS: handoff_ready\n"
+                    f"HOST_BRIDGE: current_session_required\n"
+                    f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
+                )
+
+            result = (
+                f"# {task}\n\n"
+                "STATUS: handoff_ready\n"
+                f"TASK_ID: {task_id}\n"
+                f"BRANCH: {register['branch']}\n"
+            )
+            if normalization_required:
+                result += "NORMALIZATION_GATE: required\n"
+            result += "HOST_BRIDGE: current_session_required\n"
+            result += current_next
+
+            (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
+            (task_dir / "result.md").write_text(result, encoding="utf-8")
+            append_progress_log(
+                task_dir,
+                "HOST_BRIDGE_CURRENT_SESSION",
+                "current Codex session must complete crew:run handoff",
+            )
+            append_progress_log(task_dir, "STATUS", "handoff_ready")
+            append_progress(
+                task_dir,
+                {
+                    "ts": now,
+                    "trace_id": trace_id_for(register, task_dir),
+                    "task_id": task_id,
+                    "session_id": session_id,
+                    "event": "HOST_BRIDGE_CURRENT_SESSION",
+                    "stage": 0,
+                    "agent": "",
+                    "attempt": 0,
+                    "status": "handoff_ready",
+                    "detail": "current Codex session must complete crew:run handoff",
+                    "files": ["handoff.md", "register.json", "result.md"],
+                },
+            )
+            print(f"TASK_ID: {task_id}")
+            print(f"TASK_DIR: {task_dir}")
+            print("STATUS: handoff_ready")
+            print("HOST_BRIDGE: current_session_required")
+            print(current_next.rstrip())
+            return 0
+
         if bridge_record["returncode"] == 0 and not host_bridge_reported_blocked(bridge_record):
             latest_register = load_json(task_dir / "register.json", register)
             latest_pipeline = load_json(task_dir / "pipeline.json", pipeline)

@@ -218,6 +218,29 @@ class TestValidateStateSchema:
 
         assert r.returncode == 0, r.stdout + r.stderr
 
+    def test_current_session_required_handoff_register_state_is_schema_valid(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """Codex current-session handoffs are resumable, not blocked bridge failures."""
+        reg = _valid_register()
+        reg["current_phase"] = "handoff_ready"
+        reg["blocked_by"] = []
+        reg["host_bridge_status"] = "current_session_required"
+        reg["host_bridge_failure_reason"] = "nested_codex_current_session_required"
+        (task_dir / "register.json").write_text(json.dumps(reg))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl",
+                     [_valid_progress_row()])
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stdout + r.stderr
+
     def test_quality_metrics_optional_file_is_schema_validated(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

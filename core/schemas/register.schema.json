@@ -150,6 +150,7 @@
         "pending",
         "failed",
         "internal_handoff_ready",
+        "current_session_required",
         "auto_completed",
         "fake_completed",
         "manual_fallback_completed",

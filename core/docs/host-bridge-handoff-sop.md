@@ -5,18 +5,25 @@ Date: 2026-05-23
 This SOP covers the common runtime states:
 
 - `STATUS: handoff_ready`
+- `HOST_BRIDGE: current_session_required`
 - `BLOCKER: host AI bridge has not completed this handoff`
 
 ## 1) What happened?
 
 `STATUS: handoff_ready` means `crew run` finished writing supervisor handoff
-state and no external host bridge command was needed or configured. This is a
-normal resumable state, not an infrastructure failure.
+state and can be continued from the current host session. This is a normal
+resumable state, not an infrastructure failure.
+
+`HOST_BRIDGE: current_session_required` means the Codex adapter intentionally
+refused a nested `codex exec` because `crew run` is already running inside
+Codex. No background bridge is still running; continue from `handoff.md` in
+the current Codex session.
 
 `BLOCKER: host AI bridge has not completed this handoff` now means an external
 bridge command was configured or expected but did not complete successfully.
 
 - In non-hosted/native runtime contexts, `handoff_ready` is expected.
+- In Codex current-session contexts, `current_session_required` is expected.
 - The same task can be marked complete manually after execution (`crew repair`).
 
 ## 2) Immediate operator flow (recommended)
@@ -105,6 +112,8 @@ Use this to verify:
 ## 5) Escalation policy
 
 - If the run is `handoff_ready`: continue from `handoff.md`.
+- If the run is `current_session_required`: continue in the current Codex
+  session; do not wait for a background bridge.
 - If there is no task-impacting data loss and the run is blocked: execute
   `crew repair`.
 - If this appears after code changes: re-run the task with `--host-bridge-command`

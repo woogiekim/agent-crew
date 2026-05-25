@@ -742,6 +742,33 @@ assert_contains "${out}" "\"tasks_completed\": 1"
 assert_contains "${out}" "\"host_bridge_status\": \"auto_completed\""
 assert_contains "${out}" "\"auto_completed\": 1"
 
+it "crew run treats nested Codex refusal as current-session handoff"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "AGENT_CREW_BRIDGE_STATUS: current_session_required" "codex-host-bridge: refusing nested Codex exec from an active Codex session" >&2; exit 2' \
+    bash "${CREW}" run "current session run handoff" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "STATUS: handoff_ready"
+assert_contains "${out}" "HOST_BRIDGE: current_session_required"
+assert_not_contains "${out}" "BLOCKER:"
+CURRENT_SESSION_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+CURRENT_SESSION_RUN_REGISTER=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/register.json")
+CURRENT_SESSION_RUN_INVOCATION=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/context/host-bridge-invocation.json")
+CURRENT_SESSION_RUN_RESULT=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/result.md")
+assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"current_phase": "handoff_ready"'
+assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"host_bridge_status": "current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"host_bridge_failure_reason": "nested_codex_current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"blocked_by": []'
+assert_contains "${CURRENT_SESSION_RUN_INVOCATION}" '"failure_class": "current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_INVOCATION}" '"status": "current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_RESULT}" "STATUS: handoff_ready"
+assert_contains "${CURRENT_SESSION_RUN_RESULT}" "HOST_BRIDGE: current_session_required"
+assert_not_contains "${CURRENT_SESSION_RUN_RESULT}" "host AI bridge has not completed this handoff"
+assert_contains "$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_CURRENT_SESSION"
+
 it "crew run discovers installed Codex bridge default from capabilities"
 DEFAULT_BRIDGE_HOME="$(make_tmp)"
 DEFAULT_BRIDGE_PROJECT="$(make_tmp)"

@@ -69,7 +69,13 @@ def discover(state_dir: Path, min_age_seconds: int, handoff_ready_min_age_second
             or "STATUS: handoff_ready" in result
         )
         bridge_status = str(register.get("host_bridge_status") or "")
-        if handoff_ready and bridge_status in {"internal_handoff_ready", "not_invoked", ""} and age_seconds(task_dir) >= handoff_threshold:
+        handoff_statuses = {
+            "internal_handoff_ready",
+            "current_session_required",
+            "not_invoked",
+            "",
+        }
+        if handoff_ready and bridge_status in handoff_statuses and age_seconds(task_dir) >= handoff_threshold:
             items.append({
                 "kind": "stale_handoff_ready_task",
                 "task_id": task_dir.name,

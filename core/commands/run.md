@@ -2348,6 +2348,7 @@ crew:run "resolve merge conflicts"
 When a run returns:
 
 - `STATUS: handoff_ready`
+- `HOST_BRIDGE: current_session_required`
 - `BLOCKER: host AI bridge has not completed this handoff`
 
 use this sequence:
@@ -2358,14 +2359,18 @@ use this sequence:
 2. In non-hosted/native runs, `STATUS: handoff_ready` is normal. Continue from
    `handoff.md`, then complete manually:
    - `crew repair <TASK_ID> --status completed --note "<summary>"`
-3. For auto-completion:
+3. In Codex current-session runs, `HOST_BRIDGE: current_session_required` means
+   the adapter refused nested `codex exec`; no background bridge is still
+   running. Continue from `handoff.md` in the current Codex session, then repair
+   after completion.
+4. For auto-completion:
    - Pass `--host-bridge-command "<command>"` on `crew run`, or
    - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.
    `.zshrc` is not required; it is only one optional place to persist env.
-4. Re-check task state:
+5. Re-check task state:
    - `crew status --json --task-id <TASK_ID>`
    - `crew telemetry --format json --task-id <TASK_ID>`
-5. If bridge blockers keep recurring in normal hosted runs, collect diagnostics:
+6. If bridge blockers keep recurring in normal hosted runs, collect diagnostics:
    - `crew report auto --summary "host bridge blocker pattern"`
 
 This section exists for operator troubleshooting; normal run output intentionally
