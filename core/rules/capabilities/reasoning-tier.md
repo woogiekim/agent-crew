@@ -28,7 +28,7 @@ adapter.
 |---|---|---|
 | `xhigh` | Highest-impact semantic decisions where missed defects, bad plans, or incorrect conflict resolution are expensive. Invocation should remain selective; quality dominates cost and latency. | analyst, planner, reviewer, resolver |
 | `deep` | Code implementation, orchestration, tests, infrastructure, and recovery decisions that benefit from stronger reasoning but should not always pay the maximum latency/cost. | supervisor, backend, frontend, test-writer, devops |
-| `balanced` | Substantive but bounded work within a defined domain. Moderate invocation frequency; quality / cost balanced. | requirements, designer, issuer, learning-mentor |
+| `balanced` | Substantive but bounded work within a defined domain. Moderate invocation frequency; quality / cost balanced. | requirements, designer, issuer, mentor, learning-mentor |
 | `light` | Deterministic, high-volume synthesis or transformation. Quality requirements are modest; cost dominates. | documenter, input-normalizer, korean-normalizer |
 
 ## Required Adapter Surface (install-time)

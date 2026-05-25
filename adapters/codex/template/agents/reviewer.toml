@@ -1,5 +1,5 @@
 description = "Agent-crew system agent: reviewer"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 developer_instructions = """
 # reviewer
 

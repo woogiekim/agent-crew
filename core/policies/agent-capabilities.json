@@ -517,6 +517,29 @@
       "destructive_requires_approval": false,
       "notes": "Compatibility alias for Korean task normalization; prefer input-normalizer."
     },
+    "mentor": {
+      "role": "support",
+      "model_tier": "medium",
+      "reasoning_tier": "balanced",
+      "allowed_capabilities": [
+        "read_file",
+        "structured_output",
+        "teaching_feedback"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Mentoring and learning feedback support role; balanced tier controls cost for interactive coaching."
+    },
     "learning-mentor": {
       "role": "support",
       "model_tier": "medium",
@@ -538,7 +561,7 @@
       "may_mutate_workflow_state": false,
       "may_execute_destructive": false,
       "destructive_requires_approval": false,
-      "notes": "Learning feedback support role; balanced tier controls cost for interactive teaching."
+      "notes": "Compatibility alias for concept teaching; prefer mentor for new routing."
     }
   }
 }

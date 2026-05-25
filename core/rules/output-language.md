@@ -98,8 +98,8 @@ of output-language enforcement.
 
 A specialist agent's **prompt definition** may include localized
 content if the agent's audience is language-specific (e.g.,
-`core/agents/learning-mentor.md` includes Korean trigger phrases and
-pedagogical guidance because it teaches Korean-speaking learners).
+`core/agents/mentor.md` includes Korean trigger phrases and pedagogical
+guidance because it mentors and teaches Korean-speaking learners).
 The OUTPUT-language rule above still applies to that specialist's
 runtime behavior — it produces output in the user's language, with
 internal handoff content in English.

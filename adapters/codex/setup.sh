@@ -207,6 +207,7 @@ legacy_system_names = {
     "issuer.toml",
     "korean-normalizer.toml",
     "learning-mentor.toml",
+    "mentor.toml",
     "planner.toml",
     "requirements.toml",
     "resolver.toml",

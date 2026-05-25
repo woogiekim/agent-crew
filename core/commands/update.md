@@ -945,7 +945,7 @@ remain English as a parser invariant.
 - New file `core/rules/output-language.md` codifies the input/output
   language split, lists the English-only status invariant
   (`STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`, `BLOCKER:`, etc.),
-  and notes the specialist-agent exception (e.g., `learning-mentor`).
+  and notes the specialist-agent exception (e.g., `mentor`).
 - `core/global-agents.md` gains an Output Language section that
   pairs the two rules.
 - `core/agents/supervisor.md` Absolute Rules adds the English-only

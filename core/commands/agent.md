@@ -38,7 +38,8 @@ crew:agent --routing                                                    # show a
 # Explicit mode
 crew:agent analyst "explain the current domain model and identify seams"
 crew:agent historian "what ran in this session?"
-crew:agent learning-mentor "explain the difference between a branch and a worktree"
+crew:agent mentor "explain the difference between a branch and a worktree"
+crew:agent learning-mentor "explain dependency injection"   # legacy alias
 
 # Auto-routing mode (agent selected from core/rules/agent-routing.md)
 crew:agent "explain the current domain model"
@@ -142,7 +143,8 @@ Available agents  (source: core/rules/agent-routing.md)
     crew:agent documenter "…"  — Documentation, README, API docs
     crew:agent historian "…"  — Session / git / project state Q&A
     crew:agent issuer     "…"   — Issue publishing and work-item creation
-    crew:agent learning-mentor "…" — Concept explanation, teaching, Q&A
+    crew:agent mentor "…"    — Mentoring, coaching, concept teaching, growth feedback
+    crew:agent learning-mentor "…" — Legacy concept-teaching alias; prefer mentor
     crew:agent input-normalizer "…" — Multilingual instruction normalization (utility)
     crew:agent korean-normalizer "…" — Korean normalization compatibility alias
 
@@ -460,7 +462,7 @@ A host-native subagent MUST NOT be used when any of the following applies:
   a direct bypass of crew routing.
 - **The task is conversational or user-facing** — Q&A, explanations, and
   design discussions must use `crew:agent analyst`, `crew:agent planner`,
-  `crew:agent historian`, or `crew:agent learning-mentor` as appropriate.
+  `crew:agent historian`, or `crew:agent mentor` as appropriate.
 
 Forbidden example:
 

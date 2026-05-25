@@ -64,6 +64,7 @@ def test_direct_invocation_remains_available_for_analysis_agents() -> None:
         "documenter",
         "historian",
         "issuer",
+        "mentor",
         "learning-mentor",
         "input-normalizer",
         "korean-normalizer",

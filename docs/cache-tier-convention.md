@@ -107,7 +107,7 @@ do not need tier reordering.
   phase routing → absolute rules. Already aligned.
 - `core/agents/analyst.md` — frontmatter → identity → skills → inputs
   → workflow steps → rules. Canonical small-agent shape.
-- `core/agents/learning-mentor.md` (post-C1) — illustrates moving
+- `core/agents/mentor.md` (post-C1) — illustrates moving
   cross-cutting policies (glossary rules, language adaptation,
   behavioral principles) above the per-Phase execution body.
 - `core/agents/devops.md` (post-C1) — illustrates promoting hard rules

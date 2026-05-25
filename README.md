@@ -487,7 +487,8 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **reviewer** | Final stage — verifies implementation completeness against the PRD (read-only) |
 | **resolver** | Automatic merge conflict resolution after parallel runs |
 | **documenter** | Internal repo documentation — synthesizes `{TASK_DIR}/result.md`, drafts side-car README / CHANGELOG patches (opt-in via `--to-readme` for repo-tracked writes), and archives stage outputs to `{TASK_DIR}/archive/` |
-| **learning-mentor** | Pedagogical teaching agent — runs 6-Phase structured tutoring sessions (assessment → concept foundation → application → critical evaluation → deepening → closing) with cognitive-load-controlled output |
+| **mentor** | Mentoring and coaching agent — handles concept teaching, growth feedback, engineering guidance, and 6-Phase structured tutoring sessions for learning requests |
+| **learning-mentor** | Legacy alias for the mentor agent's structured concept-teaching mode |
 | **supervisor** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 
 ### Backend Agent Workflow (TDD Cycle)

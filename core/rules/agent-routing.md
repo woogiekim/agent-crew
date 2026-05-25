@@ -35,7 +35,8 @@ whether it is safe for direct invocation via `crew:agent`.
 | analyst | Codebase understanding, domain investigation | explain, investigate, understand, map, trace, explore, audit | yes | — |
 | historian | Session / git / project state Q&A (factual lookups only) | 어떤 에이전트, 방금, what just, what did, what ran, this session, this branch, history, spawned, running, recent activity | yes | — |
 | documenter | Documentation, README, API docs | docs, readme, documentation, guide, reference, changelog, comment | yes | — |
-| learning-mentor | Concept explanation, teaching, Q&A | teach, learn, explain, concept, pattern, question, example, tutorial | yes | — |
+| mentor | Mentoring, coaching, concept teaching, growth feedback, engineering guidance Q&A | mentor, mentoring, coach, guide, teach, learn, explain, concept, pattern, question, example, tutorial, feedback, study plan, growth, 멘토, 코칭, 가르쳐, 학습, 개념, 설명 | yes | — |
+| learning-mentor | Legacy concept-teaching alias; prefer mentor for new routing | teach, learn, explain, concept, pattern, question, example, tutorial | yes | — |
 | input-normalizer | Multilingual input translation and instruction normalization (utility) | (internal — invoked automatically for multilingual or ambiguous input) | yes | — |
 | korean-normalizer | Korean text normalization compatibility alias (utility) | (legacy internal alias; prefer input-normalizer) | yes | — |
 | issuer | Issue publishing and work-item creation (user-installed, tool-agnostic dispatcher) | publish issues, create work items, issue tracking, task list import, import issues, bulk create issues, seed project, upload task list, issue file | yes | — |
@@ -71,7 +72,7 @@ level, and a reason string shown to the user in the visibility line.
 | 6.5 | "어떤 에이전트" OR 방금 OR "what just" OR "what did this session" OR "what did we" OR "what ran" OR "what agent" OR "this session" OR "이번 세션" OR "this branch" OR "session history" OR "spawned agent" OR "what's running" OR "currently running" OR "recent activity" OR "어떤 commit" OR "무슨 commit" | historian | high | Matched session/git/project-state Q pattern |
 | 7 | explain OR investigate OR understand OR trace OR audit OR explore | analyst | high | Matched analysis/exploration keywords |
 | 8 | docs OR readme OR documentation OR guide OR reference OR changelog | documenter | high | Matched documentation keywords |
-| 9 | teach OR learn OR concept OR pattern OR tutorial OR example | learning-mentor | high | Matched learning/mentorship keywords |
+| 9 | mentor OR mentoring OR coach OR guide OR teach OR learn OR concept OR pattern OR tutorial OR example OR feedback OR study plan OR growth OR 멘토 OR 코칭 OR 가르쳐 OR 학습 OR 개념 OR 설명 | mentor | high | Matched mentoring/learning keywords |
 | 9.5 | publish issues OR create work items OR issue tracking OR task list import OR import issues OR bulk create issues OR seed project OR upload task list OR issue file | issuer | medium | Matched issue-publishing / work-item creation keywords |
 | 10 | (no match) | — NONE — | — | Cannot auto-route: specify an agent explicitly or use crew:run |
 

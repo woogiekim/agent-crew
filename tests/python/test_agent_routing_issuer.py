@@ -60,7 +60,7 @@ class TestAutoRoutingRulesEntry:
         )
 
     def test_issuer_row_priority(self):
-        """The issuer row should be at priority 9.5 (between learning-mentor and no-match)."""
+        """The issuer row should be at priority 9.5 (between mentorship and no-match)."""
         text = _load_routing_text()
         rows = _table_rows(text, "Auto-Routing Rules")
         issuer_rows = [r for r in rows if "issuer" in r.lower()]

@@ -1,5 +1,5 @@
 description = "Agent-crew system agent: planner"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 developer_instructions = """
 # planner
 

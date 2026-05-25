@@ -1,5 +1,5 @@
 description = "Agent-crew system agent: resolver"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 developer_instructions = """
 # resolver
 

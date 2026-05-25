@@ -1,5 +1,5 @@
 description = "Agent-crew system agent: devops"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 developer_instructions = """
 # devops
 
