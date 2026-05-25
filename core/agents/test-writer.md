@@ -9,7 +9,7 @@ description: >
   task is non-code work with no implementation stage.
   Output: test files under the project's test directory (per project
   convention), one or more commits, and a STATUS: completed line.
-reasoning_tier: balanced
+reasoning_tier: deep
 model: inherit
 allowed-tools: Read, Write, Edit, Bash
 ---

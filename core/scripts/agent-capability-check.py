@@ -55,8 +55,8 @@ VALID_ROLES = {
 }
 CUSTOM_PROFILE_FORBIDDEN_ROLES = {"orchestrator", "planner", "component"}
 
-VALID_MODEL_TIERS = {"high", "medium", "cheap"}
-VALID_REASONING_TIERS = {"deep", "balanced", "light"}
+VALID_MODEL_TIERS = {"xhigh", "high", "medium", "cheap"}
+VALID_REASONING_TIERS = {"xhigh", "deep", "balanced", "light"}
 BOOLEAN_FIELDS = {
     "may_delegate",
     "may_implement",
@@ -376,15 +376,15 @@ def evaluate(root: Path, manifest_path: Path) -> dict[str, Any]:
         )
 
     model_tiers = {data.get("model_tier") for data in agents.values() if isinstance(data, dict)}
-    high_count = sum(1 for data in agents.values() if isinstance(data, dict) and data.get("model_tier") == "high")
+    top_count = sum(1 for data in agents.values() if isinstance(data, dict) and data.get("model_tier") == "xhigh")
     cheap_count = sum(1 for data in agents.values() if isinstance(data, dict) and data.get("model_tier") == "cheap")
     checks.append(
         check(
             "routing.cost_aware_model_tiers",
-            {"high", "medium", "cheap"}.issubset(model_tiers)
-            and high_count < len(agents)
+            {"xhigh", "high", "medium", "cheap"}.issubset(model_tiers)
+            and top_count < len(agents)
             and cheap_count >= 2,
-            f"tiers={sorted(tier for tier in model_tiers if tier)} high={high_count} cheap={cheap_count}",
+            f"tiers={sorted(tier for tier in model_tiers if tier)} xhigh={top_count} cheap={cheap_count}",
         )
     )
 
@@ -392,7 +392,7 @@ def evaluate(root: Path, manifest_path: Path) -> dict[str, Any]:
     checks.append(
         check(
             "routing.reasoning_tier_distribution",
-            {"deep", "balanced", "light"}.issubset(reasoning_tiers),
+            {"xhigh", "deep", "balanced", "light"}.issubset(reasoning_tiers),
             f"tiers={sorted(tier for tier in reasoning_tiers if tier)}",
         )
     )

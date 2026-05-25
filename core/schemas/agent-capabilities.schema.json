@@ -47,11 +47,11 @@
           },
           "model_tier": {
             "type": "string",
-            "enum": ["high", "medium", "cheap"]
+            "enum": ["xhigh", "high", "medium", "cheap"]
           },
           "reasoning_tier": {
             "type": "string",
-            "enum": ["deep", "balanced", "light"]
+            "enum": ["xhigh", "deep", "balanced", "light"]
           },
           "allowed_capabilities": {
             "type": "array",
@@ -110,11 +110,11 @@
           },
           "model_tier": {
             "type": "string",
-            "enum": ["high", "medium", "cheap"]
+            "enum": ["xhigh", "high", "medium", "cheap"]
           },
           "reasoning_tier": {
             "type": "string",
-            "enum": ["deep", "balanced", "light"]
+            "enum": ["xhigh", "deep", "balanced", "light"]
           },
           "allowed_capabilities": {
             "type": "array",

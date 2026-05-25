@@ -4,7 +4,7 @@
 
 Each system agent declares the abstract compute tier it benefits from
 via the `reasoning_tier` field in its frontmatter. The vocabulary is
-provider-neutral — `deep`, `balanced`, `light` — describing the
+provider-neutral — `xhigh`, `deep`, `balanced`, `light` — describing the
 character of the work, not a specific model. Host adapters translate
 the abstract tier into a concrete model assignment when they install
 agent definitions into the host's discovery path. This keeps `core/`
@@ -21,14 +21,15 @@ materialized.
 ## Tier vocabulary
 
 The vocabulary is fixed and exhaustive. Adapters MUST recognize all
-three tokens; new tokens are introduced via this doc, not invented per
+four tokens; new tokens are introduced via this doc, not invented per
 adapter.
 
 | Tier | Use for | Examples |
 |---|---|---|
-| `deep` | Strategic, multi-step reasoning over trade-offs; defect or risk detection; semantic ambiguity resolution. Rare invocation acceptable; quality dominates cost. | analyst, planner, reviewer, resolver |
-| `balanced` | Substantive but bounded work within a defined domain. Moderate invocation frequency; quality / cost balanced. | supervisor, requirements, backend, frontend, devops, designer, learning-mentor |
-| `light` | Deterministic, high-volume synthesis or transformation. Quality requirements are modest; cost dominates. | documenter, input-normalizer, korean-normalizer (exempt — see "Frontmatter Exemption") |
+| `xhigh` | Highest-impact semantic decisions where missed defects, bad plans, or incorrect conflict resolution are expensive. Invocation should remain selective; quality dominates cost and latency. | analyst, planner, reviewer, resolver |
+| `deep` | Code implementation, orchestration, tests, infrastructure, and recovery decisions that benefit from stronger reasoning but should not always pay the maximum latency/cost. | supervisor, backend, frontend, test-writer, devops |
+| `balanced` | Substantive but bounded work within a defined domain. Moderate invocation frequency; quality / cost balanced. | requirements, designer, issuer, learning-mentor |
+| `light` | Deterministic, high-volume synthesis or transformation. Quality requirements are modest; cost dominates. | documenter, input-normalizer, korean-normalizer |
 
 ## Required Adapter Surface (install-time)
 
@@ -37,7 +38,7 @@ An adapter implements `reasoning_tier` by performing two install-time
 duties:
 
 1. **Tier-to-model mapping table.** The adapter MUST define an internal
-   mapping from `{deep, balanced, light}` to its host's model
+   mapping from `{xhigh, deep, balanced, light}` to its host's model
    identifiers. Where the adapter ships this mapping is up to the
    adapter (a constant in `setup.sh`, a separate config file, etc.).
    The mapping MUST be hermetic to the adapter — `core/` MUST NOT see
@@ -65,9 +66,7 @@ Core's only contract is:
 - The source file's `model:` field SHOULD remain `model: inherit` so
   the abstract declaration is not shadowed by a concrete identifier.
 - Sub-modules read by a parent agent (e.g., `supervisor-bootstrap.md`)
-  and non-spawnable utility agents (e.g., `korean-normalizer.md` —
-  invoked via the normalization adapter, not host-discovered) do NOT
-  need the field.
+  do NOT need the field unless they become host-discovered standalone agents.
 
 Core code MUST NOT read `reasoning_tier` at runtime. The only consumer
 is the adapter's install-time materializer.
@@ -87,19 +86,17 @@ agents only.
 
 ## Frontmatter Exemption
 
-Some agents do not have YAML frontmatter (`korean-normalizer.md` is
-the current example — it is invoked directly via
-`core/rules/normalization-adapter.md`, not through the host's
-agent-discovery surface). The materializer MUST silently skip any file
-without a frontmatter block. These agents inherit the host's default
-model.
+Some internal modules may not have YAML frontmatter because they are read by a
+parent agent rather than discovered as standalone agents. The materializer MUST
+silently skip any file without a frontmatter block. These modules inherit the
+host's default model if a host ever discovers them directly.
 
 ## Adapter Examples
 
 | Adapter | Mapping | Notes |
 |---|---|---|
-| claude  | `deep → claude-opus-4-7`, `balanced → claude-sonnet-4-6`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md`. |
-| codex   | advisory by default; user-specified official TOML keys are preserved | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter preserves those keys when present in user-agent frontmatter, but does NOT auto-map abstract `reasoning_tier` to a concrete model because model availability is profile- and operator-specific. |
+| claude  | `xhigh → claude-opus-4-7`, `deep → claude-opus-4-7`, `balanced → claude-sonnet-4-6`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md`. Claude has no separate per-agent effort field, so `xhigh` and `deep` use the strongest configured model. |
+| codex   | `xhigh → model_reasoning_effort="xhigh"`, `deep → "high"`, `balanced → "medium"`, `light → "low"` | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter maps system-agent abstract tiers to reasoning effort, while preserving user-specified concrete model keys. |
 | generic | none — single-model environment | Leaves `model: inherit` (or absent equivalent) untouched. Tier declarations have no install-time effect. |
 
 ## Related Files
@@ -108,8 +105,9 @@ Producer (install-time):
 
 - `adapters/claude/setup.sh` — Claude materializer (rewrites
   `~/.claude/agents/*.md`)
-- `adapters/codex/setup.sh` — Codex (preserves official per-agent
-  TOML keys; does not auto-map abstract tiers)
+- `adapters/codex/setup.sh` and
+  `core/scripts/generate-codex-system-agents.py` — Codex (maps system-agent
+  tiers to `model_reasoning_effort`; preserves user-owned concrete model keys)
 - `adapters/generic/setup.sh` — no-op
 
 Consumer (none at runtime). The field is purely declarative for

@@ -696,7 +696,8 @@ def evaluate_repo(root: Path) -> dict:
             "cost_efficiency",
             "cost_aware_role_tiers",
             "medium",
-            {"high", "medium", "cheap"}.issubset(model_tiers)
+            {"xhigh", "high", "medium", "cheap"}.issubset(model_tiers)
+            and '"model_tier": "xhigh"' in agent_manifest_text
             and '"model_tier": "high"' in agent_manifest_text
             and '"model_tier": "medium"' in agent_manifest_text
             and '"model_tier": "cheap"' in agent_manifest_text,

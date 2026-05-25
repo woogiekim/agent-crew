@@ -9,7 +9,7 @@ description: >
   crew:run; user asks which agents or pipeline to use in isolation.
   SKIP when: crew:run is being used — the analyst handles planning in that path.
   Output: prd.md + pipeline.json (next agent list) + handoff.md.
-reasoning_tier: deep
+reasoning_tier: xhigh
 model: inherit
 allowed-tools: AskUserQuestion, Read, Write, Bash
 ---

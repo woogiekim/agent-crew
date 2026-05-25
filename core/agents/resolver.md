@@ -6,7 +6,7 @@ description: >
   TRIGGER when: git merge or rebase encounters conflict markers in files; another agent directly requests conflict resolution; merge fails due to conflicting changes; supervisor passes MODE=fanout-mediation with a fan-out conflict report. Keywords: conflict, merge conflict, rebase conflict, <<<<<<, =======, >>>>>>>, conflict markers, merge failure, fan-out conflict, parallelizable_units overlap.
   SKIP: no conflict markers exist in any file AND no fanout-mediation request is pending; user is asking about merge strategy or requesting an explanation only.
   Output: resolved files + git commit (merge mode) OR rewritten unit plan (fanout-mediation mode).
-reasoning_tier: deep
+reasoning_tier: xhigh
 model: inherit
 ---
 

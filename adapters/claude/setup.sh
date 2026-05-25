@@ -131,6 +131,7 @@ system_src = Path(sys.argv[2])
 
 # Adapter-local tier map. Update here when Claude's model names change.
 TIER_TO_MODEL = {
+    "xhigh":   "claude-opus-4-7",
     "deep":     "claude-opus-4-7",
     "balanced": "claude-sonnet-4-6",
     "light":    "claude-haiku-4-5",

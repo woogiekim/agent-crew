@@ -1,3 +1,12 @@
+---
+name: korean-normalizer
+description: >
+  Compatibility alias for Korean task normalization. Prefer input-normalizer
+  for new routing.
+reasoning_tier: light
+model: inherit
+---
+
 # Agent: korean-normalizer
 
 ## Role

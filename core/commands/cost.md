@@ -76,6 +76,7 @@ Per-tier budgets are configurable via env vars (consumed by
 
 | Tier      | Default budget | Env var                       |
 |-----------|---------------:|-------------------------------|
+| `xhigh`   |        300,000 | `AGENT_CREW_BUDGET_XHIGH`     |
 | `deep`    |        200,000 | `AGENT_CREW_BUDGET_DEEP`      |
 | `balanced`|        150,000 | `AGENT_CREW_BUDGET_BALANCED`  |
 | `light`   |        100,000 | `AGENT_CREW_BUDGET_LIGHT`     |
