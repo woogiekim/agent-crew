@@ -29,6 +29,27 @@ if [ "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-0}" = "1" ]; then
   fail "refusing recursive host bridge invocation"
 fi
 
+running_under_codex() {
+  local pid="${PPID:-}"
+  local depth=0
+  local args
+
+  while [ -n "${pid}" ] && [ "${pid}" -gt 1 ] 2>/dev/null && [ "${depth}" -lt 25 ]; do
+    args="$(ps -o args= -p "${pid}" 2>/dev/null || true)"
+    if printf '%s\n' "${args}" | grep -Eq '(^|[ /])codex([[:space:]]|$)'; then
+      return 0
+    fi
+    pid="$(ps -o ppid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
+    depth=$((depth + 1))
+  done
+
+  return 1
+}
+
+if [ "${AGENT_CREW_CODEX_ALLOW_NESTED:-0}" != "1" ] && running_under_codex; then
+  fail "refusing nested Codex exec from an active Codex session; continue ${AGENT_CREW_HANDOFF_PATH} in the current host session or set AGENT_CREW_CODEX_ALLOW_NESTED=1 to override"
+fi
+
 CODEX_BIN="${AGENT_CREW_CODEX_BIN:-codex}"
 if ! command -v "${CODEX_BIN}" >/dev/null 2>&1; then
   printf 'codex-host-bridge: Codex executable not found: %s\n' "${CODEX_BIN}" >&2

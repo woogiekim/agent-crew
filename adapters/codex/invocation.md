@@ -134,6 +134,13 @@ intact for `crew resume` or manual repair.
 Use `AGENT_CREW_CODEX_BIN=/path/to/codex` when the `codex` executable is not on
 `PATH`.
 
+When the bridge is invoked from an already-active Codex session, it fails fast
+instead of launching a nested `codex exec` process. Nested Codex sessions do not
+provide reliable completion signals in this adapter path, so the runtime keeps
+the existing handoff/request state resumable and tells the operator to continue
+from the current host session. Set `AGENT_CREW_CODEX_ALLOW_NESTED=1` only for
+explicit debugging or test fixtures.
+
 The core runtime bounds bridge execution. Workflow handoffs use
 `AGENT_CREW_BRIDGE_TIMEOUT_SECONDS=1800` by default, and direct-agent handoffs
 use `AGENT_CREW_DIRECT_AGENT_BRIDGE_TIMEOUT_SECONDS=60` by default. When a

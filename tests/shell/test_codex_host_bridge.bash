@@ -34,6 +34,7 @@ chmod +x "${FAKE_CODEX}"
 it "codex host bridge passes approval policy as a top-level Codex option"
 out=$(
   AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+  AGENT_CREW_CODEX_ALLOW_NESTED=1 \
   FAKE_CODEX_ARGV_PATH="${ARGV_PATH}" \
   FAKE_CODEX_STDIN_PATH="${STDIN_PATH}" \
   FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
@@ -70,6 +71,7 @@ assert_contains "${stdin_payload}" "AGENT_CREW_TASK_ID: task-1"
 it "codex direct-agent bridge forbids normalizer subagent spawn"
 out=$(
   AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+  AGENT_CREW_CODEX_ALLOW_NESTED=1 \
   FAKE_CODEX_ARGV_PATH="${ARGV_PATH}" \
   FAKE_CODEX_STDIN_PATH="${STDIN_PATH}" \
   FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
@@ -98,5 +100,29 @@ assert_contains "${stdin_payload}" "perform the input-normalizer contract inline
 assert_contains "${stdin_payload}" "Do not spawn input-normalizer"
 assert_contains "${stdin_payload}" "Direct-agent bridges run with a read-only project sandbox."
 assert_contains "${stdin_payload}" "AGENT_CREW_AGENT_NAME: analyst"
+
+it "codex host bridge fails fast for nested Codex sessions"
+NESTED_DIR="${TMP_ROOT}/nested"
+mkdir -p "${NESTED_DIR}"
+NESTED_CODEX="${NESTED_DIR}/codex"
+cat > "${NESTED_CODEX}" <<EOF
+#!/usr/bin/env bash
+AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+FAKE_CODEX_ARGV_PATH="${ARGV_PATH}" \
+FAKE_CODEX_STDIN_PATH="${STDIN_PATH}" \
+FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
+AGENT_CREW_TASK_ID="nested-task-1" \
+AGENT_CREW_TASK_DIR="${TASK_DIR}" \
+AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
+AGENT_CREW_RESULT_PATH="${TMP_ROOT}/result.md" \
+AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
+  bash "${BRIDGE}"
+EOF
+chmod +x "${NESTED_CODEX}"
+out=$("${NESTED_CODEX}" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "refusing nested Codex exec"
+assert_contains "${out}" "AGENT_CREW_CODEX_ALLOW_NESTED=1"
 
 end_report
