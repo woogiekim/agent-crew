@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -25,13 +25,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest coverage
 
       - name: Confirm clean checkout
         run: git status --short && test -z "$(git status --short)"
 
       - name: Full test suite
         run: bash tests/run-all.sh
+
+      - name: Changed Python coverage gate
+        run: make coverage-python
 
       - name: Phase 1 validation
         run: python3 core/scripts/phase-1-validation.py --output dist/phase-1-validation.json --format text

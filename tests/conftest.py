@@ -123,8 +123,15 @@ def run_script(script_name: str, *args: str, env: dict | None = None,
     on non-zero exit codes themselves).
     """
     path = SCRIPTS_DIR / script_name
-    cmd = [sys.executable, str(path), *args] if script_name.endswith(".py") \
-          else ["bash", str(path), *args]
+    if (
+        script_name.endswith(".py")
+        and os.environ.get("AGENT_CREW_SUBPROCESS_COVERAGE") == "1"
+    ):
+        cmd = [sys.executable, "-m", "coverage", "run", "-p", str(path), *args]
+    elif script_name.endswith(".py"):
+        cmd = [sys.executable, str(path), *args]
+    else:
+        cmd = ["bash", str(path), *args]
     return subprocess.run(
         cmd,
         env=env if env is not None else os.environ.copy(),

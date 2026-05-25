@@ -8,13 +8,15 @@
 #   make help              # list available targets
 
 PYTEST ?= pytest
+COVERAGE_BASE_REF ?= origin/main
 
-.PHONY: help test test-python test-shell test-integration phase-1-validation phase-2-validation release-checksums readiness-metrics commercialization-ci
+.PHONY: help test test-python coverage-python test-shell test-integration phase-1-validation phase-2-validation release-checksums readiness-metrics commercialization-ci
 
 help:
 	@echo "agent-crew Makefile targets:"
 	@echo "  make test               run all test suites"
 	@echo "  make test-python        run pytest (tests/python/)"
+	@echo "  make coverage-python    run pytest with 100% changed Python coverage enforcement"
 	@echo "  make test-shell         run shell tests (tests/shell/)"
 	@echo "  make test-integration   run integration tests (tests/integration/)"
 	@echo "  make phase-1-validation run first-phase validation framework"
@@ -28,6 +30,18 @@ test:
 
 test-python:
 	@bash tests/run-all.sh python
+
+coverage-python:
+	@python3 -m coverage erase
+	@rm -f coverage.json .coverage.json
+	@AGENT_CREW_SUBPROCESS_COVERAGE=1 python3 -m coverage run -p -m pytest tests/python -q
+	@python3 -m coverage combine -q
+	@python3 -m coverage json -o coverage.json
+	@python3 core/scripts/coverage-changed-surface.py \
+		--coverage-json coverage.json \
+		--base-ref "$(COVERAGE_BASE_REF)" \
+		--minimum 100 \
+		--format text
 
 test-shell:
 	@bash tests/run-all.sh shell

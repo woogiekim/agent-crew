@@ -1,0 +1,9 @@
+[run]
+source =
+    core/scripts
+
+[report]
+show_missing = True
+skip_covered = False
+exclude_also =
+    if __name__ == "__main__":

@@ -41,9 +41,10 @@ bash tests/run-all.sh
 
 ### Individual suites
 ```bash
-make test-python        # pytest -- 43 tests, ~3s
-make test-shell         # 87 bash assertions, ~3s
-make test-integration   # 69 bash assertions, ~3s
+make test-python        # pytest suite
+make coverage-python    # pytest + 100% changed Python execution-surface coverage
+make test-shell         # bash assertions
+make test-integration   # integration assertions
 ```
 
 ### Single file
@@ -73,11 +74,13 @@ python3 core/scripts/phase-2-validation.py --level unit --format text
     falls back to `python3 -m pytest`.
   - If pytest is missing entirely, `tests/run-all.sh` skips the python suite
     with an install hint and still runs shell + integration.
+- **coverage.py** for `make coverage-python`
+  - `python3 -m pip install --user coverage`
 - **Bash 3.2+** (tests are written for macOS / Linux default bash)
 - **git** (for `test_common_sh.bash::register_local_git_excludes` —
   uses a tmp `git init` worktree).
 
-No additional dependencies. Tests never touch the real
+The standard test suite has no additional dependencies. Tests never touch the real
 `${HOME}/.agent-crew/` or the user's mnemos store — every suite uses
 `tmp_path` (pytest) or `mktemp -d` (bash) for isolation.
 
