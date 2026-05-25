@@ -39,13 +39,17 @@ Local workflow state can generate this evidence directly:
 ```bash
 crew readiness evidence \
   --recent 20 \
+  --include-agent-requests \
   --output dist/workload-evidence.json \
   --format text
 ```
 
 The generated JSON is intentionally compatible with
 `core/scripts/readiness-metrics.py` and includes bridge completion, manual
-repair, human intervention, retry, success, and handoff-ready counts.
+repair, human intervention, retry, success, and handoff-ready counts. By
+default it counts workflow task directories only. Add
+`--include-agent-requests` when readiness should also include read-only
+direct-agent requests under `agent-requests/`.
 
 Thresholds are intentionally supplied as a JSON file so commercial targets can
 be raised without changing the aggregator:
@@ -86,3 +90,22 @@ crew readiness metrics \
 If hosted evidence or thresholds are absent, affected metrics are reported as
 `unmeasured` and the run fails. That is the expected result before external
 hosted validation has been approved and completed.
+
+## Readiness Gate
+
+For operator go/no-go checks, use the default-threshold gate:
+
+```bash
+crew readiness gate \
+  --validation-report dist/phase-1-validation.json \
+  --validation-report dist/phase-2-validation.json \
+  --include-agent-requests \
+  --recent 20 \
+  --format text
+```
+
+`crew readiness gate` generates local workload evidence from the project state
+when no `--workload-evidence` file is supplied. It applies default thresholds
+and prints blockers such as `missing_validation_report`,
+`unmeasured:host_bridge_completion_rate`, or `threshold:task_success_rate`.
+Pass `--thresholds dist/readiness-thresholds.json` to override the defaults.

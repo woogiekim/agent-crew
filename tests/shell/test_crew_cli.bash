@@ -22,7 +22,7 @@ assert_contains "${out}" "cost [args]"
 assert_contains "${out}" "doctor [args]"
 assert_contains "${out}" "config doctor|dump"
 assert_contains "${out}" "debug [args]"
-assert_contains "${out}" "readiness evidence|metrics"
+assert_contains "${out}" "readiness evidence|metrics|gate"
 assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
@@ -124,6 +124,13 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" '"tasks": 0'
+
+it "crew readiness gate reports blockers with empty evidence"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" readiness gate --format json 2>&1)
+rc=$?
+assert_exit 1 "${rc}"
+assert_contains "${out}" '"passed": false'
+assert_contains "${out}" '"missing_validation_report"'
 
 TRACE_HOME=$(make_tmp)
 TRACE_PROJECT=$(make_tmp)
@@ -357,6 +364,9 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-quality-plan-check.py"
 
 it "crew run installs automatic issue reporter during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/auto-issue-reporter.py"
+
+it "crew run installs readiness gate during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/readiness-gate.py"
 
 it "crew run installs memory GC command during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/memory-gc.py"

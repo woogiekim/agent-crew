@@ -3,12 +3,14 @@
 
 Inputs:
   --state-dir PATH      project state directory with tasks/
-  --recent N           limit to most recent task directories
+  --recent N           limit to most recent task/request directories
+  --include-agent-requests
+                        include direct-agent requests under agent-requests/
   --output PATH        optional JSON output path
 
 Outputs:
-  JSON or text evidence with task counts, bridge completions, manual repairs,
-  human interventions, retries, and task success totals.
+  JSON or text evidence with workload counts, bridge completions, manual
+  repairs, human interventions, retries, and success totals.
 
 Exit codes:
   0 - evidence generated
@@ -85,6 +87,15 @@ def task_dirs(state_dir: Path, recent: int) -> list[Path]:
     return dirs[:recent] if recent > 0 else dirs
 
 
+def agent_request_dirs(state_dir: Path, recent: int) -> list[Path]:
+    requests_root = state_dir / "agent-requests"
+    if not requests_root.is_dir():
+        return []
+    dirs = [path for path in requests_root.iterdir() if path.is_dir()]
+    dirs.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return dirs[:recent] if recent > 0 else dirs
+
+
 def task_record(task_dir: Path) -> dict[str, Any]:
     register = read_json(task_dir / "register.json")
     result = read_text(task_dir / "result.md")
@@ -115,17 +126,71 @@ def task_record(task_dir: Path) -> dict[str, Any]:
     }
 
 
-def build_evidence(state_dir: Path, *, recent: int = 0, adapter: str = "local") -> dict[str, Any]:
+def agent_request_record(request_dir: Path) -> dict[str, Any]:
+    request = read_json(request_dir / "request.json")
+    result = read_text(request_dir / "result.md")
+    request_status = str(request.get("status") or "unknown").lower()
+
+    match = STATUS_RE.search(result)
+    if match:
+        status = match.group(1).lower()
+    elif request_status == "auto_completed":
+        status = "completed"
+    else:
+        status = request_status
+
+    host_bridge_status = str(request.get("host_bridge_status") or "").lower()
+    host_bridge_completed = host_bridge_status == "auto_completed"
+    success = status == "completed" or request_status == "auto_completed"
+    handoff_ready = status == "handoff_ready" or request_status == "handoff_ready"
+    host_bridge_failed = host_bridge_status == "failed"
+
+    return {
+        "request_id": request_dir.name,
+        "request_dir": str(request_dir),
+        "agent": str(request.get("agent") or "unknown"),
+        "status": status,
+        "request_status": request_status,
+        "host_bridge_status": host_bridge_status or "unknown",
+        "task_success": success,
+        "host_bridge_completed": host_bridge_completed,
+        "manual_repair_required": False,
+        "human_intervention_required": host_bridge_failed,
+        "retries": 0,
+        "handoff_ready": handoff_ready,
+    }
+
+
+def _sum(records: list[dict[str, Any]], key: str) -> int:
+    return sum(1 for record in records if record[key])
+
+
+def build_evidence(
+    state_dir: Path,
+    *,
+    recent: int = 0,
+    adapter: str = "local",
+    include_agent_requests: bool = False,
+) -> dict[str, Any]:
     if not state_dir.is_dir():
         raise ValueError(f"state directory not found: {state_dir}")
 
-    tasks = [task_record(path) for path in task_dirs(state_dir, recent)]
-    total = len(tasks)
-    successes = sum(1 for task in tasks if task["task_success"])
-    bridge_completed = sum(1 for task in tasks if task["host_bridge_completed"])
-    manual_repairs = sum(1 for task in tasks if task["manual_repair_required"])
-    retries = sum(int(task["retries"]) for task in tasks)
-    handoff_ready = sum(1 for task in tasks if task["handoff_ready"])
+    workflow_tasks = [task_record(path) for path in task_dirs(state_dir, recent)]
+    agent_requests = [
+        agent_request_record(path)
+        for path in agent_request_dirs(state_dir, recent)
+    ] if include_agent_requests else []
+    workload_records = workflow_tasks + agent_requests
+
+    total = len(workload_records)
+    successes = _sum(workload_records, "task_success")
+    bridge_completed = _sum(workload_records, "host_bridge_completed")
+    manual_repairs = _sum(workload_records, "manual_repair_required")
+    human_interventions = _sum(workload_records, "human_intervention_required")
+    retries = sum(int(record["retries"]) for record in workload_records)
+    handoff_ready = _sum(workload_records, "handoff_ready")
+    task_successes = _sum(workflow_tasks, "task_success")
+    agent_successes = _sum(agent_requests, "task_success")
 
     return {
         "schema_version": 1,
@@ -137,24 +202,38 @@ def build_evidence(state_dir: Path, *, recent: int = 0, adapter: str = "local") 
         "successes": successes,
         "host_bridge_completed": bridge_completed,
         "manual_repairs": manual_repairs,
-        "human_interventions": manual_repairs,
+        "human_interventions": human_interventions,
         "retries": retries,
         "handoff_ready_tasks": handoff_ready,
-        "task_records": tasks,
+        "workflow_tasks": len(workflow_tasks),
+        "workflow_task_successes": task_successes,
+        "agent_requests": len(agent_requests),
+        "agent_request_successes": agent_successes,
+        "agent_request_host_bridge_completed": _sum(agent_requests, "host_bridge_completed"),
+        "agent_request_human_interventions": _sum(agent_requests, "human_intervention_required"),
+        "agent_request_handoff_ready": _sum(agent_requests, "handoff_ready"),
+        "task_records": workflow_tasks,
+        "agent_request_records": agent_requests,
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-dir", required=True)
-    parser.add_argument("--recent", type=int, default=0, help="Most recent task directories to include; 0 means all.")
+    parser.add_argument("--recent", type=int, default=0, help="Most recent task/request directories to include; 0 means all.")
     parser.add_argument("--adapter", default="local")
+    parser.add_argument("--include-agent-requests", action="store_true", help="Include direct-agent request evidence.")
     parser.add_argument("--output", help="Write JSON evidence to this path.")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args()
 
     try:
-        evidence = build_evidence(Path(args.state_dir).expanduser().resolve(), recent=max(args.recent, 0), adapter=args.adapter)
+        evidence = build_evidence(
+            Path(args.state_dir).expanduser().resolve(),
+            recent=max(args.recent, 0),
+            adapter=args.adapter,
+            include_agent_requests=args.include_agent_requests,
+        )
     except ValueError as exc:
         print(f"hosted-workload-evidence: {exc}", file=sys.stderr)
         return 2
@@ -170,6 +249,8 @@ def main() -> int:
         print("PASS: hosted workload evidence")
         print(
             f"tasks={evidence['tasks']} successes={evidence['successes']} "
+            f"workflow_tasks={evidence['workflow_tasks']} "
+            f"agent_requests={evidence['agent_requests']} "
             f"host_bridge_completed={evidence['host_bridge_completed']} "
             f"manual_repairs={evidence['manual_repairs']} retries={evidence['retries']} "
             f"handoff_ready={evidence['handoff_ready_tasks']}"

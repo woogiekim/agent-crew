@@ -39,8 +39,8 @@ Commands:
   doctor [args]                    Run framework operational readiness checks
   config doctor|dump [args]        Show effective configuration and drift
   debug [args]                     Run doctor + recent telemetry + cost snapshot
-  readiness evidence|metrics [args]
-                                    Generate readiness workload evidence or metrics
+  readiness evidence|metrics|gate [args]
+                                    Generate readiness evidence, metrics, or gate report
   resume [--print|--dry-run] TASK_ID
                                     Request or print deterministic resume state
   update [--local [SOURCE_ROOT]]   Refresh installed assets
@@ -168,6 +168,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
     "core/scripts/generate-release-checksums.py:${AGENT_CREW_HOME}/scripts/generate-release-checksums.py" \
     "core/scripts/readiness-metrics.py:${AGENT_CREW_HOME}/scripts/readiness-metrics.py" \
+    "core/scripts/readiness-gate.py:${AGENT_CREW_HOME}/scripts/readiness-gate.py" \
     "core/scripts/hosted-workload-evidence.py:${AGENT_CREW_HOME}/scripts/hosted-workload-evidence.py" \
     "core/scripts/check-host-bridge.py:${AGENT_CREW_HOME}/scripts/check-host-bridge.py" \
     "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
@@ -625,13 +626,20 @@ cmd_readiness() {
       require_file "${helper}" "readiness metrics helper"
       python3 "${helper}" "$@"
       ;;
+    gate)
+      local helper="${ASSET_ROOT}/scripts/readiness-gate.py"
+      require_file "${helper}" "readiness gate helper"
+      python3 "${helper}" --state-dir "${STATE_DIR}" "$@"
+      ;;
     -h|--help|"")
       cat <<'EOF'
-usage: crew readiness evidence [--recent N] [--output PATH] [--format text|json]
+usage: crew readiness evidence [--recent N] [--include-agent-requests] [--output PATH] [--format text|json]
        crew readiness metrics [readiness-metrics.py args]
+       crew readiness gate [--validation-report PATH] [--include-agent-requests] [readiness-gate.py args]
 
 Generate local workload evidence from agent-crew task state, then feed that
-evidence into commercial readiness metric aggregation.
+evidence into commercial readiness metric aggregation or a default-threshold
+readiness gate with blocker reporting.
 EOF
       ;;
     *)

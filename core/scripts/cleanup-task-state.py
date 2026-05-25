@@ -51,6 +51,11 @@ def discover(state_dir: Path, min_age_seconds: int, handoff_ready_min_age_second
                 "path": str(pending),
                 "age_seconds": age_seconds(pending),
                 "planned_action": "archive_sentinel",
+                "operator_hint": "Verify no live supervisor owns this task, then run cleanup-state --apply to archive the stale sentinel.",
+                "commands": [
+                    f"crew trace --task-id {pending.parent.name}",
+                    "crew cleanup-state --apply",
+                ],
                 "destructive": False,
             })
 
@@ -71,6 +76,7 @@ def discover(state_dir: Path, min_age_seconds: int, handoff_ready_min_age_second
                 "path": str(task_dir),
                 "age_seconds": age_seconds(task_dir),
                 "planned_action": "operator_review_then_repair_or_cancel",
+                "operator_hint": "Resume the handoff if work is still needed, repair it if completed manually, or cancel it if superseded.",
                 "commands": [
                     f"crew resume {task_dir.name}",
                     f"crew repair --status completed --note \"<summary>\" {task_dir.name}",
@@ -187,6 +193,10 @@ def main() -> int:
         for item in items:
             label = item.get("task_id") or Path(item["path"]).name
             print(f"- {item['kind']} {label}: {item['planned_action']}")
+            if item.get("operator_hint"):
+                print(f"  hint: {item['operator_hint']}")
+            for command in item.get("commands", []):
+                print(f"  command: {command}")
     return 0
 
 

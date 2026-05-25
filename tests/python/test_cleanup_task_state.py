@@ -33,6 +33,9 @@ def test_cleanup_task_state_dry_run_lists_stale_markers_without_mutation(
     assert payload["summary"]["stale_active_markers"] == 1
     assert payload["summary"]["stale_supervisor_pending_sentinels"] == 1
     assert payload["summary"]["planned_archival_targets"] == 2
+    pending_items = [item for item in payload["planned_changes"] if item["kind"] == "stale_supervisor_pending"]
+    assert "crew trace --task-id 20260101-120000-0" in pending_items[0]["commands"]
+    assert "operator_hint" in pending_items[0]
     assert marker.exists()
     assert pending.exists()
     assert payload["policy"]["destructive_deletion"] == "not performed by this command"
@@ -94,3 +97,4 @@ def test_cleanup_task_state_reports_stale_handoff_ready_review_target(
     assert payload["summary"]["stale_handoff_ready_tasks"] == 1
     assert payload["summary"]["operator_review_targets"] == 1
     assert "crew resume 20260101-130000-0" in review[0]["commands"]
+    assert "repair it if completed manually" in review[0]["operator_hint"]

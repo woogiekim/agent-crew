@@ -115,9 +115,13 @@ invocation in SKILL.md; generic adds guidance).
   through the internal fallback. `crew doctor` includes this probe in host
   diagnostics.
 - `hosted-workload-evidence.py` — builds commercial readiness workload evidence
-  from local task state. It emits the task, success, auto bridge completion,
-  manual repair, human intervention, retry, and handoff-ready counts consumed
-  by `readiness-metrics.py`.
+  from local task state and, when requested, direct-agent request state. It
+  emits the task, success, auto bridge completion, manual repair, human
+  intervention, retry, and handoff-ready counts consumed by
+  `readiness-metrics.py`.
+- `readiness-gate.py` — operator go/no-go gate that combines validation reports,
+  generated or supplied workload evidence, default readiness thresholds, and
+  blocker reporting for missing, unmeasured, or below-threshold metrics.
 - `agent-capability-check.py` — validates the machine-readable
   `core/policies/agent-capabilities.json` manifest against agent markdown files,
   role boundaries, destructive-operation approval requirements, reviewer
