@@ -672,6 +672,7 @@ set -u
   printf 'RESULT:%s\n' "${AGENT_CREW_RESULT_PATH:-}"
   printf 'PROJECT_ROOT:%s\n' "${AGENT_CREW_PROJECT_ROOT:-}"
   printf 'ACTIVE:%s\n' "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-}"
+  printf 'AUTO_ROUTE_DISABLED:%s\n' "${AGENT_CREW_AUTO_ROUTE_DISABLED:-}"
   while IFS= read -r line; do
     printf 'PROMPT:%s\n' "${line}"
   done
@@ -700,6 +701,7 @@ assert_contains "$(cat "${FAKE_CODEX_LOG}")" "HANDOFF:${CODEX_AUTO_TASK_DIR}/han
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "RESULT:${CODEX_AUTO_TASK_DIR}/result.md"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROJECT_ROOT:${RESOLVED_TMP_PROJECT}"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "ACTIVE:1"
+assert_contains "$(cat "${FAKE_CODEX_LOG}")" "AUTO_ROUTE_DISABLED:1"
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Resume this existing agent-crew crew:run handoff in Codex."
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "PROMPT:Do not run crew repair for normal bridge completion."
 assert_contains "$(cat "${FAKE_CODEX_LOG}")" "Use repair guidance only when the task is genuinely blocked"
@@ -720,13 +722,34 @@ assert_contains "${out}" "STATUS: completed"
 AGENT_REQUEST_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^AGENT_REQUEST_ID:/ {print $2; exit}')
 AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
 assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
+assert_file_exists "${AGENT_REQUEST_DIR}/result.md"
 assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
 assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-completion.json"
 assert_eq "${AGENT_REQUEST_ID}" "$(cat "${AGENT_BRIDGE_LOG}")"
+assert_contains "$(cat "${AGENT_REQUEST_DIR}/result.md")" "## Bridge Output"
 
 REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
 assert_contains "${REQUEST_JSON}" '"status": "auto_completed"'
 assert_contains "${REQUEST_JSON}" '"host_bridge_status": "auto_completed"'
+
+it "crew agent treats zero-exit blocked bridge output as failed"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "STATUS: blocked" "BLOCKER: downstream blocked"' \
+    bash "${CREW}" agent analyst "direct bridge blocked output" 2>&1
+)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "STATUS: blocked"
+assert_contains "${out}" "BLOCKER: host AI bridge has not completed this agent request"
+BLOCKED_AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+BLOCKED_REQUEST_JSON=$(cat "${BLOCKED_AGENT_REQUEST_DIR}/request.json")
+assert_contains "${BLOCKED_REQUEST_JSON}" '"host_bridge_status": "failed"'
+assert_contains "${BLOCKED_REQUEST_JSON}" '"host_bridge_failure_reason": "bridge_reported_blocked"'
+assert_file_exists "${BLOCKED_AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
+assert_file_absent "${BLOCKED_AGENT_REQUEST_DIR}/context/host-bridge-completion.json"
+assert_file_absent "${BLOCKED_AGENT_REQUEST_DIR}/result.md"
 
 it "Codex host bridge command passes direct-agent request env"
 FAKE_AGENT_CODEX_LOG="${FAKE_CODEX_DIR}/agent-codex.log"
@@ -752,6 +775,7 @@ assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:Resume this existing 
 assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:AGENT_CREW_AGENT_NAME: analyst"
 assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:AGENT_CREW_AGENT_REQUEST_ID: ${CODEX_AGENT_REQUEST_ID}"
 assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "PROMPT:AGENT_CREW_REQUEST_DIR: ${CODEX_AGENT_REQUEST_DIR}"
+assert_contains "$(cat "${FAKE_AGENT_CODEX_LOG}")" "AUTO_ROUTE_DISABLED:1"
 
 it "crew agent host bridge command failure keeps request resumable"
 out=$(
@@ -787,17 +811,27 @@ assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
 it "crew agent writes direct handoff"
 assert_file_exists "${AGENT_REQUEST_DIR}/handoff.md"
 
-it "crew agent routes Korean input through input-normalizer before downstream agent"
+it "crew agent keeps intended agent for Korean inline normalization"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "방금 질문을 설명해주세요" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 KOREAN_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
 request_json=$(cat "${KOREAN_REQUEST_DIR}/request.json")
-assert_contains "${request_json}" '"agent": "input-normalizer"'
+assert_contains "${request_json}" '"agent": "analyst"'
 assert_contains "${request_json}" '"normalization_status": "required"'
+assert_contains "${request_json}" '"normalization_mode": "inline_direct_bridge"'
+assert_contains "${request_json}" '"normalization_agent": "input-normalizer"'
 assert_contains "${request_json}" '"intended_agent_after_normalization": "analyst"'
 assert_not_contains "${request_json}" "방금"
 assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 방금 질문을 설명해주세요"
+assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "NORMALIZATION_MODE: inline_direct_bridge"
+assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "Do not spawn input-normalizer"
+
+it "crew agent blocks Korean mutating direct requests before normalization"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "파일을 수정해주세요" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Use crew run for mutating work"
 
 ISSUE_BIN=$(make_tmp)
 mkdir -p "${ISSUE_BIN}"

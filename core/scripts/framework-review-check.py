@@ -409,7 +409,7 @@ def evaluate_repo(root: Path) -> dict:
                     "crew run routes Korean task text through input-normalizer gate",
                     "crew run routes non-English multilingual input through input-normalizer gate",
                     "crew run routes ambiguous conversational input through input-normalizer gate",
-                    "crew agent routes Korean input through input-normalizer before downstream agent",
+                    "crew agent keeps intended agent for Korean inline normalization",
                 ],
             ),
             "Non-English or ambiguous task input must be normalized before every crew run or direct-agent downstream handoff.",

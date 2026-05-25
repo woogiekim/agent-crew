@@ -52,6 +52,10 @@ Resume this existing agent-crew direct-agent handoff in Codex.
 
 Do not create a new crew:run task. Preserve existing agent-crew ROUTE and crew:agent routing semantics. Read the handoff and request artifacts from the paths below, then complete or update the existing request state according to the installed agent-crew workflow.
 
+If the handoff contains NORMALIZATION_MODE: inline_direct_bridge, perform the input-normalizer contract inline in this same bridge session, then continue as AGENT_CREW_AGENT_NAME. Do not spawn input-normalizer, korean-normalizer, a background agent, or a nested crew:agent/crew:run command for this normalization step.
+
+Direct-agent bridges run with a read-only project sandbox. Return the final answer on stdout. If result.md cannot be written from the child process, the parent runtime will persist the bridge stdout as direct-agent result evidence.
+
 Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
 
 AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
@@ -81,11 +85,24 @@ fi
 
 printf 'codex-host-bridge: invoking Codex for task %s\n' "${TASK_ID}" >&2
 
+CODEX_ARGS=(--ask-for-approval never)
+if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
+  CODEX_ARGS+=(--sandbox "${AGENT_CREW_CODEX_DIRECT_AGENT_SANDBOX:-read-only}")
+fi
+CODEX_ARGS+=(exec)
+if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
+  CODEX_ARGS+=(
+    -C "${TASK_DIR}"
+    --skip-git-repo-check
+  )
+else
+  CODEX_ARGS+=(
+    -C "${PROJECT_ROOT}"
+    --add-dir "${TASK_DIR}"
+  )
+fi
+CODEX_ARGS+=(-o "${LAST_MESSAGE_PATH}" -)
+
 AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
-  "${CODEX_BIN}" \
-    --ask-for-approval never \
-    exec \
-    -C "${PROJECT_ROOT}" \
-    --add-dir "${TASK_DIR}" \
-    -o "${LAST_MESSAGE_PATH}" \
-    - < "${PROMPT_PATH}"
+AGENT_CREW_AUTO_ROUTE_DISABLED=1 \
+  "${CODEX_BIN}" "${CODEX_ARGS[@]}" < "${PROMPT_PATH}"

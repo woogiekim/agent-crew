@@ -520,6 +520,14 @@ def invoke_host_bridge(
     }
 
 
+def host_bridge_reported_blocked(bridge_record: dict) -> bool:
+    output = "\n".join(
+        str(bridge_record.get(key, "") or "")
+        for key in ("stdout", "stderr")
+    )
+    return bool(re.search(r"(?im)^\s*(STATUS\s*:\s*blocked\b|BLOCKER\s*:)", output))
+
+
 def asset_root(explicit: str | None = None) -> Path:
     if explicit:
         return Path(explicit).expanduser().resolve()
@@ -1044,7 +1052,7 @@ def command_run(args: argparse.Namespace) -> int:
             project_root=project_root,
         )
         write_json(task_dir / "context" / "host-bridge-invocation.json", bridge_record)
-        if bridge_record["returncode"] == 0:
+        if bridge_record["returncode"] == 0 and not host_bridge_reported_blocked(bridge_record):
             latest_register = load_json(task_dir / "register.json", register)
             latest_pipeline = load_json(task_dir / "pipeline.json", pipeline)
             if looks_mutating_task(str(latest_register.get("task", args.task))):
@@ -1095,6 +1103,8 @@ def command_run(args: argparse.Namespace) -> int:
             return 0
 
         register["host_bridge_status"] = "failed"
+        if bridge_record["returncode"] == 0:
+            register["host_bridge_failure_reason"] = "bridge_reported_blocked"
         register["host_bridge_completion_path"] = str(task_dir / "context" / "host-bridge-invocation.json")
         write_json(task_dir / "register.json", register)
 
@@ -1163,15 +1173,20 @@ def command_agent(args: argparse.Namespace) -> int:
     )
     raw_task_for_normalizer = task if normalization_required else ""
     if normalization_required:
+        if looks_mutating(raw_task_for_normalizer):
+            print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
+            return 2
+
         normalization_metadata = input_normalization_metadata(task, next_target=intended_agent_name or "direct-agent auto-routing")
-        agent_name = "input-normalizer"
         route_reason = (
-            "input normalization gate before "
+            "inline input normalization before "
             f"{intended_agent_name or 'direct-agent auto-routing'}"
         )
-        task = input_normalization_task(
-            raw_task_for_normalizer,
-            next_target=intended_agent_name or "the appropriate direct agent",
+        task = (
+            "Complete this direct-agent request after inline input normalization. "
+            f"First normalize RAW_TASK from the handoff into a canonical English read-only request, "
+            f"then answer it as the {intended_agent_name or 'selected'} agent. "
+            "Do not spawn utility agents."
         )
 
     if looks_mutating(task):
@@ -1226,6 +1241,8 @@ def command_agent(args: argparse.Namespace) -> int:
                 "source_language": normalization_metadata.get("source_language", "unknown"),
                 "translation_required": normalization_metadata.get("translation_required", False),
                 "confidence": normalization_metadata.get("confidence", 0.0),
+                "normalization_mode": "inline_direct_bridge",
+                "normalization_agent": "input-normalizer",
                 "intended_agent_after_normalization": intended_agent_name or "",
             }
         )
@@ -1242,6 +1259,8 @@ def command_agent(args: argparse.Namespace) -> int:
     if normalization_required:
         handoff += (
             "\nNORMALIZATION_GATE: required\n"
+            "NORMALIZATION_MODE: inline_direct_bridge\n"
+            "NORMALIZATION_AGENT: input-normalizer\n"
             f"SOURCE_LANGUAGE: {normalization_metadata.get('source_language', 'unknown')}\n"
             f"TRANSLATION_REQUIRED: {str(bool(normalization_metadata.get('translation_required'))).lower()}\n"
             f"INTENDED_AGENT_AFTER_NORMALIZATION: {intended_agent_name or 'auto-route'}\n"
@@ -1249,8 +1268,9 @@ def command_agent(args: argparse.Namespace) -> int:
             "OUTPUT_CONTRACT: Return JSON with source_language, translation_required, "
             "raw_input_ref, normalized_task, objective, scope, constraints, "
             "acceptance_criteria, missing_context, risk_flags, downstream_route_hint, "
-            "confidence, and normalization_sources. Do not execute the downstream "
-            "agent until the normalized English instruction is available.\n"
+            "confidence, and normalization_sources. Perform this normalization inline "
+            "inside the direct-agent bridge session. Do not spawn input-normalizer, "
+            "korean-normalizer, a background agent, or a nested crew:agent command.\n"
         )
 
     write_json(request_dir / "request.json", request)
@@ -1277,9 +1297,23 @@ def command_agent(args: argparse.Namespace) -> int:
             },
         )
         write_json(bridge_invocation_path, bridge_record)
-        if bridge_record["returncode"] == 0:
+        if bridge_record["returncode"] == 0 and not host_bridge_reported_blocked(bridge_record):
             now = utc_now_z()
             write_json(bridge_completion_path, bridge_record)
+            result_path = request_dir / "result.md"
+            if not result_path.exists():
+                bridge_stdout = str(bridge_record.get("stdout", "")).strip()
+                result_path.write_text(
+                    "# Direct Agent Result\n\n"
+                    f"REQUEST_ID: {request_id}\n"
+                    f"AGENT: {agent_name}\n"
+                    "STATUS: completed\n"
+                    f"COMPLETED_AT: {now}\n"
+                    "FILES: none\n\n"
+                    "## Bridge Output\n\n"
+                    f"{bridge_stdout or 'No bridge stdout was captured.'}\n",
+                    encoding="utf-8",
+                )
             request.update(
                 {
                     "status": "auto_completed",
@@ -1300,6 +1334,8 @@ def command_agent(args: argparse.Namespace) -> int:
                 "host_bridge_completed_at": utc_now_z(),
             }
         )
+        if bridge_record["returncode"] == 0:
+            request["host_bridge_failure_reason"] = "bridge_reported_blocked"
         write_json(request_dir / "request.json", request)
         print("STATUS: blocked")
         print("BLOCKER: host AI bridge has not completed this agent request")

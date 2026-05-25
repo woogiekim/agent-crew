@@ -12,6 +12,15 @@ import os
 import shutil
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+
+def _env_flag(name):
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+if _env_flag("AGENT_CREW_AUTO_ROUTE_DISABLED") or _env_flag("AGENT_CREW_HOST_BRIDGE_ACTIVE"):
+    sys.exit(0)
+
+
 def _bridge_status():
     raw = os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "").strip()
     if not raw:
