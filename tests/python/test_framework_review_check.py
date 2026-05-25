@@ -75,6 +75,7 @@ def test_framework_review_covers_operational_categories():
         "pipeline_quality_metrics_schema_gate",
         "durable_workflow_architecture_contract",
         "persistent_workflow_test_strategy_contract",
+        "persistent_workflow_chaos_contract",
     }.issubset(controls)
 
 

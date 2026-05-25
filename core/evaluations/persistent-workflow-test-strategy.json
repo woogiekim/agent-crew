@@ -1,6 +1,10 @@
 {
   "schema_version": 1,
   "round": 1,
+  "completed_rounds": [
+    1,
+    2
+  ],
   "system_identity": "Persistent AI Workforce System",
   "objective": [
     "workflow durability",
@@ -127,6 +131,16 @@
     "python3 core/scripts/durable-workflow-architecture-check.py --format text",
     "python3 core/scripts/workflow-replay-check.py --format text",
     "python3 core/scripts/retry-chaos-check.py --format text",
+    "python3 core/scripts/framework-review-check.py --format text"
+  ],
+  "round_2_evidence": [
+    "core/evaluations/persistent-workflow-chaos.json",
+    "core/scripts/persistent-workflow-chaos-check.py",
+    "tests/python/test_persistent_workflow_chaos.py"
+  ],
+  "round_2_commands": [
+    "python3 core/scripts/persistent-workflow-chaos-check.py --format text",
+    "python3 core/scripts/persistent-workflow-test-check.py --format text",
     "python3 core/scripts/framework-review-check.py --format text"
   ]
 }

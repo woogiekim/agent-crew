@@ -42,6 +42,7 @@ def test_persistent_workflow_strategy_fixture_covers_required_categories():
 
     assert fixture["system_identity"] == "Persistent AI Workforce System"
     assert fixture["round"] == 1
+    assert fixture["completed_rounds"] == [1, 2]
     assert set(fixture["test_categories"]) == {
         "workflow_durability",
         "resume_and_recovery",
@@ -60,6 +61,8 @@ def test_persistent_workflow_strategy_fixture_covers_chaos_and_metrics():
     assert "memory corruption" in fixture["chaos_requirements"]
     assert "Workflow Continuity Score" in fixture["success_metrics"]
     assert "superficial latency metrics" in fixture["anti_goals"]
+    assert "core/evaluations/persistent-workflow-chaos.json" in fixture["round_2_evidence"]
+    assert any("persistent-workflow-chaos-check.py" in command for command in fixture["round_2_commands"])
 
 
 def test_persistent_workflow_strategy_fails_when_evidence_is_missing(tmp_path: Path):

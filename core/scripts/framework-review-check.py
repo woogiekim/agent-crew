@@ -54,6 +54,8 @@ def evaluate_repo(root: Path) -> dict:
     persistent_workflow_test_doc = read_text(root / "docs/persistent-workflow-test-strategy.md")
     persistent_workflow_test_fixture = read_text(root / "core/evaluations/persistent-workflow-test-strategy.json")
     persistent_workflow_test_check = read_text(root / "core/scripts/persistent-workflow-test-check.py")
+    persistent_workflow_chaos_fixture = read_text(root / "core/evaluations/persistent-workflow-chaos.json")
+    persistent_workflow_chaos_check = read_text(root / "core/scripts/persistent-workflow-chaos-check.py")
     pipeline_rule = read_text(root / "core/rules/state-files/pipeline-json.md")
     supervisor = read_text(root / "core/agents/supervisor.md")
     supervisor_bootstrap = read_text(root / "core/agents/supervisor-bootstrap.md")
@@ -192,6 +194,41 @@ def evaluate_repo(root: Path) -> dict:
             )
             and "REQUIRED_CATEGORIES" in persistent_workflow_test_check,
             "Persistent workflow testing must validate durability, resume/recovery, approval integrity, determinism, observability, plugin isolation, and long-running operations.",
+        ),
+        control(
+            "reliability",
+            "persistent_workflow_chaos_contract",
+            "high",
+            has_all(
+                persistent_workflow_chaos_fixture,
+                [
+                    "process_crash_resume_success",
+                    "runtime_restart_approval_pause",
+                    "token_exhaustion_partial_replay",
+                    "plugin_failure_isolated",
+                    "partial_persistence_failure_safe_block",
+                    "memory_corruption_recovery_blocks",
+                    "infrastructure_interruption_rehydrate",
+                    "Resume Success Rate",
+                    "Workflow Survival Rate",
+                    "Recovery Accuracy",
+                    "Approval Integrity",
+                    "Deterministic Stability",
+                    "Workflow Continuity Score",
+                ],
+            )
+            and has_all(
+                persistent_workflow_chaos_check,
+                [
+                    "REQUIRED_CHAOS",
+                    "REQUIRED_METRICS",
+                    "simulate_case",
+                    "metric_value",
+                    "Workflow Continuity Score",
+                    "dangerous_action",
+                ],
+            ),
+            "Round 2 persistent workflow testing must derive operational chaos metrics from deterministic survival, resume, approval, determinism, observability, plugin, memory, and infrastructure scenarios.",
         ),
         control(
             "architecture",

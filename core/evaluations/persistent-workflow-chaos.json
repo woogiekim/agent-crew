@@ -1,0 +1,400 @@
+{
+  "schema_version": 1,
+  "round": 2,
+  "name": "agent-crew persistent workflow operational chaos scenarios",
+  "system_identity": "Persistent AI Workforce System",
+  "primary_question": "Can the workflow survive and continue safely?",
+  "chaos_requirements": [
+    "process crash",
+    "runtime restart",
+    "partial persistence failure",
+    "plugin failure",
+    "token exhaustion",
+    "memory corruption",
+    "infrastructure interruption"
+  ],
+  "success_metrics": [
+    "Resume Success Rate",
+    "Workflow Survival Rate",
+    "Recovery Accuracy",
+    "Approval Integrity",
+    "Deterministic Stability",
+    "Workflow Continuity Score"
+  ],
+  "metric_thresholds": {
+    "Resume Success Rate": 1.0,
+    "Workflow Survival Rate": 1.0,
+    "Recovery Accuracy": 1.0,
+    "Approval Integrity": 1.0,
+    "Deterministic Stability": 1.0,
+    "Workflow Continuity Score": 0.9
+  },
+  "allowed_states": [
+    "PLANNING",
+    "CHECKPOINTING",
+    "EXECUTING",
+    "WAITING_APPROVAL",
+    "INTERRUPTED",
+    "RECOVERING",
+    "COMPLETED",
+    "BLOCKED_SAFELY"
+  ],
+  "cases": [
+    {
+      "id": "process_crash_resume_success",
+      "description": "A workflow survives a process crash by restoring the last checkpoint and continuing to completion.",
+      "chaos": [
+        "process crash"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "EXECUTING",
+        "INTERRUPTED",
+        "RECOVERING",
+        "EXECUTING",
+        "COMPLETED"
+      ],
+      "events": [
+        {
+          "trace_id": "process_crash_resume_success.001",
+          "state": "CHECKPOINTING",
+          "kind": "checkpoint_written"
+        },
+        {
+          "trace_id": "process_crash_resume_success.002",
+          "state": "INTERRUPTED",
+          "kind": "process_crash"
+        },
+        {
+          "trace_id": "process_crash_resume_success.003",
+          "state": "RECOVERING",
+          "kind": "checkpoint_restored"
+        },
+        {
+          "trace_id": "process_crash_resume_success.004",
+          "state": "COMPLETED",
+          "kind": "workflow_completed"
+        }
+      ],
+      "expected": {
+        "terminal_status": "completed",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "restored",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    },
+    {
+      "id": "runtime_restart_approval_pause",
+      "description": "A pending dangerous operation remains blocked after restart until approval is explicitly granted.",
+      "chaos": [
+        "runtime restart"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "EXECUTING",
+        "WAITING_APPROVAL",
+        "INTERRUPTED",
+        "RECOVERING",
+        "WAITING_APPROVAL",
+        "BLOCKED_SAFELY"
+      ],
+      "events": [
+        {
+          "trace_id": "runtime_restart_approval_pause.001",
+          "state": "WAITING_APPROVAL",
+          "kind": "approval_requested",
+          "operation": "git push",
+          "approved": false
+        },
+        {
+          "trace_id": "runtime_restart_approval_pause.002",
+          "state": "INTERRUPTED",
+          "kind": "runtime_restart"
+        },
+        {
+          "trace_id": "runtime_restart_approval_pause.003",
+          "state": "RECOVERING",
+          "kind": "approval_rehydrated",
+          "operation": "git push",
+          "approved": false
+        },
+        {
+          "trace_id": "runtime_restart_approval_pause.004",
+          "state": "BLOCKED_SAFELY",
+          "kind": "dangerous_action",
+          "operation": "git push",
+          "approved": false,
+          "status": "blocked"
+        }
+      ],
+      "expected": {
+        "terminal_status": "blocked_safely",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "approval_preserved",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    },
+    {
+      "id": "token_exhaustion_partial_replay",
+      "description": "Token exhaustion resumes through partial replay instead of restarting the workflow from scratch.",
+      "chaos": [
+        "token exhaustion"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "EXECUTING",
+        "INTERRUPTED",
+        "RECOVERING",
+        "EXECUTING",
+        "COMPLETED"
+      ],
+      "events": [
+        {
+          "trace_id": "token_exhaustion_partial_replay.001",
+          "state": "CHECKPOINTING",
+          "kind": "checkpoint_written"
+        },
+        {
+          "trace_id": "token_exhaustion_partial_replay.002",
+          "state": "INTERRUPTED",
+          "kind": "token_exhaustion"
+        },
+        {
+          "trace_id": "token_exhaustion_partial_replay.003",
+          "state": "RECOVERING",
+          "kind": "partial_replay"
+        },
+        {
+          "trace_id": "token_exhaustion_partial_replay.004",
+          "state": "COMPLETED",
+          "kind": "workflow_completed"
+        }
+      ],
+      "expected": {
+        "terminal_status": "completed",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "restored",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    },
+    {
+      "id": "plugin_failure_isolated",
+      "description": "A failing plugin is isolated and the core workflow continues through a controlled fallback path.",
+      "chaos": [
+        "plugin failure"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "EXECUTING",
+        "RECOVERING",
+        "EXECUTING",
+        "COMPLETED"
+      ],
+      "events": [
+        {
+          "trace_id": "plugin_failure_isolated.001",
+          "state": "EXECUTING",
+          "kind": "plugin_failure",
+          "plugin": "unsafe-runtime-extension"
+        },
+        {
+          "trace_id": "plugin_failure_isolated.002",
+          "state": "RECOVERING",
+          "kind": "plugin_isolated",
+          "plugin": "unsafe-runtime-extension"
+        },
+        {
+          "trace_id": "plugin_failure_isolated.003",
+          "state": "EXECUTING",
+          "kind": "fallback_runtime_selected"
+        },
+        {
+          "trace_id": "plugin_failure_isolated.004",
+          "state": "COMPLETED",
+          "kind": "workflow_completed"
+        }
+      ],
+      "expected": {
+        "terminal_status": "completed",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "isolated",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    },
+    {
+      "id": "partial_persistence_failure_safe_block",
+      "description": "A partial checkpoint write failure blocks safely instead of continuing with ambiguous state.",
+      "chaos": [
+        "partial persistence failure"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "INTERRUPTED",
+        "RECOVERING",
+        "BLOCKED_SAFELY"
+      ],
+      "events": [
+        {
+          "trace_id": "partial_persistence_failure_safe_block.001",
+          "state": "CHECKPOINTING",
+          "kind": "checkpoint_write_started"
+        },
+        {
+          "trace_id": "partial_persistence_failure_safe_block.002",
+          "state": "INTERRUPTED",
+          "kind": "partial_persistence_failure"
+        },
+        {
+          "trace_id": "partial_persistence_failure_safe_block.003",
+          "state": "RECOVERING",
+          "kind": "state_validation_failed"
+        },
+        {
+          "trace_id": "partial_persistence_failure_safe_block.004",
+          "state": "BLOCKED_SAFELY",
+          "kind": "safe_block"
+        }
+      ],
+      "expected": {
+        "terminal_status": "blocked_safely",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "safe_block",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    },
+    {
+      "id": "memory_corruption_recovery_blocks",
+      "description": "Memory corruption is detected and converted into a safe block rather than being injected into resumed context.",
+      "chaos": [
+        "memory corruption"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "EXECUTING",
+        "INTERRUPTED",
+        "RECOVERING",
+        "BLOCKED_SAFELY"
+      ],
+      "events": [
+        {
+          "trace_id": "memory_corruption_recovery_blocks.001",
+          "state": "EXECUTING",
+          "kind": "memory_corruption_detected"
+        },
+        {
+          "trace_id": "memory_corruption_recovery_blocks.002",
+          "state": "INTERRUPTED",
+          "kind": "context_injection_blocked"
+        },
+        {
+          "trace_id": "memory_corruption_recovery_blocks.003",
+          "state": "RECOVERING",
+          "kind": "memory_quarantine"
+        },
+        {
+          "trace_id": "memory_corruption_recovery_blocks.004",
+          "state": "BLOCKED_SAFELY",
+          "kind": "safe_block"
+        }
+      ],
+      "expected": {
+        "terminal_status": "blocked_safely",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "safe_block",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    },
+    {
+      "id": "infrastructure_interruption_rehydrate",
+      "description": "Infrastructure interruption rehydrates workflow state and continues from the persisted checkpoint.",
+      "chaos": [
+        "infrastructure interruption"
+      ],
+      "state_sequence": [
+        "PLANNING",
+        "CHECKPOINTING",
+        "EXECUTING",
+        "INTERRUPTED",
+        "RECOVERING",
+        "EXECUTING",
+        "COMPLETED"
+      ],
+      "events": [
+        {
+          "trace_id": "infrastructure_interruption_rehydrate.001",
+          "state": "CHECKPOINTING",
+          "kind": "checkpoint_written"
+        },
+        {
+          "trace_id": "infrastructure_interruption_rehydrate.002",
+          "state": "INTERRUPTED",
+          "kind": "infrastructure_interruption"
+        },
+        {
+          "trace_id": "infrastructure_interruption_rehydrate.003",
+          "state": "RECOVERING",
+          "kind": "workflow_rehydrated"
+        },
+        {
+          "trace_id": "infrastructure_interruption_rehydrate.004",
+          "state": "COMPLETED",
+          "kind": "workflow_completed"
+        }
+      ],
+      "expected": {
+        "terminal_status": "completed",
+        "workflow_survived": true,
+        "resume_success": true,
+        "recovery_accuracy": "restored",
+        "approval_integrity": true,
+        "plugin_isolated": true,
+        "deterministic_stability": true,
+        "observability_trace": true,
+        "unsafe_execution": false,
+        "workflow_continuity_score_min": 0.9
+      }
+    }
+  ]
+}

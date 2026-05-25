@@ -45,6 +45,8 @@ REQUIRED_DOC_TERMS = [
     "long-running operational workflow system",
     "Can this AI continue working tomorrow?",
     "Can the workflow survive and continue safely?",
+    "Round 2 Scope",
+    "deterministic operational chaos scenarios",
     "Workflow durability",
     "Resume and recovery",
     "Human approval integrity",
@@ -91,6 +93,14 @@ def all_evidence_paths_exist(root: Path, fixture: dict) -> bool:
     return True
 
 
+def round_2_evidence_paths_exist(root: Path, fixture: dict) -> bool:
+    evidence = fixture.get("round_2_evidence", [])
+    if not isinstance(evidence, list) or not evidence:
+        return False
+
+    return all(isinstance(rel_path, str) and (root / rel_path).exists() for rel_path in evidence)
+
+
 def evaluate(root: Path) -> dict:
     root = root.resolve()
     doc = read_text(root / "docs/persistent-workflow-test-strategy.md")
@@ -102,6 +112,8 @@ def evaluate(root: Path) -> dict:
     metrics = set(fixture.get("success_metrics", [])) if isinstance(fixture.get("success_metrics"), list) else set()
     anti_goals = set(fixture.get("anti_goals", [])) if isinstance(fixture.get("anti_goals"), list) else set()
     commands = fixture.get("round_1_commands", []) if isinstance(fixture.get("round_1_commands"), list) else []
+    completed_rounds = fixture.get("completed_rounds", []) if isinstance(fixture.get("completed_rounds"), list) else []
+    round_2_commands = fixture.get("round_2_commands", []) if isinstance(fixture.get("round_2_commands"), list) else []
 
     checks = [
         finding(
@@ -118,6 +130,7 @@ def evaluate(root: Path) -> dict:
             "identity_and_objective",
             fixture.get("system_identity") == "Persistent AI Workforce System"
             and fixture.get("round") == 1
+            and {1, 2}.issubset(set(completed_rounds))
             and all(term in fixture.get("objective", []) for term in [
                 "workflow durability",
                 "execution continuity",
@@ -164,6 +177,19 @@ def evaluate(root: Path) -> dict:
             and any("retry-chaos-check.py" in command for command in commands)
             and any("framework-review-check.py" in command for command in commands),
             "round 1 command set must connect strategy, replay, chaos, and framework checks.",
+        ),
+        finding(
+            "round_2_evidence_paths",
+            round_2_evidence_paths_exist(root, fixture),
+            "round 2 evidence must point at existing operational chaos artifacts.",
+        ),
+        finding(
+            "round_2_commands",
+            all(isinstance(command, str) and command.startswith("python3 core/scripts/") for command in round_2_commands)
+            and any("persistent-workflow-chaos-check.py" in command for command in round_2_commands)
+            and any("persistent-workflow-test-check.py" in command for command in round_2_commands)
+            and any("framework-review-check.py" in command for command in round_2_commands),
+            "round 2 command set must connect chaos scenarios, strategy, and framework checks.",
         ),
     ]
 

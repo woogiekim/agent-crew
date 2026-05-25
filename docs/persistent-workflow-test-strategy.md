@@ -1,7 +1,6 @@
 # Persistent Workflow Test Strategy
 
-This document defines the first-round test strategy for validating agent-crew
-as a:
+This document defines the test strategy for validating agent-crew as a:
 
 ```text
 Persistent AI Workforce System
@@ -12,6 +11,8 @@ system, not merely as request/response software, prompt execution tooling, or
 isolated AI tasks.
 
 Round 1 treats agent-crew as a long-running operational workflow system.
+Round 2 adds deterministic operational chaos scenarios and derives persistent
+workflow success metrics from those scenarios.
 
 ## Objective
 
@@ -102,6 +103,35 @@ Round 1 adds:
 Round 1 validates that the repository contains a coherent persistent workflow
 test strategy and that the strategy is connected to existing deterministic
 checks. It is intentionally not a substitute for future hosted endurance tests.
+
+## Round 2 Scope
+
+Round 2 adds:
+
+- `core/evaluations/persistent-workflow-chaos.json`
+- `core/scripts/persistent-workflow-chaos-check.py`
+- `tests/python/test_persistent_workflow_chaos.py`
+- framework-review coverage for the operational chaos contract
+
+Round 2 validates deterministic operational chaos scenarios for:
+
+- process crash resume
+- runtime restart with approval preservation
+- token exhaustion partial replay
+- plugin failure isolation
+- partial persistence failure safe block
+- memory corruption quarantine
+- infrastructure interruption rehydration
+
+The round 2 checker derives the required operational metrics from scenario
+outcomes:
+
+- Resume Success Rate
+- Workflow Survival Rate
+- Recovery Accuracy
+- Approval Integrity
+- Deterministic Stability
+- Workflow Continuity Score
 
 ## Anti-Goals
 
