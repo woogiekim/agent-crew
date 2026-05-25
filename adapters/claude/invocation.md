@@ -15,6 +15,30 @@ the same `crew:<intent>` semantics. Documentation should still prefer
 `crew:<intent>`. The native shell CLI uses space-separated commands such as
 `crew run` and `crew agent`; reserve those forms for CLI documentation.
 
+## Host bridge command
+
+Claude Code can complete native file-based handoffs through the Claude host
+bridge:
+
+```bash
+export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/claude/bin/claude-host-bridge"
+```
+
+The bridge runs Claude from an isolated temporary working directory and grants
+explicit access to the project root and task state directory with `--add-dir`.
+This prevents project-level instructions from turning a bridge validation back
+into a new `crew:run` request while preserving the existing handoff artifacts.
+
+Optional tuning:
+
+```bash
+export AGENT_CREW_CLAUDE_MODEL="claude-haiku-4-5"
+export AGENT_CREW_CLAUDE_EFFORT="low"
+export AGENT_CREW_CLAUDE_MAX_BUDGET_USD="0.25"
+export AGENT_CREW_CLAUDE_TOOLS="Bash"
+export AGENT_CREW_CLAUDE_ALLOWED_TOOLS="Bash"
+```
+
 ## Capability mappings
 
 `core/` markdown never names a Claude-Code-specific tool directly (Invariant 3 of
