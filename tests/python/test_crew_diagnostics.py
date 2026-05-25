@@ -95,7 +95,34 @@ def test_codex_false_capabilities_are_reported_as_policy_only(tmp_path: Path):
 
     reports = {item["name"]: item for item in cfg["capability_reports"]}
     assert reports["task_tools"]["status"] == "policy-only"
+    assert reports["task_tools"]["severity"] == "info"
+    assert reports["task_tools"]["non_blocking"] is True
     assert reports["cost_tracking"]["status"] == "policy-only"
+    assert reports["cost_tracking"]["severity"] == "info"
+
+
+def test_doctor_host_reports_codex_policy_only_capabilities_as_info(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / "home"
+    state = home / "state" / project.name
+    state.mkdir(parents=True)
+    (state / "capabilities.json").write_text(
+        '{"adapter":"codex","task_tools":false,"cost_tracking":false}\n',
+        encoding="utf-8",
+    )
+    args = type("Args", (), {
+        "project_root": str(project),
+        "asset_root": str(REPO_ROOT / "core"),
+        "agent_crew_home": str(home),
+        "format": "json",
+    })()
+
+    findings = diagnostics.doctor_host(args)
+    by_label = {item["label"]: item for item in findings}
+
+    assert by_label["capability task_tools policy-only"]["status"] == "info"
+    assert by_label["capability cost_tracking policy-only"]["status"] == "info"
 
 
 def test_stale_state_summary_counts_markers(tmp_path: Path):

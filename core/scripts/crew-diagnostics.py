@@ -221,17 +221,22 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
     for name, enabled in flags.items():
         if enabled:
             status = "runtime-enforced"
+            severity = "pass"
             detail = "active adapter advertises this runtime capability"
         elif active_adapter == "codex" and name in {"hook_system", "interactive_question", "task_tools", "agent_background", "monitor_tool", "cost_tracking"}:
             status = "policy-only"
+            severity = "info"
             detail = "Codex uses prompt/file fallbacks; this capability is not runtime-enforced"
         else:
             status = "unavailable"
+            severity = "warn"
             detail = "active adapter does not advertise this runtime capability"
         capability_reports.append({
             "name": name,
             "enabled": enabled,
             "status": status,
+            "severity": severity,
+            "non_blocking": severity == "info",
             "detail": detail,
         })
     report_publish = os.environ.get("AGENT_CREW_REPORT_PUBLISH") or os.environ.get("AGENT_CREW_AUTO_ISSUE_PUBLISH") or "none"
@@ -267,6 +272,16 @@ def print_status(label: str, ok: bool, detail: str = "", *, emit: bool = True) -
     if emit:
         print(line)
     return {"label": label, "status": status.lower(), "detail": detail}
+
+
+def print_finding(label: str, status: str, detail: str = "", *, emit: bool = True) -> dict[str, Any]:
+    normalized = status.lower()
+    line = f"{normalized.upper()}: {label}"
+    if detail:
+        line += f" — {detail}"
+    if emit:
+        print(line)
+    return {"label": label, "status": normalized, "detail": detail}
 
 
 def auto_issue_reporting_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
@@ -587,10 +602,10 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
         print_status("install drift status", cfg["install_drift"]["status"] != "warn", cfg["install_drift"]["detail"], emit=args.format == "text"),
     ]
     for report in cfg["capability_reports"]:
-        ok = report["status"] == "runtime-enforced"
-        findings.append(print_status(
+        severity = str(report.get("severity") or ("pass" if report["status"] == "runtime-enforced" else "warn"))
+        findings.append(print_finding(
             f"capability {report['name']} {report['status']}",
-            ok,
+            severity,
             report["detail"],
             emit=args.format == "text",
         ))
