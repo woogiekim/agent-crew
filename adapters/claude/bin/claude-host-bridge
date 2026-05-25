@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Claude Code host bridge for agent-crew native handoffs.
+#
+# Run Claude from an isolated cwd so project-level CLAUDE.md / hooks do not
+# reinterpret a handoff validation as a new crew:run request. The task and
+# project roots are still explicitly available through --add-dir.
+
+fail() {
+  printf 'claude-host-bridge: %s\n' "$*" >&2
+  exit 2
+}
+
+require_env() {
+  local name="$1"
+  local value="${!name:-}"
+  [ -n "${value}" ] || fail "missing required environment variable: ${name}"
+}
+
+require_env AGENT_CREW_TASK_ID
+require_env AGENT_CREW_TASK_DIR
+require_env AGENT_CREW_HANDOFF_PATH
+require_env AGENT_CREW_RESULT_PATH
+require_env AGENT_CREW_PROJECT_ROOT
+
+if [ "${AGENT_CREW_HOST_BRIDGE_ACTIVE:-0}" = "1" ]; then
+  fail "refusing recursive host bridge invocation"
+fi
+
+CLAUDE_BIN="${AGENT_CREW_CLAUDE_BIN:-claude}"
+if ! command -v "${CLAUDE_BIN}" >/dev/null 2>&1; then
+  printf 'claude-host-bridge: Claude executable not found: %s\n' "${CLAUDE_BIN}" >&2
+  exit 127
+fi
+
+TASK_ID="${AGENT_CREW_TASK_ID}"
+TASK_DIR="${AGENT_CREW_TASK_DIR}"
+HANDOFF_PATH="${AGENT_CREW_HANDOFF_PATH}"
+RESULT_PATH="${AGENT_CREW_RESULT_PATH}"
+PROJECT_ROOT="${AGENT_CREW_PROJECT_ROOT}"
+CONTEXT_DIR="${TASK_DIR}/context"
+mkdir -p "${CONTEXT_DIR}"
+
+PROMPT_PATH="${CONTEXT_DIR}/claude-host-bridge-prompt.md"
+LAST_MESSAGE_PATH="${CONTEXT_DIR}/claude-host-bridge-last-message.json"
+
+if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
+  cat > "${PROMPT_PATH}" <<EOF
+Resume this existing agent-crew direct-agent handoff in Claude Code.
+
+Do not create a new crew:run task. Do not invoke crew:run or any slash command. Read the existing handoff/request artifacts from the paths below, then complete or update the existing request state according to the installed agent-crew workflow.
+
+Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
+
+AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
+AGENT_CREW_AGENT_REQUEST_ID: ${AGENT_CREW_AGENT_REQUEST_ID}
+AGENT_CREW_REQUEST_DIR: ${AGENT_CREW_REQUEST_DIR:-${TASK_DIR}}
+AGENT_CREW_TASK_ID: ${TASK_ID}
+AGENT_CREW_TASK_DIR: ${TASK_DIR}
+AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
+AGENT_CREW_RESULT_PATH: ${RESULT_PATH}
+AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
+EOF
+else
+  cat > "${PROMPT_PATH}" <<EOF
+Resume this existing agent-crew crew:run handoff in Claude Code.
+
+Do not create a new crew:run task. Do not invoke crew:run or any slash command. Continue from the existing handoff artifacts below and complete or update the existing task state according to the installed agent-crew supervisor workflow.
+
+Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
+
+AGENT_CREW_TASK_ID: ${TASK_ID}
+AGENT_CREW_TASK_DIR: ${TASK_DIR}
+AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
+AGENT_CREW_RESULT_PATH: ${RESULT_PATH}
+AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
+EOF
+fi
+
+SYSTEM_PROMPT="${AGENT_CREW_CLAUDE_BRIDGE_SYSTEM_PROMPT:-You are a minimal agent-crew host bridge executor. Follow only the provided handoff prompt. Do not invoke crew workflows unless the handoff explicitly requires it. Do not create a new task. Complete the existing handoff and exit.}"
+MODEL="${AGENT_CREW_CLAUDE_MODEL:-claude-haiku-4-5}"
+EFFORT="${AGENT_CREW_CLAUDE_EFFORT:-low}"
+TOOLS="${AGENT_CREW_CLAUDE_TOOLS:-Bash}"
+ALLOWED_TOOLS="${AGENT_CREW_CLAUDE_ALLOWED_TOOLS:-Bash}"
+MAX_BUDGET="${AGENT_CREW_CLAUDE_MAX_BUDGET_USD:-}"
+
+CLAUDE_ARGS=(
+  --print
+  --output-format json
+  --model "${MODEL}"
+  --effort "${EFFORT}"
+  --no-session-persistence
+  --setting-sources user
+  --disable-slash-commands
+  --strict-mcp-config
+  --mcp-config '{"mcpServers":{}}'
+  --system-prompt "${SYSTEM_PROMPT}"
+  --permission-mode dontAsk
+  --tools "${TOOLS}"
+  --allowedTools "${ALLOWED_TOOLS}"
+  --add-dir "${PROJECT_ROOT}"
+  --add-dir "${TASK_DIR}"
+)
+
+if [ -n "${MAX_BUDGET}" ]; then
+  CLAUDE_ARGS+=(--max-budget-usd "${MAX_BUDGET}")
+fi
+
+BRIDGE_CWD="$(mktemp -d "${TMPDIR:-/tmp}/agent-crew-claude-bridge.XXXXXX")"
+cleanup() {
+  rm -rf "${BRIDGE_CWD}"
+}
+trap cleanup EXIT
+
+printf 'claude-host-bridge: invoking Claude for task %s\n' "${TASK_ID}" >&2
+
+AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
+  bash -c 'cd "$1" && shift && exec "$@"' \
+    bash "${BRIDGE_CWD}" "${CLAUDE_BIN}" "${CLAUDE_ARGS[@]}" "$(cat "${PROMPT_PATH}")" \
+    > "${LAST_MESSAGE_PATH}"
+
+cat "${LAST_MESSAGE_PATH}"

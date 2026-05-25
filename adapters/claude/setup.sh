@@ -28,6 +28,7 @@ chmod +x "${CLAUDE_DIR}/agent-crew/scripts/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/scripts/"*.py 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/setup/"*.sh 2>/dev/null || true
 chmod +x "${CLAUDE_DIR}/agent-crew/adapters/claude/"*.sh 2>/dev/null || true
+chmod +x "${CLAUDE_DIR}/agent-crew/adapters/claude/bin/"* 2>/dev/null || true
 
 # Enforce system/agents/ classification before copying to mirror path.
 # In update mode: re-sync system/agents/ from the installed system source to
