@@ -24,6 +24,10 @@ bridge:
 export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/claude/bin/claude-host-bridge"
 ```
 
+The environment variable overrides bridge selection. When it is unset, the core
+runtime can discover the installed Claude bridge from the active project's
+`capabilities.json`.
+
 The bridge runs Claude from an isolated temporary working directory and grants
 explicit access to the project root and task state directory with `--add-dir`.
 This prevents project-level instructions from turning a bridge validation back

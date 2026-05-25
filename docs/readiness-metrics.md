@@ -34,6 +34,19 @@ Hosted workload evidence can be one or more JSON files with:
 }
 ```
 
+Local workflow state can generate this evidence directly:
+
+```bash
+crew readiness evidence \
+  --recent 20 \
+  --output dist/workload-evidence.json \
+  --format text
+```
+
+The generated JSON is intentionally compatible with
+`core/scripts/readiness-metrics.py` and includes bridge completion, manual
+repair, human intervention, retry, success, and handoff-ready counts.
+
 Thresholds are intentionally supplied as a JSON file so commercial targets can
 be raised without changing the aggregator:
 
@@ -58,6 +71,16 @@ python3 core/scripts/readiness-metrics.py \
   --workload-evidence dist/hosted-generic.json \
   --thresholds dist/readiness-thresholds.json \
   --output dist/readiness-metrics.json
+```
+
+The same metric aggregator is available through the native CLI:
+
+```bash
+crew readiness metrics \
+  --validation-report dist/phase-1-validation.json \
+  --validation-report dist/phase-2-validation.json \
+  --workload-evidence dist/workload-evidence.json \
+  --thresholds dist/readiness-thresholds.json
 ```
 
 If hosted evidence or thresholds are absent, affected metrics are reported as

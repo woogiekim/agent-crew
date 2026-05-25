@@ -14,7 +14,7 @@ out=$(bash "${CREW}" --help 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/resume/update/report/issue-ingest/cancel"
+it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/readiness/resume/update/report/issue-ingest/cancel"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
 assert_contains "${out}" "telemetry [args]"
 assert_contains "${out}" "trace [args]"
@@ -22,6 +22,7 @@ assert_contains "${out}" "cost [args]"
 assert_contains "${out}" "doctor [args]"
 assert_contains "${out}" "config doctor|dump"
 assert_contains "${out}" "debug [args]"
+assert_contains "${out}" "readiness evidence|metrics"
 assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
@@ -117,6 +118,12 @@ assert_exit 0 "${rc}"
 
 it "crew trace empty state explains no events"
 assert_contains "${out}" "No trace events found."
+
+it "crew readiness evidence exits 0 with empty task directory"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" readiness evidence --format json 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" '"tasks": 0'
 
 TRACE_HOME=$(make_tmp)
 TRACE_PROJECT=$(make_tmp)
@@ -655,6 +662,34 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 assert_contains "${out}" "\"tasks_completed\": 1"
 assert_contains "${out}" "\"host_bridge_status\": \"auto_completed\""
 assert_contains "${out}" "\"auto_completed\": 1"
+
+it "crew run discovers installed Codex bridge default from capabilities"
+DEFAULT_BRIDGE_HOME="$(make_tmp)"
+DEFAULT_BRIDGE_PROJECT="$(make_tmp)"
+DEFAULT_BRIDGE_LOG="$(make_tmp)/default-bridge.log"
+DEFAULT_BRIDGE_BIN="${DEFAULT_BRIDGE_HOME}/adapters/codex/bin/codex-host-bridge"
+mkdir -p "$(dirname "${DEFAULT_BRIDGE_BIN}")" "${DEFAULT_BRIDGE_HOME}/state/$(basename "${DEFAULT_BRIDGE_PROJECT}")"
+cat > "${DEFAULT_BRIDGE_HOME}/state/$(basename "${DEFAULT_BRIDGE_PROJECT}")/capabilities.json" <<EOF
+{"host":"codex"}
+EOF
+cat > "${DEFAULT_BRIDGE_BIN}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${AGENT_CREW_TASK_ID}" > "${AGENT_CREW_DEFAULT_BRIDGE_LOG}"
+EOF
+chmod +x "${DEFAULT_BRIDGE_BIN}"
+out=$(
+  AGENT_CREW_HOME="${DEFAULT_BRIDGE_HOME}" \
+  PROJECT_ROOT="${DEFAULT_BRIDGE_PROJECT}" \
+  AGENT_CREW_DEFAULT_BRIDGE_LOG="${DEFAULT_BRIDGE_LOG}" \
+    bash "${CREW}" run "default bridge task" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "HOST_BRIDGE: auto_completed"
+DEFAULT_AUTO_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+DEFAULT_AUTO_TASK_ID=$(basename "${DEFAULT_AUTO_TASK_DIR}")
+assert_eq "${DEFAULT_AUTO_TASK_ID}" "$(cat "${DEFAULT_BRIDGE_LOG}")"
+assert_contains "$(cat "${DEFAULT_AUTO_TASK_DIR}/context/host-bridge-completion.json")" "${DEFAULT_BRIDGE_BIN}"
 
 it "Codex host bridge command invokes codex exec with crew run handoff env"
 CODEX_BRIDGE="${REPO_ROOT}/adapters/codex/bin/codex-host-bridge"

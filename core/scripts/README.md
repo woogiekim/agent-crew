@@ -108,9 +108,16 @@ invocation in SKILL.md; generic adds guidance).
   from host diagnostics instead of anecdotal observation.
 - `check-host-bridge.py` — validates an optional external
   `AGENT_CREW_HOST_BRIDGE_COMMAND` for shell-token parseability and executable
-  discoverability/permissions. Missing external bridge configuration is a soft
-  notice because `crew run` records `handoff_ready` through the internal
-  fallback. `crew doctor` includes this probe in host diagnostics.
+  discoverability/permissions. When the environment variable is absent, it can
+  discover the installed Codex or Claude adapter bridge from the active project
+  capabilities. Missing external bridge configuration is a soft notice when no
+  default bridge is installed because `crew run` records `handoff_ready`
+  through the internal fallback. `crew doctor` includes this probe in host
+  diagnostics.
+- `hosted-workload-evidence.py` — builds commercial readiness workload evidence
+  from local task state. It emits the task, success, auto bridge completion,
+  manual repair, human intervention, retry, and handoff-ready counts consumed
+  by `readiness-metrics.py`.
 - `agent-capability-check.py` — validates the machine-readable
   `core/policies/agent-capabilities.json` manifest against agent markdown files,
   role boundaries, destructive-operation approval requirements, reviewer

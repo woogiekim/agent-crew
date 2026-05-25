@@ -10,6 +10,7 @@ import shlex
 import sys
 import os
 import shutil
+from pathlib import Path
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
 
@@ -24,7 +25,9 @@ if _env_flag("AGENT_CREW_AUTO_ROUTE_DISABLED") or _env_flag("AGENT_CREW_HOST_BRI
 def _bridge_status():
     raw = os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "").strip()
     if not raw:
-        return (False, "AGENT_CREW_HOST_BRIDGE_COMMAND is not set.")
+        raw = _default_bridge_command()
+        if not raw:
+            return (False, "AGENT_CREW_HOST_BRIDGE_COMMAND is not set.")
     try:
         argv = shlex.split(raw)
     except ValueError as error:
@@ -41,6 +44,33 @@ def _bridge_status():
     if shutil.which(executable):
         return (True, "bridge executable is available.")
     return (False, f"bridge executable is not in PATH: {executable}")
+
+
+def _default_bridge_command():
+    if _env_flag("AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT") or _env_flag("AGENT_CREW_DISABLE_DEFAULT_HOST_BRIDGE"):
+        return ""
+
+    home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))).expanduser()
+    project_root = Path(os.environ.get("PROJECT_ROOT", os.getcwd())).resolve()
+    host = os.environ.get("AGENT_CREW_HOST", "").strip().lower()
+    if not host:
+        try:
+            capabilities = json.loads((home / "state" / project_root.name / "capabilities.json").read_text(encoding="utf-8"))
+            host = str(capabilities.get("host") or capabilities.get("adapter") or "").strip().lower()
+        except Exception:
+            host = ""
+
+    bridge_name = {
+        "codex": "codex-host-bridge",
+        "claude": "claude-host-bridge",
+    }.get(host)
+    if not bridge_name:
+        return ""
+
+    candidate = home / "adapters" / host / "bin" / bridge_name
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return ""
 
 
 HOST_BRIDGE_READY, HOST_BRIDGE_REASON = _bridge_status()

@@ -21,6 +21,7 @@ def test_cleanup_task_state_dry_run_lists_stale_markers_without_mutation(
     r = script_runner(
         "cleanup-task-state.py",
         "--state-dir", str(state_dir),
+        "--handoff-ready-min-age-seconds", "0",
         "--format", "json",
         env=env_with_home,
     )
@@ -51,6 +52,7 @@ def test_cleanup_task_state_reports_blocked_retention_policy(
     r = script_runner(
         "cleanup-task-state.py",
         "--state-dir", str(state_dir),
+        "--handoff-ready-min-age-seconds", "0",
         "--format", "json",
         env=env_with_home,
     )
@@ -61,3 +63,34 @@ def test_cleanup_task_state_reports_blocked_retention_policy(
     assert retention
     assert retention[0]["state"] == "blocked"
     assert "result.md" in retention[0]["retained"]
+
+
+def test_cleanup_task_state_reports_stale_handoff_ready_review_target(
+    script_runner, env_with_home, state_dir
+):
+    task_dir = state_dir / "tasks" / "20260101-130000-0"
+    task_dir.mkdir(parents=True)
+    (task_dir / "register.json").write_text(
+        json.dumps({
+            "current_phase": "handoff_ready",
+            "host_bridge_status": "internal_handoff_ready",
+        }),
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: handoff_ready\n", encoding="utf-8")
+
+    r = script_runner(
+        "cleanup-task-state.py",
+        "--state-dir", str(state_dir),
+        "--handoff-ready-min-age-seconds", "0",
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    review = [item for item in payload["planned_changes"] if item["kind"] == "stale_handoff_ready_task"]
+    assert review
+    assert payload["summary"]["stale_handoff_ready_tasks"] == 1
+    assert payload["summary"]["operator_review_targets"] == 1
+    assert "crew resume 20260101-130000-0" in review[0]["commands"]

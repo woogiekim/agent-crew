@@ -67,6 +67,17 @@ def source_root(asset_root: Path) -> Path:
     return asset_root.parent if asset_root.name == "core" and (asset_root.parent / "adapters").is_dir() else asset_root
 
 
+def adapter_doc_path(asset_root: Path, agent_crew_home: Path, adapter: str, filename: str) -> Path:
+    for candidate in (
+        source_root(asset_root) / "adapters" / adapter / filename,
+        agent_crew_home / "adapters" / adapter / filename,
+        asset_root / "adapters" / adapter / filename,
+    ):
+        if candidate.is_file():
+            return candidate
+    return source_root(asset_root) / "adapters" / adapter / filename
+
+
 def install_drift(asset_root: Path, project_root: Path, agent_crew_home: Path) -> dict[str, Any]:
     script = asset_root / "scripts" / "verify-install-drift.py"
     root = source_root(asset_root)
@@ -322,7 +333,13 @@ def host_bridge_blocker_probe(state_dir: Path, min_age_seconds: int) -> tuple[bo
     return False, detail, len(matches)
 
 
-def host_bridge_command_probe(asset_root: Path, *, env: dict[str, str] | None = None) -> tuple[bool, str]:
+def host_bridge_command_probe(
+    asset_root: Path,
+    *,
+    agent_crew_home: Path | None = None,
+    project_root: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[bool, str]:
     script = Path(__file__).resolve().parent / "check-host-bridge.py"
     if not script.is_file():
         return False, "host-bridge command checker not found"
@@ -331,7 +348,13 @@ def host_bridge_command_probe(asset_root: Path, *, env: dict[str, str] | None = 
     if env:
         probe_env.update(env)
 
-    rc, out = run_cmd([sys.executable, str(script), "--json"], env=probe_env)
+    command = [sys.executable, str(script), "--json"]
+    if agent_crew_home is not None:
+        command.extend(["--agent-crew-home", str(agent_crew_home)])
+    if project_root is not None:
+        command.extend(["--project-root", str(project_root)])
+
+    rc, out = run_cmd(command, env=probe_env)
     if rc == 127:
         return False, "host-bridge checker could not run"
     if rc not in (0, 1, 2):
@@ -343,6 +366,8 @@ def host_bridge_command_probe(asset_root: Path, *, env: dict[str, str] | None = 
         return False, f"host-bridge checker returned invalid json (rc={rc})"
 
     if payload.get("ready"):
+        if payload.get("defaulted"):
+            return True, f"default host bridge ready: {payload.get('command_head', '')}"
         return True, f"host bridge ready: {payload.get('command_head', '')}"
     if payload.get("status") in {"missing", "empty"}:
         return True, payload.get("reason", "internal handoff fallback available")
@@ -439,10 +464,14 @@ def stale_state_summary(asset_root: Path, state_dir: Path) -> dict[str, Any]:
         return {"status": "warn", "detail": "cleanup probe returned invalid json"}
     summary = payload.get("summary") or {}
     archival_targets = int(summary.get("planned_archival_targets") or 0)
-    status = "warn" if archival_targets else "pass"
+    review_targets = int(summary.get("operator_review_targets") or 0)
+    status = "warn" if archival_targets or review_targets else "pass"
     recommendation = (
         "run crew cleanup-state --apply after confirming no live workflow owns these markers"
-        if archival_targets else ""
+        if archival_targets
+        else "review stale handoff-ready tasks with crew resume, crew repair, or crew cancel"
+        if review_targets
+        else ""
     )
     return {
         "status": status,
@@ -450,7 +479,9 @@ def stale_state_summary(asset_root: Path, state_dir: Path) -> dict[str, Any]:
         "detail": (
             f"active_markers={summary.get('stale_active_markers', 0)} "
             f"supervisor_pending={summary.get('stale_supervisor_pending_sentinels', 0)} "
-            f"archival_targets={archival_targets}"
+            f"handoff_ready={summary.get('stale_handoff_ready_tasks', 0)} "
+            f"archival_targets={archival_targets} "
+            f"review_targets={review_targets}"
         ),
         "recommendation": recommendation,
     }
@@ -527,7 +558,11 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
     cfg = effective_config(args)
-    cfg["command_check"] = host_bridge_command_probe(Path(args.asset_root))
+    cfg["command_check"] = host_bridge_command_probe(
+        Path(args.asset_root),
+        agent_crew_home=Path(args.agent_crew_home).expanduser(),
+        project_root=Path(args.project_root).resolve(),
+    )
     findings = [
         print_status("active adapter visible", bool(cfg["active_adapter"]), str(cfg["active_adapter"]), emit=args.format == "text"),
         print_status("install drift status", cfg["install_drift"]["status"] != "warn", cfg["install_drift"]["detail"], emit=args.format == "text"),
@@ -550,7 +585,12 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
     )
     claude_ok, claude_detail = claude_performance_probe(Path(args.asset_root))
     findings.append(print_status("claude performance budgets", claude_ok, claude_detail, emit=args.format == "text"))
-    codex_invocation = Path(args.asset_root).parent / "adapters" / "codex" / "invocation.md"
+    codex_invocation = adapter_doc_path(
+        Path(args.asset_root),
+        Path(args.agent_crew_home).expanduser(),
+        "codex",
+        "invocation.md",
+    )
     text = codex_invocation.read_text(encoding="utf-8", errors="replace") if codex_invocation.is_file() else ""
     findings.append(print_status("slash command vocabulary documented", "slash command" in text and "crew:<intent>" in text, str(codex_invocation), emit=args.format == "text"))
     return findings

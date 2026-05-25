@@ -108,8 +108,10 @@ The Codex adapter includes an executable bridge command for native CLI handoffs:
 export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/codex/bin/codex-host-bridge"
 ```
 
-When `crew run` or `crew agent` creates a handoff and this variable is set, the
-core runtime invokes the bridge with the provider-neutral handoff coordinates:
+When `crew run` or `crew agent` creates a handoff, the core runtime uses this
+variable when it is set. If it is unset, the runtime can discover the installed
+Codex bridge from the active project's `capabilities.json`. The bridge receives
+the provider-neutral handoff coordinates:
 
 - `AGENT_CREW_TASK_ID`
 - `AGENT_CREW_TASK_DIR`

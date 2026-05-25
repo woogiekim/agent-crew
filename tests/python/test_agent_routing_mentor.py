@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -89,3 +90,19 @@ def test_runtime_auto_route_prefers_mentor_over_legacy_alias() -> None:
 
     assert agent_name == "mentor"
     assert "mentor" in reason
+
+
+def test_runtime_resolves_installed_codex_bridge_default(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    capabilities = home / "state" / project.name / "capabilities.json"
+    bridge.parent.mkdir(parents=True)
+    capabilities.parent.mkdir(parents=True)
+    bridge.write_text("#!/bin/sh\necho bridge\n", encoding="utf-8")
+    bridge.chmod(0o755)
+    capabilities.write_text(json.dumps({"host": "codex"}), encoding="utf-8")
+
+    resolved = crew_runtime.resolve_host_bridge_command(None, home, project)
+
+    assert resolved == str(bridge)

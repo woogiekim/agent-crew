@@ -24,6 +24,9 @@ PYTHON_SCRIPTS=(
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"
   "reviewer-loop-decision.py"
+  "check-host-bridge.py"
+  "hosted-workload-evidence.py"
+  "readiness-metrics.py"
 )
 
 # Shell scripts in core/scripts/ — exclude smoke-test-state which is itself

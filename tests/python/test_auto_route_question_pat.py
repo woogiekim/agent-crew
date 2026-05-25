@@ -67,6 +67,7 @@ def _run_hook(payload: dict, *, bridge_configured: bool | str = False) -> dict:
             env["AGENT_CREW_HOST_BRIDGE_COMMAND"] = "true"
     else:
         env.pop("AGENT_CREW_HOST_BRIDGE_COMMAND", None)
+        env["AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT"] = "1"
 
     result = subprocess.run(
         [str(HOOK_PATH)],

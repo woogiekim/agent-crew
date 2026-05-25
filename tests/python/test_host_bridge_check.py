@@ -76,3 +76,24 @@ def test_lookup_in_path_is_ready(tmp_path, script_runner):
     assert decoded["status"] == "ready"
     assert decoded["ready"] is True
     assert decoded["command_head"] == "agent-bridge"
+
+
+def test_missing_command_uses_installed_adapter_default(tmp_path: Path):
+    checker = _load_checker()
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    caps = home / "state" / project.name / "capabilities.json"
+    bridge.parent.mkdir(parents=True)
+    caps.parent.mkdir(parents=True)
+    bridge.write_text("#!/bin/sh\necho bridge\n", encoding="utf-8")
+    bridge.chmod(0o755)
+    caps.write_text('{"host":"codex"}', encoding="utf-8")
+
+    default = checker.default_bridge_command(agent_crew_home=home, project_root=project)
+    result = checker.inspect_bridge_command("", default_command=default)
+
+    assert result["ready"] is True
+    assert result["defaulted"] is True
+    assert result["command_effective"] == str(bridge)
+    assert result["status"] == "ready"

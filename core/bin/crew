@@ -39,6 +39,8 @@ Commands:
   doctor [args]                    Run framework operational readiness checks
   config doctor|dump [args]        Show effective configuration and drift
   debug [args]                     Run doctor + recent telemetry + cost snapshot
+  readiness evidence|metrics [args]
+                                    Generate readiness workload evidence or metrics
   resume [--print|--dry-run] TASK_ID
                                     Request or print deterministic resume state
   update [--local [SOURCE_ROOT]]   Refresh installed assets
@@ -166,6 +168,8 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
     "core/scripts/generate-release-checksums.py:${AGENT_CREW_HOME}/scripts/generate-release-checksums.py" \
     "core/scripts/readiness-metrics.py:${AGENT_CREW_HOME}/scripts/readiness-metrics.py" \
+    "core/scripts/hosted-workload-evidence.py:${AGENT_CREW_HOME}/scripts/hosted-workload-evidence.py" \
+    "core/scripts/check-host-bridge.py:${AGENT_CREW_HOME}/scripts/check-host-bridge.py" \
     "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
     "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
     "core/rules/prompt-injection-defense.md:${AGENT_CREW_HOME}/rules/prompt-injection-defense.md" \
@@ -606,6 +610,36 @@ EOF
   cmd_cost --recent "${recent}" --format table || true
 }
 
+cmd_readiness() {
+  local sub="${1:-}"
+  shift || true
+
+  case "${sub}" in
+    evidence)
+      local helper="${ASSET_ROOT}/scripts/hosted-workload-evidence.py"
+      require_file "${helper}" "hosted workload evidence helper"
+      python3 "${helper}" --state-dir "${STATE_DIR}" "$@"
+      ;;
+    metrics)
+      local helper="${ASSET_ROOT}/scripts/readiness-metrics.py"
+      require_file "${helper}" "readiness metrics helper"
+      python3 "${helper}" "$@"
+      ;;
+    -h|--help|"")
+      cat <<'EOF'
+usage: crew readiness evidence [--recent N] [--output PATH] [--format text|json]
+       crew readiness metrics [readiness-metrics.py args]
+
+Generate local workload evidence from agent-crew task state, then feed that
+evidence into commercial readiness metric aggregation.
+EOF
+      ;;
+    *)
+      die "unknown readiness subcommand: ${sub}"
+      ;;
+  esac
+}
+
 cmd_resume() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -950,6 +984,7 @@ main() {
     doctor) cmd_doctor "$@" ;;
     config) cmd_config "$@" ;;
     debug) cmd_debug "$@" ;;
+    readiness) cmd_readiness "$@" ;;
     resume) cmd_resume "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;

@@ -240,6 +240,17 @@ def test_host_bridge_command_probe_prefers_env_var(tmp_path: Path):
     assert "host bridge ready" in detail
 
 
+def test_adapter_doc_path_prefers_installed_adapter_docs(tmp_path: Path):
+    asset_root = tmp_path / ".agent-crew"
+    installed_doc = asset_root / "adapters" / "codex" / "invocation.md"
+    installed_doc.parent.mkdir(parents=True)
+    installed_doc.write_text("crew:<intent> slash command", encoding="utf-8")
+
+    path = diagnostics.adapter_doc_path(asset_root, asset_root, "codex", "invocation.md")
+
+    assert path == installed_doc
+
+
 def test_claude_performance_probe_reports_budget_summary(tmp_path: Path):
     claude_dir = tmp_path / ".claude"
     (claude_dir / "agent-crew" / "hooks").mkdir(parents=True)

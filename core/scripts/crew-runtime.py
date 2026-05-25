@@ -528,6 +528,49 @@ def host_bridge_reported_blocked(bridge_record: dict) -> bool:
     return bool(re.search(r"(?im)^\s*(STATUS\s*:\s*blocked\b|BLOCKER\s*:)", output))
 
 
+def env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def default_host_bridge_command(agent_crew_home: Path, project_root: Path) -> str:
+    if env_flag("AGENT_CREW_HOST_BRIDGE_ACTIVE"):
+        return ""
+    if env_flag("AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT") or env_flag("AGENT_CREW_DISABLE_DEFAULT_HOST_BRIDGE"):
+        return ""
+
+    capabilities = load_json(
+        agent_crew_home / "state" / project_root.name / "capabilities.json",
+        {},
+    )
+    host = str(
+        os.environ.get("AGENT_CREW_HOST")
+        or capabilities.get("host")
+        or capabilities.get("adapter")
+        or ""
+    ).strip().lower()
+    bridge_name_by_host = {
+        "codex": "codex-host-bridge",
+        "claude": "claude-host-bridge",
+    }
+    bridge_name = bridge_name_by_host.get(host)
+    if not bridge_name:
+        return ""
+
+    candidate = agent_crew_home / "adapters" / host / "bin" / bridge_name
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    return ""
+
+
+def resolve_host_bridge_command(explicit_command: str | None, agent_crew_home: Path, project_root: Path) -> str:
+    if explicit_command:
+        return explicit_command
+    env_command = os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "").strip()
+    if env_command:
+        return env_command
+    return default_host_bridge_command(agent_crew_home, project_root)
+
+
 def asset_root(explicit: str | None = None) -> Path:
     if explicit:
         return Path(explicit).expanduser().resolve()
@@ -876,7 +919,7 @@ def command_run(args: argparse.Namespace) -> int:
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
-    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
+    bridge_command = resolve_host_bridge_command(args.host_bridge_command, agent_crew_home, project_root)
     if fake_completed_requested and not fake_quality_blocked:
         result_status = "completed"
     elif bridge_command or fake_quality_blocked:
@@ -1241,7 +1284,7 @@ def command_agent(args: argparse.Namespace) -> int:
         request_id = f"agent-{now.strftime('%Y%m%d-%H%M%S')}-{index}"
 
     request_dir = requests_dir / request_id
-    bridge_command = args.host_bridge_command or os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "")
+    bridge_command = resolve_host_bridge_command(args.host_bridge_command, agent_crew_home, project_root)
     request = {
         "schema_version": 1,
         "request_id": request_id,

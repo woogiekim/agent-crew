@@ -18,6 +18,7 @@
   "manual_repairs": 0,
   "human_interventions": 0,
   "retries": 0,
+  "handoff_ready_tasks": 0,
   "approval_gates_preserved": true,
   "manual_repair_required": true,
   "evidence_files": [],
