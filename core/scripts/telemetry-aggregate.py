@@ -904,10 +904,11 @@ def explicit_quality_bool(row, key):
 def operational_quality_metrics(rows):
     current_rows = [
         r for r in rows
-        if r.get("status") not in {"running", "stale_blocked"}
+        if r.get("status") not in {"running", "stale_blocked", "cancelled"}
     ]
     denominator = len(current_rows)
     completed = sum(1 for r in current_rows if r.get("status") == "completed")
+    cancelled = sum(1 for r in rows if r.get("status") == "cancelled")
     retried = sum(1 for r in current_rows if int(r.get("retries") or 0) > 0)
     hallucination = sum(1 for r in current_rows if has_hallucination_signal(r))
     rollback = sum(1 for r in current_rows if has_rollback_signal(r))
@@ -917,6 +918,7 @@ def operational_quality_metrics(rows):
 
     return {
         "denominator_tasks": denominator,
+        "cancelled_tasks": cancelled,
         "success_rate": rate(completed, denominator),
         "retry_rate": rate(retried, denominator),
         "hallucination_signal_rate": rate(hallucination, denominator),

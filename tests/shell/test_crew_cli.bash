@@ -643,6 +643,9 @@ assert_contains "${cancel_result}" "BLOCKER: manual_fallback_cancelled"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry --format json --task-id "${CANCEL_TASK_ID}" 2>&1)
 assert_contains "${out}" "\"tasks_cancelled\": 1"
 assert_contains "${out}" "\"tasks_blocked\": 0"
+assert_contains "${out}" "\"denominator_tasks\": 0"
+assert_contains "${out}" "\"cancelled_tasks\": 1"
+assert_contains "${out}" "\"success_rate\": null"
 assert_contains "${out}" "\"cancelled\""
 
 it "crew cancel is a concise wrapper for superseded handoffs"

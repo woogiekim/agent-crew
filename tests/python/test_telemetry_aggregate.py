@@ -470,6 +470,9 @@ class TestTelemetryAggregate:
         assert task["blockers"] == []
         assert payload["summary"]["tasks_cancelled"] == 1
         assert payload["summary"]["tasks_blocked"] == 0
+        assert payload["summary"]["operational_quality"]["denominator_tasks"] == 0
+        assert payload["summary"]["operational_quality"]["cancelled_tasks"] == 1
+        assert payload["summary"]["operational_quality"]["success_rate"] is None
 
     def test_supervisor_handoff_without_progress_is_actionable(
         self, script_runner, env_with_home, state_dir
