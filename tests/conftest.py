@@ -19,6 +19,32 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "core" / "scripts"
 SCHEMAS_DIR = REPO_ROOT / "core" / "schemas"
+COVERAGE_STARTUP_DIR = REPO_ROOT / "tests" / "coverage-startup"
+
+
+def _prepend_env_path(env: dict[str, str], key: str, values: list[Path]) -> None:
+    existing = [item for item in env.get(key, "").split(os.pathsep) if item]
+    additions = [str(value) for value in values if str(value) not in existing]
+    env[key] = os.pathsep.join([*additions, *existing])
+
+
+def configure_subprocess_coverage(env: dict[str, str]) -> dict[str, str]:
+    """Attach coverage startup settings to child Python processes when enabled."""
+    if os.environ.get("AGENT_CREW_SUBPROCESS_COVERAGE") != "1":
+        return env
+
+    try:
+        import coverage  # type: ignore
+    except ModuleNotFoundError:
+        return env
+
+    coverage_site = Path(coverage.__file__).resolve().parent.parent
+    env["COVERAGE_PROCESS_START"] = str(REPO_ROOT / ".coveragerc")
+    _prepend_env_path(env, "PYTHONPATH", [COVERAGE_STARTUP_DIR, coverage_site])
+    return env
+
+
+configure_subprocess_coverage(os.environ)
 
 
 @pytest.fixture
@@ -123,18 +149,15 @@ def run_script(script_name: str, *args: str, env: dict | None = None,
     on non-zero exit codes themselves).
     """
     path = SCRIPTS_DIR / script_name
-    if (
-        script_name.endswith(".py")
-        and os.environ.get("AGENT_CREW_SUBPROCESS_COVERAGE") == "1"
-    ):
-        cmd = [sys.executable, "-m", "coverage", "run", "-p", str(path), *args]
-    elif script_name.endswith(".py"):
+    if script_name.endswith(".py"):
         cmd = [sys.executable, str(path), *args]
     else:
         cmd = ["bash", str(path), *args]
+    child_env = env if env is not None else os.environ.copy()
+    configure_subprocess_coverage(child_env)
     return subprocess.run(
         cmd,
-        env=env if env is not None else os.environ.copy(),
+        env=child_env,
         input=input_text,
         capture_output=True,
         text=True,

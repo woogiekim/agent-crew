@@ -42,7 +42,7 @@ bash tests/run-all.sh
 ### Individual suites
 ```bash
 make test-python        # pytest suite
-make coverage-python    # pytest + changed-surface 100% + full coverage policy
+make coverage-python    # full suite + changed-surface 100% + full coverage policy
 make test-shell         # bash assertions
 make test-integration   # integration assertions
 ```
@@ -68,7 +68,11 @@ python3 core/scripts/phase-2-validation.py --level unit --format text
 
 ### Coverage policy
 
-`make coverage-python` runs pytest under `coverage.py`, then enforces two gates:
+`make coverage-python` runs pytest under `coverage.py`, enables coverage startup
+for pytest-spawned Python subprocesses, then runs shell and integration suites
+through a temporary `python3` wrapper so subprocess execution of
+`core/scripts/*.py` contributes to the same coverage dataset. It then enforces
+two gates:
 
 - Changed Python execution surfaces under `core/scripts/` must be 100% covered.
 - Full `core/scripts/` coverage debt must be explicit in

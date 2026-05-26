@@ -16,7 +16,7 @@ help:
 	@echo "agent-crew Makefile targets:"
 	@echo "  make test               run all test suites"
 	@echo "  make test-python        run pytest (tests/python/)"
-	@echo "  make coverage-python    run pytest with changed-surface 100% and full policy enforcement"
+	@echo "  make coverage-python    run all suites with changed-surface 100% and full policy enforcement"
 	@echo "  make test-shell         run shell tests (tests/shell/)"
 	@echo "  make test-integration   run integration tests (tests/integration/)"
 	@echo "  make phase-1-validation run first-phase validation framework"
@@ -35,6 +35,17 @@ coverage-python:
 	@python3 -m coverage erase
 	@rm -f coverage.json .coverage.json
 	@AGENT_CREW_SUBPROCESS_COVERAGE=1 python3 -m coverage run -p -m pytest tests/python -q
+	@set -e; \
+		tmp_wrap="$$(mktemp -d)"; \
+		trap 'rm -rf "$${tmp_wrap}"' EXIT; \
+		coverage_site="$$(python3 -c 'from pathlib import Path; import coverage; print(Path(coverage.__file__).resolve().parent.parent)')"; \
+		cp tests/coverage-python-wrapper "$${tmp_wrap}/python3"; \
+		chmod +x "$${tmp_wrap}/python3"; \
+		AGENT_CREW_REAL_PYTHON="$$(command -v python3)" \
+		AGENT_CREW_COVERAGE_SITE="$${coverage_site}" \
+		AGENT_CREW_CORE_SCRIPTS="$$(pwd)/core/scripts" \
+		PATH="$${tmp_wrap}:$${PATH}" \
+		bash tests/run-all.sh shell integration
 	@python3 -m coverage combine -q
 	@python3 -m coverage json -o coverage.json
 	@python3 core/scripts/coverage-changed-surface.py \

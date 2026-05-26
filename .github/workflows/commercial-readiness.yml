@@ -30,10 +30,7 @@ jobs:
       - name: Confirm clean checkout
         run: git status --short && test -z "$(git status --short)"
 
-      - name: Full test suite
-        run: bash tests/run-all.sh
-
-      - name: Python coverage policy gate
+      - name: Full test suite and Python coverage policy gate
         run: make coverage-python
 
       - name: Phase 1 validation

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Wrap python3 calls during coverage-python so bash/integration suites
+# contribute coverage data for core/scripts/*.py subprocess execution.
+set -euo pipefail
+
+real_python="${AGENT_CREW_REAL_PYTHON:-}"
+if [ -z "${real_python}" ]; then
+  real_python="$(command -v python3)"
+fi
+
+core_scripts="${AGENT_CREW_CORE_SCRIPTS:-}"
+if [ -z "${core_scripts}" ]; then
+  core_scripts="$(pwd)/core/scripts"
+fi
+
+case "${1:-}" in
+  "${core_scripts}"/*.py|core/scripts/*.py|./core/scripts/*.py)
+    coverage_site="${AGENT_CREW_COVERAGE_SITE:-}"
+    if [ -z "${coverage_site}" ]; then
+      coverage_site="$("${real_python}" - <<'PY'
+from pathlib import Path
+import coverage
+
+print(Path(coverage.__file__).resolve().parent.parent)
+PY
+)"
+    fi
+
+    PYTHONPATH="${core_scripts}:${coverage_site}:${PYTHONPATH:-}" \
+      exec "${real_python}" -m coverage run -p "$@"
+    ;;
+  *)
+    exec "${real_python}" "$@"
+    ;;
+esac
