@@ -218,6 +218,19 @@ Cross-references resolve semantically; no link-style markup is used.
   treat it as a crash and apply the Stage Retry Rule (up to 5 crash attempts). Only
   after 5 consecutive crash failures may the supervisor halt with `STATUS: blocked`.
   A supervisor that silently stops without writing `result.md` violates this rule.
+- **Pipeline Bypass Prohibition** — on a fresh run where `pipeline.json` does
+  not already exist at Phase 0, the supervisor MUST NOT implement code,
+  edit production files, run stage work inline, commit changes, or write
+  `STATUS: completed` before Phase 1b+1c has produced `analysis.md`,
+  `prd.md`, `handoff.md`, and `pipeline.json`, Phase 1d plan approval has
+  completed, and Phase 2 has spawned every planned stage agent. A detailed
+  `{TASK_DIR}/context/requirements.md` file is only input to Phase 1b; it is
+  never proof that analysis/planning, plan approval, implementation stages,
+  or the final reviewer may be skipped. If the supervisor detects that it is
+  about to log generic inline implementation events such as `PHASE |
+  Implementation`, `STAGE_DONE | all layers`, or any equivalent all-in-one
+  completion before `pipeline.json` exists, it must stop and write
+  `STATUS: blocked` with `BLOCKER: supervisor_pipeline_bypass_prevented`.
 - **English-only status keywords** — the stage-result parser is regex-based and
   matches English literals: `STATUS: completed`, `STATUS: blocked`,
   `STATUS: plan_ready`, `REVIEW: APPROVED`, `REVIEW: NEEDS_CHANGES`, `PLAN:`,

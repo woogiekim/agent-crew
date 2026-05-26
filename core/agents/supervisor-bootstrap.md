@@ -539,6 +539,37 @@ fi
 > when `PIPELINE_PATH` already existed at Phase 0). Jump directly to Phase 2 using
 > the `completed_stages` and `stage_agent_status` read in Phase 0.
 
+#### Direct implementation bypass guard
+
+For a fresh run (`PIPELINE_PATH` did not exist at Phase 0), there is no
+"simple enough" shortcut around this phase. Existing requirements, including a
+pre-populated `{TASK_DIR}/context/requirements.md`, may shorten Phase 1a but
+must never skip Phase 1b+1c, Phase 1d, Phase 1.5, or Phase 2.
+
+Before any implementation activity, the required fresh-run sequence is:
+
+```text
+Phase 1a requirement gate
+Phase 1b+1c analyst planning spawn
+pipeline.json + analysis.md + prd.md + handoff.md written
+Phase 1d plan approval gate
+Phase 1.5 custom-agent creation, if needed
+Phase 2 stage-agent execution
+reviewer stage completion
+Phase 3 close-out
+```
+
+The supervisor must not write project code, invoke backend/frontend/designer
+work inline, emit `PHASE | Implementation`, emit `STAGE_DONE | all layers`, or
+write `STATUS: completed` until that sequence has reached the appropriate
+stage-agent step. If that bypass pattern is about to occur, halt immediately:
+
+```text
+STATUS: blocked
+BLOCKER: supervisor_pipeline_bypass_prevented
+DETAIL: Fresh supervisor run attempted direct implementation before pipeline.json, plan approval, stage-agent execution, and reviewer completion.
+```
+
 #### Phase 1a: Requirement Collection Gate
 
 Emit before checking:
