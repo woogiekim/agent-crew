@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -11,6 +12,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "phase-2-validation.py"
 DEFAULT_FRAMEWORK = REPO_ROOT / "core" / "evaluations" / "phase-2-validation.json"
 WORKFLOW_REPLAY = REPO_ROOT / "core" / "evaluations" / "workflow-replay.json"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+phase_two = _load_module(SCRIPT, "phase_2_validation")
 
 
 def write_framework(path: Path) -> None:
@@ -148,6 +160,95 @@ def test_phase_2_validation_unmeasured_required_dimension_is_reported(tmp_path: 
     maintainability = next(item for item in payload["criteria"] if item["id"] == "maintainability")
     assert maintainability["status"] == "unmeasured"
     assert any(gap["criterion_id"] == "maintainability" for gap in payload["gaps"])
+
+
+def test_phase_2_validation_helpers_cover_selection_and_status_branches(tmp_path: Path):
+    assert phase_two.tail("abcdef", 3) == "def"
+    assert phase_two.selected("unit", "cmd", {"integration"}, set()) is False
+    assert phase_two.gap_summary("compatibility", "custom") == "compatibility status is custom."
+    assert phase_two.action_for({}, "passed") is None
+    assert phase_two.criterion_summary(
+        {"criteria": [{"id": "optional"}]},
+        [{"id": "optional_cmd", "criteria": ["optional"], "optional": True, "passed": True}],
+        plan_only=False,
+    )[0]["status"] == "passed"
+
+    framework = {
+        "levels": [
+            {
+                "id": "unit",
+                "commands": [
+                    {
+                        "id": "pass_cmd",
+                        "label": "Passing command",
+                        "command": ["{python}", "-c", "print('ok')"],
+                        "criteria": ["quality"],
+                    }
+                ],
+            },
+            {"id": "unselected", "commands": []},
+        ],
+        "criteria": [
+            {"id": "quality"},
+        ],
+    }
+    report = phase_two.build_report(
+        framework,
+        root=tmp_path,
+        plan_only=False,
+        levels=set(),
+        commands=set(),
+    )
+
+    assert {item["id"]: item["status"] for item in report["criteria"]}["quality"] == "passed"
+    assert {item["id"]: item["status"] for item in report["levels"]}["unselected"] == "unselected"
+
+
+def test_phase_2_validation_command_filter_can_skip_unselected_commands(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    write_framework(framework)
+
+    result = run_runner("--framework", str(framework), "--command", "missing")
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["commands"] == []
+    assert any(level["status"] == "unselected" for level in payload["levels"])
+
+
+def test_phase_2_validation_text_output_lists_gaps_and_actions(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    write_framework(framework)
+    data = json.loads(framework.read_text(encoding="utf-8"))
+    data["levels"][0]["commands"][0]["command"] = ["{python}", "-c", "raise SystemExit(3)"]
+    framework.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--framework", str(framework)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: phase-two validation" in result.stdout
+    assert "criteria:" in result.stdout
+    assert "gaps:" in result.stdout
+    assert "follow-up actions:" in result.stdout
+
+
+def test_phase_2_validation_text_output_skips_unselected_levels(capsys):
+    phase_two.emit_text({
+        "plan_only": False,
+        "passed": True,
+        "levels": [
+            {"id": "unit", "status": "unselected", "commands": []},
+        ],
+        "criteria": [],
+        "gaps": [],
+        "recommended_follow_up_actions": [],
+    })
+
+    assert "level/unit" not in capsys.readouterr().out
 
 
 def test_phase_2_unit_level_maps_lightweight_operational_assertions():

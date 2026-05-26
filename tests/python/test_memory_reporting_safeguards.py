@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -16,6 +17,9 @@ MEMORY_FIXTURE = REPO_ROOT / "core" / "evaluations" / "memory-retrieval.json"
 
 
 def _load_module(path: Path, name: str):
+    scripts_dir = str(path.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -24,6 +28,8 @@ def _load_module(path: Path, name: str):
 
 
 memory_eval = _load_module(MEMORY_EVAL, "memory_retrieval_eval")
+memory_trace = _load_module(MEMORY_TRACE, "memory_evidence_trace")
+report_quality = _load_module(REPORT_CHECK, "report_quality_check")
 
 
 def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
@@ -80,6 +86,42 @@ def test_memory_eval_reports_misses_noise_and_latency_separately():
     assert result["misses"] == ["expected-b"]
     assert result["failures"]["noise"] == ["noisy-extra"]
     assert result["failures"]["latency_ms"] == 20.0
+
+
+def test_memory_eval_helpers_cover_fixture_output_and_subprocess_edges(monkeypatch, tmp_path: Path):
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(json.dumps({"query": "probe"}), encoding="utf-8")
+    try:
+        memory_eval.load_fixture(fixture)
+    except ValueError as exc:
+        assert "expected_memory_ids" in str(exc)
+    else:
+        raise AssertionError("expected missing-key fixture to fail")
+
+    assert memory_eval.extract_ids("[mnemos] expected-a\n[memory] expected-b\n  expected-c: ok\n") == ["expected-c"]
+    assert memory_eval.extract_scores("[memory] expected-a score=1\n  expected-b score=0.9\n") == {"expected-b": 0.9}
+
+    class BadScoreRe:
+        def search(self, _line: str):
+            class Match:
+                def group(self, _index: int):
+                    return "bad"
+
+            return Match()
+
+    monkeypatch.setattr(memory_eval, "SCORE_RE", BadScoreRe())
+    assert memory_eval.extract_scores("expected-a score=bad\n") == {}
+
+    class Proc:
+        stdout = "out\n"
+        stderr = "err\n"
+        returncode = 124
+
+    monkeypatch.setattr(memory_eval.subprocess, "run", lambda *_args, **_kwargs: Proc())
+    output, rc, elapsed_ms = memory_eval.run_memory(Path("memory"), "probe", 3)
+    assert output == "out\nerr\n"
+    assert rc == 124
+    assert elapsed_ms >= 0
 
 
 def test_memory_eval_enforces_optional_relevance_scores():
@@ -187,6 +229,81 @@ def test_memory_eval_still_fails_unrelated_noise():
     assert result["failures"]["noise"] == ["unrelated-noise"]
 
 
+def test_memory_eval_cli_covers_results_file_and_memory_invocation(tmp_path: Path):
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(
+        json.dumps({
+            "query": "probe",
+            "expected_memory_ids": ["expected-a"],
+            "latency_budget_ms": 10000,
+            "noise_budget_count": 0,
+        }),
+        encoding="utf-8",
+    )
+    results = tmp_path / "results.txt"
+    results.write_text("expected-a: useful\nnoisy-extra: unrelated\n", encoding="utf-8")
+
+    text_result = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_EVAL),
+            "--fixture",
+            str(fixture),
+            "--results-file",
+            str(results),
+            "--elapsed-ms",
+            "20",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert text_result.returncode == 1
+    assert "FAIL: memory retrieval evaluation" in text_result.stdout
+    assert "noise: noisy-extra" in text_result.stdout
+
+    missing_results = tmp_path / "missing-results.txt"
+    missing_results.write_text("", encoding="utf-8")
+    missing_result = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_EVAL),
+            "--fixture",
+            str(fixture),
+            "--results-file",
+            str(missing_results),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert missing_result.returncode == 1
+    assert "missing: expected-a" in missing_result.stdout
+
+    memory_bin = tmp_path / "memory"
+    memory_bin.write_text("#!/bin/sh\necho 'expected-a: useful'\n", encoding="utf-8")
+    memory_bin.chmod(0o755)
+    json_result = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_EVAL),
+            "--fixture",
+            str(fixture),
+            "--memory-bin",
+            str(memory_bin),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert json_result.returncode == 0, json_result.stdout + json_result.stderr
+    payload = json.loads(json_result.stdout)
+    assert payload["memory_rc"] == 0
+    assert payload["passed"] is True
+
+
 def test_report_quality_gate_passes_with_measurements_evidence_blocker_and_memory(
     tmp_path: Path,
 ):
@@ -267,6 +384,76 @@ def test_report_quality_gate_blocks_low_value_report(tmp_path: Path):
     assert "missing_measurements" in payload["failures"]
     assert "missing_evidence" in payload["failures"]
     assert "missing_uncertainty" in payload["failures"]
+
+
+def test_report_quality_helpers_cover_linked_evidence_and_invalid_trace(tmp_path: Path):
+    assert report_quality.evidence_paths("EVIDENCE: [trace](context/evidence.md#L1)\n") == [
+        "context/evidence.md"
+    ]
+
+    trace = tmp_path / "memory-evidence.json"
+    trace.write_text("not json", encoding="utf-8")
+    assert report_quality.memory_ids_from_trace(trace) == set()
+
+    telemetry = tmp_path / "telemetry.json"
+    telemetry.write_text("not json", encoding="utf-8")
+    assert report_quality.stale_blocker_count_from_telemetry(telemetry) == 0
+
+    telemetry.write_text(json.dumps({"summary": {"tasks_stale_blocked": "many"}}), encoding="utf-8")
+    assert report_quality.stale_blocker_count_from_telemetry(telemetry) == 0
+
+
+def test_report_quality_flags_invalid_evidence_blocker_and_missing_memory_reuse(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    (task_dir / "context").mkdir(parents=True)
+    (task_dir / "context" / "memory-evidence.json").write_text(
+        json.dumps({"memory_ids": ["trace-memory-999"]}),
+        encoding="utf-8",
+    )
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: blocked\n"
+        "BLOCKER: unexpected_blocker\n"
+        "MEASUREMENTS: status latency 42 ms\n"
+        "EVIDENCE: missing.log\n"
+        "UNCERTAINTY: Unknown runtime variance remains.\n",
+        encoding="utf-8",
+    )
+
+    payload = report_quality.check_report(
+        report,
+        task_dir,
+        {"allowed_blockers": ["stage_timeout"]},
+    )
+
+    assert payload["missing_evidence_paths"] == ["missing.log"]
+    assert "invalid_evidence_paths" in payload["failures"]
+    assert "invalid_blocker_classification" in payload["failures"]
+    assert "missing_memory_context_reuse" in payload["failures"]
+
+
+def test_report_quality_text_output_lists_failures(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    report = task_dir / "result.md"
+    report.write_text("STATUS: completed\nLooks good.\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(REPORT_CHECK),
+            "--report",
+            str(report),
+            "--task-dir",
+            str(task_dir),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: report quality" in result.stdout
+    assert "- missing_measurements" in result.stdout
 
 
 def test_report_quality_gate_requires_tdd_and_reviewer_for_completed_implementation(tmp_path: Path):
@@ -763,6 +950,60 @@ def test_memory_evidence_trace_folds_retrieval_eval_context_feedback(tmp_path: P
     assert "round-context" in result["memory_context_ids"]
     assert "new-memory" in result["memory_context_ids"]
     assert result["reused_memory_context_ids"] == ["new-memory", "round-context"]
+
+
+def test_memory_evidence_trace_helpers_cover_invalid_and_missing_inputs(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+
+    existing, missing = memory_trace.resolve_evidence(task_dir, ["missing.md"])
+    assert existing == []
+    assert missing == ["missing.md"]
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    assert memory_trace.load_retrieval_eval(str(invalid)) == {
+        "path": str(invalid),
+        "load_error": True,
+    }
+
+    non_object = tmp_path / "array.json"
+    non_object.write_text("[]", encoding="utf-8")
+    assert memory_trace.load_retrieval_eval(str(non_object)) == {
+        "path": str(non_object),
+        "load_error": True,
+    }
+    assert memory_trace.successor_ids({"satisfied_by_successor": []}) == []
+
+
+def test_memory_evidence_trace_text_reports_missing_evidence_and_note(tmp_path: Path):
+    task_dir = tmp_path / "task"
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_TRACE),
+            "--task-dir",
+            str(task_dir),
+            "--evidence",
+            "missing.md",
+            "--reused",
+            "no",
+            "--note",
+            "manual trace note",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "TRACE:" in result.stdout
+    assert "MEMORY_CONTEXT_REUSED: no" in result.stdout
+    assert "MISSING_EVIDENCE: missing.md" in result.stdout
+    markdown = task_dir / "context" / "memory-evidence.md"
+    text = markdown.read_text(encoding="utf-8")
+    assert "MISSING_EVIDENCE: missing.md" in text
+    assert "NOTE: manual trace note" in text
 
 
 def test_canonical_context_compacts_repeated_prior_outcomes(tmp_path: Path):

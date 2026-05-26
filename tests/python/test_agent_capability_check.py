@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -11,6 +12,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "agent-capability-check.py"
 SCHEMA = REPO_ROOT / "core" / "schemas" / "agent-capabilities.schema.json"
 MANIFEST = REPO_ROOT / "core" / "policies" / "agent-capabilities.json"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+capability_check = _load_module(SCRIPT, "agent_capability_check")
 
 
 def _make_project(tmp_path: Path) -> Path:
@@ -122,3 +134,94 @@ def test_agent_capability_check_blocks_recursive_custom_profile(tmp_path: Path):
     payload = json.loads(result.stdout)
     failed_names = {failure["name"] for failure in payload["failures"]}
     assert "profile.custom-planner.no_recursive_orchestrator_role" in failed_names
+
+
+def test_agent_capability_helpers_handle_invalid_shapes(tmp_path: Path):
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    payload, error = capability_check.read_json(invalid)
+    assert payload is None
+    assert error
+
+    assert capability_check.agent_markdown_files(tmp_path) == set()
+    assert capability_check.frontmatter_reasoning_tier(tmp_path / "missing.md") is None
+    shape = capability_check.validate_agent_shape("broken", [])
+    assert shape == [
+        {
+            "name": "broken.shape",
+            "passed": False,
+            "detail": "Agent entry must be an object.",
+        }
+    ]
+    custom = capability_check.validate_custom_profiles({"custom_profiles": []})
+    assert custom[0]["name"] == "custom_profiles.object"
+    assert custom[0]["passed"] is False
+
+
+def test_agent_capability_check_reports_manifest_parse_error(tmp_path: Path):
+    project = _make_project(tmp_path)
+    manifest_path = project / "core" / "policies" / "agent-capabilities.json"
+    manifest_path.write_text("not json", encoding="utf-8")
+
+    result = _run(project)
+
+    assert result.returncode == 2
+    payload = json.loads(result.stdout)
+    failed_names = {failure["name"] for failure in payload["failures"]}
+    assert "manifest.parse" in failed_names
+
+
+def test_agent_capability_check_handles_non_object_collections(tmp_path: Path):
+    project = _make_project(tmp_path)
+    manifest_path = project / "core" / "policies" / "agent-capabilities.json"
+    manifest_path.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "agents": [],
+            "custom_profiles": {},
+            "default_custom_profile": "custom-worker",
+        }),
+        encoding="utf-8",
+    )
+
+    result = _run(project)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    failed_names = {failure["name"] for failure in payload["failures"]}
+    assert "manifest.agents_object" in failed_names
+
+
+def test_agent_capability_check_skips_non_object_profiles_and_agents(tmp_path: Path):
+    project = _make_project(tmp_path)
+    manifest_path = project / "core" / "policies" / "agent-capabilities.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["custom_profiles"]["custom-broken"] = []
+    manifest["agents"]["broken-agent"] = []
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = _run(project)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    failed_names = {failure["name"] for failure in payload["failures"]}
+    assert "profile.custom-broken.shape" in failed_names
+    assert "broken-agent.shape" in failed_names
+
+
+def test_agent_capability_check_text_output_lists_failures(tmp_path: Path):
+    project = _make_project(tmp_path)
+    manifest_path = project / "core" / "policies" / "agent-capabilities.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["agents"]["reviewer"]["may_implement"] = True
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--project-root", str(project)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: agent capability check" in result.stdout
+    assert "reviewer.reviewer_read_only_boundary" in result.stdout

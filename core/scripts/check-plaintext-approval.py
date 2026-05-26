@@ -158,6 +158,8 @@ def main():
             payload = None
             text = raw
         if payload is not None:
+            if not isinstance(payload, dict):
+                return 0
             if args.tool != "*":
                 tool_name = payload.get("tool_name", "")
                 if tool_name != args.tool:

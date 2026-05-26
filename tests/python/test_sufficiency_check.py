@@ -106,6 +106,36 @@ class TestCommercializationPrompt:
         assert payload["signals"]["has_perf"] is True
         assert payload["signals"]["has_quality"] is True
 
+    def test_cli_status_requirements_and_default_output(self):
+        default = subprocess.run(
+            ["python3", str(SCRIPT), "Create docs for the existing config"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert default.stdout.strip() == "AMBIGUOUS"
+
+        status = subprocess.run(
+            ["python3", str(SCRIPT), "--status", "Create docs for the existing config"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert status.stdout.strip() == "AMBIGUOUS"
+
+        requirements = subprocess.run(
+            [
+                "python3",
+                str(SCRIPT),
+                "--requirements",
+                "Create docs for the existing config",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert requirements.stdout.startswith("REQUIREMENTS: |")
+
     def test_cli_write_is_silent_and_creates_requirements(self, tmp_path):
         out = tmp_path / "requirements.md"
         result = subprocess.run(
@@ -130,6 +160,34 @@ class TestCommercializationPrompt:
         )
         requirements = _module.synthesize_requirements(task)
         assert "skill_context: openai-docs" in requirements
+
+    def test_synthesized_requirements_cover_full_stack_admin_and_default_constraints(self):
+        full_stack = _module.synthesize_requirements(
+            "Implement admin dashboard API and React UI for internal users"
+        )
+
+        assert "scope: Full-stack" in full_stack
+        assert "target: Internal team / admin tooling" in full_stack
+        assert "constraints: No special constraints" in full_stack
+
+        backend_only = _module.synthesize_requirements("Implement API endpoint for login")
+        assert "scope: Backend API" in backend_only
+        assert "target: Other / not yet defined" in backend_only
+
+    def test_synthesized_requirements_cover_ui_end_user_and_script_constraints(self):
+        ui_feature = _module.synthesize_requirements(
+            'Add a "ProfileCard" component with explicit props and no new dependencies'
+        )
+        assert "scope: UI only" in ui_feature
+        assert "target: End-user product feature" in ui_feature
+        assert "Use existing tech stack only" in ui_feature
+
+        script_feature = _module.synthesize_requirements(
+            "Create cleanup.py with cleanup(path) MVP behavior and do not push"
+        )
+        assert "MVP scope" in script_feature
+        assert "No remote publish without approval" in script_feature
+        assert "Explicit function/interface spec" in script_feature
 
     def test_second_commercialization_e2e_prompt_is_sufficient(self):
         task = (

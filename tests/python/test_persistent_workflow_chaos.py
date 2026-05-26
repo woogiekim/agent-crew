@@ -91,3 +91,120 @@ def test_persistent_workflow_chaos_fails_when_metric_is_missing(tmp_path: Path):
     assert payload["passed"] is False
     assert payload["error_type"] == "invalid_fixture"
     assert "success metrics" in payload["failures"][0]
+
+
+def test_persistent_workflow_chaos_helpers_cover_invalid_json_and_edges(tmp_path: Path):
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    assert chaos_check.load_json(invalid)[0] is None
+    assert chaos_check.evaluate(invalid)["error_type"] == "invalid_fixture"
+
+    array = tmp_path / "array.json"
+    array.write_text("[]", encoding="utf-8")
+    assert chaos_check.load_json(array) == (None, "fixture root must be an object")
+
+    assert chaos_check.transition_failures([]) == ["missing_state_sequence"]
+    assert "unknown_state:UNKNOWN" in chaos_check.transition_failures(["UNKNOWN", "COMPLETED"])
+    assert "invalid_transition:PLANNING->COMPLETED" in chaos_check.transition_failures(["PLANNING", "COMPLETED"])
+    assert "non_terminal_final_state:PLANNING" in chaos_check.transition_failures(["PLANNING"])
+    assert chaos_check.has_observability_trace([]) is False
+    assert chaos_check.metric_value("Resume Success Rate", []) == 0.0
+    assert chaos_check.metric_value("Resume Success Rate", [{"chaos": [], "observed": {}}]) == 0.0
+    assert chaos_check.metric_value("unknown", [{"chaos": [], "observed": {}}]) == 0.0
+
+
+def test_persistent_workflow_chaos_unsafe_execution_and_recovery_branches():
+    assert chaos_check.has_unsafe_execution([{"unsafe_execution": True}]) is True
+    assert chaos_check.has_unsafe_execution([
+        {"kind": "dangerous_action", "approved": True, "status": "executed"}
+    ]) is False
+    assert chaos_check.has_unsafe_execution([
+        {"kind": "dangerous_action", "approved": False, "status": "executed"}
+    ]) is True
+
+    assert chaos_check.observed_recovery_accuracy(
+        {"memory corruption"},
+        ["PLANNING", "BLOCKED_SAFELY"],
+        {"memory_quarantine"},
+    ) == "safe_block"
+    assert chaos_check.observed_recovery_accuracy(
+        {"runtime restart"},
+        ["PLANNING", "WAITING_APPROVAL", "COMPLETED"],
+        {"approval_rehydrated"},
+    ) == "approval_preserved"
+    assert chaos_check.observed_recovery_accuracy({"process crash"}, ["COMPLETED"], set()) == "missing"
+
+
+def test_persistent_workflow_chaos_simulates_missing_data_and_score_thresholds():
+    missing = chaos_check.simulate_case({"id": "missing"})
+
+    assert "missing_state_sequence" in missing["failures"]
+    assert "missing_chaos" in missing["failures"]
+    assert "missing_events" in missing["failures"]
+    assert "workflow_continuity_score_min_missing" in missing["failures"]
+
+    low_score = chaos_check.simulate_case({
+        "id": "low-score",
+        "chaos": ["process crash"],
+        "state_sequence": ["PLANNING", "INTERRUPTED", "RECOVERING", "COMPLETED"],
+        "events": [
+            {"trace_id": "t1", "state": "PLANNING", "kind": "started"},
+        ],
+        "expected": {
+            "terminal_status": "completed",
+            "workflow_survived": True,
+            "resume_success": False,
+            "recovery_accuracy": "missing",
+            "approval_integrity": True,
+            "plugin_isolated": True,
+            "deterministic_stability": True,
+            "observability_trace": True,
+            "unsafe_execution": False,
+            "workflow_continuity_score_min": 1.1,
+        },
+    })
+
+    assert any(item.startswith("workflow_continuity_score:") for item in low_score["failures"])
+
+
+def test_persistent_workflow_chaos_evaluate_rejects_fixture_shapes_and_thresholds(tmp_path: Path):
+    empty = tmp_path / "empty.json"
+    empty.write_text(json.dumps({"schema_version": 1, "round": 2, "cases": []}), encoding="utf-8")
+    assert "schema_version=1" in chaos_check.evaluate(empty)["failures"][0]
+
+    non_object_case = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    non_object_case["cases"] = ["bad-case"]
+    non_object_path = tmp_path / "non-object-case.json"
+    non_object_path.write_text(json.dumps(non_object_case), encoding="utf-8")
+    assert chaos_check.evaluate(non_object_path)["failures"] == ["fixture cases must be objects"]
+
+    missing_chaos = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    missing_chaos["chaos_requirements"].remove("process crash")
+    missing_chaos_path = tmp_path / "missing-chaos.json"
+    missing_chaos_path.write_text(json.dumps(missing_chaos), encoding="utf-8")
+    assert "chaos requirements" in chaos_check.evaluate(missing_chaos_path)["failures"][0]
+
+    threshold_fail = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    threshold_fail["metric_thresholds"]["Workflow Continuity Score"] = 2
+    threshold_path = tmp_path / "threshold-fail.json"
+    threshold_path.write_text(json.dumps(threshold_fail), encoding="utf-8")
+    payload = chaos_check.evaluate(threshold_path)
+    assert any("Workflow Continuity Score" in str(failure) for failure in payload["failures"])
+
+
+def test_persistent_workflow_chaos_text_output_lists_metrics_and_failures(tmp_path: Path):
+    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    fixture["metric_thresholds"]["Workflow Continuity Score"] = 2
+    path = tmp_path / "threshold-fail.json"
+    path.write_text(json.dumps(fixture), encoding="utf-8")
+
+    result = subprocess.run(
+        ["python3", str(CHECK), "--fixture", str(path)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: persistent workflow chaos check" in result.stdout
+    assert "Workflow Continuity Score:" in result.stdout
+    assert "- Workflow Continuity Score:" in result.stdout

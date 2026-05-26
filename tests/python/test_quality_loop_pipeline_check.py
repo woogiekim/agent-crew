@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -10,6 +11,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CHECKER = REPO_ROOT / "core" / "scripts" / "quality-loop-check.py"
 REPORT_CHECK = REPO_ROOT / "core" / "scripts" / "report-quality-check.py"
+QUALITY_LIB = REPO_ROOT / "core" / "scripts" / "quality_loop_lib.py"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+quality_loop = _load_module(QUALITY_LIB, "quality_loop_lib")
 
 
 def write_task(task_dir: Path, rows: list[dict], pipeline: dict | None = None) -> None:
@@ -24,16 +37,20 @@ def write_task(task_dir: Path, rows: list[dict], pipeline: dict | None = None) -
         }),
         encoding="utf-8",
     )
+    pipeline_payload = {
+        "schema_version": 1,
+        "task": "Implement production quality-loop behavior",
+        "stages": [
+            {"agents": ["backend"], "tdd_parallel": True},
+            "reviewer",
+        ],
+        "completed_stages": 2,
+    }
+    if pipeline is not None:
+        pipeline_payload = pipeline
+
     (task_dir / "pipeline.json").write_text(
-        json.dumps(pipeline or {
-            "schema_version": 1,
-            "task": "Implement production quality-loop behavior",
-            "stages": [
-                {"agents": ["backend"], "tdd_parallel": True},
-                "reviewer",
-            ],
-            "completed_stages": 2,
-        }),
+        json.dumps(pipeline_payload),
         encoding="utf-8",
     )
     (task_dir / "result.md").write_text(
@@ -186,6 +203,24 @@ def test_quality_loop_checker_blocks_stale_attempt_rework(tmp_path: Path):
     assert payload["rejection_followups"][0]["tdd_retry"] is False
 
 
+def test_quality_loop_checker_requires_rework_cycle_when_requested(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+
+    result = run_checker(task_dir, "--require-rework-cycle")
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_rework_cycle" in payload["failures"]
+
+
 def test_quality_loop_checker_blocks_implementation_stage_without_immediate_reviewer(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(
@@ -318,6 +353,89 @@ def test_quality_loop_checker_blocks_schema_invalid_quality_metrics_artifact(tmp
         "invalid_quality_metrics_schema_version",
         "unexpected_quality_metrics_fields",
     }
+
+
+def test_quality_loop_library_helpers_cover_schema_and_path_edges(tmp_path: Path):
+    assert quality_loop.load_json(tmp_path) == {}
+    assert quality_loop.load_text(tmp_path) == ""
+
+    jsonl = tmp_path / "events.jsonl"
+    jsonl.write_text("not json\n" + json.dumps({"event": "ok"}) + "\n", encoding="utf-8")
+    assert quality_loop.load_jsonl(tmp_path / "missing.jsonl") == []
+    assert quality_loop.load_jsonl(jsonl) == [{"event": "ok"}]
+    assert quality_loop.stage_agents({"agents": "backend"}) == []
+    assert quality_loop.is_tdd_capable_stage(["test-writer"]) is True
+    assert quality_loop.is_completed("completed", {}, "") is True
+
+    absolute = tmp_path / "quality.json"
+    assert quality_loop.resolve_event_quality_metrics_path("", tmp_path) is None
+    assert quality_loop.resolve_event_quality_metrics_path(str(absolute), None) == absolute
+    assert quality_loop.resolve_event_quality_metrics_path("quality.json", tmp_path) == tmp_path / "quality.json"
+
+    assert quality_loop.quality_metrics_schema_errors(tmp_path) == [
+        "unreadable_quality_metrics_artifact"
+    ]
+    array_metrics = tmp_path / "array.json"
+    array_metrics.write_text("[]", encoding="utf-8")
+    assert quality_loop.quality_metrics_schema_errors(array_metrics) == ["quality_metrics_not_object"]
+
+    invalid = tmp_path / "invalid-quality.json"
+    invalid.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "hallucination_detected": False,
+            "rollback_performed": False,
+            "human_intervention_required": False,
+            "factuality_review": "passed",
+            "evidence_paths": [42],
+            "notes": [],
+        }),
+        encoding="utf-8",
+    )
+    assert set(quality_loop.quality_metrics_schema_errors(invalid)) == {
+        "invalid_quality_metrics_evidence_paths",
+        "invalid_quality_metrics_notes",
+    }
+
+    assert quality_loop.event_quality_metrics_errors({"detail": "REVIEW: APPROVED"}, tmp_path) == [
+        "missing_quality_metrics_pointer"
+    ]
+    assert quality_loop.event_stage({"stage": "x"}) is None
+    assert quality_loop.event_attempt({"attempt": "x"}) == 0
+    assert quality_loop.task_description(tmp_path, {}, {"task": "Pipeline task"}, "") == "Pipeline task"
+    assert quality_loop.task_description(tmp_path, {}, {}, "# Result heading\n") == "Result heading"
+
+
+def test_quality_loop_library_reports_missing_required_pipeline_and_events(tmp_path: Path):
+    missing_pipeline = tmp_path / "missing-pipeline"
+    write_task(missing_pipeline, [], pipeline={})
+
+    result = quality_loop.check_quality_loop(missing_pipeline)
+
+    assert "missing_pipeline" in result["failures"]
+    assert "missing_pipeline_implementation_stage" in result["failures"]
+    assert "missing_pipeline_reviewer_stage" in result["failures"]
+    assert "missing_pipeline_reviewer_after_implementer" in result["failures"]
+    assert "missing_progress_events" in result["failures"]
+
+    missing_events = tmp_path / "missing-events"
+    write_task(
+        missing_events,
+        [
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
+                stage=1,
+            )
+        ],
+        pipeline={"schema_version": 1, "stages": ["reviewer"]},
+    )
+
+    event_result = quality_loop.check_quality_loop(missing_events)
+
+    assert "missing_pipeline_implementation_completion" in event_result["failures"]
+    assert "missing_pipeline_tdd_event" in event_result["failures"]
 
 
 def test_report_quality_fails_when_only_evidence_files_exist(tmp_path: Path):

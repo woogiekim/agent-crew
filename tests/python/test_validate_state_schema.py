@@ -8,8 +8,24 @@ Exit code contract (from the script docstring):
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+SCRIPT = REPO_ROOT / "core" / "scripts" / "validate-state-schema.py"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+validate_state = _load_module(SCRIPT, "validate_state_schema")
 
 
 # --------------------------------------------------------------------------- #
@@ -56,6 +72,167 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row) + "\n")
+
+
+def test_validate_state_schema_helpers_cover_validator_edges(monkeypatch, tmp_path: Path):
+    findings = validate_state.Findings()
+    validate_state.validate("value", None, findings, tmp_path / "file.json")
+    validate_state.validate("value", {"type": "unknown"}, findings, tmp_path / "file.json")
+    validate_state.validate(True, {"type": "integer"}, findings, tmp_path / "file.json")
+    validate_state.validate("", {"type": "string", "minLength": 1}, findings, tmp_path / "file.json")
+    validate_state.validate([], {"type": "array", "minItems": 1}, findings, tmp_path / "file.json")
+    validate_state.validate(0, {"type": "number", "minimum": 1}, findings, tmp_path / "file.json")
+    validate_state.validate("abc", {"type": "string", "pattern": r"^xyz$"}, findings, tmp_path / "file.json")
+    validate_state.validate("abc", {"oneOf": [{"type": "string"}, {"type": "string"}]}, findings, tmp_path / "file.json")
+    validate_state.validate(
+        {"x_name": 1, "unexpected": True},
+        {
+            "type": "object",
+            "patternProperties": {
+                r"^x_": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        findings,
+        tmp_path / "file.json",
+    )
+
+    messages = [item["message"] for item in findings.errors]
+    assert "expected integer, got boolean" in messages
+    assert any("minLength" in message for message in messages)
+    assert any("minItems" in message for message in messages)
+    assert any("minimum" in message for message in messages)
+    assert any("does not match pattern" in message for message in messages)
+    assert any("oneOf matched 2" in message for message in messages)
+    assert any("unexpected field 'unexpected'" in message for message in messages)
+
+    try:
+        validate_state.load_schema(tmp_path, "missing.schema.json")
+    except FileNotFoundError as exc:
+        assert "schema not found" in str(exc)
+    else:
+        raise AssertionError("expected missing schema to fail")
+
+    assert validate_state.load_json(tmp_path)[1].startswith("read_error:")
+    assert validate_state.stage_agents({"agents": "backend"}) == ["backend"]
+    assert validate_state.stage_agents({"agents": ["backend", 42]}) == ["backend"]
+    assert validate_state.stage_agents({"agents": 42}) == []
+
+    policy_findings = validate_state.Findings()
+    validate_state.validate_pipeline_artifact_policy(
+        tmp_path / "pipeline.json",
+        {"stages": "bad", "completed_stages": 1},
+        policy_findings,
+    )
+    assert policy_findings.all() == []
+
+    monkeypatch.setenv("AGENT_CREW_STATE_DIR", str(tmp_path / "state-from-env"))
+    assert validate_state.resolve_state_dir(None) == tmp_path / "state-from-env"
+    monkeypatch.delenv("AGENT_CREW_STATE_DIR")
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("AGENT_CREW_PROJECT", "project")
+    assert validate_state.resolve_state_dir(None) == tmp_path / "home" / "state" / "project"
+
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home-without-schemas"))
+    assert validate_state.resolve_schemas_dir() == REPO_ROOT / "core" / "schemas"
+
+    original_file = validate_state.__file__
+    monkeypatch.setattr(validate_state, "__file__", str(tmp_path / "isolated" / "scripts" / "validate-state-schema.py"))
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "isolated-home"))
+    try:
+        validate_state.resolve_schemas_dir()
+    except FileNotFoundError as exc:
+        assert "schemas directory not found" in str(exc)
+    else:
+        raise AssertionError("expected schema directory resolution to fail")
+    monkeypatch.setattr(validate_state, "__file__", original_file)
+
+
+def test_validate_state_schema_file_validation_covers_warn_downgrades_and_jsonl(tmp_path: Path):
+    findings = validate_state.Findings()
+    validate_state.validate_file(
+        tmp_path / "session.json",
+        {"type": "object", "required": ["schema_version"]},
+        "warn",
+        findings,
+    )
+    assert findings.warnings[-1]["message"] == "file not found (skipping)"
+
+    session = tmp_path / "session.json"
+    session.write_text("{}", encoding="utf-8")
+    validate_state.validate_file(
+        session,
+        {"type": "object", "required": ["schema_version"]},
+        "warn",
+        findings,
+    )
+    assert any("schema_version" in item["message"] for item in findings.warnings)
+
+    progress = tmp_path / "progress.buffer.jsonl"
+    progress.write_text(
+        "\nnot json\n"
+        + json.dumps({"schema_version": 2})
+        + "\n"
+        + json.dumps({})
+        + "\n",
+        encoding="utf-8",
+    )
+    validate_state.validate_jsonl_file(
+        progress,
+        {
+            "type": "object",
+            "required": ["event"],
+            "properties": {
+                "schema_version": {"const": 1},
+            },
+        },
+        "warn",
+        findings,
+    )
+
+    warning_messages = [item["message"] for item in findings.warnings]
+    assert any("malformed JSONL" in message for message in warning_messages)
+    assert any("const expected" in message for message in warning_messages)
+    assert any("required field 'event' missing" in message for message in warning_messages)
+
+    missing_optional = tmp_path / "context" / "quality-metrics.json"
+    validate_state.validate_optional_file(missing_optional, {"type": "object"}, "error", findings)
+
+
+def test_validate_state_schema_main_covers_missing_schemas(monkeypatch, capsys, tmp_path: Path):
+    original_resolve_schemas_dir = validate_state.resolve_schemas_dir
+    monkeypatch.setattr(validate_state, "resolve_schemas_dir", lambda: (_ for _ in ()).throw(FileNotFoundError("no schemas")))
+    monkeypatch.setattr(validate_state.sys, "argv", ["validate-state-schema.py"])
+
+    assert validate_state.main() == 3
+    assert "no schemas" in capsys.readouterr().err
+    monkeypatch.setattr(validate_state, "resolve_schemas_dir", original_resolve_schemas_dir)
+
+    home = tmp_path / "home"
+    schemas = home / "schemas"
+    task_dir = tmp_path / "task"
+    state_dir = tmp_path / "state"
+    schemas.mkdir(parents=True)
+    task_dir.mkdir()
+    state_dir.mkdir()
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    monkeypatch.setattr(
+        validate_state.sys,
+        "argv",
+        [
+            "validate-state-schema.py",
+            "--state-dir",
+            str(state_dir),
+            "--task-dir",
+            str(task_dir),
+        ],
+    )
+
+    assert validate_state.main() == 2
+    output = capsys.readouterr().out
+    assert "session.schema.json" in output
+    assert "register.schema.json" in output
+    assert "quality-metrics.schema.json" in output
 
 
 # --------------------------------------------------------------------------- #

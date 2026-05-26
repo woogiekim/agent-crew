@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -9,6 +10,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "reviewer-loop-decision.py"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+decision = _load_module(SCRIPT, "reviewer_loop_decision")
 
 
 def run_decision(text: str) -> subprocess.CompletedProcess[str]:
@@ -117,6 +129,72 @@ def test_review_approved_existing_quality_metrics_file_approves(tmp_path: Path):
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["action"] == "approve"
+
+
+def test_response_file_and_relative_quality_metrics_path_are_supported(tmp_path: Path):
+    (tmp_path / "quality-metrics.json").write_text("{}", encoding="utf-8")
+    response = tmp_path / "review.md"
+    response.write_text(
+        "REVIEW: APPROVED\n"
+        "QUALITY_METRICS: quality-metrics.json\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--response",
+            str(response),
+            "--task-dir",
+            str(tmp_path),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "approve"
+
+
+def test_unreadable_response_file_exits_two(tmp_path: Path):
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--response", str(tmp_path / "missing.md")],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 2
+    assert "cannot read response" in result.stderr
+
+
+def test_text_output_prints_retry_directive():
+    result = subprocess.run(
+        ["python3", str(SCRIPT)],
+        input="REVIEW: NEEDS_CHANGES\nISSUES: 1\n",
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "ACTION: retry" in result.stdout
+    assert "REASON: review_needs_changes" in result.stdout
+    assert "DIRECTIVE:" in result.stdout
+
+
+def test_no_verdict_and_quality_metrics_path_resolution(tmp_path: Path):
+    assert decision.classify("No structured verdict here.") == {
+        "action": "none",
+        "trigger": "",
+        "reason": "no_review_verdict",
+        "directive": "",
+    }
+    absolute = tmp_path / "quality-metrics.json"
+    assert decision.resolve_quality_metrics_path(str(absolute), None) == absolute
+    assert decision.resolve_quality_metrics_path("", str(tmp_path)) is None
 
 
 def test_supervisor_docs_treat_needs_changes_as_loop_trigger():

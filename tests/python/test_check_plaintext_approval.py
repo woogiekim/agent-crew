@@ -7,7 +7,24 @@ Exit code contract:
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+SCRIPT = REPO_ROOT / "core" / "scripts" / "check-plaintext-approval.py"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+approval_check = _load_module(SCRIPT, "check_plaintext_approval")
 
 
 class TestEnglishViolations:
@@ -159,6 +176,34 @@ class TestStdinPayload:
         payload = json.dumps({"tool_name": "Agent", "unknown_field": 42})
         r = script_runner("check-plaintext-approval.py", input_text=payload)
         assert r.returncode == 0
+
+    def test_non_dict_payload_exits_0(self, script_runner):
+        r = script_runner("check-plaintext-approval.py", input_text=json.dumps(["not", "a", "dict"]))
+        assert r.returncode == 0
+        assert approval_check.extract_text(["not", "a", "dict"]) == ""
+
+    def test_content_block_list_is_joined_before_scanning(self, script_runner):
+        payload = json.dumps({
+            "tool_name": "Agent",
+            "tool_response": {
+                "content": [
+                    {"text": "Safe first block."},
+                    {"content": "Should I push now?"},
+                    "ignored raw block",
+                ]
+            },
+        })
+
+        r = script_runner("check-plaintext-approval.py", input_text=payload)
+
+        assert r.returncode == 2
+        assert "Should I push" in r.stderr
+
+    def test_invalid_json_stdin_is_scanned_as_raw_text(self, script_runner):
+        r = script_runner("check-plaintext-approval.py", input_text="May I deploy now?")
+
+        assert r.returncode == 2
+        assert "May I deploy" in r.stderr
 
     def test_wildcard_tool_filter_matches_anything(self, script_runner):
         payload = json.dumps({

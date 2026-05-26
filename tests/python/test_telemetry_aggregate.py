@@ -6,9 +6,31 @@ Exit code contract:
 """
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+TELEMETRY = REPO_ROOT / "core" / "scripts" / "telemetry-aggregate.py"
+
+
+def _load_module(path: Path, name: str):
+    script_dir = str(path.parent)
+    if script_dir in sys.path:
+        sys.path.remove(script_dir)
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+telemetry = _load_module(TELEMETRY, "telemetry_aggregate")
 
 
 def _write_register(task_dir: Path, *, task_id: str,
@@ -35,6 +57,292 @@ def _write_progress_jsonl(task_dir: Path, rows: list[dict]) -> None:
     with (task_dir / "progress.buffer.jsonl").open("w") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
+
+
+def _selector_args(**overrides):
+    values = {
+        "project_root": None,
+        "task_id": None,
+        "session_id": None,
+        "recent": None,
+        "since": None,
+        "until": None,
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def test_direct_resolvers_parse_helpers_and_project_matching(monkeypatch, tmp_path: Path):
+    state = tmp_path / "state"
+    monkeypatch.setenv("AGENT_CREW_STATE_DIR", str(state))
+    assert telemetry.resolve_state_dir(None) == state
+
+    monkeypatch.delenv("AGENT_CREW_STATE_DIR")
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("AGENT_CREW_PROJECT", "project")
+    assert telemetry.resolve_state_dir(None) == tmp_path / "home" / "state" / "project"
+    assert telemetry.parse_iso_ts("not-a-date") is None
+    assert telemetry.parse_date_arg("2026-99-99") is None
+
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    assert telemetry.task_matches_project_root(task_dir, "") is True
+    assert telemetry.task_matches_project_root(task_dir, str(tmp_path / "project")) is True
+    (task_dir / "project-root.txt").write_text(str(tmp_path / "foreign"), encoding="utf-8")
+    assert telemetry.task_matches_project_root(task_dir, str(tmp_path / "project")) is False
+
+
+def test_direct_readers_skip_bad_lines_and_legacy_logs(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120000-0"
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+    (task_dir / "progress.buffer.jsonl").write_text("\n{bad json\n{}\n", encoding="utf-8")
+    assert telemetry.read_progress_buffer(task_dir) == [{}]
+
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:00:00Z | LEGACY | detailed event\n"
+        "raw legacy line\n",
+        encoding="utf-8",
+    )
+    log_rows = telemetry.read_progress_log(task_dir)
+    assert log_rows[0]["event"] == "LEGACY"
+    assert log_rows[1]["event"] == "LOG"
+    assert telemetry.latest_progress_event(task_dir, [])["detail"] == "raw legacy line"
+
+    assert telemetry.read_cost_file(state_dir, task_id) is None
+    cost_file = state_dir / "cost" / f"{task_id}.jsonl"
+    cost_file.parent.mkdir(parents=True)
+    cost_file.write_text(
+        "\n{bad json\n"
+        + json.dumps({"input_tokens": 1200, "output_tokens": 300})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert telemetry.read_cost_file(state_dir, task_id)["tokens_total"] == 1500
+
+    (task_dir / "tool-events.jsonl").write_text("\n{bad json\n{}\n", encoding="utf-8")
+    assert telemetry.read_tool_events(task_dir) == [{}]
+
+    (task_dir / "context").mkdir()
+    (task_dir / "context" / "quality-metrics.json").write_text("{bad json", encoding="utf-8")
+    assert telemetry.read_quality_metrics(task_dir) == {}
+
+    (state_dir / "capabilities.json").write_text("{bad json", encoding="utf-8")
+    assert telemetry.read_capabilities(state_dir) is None
+    (state_dir / "capabilities.json").unlink()
+    assert telemetry.read_capabilities(state_dir) is None
+
+
+def test_direct_runtime_thresholds_health_and_guidance(monkeypatch, tmp_path: Path):
+    assert telemetry.phase_runtime_metrics([{"event": "STAGE", "ts": "bad"}]) == []
+
+    monkeypatch.setenv("AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS", "bad")
+    monkeypatch.setenv("AGENT_CREW_STALE_HOST_BRIDGE_SECONDS", "bad")
+    monkeypatch.setenv("AGENT_CREW_STALLED_PROGRESS_SECONDS", "bad")
+    assert telemetry.supervisor_boot_timeout_seconds() == 30
+    assert telemetry.stale_host_bridge_seconds() == 600
+    assert telemetry.stalled_progress_seconds() == 300
+
+    class BadStat:
+        def stat(self):
+            raise OSError("no stat")
+
+    assert telemetry.task_age_seconds(BadStat(), None) == 0
+    assert telemetry.event_age_seconds({}, BadStat()) == 0
+    assert telemetry.health_classification("running", "supervisor_handoff_pending", [], {}, tmp_path) == "booting"
+
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "task.txt").write_text("pending task", encoding="utf-8")
+    monkeypatch.setenv("AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS", "999999")
+    pending = telemetry.missing_supervisor_boot_state(
+        task_dir,
+        has_register=False,
+        has_events=False,
+        has_result=False,
+    )
+    assert pending["status"] == "running"
+    assert pending["current_phase"] == "supervisor_handoff_pending"
+
+    assert "Supervisor boot is pending" in telemetry.guidance_for([], "running", "supervisor_handoff_pending")[0]
+    assert "Inspect result.md" in telemetry.guidance_for([], "blocked", "")[0]
+    assert telemetry.host_bridge_status({"manual_fallback_repair_path": "context/repair.json"}) == "manual_fallback_completed"
+
+    empty_dir = tmp_path / "empty-task"
+    empty_dir.mkdir()
+    assert telemetry.missing_supervisor_boot_state(
+        empty_dir,
+        has_register=False,
+        has_events=False,
+        has_result=False,
+    ) is None
+
+
+def test_direct_aggregate_task_terminal_event_and_register_edges(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    tasks = state_dir / "tasks"
+    tasks.mkdir(parents=True)
+
+    cancelled_reg = tasks / "20260101-120000-0"
+    cancelled_reg.mkdir()
+    _write_register(cancelled_reg, task_id=cancelled_reg.name, current_phase="cancelled")
+    assert telemetry.aggregate_task(state_dir, cancelled_reg)["status"] == "cancelled"
+
+    unknown_reg = tasks / "20260101-120001-0"
+    unknown_reg.mkdir()
+    _write_register(unknown_reg, task_id=unknown_reg.name, current_phase="")
+    assert telemetry.aggregate_task(state_dir, unknown_reg)["status"] == "unknown"
+
+    completed = tasks / "20260101-120002-0"
+    completed.mkdir()
+    _write_progress_jsonl(completed, [
+        {"ts": "2026-01-01T12:00:00Z", "event": "STARTED", "detail": "started detail"},
+        {"ts": "2026-01-01T12:00:10Z", "event": "COMPLETED"},
+    ])
+    (completed / "pipeline.json").write_text("{bad json", encoding="utf-8")
+    completed_row = telemetry.aggregate_task(state_dir, completed)
+    assert completed_row["status"] == "completed"
+    assert completed_row["task"] == "started detail"
+
+    cancelled = tasks / "20260101-120003-0"
+    cancelled.mkdir()
+    _write_progress_jsonl(cancelled, [
+        {"ts": "2026-01-01T12:00:00Z", "event": "STARTED"},
+        {"ts": "2026-01-01T12:00:10Z", "event": "CANCELLED"},
+    ])
+    assert telemetry.aggregate_task(state_dir, cancelled)["status"] == "cancelled"
+
+    blocked = tasks / "20260101-120004-0"
+    blocked.mkdir()
+    _write_progress_jsonl(blocked, [
+        {"ts": "2026-01-01T12:00:00Z", "event": "STARTED"},
+        {"ts": "2026-01-01T12:00:10Z", "event": "COST_BLOCKED", "detail": "budget exhausted"},
+    ])
+    blocked_row = telemetry.aggregate_task(state_dir, blocked)
+    assert blocked_row["status"] == "blocked"
+    assert blocked_row["blockers"] == ["budget exhausted"]
+
+    unusual_result = tasks / "20260101-120005-0"
+    unusual_result.mkdir()
+    (unusual_result / "result.md").write_text("STATUS: paused\n", encoding="utf-8")
+    assert telemetry.read_result_md(unusual_result)["status"] == "paused"
+
+
+def test_direct_selection_quality_and_stale_marker_edges(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    assert telemetry.list_task_dirs(state_dir, _selector_args()) == []
+
+    tasks = state_dir / "tasks"
+    tasks.mkdir(parents=True)
+    first = tasks / "20260101-120000-0"
+    second = tasks / "20260101-120001-0"
+    custom = tasks / "custom-task"
+    for task_dir in (first, second, custom):
+        task_dir.mkdir()
+        _write_register(task_dir, task_id=task_dir.name)
+
+    assert [p.name for p in telemetry.list_task_dirs(
+        state_dir,
+        _selector_args(session_id="20260101-120000"),
+    )] == [first.name]
+    assert [p.name for p in telemetry.list_task_dirs(
+        state_dir,
+        _selector_args(task_id=second.name),
+    )] == [second.name]
+
+    os.utime(custom, (1893456000, 1893456000))
+    assert [p.name for p in telemetry.list_task_dirs(
+        state_dir,
+        _selector_args(task_id=None, since="2030-01-01"),
+    )] == ["custom-task"]
+    assert telemetry.list_task_dirs(
+        state_dir,
+        _selector_args(until="2025-01-01"),
+    ) == []
+
+    assert telemetry.explicit_quality_bool({"quality_metrics": "bad"}, "hallucination_detected") is None
+
+    terminal = tasks / "20260101-120002-0"
+    terminal.mkdir()
+    _write_register(terminal, task_id=terminal.name, current_phase="blocked")
+    assert telemetry.terminal_task_state(terminal) == "blocked"
+    assert telemetry.active_marker_task_dir(tasks, tasks / "active") is None
+    assert telemetry.active_marker_task_dir(tasks, tasks / "active.") is None
+
+    no_tasks_state = tmp_path / "no-tasks"
+    assert telemetry.stale_state_counts(no_tasks_state)["stale_active_markers"] == 0
+    (tasks / f"active.{terminal.name}").write_text("active\n", encoding="utf-8")
+    (tasks / "active.directory").mkdir()
+    (terminal / "supervisor-pending.txt").mkdir()
+    counts = telemetry.stale_state_counts(state_dir)
+    assert counts["terminal_active_markers"] == 1
+
+
+def test_direct_formatters_and_rich_text_render(capsys):
+    assert telemetry.format_duration(3661) == "1h01m"
+    assert telemetry.format_tokens(1_500_000) == "1.5M"
+    assert telemetry.format_tokens(1500) == "1.5k"
+    assert telemetry.format_rate(None) == "—"
+    assert telemetry.format_progress_event({
+        "latest_progress": {"event": "STAGE", "agent": "backend", "detail": "x" * 100},
+        "last_update_age_seconds": 65,
+    }).endswith("...")
+
+    row = {
+        "task_id": "20260101-120000-0",
+        "task": "render task",
+        "status": "blocked",
+        "health": "blocked",
+        "current_phase": "blocked",
+        "duration_seconds": 65,
+        "stages_completed": None,
+        "stages_total": 0,
+        "retries": 1,
+        "tokens_total": 1500,
+        "latest_progress": {"event": "BLOCKED", "stage": 1, "detail": "blocked"},
+        "last_update_age_seconds": 65,
+        "guidance": ["Inspect result.md"],
+    }
+    summary = {
+        "tasks_total": 1,
+        "tasks_completed": 0,
+        "tasks_cancelled": 0,
+        "tasks_blocked": 1,
+        "tasks_stale_blocked": 0,
+        "tasks_running": 0,
+        "mean_duration_seconds": 65,
+        "median_duration_seconds": 65,
+        "total_retries": 1,
+        "total_tokens": 1500,
+        "total_tool_events": 2,
+        "total_tool_failures": 1,
+        "total_tool_unrecovered_failures": 1,
+        "operational_quality": {
+            "success_rate": 0.0,
+            "retry_rate": 1.0,
+            "human_intervention_rate": 1.0,
+            "rollback_frequency": 1,
+            "hallucination_signal_rate": 1.0,
+        },
+        "stale_state_counts": {
+            "stale_active_markers": 1,
+            "stale_supervisor_pending_sentinels": 1,
+            "terminal_active_markers": 1,
+            "terminal_supervisor_pending_sentinels": 1,
+        },
+        "by_blocker": {"host_bridge_not_invoked": 1},
+        "by_host_bridge_status": {"manual_fallback_completed": 1},
+        "core_objective": telemetry.capability_ceiling({"adapter": "codex"}),
+        "by_stale_blocker": {"host_bridge_not_invoked": 1},
+    }
+
+    telemetry.render_text([row], summary)
+    out = capsys.readouterr().out
+    assert "Historical cleanup markers" in out
+    assert "Blockers: host_bridge_not_invoked=1" in out
+    assert "Stale blockers: host_bridge_not_invoked=1" in out
+    assert "Guidance:" in out
 
 
 class TestTelemetryAggregate:

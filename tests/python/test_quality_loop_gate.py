@@ -2,14 +2,31 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REPAIR = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
 QUALITY_CHECK = REPO_ROOT / "core" / "scripts" / "quality-loop-check.py"
+SCRIPTS_DIR = REPO_ROOT / "core" / "scripts"
+
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+repair_state = _load_module(REPAIR, "repair_task_state")
 
 
 def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
@@ -220,6 +237,59 @@ def test_repair_records_explicit_quality_bypass_reason(tmp_path: Path):
     assert repair["quality_gate"]["bypassed"] is True
     assert repair["quality_gate"]["bypass_reason"] == "emergency documentation-only repair; reviewer unavailable"
     assert "QUALITY_LOOP: bypassed" in (task_dir / "result.md").read_text(encoding="utf-8")
+
+
+def test_repair_helpers_cover_fallback_paths(tmp_path: Path):
+    assert repair_state.load_json(tmp_path / "missing.json") == {}
+
+    try:
+        repair_state.resolve_task_dir(tmp_path / "state", "missing-task")
+    except SystemExit as exc:
+        assert "task not found" in str(exc)
+    else:
+        raise AssertionError("missing task should exit")
+
+    repair_state.backup_result(tmp_path)
+    paths = repair_state.resolve_quality_paths(tmp_path / "task", ["context/custom-review.md"])
+    assert tmp_path / "task" / "context" / "custom-review.md" in paths
+
+    rendered = repair_state.render_result(
+        "Implement memory logging",
+        "task-1",
+        "completed",
+        "done",
+        "",
+        ["context/evidence.md"],
+        ["memory-1"],
+        True,
+    )
+
+    assert "EVIDENCE: context/evidence.md" in rendered
+    assert "MEMORY_IDS: memory-1" in rendered
+    assert "MEMORY_CONTEXT_REUSED: yes" in rendered
+    blocked = repair_state.render_result(
+        "Implement memory logging",
+        "task-1",
+        "blocked",
+        "",
+        "manual_blocker",
+        [],
+        [],
+        False,
+    )
+    assert "BLOCKER: manual_blocker" in blocked
+
+
+def test_repair_json_format_outputs_repair_record(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(tmp_path, "Read current status")
+
+    result = run_repair(state_dir, task_id, "--format", "json")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["task_id"] == task_id
+    assert payload["status"] == "completed"
+    assert (task_dir / "context" / "manual-fallback-repair.json").is_file()
 
 
 def test_quality_loop_check_rejects_missing_task_dir(tmp_path: Path):

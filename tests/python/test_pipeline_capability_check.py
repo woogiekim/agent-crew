@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CHECKER = REPO_ROOT / "core" / "scripts" / "pipeline-capability-check.py"
+
+
+def _load_module(path: Path, name: str):
+    scripts_dir = str(path.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+pipeline_capability = _load_module(CHECKER, "pipeline_capability_check")
 
 
 def write_pipeline(tmp_path: Path, pipeline: dict) -> Path:
@@ -309,3 +325,153 @@ def test_pipeline_capability_check_reads_codex_toml_custom_agent_profile(tmp_pat
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
+
+
+def test_pipeline_capability_helpers_cover_input_edges(tmp_path: Path):
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    assert pipeline_capability.load_json(invalid)[0] is None
+
+    array = tmp_path / "array.json"
+    array.write_text("[]", encoding="utf-8")
+    assert pipeline_capability.load_json(array) == (None, "JSON root must be an object")
+
+    missing_dir = tmp_path / "missing"
+    assert pipeline_capability.existing_agent_names([missing_dir]) == set()
+    assert pipeline_capability.existing_agent_profiles([missing_dir]) == {}
+
+    agent_dir = tmp_path / "agents"
+    agent_dir.mkdir()
+    (agent_dir / "not-a-file.md").mkdir()
+    assert pipeline_capability.existing_agent_profiles([agent_dir]) == {}
+
+    planned, profiles, failures = pipeline_capability.planned_dynamic_agents({"needs_creation": "bad"})
+    assert planned == set()
+    assert profiles == {}
+    assert failures[0]["code"] == "needs_creation_not_array"
+
+    planned, profiles, failures = pipeline_capability.planned_dynamic_agents({
+        "needs_creation": [
+            "bad-entry",
+            {"name": "Bad_Name"},
+            {"name": "worker", "capability_profile": 42},
+        ]
+    })
+    assert planned == {"worker"}
+    assert profiles == {}
+    assert {failure["code"] for failure in failures} == {
+        "needs_creation_entry_not_object",
+        "invalid_dynamic_agent_name",
+        "invalid_custom_capability_profile",
+    }
+
+    assert pipeline_capability.custom_profiles({}) == ({}, "custom-worker")
+
+
+def test_pipeline_capability_validation_covers_policy_failures():
+    manifest = {
+        "schema_version": 1,
+        "agents": {
+            "backend": {"role": "worker"},
+            "component": {"role": "component"},
+            "stateful": {"role": "worker", "may_mutate_workflow_state": True},
+            "devops": {
+                "role": "devops",
+                "may_execute_destructive": True,
+                "destructive_requires_approval": False,
+            },
+            "reviewer": {"role": "reviewer"},
+        },
+        "custom_profiles": {
+            "custom-worker": {"role": "worker"},
+            "custom-recursive": {"role": "orchestrator"},
+        },
+        "default_custom_profile": "custom-worker",
+    }
+
+    invalid_manifest = pipeline_capability.validate_pipeline_capabilities(
+        {"stages": []},
+        {"schema_version": 2},
+    )
+    assert invalid_manifest["failures"][0]["code"] == "invalid_capability_manifest"
+
+    invalid_pipeline = pipeline_capability.validate_pipeline_capabilities(
+        {"stages": "bad"},
+        manifest,
+    )
+    assert invalid_pipeline["failures"][0]["code"] == "stages_not_array"
+
+    result = pipeline_capability.validate_pipeline_capabilities(
+        {
+            "stages": [
+                [],
+                ["backend", "backend"],
+                ["component"],
+                ["stateful"],
+                ["devops", "backend"],
+                ["devops"],
+                {"agents": ["worker", "reviewer"]},
+                {"agents": ["recursive-worker"]},
+            ],
+            "needs_creation": [
+                {"name": "backend", "role": "worker"},
+                {"name": "unused-worker", "role": "worker"},
+                {"name": "worker", "role": "worker"},
+                {"name": "recursive-worker", "role": "worker", "capability_profile": "custom-recursive"},
+            ],
+        },
+        manifest,
+    )
+    codes = {failure["code"] for failure in result["failures"]}
+    assert {
+        "needs_creation_conflicts_with_manifest_agent",
+        "dynamic_agent_not_used_in_stages",
+        "empty_stage",
+        "duplicate_stage_agent",
+        "component_agent_in_runtime_stage",
+        "workflow_state_agent_in_runtime_stage",
+        "devops_stage_must_be_solo",
+        "devops_missing_approval_requirement",
+        "devops_stage_requires_followup_reviewer",
+        "custom_agent_mixed_with_gated_role",
+        "custom_profile_grants_recursive_authority",
+    }.issubset(codes)
+
+
+def test_pipeline_capability_evaluate_reports_manifest_parse_and_text_failures(tmp_path: Path):
+    pipeline = write_pipeline(tmp_path, {"schema_version": 1, "stages": ["backend"]})
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("not json", encoding="utf-8")
+
+    payload = pipeline_capability.evaluate(pipeline, manifest, [])
+
+    assert payload["failures"][0]["code"] == "manifest_parse_failed"
+
+    invalid_pipeline = tmp_path / "invalid-pipeline.json"
+    invalid_pipeline.write_text("not json", encoding="utf-8")
+    parse_payload = pipeline_capability.evaluate(invalid_pipeline, manifest, [])
+    assert parse_payload["failures"][0]["code"] == "pipeline_parse_failed"
+
+    text_pipeline = write_pipeline(tmp_path, {
+        "schema_version": 1,
+        "task": "Implement workflow",
+        "stages": [["backend", "backend"]],
+    })
+    result = subprocess.run(
+        ["python3", str(CHECKER), "--pipeline", str(text_pipeline)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: pipeline capability check" in result.stdout
+    assert "duplicate_stage_agent" in result.stdout
+
+    parse_result = subprocess.run(
+        ["python3", str(CHECKER), "--pipeline", str(invalid_pipeline)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert parse_result.returncode == 2
+    assert "pipeline_parse_failed" in parse_result.stdout

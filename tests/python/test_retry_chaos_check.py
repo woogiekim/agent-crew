@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -10,6 +11,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "retry-chaos-check.py"
 FIXTURE = REPO_ROOT / "core" / "evaluations" / "retry-chaos.json"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+retry_chaos = _load_module(SCRIPT, "retry_chaos_check")
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -68,3 +80,236 @@ def test_retry_chaos_check_rejects_invalid_fixture(tmp_path: Path):
     assert result.returncode == 2
     payload = json.loads(result.stdout)
     assert payload["error_type"] == "invalid_fixture"
+
+
+def test_retry_chaos_helpers_cover_invalid_json_and_status_edges(tmp_path: Path):
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    assert retry_chaos.load_json(invalid)[0] is None
+    assert retry_chaos.evaluate(REPO_ROOT, invalid)["error_type"] == "invalid_fixture"
+
+    array = tmp_path / "array.json"
+    array.write_text("[]", encoding="utf-8")
+    assert retry_chaos.load_json(array) == (None, "fixture root must be an object")
+
+    assert retry_chaos.status_line("STATUS: plan_ready\n") == "plan_ready"
+    assert retry_chaos.status_line("STATUS: BLOCKED\n") == "blocked"
+
+
+def test_retry_chaos_simulation_covers_event_errors_and_terminal_statuses(monkeypatch):
+    empty = retry_chaos.simulate_case({"id": "empty", "events": []}, {}, REPO_ROOT)
+    assert empty["failures"] == ["events must be a non-empty array"]
+
+    malformed = retry_chaos.simulate_case(
+        {
+            "id": "malformed",
+            "events": [
+                "bad-event",
+                {"kind": "unknown"},
+            ],
+        },
+        {},
+        REPO_ROOT,
+    )
+    assert "event_not_object:0" in malformed["failures"]
+    assert "unknown_event_kind:'unknown'" in malformed["failures"]
+
+    monkeypatch.setattr(
+        retry_chaos,
+        "reviewer_decision",
+        lambda _root, _response: (None, "reviewer_decision_failed:9:boom"),
+    )
+    failed_review = retry_chaos.simulate_case(
+        {"id": "review-fail", "events": [{"kind": "reviewer_result", "response": "bad"}]},
+        {},
+        REPO_ROOT,
+    )
+    assert "reviewer_decision_failed:9:boom" in failed_review["failures"]
+    assert failed_review["observed"]["blocked_by"] == ["reviewer_decision_failed"]
+
+    monkeypatch.setattr(
+        retry_chaos,
+        "reviewer_decision",
+        lambda _root, _response: ({"action": "retry", "reason": "tests_failed", "directive": "fix"}, None),
+    )
+    retry_then_complete = retry_chaos.simulate_case(
+        {
+            "id": "retry",
+            "events": [
+                {"kind": "reviewer_result", "response": "REVIEW: NEEDS_CHANGES"},
+                {"kind": "agent_result", "response": "STATUS: completed"},
+            ],
+            "expected": {
+                "final_status": "completed",
+                "blocked_by": [],
+                "invocations": 2,
+                "crash_failures": 0,
+                "token_resumes": 0,
+                "validation_retries": 1,
+                "retry_reasons": ["tests_failed"],
+            },
+        },
+        {"max_validation_retries": 2},
+        REPO_ROOT,
+    )
+    assert retry_then_complete["passed"] is True
+    assert retry_then_complete["observed"]["directives"] == ["fix"]
+
+    monkeypatch.setattr(
+        retry_chaos,
+        "reviewer_decision",
+        lambda _root, _response: ({"action": "observe"}, None),
+    )
+    plan_ready = retry_chaos.simulate_case(
+        {
+            "id": "plan",
+            "events": [
+                {"kind": "reviewer_result", "response": "noop"},
+                {"kind": "agent_result", "response": "STATUS: plan_ready"},
+            ],
+            "expected": {
+                "final_status": "plan_ready",
+                "blocked_by": [],
+                "invocations": 2,
+                "crash_failures": 0,
+                "token_resumes": 0,
+                "validation_retries": 0,
+                "retry_reasons": [],
+            },
+        },
+        {},
+        REPO_ROOT,
+    )
+    assert plan_ready["passed"] is True
+
+    blocked = retry_chaos.simulate_case(
+        {
+            "id": "blocked",
+            "events": [{"kind": "agent_result", "response": "STATUS: BLOCKED"}],
+            "expected": {
+                "final_status": "blocked",
+                "blocked_by": ["agent_blocked"],
+                "invocations": 1,
+                "crash_failures": 0,
+                "token_resumes": 0,
+                "validation_retries": 0,
+                "retry_reasons": [],
+            },
+        },
+        {},
+        REPO_ROOT,
+    )
+    assert blocked["passed"] is True
+
+
+def test_retry_chaos_reviewer_decision_covers_parse_and_returncode_errors(monkeypatch):
+    class Proc:
+        def __init__(self, stdout: str, stderr: str, returncode: int):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    monkeypatch.setattr(
+        retry_chaos.subprocess,
+        "run",
+        lambda *_args, **_kwargs: Proc("not json", "", 0),
+    )
+    payload, error = retry_chaos.reviewer_decision(REPO_ROOT, "response")
+    assert payload is None
+    assert error and error.startswith("reviewer_decision_parse_failed:")
+
+    monkeypatch.setattr(
+        retry_chaos.subprocess,
+        "run",
+        lambda *_args, **_kwargs: Proc("{}", "boom", 2),
+    )
+    payload, error = retry_chaos.reviewer_decision(REPO_ROOT, "response")
+    assert payload is None
+    assert error == "reviewer_decision_failed:2:boom"
+
+
+def test_retry_chaos_reviewer_retry_and_unknown_actions_continue(monkeypatch):
+    retry_decisions = iter([
+        ({"action": "retry", "reason": "tests_failed"}, None),
+        ({"action": "approve"}, None),
+    ])
+    monkeypatch.setattr(
+        retry_chaos,
+        "reviewer_decision",
+        lambda _root, _response: next(retry_decisions),
+    )
+    retry_result = retry_chaos.simulate_case(
+        {
+            "id": "retry-continue",
+            "events": [
+                {"kind": "reviewer_result", "response": "retry"},
+                {"kind": "reviewer_result", "response": "approve"},
+            ],
+            "expected": {
+                "final_status": "completed",
+                "blocked_by": [],
+                "invocations": 2,
+                "crash_failures": 0,
+                "token_resumes": 0,
+                "validation_retries": 1,
+                "retry_reasons": ["tests_failed"],
+            },
+        },
+        {"max_validation_retries": 2},
+        REPO_ROOT,
+    )
+    assert retry_result["passed"] is True
+
+    observe_decisions = iter([
+        ({"action": "observe"}, None),
+        ({"action": "approve"}, None),
+    ])
+    monkeypatch.setattr(
+        retry_chaos,
+        "reviewer_decision",
+        lambda _root, _response: next(observe_decisions),
+    )
+    observe_result = retry_chaos.simulate_case(
+        {
+            "id": "observe-continue",
+            "events": [
+                {"kind": "reviewer_result", "response": "observe"},
+                {"kind": "reviewer_result", "response": "approve"},
+            ],
+            "expected": {
+                "final_status": "completed",
+                "blocked_by": [],
+                "invocations": 2,
+                "crash_failures": 0,
+                "token_resumes": 0,
+                "validation_retries": 0,
+                "retry_reasons": [],
+            },
+        },
+        {},
+        REPO_ROOT,
+    )
+    assert observe_result["passed"] is True
+
+
+def test_retry_chaos_rejects_non_object_cases_and_text_output(tmp_path: Path):
+    fixture = tmp_path / "retry-chaos.json"
+    fixture.write_text(
+        json.dumps({"schema_version": 1, "budgets": {}, "cases": ["bad-case"]}),
+        encoding="utf-8",
+    )
+
+    payload = retry_chaos.evaluate(REPO_ROOT, fixture)
+
+    assert payload["error_type"] == "invalid_fixture"
+    assert payload["failures"] == ["fixture cases must be objects"]
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--fixture", str(fixture)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 2
+    assert "FAIL: retry chaos check" in result.stdout
+    assert "cases=0 passed=0 failed=1" in result.stdout

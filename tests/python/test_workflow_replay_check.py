@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -10,6 +11,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "workflow-replay-check.py"
 FIXTURE = REPO_ROOT / "core" / "evaluations" / "workflow-replay.json"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+workflow_replay = _load_module(SCRIPT, "workflow_replay_check")
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -101,3 +113,78 @@ def test_workflow_replay_check_rejects_invalid_fixture(tmp_path: Path):
     assert result.returncode == 2
     payload = json.loads(result.stdout)
     assert payload["error_type"] == "invalid_fixture"
+
+
+def test_workflow_replay_helpers_cover_invalid_json_and_transition_edges(tmp_path: Path):
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("not json", encoding="utf-8")
+    assert workflow_replay.load_json(invalid)[0] is None
+    invalid_payload = workflow_replay.evaluate(REPO_ROOT, invalid)
+    assert invalid_payload["error_type"] == "invalid_fixture"
+
+    array = tmp_path / "array.json"
+    array.write_text("[]", encoding="utf-8")
+    assert workflow_replay.load_json(array) == (None, "fixture root must be an object")
+
+    result = workflow_replay.run_tool(
+        ["python3", "-c", "print('not json')"],
+        cwd=tmp_path,
+        env={},
+    )
+    assert result["payload"] == {}
+
+    assert workflow_replay.transition_failures([]) == ["missing_state_transitions"]
+    assert workflow_replay.transition_failures(["unknown", "blocked"]) == ["unknown_state:unknown"]
+    assert workflow_replay.transition_failures(["phase_0"]) == ["non_terminal_final_state:phase_0"]
+
+
+def test_workflow_replay_case_reports_unknown_tool_and_expected_mismatches():
+    case = {
+        "id": "unknown-tool",
+        "task": "Replay unknown tool",
+        "pipeline": {"stages": ["planner"]},
+        "progress_events": [],
+        "state_transitions": ["phase_0", "blocked"],
+        "expected": {
+            "tool_flow": [{"tool": "missing-tool.py", "returncode": 0}],
+            "final_phase": "completed",
+            "passed": True,
+        },
+    }
+
+    result = workflow_replay.replay_case(case, REPO_ROOT)
+
+    assert "unknown_expected_tool:missing-tool.py" in result["failures"]
+    assert "final_phase:blocked!=expected:completed" in result["failures"]
+    assert "workflow_passed:False!=expected:True" in result["failures"]
+
+
+def test_workflow_replay_rejects_non_object_cases(tmp_path: Path):
+    fixture = tmp_path / "workflow-replay.json"
+    fixture.write_text(
+        json.dumps({"schema_version": 1, "cases": ["bad-case"]}),
+        encoding="utf-8",
+    )
+
+    payload = workflow_replay.evaluate(REPO_ROOT, fixture)
+
+    assert payload["error_type"] == "invalid_fixture"
+    assert payload["failures"] == ["fixture cases must be objects"]
+
+
+def test_workflow_replay_text_output_lists_failures(tmp_path: Path):
+    fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    fixture["cases"][0]["state_transitions"] = ["phase_0", "completed"]
+    path = tmp_path / "workflow-replay.json"
+    path.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--fixture", str(path)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: workflow replay check" in result.stdout
+    assert "cases=" in result.stdout
+    assert "invalid_transition:phase_0->completed" in result.stdout

@@ -132,46 +132,44 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
                     observed["final_status"] = "blocked"
                     observed["blocked_by"] = ["quality_loop_exhausted"]
                     break
-                continue
 
-            continue
-
-        if kind != "agent_result":
+        elif kind != "agent_result":
             failures.append(f"unknown_event_kind:{kind!r}")
             continue
 
-        line = status_line(response)
-        if line == "completed":
-            observed["final_status"] = "completed"
-            break
-        if line == "plan_ready":
-            observed["final_status"] = "plan_ready"
-            break
-        if line == "blocked":
-            observed["final_status"] = "blocked"
-            observed["blocked_by"] = ["agent_blocked"]
-            break
+        else:
+            line = status_line(response)
+            if line == "completed":
+                observed["final_status"] = "completed"
+                break
+            if line == "plan_ready":
+                observed["final_status"] = "plan_ready"
+                break
+            if line == "blocked":
+                observed["final_status"] = "blocked"
+                observed["blocked_by"] = ["agent_blocked"]
+                break
 
-        host_status = str(raw_event.get("host_status") or "error")
-        if host_status == "completed" and observed["token_resumes"] < max_token_resumes:
-            observed["token_resumes"] += 1
-            observed["retry_reasons"].append("token_truncation")
-            continue
-        if host_status == "blocked":
-            observed["final_status"] = "blocked"
-            observed["blocked_by"] = ["host_blocked"]
-            break
-        if host_status == "cancelled":
-            observed["final_status"] = "blocked"
-            observed["blocked_by"] = ["cancelled"]
-            break
+            host_status = str(raw_event.get("host_status") or "error")
+            if host_status == "completed" and observed["token_resumes"] < max_token_resumes:
+                observed["token_resumes"] += 1
+                observed["retry_reasons"].append("token_truncation")
+                continue
+            if host_status == "blocked":
+                observed["final_status"] = "blocked"
+                observed["blocked_by"] = ["host_blocked"]
+                break
+            if host_status == "cancelled":
+                observed["final_status"] = "blocked"
+                observed["blocked_by"] = ["cancelled"]
+                break
 
-        observed["crash_failures"] += 1
-        observed["retry_reasons"].append("crash")
-        if observed["crash_failures"] > max_crash_retries:
-            observed["final_status"] = "blocked"
-            observed["blocked_by"] = ["agent_crashed_after_retry_budget"]
-            break
+            observed["crash_failures"] += 1
+            observed["retry_reasons"].append("crash")
+            if observed["crash_failures"] > max_crash_retries:
+                observed["final_status"] = "blocked"
+                observed["blocked_by"] = ["agent_crashed_after_retry_budget"]
+                break
 
     expected = case.get("expected") or {}
     for key in (

@@ -92,3 +92,44 @@ def test_persistent_workflow_strategy_fails_when_evidence_is_missing(tmp_path: P
 
     assert payload["passed"] is False
     assert "evidence_paths" in failed
+
+
+def test_persistent_workflow_strategy_helpers_handle_invalid_shapes(tmp_path: Path):
+    assert persistent_check.read_text(tmp_path) == ""
+    assert persistent_check.read_json(tmp_path) == {}
+
+    assert persistent_check.all_evidence_paths_exist(
+        tmp_path,
+        {"test_categories": []},
+    ) is False
+    assert persistent_check.all_evidence_paths_exist(
+        tmp_path,
+        {"test_categories": {"workflow_durability": []}},
+    ) is False
+    assert persistent_check.all_evidence_paths_exist(
+        tmp_path,
+        {"test_categories": {"workflow_durability": {}}},
+    ) is False
+
+
+def test_persistent_workflow_strategy_text_reports_failures(tmp_path: Path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "core" / "evaluations").mkdir(parents=True)
+    (tmp_path / "docs" / "persistent-workflow-test-strategy.md").write_text(
+        "incomplete strategy",
+        encoding="utf-8",
+    )
+    (tmp_path / "core" / "evaluations" / "persistent-workflow-test-strategy.json").write_text(
+        json.dumps({}),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["python3", str(CHECK), "--root", str(tmp_path)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: persistent workflow test strategy check" in result.stdout
+    assert "FAIL: doc_core_terms" in result.stdout

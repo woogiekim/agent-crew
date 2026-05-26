@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -9,6 +10,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "phase-1-validation.py"
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+phase_one = _load_module(SCRIPT, "phase_1_validation")
 
 
 def write_framework(path: Path) -> None:
@@ -105,3 +117,78 @@ def test_phase_1_validation_required_failure_fails_run(tmp_path: Path):
     assert payload["passed"] is False
     quality = next(item for item in payload["criteria"] if item["id"] == "quality")
     assert quality["status"] == "needs_attention"
+
+
+def test_phase_1_validation_helpers_cover_selection_and_summary_statuses(tmp_path: Path):
+    assert phase_one.tail("abcdef", 3) == "def"
+    assert phase_one.selected("unit", "cmd", {"integration"}, set()) is False
+    assert phase_one.criterion_summary(
+        {"criteria": [{"id": "optional"}]},
+        [{"id": "optional_cmd", "criteria": ["optional"], "optional": True, "passed": True}],
+    )[0]["status"] == "passed"
+
+    framework = {
+        "levels": [
+            {
+                "id": "unit",
+                "commands": [
+                    {
+                        "id": "pass_cmd",
+                        "label": "Passing command",
+                        "command": ["{python}", "-c", "print('ok')"],
+                        "criteria": ["quality"],
+                    }
+                ],
+            }
+        ],
+        "criteria": [
+            {"id": "quality"},
+            {"id": "unmeasured"},
+        ],
+    }
+    report = phase_one.build_report(
+        framework,
+        root=tmp_path,
+        plan_only=False,
+        levels=set(),
+        commands=set(),
+    )
+    by_id = {item["id"]: item["status"] for item in report["criteria"]}
+    assert by_id["quality"] == "passed"
+    assert by_id["unmeasured"] == "unmeasured"
+
+
+def test_phase_1_validation_text_output_includes_skips_and_criteria(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    write_framework(framework)
+
+    plan = subprocess.run(
+        ["python3", str(SCRIPT), "--framework", str(framework), "--plan-only"],
+        text=True,
+        capture_output=True,
+    )
+
+    assert plan.returncode == 0
+    assert "PLAN: phase-one validation" in plan.stdout
+    assert "- SKIP unit/pass_cmd:" in plan.stdout
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--framework", str(framework)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "criteria:" in result.stdout
+    assert "- quality:" in result.stdout
+
+
+def test_phase_1_validation_command_filter_can_skip_unselected_commands(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    write_framework(framework)
+
+    result = run_runner("--framework", str(framework), "--command", "missing")
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["commands"] == []
