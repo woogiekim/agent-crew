@@ -19,6 +19,14 @@ def _run(task_dir: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_text(task_dir: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(SCRIPT), "--task-dir", str(task_dir), *extra],
+        text=True,
+        capture_output=True,
+    )
+
+
 def test_codex_workflow_guard_accepts_complete_state(tmp_path: Path):
     task_dir = tmp_path / "task"
     task_dir.mkdir()
@@ -45,3 +53,26 @@ def test_codex_workflow_guard_blocks_missing_markers(tmp_path: Path):
     assert payload["status"] == "blocked"
     assert payload["blocker"] == "missing_required_state_markers"
     assert set(payload["missing"]) == {"pipeline", "register"}
+
+
+def test_codex_workflow_guard_text_reports_ok(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+
+    result = _run_text(task_dir, "--require", "task-dir")
+
+    assert result.returncode == 0
+    assert result.stdout == "STATUS: ok\n"
+
+
+def test_codex_workflow_guard_text_reports_blocker(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+
+    result = _run_text(task_dir, "--require", "pipeline")
+
+    assert result.returncode == 2
+    assert "STATUS: blocked" in result.stdout
+    assert "BLOCKER: missing_required_state_markers" in result.stdout
+    assert "MISSING: pipeline" in result.stdout
+    assert "NEXT: Run crew:run/crew run" in result.stdout

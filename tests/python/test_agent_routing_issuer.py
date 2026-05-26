@@ -79,6 +79,18 @@ class TestAutoRoutingRulesEntry:
             f"Expected 'medium' confidence in issuer row but got: {issuer_rows[0]}"
         )
 
+    def test_issuer_row_covers_lifecycle_updates(self):
+        """The issuer row must cover lifecycle transitions and field updates."""
+        text = _load_routing_text()
+        rows = _table_rows(text, "Auto-Routing Rules")
+        issuer_rows = [r for r in rows if "issuer" in r.lower()]
+        assert issuer_rows, "issuer row not found"
+        row = issuer_rows[0].lower()
+        for marker in ("issue lifecycle", "status transition", "field update"):
+            assert marker in row, (
+                f"Expected lifecycle marker {marker!r} in issuer row: {issuer_rows[0]}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # AC2 — issuer row in Agent Registry table
@@ -104,6 +116,15 @@ class TestAgentRegistryEntry:
         assert "yes" in issuer_rows[0].lower(), (
             f"Expected 'yes' for safe direct invocation in issuer registry row: {issuer_rows[0]}"
         )
+
+    def test_issuer_registry_mentions_lifecycle_scope(self):
+        text = _load_routing_text()
+        rows = _table_rows(text, "Agent Registry")
+        issuer_rows = [r for r in rows if r.lstrip("| ").lower().startswith("issuer")]
+        assert issuer_rows, "issuer row not found in Agent Registry"
+        row = issuer_rows[0].lower()
+        assert "state transitions" in row
+        assert "field updates" in row
 
 
 # ---------------------------------------------------------------------------

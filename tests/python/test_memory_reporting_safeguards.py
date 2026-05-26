@@ -788,3 +788,26 @@ def test_canonical_context_compacts_repeated_prior_outcomes(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     text = output.read_text(encoding="utf-8")
     assert "repeated=2: Telemetry must expose retries." in text
+
+
+def test_canonical_context_ignores_missing_and_non_matching_inputs(tmp_path: Path):
+    source = tmp_path / "notes.md"
+    missing = tmp_path / "missing.md"
+    output = tmp_path / "canonical-context.md"
+    source.write_text("plain note without a canonical marker\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(CANONICAL_CONTEXT),
+            "--output",
+            str(output),
+            str(missing),
+            str(source),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "- Unknown: no repeated prior outcomes were available." in output.read_text(encoding="utf-8")

@@ -43,6 +43,39 @@ def test_plan_checker_blocks_bare_implementation_stage(tmp_path: Path):
     assert "implementation_stage_without_tdd_parallel" in payload["failures"]
 
 
+def test_plan_checker_reports_missing_pipeline_path(tmp_path: Path):
+    result = subprocess.run(
+        ["python3", str(CHECKER), "--pipeline", str(tmp_path / "missing.json")],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 2
+    assert "pipeline not found" in result.stderr
+
+
+def test_plan_checker_text_output_lists_failures(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement production quality behavior",
+            "stages": ["backend", "reviewer"],
+            "completed_stages": 0,
+        },
+    )
+
+    result = subprocess.run(
+        ["python3", str(CHECKER), "--pipeline", str(path)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: pipeline quality plan" in result.stdout
+    assert "- implementation_stage_without_tdd_parallel" in result.stdout
+
+
 def test_plan_checker_blocks_mixed_bare_implementation_stage(tmp_path: Path):
     path = write_pipeline(
         tmp_path,

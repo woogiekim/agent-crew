@@ -114,7 +114,7 @@ assert_contains "${CTX}" 'crew:run "issuer task"' "direct MCP call routes to iss
 it "work item title updates route through issuer pipeline"
 PAYLOAD="$(make_prompt_payload 'update the work item title for ENRTC-236')"
 CTX="$(run_hook_ctx "${PAYLOAD}")"
-assert_contains "${CTX}" "issue publication" "work item update detected"
+assert_contains "${CTX}" "issue lifecycle" "work item update detected"
 assert_contains "${CTX}" 'crew:run "issuer task"' "work item update routes to issuer"
 
 it "Korean issue publication request routes through issuer pipeline"
@@ -122,6 +122,30 @@ PAYLOAD="$(make_prompt_payload 'ENRTC-236 하위 작업 26건 이슈 발행해�
 CTX="$(run_hook_ctx "${PAYLOAD}")"
 assert_contains "${CTX}" "issue publication" "Korean issue publication detected"
 assert_contains "${CTX}" 'crew:run "issuer task"' "Korean request routes to issuer"
+
+it "issue state transitions route through issuer lifecycle pipeline"
+PAYLOAD="$(make_prompt_payload 'ENRTC-273 완료 처리')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "implementation request detected (issue lifecycle)" "state transition detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "state transition routes to issuer"
+
+it "issue ranges route through issuer lifecycle pipeline"
+PAYLOAD="$(make_prompt_payload 'ENRTC-273~280 진행중으로 변경')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "issue lifecycle" "range transition detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "range transition routes to issuer"
+
+it "English issue reopen commands route through issuer lifecycle pipeline"
+PAYLOAD="$(make_prompt_payload 'reopen ENRTC-275')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "issue lifecycle" "reopen command detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "reopen routes to issuer"
+
+it "issue field updates route through issuer lifecycle pipeline"
+PAYLOAD="$(make_prompt_payload 'ENRTC-273 라벨 추가')"
+CTX="$(run_hook_ctx "${PAYLOAD}")"
+assert_contains "${CTX}" "issue lifecycle" "field update detected"
+assert_contains "${CTX}" 'crew:run "issuer task"' "field update routes to issuer"
 
 # --------------------------------------------------------------------------- #
 # Negative cases: pure questions must NOT emit STOP                           #

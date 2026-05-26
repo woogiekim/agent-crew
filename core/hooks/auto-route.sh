@@ -253,19 +253,49 @@ ARTIFACT_NOUN_PAT = (
 )
 ISSUE_PUBLICATION_PAT = (
     r"publish\s+(?:(?:the|these|those)\s+)?issues?|create\s+(?:(?:the|these|those)\s+)?(?:work\s+items?|issues?)|"
-    r"update\s+(?:(?:the|these|those)\s+)?(?:work\s+items?|issues?)|rename\s+(?:(?:the|these|those)\s+)?(?:work\s+items?|issues?)|"
-    r"change\s+(?:the\s+)?(?:work\s+item|issue)\s+title|"
     r"bulk\s+create\s+(?:work\s+items?|issues?)|import\s+(?:issues?|task\s+list)|"
     r"seed\s+(?:the\s+)?project|upload\s+(?:the\s+)?task\s+list|"
     r"issue\s+publication|work\s+item\s+creation|"
-    r"이슈\s*(?:발행|생성|등록|업로드|수정|변경)|작업\s*항목\s*(?:생성|등록|수정|변경)|"
-    r"업무\s*항목\s*(?:생성|등록|수정|변경)|제목\s*변경|태스크\s*목록\s*(?:가져오기|업로드)"
+    r"이슈\s*(?:발행|생성|등록|업로드)|작업\s*항목\s*(?:생성|등록)|"
+    r"업무\s*항목\s*(?:생성|등록)|태스크\s*목록\s*(?:가져오기|업로드)"
 )
 DIRECT_TRACKER_TOOL_PAT = (
     r"mcp__plane__(?:create|update|delete)_work_item|"
     r"mcp__gitlab__(?:create|update|delete)_issue|"
     r"gh\s+issue\s+create|"
     r"curl\s+.*(?:/issues|/work-items|/work_items)"
+)
+DIRECT_TRACKER_LIFECYCLE_PAT = (
+    r"mcp__plane__update_work_item|"
+    r"mcp__gitlab__update_issue|"
+    r"gh\s+issue\s+(?:edit|close|reopen)"
+)
+ISSUE_REF_PAT = (
+    r"\b[A-Z][A-Z0-9]+-\d+\b"
+    r"(?:\s*(?:~|-|to|through|,)\s*(?:[A-Z][A-Z0-9]+-)?\d+\b|"
+    r"\s*,\s*\b[A-Z][A-Z0-9]+-\d+\b)*"
+)
+ISSUE_STATE_TRANSITION_PAT = (
+    r"완료\s*처리|완료|시작|진행\s*중(?:으로)?|진행|"
+    r"상태\s*(?:변경|전환)|"
+    r"status\s+(?:to|as|=)|state\s+(?:to|as|=)|"
+    r"done|start(?:ed)?|in\s*progress|cancel(?:led)?|"
+    r"보류|hold|blocked|QA|배포|deploy(?:ed)?|"
+    r"reopen(?:ed)?|close(?:d)?|취소"
+)
+ISSUE_FIELD_UPDATE_PAT = (
+    r"라벨\s*(?:추가|변경|삭제|제거)|우선순위\s*(?:변경|수정|설정)|"
+    r"담당자\s*(?:변경|추가|지정|삭제)|제목\s*변경|"
+    r"labels?\s*(?:add|remove|update|change|set)|"
+    r"priority\s*(?:change|update|set)|"
+    r"assignees?\s*(?:change|update|add|set|remove)|"
+    r"title\s*(?:change|update|rename)|"
+    r"(?:update|rename|change)\s+(?:the\s+)?(?:work\s+item|issue)\s+title|"
+    r"field\s+update"
+)
+ISSUE_LIFECYCLE_PAT = (
+    rf"(?:{ISSUE_REF_PAT}).{{0,120}}(?:{ISSUE_STATE_TRANSITION_PAT}|{ISSUE_FIELD_UPDATE_PAT})|"
+    rf"(?:{ISSUE_STATE_TRANSITION_PAT}|{ISSUE_FIELD_UPDATE_PAT}).{{0,120}}(?:{ISSUE_REF_PAT})"
 )
 READONLY_REVIEW_PAT = (
     r"review|evaluate|assess|compare|honest\s+review|check|diagnos(?:e|is)|"
@@ -385,7 +415,7 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
 
 TRIVIAL_INTENT_PAT = {
     # English intents — with "git" prefix
-    r"\b(git\s+)?status\b":               ("git status",                    "status"),
+    r"^\s*(?:git\s+)?status(?:\s+[-\w]+)?\s*$": ("git status",              "status"),
     r"\bgit\s+push\b":                    ("git push",                      "push"),
     r"\bgit\s+merge\b":                   ("git merge <branch>",            "merge"),
     r"\bgit\s+tag\b":                     ("git tag <name>",                "tag"),
@@ -400,7 +430,7 @@ TRIVIAL_INTENT_PAT = {
     # Korean equivalents
     r"머지|병합":                          ("git merge <branch>",            "merge"),
     r"푸시":                               ("git push",                      "push"),
-    r"상태(\s*확인)?":                     ("git status",                    "status"),
+    r"^\s*상태(?:\s*확인)?\s*$":           ("git status",                    "status"),
     r"태그":                               ("git tag <name>",                "tag"),
     r"롤백|되돌리기":                      ("git revert HEAD",               "rollback/revert"),
     r"커밋":                               ("git commit -m '...'",           "commit"),
@@ -454,7 +484,11 @@ suggested_agent = ""
 
 # --- Existing domain-specific routing ---
 
-if match(ISSUE_PUBLICATION_PAT) or match(DIRECT_TRACKER_TOOL_PAT):
+if match(ISSUE_LIFECYCLE_PAT) or match(DIRECT_TRACKER_LIFECYCLE_PAT):
+    detected_type = "issue lifecycle"
+    suggested_pipeline = "issuer"
+    suggested_agent = "issuer"
+elif match(ISSUE_PUBLICATION_PAT) or match(DIRECT_TRACKER_TOOL_PAT):
     detected_type = "issue publication"
     suggested_pipeline = "issuer"
     suggested_agent = "issuer"

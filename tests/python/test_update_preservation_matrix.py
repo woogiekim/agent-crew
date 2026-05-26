@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -10,6 +12,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PRESERVATION = REPO_ROOT / "core" / "scripts" / "update-preservation-manifest.py"
+
+
+def load_preservation_module():
+    spec = importlib.util.spec_from_file_location("update_preservation_manifest", PRESERVATION)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def write(path: Path, content: str) -> Path:
@@ -152,3 +162,97 @@ def test_preservation_matrix_reports_changed_settings(tmp_path: Path):
 
     assert payload["passed"] is True
     assert payload["changed_settings"] == [str(tmp_path / "project" / ".codex" / "config.toml")]
+
+
+def test_preservation_matrix_text_reports_deleted_files_and_changed_settings(tmp_path: Path):
+    agent_home = tmp_path / "agent-home"
+    project = tmp_path / "project"
+    codex_home = tmp_path / "codex-home"
+    claude_dir = tmp_path / "claude"
+    custom_agent = write(project / ".codex" / "agents" / "custom.toml", 'name = "custom"\n')
+    config = write(project / ".codex" / "config.toml", "model = \"original\"\n")
+    project.mkdir(exist_ok=True)
+
+    env = os.environ.copy()
+    env.update({"CODEX_HOME": str(codex_home), "CLAUDE_DIR": str(claude_dir)})
+    begin = subprocess.run(
+        [
+            "python3",
+            str(PRESERVATION),
+            "begin",
+            "--agent-crew-home",
+            str(agent_home),
+            "--project-root",
+            str(project),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    assert begin.returncode == 0, begin.stdout + begin.stderr
+    manifest = Path(begin.stdout.strip())
+    custom_agent.unlink()
+    config.write_text("model = \"changed\"\n", encoding="utf-8")
+
+    finish = subprocess.run(
+        ["python3", str(PRESERVATION), "finish", "--manifest", str(manifest)],
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    assert finish.returncode == 1
+    assert "deleted_custom_files:" in finish.stdout
+    assert "changed_settings:" in finish.stdout
+
+
+def test_preservation_helpers_filter_generated_codex_agents(tmp_path: Path):
+    module = load_preservation_module()
+    agents = tmp_path / "agents"
+    custom = write(agents / "custom.toml", 'name = "custom"\n')
+    generated = write(agents / "supervisor.toml", module.CODEX_SYSTEM_AGENT_MARKER)
+    legacy = write(agents / "backend.toml", "Agent-crew system agent: backend\n")
+
+    snapshot = module.filtered_file_snapshot(agents, module.protected_project_codex_agent)
+
+    assert snapshot["files"] == {
+        "custom.toml": {
+            "sha256": module.sha256_file(custom),
+            "bytes": custom.stat().st_size,
+        }
+    }
+    assert module.protected_project_codex_agent(generated) is False
+    assert module.protected_project_codex_agent(legacy) is False
+
+
+def test_preservation_changed_settings_reports_existence_changes(tmp_path: Path):
+    module = load_preservation_module()
+    settings = str(tmp_path / "config.toml")
+
+    changed = module.changed_settings(
+        {"settings": {settings: {"exists": True, "sha256": "old"}}},
+        {"settings": {settings: {"exists": False}}},
+    )
+
+    assert changed == [settings]
+
+
+def test_preservation_main_returns_two_for_unknown_command(monkeypatch):
+    module = load_preservation_module()
+
+    class Parser:
+        def add_subparsers(self, **_kwargs):
+            return self
+
+        def add_parser(self, *_args, **_kwargs):
+            return self
+
+        def add_argument(self, *_args, **_kwargs):
+            return None
+
+        def parse_args(self):
+            return argparse.Namespace(command="unknown")
+
+    monkeypatch.setattr(module.argparse, "ArgumentParser", lambda **_kwargs: Parser())
+
+    assert module.main() == 2

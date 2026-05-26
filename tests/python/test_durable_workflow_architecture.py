@@ -91,3 +91,44 @@ def test_durable_workflow_contract_fails_without_issue_coverage(tmp_path: Path):
 
     assert payload["passed"] is False
     assert "issue_coverage" in failed
+
+
+def test_durable_workflow_helpers_tolerate_unreadable_inputs(tmp_path: Path):
+    assert durable_check.read_text(tmp_path / "missing.md") == ""
+    assert durable_check.read_json(tmp_path / "missing.json") == {}
+
+    invalid_json = tmp_path / "invalid.json"
+    invalid_json.write_text("not json", encoding="utf-8")
+    assert durable_check.read_json(invalid_json) == {}
+
+    list_json = tmp_path / "list.json"
+    list_json.write_text("[]", encoding="utf-8")
+    assert durable_check.read_json(list_json) == {}
+
+
+def test_durable_workflow_check_text_reports_failures(tmp_path: Path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "core" / "schemas").mkdir(parents=True)
+    (tmp_path / "core" / "evaluations").mkdir(parents=True)
+    (tmp_path / "docs" / "durable-workflow-architecture.md").write_text(
+        "incomplete",
+        encoding="utf-8",
+    )
+    (tmp_path / "core" / "schemas" / "durable-workflow.schema.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    (tmp_path / "core" / "evaluations" / "durable-workflow-architecture.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["python3", str(CHECK), "--root", str(tmp_path)],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: durable workflow architecture check" in result.stdout
+    assert "FAIL: doc_core_terms" in result.stdout

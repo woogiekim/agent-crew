@@ -3,24 +3,36 @@ name: issuer
 description: >
   TRIGGER when: user wants to publish issues or work items in bulk, create issues
   from a markdown file, import a task list into a project tracker, seed a project
-  with pre-defined issues, upload an issue list to an issue tracking system, or
-  create multiple work items from a structured list.
+  with pre-defined issues, upload an issue list to an issue tracking system,
+  create multiple work items from a structured list, transition existing issue
+  or work-item states, reopen/close/cancel/start/complete work items, or update
+  non-state fields such as labels, priority, assignees, title, dates, estimate,
+  or description.
   SKIP when: user only needs to read, query, or view existing work items without
-  creating new ones.
-  Output: Work items created via the selected backend adapter, with a summary
-  table of issue titles, priorities, states, and URLs printed after completion.
+  creating, transitioning, or updating them.
+  Output: Work items created or updated via the selected backend adapter, with
+  a summary table of issue titles, operations, states, fields, and URLs printed
+  after completion.
 reasoning_tier: balanced
 model: inherit
 ---
 
-# issuer — Issue Publisher (Thin Dispatcher)
+# issuer — Issue Lifecycle Dispatcher
 
 ## Role
 
-Read a structured markdown file of issues and publish them as work items by
-dispatching to the appropriate backend adapter skill. The dispatcher owns the
-abstract interface contract, input resolution, and the dispatch-by-convention
-mechanism. All vendor-specific steps live in the corresponding adapter skill.
+Manage issue and work-item lifecycle operations by dispatching to the
+appropriate backend adapter skill. The dispatcher owns operation
+classification, abstract interface contracts, input resolution, and the
+dispatch-by-convention mechanism. All vendor-specific steps live in the
+corresponding adapter skill.
+
+The supported operations are:
+
+- `create` — read a structured markdown file of issues and publish them as new
+  work items.
+- `transition` — resolve existing issue references and move their state.
+- `update` — resolve existing issue references and update non-state fields.
 
 Supported adapters (loaded by convention):
 - `plane` → skill `issuer-plane` (installed at `~/.agent-crew/user/skills/issuer-plane.md`)
@@ -32,8 +44,22 @@ following the Adapter Interface Contract below. No changes to this file are need
 
 ## Inputs
 
+- `OPERATION_MODE` — Operation to run: `create`, `transition`, `update`, or
+  `auto`. When omitted, infer it from the user's request using Operation
+  Classification below. Default: `auto`.
 - `ISSUES_FILE` — Path to the markdown file containing the issues to publish.
-  Each issue is a `##` section (see Issue File Format below). **Required.**
+  Each issue is a `##` section (see Issue File Format below). **Required for
+  `create`; unused for `transition` unless the adapter explicitly supports
+  batch input from a file.**
+- `ISSUE_REFS` — Existing issue or work-item references for `transition` and
+  `update`. Accepts a single reference, a range, or a comma-separated list (see
+  Issue References below). Required for `transition` and `update`.
+- `TARGET_STATE` — Desired state name for `transition` operations, such as
+  `Done`, `In Progress`, `Cancelled`, `QA`, `Deploy`, or any backend-specific
+  state name configured in the target project.
+- `FIELD_UPDATES` — Non-state fields to update for `update` operations:
+  labels, priority, assignees, title, start date, due date, estimate,
+  description, or backend-specific custom fields.
 - `BACKEND_ADAPTER` — Which issue tracking backend to use. When omitted (or set to
   `"auto"`), the dispatcher auto-detects the correct adapter from `git remote get-url
   origin` (Step 0). Explicit values bypass auto-detection and load
@@ -52,6 +78,56 @@ Backend-specific inputs (passed through to the adapter skill):
   `PROJECT_NAME`, the adapter triggers interactive project selection.
 - `PROJECT_NAME` — Human-readable project name used to resolve `PROJECT_ID`.
   If both `PROJECT_ID` and `PROJECT_NAME` are absent, interactive selection runs.
+
+---
+
+## Operation Classification
+
+The dispatcher MUST classify the request before executing adapter work. When
+`OPERATION_MODE` is provided and is not `auto`, use that value. Otherwise infer
+the mode from the normalized user request.
+
+| Operation | Trigger shape | Required inputs | Adapter branch |
+|---|---|---|---|
+| `create` | Publish/create/import/seed/upload issues from a file or structured list | `ISSUES_FILE` | Existing create flow: dispatcher Step 0 -> Step 0.5 -> Step 1 -> adapter Steps 1-5 |
+| `transition` | Existing issue references plus state-change verbs such as complete, start, done, cancel, hold, QA, deploy, reopen, or Korean equivalents like 완료, 시작, 진행, 보류, 취소 | `ISSUE_REFS`, `TARGET_STATE` | Lifecycle flow: dispatcher Step 0 -> Step 0.5 -> adapter lifecycle state transition |
+| `update` | Existing issue references plus non-state field changes such as label, priority, assignee, title, date, estimate, or description updates | `ISSUE_REFS`, `FIELD_UPDATES` | Lifecycle flow: dispatcher Step 0 -> Step 0.5 -> adapter lifecycle field update |
+
+Classification rules:
+
+1. If the request contains issue references and a state transition phrase,
+   classify as `transition` even when the word "update" appears.
+2. If the request contains issue references and non-state field changes,
+   classify as `update`.
+3. If the request has both state and field changes, split the work into a
+   sequential lifecycle batch: apply `transition` and `update` per issue, then
+   report each result row.
+4. If classification is ambiguous, ask one structured choice before any
+   mutation: `create`, `transition`, `update`, or cancel.
+5. Read-only queries that only inspect existing issues are outside issuer's
+   mutating lifecycle path and should route to a read-only agent instead.
+
+---
+
+## Issue References
+
+Lifecycle operations resolve `ISSUE_REFS` into backend work-item IDs before any
+state or field mutation. Adapters MUST support these formats:
+
+| Input form | Example | Meaning |
+|---|---|---|
+| Single | `ENRTC-273` | One work item |
+| Range | `ENRTC-273~280` | Inclusive sequence in the same project prefix |
+| List | `ENRTC-273, ENRTC-275, ENRTC-280` | Explicit set of work items |
+
+Resolution behavior:
+
+- Preserve the project prefix from the first item in a range when the end of the
+  range is numeric only.
+- Resolve each reference to the backend's canonical work-item ID and URL before
+  mutation.
+- For bulk operations, process references sequentially and keep going after
+  per-item failures unless the adapter loses authentication or target context.
 
 ---
 
@@ -190,13 +266,15 @@ inspecting the current repository's git remote. This step MUST run before
 
 1. Resolve `BACKEND_ADAPTER` from Step 0 above (already set; no default override).
 
-2. Load the skill named `issuer-{BACKEND_ADAPTER}`.
+2. Resolve `OPERATION_MODE` using Operation Classification above.
+
+3. Load the skill named `issuer-{BACKEND_ADAPTER}`.
    The skill is installed at `~/.agent-crew/user/skills/issuer-{BACKEND_ADAPTER}.md`.
    This is a **convention-based load** — no registry lookup is needed.
    New adapters are auto-discoverable by placing the correctly-named skill file
    in `~/.agent-crew/user/skills/`.
 
-3. If the skill file does not exist, return the following structured block
+4. If the skill file does not exist, return the following structured block
    and stop — do NOT attempt to call any external API, CLI, or service
    as a workaround:
    ```
@@ -212,17 +290,27 @@ inspecting the current repository's git remote. This step MUST run before
    any calling workflow will detect it and surface the blocker to the user
    without proceeding with direct API calls.
 
-4. Execute the adapter skill's **Step 0** (authenticate and resolve target). The
+5. Execute the adapter skill's **Step 0** (authenticate and resolve target). The
    adapter Step 0 resolves all target coordinates (workspace slug, project ID,
    project name, repo, etc.) and returns them to the dispatcher as a structured
    `TARGET_SUMMARY:` block (see Adapter Interface Contract).
 
-5. Execute **Step 1** (target confirmation) defined below.
+6. Execute **Step 1** (target confirmation) defined below.
 
-6. Execute adapter Steps 1–5, passing through all inputs (ISSUES_FILE, DRY_RUN,
-   WORKSPACE_SLUG, PROJECT_ID, PROJECT_NAME, TASK_DIR, and any backend-specific
-   inputs the caller provided). The adapter must surface a preview gate before
-   any create call when `DRY_RUN` is not enabled.
+7. Dispatch by operation:
+   - `create`: Execute adapter Steps 1-5, passing through all inputs
+     (`ISSUES_FILE`, `DRY_RUN`, `WORKSPACE_SLUG`, `PROJECT_ID`, `PROJECT_NAME`,
+     `TASK_DIR`, and any backend-specific inputs the caller provided). The
+     adapter must surface a preview gate before any create call when `DRY_RUN`
+     is not enabled.
+   - `transition`: Execute the adapter's lifecycle state-transition branch,
+     passing `ISSUE_REFS`, `TARGET_STATE`, `DRY_RUN`, target coordinates, and
+     any backend-specific inputs. The adapter must resolve references and show
+     a pre-mutation preview unless `DRY_RUN=true`.
+   - `update`: Execute the adapter's lifecycle field-update branch, passing
+     `ISSUE_REFS`, `FIELD_UPDATES`, `DRY_RUN`, target coordinates, and any
+     backend-specific inputs. The adapter must resolve references and show a
+     pre-mutation preview unless `DRY_RUN=true`.
 
 ---
 
@@ -240,7 +328,7 @@ interactive prompt entirely and log:
 
 ```
 [issuer] Auto-confirm active (AGENT_CREW_ISSUER_AUTO_CONFIRM=1) — proceeding without prompt.
-Target: {backend} | {project_name} ({project_id}) | workspace={workspace_slug} | file={ISSUES_FILE}
+Target: {backend} | {project_name} ({project_id}) | workspace={workspace_slug} | operation={OPERATION_MODE} | file={ISSUES_FILE or N/A} | refs={ISSUE_REFS or N/A}
 ```
 
 This bypass is intended for CI / batch contexts where no interactive terminal is
@@ -254,7 +342,7 @@ occur) and print:
 
 ```
 [issuer] DRY_RUN mode — skipping confirmation prompt (no mutations will occur).
-Target: {backend} | {project_name} ({project_id}) | workspace={workspace_slug} | file={ISSUES_FILE}
+Target: {backend} | {project_name} ({project_id}) | workspace={workspace_slug} | operation={OPERATION_MODE} | file={ISSUES_FILE or N/A} | refs={ISSUE_REFS or N/A}
 ```
 
 #### Interactive confirmation
@@ -268,10 +356,12 @@ When neither bypass applies, present the confirmation block to the user.
 issuer — Target Confirmation
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Backend       : {BACKEND_ADAPTER}
+  Operation     : {OPERATION_MODE}
   Project       : {project_name} (id={project_id})
   Workspace/Org : {workspace_slug}   [omit line if N/A for this backend]
-  Source file   : {ISSUES_FILE}
-  Issues to pub : {N} (parsed from {ISSUES_FILE})
+  Source file   : {ISSUES_FILE}       [create only; show N/A otherwise]
+  Issue refs    : {ISSUE_REFS}        [transition/update only; show N/A otherwise]
+  Issues to pub : {N} (parsed from {ISSUES_FILE}) [create only]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -300,7 +390,7 @@ Proceed with publication? [Y/N]:
 #### Proceed / Abort logic
 
 - If the user selects **Approve** or types **Y** (case-insensitive): continue to
-  adapter Step 1.
+  the selected adapter operation branch.
 - Any other answer (Cancel, N, empty, or anything else): halt immediately with:
   ```
   STATUS: BLOCKED
@@ -312,11 +402,15 @@ Proceed with publication? [Y/N]:
 
 #### Issue count resolution for the confirmation block
 
-The issue count `N` in the confirmation block is a **quick pre-parse estimate**:
-count the number of `## ` heading lines in `ISSUES_FILE`. This count is
-informational only (does not need to match the exact parsed count from adapter
-Step 1 after field validation). If the file cannot be read at this point, omit the
-count and show `Issues to pub: (unable to read file)`.
+For `create`, the issue count `N` in the confirmation block is a **quick
+pre-parse estimate**: count the number of `## ` heading lines in `ISSUES_FILE`.
+This count is informational only (does not need to match the exact parsed count
+from adapter Step 1 after field validation). If the file cannot be read at this
+point, omit the count and show `Issues to pub: (unable to read file)`.
+
+For `transition` and `update`, show `ISSUE_REFS` exactly as provided. The
+adapter lifecycle branch owns full expansion and resolution after the target
+confirmation gate.
 
 ---
 
@@ -372,6 +466,40 @@ emitting this block.
 - **Graceful error handling** — label creation failures, state mismatches, and
   work item creation errors MUST be logged and skipped without aborting the batch.
 
+### Lifecycle Management
+
+Every adapter skill MUST also implement lifecycle branches for `transition` and
+`update`. These branches reuse adapter Step 0 target resolution and the
+dispatcher Step 1 target confirmation gate before any mutation.
+
+| Capability | Responsibility |
+|---|---|
+| Issue resolution | Resolve `ISSUE_REFS` into canonical backend work-item IDs, titles, current states, and URLs. Support single references, ranges, and comma-separated lists. |
+| State transition | Resolve `TARGET_STATE` to the backend state identifier, then update each resolved work item with that state. For backends that expose a generic update call, this is the abstract equivalent of `update_work_item(state=TARGET_STATE_ID)`. |
+| Field update | Validate `FIELD_UPDATES`, resolve backend-specific IDs for labels, assignees, priority, dates, estimates, title, and description, then update each resolved work item. |
+| Bulk operations | Process resolved references sequentially, continue after per-item validation or mutation failures, and preserve input order in the summary. |
+| Result reporting | Print a per-item result table with reference, title, operation, previous value, new value, status, and URL. |
+
+Lifecycle mutation gates:
+
+- Before `transition` or `update`, render a preview that shows the resolved
+  issue references, target state or field updates, and the exact target backend
+  project/repository.
+- Require explicit approval unless `DRY_RUN=true` or
+  `AGENT_CREW_ISSUER_AUTO_CONFIRM=1`.
+- If `DRY_RUN=true`, resolve references and payloads, print the would-change
+  summary, and do not call a mutating backend API.
+- If a reference cannot be resolved, mark that row as `FAILED` or `SKIPPED` and
+  continue with remaining references.
+
+Lifecycle result rows should be concise and auditable:
+
+```text
+OK     ENRTC-273 "Fetch article body" transition Todo -> Done https://...
+FAILED ENRTC-274 "Unknown" transition unresolved_reference —
+OK     ENRTC-275 "Parser cleanup" update labels += backend https://...
+```
+
 ---
 
 ## Error Handling
@@ -382,6 +510,19 @@ emitting this block.
 - **File not found / unreadable**: abort immediately with:
   `ERROR: Cannot read ISSUES_FILE "{ISSUES_FILE}". Check the path and try again.`
 - **User cancelled at Step 1**: return `STATUS: BLOCKED` / `BLOCKER: user_cancelled_confirmation`. No mutations have occurred.
+- **Missing `ISSUE_REFS` for lifecycle operation**: return `STATUS: BLOCKED` /
+  `BLOCKER: missing_issue_refs`. No mutations occur.
+- **Unresolved issue reference**: record the row as `FAILED` or `SKIPPED` in the
+  lifecycle summary and continue with remaining references.
+- **Missing or invalid `TARGET_STATE` for `transition`**: return
+  `STATUS: BLOCKED` / `BLOCKER: invalid_target_state` when no valid backend
+  state can be resolved.
+- **Missing or invalid `FIELD_UPDATES` for `update`**: return
+  `STATUS: BLOCKED` / `BLOCKER: invalid_field_updates` when no valid field
+  mutation remains after validation.
+- **User cancelled lifecycle preview**: return `STATUS: BLOCKED` /
+  `BLOCKER: user_cancelled_lifecycle_preview`. No mutations occur after
+  cancellation.
 - All other error scenarios are delegated to the adapter skill's own error handling.
 
 ---
@@ -479,6 +620,46 @@ Step 3.5: Preview 12 issues
           User selects [A] -> continue to Step 4
 
 Adapter Steps 1-5: (adapter handles parsing, resolution, preview, creation, summary)
+```
+
+### Lifecycle transition
+
+```
+User: ENRTC-273~280 진행중으로 변경
+
+Agent inputs resolved:
+  OPERATION_MODE   = transition
+  ISSUE_REFS       = ENRTC-273~280
+  TARGET_STATE     = In Progress
+  BACKEND_ADAPTER  = (not set — auto-detect)
+  DRY_RUN          = false
+
+Step 0:   Resolve backend adapter and target project/repository.
+Step 0.5: Load issuer-{BACKEND_ADAPTER}, run adapter Step 0, then dispatcher
+          target confirmation.
+Lifecycle branch:
+          Resolve ENRTC-273 through ENRTC-280 to backend work-item IDs.
+          Preview the state transition for each item.
+          On approval, update each item sequentially.
+          Print a result table with previous state, new state, status, and URL.
+```
+
+### Lifecycle field update
+
+```
+User: ENRTC-273, ENRTC-275 라벨 backend 추가하고 우선순위 high로 변경
+
+Agent inputs resolved:
+  OPERATION_MODE   = update
+  ISSUE_REFS       = ENRTC-273, ENRTC-275
+  FIELD_UPDATES    = labels += backend; priority = high
+  BACKEND_ADAPTER  = (not set — auto-detect)
+  DRY_RUN          = false
+
+Lifecycle branch:
+          Resolve each reference, validate labels and priority, preview the
+          exact changes, apply approved updates sequentially, and print a
+          per-item summary table.
 ```
 
 See `~/.agent-crew/user/skills/issuer-plane.md` for the full Plane adapter

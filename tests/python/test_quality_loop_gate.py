@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REPAIR = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
+QUALITY_CHECK = REPO_ROOT / "core" / "scripts" / "quality-loop-check.py"
 
 
 def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
@@ -126,6 +127,20 @@ def run_repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.Complet
     )
 
 
+def run_quality_loop_check(task_dir: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "python3",
+            str(QUALITY_CHECK),
+            "--task-dir",
+            str(task_dir),
+            *extra,
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+
 def test_repair_blocks_mutating_task_without_quality_loop_evidence(tmp_path: Path):
     state_dir, task_id, _task_dir = make_task(tmp_path, "Implement a new update gate")
 
@@ -205,3 +220,21 @@ def test_repair_records_explicit_quality_bypass_reason(tmp_path: Path):
     assert repair["quality_gate"]["bypassed"] is True
     assert repair["quality_gate"]["bypass_reason"] == "emergency documentation-only repair; reviewer unavailable"
     assert "QUALITY_LOOP: bypassed" in (task_dir / "result.md").read_text(encoding="utf-8")
+
+
+def test_quality_loop_check_rejects_missing_task_dir(tmp_path: Path):
+    result = run_quality_loop_check(tmp_path / "missing")
+
+    assert result.returncode == 2
+    assert "quality-loop-check: task dir not found" in result.stderr
+
+
+def test_quality_loop_check_text_reports_failures(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "FAIL: pipeline quality loop" in result.stdout
+    assert "- missing_pipeline_implementation_stage" in result.stdout

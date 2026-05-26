@@ -16,11 +16,6 @@
       "max_missing_lines": 52
     },
     {
-      "path": "core/scripts/canonical-context.py",
-      "baseline_percent": 91.81,
-      "max_missing_lines": 6
-    },
-    {
       "path": "core/scripts/check-host-bridge.py",
       "baseline_percent": 80.33,
       "max_missing_lines": 26
@@ -46,16 +41,6 @@
       "max_missing_lines": 34
     },
     {
-      "path": "core/scripts/codex-workflow-guard.py",
-      "baseline_percent": 72.83,
-      "max_missing_lines": 11
-    },
-    {
-      "path": "core/scripts/core_objective_lib.py",
-      "baseline_percent": 91.34,
-      "max_missing_lines": 7
-    },
-    {
       "path": "core/scripts/cost-aggregate.py",
       "baseline_percent": 76.01,
       "max_missing_lines": 69
@@ -71,24 +56,9 @@
       "max_missing_lines": 111
     },
     {
-      "path": "core/scripts/durable-workflow-architecture-check.py",
-      "baseline_percent": 81.85,
-      "max_missing_lines": 12
-    },
-    {
       "path": "core/scripts/e2e-slo-check.py",
       "baseline_percent": 82.19,
       "max_missing_lines": 21
-    },
-    {
-      "path": "core/scripts/framework-review-check.py",
-      "baseline_percent": 93.79,
-      "max_missing_lines": 9
-    },
-    {
-      "path": "core/scripts/generate-codex-system-agents.py",
-      "baseline_percent": 96.38,
-      "max_missing_lines": 5
     },
     {
       "path": "core/scripts/generate-release-checksums.py",
@@ -99,11 +69,6 @@
       "path": "core/scripts/hosted-workload-evidence.py",
       "baseline_percent": 87.19,
       "max_missing_lines": 19
-    },
-    {
-      "path": "core/scripts/interactive-question-state.py",
-      "baseline_percent": 92.09,
-      "max_missing_lines": 11
     },
     {
       "path": "core/scripts/memory-evidence-trace.py",
@@ -146,16 +111,6 @@
       "max_missing_lines": 39
     },
     {
-      "path": "core/scripts/pipeline-quality-plan-check.py",
-      "baseline_percent": 91.03,
-      "max_missing_lines": 8
-    },
-    {
-      "path": "core/scripts/quality-loop-check.py",
-      "baseline_percent": 78.67,
-      "max_missing_lines": 8
-    },
-    {
       "path": "core/scripts/quality_loop_lib.py",
       "baseline_percent": 89.24,
       "max_missing_lines": 27
@@ -164,16 +119,6 @@
       "path": "core/scripts/readiness-gate.py",
       "baseline_percent": 69.42,
       "max_missing_lines": 40
-    },
-    {
-      "path": "core/scripts/readiness-metrics.py",
-      "baseline_percent": 93.87,
-      "max_missing_lines": 7
-    },
-    {
-      "path": "core/scripts/readiness-workload-validate.py",
-      "baseline_percent": 98.15,
-      "max_missing_lines": 4
     },
     {
       "path": "core/scripts/repair-task-state.py",
@@ -209,16 +154,6 @@
       "path": "core/scripts/telemetry-taxonomy-check.py",
       "baseline_percent": 81.03,
       "max_missing_lines": 44
-    },
-    {
-      "path": "core/scripts/update-fingerprint.py",
-      "baseline_percent": 93.67,
-      "max_missing_lines": 10
-    },
-    {
-      "path": "core/scripts/update-preservation-manifest.py",
-      "baseline_percent": 93.14,
-      "max_missing_lines": 10
     },
     {
       "path": "core/scripts/update-slo-benchmark.py",

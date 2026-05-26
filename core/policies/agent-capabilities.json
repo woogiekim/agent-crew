@@ -405,6 +405,7 @@
       "model_tier": "medium",
       "reasoning_tier": "balanced",
       "allowed_capabilities": [
+        "issue_lifecycle_dispatch",
         "issue_report",
         "read_file",
         "redaction",
@@ -422,7 +423,7 @@
       "may_mutate_workflow_state": false,
       "may_execute_destructive": false,
       "destructive_requires_approval": false,
-      "notes": "Publishes or drafts issue reports after redaction and deduplication."
+      "notes": "Dispatches issue create, transition, and field-update workflows through governed adapter contracts after redaction, deduplication, and confirmation."
     },
     "documenter": {
       "role": "worker",

@@ -231,3 +231,23 @@ class TestIssue25RegressionCases:
         assert ctx.rstrip().endswith("git status."), (
             f"Directive for 'git status' should end with 'git status.' but got: {ctx!r}"
         )
+
+    def test_issue_status_transition_does_not_use_git_status_fast_path(self):
+        """Issue lifecycle commands that mention status must route to issuer."""
+        ctx = _get_context("set ENRTC-273 status to Done")
+        assert ctx is not None
+        assert "[agent-crew] FAST-PATH" not in ctx, (
+            f"Issue status transition must not be treated as git status: {ctx!r}"
+        )
+        assert "issue lifecycle" in ctx
+        assert 'crew:run "issuer task"' in ctx
+
+    def test_korean_issue_status_transition_does_not_use_git_status_fast_path(self):
+        """Korean issue status changes must not be treated as git status."""
+        ctx = _get_context("ENRTC-273 상태 변경")
+        assert ctx is not None
+        assert "[agent-crew] FAST-PATH" not in ctx, (
+            f"Korean issue status transition must not be treated as git status: {ctx!r}"
+        )
+        assert "issue lifecycle" in ctx
+        assert 'crew:run "issuer task"' in ctx

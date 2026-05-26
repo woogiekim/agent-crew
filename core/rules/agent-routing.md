@@ -39,7 +39,7 @@ whether it is safe for direct invocation via `crew:agent`.
 | learning-mentor | Legacy concept-teaching alias; prefer mentor for new routing | teach, learn, explain, concept, pattern, question, example, tutorial | yes | — |
 | input-normalizer | Multilingual input translation and instruction normalization (utility) | (internal — invoked automatically for multilingual or ambiguous input) | yes | — |
 | korean-normalizer | Korean text normalization compatibility alias (utility) | (legacy internal alias; prefer input-normalizer) | yes | — |
-| issuer | Issue publishing and work-item creation (user-installed, tool-agnostic dispatcher) | publish issues, create work items, issue tracking, task list import, import issues, bulk create issues, seed project, upload task list, issue file | yes | — |
+| issuer | Issue lifecycle management for creation, state transitions, and field updates (user-installed, tool-agnostic dispatcher) | publish issues, create work items, issue tracking, task list import, import issues, bulk create issues, seed project, upload task list, issue file, issue lifecycle, status transition, state change, field update, label update, priority update, assignee update | yes | — |
 | reviewer | Code review (needs prior stage output) | review, lint, quality, approve, check | no | Requires completed stage output from supervisor context |
 | devops | Deploy, CI/CD, push, infrastructure | deploy, push, ci, cd, pipeline, infrastructure, release | no | Requires supervisor approval gate |
 | resolver | Merge conflict resolution (needs conflict state) | conflict, merge conflict, resolve | no | Requires git conflict state established by supervisor |
@@ -73,7 +73,7 @@ level, and a reason string shown to the user in the visibility line.
 | 7 | explain OR investigate OR understand OR trace OR audit OR explore | analyst | high | Matched analysis/exploration keywords |
 | 8 | docs OR readme OR documentation OR guide OR reference OR changelog | documenter | high | Matched documentation keywords |
 | 9 | mentor OR mentoring OR coach OR guide OR teach OR learn OR concept OR pattern OR tutorial OR example OR feedback OR study plan OR growth OR 멘토 OR 코칭 OR 가르쳐 OR 학습 OR 개념 OR 설명 | mentor | high | Matched mentoring/learning keywords |
-| 9.5 | publish issues OR create work items OR issue tracking OR task list import OR import issues OR bulk create issues OR seed project OR upload task list OR issue file | issuer | medium | Matched issue-publishing / work-item creation keywords |
+| 9.5 | publish issues OR create work items OR issue tracking OR task list import OR import issues OR bulk create issues OR seed project OR upload task list OR issue file OR issue lifecycle OR status transition OR state change OR field update OR label update OR priority update OR assignee update | issuer | medium | Matched issue lifecycle / work-item keywords |
 | 10 | (no match) | — NONE — | — | Cannot auto-route: specify an agent explicitly or use crew:run |
 
 ### Matching semantics

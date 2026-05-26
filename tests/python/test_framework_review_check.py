@@ -118,6 +118,24 @@ def test_framework_review_fails_when_security_policy_missing(tmp_path: Path):
     assert "forbidden_tool_policy" in failed_names
 
 
+def test_framework_review_text_output_lists_failures(tmp_path: Path):
+    result = subprocess.run(
+        [
+            "python3",
+            str(FRAMEWORK_REVIEW),
+            "--project-root",
+            str(tmp_path),
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "FAIL: framework review check" in result.stdout
+    assert "controls=" in result.stdout
+    assert "- high architecture.core_roles_present:" in result.stdout
+
+
 def test_framework_review_fails_when_agent_capability_manifest_missing(tmp_path: Path):
     payload = framework_review.evaluate_repo(tmp_path)
     failed_names = {failure["name"] for failure in payload["failures"]}

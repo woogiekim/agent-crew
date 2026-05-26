@@ -105,3 +105,37 @@ def test_readiness_metrics_fails_when_threshold_not_met(tmp_path: Path):
 
     assert result.returncode == 1
     assert "needs_attention task_success_rate" in result.stdout
+
+
+def test_readiness_metrics_writes_output_and_treats_plan_only_as_unclean(tmp_path: Path):
+    validation = tmp_path / "phase-1.json"
+    workload = tmp_path / "hosted.json"
+    thresholds = tmp_path / "thresholds.json"
+    output = tmp_path / "readiness.json"
+    validation.write_text(json.dumps({"passed": True, "plan_only": True}), encoding="utf-8")
+    workload.write_text(json.dumps({"tasks": 0}), encoding="utf-8")
+    thresholds.write_text(json.dumps({"consecutive_clean_full_validation_runs": 1}), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--validation-report",
+            str(validation),
+            "--workload-evidence",
+            str(workload),
+            "--thresholds",
+            str(thresholds),
+            "--output",
+            str(output),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    metrics = {metric["id"]: metric for metric in payload["metrics"]}
+    assert metrics["consecutive_clean_full_validation_runs"]["value"] == 0
