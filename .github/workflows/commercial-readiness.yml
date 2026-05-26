@@ -33,7 +33,7 @@ jobs:
       - name: Full test suite
         run: bash tests/run-all.sh
 
-      - name: Changed Python coverage gate
+      - name: Python coverage policy gate
         run: make coverage-python
 
       - name: Phase 1 validation

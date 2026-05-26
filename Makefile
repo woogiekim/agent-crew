@@ -16,7 +16,7 @@ help:
 	@echo "agent-crew Makefile targets:"
 	@echo "  make test               run all test suites"
 	@echo "  make test-python        run pytest (tests/python/)"
-	@echo "  make coverage-python    run pytest with 100% changed Python coverage enforcement"
+	@echo "  make coverage-python    run pytest with changed-surface 100% and full policy enforcement"
 	@echo "  make test-shell         run shell tests (tests/shell/)"
 	@echo "  make test-integration   run integration tests (tests/integration/)"
 	@echo "  make phase-1-validation run first-phase validation framework"
@@ -40,6 +40,11 @@ coverage-python:
 	@python3 core/scripts/coverage-changed-surface.py \
 		--coverage-json coverage.json \
 		--base-ref "$(COVERAGE_BASE_REF)" \
+		--minimum 100 \
+		--format text
+	@python3 core/scripts/coverage-total-policy.py \
+		--coverage-json coverage.json \
+		--exceptions core/coverage/python-coverage-exceptions.json \
 		--minimum 100 \
 		--format text
 

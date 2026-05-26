@@ -42,7 +42,7 @@ bash tests/run-all.sh
 ### Individual suites
 ```bash
 make test-python        # pytest suite
-make coverage-python    # pytest + 100% changed Python execution-surface coverage
+make coverage-python    # pytest + changed-surface 100% + full coverage policy
 make test-shell         # bash assertions
 make test-integration   # integration assertions
 ```
@@ -65,6 +65,16 @@ python3 core/scripts/phase-1-validation.py --plan-only
 python3 core/scripts/phase-2-validation.py --plan-only
 python3 core/scripts/phase-2-validation.py --level unit --format text
 ```
+
+### Coverage policy
+
+`make coverage-python` runs pytest under `coverage.py`, then enforces two gates:
+
+- Changed Python execution surfaces under `core/scripts/` must be 100% covered.
+- Full `core/scripts/` coverage debt must be explicit in
+  `core/coverage/python-coverage-exceptions.json`; uncovered legacy files may
+  not regress below their recorded baseline and must be removed from the
+  exception list once they reach 100%.
 
 ## Requirements
 
