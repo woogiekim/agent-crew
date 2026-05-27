@@ -82,6 +82,12 @@ Flag any hit as `BLOCKER`.
 - [ ] No dead code or commented-out blocks committed
 - [ ] Naming is clear and consistent with existing codebase conventions
 - [ ] No magic numbers — use named constants or enums
+- [ ] `core/rules/code-quality.md` is applied to every changed code file,
+      regardless of implementation language or file extension. Kotlin examples
+      in OOP skills are illustrative, not a scope limit.
+- [ ] Avoidable `else` branches, nested control flow, ternary-heavy
+      validation/fallback logic, getter-driven decisions, and names that
+      duplicate class/module context are reported in any language.
 - [ ] Context changes are separated by blank lines. Flag
       `context_break_missing_blank_line` when validation/reporting is
       immediately followed by early return/throw, setup is immediately followed

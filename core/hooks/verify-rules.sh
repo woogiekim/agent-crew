@@ -19,20 +19,94 @@ fi
 
 VIOLATIONS=()
 
+file_extension() {
+  local path="$1"
+  local base="${path##*/}"
+  if [[ "${base}" == *.* ]]; then
+    printf '%s' "${base##*.}" | tr '[:upper:]' '[:lower:]'
+  else
+    printf ''
+  fi
+}
+
+is_test_file() {
+  local path="$1"
+  case "$path" in
+    *Test.*|*Tests.*|*_test.*|*.test.*|*.spec.*|*/test/*|*/tests/*|*/__tests__/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_code_file() {
+  local path="$1"
+  local ext
+  ext="$(file_extension "$path")"
+  case "$ext" in
+    kt|kts|java|jsp|jspf|ts|tsx|js|jsx|mjs|cjs|py|pyi|go|rs|rb|swift|scala|sc|groovy|gradle|sh|bash|zsh|sql|lua|php|c|cc|cpp|h|hpp|cs|dart|vue|svelte|xml|yml|yaml)
+      return 0
+      ;;
+  esac
+
+  if command -v file >/dev/null 2>&1; then
+    local mime
+    mime="$(file --mime-type -b "$path" 2>/dev/null || true)"
+    case "$mime" in
+      text/x-*|text/*script*|application/x-shellscript)
+        return 0
+        ;;
+    esac
+  fi
+
+  return 1
+}
+
+code_lines() {
+  grep -nE '.' "$1" \
+    | grep -vE '^[0-9]+:[[:space:]]*(//|#|/\*|\*|\*/|<!--|<%--)' \
+    || true
+}
+
+count_else_usage() {
+  local path="$1"
+  local ext
+  ext="$(file_extension "$path")"
+
+  case "$ext" in
+    py|pyi)
+      code_lines "$path" | grep -E '^[0-9]+:[[:space:]]*else[[:space:]]*:' | wc -l | tr -d ' '
+      ;;
+    sh|bash|zsh)
+      code_lines "$path" | grep -E '^[0-9]+:[[:space:]]*else([[:space:]]|$)' | wc -l | tr -d ' '
+      ;;
+    yml|yaml|xml)
+      printf '0'
+      ;;
+    *)
+      code_lines "$path" | grep -E '(^|[[:space:]\};])else([[:space:]\{\}:]|$)' | wc -l | tr -d ' '
+      ;;
+  esac
+}
+
+if is_code_file "$CHANGED_FILE"; then
+  if ! is_test_file "$CHANGED_FILE"; then
+    ELSE_COUNT=$(count_else_usage "$CHANGED_FILE")
+    if [[ "$ELSE_COUNT" -gt 0 ]]; then
+      VIOLATIONS+=("[Object Calisthenics #2] Detected else usage (${ELSE_COUNT} occurrence(s)) in a code file. Prefer early return, guard clauses, polymorphism, or table-driven dispatch.")
+    fi
+  fi
+
+  GETTER_COUNT=$(code_lines "$CHANGED_FILE" | grep -E '\.get[A-Z]|\.is[A-Z]' | wc -l | tr -d ' ')
+  if [[ "$GETTER_COUNT" -gt 5 ]]; then
+    VIOLATIONS+=("[Tell, Do Not Ask] Detected heavy getter usage (${GETTER_COUNT} occurrence(s)). Delegate behavior to objects.")
+  fi
+fi
+
 case "$CHANGED_FILE" in
   *.kt)
-    if [[ "$CHANGED_FILE" != *Test.kt ]]; then
-      ELSE_COUNT=$(grep -nE '\belse\b' "$CHANGED_FILE" | grep -vE '^\s*//' | wc -l | tr -d ' ')
-      if [[ "$ELSE_COUNT" -gt 0 ]]; then
-        VIOLATIONS+=("[Object Calisthenics #2] Detected else usage (${ELSE_COUNT} occurrence(s)). Prefer early return or polymorphism.")
-      fi
-    fi
-
-    GETTER_COUNT=$(grep -nE '\.get[A-Z]|\.is[A-Z]' "$CHANGED_FILE" | wc -l | tr -d ' ')
-    if [[ "$GETTER_COUNT" -gt 5 ]]; then
-      VIOLATIONS+=("[Tell, Do Not Ask] Detected heavy getter usage (${GETTER_COUNT} occurrence(s)). Delegate behavior to objects.")
-    fi
-
     if [[ "$CHANGED_FILE" == */src/main/* ]]; then
       TEST_FILE="${CHANGED_FILE/src\/main/src\/test}"
       TEST_FILE="${TEST_FILE%.kt}Test.kt"
@@ -41,7 +115,6 @@ case "$CHANGED_FILE" in
       fi
     fi
     ;;
-
   *.ts|*.tsx)
     # Exclude comment-only lines (// ...) to avoid false positives
     ANY_COUNT=$(grep -nE '\bany\b' "$CHANGED_FILE" | grep -vE '^\s*//' | wc -l | tr -d ' ')

@@ -43,6 +43,11 @@ load them at agent startup:
 > **Load the language-specific skill matching the detected project language before reviewing code.**
 > Use the same detection heuristic as the implementer agents (build files → language → skill file).
 
+> **MANDATORY: Before approving any code change, read `~/.agent-crew/system/rules/code-quality.md`.**
+> Apply its baseline to every changed source, script, template, and
+> configuration file regardless of extension. Do not treat Kotlin examples in
+> skills as a Kotlin-only scope.
+
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.
 - `MODE` _(optional, default `final`)_: one of `final` | `streaming`. Selects
@@ -410,6 +415,13 @@ Inspect changed code for missing blank lines between adjacent statements whose
 implementation context changes. This check applies to all programming
 languages, including Kotlin, Java, Python, Go, Rust, Scala, Swift, TypeScript,
 and shell scripts.
+
+Also inspect changed code for language-agnostic quality-rule violations from
+`core/rules/code-quality.md`, including avoidable `else` branches, nested
+control flow that should be extracted, ternary-heavy validation/fallback logic,
+getter-driven decisions, and names that duplicate surrounding class/module
+context. This applies equally to JSP/JSPF, SQL, YAML, XML, shell, scripts, and
+other text-based code files.
 
 Reject with `REVIEW: NEEDS_CHANGES` when a changed hunk has any of these
 patterns without a separating blank line:
