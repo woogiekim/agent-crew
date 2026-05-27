@@ -47,6 +47,27 @@ Read the following skill files using the Read tool **only when the specific tech
 - Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, error handling, and return/reporting as context changes.
 - Do not reformat unrelated code solely to add spacing; apply this rule to code you write or directly touch.
 
+### Context-Break Line Break Enforcement
+
+Apply this rule to every language you generate, not only Kotlin:
+
+- Validation or guard reporting -> early return/throw: after logging, error
+  construction, or metric reporting, insert a blank line before the control
+  transfer.
+- Setup -> business logic: keep declarations, dependency lookups, and request
+  parsing in a contiguous setup block, then insert a blank line before domain or
+  application logic starts.
+- Side effect -> return value construction: after database writes, outbound
+  calls, filesystem writes, event publication, or cache mutation, insert a
+  blank line before building or returning the result.
+- Error handling -> normal flow: after `catch`, fallback, or recovery handling,
+  insert a blank line before subsequent normal-path logic.
+
+Do not insert blank lines inside a fluent chain, expression body, constructor
+argument list, or tiny single-expression branch where the language formatter
+would split a semantic unit. The required break is between adjacent statements
+whose purpose changes.
+
 ## Before Work — Recall from Memory
 
 ```bash

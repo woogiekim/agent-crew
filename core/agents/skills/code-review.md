@@ -82,6 +82,12 @@ Flag any hit as `BLOCKER`.
 - [ ] No dead code or commented-out blocks committed
 - [ ] Naming is clear and consistent with existing codebase conventions
 - [ ] No magic numbers — use named constants or enums
+- [ ] Context changes are separated by blank lines. Flag
+      `context_break_missing_blank_line` when validation/reporting is
+      immediately followed by early return/throw, setup is immediately followed
+      by business logic, side effects are immediately followed by result
+      construction/return, or error handling is immediately followed by normal
+      flow without a separating blank line.
 
 ### Cognitive Complexity
 Flag methods with complexity > 15 as a WARNING. (Reference: SonarSource "Cognitive Complexity", 2017)
@@ -173,6 +179,7 @@ APPROVED | NEEDS_CHANGES
 - [ ] OWASP Top 10 risks checked for applicable items
 - [ ] Non-functional requirements checked (security, performance, maintainability)
 - [ ] Cognitive complexity checked for new/changed methods
+- [ ] Context-break blank line rule checked for new/changed code
 - [ ] Conventional Commits format verified
 - [ ] Tests or risk-appropriate validation checks verified
 - [ ] Anti-pattern scan completed

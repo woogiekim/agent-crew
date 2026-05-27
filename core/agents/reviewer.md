@@ -404,6 +404,31 @@ git -C "${PROJECT_ROOT}" diff HEAD~5..HEAD --stat 2>/dev/null || true
 - Non-functional requirements (performance, security) addressed?
 - Any gaps, regressions, or deviations?
 
+### Step 2.5: Context-Break Line Break Review
+
+Inspect changed code for missing blank lines between adjacent statements whose
+implementation context changes. This check applies to all programming
+languages, including Kotlin, Java, Python, Go, Rust, Scala, Swift, TypeScript,
+and shell scripts.
+
+Reject with `REVIEW: NEEDS_CHANGES` when a changed hunk has any of these
+patterns without a separating blank line:
+
+- Validation or guard reporting -> early return/throw, such as `logger.warn(...)`
+  immediately followed by `return`, `throw`, `continue`, or `break`.
+- Setup -> business logic, such as declarations or parsing immediately followed
+  by domain mutation, repository calls, or service calls.
+- Side effect -> return value construction, such as a database write, outbound
+  call, filesystem write, event publication, or cache mutation immediately
+  followed by result construction or `return`.
+- Error handling -> normal flow, such as `catch`, fallback, or recovery handling
+  immediately followed by normal-path logic.
+
+Do not flag fluent chains, expression bodies, constructor argument lists, or
+tiny single-expression branches where a blank line would split one semantic
+unit. When this rule is violated, report
+`context_break_missing_blank_line` with the file and nearest line number.
+
 ### Step 3: Save Review Report
 Save to `{TASK_DIR}/context/review.md`:
 
