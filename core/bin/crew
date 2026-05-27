@@ -45,7 +45,8 @@ Commands:
                                     Persist structured question choices
   resume [--print|--dry-run] TASK_ID
                                     Request or print deterministic resume state
-  update [--local [SOURCE_ROOT]]   Refresh installed assets
+  update [--local [SOURCE_ROOT]] [--all-projects]
+                                    Refresh installed assets
   run "task"                       Write state and host handoff for a task
   report auto|publish [args]       Store/publish native agent-crew reports
   issue-ingest ISSUE [args]        Record issue body/comment ingestion evidence
@@ -177,6 +178,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/interactive-question-state.py:${AGENT_CREW_HOME}/scripts/interactive-question-state.py" \
     "core/scripts/check-host-bridge.py:${AGENT_CREW_HOME}/scripts/check-host-bridge.py" \
     "core/scripts/verify-install-drift.py:${AGENT_CREW_HOME}/scripts/verify-install-drift.py" \
+    "core/scripts/update-project-registry.py:${AGENT_CREW_HOME}/scripts/update-project-registry.py" \
     "core/commands/run.md:${AGENT_CREW_HOME}/commands/run.md" \
     "core/rules/prompt-injection-defense.md:${AGENT_CREW_HOME}/rules/prompt-injection-defense.md" \
     "core/evaluations/memory-retrieval.json:${AGENT_CREW_HOME}/evaluations/memory-retrieval.json" \
@@ -280,6 +282,104 @@ cmd_setup() {
 
   require_file "${setup_script}" "setup dispatcher"
   bash "${setup_script}" "${project}"
+  record_project_update_scope "${project}" "${SOURCE_ROOT}"
+}
+
+update_registry_script() {
+  local candidate
+  for candidate in \
+    "${ASSET_ROOT}/scripts/update-project-registry.py" \
+    "${AGENT_CREW_HOME}/system/scripts/update-project-registry.py" \
+    "${AGENT_CREW_HOME}/scripts/update-project-registry.py"; do
+    [ -f "${candidate}" ] || continue
+    printf '%s\n' "${candidate}"
+    return 0
+  done
+  return 1
+}
+
+record_project_update_scope() {
+  local project="$1"
+  local source="$2"
+  local registry
+  registry="$(update_registry_script 2>/dev/null || true)"
+  [ -n "${registry}" ] || return 0
+  python3 "${registry}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    mark-project \
+    --source-root "${source}" \
+    --project-root "${project}" >/dev/null 2>&1 || true
+}
+
+print_update_stale_warning() {
+  local registry
+  registry="$(update_registry_script 2>/dev/null || true)"
+  [ -n "${registry}" ] || return 0
+  python3 "${registry}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    check-stale \
+    --project-root "${PROJECT_ROOT}" \
+    --format text || true
+}
+
+update_registered_projects() {
+  local source="$1"
+  local current="$2"
+  local registry setup_script roots_file current_resolved project project_resolved
+  local total=0 refreshed=0 skipped=0 current_seen=0
+
+  registry="$(update_registry_script 2>/dev/null || true)"
+  [ -n "${registry}" ] || {
+    printf 'update_scope: all_projects=skipped reason=registry_script_missing\n'
+    return 0
+  }
+
+  setup_script="${AGENT_CREW_HOME}/system/setup/setup-host.sh"
+  [ -x "${setup_script}" ] || setup_script="${AGENT_CREW_HOME}/setup/setup-host.sh"
+  [ -x "${setup_script}" ] || {
+    printf 'update_scope: all_projects=skipped reason=setup_dispatcher_missing\n'
+    return 0
+  }
+
+  roots_file="$(mktemp)"
+  python3 "${registry}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    list-projects > "${roots_file}" || true
+
+  current_resolved="$(cd "${current}" 2>/dev/null && pwd || printf '%s' "${current}")"
+  while IFS= read -r project; do
+    [ -n "${project}" ] || continue
+    total=$((total + 1))
+    if [ ! -d "${project}" ]; then
+      printf 'update_scope: project=%s status=skipped reason=missing_path\n' "${project}"
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    project_resolved="$(cd "${project}" 2>/dev/null && pwd || printf '%s' "${project}")"
+    if [ "${project_resolved}" = "${current_resolved}" ]; then
+      printf 'update_scope: project=%s status=already-refreshed\n' "${project_resolved}"
+      current_seen=1
+      continue
+    fi
+
+    printf 'update_scope: project=%s status=refreshing\n' "${project_resolved}"
+    SOURCE_ROOT="${source}" AGENT_CREW_MODE=update \
+      bash "${setup_script}" "${project_resolved}"
+    python3 "${registry}" \
+      --agent-crew-home "${AGENT_CREW_HOME}" \
+      mark-project \
+      --source-root "${source}" \
+      --project-root "${project_resolved}" >/dev/null 2>&1 || true
+    refreshed=$((refreshed + 1))
+  done < "${roots_file}"
+  rm -f "${roots_file}"
+
+  if [ "${current_seen}" = "0" ]; then
+    printf 'update_scope: project=%s status=already-refreshed\n' "${current_resolved}"
+  fi
+  printf 'update_scope: all_projects total=%s refreshed=%s skipped=%s\n' \
+    "${total}" "${refreshed}" "${skipped}"
 }
 
 cmd_status_json() {
@@ -328,6 +428,7 @@ EOF
 
   printf 'Project: %s\n' "${PROJECT_NAME}"
   printf 'State  : %s\n\n' "${STATE_DIR}"
+  print_update_stale_warning
 
   if [ ! -d "${STATE_DIR}/tasks" ]; then
     printf 'No tasks found. Run crew setup first, then use crew:run in your host runtime.\n'
@@ -788,8 +889,9 @@ PYEOF
 }
 
 cmd_update() {
-  local mode="${1:-}"
-  local source="${2:-}"
+  local use_local=0
+  local all_projects=0
+  local source=""
   run_mnemos_update_check() {
     local diagnostics="${ASSET_ROOT}/scripts/crew-diagnostics.py"
     if [ -f "${diagnostics}" ]; then
@@ -812,43 +914,71 @@ print(f"update_check: mnemos={status} {detail}".rstrip())
     fi
   }
 
-  case "${mode}" in
-    -h|--help)
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -h|--help)
       cat <<'EOF'
-usage: crew update [--local [SOURCE_ROOT]]
+usage: crew update [--local [SOURCE_ROOT]] [--all-projects]
 
 Default update mode clones origin/main into a fresh temporary checkout and
 refreshes the install from that source. Use --local to deterministically refresh
 from an existing local checkout.
+
+By default, project-local adapter files are refreshed only for the current
+project. Use --all-projects to refresh registered project-local adapter files
+after the global install has been updated.
 EOF
       return 0
       ;;
-    --local)
+      --local)
+        use_local=1
+        shift
+        if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
+          source="$1"
+          shift
+          continue
+        fi
+        continue
+        ;;
+      --all-projects)
+        all_projects=1
+        shift
+        continue
+        ;;
+      *)
+        die "unknown update argument: $1"
+        ;;
+    esac
+  done
+
+  if [ "${use_local}" = "1" ]; then
       local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
       require_file "${sync_script}" "local sync script"
       bash "${sync_script}" "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+      if [ "${all_projects}" = "1" ]; then
+        update_registered_projects "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+      fi
       run_mnemos_update_check
-      ;;
-    "")
-      command -v git >/dev/null 2>&1 || die "git is required for native remote update"
-      local update_total_start="${SECONDS}"
-      local update_phase_start="${SECONDS}"
-      local work_dir
-      work_dir="$(mktemp -d)"
-      git clone --depth 1 https://github.com/woogiekim/agent-crew "${work_dir}"
-      printf 'update_phase: remote_clone=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
-      update_phase_start="${SECONDS}"
-      local sync_script="${work_dir}/core/scripts/sync-local-install.sh"
-      require_file "${sync_script}" "remote local sync script"
-      bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"
-      printf 'update_phase: remote_sync=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
-      run_mnemos_update_check
-      printf 'update_phase: remote_total=%sms\n' "$(( (SECONDS - update_total_start) * 1000 ))"
-      ;;
-    *)
-      die "unknown update argument: ${mode}"
-      ;;
-  esac
+      return 0
+  fi
+
+  command -v git >/dev/null 2>&1 || die "git is required for native remote update"
+  local update_total_start="${SECONDS}"
+  local update_phase_start="${SECONDS}"
+  local work_dir
+  work_dir="$(mktemp -d)"
+  git clone --depth 1 https://github.com/woogiekim/agent-crew "${work_dir}"
+  printf 'update_phase: remote_clone=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
+  update_phase_start="${SECONDS}"
+  local sync_script="${work_dir}/core/scripts/sync-local-install.sh"
+  require_file "${sync_script}" "remote local sync script"
+  bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"
+  if [ "${all_projects}" = "1" ]; then
+    update_registered_projects "${work_dir}" "${PROJECT_ROOT}"
+  fi
+  printf 'update_phase: remote_sync=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
+  run_mnemos_update_check
+  printf 'update_phase: remote_total=%sms\n' "$(( (SECONDS - update_total_start) * 1000 ))"
 }
 
 cmd_run() {
@@ -865,6 +995,7 @@ zero exit status marks the run auto-completed with host bridge evidence.
 EOF
     return 0
   fi
+  print_update_stale_warning
   sync_source_runtime_assets_if_drifted
   require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
   sync_source_hooks_if_drifted

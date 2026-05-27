@@ -44,6 +44,43 @@ UPDATE_FINGERPRINT="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/update-fingerprint.
 UPDATE_TOTAL_START="${SECONDS}"
 UPDATE_PHASE_START="${SECONDS}"
 
+update_registry_script() {
+  local candidate
+  for candidate in \
+    "${SOURCE_ROOT}/core/scripts/update-project-registry.py" \
+    "${AGENT_CREW_HOME}/system/scripts/update-project-registry.py" \
+    "${AGENT_CREW_HOME}/scripts/update-project-registry.py"; do
+    [ -f "${candidate}" ] || continue
+    printf '%s\n' "${candidate}"
+    return 0
+  done
+  return 1
+}
+
+record_global_update_scope() {
+  local registry
+  registry="$(update_registry_script 2>/dev/null || true)"
+  [ -n "${registry}" ] || return 0
+  python3 "${registry}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    mark-global \
+    --source-root "${SOURCE_ROOT}" \
+    --mode "${AGENT_CREW_MODE:-update}" || true
+}
+
+record_project_update_scope() {
+  local registry
+  registry="$(update_registry_script 2>/dev/null || true)"
+  [ -n "${registry}" ] || return 0
+  python3 "${registry}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    mark-project \
+    --source-root "${SOURCE_ROOT}" \
+    --project-root "${PROJECT_ROOT}" || true
+  printf 'update_scope: default_project_scope=current-only\n'
+  printf 'update_scope: all_projects_hint=crew update --all-projects\n'
+}
+
 print_update_phase() {
   local name="$1"
   local now="${SECONDS}"
@@ -125,6 +162,8 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     fi
     python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
     print_update_phase "drift_verification"
+    record_global_update_scope
+    record_project_update_scope
     write_update_integrity_manifest
     print_update_total
     printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
@@ -203,6 +242,7 @@ copy_tree "${SOURCE_ROOT}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
 copy_flat "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
 install_path_crew_cli
 print_update_phase "asset_copy"
+record_global_update_scope
 
 chmod +x \
   "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \
@@ -241,6 +281,7 @@ SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
 SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/setup/setup-host.sh" "${PROJECT_ROOT}"
 print_update_phase "adapter_setup"
+record_project_update_scope
 
 if [ -n "${PRESERVATION_MANIFEST}" ]; then
   python3 "${AGENT_CREW_HOME}/system/scripts/update-preservation-manifest.py" finish \

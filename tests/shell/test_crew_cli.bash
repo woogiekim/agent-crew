@@ -16,6 +16,7 @@ assert_exit 0 "${rc}"
 
 it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/readiness/question/resume/update/report/issue-ingest/cancel"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
+assert_contains "${out}" "update [--local [SOURCE_ROOT]] [--all-projects]"
 assert_contains "${out}" "telemetry [args]"
 assert_contains "${out}" "trace [args]"
 assert_contains "${out}" "cost [args]"
@@ -51,6 +52,49 @@ assert_exit 0 "${rc}"
 
 it "crew status --json contains tasks key"
 assert_contains "${out}" "\"tasks\""
+
+STALE_HOME=$(make_tmp)
+STALE_PROJECT=$(make_tmp)
+mkdir -p "${STALE_PROJECT}/.codex" "${STALE_HOME}/state/$(basename "${STALE_PROJECT}")/tasks"
+python3 - "${STALE_HOME}" "${STALE_PROJECT}" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+home = Path(sys.argv[1])
+project = Path(sys.argv[2]).resolve()
+registry = {
+    "schema_version": 1,
+    "global": {
+        "updated_at_epoch": 20,
+        "updated_at": "1970-01-01T00:00:20Z",
+    },
+    "projects": {
+        str(project): {
+            "project_root": str(project),
+            "project_name": project.name,
+            "updated_at_epoch": 10,
+            "updated_at": "1970-01-01T00:00:10Z",
+        }
+    },
+}
+path = home / "state" / "update-registry.json"
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(registry), encoding="utf-8")
+PYEOF
+
+it "crew status warns when project-local update marker is stale"
+out=$(AGENT_CREW_HOME="${STALE_HOME}" PROJECT_ROOT="${STALE_PROJECT}" bash "${CREW}" status 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "WARNING: project-local agent-crew files may be stale"
+assert_contains "${out}" "crew update --all-projects"
+
+it "crew run warns when project-local update marker is stale"
+out=$(AGENT_CREW_HOME="${STALE_HOME}" PROJECT_ROOT="${STALE_PROJECT}" bash "${CREW}" run "read stale warning" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "WARNING: project-local agent-crew files may be stale"
 
 it "crew telemetry exits 0 with empty task directory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry 2>&1)
@@ -286,6 +330,7 @@ assert_contains "$(cat "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capab
 PATH_HOME=$(make_tmp)
 PATH_INSTALL=$(make_tmp)
 PATH_PROJECT=$(make_tmp)
+PATH_PROJECT_RESOLVED="$(python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).resolve())' "${PATH_PROJECT}")"
 PATH_BIN="${PATH_HOME}/.local/bin"
 mkdir -p "${PATH_BIN}" "${PATH_INSTALL}/agents" "${PATH_INSTALL}/user/agents" "${PATH_INSTALL}/user/skills"
 cp "${REPO_ROOT}/core/agents/backend.md" "${PATH_INSTALL}/agents/backend.md"
@@ -310,6 +355,38 @@ assert_contains "${out}" "installed native crew CLI"
 
 it "local sync explains first fingerprint miss"
 assert_contains "${out}" "MISS: update fingerprint"
+
+it "local sync reports global update scope"
+assert_contains "${out}" "update_scope: global="
+
+it "local sync reports current project update scope"
+assert_contains "${out}" "update_scope: project=${PATH_PROJECT_RESOLVED}"
+
+it "local sync explains default current-project scope"
+assert_contains "${out}" "update_scope: default_project_scope=current-only"
+assert_contains "${out}" "update_scope: all_projects_hint=crew update --all-projects"
+
+it "local sync writes update project registry"
+assert_file_exists "${PATH_INSTALL}/state/update-registry.json"
+assert_contains "$(cat "${PATH_INSTALL}/state/update-registry.json")" "${PATH_PROJECT_RESOLVED}"
+
+ALL_PROJECT=$(make_tmp)
+mkdir -p "${ALL_PROJECT}"
+ALL_PROJECT_RESOLVED="$(python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).resolve())' "${ALL_PROJECT}")"
+python3 "${REPO_ROOT}/core/scripts/update-project-registry.py" \
+  --agent-crew-home "${PATH_INSTALL}" \
+  mark-project \
+  --source-root "${REPO_ROOT}" \
+  --project-root "${ALL_PROJECT}" >/dev/null
+
+it "crew update --all-projects refreshes a registered project"
+out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" CLAUDE_DIR="${PATH_HOME}/.claude" CODEX_HOME="${PATH_HOME}/.codex" PROJECT_ROOT="${PATH_PROJECT}" \
+  bash "${CREW}" update --local "${REPO_ROOT}" --all-projects 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "update_scope: project=${ALL_PROJECT_RESOLVED} status=refreshing"
+assert_contains "${out}" "update_scope: all_projects"
+assert_file_exists "${ALL_PROJECT}/.agent-crew/invocation.md"
 
 it "local sync removes duplicate legacy system agents"
 assert_file_absent "${PATH_INSTALL}/agents/backend.md"
@@ -336,7 +413,8 @@ assert_file_exists "${PATH_INSTALL}/user/skills/custom-skill.md"
 
 it "local sync writes update preservation manifest"
 manifest_count=$(find "${PATH_INSTALL}/state/$(basename "${PATH_PROJECT}")/update-preservation" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "1" "${manifest_count}"
+test "${manifest_count}" -ge 1
+assert_true "$?" "preservation manifest count"
 
 it "repeated local sync does not delete regenerated Codex agents or hooks"
 out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" CLAUDE_DIR="${PATH_HOME}/.claude" CODEX_HOME="${PATH_HOME}/.codex" \

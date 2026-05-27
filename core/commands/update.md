@@ -32,6 +32,8 @@ Unlike `crew:setup`, this command:
 | Argument | Default | Description |
 |---|---|---|
 | none | — | `crew:update` always refreshes from the remote source repository. |
+| `--local [SOURCE_ROOT]` | — | Refresh from an existing local checkout instead of a fresh remote clone. |
+| `--all-projects` | off | After the global install and current project refresh, re-run project-local adapter setup for every registered project root. |
 
 ## State Paths
 
@@ -40,6 +42,7 @@ PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+UPDATE_REGISTRY="${AGENT_CREW_HOME}/state/update-registry.json"
 ```
 
 ## Source Acquisition
@@ -358,7 +361,8 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    `capabilities.json`.
 
 4. **Project-local update** — re-runs the detected host adapter for the
-   current project so project-local files are also refreshed. This step runs
+   current project so project-local files are also refreshed. The default
+   project-local scope is intentionally current-project only. This step runs
    after the global `install.sh` pass so the final
    `${STATE_DIR}/capabilities.json` belongs to the active project host, not to
    the Claude compatibility layer. The fan-out loop in `setup-host.sh` runs all
@@ -369,6 +373,36 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
    AGENT_CREW_MODE=update \
      bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
+   ```
+
+   The native CLI records scope markers through
+   `core/scripts/update-project-registry.py` and prints explicit scope lines:
+
+   ```text
+   update_scope: global=/Users/me/.agent-crew source=/tmp/agent-crew
+   update_scope: project=/path/to/current-project
+   update_scope: default_project_scope=current-only
+   update_scope: all_projects_hint=crew update --all-projects
+   ```
+
+4b. **Optional registered-project fan-out (`--all-projects`)** — after the
+    global install and current project have been refreshed, enumerate registered
+    project roots from `${UPDATE_REGISTRY}` plus task-state `project-root.txt`
+    fallbacks. For each existing project root other than the already-refreshed
+    current project, run:
+
+   ```bash
+   SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
+     bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${REGISTERED_PROJECT_ROOT}"
+   ```
+
+   Missing paths are skipped and reported. The summary uses deterministic
+   `update_scope:` lines, for example:
+
+   ```text
+   update_scope: project=/path/to/project-b status=refreshing
+   update_scope: project=/path/to/project-a status=already-refreshed
+   update_scope: all_projects total=2 refreshed=1 skipped=0
    ```
 
 5. **Sync host AI instruction files from mnemos (Phase L17).** After the
@@ -400,8 +434,11 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
 ## Safety Guarantees
 
-- `${AGENT_CREW_HOME}/state/` is NEVER touched. The `cp -f` approach
-  targets only the categories listed above, which never overlap with state.
+- Existing task state under `${AGENT_CREW_HOME}/state/*/tasks/` is never reset.
+  Updates write only additive operational metadata:
+  `${AGENT_CREW_HOME}/state/update-registry.json`,
+  `${STATE_DIR}/project-update.json`, preservation manifests, fingerprints, and
+  integrity manifests.
 - The state directory marker file `${STATE_DIR}/tasks/active` (if present
   from an in-flight crew task) is preserved.
 - `cp -f` guarantees byte-for-byte replacement: a second `crew:update` run
