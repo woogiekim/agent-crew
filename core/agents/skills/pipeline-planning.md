@@ -31,6 +31,8 @@ Translate scope/target/constraints answers into a structured Product Requirement
 ## Non-Functional Requirements
 - Performance: {response time / throughput target}
 - Security: {auth, data handling}
+- Maintainability: KISS, YAGNI, and DRY from `core/rules/code-quality.md`
+  must guide implementation and review.
 - Availability: {SLA}
 
 ## Scope
@@ -162,6 +164,8 @@ Write a concise handoff.md that gives downstream agents exactly what they need w
 
 ## Checklist
 - [ ] PRD written to `{TASK_DIR}/context/prd.md` with goals, features, NFRs, and scope
+- [ ] PRD maintainability NFR names KISS, YAGNI, and DRY when implementation
+      work is planned
 - [ ] Core Features marked with MoSCoW priority
 - [ ] At least one acceptance criterion per Must-have feature
 - [ ] Dependency graph analyzed; critical path identified

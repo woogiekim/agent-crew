@@ -85,6 +85,9 @@ Flag any hit as `BLOCKER`.
 - [ ] `core/rules/code-quality.md` is applied to every changed code file,
       regardless of implementation language or file extension. Kotlin examples
       in OOP skills are illustrative, not a scope limit.
+- [ ] KISS, YAGNI, and DRY are checked from `core/rules/code-quality.md`.
+      Flag needless complexity, speculative future behavior, and meaningful
+      duplicated knowledge or behavior.
 - [ ] Avoidable `else` branches, nested control flow, ternary-heavy
       validation/fallback logic, getter-driven decisions, and names that
       duplicate class/module context are reported in any language.

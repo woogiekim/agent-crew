@@ -14,12 +14,35 @@ YAML, and comparable text-based source files.
 Kotlin examples in older skill files are illustrative. The principles are not
 Kotlin-only.
 
+## Software Development Three Principles
+
+Apply these three principles to every implementation and review decision:
+
+- **KISS (Keep It Simple, Stupid)** — choose the simplest design that satisfies
+  the current requirements, tests, and architecture. Avoid clever control flow,
+  speculative framework code, and abstractions that make the change harder to
+  read.
+- **YAGNI (You Aren't Gonna Need It)** — do not implement future flexibility,
+  unused extension points, optional modes, feature flags, caches, adapters, or
+  configuration until the current task actually requires them.
+- **DRY (Don't Repeat Yourself)** — remove meaningful duplication of knowledge
+  or behavior. Do not force premature helpers for incidental similarity; extract
+  shared code only when it clarifies the domain rule or reduces real maintenance
+  risk.
+
 ## Baseline
 
 - Prefer early return, guard clauses, polymorphism, or table-driven dispatch
   over `else` branches in new or modified code.
 - Keep one level of indentation per method/function where practical. Extract
   a named helper when a branch, loop, or callback nests another branch or loop.
+- Keep the design small enough to explain from the current requirement. If a
+  class, helper, CLI flag, adapter, configuration option, or extension hook has
+  only a hypothetical future use, remove it until a real requirement appears.
+- Consolidate duplicated rules, branching decisions, strings, fixtures, or data
+  transformations when the duplication would make future behavior changes
+  error-prone. Keep harmless one-off repetition when an abstraction would be
+  harder to understand than the repeated code.
 - Avoid ternary-heavy or expression-packed control flow when it hides validation
   or error handling. Use named intermediate values or guard clauses instead.
 - Keep implementation context changes separated by a blank line. This applies

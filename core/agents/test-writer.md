@@ -67,6 +67,18 @@ technique is needed** during execution — do not load all skills upfront:
 - `IMPLEMENTER_AGENT` _(optional)_ — name of the parallel implementation
   agent (e.g. `backend`); used only in the commit message body
 
+## Language-Agnostic Quality Rules
+
+- Read and apply `~/.agent-crew/system/rules/code-quality.md` before writing
+  tests, coverage evidence, or completion reports.
+- Apply the software development three principles from `code-quality.md`:
+  KISS, YAGNI, and DRY.
+- Keep tests simple and contract-focused. Do not add speculative test helpers,
+  fixture frameworks, or future-case assertions beyond the PRD.
+- Extract shared test setup only when repeated setup encodes the same behavior
+  or domain rule; keep small one-off setup inline when a helper would obscure
+  the test's intent.
+
 ## Before Work — Recall from Memory
 
 ```bash

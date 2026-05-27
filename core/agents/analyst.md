@@ -321,7 +321,9 @@ message the other flags' dispatch already issues.
 Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
 - Feature goals and background
 - Core feature list
-- Non-functional requirements
+- Non-functional requirements, including the maintainability rule that KISS,
+  YAGNI, and DRY from `core/rules/code-quality.md` must guide implementation
+  and review when code changes are planned
 - Implementation scope and exclusions
 
 Write handoff content to `{TASK_DIR}/handoff.md`:

@@ -113,7 +113,8 @@ Based on the collected information, save the following to `{TASK_DIR}/context/pr
 
 - Feature goals and background
 - Core feature list
-- Non-functional requirements (performance, security, etc.)
+- Non-functional requirements, including KISS, YAGNI, and DRY from
+  `core/rules/code-quality.md` for implementation work
 - Implementation scope and excluded items
 
 ---

@@ -254,6 +254,11 @@ TEST_WRITER_CONTENT="$(cat "${REPO_ROOT}/core/agents/test-writer.md" 2>/dev/null
 REVIEWER_CONTENT="$(cat "${REPO_ROOT}/core/agents/reviewer.md" 2>/dev/null || true)"
 TDD_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/tdd.md" 2>/dev/null || true)"
 CODE_REVIEW_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/code-review.md" 2>/dev/null || true)"
+AGILE_XP_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/agile-xp.md" 2>/dev/null || true)"
+PIPELINE_PLANNING_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/pipeline-planning.md" 2>/dev/null || true)"
+CODE_QUALITY_CONTENT="$(cat "${REPO_ROOT}/core/rules/code-quality.md" 2>/dev/null || true)"
+ANALYST_CONTENT="$(cat "${REPO_ROOT}/core/agents/analyst.md" 2>/dev/null || true)"
+PLANNER_CONTENT="$(cat "${REPO_ROOT}/core/agents/planner.md" 2>/dev/null || true)"
 
 it "backend.md declares DGS DataLoader guidance for GraphQL/Feign N+1 prevention"
 assert_contains "${BACKEND_CONTENT}" "dgs-dataloader.md"
@@ -296,6 +301,43 @@ assert_contains "${CODE_REVIEW_CONTENT}" "Primary test target variables default 
 
 it "frontend.md declares context-change line break code style"
 assert_contains "${FRONTEND_CONTENT}" "Insert a line break when the implementation context changes"
+
+it "code-quality.md defines the software development three principles"
+assert_contains "${CODE_QUALITY_CONTENT}" "Software Development Three Principles"
+
+it "code-quality.md names KISS, YAGNI, and DRY"
+assert_contains "${CODE_QUALITY_CONTENT}" "KISS"
+assert_contains "${CODE_QUALITY_CONTENT}" "YAGNI"
+assert_contains "${CODE_QUALITY_CONTENT}" "DRY"
+
+it "backend.md applies KISS, YAGNI, and DRY from code-quality"
+assert_contains "${BACKEND_CONTENT}" "KISS, YAGNI, and DRY"
+
+it "frontend.md applies KISS, YAGNI, and DRY from code-quality"
+assert_contains "${FRONTEND_CONTENT}" "KISS, YAGNI, and DRY"
+
+it "test-writer.md applies KISS, YAGNI, and DRY from code-quality"
+assert_contains "${TEST_WRITER_CONTENT}" "KISS, YAGNI, and DRY"
+
+it "reviewer.md enforces KISS, YAGNI, and DRY"
+assert_contains "${REVIEWER_CONTENT}" "KISS, YAGNI, and DRY"
+
+it "code-review skill checks KISS, YAGNI, and DRY"
+assert_contains "${CODE_REVIEW_CONTENT}" "KISS, YAGNI, and DRY are checked"
+
+it "agile-xp skill maps the three principles"
+assert_contains "${AGILE_XP_CONTENT}" "KISS is Rule 5, YAGNI is Rule 2, and DRY"
+
+it "pipeline planning carries KISS/YAGNI/DRY into PRDs"
+assert_contains "${PIPELINE_PLANNING_CONTENT}" "Maintainability: KISS, YAGNI, and DRY"
+
+it "analyst PRDs include KISS/YAGNI/DRY maintainability guidance"
+assert_contains "${ANALYST_CONTENT}" "KISS,"
+assert_contains "${ANALYST_CONTENT}" "YAGNI"
+assert_contains "${ANALYST_CONTENT}" "DRY"
+
+it "planner PRDs include KISS/YAGNI/DRY maintainability guidance"
+assert_contains "${PLANNER_CONTENT}" "KISS, YAGNI, and DRY"
 
 # ─────────────────────────────────────────────────────────────────────────────
 end_report

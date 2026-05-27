@@ -16,6 +16,9 @@
 
 ## Core Rules
 
+The common software development three principles map directly into this skill:
+KISS is Rule 5, YAGNI is Rule 2, and DRY is Rule 5's no-duplication criterion.
+
 ### Rule 1: Test-First — write the test before the code (XP's core discipline)
 > Source: Beck, Ch. 18 "Test-First Programming"; Fowler, Refactoring Ch. 4
 
@@ -64,7 +67,7 @@ For agent-crew context: a stage should produce a commit that is independently
 comprehensible, passes tests, and advances the task by one coherent step —
 not a single massive commit covering the entire feature.
 
-### Rule 5: Simple Design — make it work, make it right, make it fast
+### Rule 5: Simple Design — KISS and DRY
 > Source: Beck, Ch. 12 "Simple Design"; Fowler, Refactoring introduction
 
 The design is simple when it:
@@ -75,6 +78,10 @@ The design is simple when it:
 
 Order these criteria in priority. Tests pass first; remove duplication next;
 reduce elements last.
+
+Apply KISS by choosing the smallest readable design that satisfies the current
+story. Apply DRY by extracting duplicated knowledge or behavior only when the
+extraction reduces maintenance risk without hiding intent.
 
 ### Rule 6: Refactor Mercilessly — the code is always improvable
 > Source: Beck, Ch. 10 "Refactoring"; Fowler, Refactoring Ch. 2

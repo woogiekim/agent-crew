@@ -47,6 +47,8 @@ load them at agent startup:
 > Apply its baseline to every changed source, script, template, and
 > configuration file regardless of extension. Do not treat Kotlin examples in
 > skills as a Kotlin-only scope.
+> Enforce the software development three principles from that rule:
+> KISS, YAGNI, and DRY.
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.
@@ -420,8 +422,10 @@ Also inspect changed code for language-agnostic quality-rule violations from
 `core/rules/code-quality.md`, including avoidable `else` branches, nested
 control flow that should be extracted, ternary-heavy validation/fallback logic,
 getter-driven decisions, and names that duplicate surrounding class/module
-context. This applies equally to JSP/JSPF, SQL, YAML, XML, shell, scripts, and
-other text-based code files.
+context. Enforce KISS, YAGNI, and DRY by rejecting needless abstractions,
+speculative future hooks or options, and meaningful duplicated behavior or
+domain knowledge. This applies equally to JSP/JSPF, SQL, YAML, XML, shell,
+scripts, and other text-based code files.
 
 Reject with `REVIEW: NEEDS_CHANGES` when a changed hunk has any of these
 patterns without a separating blank line:

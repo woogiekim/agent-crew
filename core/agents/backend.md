@@ -46,6 +46,8 @@ Read the following skill files using the Read tool **only when the specific tech
 ## Language-Agnostic Quality Rules
 - Read and apply `~/.agent-crew/system/rules/code-quality.md` before writing or
   reporting any code change.
+- Apply the software development three principles from `code-quality.md`:
+  KISS, YAGNI, and DRY.
 - Treat Object Calisthenics, early-return/no-else guidance, Tell Don't Ask,
   context-break spacing, and naming clarity as language-agnostic rules. Kotlin
   examples in skills are illustrative, not a scope limit.
