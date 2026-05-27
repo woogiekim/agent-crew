@@ -1,11 +1,148 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── Visual diff helpers ────────────────────────────────────────────────────────
+# Accumulates per-file change summaries for the final summary block.
+# Each entry format: "<label>(<dest>)\t+<added> -<removed>"
+_DIFF_LOG=()
+
+# diff_copy <src> <dest> [label]
+#
+# Copies src to dest while printing an inline diff in Claude Code Edit style:
+#   Update(path)           — if dest already exists
+#   Install(path)          — if dest is new
+#   Added N lines / Removed N lines
+#   + added line
+#   - removed line
+#
+# Appends a summary entry to _DIFF_LOG for print_diff_summary.
+# Falls back to a plain cp when python3 is unavailable.
+diff_copy() {
+  local src="$1"
+  local dest="$2"
+  local label="${3:-}"
+
+  [ -f "${src}" ] || return 0
+
+  # Determine label from file existence
+  if [ -z "${label}" ]; then
+    if [ -f "${dest}" ]; then
+      label="Update"
+    else
+      label="Install"
+    fi
+  fi
+
+  mkdir -p "$(dirname "${dest}")"
+
+  # Compute diff via python3 (cross-platform, no external diff flags needed)
+  if command -v python3 >/dev/null 2>&1; then
+    local diff_output
+    diff_output=$(python3 - "${src}" "${dest}" "${label}" <<'PYEOF'
+import sys, difflib
+from pathlib import Path
+
+src_path  = sys.argv[1]
+dest_path = sys.argv[2]
+label     = sys.argv[3]
+
+src_lines  = Path(src_path).read_text(errors="replace").splitlines()
+dest_lines = Path(dest_path).read_text(errors="replace").splitlines() \
+             if Path(dest_path).exists() else []
+
+added   = sum(1 for l in difflib.unified_diff(dest_lines, src_lines) if l.startswith('+') and not l.startswith('+++'))
+removed = sum(1 for l in difflib.unified_diff(dest_lines, src_lines) if l.startswith('-') and not l.startswith('---'))
+
+print(f"{label}({dest_path})")
+if added == 0 and removed == 0:
+    print("  (no changes)")
+else:
+    parts = []
+    if added:   parts.append(f"Added {added} lines")
+    if removed: parts.append(f"Removed {removed} lines")
+    print("  " + " / ".join(parts))
+    for line in difflib.unified_diff(dest_lines, src_lines, lineterm=""):
+        if line.startswith('+++') or line.startswith('---') or line.startswith('@@'):
+            continue
+        if line.startswith('+'):
+            print(f"  {line}")
+        elif line.startswith('-'):
+            print(f"  {line}")
+
+# Summary token on last line (tab-separated, not shown to user)
+print(f"__DIFF_SUMMARY__\t{label}({dest_path})\t+{added}\t-{removed}", end="")
+PYEOF
+    )
+
+    # Split off summary token before printing
+    local visible summary
+    visible=$(printf '%s\n' "${diff_output}" | grep -v '^__DIFF_SUMMARY__')
+    summary=$(printf '%s\n' "${diff_output}" | grep '^__DIFF_SUMMARY__' | cut -f2-)
+    printf '%s\n' "${visible}"
+    [ -n "${summary}" ] && _DIFF_LOG+=("${summary}")
+  else
+    # Fallback: plain copy, no diff output
+    printf '%s(%s)\n' "${label}" "${dest}"
+    _DIFF_LOG+=("${label}(${dest})\t(diff unavailable — python3 not found)")
+  fi
+
+  cp "${src}" "${dest}"
+}
+
+# diff_install <src_dir> <dest_dir>
+#
+# Iterates every regular file in src_dir and calls diff_copy for each.
+# Produces per-file diff output inline, identical to what diff_copy emits.
+diff_install() {
+  local src="$1"
+  local dest="$2"
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+  while IFS= read -r -d '' src_file; do
+    local rel_path
+    rel_path="${src_file#${src}/}"
+    diff_copy "${src_file}" "${dest}/${rel_path}"
+  done < <(find "${src}" -type f ! -name ".DS_Store" -print0 2>/dev/null | LC_ALL=C sort -z)
+}
+
+# print_diff_summary
+#
+# Prints the accumulated _DIFF_LOG entries as a final summary block.
+# Call once at the end of install/update scripts after all copy operations.
+print_diff_summary() {
+  if [ ${#_DIFF_LOG[@]} -eq 0 ]; then
+    return 0
+  fi
+  printf '\n'
+  printf '════════════════════════════════════════\n'
+  printf '  File Change Summary\n'
+  printf '════════════════════════════════════════\n'
+  local total_added=0 total_removed=0
+  for entry in "${_DIFF_LOG[@]}"; do
+    local path_label added_count removed_count
+    path_label=$(printf '%s' "${entry}" | cut -f1)
+    added_count=$(printf '%s' "${entry}" | cut -f2 | tr -d '+')
+    removed_count=$(printf '%s' "${entry}" | cut -f3 | tr -d '-')
+    # Accumulate totals when values are numeric
+    if [[ "${added_count}" =~ ^[0-9]+$ ]]; then
+      total_added=$((total_added + added_count))
+    fi
+    if [[ "${removed_count}" =~ ^[0-9]+$ ]]; then
+      total_removed=$((total_removed + removed_count))
+    fi
+    printf '  %s  +%s -%s\n' "${path_label}" "${added_count:-0}" "${removed_count:-0}"
+  done
+  printf '────────────────────────────────────────\n'
+  printf '  %d file(s) changed  +%d -%d\n' "${#_DIFF_LOG[@]}" "${total_added}" "${total_removed}"
+  printf '════════════════════════════════════════\n'
+}
+# ── End visual diff helpers ────────────────────────────────────────────────────
+
 copy_dir_contents() {
   local src="$1" dest="$2"
   [ -d "${src}" ] || return 0
   mkdir -p "${dest}"
-  cp -R "${src}/." "${dest}/"
+  diff_install "${src}" "${dest}"
   find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
 }
 
@@ -104,9 +241,17 @@ sync_system_agents() {
   mkdir -p "${system_agents}/skills"
 
   # Copy all source agents into system (update existing, add new)
-  cp "${source_agents}/"*.md "${system_agents}/" 2>/dev/null || true
+  while IFS= read -r -d '' src_file; do
+    local basename_file
+    basename_file=$(basename "${src_file}")
+    diff_copy "${src_file}" "${system_agents}/${basename_file}"
+  done < <(find "${source_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null | LC_ALL=C sort -z)
   if [ -d "${source_agents}/skills" ]; then
-    cp "${source_agents}/skills/"*.md "${system_agents}/skills/" 2>/dev/null || true
+    while IFS= read -r -d '' src_file; do
+      local basename_file
+      basename_file=$(basename "${src_file}")
+      diff_copy "${src_file}" "${system_agents}/skills/${basename_file}"
+    done < <(find "${source_agents}/skills" -maxdepth 1 -name "*.md" -print0 2>/dev/null | LC_ALL=C sort -z)
   fi
 
   # Remove stale system agents: those not in source AND not in exceptions list
@@ -205,7 +350,7 @@ migrate_legacy_agents() {
       # Non-repo, non-exception: belongs in user/agents/
       if [ ! -f "${user_agents}/${basename_file}" ]; then
         mkdir -p "${user_agents}"
-        cp "${legacy_file}" "${user_agents}/${basename_file}"
+        diff_copy "${legacy_file}" "${user_agents}/${basename_file}" "Install"
         printf '[agent-crew] Migrated %s → user/agents/\n' "${basename_file}"
         rm -f "${legacy_file}"
         migrated=$((migrated + 1))
@@ -324,7 +469,7 @@ merge_agents_to_discovery() {
         for c in "${conflicts[@]}"; do
           [ "${basename_file}" = "${c}" ] && is_conflict=1 && break
         done
-        [ "${is_conflict}" -eq 0 ] && cp "${user_file}" "${dest}/"
+        [ "${is_conflict}" -eq 0 ] && diff_copy "${user_file}" "${dest}/$(basename "${user_file}")"
       done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
     else
       # No conflicts — copy all user agents (excluding README.md)
@@ -332,7 +477,7 @@ merge_agents_to_discovery() {
         local basename_file
         basename_file=$(basename "${user_file}")
         [ "${basename_file}" = "README.md" ] && continue
-        cp "${user_file}" "${dest}/"
+        diff_copy "${user_file}" "${dest}/${basename_file}"
       done < <(find "${user_agents}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
     fi
   fi

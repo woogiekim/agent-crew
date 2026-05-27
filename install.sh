@@ -28,6 +28,12 @@ log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 log_error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 log_section() { echo -e "\n${GREEN}▶ $1${NC}"; }
 
+# Bootstrap stubs for diff helpers. They are replaced when common.sh is sourced.
+_DIFF_LOG=()
+diff_copy()         { local src="$1" dest="$2"; mkdir -p "$(dirname "${dest}")"; cp "${src}" "${dest}"; }
+diff_install()      { local src="$1" dest="$2"; [ -d "${src}" ] || return 0; mkdir -p "${dest}"; cp -R "${src}/." "${dest}/"; find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true; }
+print_diff_summary() { :; }
+
 install_path_crew_cli() {
   local src="${SOURCE_DIR}/bin/crew"
   local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
@@ -114,21 +120,25 @@ install_global() {
   [ -d "${ADAPTERS_DIR}" ] \
     || log_error "adapter directory not found — expected ${ADAPTERS_DIR}"
 
+  # Load shared functions (sync_system_agents, migrate_legacy_agents,
+  # merge_agents_to_discovery, diff_copy, diff_install, print_diff_summary).
+  # Source as early as possible so all copy operations below emit diff output.
+  # Falls back gracefully when common.sh is unavailable (very first bootstrap).
+  if [ -f "${SOURCE_DIR}/setup/common.sh" ]; then
+    . "${SOURCE_DIR}/setup/common.sh"
+  fi
+
   mkdir -p "${AGENT_CREW_HOME}/system/commands"
-  cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_HOME}/system/commands/"
+  diff_install "${SOURCE_DIR}/commands" "${AGENT_CREW_HOME}/system/commands"
   log_info "Commands installed → ${AGENT_CREW_HOME}/system/commands/"
 
   [ -f "${AGENT_CREW_HOME}/system/commands/agent-maker.md" ] \
     || log_error "agent-maker.md install failed — system/commands/agent-maker.md not found"
   log_info "agent-maker command verified"
 
-  # Load shared functions (sync_system_agents, migrate_legacy_agents, merge_agents_to_discovery)
-  # common.sh is sourced here so the functions are available for agent layer enforcement.
-  # If common.sh is not yet installed (first-time install), fall back to direct cp.
-  if [ -f "${SOURCE_DIR}/setup/common.sh" ]; then
-    . "${SOURCE_DIR}/setup/common.sh"
-    # Enforce agent classification: sync source → system/agents/, pruning stale files
-    # but preserving system-exception agents (mcp-manager.md).
+  # Enforce agent classification: sync source → system/agents/, pruning stale files
+  # but preserving system-exception agents (mcp-manager.md).
+  if type sync_system_agents &>/dev/null 2>&1; then
     sync_system_agents \
       "${SOURCE_DIR}/agents" \
       "${AGENT_CREW_DIR}/system/agents" \
@@ -167,7 +177,7 @@ install_global() {
   log_info "documenter agent verified"
 
   mkdir -p "${AGENT_CREW_DIR}/system/rules"
-  cp -r "${SOURCE_DIR}/rules/"* "${AGENT_CREW_DIR}/system/rules/" 2>/dev/null || true
+  diff_install "${SOURCE_DIR}/rules" "${AGENT_CREW_DIR}/system/rules"
   log_info "Rules installed → ${AGENT_CREW_DIR}/system/rules/"
 
   [ -f "${AGENT_CREW_DIR}/system/rules/quality-loop.md" ] \
@@ -219,7 +229,7 @@ install_global() {
     || log_error "register.schema.json install failed — system/schemas/register.schema.json not found"
 
   mkdir -p "${AGENT_CREW_DIR}/system/hooks"
-  cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/system/hooks/"
+  diff_install "${SOURCE_DIR}/hooks" "${AGENT_CREW_DIR}/system/hooks"
   chmod +x "${AGENT_CREW_DIR}/system/hooks/"*.sh 2>/dev/null || true
   log_info "Hooks installed → ${AGENT_CREW_DIR}/system/hooks/"
 
@@ -227,12 +237,12 @@ install_global() {
     || log_error "direct-edit-guard.sh install failed — system/hooks/direct-edit-guard.sh not found"
 
   mkdir -p "${AGENT_CREW_DIR}/system/setup"
-  cp -r "${SOURCE_DIR}/setup/"* "${AGENT_CREW_DIR}/system/setup/"
+  diff_install "${SOURCE_DIR}/setup" "${AGENT_CREW_DIR}/system/setup"
   chmod +x "${AGENT_CREW_DIR}/system/setup/"*.sh 2>/dev/null || true
   log_info "Setup dispatcher installed → ${AGENT_CREW_DIR}/system/setup/"
 
   mkdir -p "${AGENT_CREW_DIR}/system/adapters"
-  cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/system/adapters/"
+  diff_install "${ADAPTERS_DIR}" "${AGENT_CREW_DIR}/system/adapters"
   chmod +x "${AGENT_CREW_DIR}/system/adapters/"*/*.sh 2>/dev/null || true
   chmod +x "${AGENT_CREW_DIR}/system/adapters/"*/bin/* 2>/dev/null || true
   find "${AGENT_CREW_DIR}/system" -name ".DS_Store" -delete 2>/dev/null || true
@@ -245,23 +255,23 @@ install_global() {
   # hooks that reference ${AGENT_CREW_HOME}/hooks/ directly.
   # We write real copies here so existing hook registrations still resolve.
   mkdir -p "${AGENT_CREW_DIR}/hooks"
-  cp -r "${SOURCE_DIR}/hooks/"* "${AGENT_CREW_DIR}/hooks/"
+  diff_install "${SOURCE_DIR}/hooks" "${AGENT_CREW_DIR}/hooks"
   chmod +x "${AGENT_CREW_DIR}/hooks/"*.sh 2>/dev/null || true
 
   mkdir -p "${AGENT_CREW_DIR}/setup"
-  cp -r "${SOURCE_DIR}/setup/"* "${AGENT_CREW_DIR}/setup/"
+  diff_install "${SOURCE_DIR}/setup" "${AGENT_CREW_DIR}/setup"
   chmod +x "${AGENT_CREW_DIR}/setup/"*.sh 2>/dev/null || true
 
   mkdir -p "${AGENT_CREW_DIR}/adapters"
-  cp -R "${ADAPTERS_DIR}/." "${AGENT_CREW_DIR}/adapters/"
+  diff_install "${ADAPTERS_DIR}" "${AGENT_CREW_DIR}/adapters"
   chmod +x "${AGENT_CREW_DIR}/adapters/"*/*.sh 2>/dev/null || true
   chmod +x "${AGENT_CREW_DIR}/adapters/"*/bin/* 2>/dev/null || true
 
   mkdir -p "${AGENT_CREW_DIR}/commands"
-  cp -r "${SOURCE_DIR}/commands/"* "${AGENT_CREW_DIR}/commands/"
+  diff_install "${SOURCE_DIR}/commands" "${AGENT_CREW_DIR}/commands"
 
   mkdir -p "${AGENT_CREW_DIR}/rules"
-  cp -r "${SOURCE_DIR}/rules/"* "${AGENT_CREW_DIR}/rules/" 2>/dev/null || true
+  diff_install "${SOURCE_DIR}/rules" "${AGENT_CREW_DIR}/rules"
 
   mkdir -p "${AGENT_CREW_DIR}/scripts"
   if [ -d "${SOURCE_DIR}/scripts" ]; then
@@ -379,7 +389,7 @@ install_codex_bootstrap_skill() {
   fi
 
   mkdir -p "${dest_skill_dir}"
-  cp -R "${source_skill_dir}/." "${dest_skill_dir}/"
+  diff_install "${source_skill_dir}" "${dest_skill_dir}"
   log_info "Codex bootstrap skill installed → ${dest_skill_dir}"
 }
 
@@ -532,11 +542,12 @@ PYEOF
 merge_global_agents() {
   local src="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
-  cp "$src" "$dest"
+  diff_copy "$src" "$dest"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   install_global
+  print_diff_summary
 
   CMD_COUNT=$(ls "${AGENT_CREW_HOME}/system/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
   AGENT_COUNT=$(ls "${AGENT_CREW_DIR}/system/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')

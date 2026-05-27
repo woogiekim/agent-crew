@@ -167,6 +167,8 @@ PYEOF
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
+print_diff_summary
+
 if [ "${DEPLOYED}" -eq 0 ]; then
   printf '[deploy-user-agent] No installed host adapters detected — agent saved to user/agents/ only.\n'
   printf '[deploy-user-agent] Run crew:setup to install for a specific host.\n'
