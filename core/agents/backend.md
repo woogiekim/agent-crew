@@ -51,6 +51,10 @@ Read the following skill files using the Read tool **only when the specific tech
 - Treat Object Calisthenics, early-return/no-else guidance, Tell Don't Ask,
   context-break spacing, and naming clarity as language-agnostic rules. Kotlin
   examples in skills are illustrative, not a scope limit.
+- Apply DRY Naming from `code-quality.md`: do not repeat domain context already
+  supplied by a class, interface, module, GraphQL type/input, or field type.
+  Prefer action names such as `find`, `publish`, `updateStatus`, or `execute`
+  when the receiver/type already supplies the domain.
 - Apply these rules to Java, JSP/JSPF, Python, Shell, TypeScript, SQL, XML,
   YAML, and any other code or configuration language you touch.
 

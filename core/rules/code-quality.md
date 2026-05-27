@@ -30,6 +30,27 @@ Apply these three principles to every implementation and review decision:
   shared code only when it clarifies the domain rule or reduces real maintenance
   risk.
 
+## DRY Naming
+
+Avoid repeating context that is already supplied by the surrounding class,
+interface, module, component, GraphQL type, input type, or field type.
+
+- Service or component methods should name the action, not restate the domain
+  already named by the owner. Prefer `reviewMetaService.find(...)` over
+  `reviewMetaService.findReviewMetas(...)` when the receiver already gives the
+  `ReviewMeta` context.
+- Use case interfaces whose name already states the action should use a neutral
+  entrypoint such as `execute(...)` or the minimal verb that remains clear.
+- Field and input names should avoid restating their type. Prefer
+  `statuses: List<ReviewPublicStatus>` over `publicStates:
+  List<ReviewPublicStatus>` when the type already supplies the public-status
+  context.
+- GraphQL input/type fields follow the same rule: the enclosing type and field
+  type are part of the call-site context.
+- Keep redundant context only when the method or field is part of a public API
+  consumed without owner/type context, or when one owner intentionally contains
+  multiple domains that need disambiguation.
+
 ## Baseline
 
 - Prefer early return, guard clauses, polymorphism, or table-driven dispatch
@@ -50,8 +71,9 @@ Apply these three principles to every implementation and review decision:
   rendering, and return/reporting.
 - Follow Tell, Don't Ask. Do not pull object state through chains of getters
   to make decisions that belong with the object owning that state.
-- Name methods and variables by their local responsibility. Avoid duplicating
-  context already provided by the class, module, or component name.
+- Name methods, variables, fields, inputs, and operations by their local
+  responsibility. Avoid duplicating context already provided by the class,
+  interface, module, component, enclosing schema type, or field type.
 
 ## Language Notes
 

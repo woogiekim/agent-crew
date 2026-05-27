@@ -88,6 +88,10 @@ Flag any hit as `BLOCKER`.
 - [ ] KISS, YAGNI, and DRY are checked from `core/rules/code-quality.md`.
       Flag needless complexity, speculative future behavior, and meaningful
       duplicated knowledge or behavior.
+- [ ] DRY Naming is checked. Flag method, field, GraphQL input/type, fixture,
+      and helper names that repeat context already supplied by the class,
+      interface, module, component, enclosing schema type, or field type unless
+      the public API or mixed-domain owner needs disambiguation.
 - [ ] Avoidable `else` branches, nested control flow, ternary-heavy
       validation/fallback logic, getter-driven decisions, and names that
       duplicate class/module context are reported in any language.

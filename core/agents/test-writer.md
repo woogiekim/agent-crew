@@ -78,6 +78,9 @@ technique is needed** during execution — do not load all skills upfront:
 - Extract shared test setup only when repeated setup encodes the same behavior
   or domain rule; keep small one-off setup inline when a helper would obscure
   the test's intent.
+- Apply DRY Naming to test helpers and fixtures: do not repeat class, component,
+  schema, or type context in helper names when the test owner or fixture type
+  already supplies it.
 
 ## Before Work — Recall from Memory
 

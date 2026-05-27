@@ -44,6 +44,9 @@ technique is needed** during execution — do not load all skills upfront:
   context-break spacing, and naming clarity as language-agnostic rules. UI,
   JavaScript/TypeScript, Swift, template, style, and configuration files are
   all in scope when you touch them.
+- Apply DRY Naming from `code-quality.md`: do not repeat context already
+  supplied by a component, hook, module, schema type, or field type. Prefer
+  local action or state names that read clearly at the call site.
 
 ## Code Style Rules
 - Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, rendering, error handling, and reporting as context changes.

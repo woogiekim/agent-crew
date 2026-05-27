@@ -310,23 +310,49 @@ assert_contains "${CODE_QUALITY_CONTENT}" "KISS"
 assert_contains "${CODE_QUALITY_CONTENT}" "YAGNI"
 assert_contains "${CODE_QUALITY_CONTENT}" "DRY"
 
+it "code-quality.md defines DRY Naming for redundant owner/type context"
+assert_contains "${CODE_QUALITY_CONTENT}" "## DRY Naming"
+assert_contains "${CODE_QUALITY_CONTENT}" "reviewMetaService.find(...)"
+assert_contains "${CODE_QUALITY_CONTENT}" "GraphQL input/type fields follow the same rule"
+
 it "backend.md applies KISS, YAGNI, and DRY from code-quality"
 assert_contains "${BACKEND_CONTENT}" "KISS, YAGNI, and DRY"
+
+it "backend.md applies DRY Naming to domain and GraphQL names"
+assert_contains "${BACKEND_CONTENT}" "Apply DRY Naming from \`code-quality.md\`"
+assert_contains "${BACKEND_CONTENT}" "GraphQL type/input"
 
 it "frontend.md applies KISS, YAGNI, and DRY from code-quality"
 assert_contains "${FRONTEND_CONTENT}" "KISS, YAGNI, and DRY"
 
+it "frontend.md applies DRY Naming to component and schema names"
+assert_contains "${FRONTEND_CONTENT}" "Apply DRY Naming from \`code-quality.md\`"
+assert_contains "${FRONTEND_CONTENT}" "component, hook, module, schema type"
+
 it "test-writer.md applies KISS, YAGNI, and DRY from code-quality"
 assert_contains "${TEST_WRITER_CONTENT}" "KISS, YAGNI, and DRY"
+
+it "test-writer.md applies DRY Naming to helpers and fixtures"
+assert_contains "${TEST_WRITER_CONTENT}" "Apply DRY Naming to test helpers and fixtures"
 
 it "reviewer.md enforces KISS, YAGNI, and DRY"
 assert_contains "${REVIEWER_CONTENT}" "KISS, YAGNI, and DRY"
 
+it "reviewer.md enforces DRY Naming"
+assert_contains "${REVIEWER_CONTENT}" "Enforce DRY Naming"
+assert_contains "${REVIEWER_CONTENT}" "repeat context already supplied"
+
 it "code-review skill checks KISS, YAGNI, and DRY"
 assert_contains "${CODE_REVIEW_CONTENT}" "KISS, YAGNI, and DRY are checked"
 
+it "code-review skill checks DRY Naming"
+assert_contains "${CODE_REVIEW_CONTENT}" "DRY Naming is checked"
+
 it "agile-xp skill maps the three principles"
 assert_contains "${AGILE_XP_CONTENT}" "KISS is Rule 5, YAGNI is Rule 2, and DRY"
+
+it "agile-xp skill applies DRY to names"
+assert_contains "${AGILE_XP_CONTENT}" "DRY also applies to names"
 
 it "pipeline planning carries KISS/YAGNI/DRY into PRDs"
 assert_contains "${PIPELINE_PLANNING_CONTENT}" "Maintainability: KISS, YAGNI, and DRY"

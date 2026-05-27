@@ -424,8 +424,11 @@ control flow that should be extracted, ternary-heavy validation/fallback logic,
 getter-driven decisions, and names that duplicate surrounding class/module
 context. Enforce KISS, YAGNI, and DRY by rejecting needless abstractions,
 speculative future hooks or options, and meaningful duplicated behavior or
-domain knowledge. This applies equally to JSP/JSPF, SQL, YAML, XML, shell,
-scripts, and other text-based code files.
+domain knowledge. Enforce DRY Naming by flagging methods, fields, GraphQL
+inputs/types, and test helpers that repeat context already supplied by their
+class, interface, module, component, enclosing schema type, or field type.
+This applies equally to JSP/JSPF, SQL, YAML, XML, shell, scripts, and other
+text-based code files.
 
 Reject with `REVIEW: NEEDS_CHANGES` when a changed hunk has any of these
 patterns without a separating blank line:

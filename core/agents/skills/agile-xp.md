@@ -83,6 +83,11 @@ Apply KISS by choosing the smallest readable design that satisfies the current
 story. Apply DRY by extracting duplicated knowledge or behavior only when the
 extraction reduces maintenance risk without hiding intent.
 
+DRY also applies to names. Do not repeat the class, module, component,
+GraphQL type/input, or field type context inside method, field, or helper names
+unless the owner intentionally spans multiple domains or the public API is used
+without owner/type context.
+
 ### Rule 6: Refactor Mercilessly — the code is always improvable
 > Source: Beck, Ch. 10 "Refactoring"; Fowler, Refactoring Ch. 2
 
