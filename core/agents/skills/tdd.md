@@ -81,8 +81,9 @@ fun `should apply seasonal discount from pricing service`() {
     val pricingService = mockk<PricingService>()
     every { pricingService.discountRate(any()) } returns 0.1
 
-    val service = OrderService(pricingService)
-    assertThat(service.finalPrice(order)).isEqualTo(Money(900))
+    val sut = OrderService(pricingService)
+
+    assertThat(sut.finalPrice(order)).isEqualTo(Money(900))
 }
 
 // Mock — verify an interaction occurred
@@ -91,7 +92,9 @@ fun `should save order after placement`() {
     val repo = mockk<OrderRepository>()
     every { repo.save(any()) } just Runs
 
-    OrderService(repo).place(order)
+    val sut = OrderService(repo)
+
+    sut.place(order)
 
     verify(exactly = 1) { repo.save(order) }
 }
@@ -120,7 +123,7 @@ class OrderServiceTest {
     private lateinit var orderRepository: OrderRepository
 
     @InjectMockKs
-    private lateinit var orderService: OrderService
+    private lateinit var sut: OrderService
 
     @Test
     fun `should publish domain event after saving order`() {
@@ -129,7 +132,7 @@ class OrderServiceTest {
         every { orderRepository.save(any()) } returns order
 
         // when
-        orderService.placeOrder(order)
+        sut.placeOrder(order)
 
         // then
         verify(exactly = 1) { orderRepository.save(order) }
@@ -203,6 +206,18 @@ companion object {
 ```
 
 `given / when / then` comments are mandatory in every test body.
+
+## Test Target Variable Naming
+
+Default the object, function wrapper, component instance, hook result, or other
+primary test target to `sut` (system under test) when a test introduces a local
+variable or field for it.
+
+Use domain-specific names for collaborators, inputs, expected values, fixtures,
+and observed results. Do not rename those to `sut`; only the primary target
+being exercised gets the `sut` name. If an existing project has an explicit,
+documented test-target naming convention, follow the project convention and
+record the exception in the TDD log.
 
 ---
 

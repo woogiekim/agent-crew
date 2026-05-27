@@ -88,6 +88,10 @@ REFACTOR → Improve component design, extract sub-components → run test comma
 - Every new component MUST have a corresponding test file before the component file is created.
 - Test files MUST be committed in the same commit as the component they cover.
 - Test naming convention: `{ComponentName}.test.tsx` (or `.spec.tsx`) adjacent to the component file.
+- Test target naming convention: default the component, hook result, rendered
+  wrapper, or other primary system under test variable to `sut` when a target
+  variable is introduced. Keep props, fixtures, user events, and query results
+  domain-specific.
 - Minimum test coverage per component: renders without error + at least one interaction or prop variation test.
 - Coverage target: 100% changed executable coverage. Every new or modified
   component branch, prop variation, state transition, user interaction,

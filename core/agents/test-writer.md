@@ -157,6 +157,9 @@ Each test must:
   top: `# Spec: prd.md § "<section>" — acceptance criterion #<n>`).
 - Exercise the documented contract — not the (yet-to-exist)
   implementation internals.
+- Name the primary test target variable `sut` by default when the test creates
+  a local target object, function wrapper, component instance, hook result, or
+  equivalent system under test.
 - Be runnable: even when the implementation file does not yet exist,
   the test file itself must parse and the test framework must be able
   to enumerate it. If the host runner reports the test as "import
@@ -171,6 +174,12 @@ Edge-case checklist (apply per entry point, if relevant):
 - Documented failure modes (each one becomes one test).
 - Branches and conditional behavior introduced by the PRD.
 - Idempotence / re-entry behavior if documented.
+
+Naming rule: reserve `sut` for the primary test target only. Keep collaborators,
+inputs, expected values, fixtures, and observed results domain-specific
+(`repository`, `request`, `expectedTotal`, `result`, etc.). If a repository has
+an explicit conflicting convention, follow it and record the exception in
+`{TASK_DIR}/context/tdd_log.md`.
 
 ### Step 5 — Coverage matrix, quality loop, and commit
 

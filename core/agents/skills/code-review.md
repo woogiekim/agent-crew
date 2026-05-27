@@ -102,6 +102,8 @@ grep -c "if\|for\|while\|when\|catch\|\?\." {file}
 ## Test Coverage Sanity Check
 
 - At least one test per new endpoint or public method
+- Primary test target variables default to `sut` unless the repository has an
+  explicit conflicting convention recorded in the TDD log
 - Failing paths (error cases, validation) tested, not only happy paths
 - No commented-out test assertions (`//assertThat(...)`)
 - Parameterized tests used where multiple similar inputs exist

@@ -250,7 +250,9 @@ done
 # ─────────────────────────────────────────────────────────────────────────────
 BACKEND_CONTENT="$(cat "${REPO_ROOT}/core/agents/backend.md" 2>/dev/null || true)"
 FRONTEND_CONTENT="$(cat "${REPO_ROOT}/core/agents/frontend.md" 2>/dev/null || true)"
+TEST_WRITER_CONTENT="$(cat "${REPO_ROOT}/core/agents/test-writer.md" 2>/dev/null || true)"
 REVIEWER_CONTENT="$(cat "${REPO_ROOT}/core/agents/reviewer.md" 2>/dev/null || true)"
+TDD_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/tdd.md" 2>/dev/null || true)"
 CODE_REVIEW_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/code-review.md" 2>/dev/null || true)"
 
 it "backend.md declares DGS DataLoader guidance for GraphQL/Feign N+1 prevention"
@@ -268,6 +270,18 @@ assert_contains "${BACKEND_CONTENT}" "Validation or guard reporting -> early ret
 it "backend.md applies context-break enforcement to every language"
 assert_contains "${BACKEND_CONTENT}" "Apply this rule to every language you generate"
 
+it "backend.md defaults test target variables to sut"
+assert_contains "${BACKEND_CONTENT}" "primary system under test variable to \`sut\`"
+
+it "frontend.md defaults test target variables to sut"
+assert_contains "${FRONTEND_CONTENT}" "primary system under test variable to \`sut\`"
+
+it "test-writer.md defaults test target variables to sut"
+assert_contains "${TEST_WRITER_CONTENT}" "primary test target variable \`sut\`"
+
+it "tdd.md defines system under test variable naming"
+assert_contains "${TDD_CONTENT}" "primary test target to \`sut\`"
+
 it "reviewer.md rejects missing context-break blank lines"
 assert_contains "${REVIEWER_CONTENT}" "context_break_missing_blank_line"
 
@@ -276,6 +290,9 @@ assert_contains "${REVIEWER_CONTENT}" "Side effect -> return value construction"
 
 it "code-review skill includes context-break blank line checklist"
 assert_contains "${CODE_REVIEW_CONTENT}" "Context-break blank line rule checked"
+
+it "code-review skill reviews sut test target naming"
+assert_contains "${CODE_REVIEW_CONTENT}" "Primary test target variables default to \`sut\`"
 
 it "frontend.md declares context-change line break code style"
 assert_contains "${FRONTEND_CONTENT}" "Insert a line break when the implementation context changes"

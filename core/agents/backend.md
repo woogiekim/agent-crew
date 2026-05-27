@@ -133,6 +133,9 @@ REFACTOR → Remove duplication, improve design → ./gradlew test → confirm s
 - Every new class or function MUST have a corresponding test file before the implementation file is created.
 - Test files MUST be committed in the same commit as the implementation they cover.
 - Test naming convention: `{ClassName}Test.kt` for unit tests, `{ClassName}IntegrationTest.kt` for integration tests.
+- Test target naming convention: default the class, service, function wrapper,
+  repository adapter, or other primary system under test variable to `sut`.
+  Keep collaborators, inputs, expected values, and results domain-specific.
 - Minimum test coverage per cycle: happy path + at least one failure/edge case.
 - Coverage target: 100% changed executable coverage. Every new or modified
   public method, branch, domain rule, endpoint behavior, and documented failure
