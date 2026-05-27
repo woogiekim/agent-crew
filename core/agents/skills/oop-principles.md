@@ -1,5 +1,17 @@
 # OOP Principles
 
+## Scope
+
+These principles apply to all code written by agents, regardless of language,
+tool, framework, host adapter, or runtime environment. Kotlin examples in this
+file are illustrative only; apply the same rules to Java, JSP/JSPF, Python,
+TypeScript, JavaScript, Go, Rust, Ruby, Shell, SQL, Groovy, Scala, Swift, PHP,
+C/C++, C#, Dart, Vue, Svelte, XML, YAML, and comparable source files.
+
+When this skill and `core/rules/code-quality.md` overlap, treat them as the
+same baseline. Language-specific skills may add stricter guidance, but they do
+not make these principles Kotlin-only.
+
 ## SOLID (Robert C. Martin, "Agile Software Development", 2002)
 
 ### S — Single Responsibility Principle

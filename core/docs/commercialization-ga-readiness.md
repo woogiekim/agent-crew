@@ -85,6 +85,52 @@ misses, noise, latency, and a compact `memory_quality` score. The answer-quality
 gate fails when reusable memory context is present but no memory evidence trace
 was produced, or when the final report does not reuse any available memory ID.
 
+## Readiness Evidence Bundle
+
+The 2026-05-27 readiness pass for issue #119 uses explicit generated evidence
+under `dist/` instead of ad-hoc local task history:
+
+- `dist/phase-1-validation.json` - phase-one validation report, `passed: true`
+- `dist/phase-2-validation.json` - phase-two validation report, `passed: true`
+- `dist/readiness-workload.json` - deterministic readiness workload evidence,
+  `source: agent-crew-readiness-validation-workload`
+
+Release review should run the readiness gate with those explicit inputs:
+
+```bash
+crew readiness gate \
+  --validation-report dist/phase-1-validation.json \
+  --validation-report dist/phase-2-validation.json \
+  --workload-evidence dist/readiness-workload.json \
+  --format text
+```
+
+The issue #119 evidence run returned `PASS: readiness gate`,
+`evidence_mode=explicit_workload_evidence`, and `blockers=0`. Regenerate these
+artifacts before publishing a release if source, adapter, or validation logic
+changes.
+
+The issue #120 hosted-adapter validation pass records machine-readable adapter
+evidence under `dist/` using `docs/templates/hosted-adapter-validation.json`:
+
+- `dist/hosted-generic-validation.json` - clean deterministic generic adapter
+  evidence with `host_bridge_status=auto_completed`, `manual_repairs=0`, and
+  `human_interventions=0`
+- `dist/hosted-codex-validation.json` - deferred external Codex hosted run;
+  current Codex sessions refuse nested `codex exec` and require a non-nested
+  hosted environment
+- `dist/hosted-claude-validation.json` - deferred external Claude hosted run;
+  this workspace was validated from Codex and requires an approved Claude Code
+  hosted run
+- `dist/hosted-adapter-validation-summary.json` - adapter status index for
+  release review
+
+The hosted evidence files are redacted release artifacts. They contain no
+credentials, tokens, proprietary prompts, or private customer data. The
+readiness gate can consume the hosted evidence files with the phase validation
+reports; the issue #120 run returned `PASS: readiness gate` and `blockers=0`
+for the generated generic evidence plus documented Codex/Claude deferrals.
+
 ## Implementation Quality Loop
 
 Commercial implementation tasks must prove the quality loop ran before they are

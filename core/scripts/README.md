@@ -208,6 +208,9 @@ invocation in SKILL.md; generic adds guidance).
 - `update-fingerprint.py` — records source, user, and generated-output hashes so
   repeated no-op local updates can skip expensive adapter refreshes safely, and
   reports changed fingerprint categories when a full refresh is required.
+- `update-project-registry.py` — records global and project-local update
+  markers, lists registered project roots for `crew update --all-projects`, and
+  emits stale project-local adapter warnings for `crew status` / `crew run`.
 - `verify-install-drift.py` — post-update source/install drift verifier for
   source-owned commands, hooks, scripts, evaluations, policies, and binary
   entrypoints.

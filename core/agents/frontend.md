@@ -35,6 +35,14 @@ technique is needed** during execution — do not load all skills upfront:
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
 - `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
+## Language-Agnostic Quality Rules
+- Read and apply `~/.agent-crew/system/rules/code-quality.md` before writing or
+  reporting any code change.
+- Treat Object Calisthenics, early-return/no-else guidance, Tell Don't Ask,
+  context-break spacing, and naming clarity as language-agnostic rules. UI,
+  JavaScript/TypeScript, Swift, template, style, and configuration files are
+  all in scope when you touch them.
+
 ## Code Style Rules
 - Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, rendering, error handling, and reporting as context changes.
 - Do not reformat unrelated code solely to add spacing; apply this rule to code you write or directly touch.

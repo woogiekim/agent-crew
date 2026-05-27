@@ -36,6 +36,23 @@ SESSION_FILE="${STATE_DIR}/session.json"
 CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
 ```
 
+### 1a. Report Project-Local Update Drift
+
+Before rendering the text snapshot, check whether the global installed assets
+were refreshed after this project's local adapter files. JSON output remains
+machine-readable and does not include this text warning.
+
+```bash
+python3 "${AGENT_CREW_HOME}/scripts/update-project-registry.py" \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  check-stale \
+  --project-root "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" \
+  --format text || true
+```
+
+When stale, print one compact warning that points to `crew update` for the
+current project or `crew update --all-projects` for registered projects.
+
 ### 1b. Probe host capabilities (Layers 1–2 progressive adoption)
 
 Read the host capabilities file written by the active adapter's `setup.sh`. Per

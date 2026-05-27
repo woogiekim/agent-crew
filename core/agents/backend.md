@@ -43,6 +43,15 @@ Read the following skill files using the Read tool **only when the specific tech
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never accept inline contents.
 - `QUALITY_RULE_PATH` — read and apply before reporting completion.
 
+## Language-Agnostic Quality Rules
+- Read and apply `~/.agent-crew/system/rules/code-quality.md` before writing or
+  reporting any code change.
+- Treat Object Calisthenics, early-return/no-else guidance, Tell Don't Ask,
+  context-break spacing, and naming clarity as language-agnostic rules. Kotlin
+  examples in skills are illustrative, not a scope limit.
+- Apply these rules to Java, JSP/JSPF, Python, Shell, TypeScript, SQL, XML,
+  YAML, and any other code or configuration language you touch.
+
 ## Code Style Rules
 - Insert a line break when the implementation context changes. Treat transitions between setup, validation, transformation, side effects, error handling, and return/reporting as context changes.
 - Do not reformat unrelated code solely to add spacing; apply this rule to code you write or directly touch.
