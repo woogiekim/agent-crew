@@ -81,21 +81,29 @@ File overlap alone is never a reason to serialize.
 > Requirements collection (Step 5 of `crew:run`) is always mandatory and must
 > never be skipped, even when the request seems self-evident.
 
-Spawn an agent or workflow when the user asks to build, implement, create, add,
-update, fix, remove, move, change, migrate, refactor, replace, extend, or
-integrate development work.
+Every substantive user-facing response must enter an agent-crew route before
+answering. Do not answer inline merely because the response is short, obvious,
+or read-only.
+
+Route implementation, mutation, issue, git, release, update, and workflow
+requests through `crew:run`. This includes build, implement, create, add,
+update, fix, remove, move, change, migrate, refactor, replace, extend,
+integrate, test, deploy, merge, push, rollback, commit, issue publication,
+and artifact/document mutation work.
+
+Route questions, explanations, diagnostics, status/history lookups, and
+read-only analysis through `crew:agent` (auto-routing selects analyst for
+codebase Q and historian for session/git/project state Q).
 
 If the user gives a short confirmation such as "go", "yes", "ok", "continue",
-or "proceed" and the prior context is about implementation work, continue
-through the appropriate `crew:<intent>` workflow instead of answering directly.
+"proceed", "네", or "진행해주세요", continue through the appropriate
+`crew:<intent>` workflow instead of answering directly.
 
-For questions and explanations, route through `crew:agent` (auto-routing
-selects analyst for codebase Q, historian for session/git/project state Q).
-Direct inline response is permitted only for bare atomic facts (literal yes/no,
-one file path, or one number) and only when no STOP, ROUTE, COMMAND, or other
-agent-crew routing directive is present. When an agent has the right scope, or
-when routing context is present, use the routed workflow instead of answering
-inline.
+Direct inline output is permitted only for machine-required control surfaces:
+structured-choice numbers/labels, workflow handoff/result/status tokens, or
+the final relay of a response that has already gone through `crew:run` or
+`crew:agent`. Never use inline output as a shortcut around an available
+agent-crew route.
 
 ## Code Style Context Breaks
 

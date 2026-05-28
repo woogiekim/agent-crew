@@ -83,6 +83,7 @@ Workforce System:
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
 - **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; after any explicitly invoked Codex skill loads, the AI must enter the `crew-run` workflow with no preamble, no file reads, no Bash commands, and no clarifying questions
+- **All-response agent routing** — substantive user-facing answers route through agent-crew first: implementation/mutation/git work enters `crew:run`, while questions, explanations, diagnostics, status, and history lookups enter `crew:agent`
 - **Route directive guard** — when a host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` detects Agent responses that received a STOP/ROUTE route lock but answered inline instead of entering `crew:run` / `crew:agent`
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
 - **Reviewer always last** — every pipeline that produces implementation output ends with the `reviewer` agent, which verifies completeness against the PRD
@@ -769,9 +770,21 @@ The loop protocol for each stage:
 
 If a stage reports `STATUS: BLOCKED`, the supervisor halts the pipeline immediately and writes the blocker detail to `{TASK_DIR}/result.md`. A blocked stage is never silently skipped.
 
-### STOP Directive (`core/hooks/auto-route.sh`)
+### Agent-Crew Routing Directives (`core/hooks/auto-route.sh`)
 
-`auto-route.sh` is a `UserPromptSubmit` hook. When it detects a development request (backend, frontend, full-stack, file-level edits, project keywords), it injects `[agent-crew] STOP` into the system context.
+`auto-route.sh` is a `UserPromptSubmit` hook. It routes substantive prompts
+through agent-crew before an answer is produced:
+
+- implementation, mutation, issue, git, release, update, and artifact/document
+  requests inject `[agent-crew] STOP` and must enter `crew:run`
+- questions, explanations, diagnostics, read-only status, and session/history
+  lookups inject `[agent-crew] ROUTE` and must enter `crew:agent`
+- short workflow continuations such as `go`, `continue`, `네`, or
+  `진행해주세요` route back into the appropriate crew workflow instead of being
+  answered inline
+
+Machine-control replies used by structured-choice fallbacks, such as a bare
+option number, are the only prompt-level bypass.
 
 When `[agent-crew] STOP` is present, the first agent-crew workflow action is to
 invoke `crew:run`. In Codex, explicitly invoked or domain-specific Codex skills
@@ -784,7 +797,22 @@ before the `crew-run` workflow begins:
 - Reading files to understand the request
 - Asking clarifying questions
 
-The STOP directive is a hard override enforced both by `auto-route.sh` and by `core/global-agents.md`.
+When `[agent-crew] ROUTE` is present, the first agent-crew workflow action is to
+invoke `crew:agent` with the selected read-only agent. Inline substantive answers
+are forbidden even when the answer is short or obvious.
+
+These directives are hard workflow locks in `core/global-agents.md`; where a
+host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` also detects
+Agent responses that ignored the route and answered inline.
+
+#### Codex current-session update limitation
+
+`crew update` refreshes installed files on disk, including hooks, commands,
+rules, generated agents, and Codex skill mirrors. It cannot retroactively replace
+system/developer context that is already loaded into an active Codex
+conversation. After changing routing policy, start a new Codex session for the
+new instructions to apply automatically. In the old session, explicitly invoke
+`$crew-run` / `$crew-agent` or follow the visible STOP/ROUTE directive.
 
 ### Direct-Edit Guard (`core/hooks/direct-edit-guard.sh`)
 

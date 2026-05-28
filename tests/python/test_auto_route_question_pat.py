@@ -332,6 +332,35 @@ class TestNonBridgedAutoRouteFallback:
         assert "bridge executable" in ctx
 
 
+class TestAllSubstantiveResponsesRoute:
+    def test_generic_statement_routes_to_analyst(self):
+        payload = {"prompt": "업데이트했음에도 에이전트크루를 안쓰네요"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] ROUTE" in ctx
+        assert "ROUTE_LOCK: crew-agent" in ctx
+        assert "TARGET_AGENT: analyst" in ctx
+        assert "[agent-crew] STOP" not in ctx
+
+    def test_followup_confirmation_routes_to_crew_run(self):
+        payload = {"prompt": "네 진행해주세요."}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] STOP" in ctx
+        assert "follow-up continuation" in ctx
+        assert "ROUTE_LOCK: crew-run" in ctx
+
+    def test_bare_control_choice_remains_available_for_structured_fallbacks(self):
+        assert _run_hook({"prompt": "1"}, bridge_configured=True) == {}
+
+    def test_short_question_does_not_use_atomic_inline_exception(self):
+        payload = {"prompt": "되나요?"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "[agent-crew] ROUTE" in ctx
+        assert "INLINE_ANSWER: FORBIDDEN" in ctx
+
+
 # ---------------------------------------------------------------------------
 # Negative cases — ACTION_PAT phrases alone must NOT match QUESTION_PAT
 # (sanity check — QUESTION_PAT should not accidentally absorb action verbs)

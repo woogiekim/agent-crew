@@ -72,9 +72,17 @@ Do not start by reading repository files, running shell commands, editing files,
 or asking implementation questions unless the loaded command definition requires
 that step.
 
-Respond directly only when the user is asking a pure explanation or diagnostic
-question, such as "how", "why", "what", "explain", "describe", `어떻게`, `왜`,
-`무엇`, or `설명`, and the message does not also request implementation.
+Do not answer substantive questions directly. Pure explanation, diagnostic,
+status, history, and lookup requests such as "how", "why", "what", "explain",
+"describe", `어떻게`, `왜`, `무엇`, or `설명` must route through the
+`crew-agent` skill wrapper and execute `crew:agent`. Use analyst for codebase
+or product questions, and historian for session, git, branch, progress, or
+project-state questions.
+
+Short confirmations such as "go", "yes", "ok", "continue", "proceed", `네`,
+or `진행해주세요` are workflow continuations. Route them through the
+appropriate `crew-run` or `crew-agent` wrapper based on the prior context
+instead of answering inline.
 
 ## Dependency Inversion Boundary
 
@@ -158,6 +166,35 @@ definition's required normalization and requirements-collection steps. If a
 Codex skill was explicitly invoked or domain-selected before routing, preserve
 that skill context as task metadata and include it in requirements and handoff
 inputs.
+
+For a natural-language read-only question, explanation, diagnostic, status, or
+history request, load the `crew-agent` skill wrapper and behave as if the user
+had typed:
+
+```text
+crew:agent "{original request}"
+```
+
+Do not return the substantive answer until `crew:agent` has produced a direct
+agent handoff/result. If Codex is already inside an active Codex session and the
+bridge reports `HOST_BRIDGE: current_session_required`, continue the direct-agent
+handoff in the current session as instructed by the `crew-agent` skill.
+
+## Current-Session Update Limitation
+
+`crew update` refreshes files on disk: commands, hooks, rules, generated
+agents, and Codex skill mirrors. It cannot retroactively replace system or
+developer context that was already injected into the current Codex conversation.
+
+After updating routing policy, hooks, or Codex skill instructions:
+
+1. Start a new Codex session for the refreshed prompt context to apply
+   automatically.
+2. In the current session, explicitly invoke `$crew-run` or `$crew-agent`, or
+   follow any `[agent-crew] STOP` / `[agent-crew] ROUTE` directive already
+   present in the context.
+3. Treat stale inline-routing behavior in the old session as a session reload
+   limitation, not proof that installed files failed to update.
 
 ## Capability fallbacks
 

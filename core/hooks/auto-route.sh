@@ -198,13 +198,19 @@ QUESTION_PAT = (
     r"되나요|되죠|되잖아요|"
     r"활용|사용하고|쓰고|동작|작동|비교|평가|체크|쓸만|쓸\s*만|솔직"
 )
-# Truly atomic facts that need no agent — a bare yes/no, a bare file path,
-# or a bare single number. These stay inline even when QUESTION_PAT fires.
-# Must be very tight: multi-word or explanatory responses never qualify.
-TRIVIAL_ATOMIC_PAT = (
-    r"^\s*(yes|no|true|false|예|아니오|맞아|아니야)\s*[.!?]?\s*$|"  # bare yes/no
-    r"^\s*~?/[\w./\-]+\s*$|"                                          # bare file path
-    r"^\s*\d+(\.\d+)?\s*[a-zA-Z%]?\s*$"                               # bare number/metric
+# Machine-control replies are not substantive answers. They are allowed through
+# so numbered structured-choice fallbacks can resolve without being hijacked by
+# a catch-all route.
+CONTROL_REPLY_PAT = (
+    r"^\s*(?:[0-9]+|[A-Da-d])\s*$|"
+    r"^\s*(?:approve|cancel|hold|승인|취소|보류)\s*$"
+)
+FOLLOWUP_CONTINUATION_PAT = (
+    r"^\s*(?:go|yes|ok|okay|continue|proceed|do\s+it|please\s+proceed|"
+    r"네|네\s*(?:진행(?:해(?:주세요)?)?|계속(?:해(?:주세요)?)?|"
+    r"그렇게\s*(?:가시죠|해주세요|해줘)?|해주세요|해줘)|"
+    r"예|좋아요|진행|진행해|진행해주세요|계속|계속해|계속해주세요|"
+    r"가시죠|그렇게\s*가시죠|해주세요|해줘)\s*[.!?。]*\s*$"
 )
 MEMORY_PAT = (
     r"memory|MEMORY\.md|remember|recall|"
@@ -304,6 +310,10 @@ READONLY_REVIEW_PAT = (
     r"리뷰|검토|평가|비교|솔직|쓸만|쓸\s*만|"
     r"괜찮|문제점|개선점|부족|체크|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
 )
+READONLY_COMPLAINT_PAT = (
+    r"안\s*쓰|안쓰|안\s*되|안되|못\s*하|못하|"
+    r"자꾸|계속\s*(?:문제|실패|무시|빠지)"
+)
 REVIEW_MUTATION_PAT = (
     r"fix\s+it|apply\s+the\s+fix|make\s+the\s+change|implement|"
     r"수정해|수정해줘|수정\s*(?:→|->|후|하고|및|,)|고쳐줘|반영해|반영해줘|구현해|"
@@ -356,9 +366,65 @@ def emit_question_route(target_agent: str, route_reason: str):
     sys.exit(0)
 
 
+def emit_stop_route(detected_type: str, action_line: str):
+    directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
+
+ROUTE_LOCK: crew-run
+FIRST_ACTION_ONLY:
+{action_line}
+
+In Codex: let any explicitly invoked or domain-specific Codex skill load first,
+then load Skill("crew-run"), preserve explicit/domain-specific
+skill context in requirements collection, then execute the workflow intent.
+Preserve that skill context in requirements collection, supervisor handoffs,
+and generated prompts.
+
+INLINE_IMPLEMENTATION_OR_ANSWER: FORBIDDEN
+NO_PRELUDE: do not explain, diagnose, inspect files, run Bash, ask questions,
+or edit files before crew-run starts.
+COMPLIANCE: route-directive-guard checks Agent responses for this lock.
+
+CODEX SKILL WORKFLOW:
+1. Invoke Skill("crew-run") — loads the full crew:run wrapper and command spec.
+2. Pass the original request plus any explicit/domain-specific Codex skill context
+   into the workflow so Step 5 requirements and supervisor prompts retain it.
+
+Enter the crew-run workflow now."""
+    if not HOST_BRIDGE_READY:
+        directive += (
+            "\n\nHost bridge is unavailable ("
+            f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
+            "\nThe runtime will record a resumable internal handoff when no "
+            "external bridge command is configured."
+        )
+
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": directive,
+        }
+    }
+
+    print(json.dumps(output, ensure_ascii=True))
+    sys.exit(0)
+
+
 def emit_no_bridge_inline_fallback(reason: str):
     """Compatibility shim for callsites that previously short-circuited inline."""
     return not HOST_BRIDGE_READY
+
+
+if re.search(CONTROL_REPLY_PAT, prompt, re.IGNORECASE):
+    sys.exit(0)
+
+if re.search(FOLLOWUP_CONTINUATION_PAT, prompt, re.IGNORECASE):
+    emit_stop_route(
+        "follow-up continuation",
+        '  crew:run "continue the prior agent-crew task or request"',
+    )
+
+if match(READONLY_COMPLAINT_PAT) and not match(REVIEW_MUTATION_PAT):
+    emit_question_route("analyst", "behavior complaint/diagnostic request")
 
 
 if (
@@ -385,13 +451,8 @@ if match(READONLY_REVIEW_PAT) and re.search(
 
 if match(QUESTION_PAT) and not match(ACTION_PAT):
     # Questions and explanations must go through crew:agent — not inline.
-    # Exception: truly atomic facts (bare yes/no, bare path, bare number)
-    # that need no explanation are allowed inline.
     if emit_no_bridge_inline_fallback("question"):
         pass
-
-    if re.search(TRIVIAL_ATOMIC_PAT, prompt.strip(), re.IGNORECASE):
-        sys.exit(0)  # bare atomic fact — inline is fine
 
     # Determine the best agent via the routing rules in agent-routing.md.
     # Default: analyst for codebase Q; historian for session/git/project state Q.
@@ -410,10 +471,11 @@ if match(QUESTION_PAT) and not match(ACTION_PAT):
 
     emit_question_route(target_agent, route_reason)
 
-# --- Trivial-intent fast-path (Change A) ---
-# Detect short operational git intents that map to a known command template.
-# These are handled directly by the model without a full crew:run waterfall.
-# MUST NOT emit "STOP" or "crew:run" to avoid triggering the full pipeline.
+# --- Operational intent routing ---
+# Short git/status intents are still classified quickly, but they no longer
+# authorize inline execution. Read-only status routes to historian; mutating
+# git operations route through crew:run so the agent-crew workflow remains the
+# mandatory response path.
 
 TRIVIAL_INTENT_PAT = {
     # English intents — with "git" prefix
@@ -446,28 +508,22 @@ fast_path_candidate = len(prompt.strip()) <= 120 and "\n" not in prompt
 if fast_path_candidate:
     for pat, (cmd_template, intent_label) in TRIVIAL_INTENT_PAT.items():
         if re.search(pat, prompt, re.IGNORECASE):
-            approval_suffix = " Show approval gate first." if intent_label in DESTRUCTIVE_INTENTS else ""
-            fast_directive = (
-                f"[agent-crew] FAST-PATH — trivial intent detected: {intent_label}. "
-                f"Execute directly: {cmd_template}.{approval_suffix}"
-            )
-            fast_output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": fast_directive,
-                }
-            }
-            print(json.dumps(fast_output, ensure_ascii=True))
-            sys.exit(0)
+            if intent_label == "status":
+                emit_question_route("historian", "read-only git/project status request")
 
-# Memory/feedback meta-operations: skip routing unless combined with ACTION_PAT
+            emit_stop_route(
+                f"operational {intent_label} request",
+                f'  crew:run "{prompt.strip()}"',
+            )
+
+# Memory/feedback meta-operations route through historian for read-only lookup.
 if re.search(MEMORY_PATH_PAT, prompt, re.IGNORECASE):
     if not match(ACTION_PAT):
-        sys.exit(0)
+        emit_question_route("historian", "memory/support-path lookup")
 if match(MEMORY_PAT) and not match(ACTION_PAT):
-    sys.exit(0)
+    emit_question_route("historian", "memory/session request")
 
-# 저장/기록 without code/file/system target: skip routing
+# 저장/기록 without code/file/system target still routes as state/memory mutation.
 SAVE_PAT = r"저장|기록"
 CODE_TARGET_PAT = (
     r"\b(?:README|AGENTS|CLAUDE)(?:\.md)?\b|"
@@ -478,7 +534,7 @@ CODE_TARGET_PAT = (
 )
 if re.search(SAVE_PAT, prompt, re.IGNORECASE):
     if not re.search(CODE_TARGET_PAT, prompt, re.IGNORECASE):
-        sys.exit(0)
+        emit_stop_route("state or memory mutation", '  crew:run "your request"')
 
 detected_type = ""
 suggested_pipeline = ""
@@ -534,7 +590,7 @@ if not detected_type:
         suggested_pipeline = 'crew:run "your request"'
 
 if not detected_type:
-    sys.exit(0)
+    emit_question_route("analyst", "general user request")
 
 if emit_no_bridge_inline_fallback("implementation request"):
     pass
@@ -550,43 +606,5 @@ else:
         f"Suggested pipeline: {suggested_pipeline}"
     )
 
-directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
-
-ROUTE_LOCK: crew-run
-FIRST_ACTION_ONLY:
-{action_line}
-
-In Codex: let any explicitly invoked or domain-specific Codex skill load first,
-then load Skill("crew-run"), preserve explicit/domain-specific
-skill context in requirements collection, then execute the workflow intent.
-Preserve that skill context in requirements collection, supervisor handoffs,
-and generated prompts.
-
-INLINE_IMPLEMENTATION_OR_ANSWER: FORBIDDEN
-NO_PRELUDE: do not explain, diagnose, inspect files, run Bash, ask questions,
-or edit files before crew-run starts.
-COMPLIANCE: route-directive-guard checks Agent responses for this lock.
-
-CODEX SKILL WORKFLOW:
-1. Invoke Skill("crew-run") — loads the full crew:run wrapper and command spec.
-2. Pass the original request plus any explicit/domain-specific Codex skill context
-   into the workflow so Step 5 requirements and supervisor prompts retain it.
-
-Enter the crew-run workflow now."""
-if not HOST_BRIDGE_READY:
-    directive += (
-        "\n\nHost bridge is unavailable ("
-        f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
-        "\nThe runtime will record a resumable internal handoff when no "
-        "external bridge command is configured."
-    )
-
-output = {
-    "hookSpecificOutput": {
-        "hookEventName": "UserPromptSubmit",
-        "additionalContext": directive,
-    }
-}
-
-print(json.dumps(output, ensure_ascii=True))
+emit_stop_route(detected_type, action_line)
 PYEOF

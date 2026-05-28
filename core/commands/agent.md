@@ -97,10 +97,11 @@ same way implementation tasks do:
 - Session/git/project-state Q ("어떤 에이전트", "what just ran",
   "what's on this branch") → historian (row 6.5)
 
-The orchestrator may still answer inline only for trivial single-fact
-lookups (yes/no, file path, single-number metric) when no registered agent
-has the right scope. See the global CLAUDE.md "Auto-Execution Triggers"
-section for the canonical wording.
+The orchestrator may emit inline text only for machine-required control
+surfaces or for relaying a result that has already gone through `crew:agent`.
+It must not use short or obvious answers as a shortcut around direct-agent
+routing. See the global CLAUDE.md "Auto-Execution Triggers" section for the
+canonical wording.
 
 ---
 

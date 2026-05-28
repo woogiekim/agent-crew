@@ -115,8 +115,9 @@ assert_contains "${CTX}" "ROUTE_LOCK: crew-agent" "ROUTE route lock"
 it "auto-route ROUTE directive removes inline-answer escape wording"
 assert_not_contains "${CTX}" "ONLY permitted inline response" "ROUTE directive should not invite expanded inline exceptions"
 
-it "global auto-execution rule disables atomic inline exception under route directives"
-assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "when no STOP, ROUTE, COMMAND" "global rule exception is route-locked"
+it "global auto-execution rule requires agent-crew for substantive responses"
+assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "Every substantive user-facing response must enter an agent-crew route" "global rule requires routing"
+assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "Never use inline output as a shortcut" "global rule forbids inline bypass"
 
 it "hook-system rule documents route directive compliance"
 assert_contains "$(cat "${REPO_ROOT}/core/rules/capabilities/hook-system.md")" "Route directive compliance" "hook-system docs"

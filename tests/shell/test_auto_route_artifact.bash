@@ -155,16 +155,19 @@ it "pure question 'what is in the file' must NOT emit STOP"
 PAYLOAD="$(make_prompt_payload 'what is in the file')"
 CTX="$(run_hook_ctx "${PAYLOAD}")"
 assert_not_contains "${CTX}" "[agent-crew] STOP" "question does not trigger STOP"
+assert_contains "${CTX}" "[agent-crew] ROUTE" "question routes through crew:agent"
 
 it "pure question 'explain the doc structure' must NOT emit STOP"
 PAYLOAD="$(make_prompt_payload 'explain the doc structure')"
 CTX="$(run_hook_ctx "${PAYLOAD}")"
 assert_not_contains "${CTX}" "[agent-crew] STOP" "explain does not trigger STOP"
+assert_contains "${CTX}" "[agent-crew] ROUTE" "explain routes through crew:agent"
 
 it "pure Korean question 어떻게 작동하나요 must NOT emit STOP"
 PAYLOAD="$(make_prompt_payload '파일이 어떻게 작동하나요')"
 CTX="$(run_hook_ctx "${PAYLOAD}")"
 assert_not_contains "${CTX}" "[agent-crew] STOP" "Korean question does not trigger STOP"
+assert_contains "${CTX}" "[agent-crew] ROUTE" "Korean question routes through crew:agent"
 
 # --------------------------------------------------------------------------- #
 # AC2: Codex SKILL.md covers artifact/doc edits                               #
