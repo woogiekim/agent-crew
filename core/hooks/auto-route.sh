@@ -195,6 +195,7 @@ QUESTION_PAT = (
     r"어떻게|뭐야|무엇|왜|어떤|설명|"
     r"알려|이해|뭔지|뭔가|뭐가|뭘|어디|누가|언제|"
     r"있나요|합니까|인가요|할까요|됩니까|인지요|했나요|"
+    r"되나요|되죠|되잖아요|"
     r"활용|사용하고|쓰고|동작|작동|비교|평가|체크|쓸만|쓸\s*만|솔직"
 )
 # Truly atomic facts that need no agent — a bare yes/no, a bare file path,
@@ -326,16 +327,17 @@ def match(pattern):
 def emit_question_route(target_agent: str, route_reason: str):
     question_directive = (
         f"[agent-crew] ROUTE — question detected, routing to {target_agent} ({route_reason}).\n\n"
-        f"Do NOT answer this question inline. In Codex, let any explicitly invoked "
-        f"or domain-specific Codex skill load first, then invoke the crew-agent "
-        f"skill wrapper with the question.\n\n"
-        f"REQUIRED action:\n"
+        f"ROUTE_LOCK: crew-agent\n"
+        f"TARGET_AGENT: {target_agent}\n"
+        f"FIRST_ACTION_ONLY:\n"
         f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
-        f"Invoke Skill(\"crew-agent\") with the user's question and agent={target_agent}; "
-        f"preserve any loaded Codex skill context as direct-agent input.\n"
-        f"Direct inline responses for questions are forbidden — even short ones.\n"
-        f"The ONLY permitted inline response is a bare atomic fact: "
-        f"literal yes/no, a bare file path, or a bare single number with no explanation."
+        f"In Codex: let any explicitly invoked or domain-specific Codex skill load first, "
+        f"then Invoke Skill(\"crew-agent\"). Preserve that skill context as "
+        f"direct-agent input and execute the workflow intent; preserve any loaded "
+        f"Codex skill context.\n\n"
+        f"INLINE_ANSWER: FORBIDDEN\n"
+        f"NO_PRELUDE: do not explain, summarize, inspect files, run Bash, or answer before crew-agent starts.\n"
+        f"COMPLIANCE: route-directive-guard checks Agent responses for this lock."
     )
     if not HOST_BRIDGE_READY:
         question_directive += (
@@ -550,27 +552,20 @@ else:
 
 directive = f"""[agent-crew] STOP — implementation request detected ({detected_type}).
 
-IMMEDIATE WORKFLOW ACTION REQUIRED: enter the crew-run workflow.
-In Codex, let any explicitly invoked or domain-specific Codex skill load first,
-then invoke the crew-run skill wrapper. Preserve that skill context in
-requirements collection, supervisor handoffs, and generated prompts.
-
-Do NOT explain, diagnose, analyze, investigate, read files, or run any command before the crew-run wrapper begins the workflow.
-Any action other than skill loading followed by crew-run workflow execution is a system violation.
-
-REQUIRED action:
+ROUTE_LOCK: crew-run
+FIRST_ACTION_ONLY:
 {action_line}
 
-FORBIDDEN before the crew-run wrapper begins (each one is a violation):
-- Running ANY Bash command (git status, ls, cat, grep, find, etc.)
-- Using the Read tool to read any file
-- Analyzing code, error messages, logs, or stack traces
-- Investigating bugs or diagnosing root causes
-- Asking clarifying questions
-- Editing or writing files directly
+In Codex: let any explicitly invoked or domain-specific Codex skill load first,
+then load Skill("crew-run"), preserve explicit/domain-specific
+skill context in requirements collection, then execute the workflow intent.
+Preserve that skill context in requirements collection, supervisor handoffs,
+and generated prompts.
 
-crew:run owns ALL investigation, analysis, and implementation.
-Delegate EVERYTHING to crew:run — including bug finding and root cause analysis.
+INLINE_IMPLEMENTATION_OR_ANSWER: FORBIDDEN
+NO_PRELUDE: do not explain, diagnose, inspect files, run Bash, ask questions,
+or edit files before crew-run starts.
+COMPLIANCE: route-directive-guard checks Agent responses for this lock.
 
 CODEX SKILL WORKFLOW:
 1. Invoke Skill("crew-run") — loads the full crew:run wrapper and command spec.

@@ -500,6 +500,37 @@ with open(dest, "w") as f:
   f.write("\n")
 PYEOF
 
+# Issue #125: route-directive-guard.sh detects Agent responses that ignore
+# STOP/ROUTE route locks injected by auto-route.sh and answer inline instead.
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/route-directive-guard.sh" "Agent" "PostToolUse" <<'PYEOF'
+import sys, json, os
+dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 5}
+if os.path.exists(dest):
+  with open(dest) as f:
+    try: settings = json.load(f)
+    except json.JSONDecodeError: settings = {}
+else:
+  settings = {}
+hooks = settings.setdefault("hooks", {})
+hook_list = hooks.setdefault(hook_type, [])
+hook_path_base = os.path.basename(hook_path)
+for block in hook_list:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+
 print_diff_summary
 
 printf 'HOST: claude\n'

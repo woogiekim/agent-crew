@@ -60,6 +60,16 @@ settings = {
         ],
         "PostToolUse": [
             {
+                "matcher": "Agent",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"bash '{home}/hooks/route-directive-guard.sh'",
+                        "timeout": 5,
+                    }
+                ],
+            },
+            {
                 "matcher": "Bash",
                 "hooks": [
                     {
@@ -429,25 +439,6 @@ write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
 install_codex_skills
 install_system_agents_codex
 install_user_agents_codex
-
-# Write capabilities.json for this project.
-# Schema documented at core/rules/host-capabilities.md.
-# Absence of this file MUST be treated as legacy behavior (all flags false).
-PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
-CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
-mkdir -p "${STATE_DIR}"
-cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
-{
-  "host": "codex",
-  "task_tools": false,
-  "agent_background": false,
-  "monitor_tool": false,
-  "cost_tracking": false,
-  "hook_system": true,
-  "interactive_question": false
-}
-CAPS_EOF
 
 # Scaffold skill directories (idempotent)
 mkdir -p "${AGENT_CREW_HOME}/system/skills"

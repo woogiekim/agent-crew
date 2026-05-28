@@ -17,6 +17,12 @@ Consumers:
   found. Script: `core/scripts/check-plaintext-approval.py`. Hook
   wrapper: `core/hooks/forbid-plaintext-approval.sh`. Registered by
   `adapters/claude/setup.sh` when `hook_system=true`.
+- **Route directive compliance** (Issue #125 — implemented). A
+  `PostToolUse[Agent]` validator detects Agent responses that received
+  an auto-route `[agent-crew] STOP` or `[agent-crew] ROUTE` directive
+  but answered inline instead of entering `crew:run` / `crew:agent`.
+  Script: `core/scripts/check-route-directive-compliance.py`. Hook
+  wrapper: `core/hooks/route-directive-guard.sh`.
 - **Autonomous task injection** (Phase J14 — implemented in `crew:run`
   Step 1.5, no hook required). `core/scripts/detect-inject-intent.sh`
   classifies the user's input for inject-intent phrases ("추가로 해줘",
@@ -58,14 +64,16 @@ Adapter MUST provide:
 Consumers fall in two layers:
 
 - **Existing hook scripts** under `core/hooks/*.sh` are ready to be
-  wired by any adapter that advertises `hook_system=true`. As of
-  Phase G6 this set includes `forbid-plaintext-approval.sh`.
+  wired by any adapter that advertises `hook_system=true`. This set
+  includes `forbid-plaintext-approval.sh` and
+  `route-directive-guard.sh`.
 - **Provider-neutral validators** under `core/scripts/check-*.py` are
-  the canonical implementations that the adapter wires in. Phase G6
-  ships `check-plaintext-approval.py` and `detect-inject-intent.sh`
-  (the latter is invoked inline by `crew:run` Step 1.5 rather than
-  through a hook). `check-task-injection.py` for the mid-injection
-  duplicate-disambiguation prompt remains planned (refactor item 14b).
+  the canonical implementations that the adapter wires in.
+  `check-plaintext-approval.py`, `check-route-directive-compliance.py`,
+  and `detect-inject-intent.sh` ship today (the latter is invoked
+  inline by `crew:run` Step 1.5 rather than through a hook).
+  `check-task-injection.py` for the mid-injection duplicate-disambiguation
+  prompt remains planned (refactor item 14b).
   These scripts run on stdin/stdout with exit codes so they can be
   invoked from any host's hook mechanism.
 
@@ -118,10 +126,12 @@ Consumer — current hook scripts:
 - `core/hooks/context-guard.sh`
 - `core/hooks/verify-rules.sh`
 - `core/hooks/forbid-plaintext-approval.sh` (Phase G6)
+- `core/hooks/route-directive-guard.sh` (Issue #125)
 
 Consumer — validator scripts:
 
 - `core/scripts/check-plaintext-approval.py` (Phase G6 — implemented)
+- `core/scripts/check-route-directive-compliance.py` (Issue #125 — implemented)
 - `core/scripts/auto-issue-reporter.py` (implemented; advisory
   UserPromptSubmit/PostToolUse native report engine)
 - `core/scripts/detect-inject-intent.sh` (Phase J14 — implemented;

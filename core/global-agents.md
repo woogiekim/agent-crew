@@ -91,9 +91,11 @@ through the appropriate `crew:<intent>` workflow instead of answering directly.
 
 For questions and explanations, route through `crew:agent` (auto-routing
 selects analyst for codebase Q, historian for session/git/project state Q).
-Direct inline response is permitted ONLY for trivial single-fact replies
-(yes/no, file path lookup, single-number metric) AND when no agent in the
-registry has the right scope.
+Direct inline response is permitted only for bare atomic facts (literal yes/no,
+one file path, or one number) and only when no STOP, ROUTE, COMMAND, or other
+agent-crew routing directive is present. When an agent has the right scope, or
+when routing context is present, use the routed workflow instead of answering
+inline.
 
 ## Code Style Context Breaks
 
