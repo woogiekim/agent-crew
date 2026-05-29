@@ -1151,6 +1151,144 @@ def render_text(rows, summary):
 
 
 # --------------------------------------------------------------------------- #
+# AAR debrief (After-Action Review learning closed-loop)                      #
+# --------------------------------------------------------------------------- #
+#
+# The debrief mode distills a single completed task's post-run signals into a
+# compact After-Action Review (AAR) memo. It reuses aggregate_task() — no new
+# schema, no new state file — and is consumed at PLAN TIME by analyst/planner
+# via the existing mnemos memory preflight. It never changes runtime behavior
+# and never substitutes for verification (see core/rules/memory-governance.md
+# § After-Action Review (AAR) Memo).
+
+# A RETRY event is classified as a reviewer loop-back when its detail mentions
+# either the loop-decision reason token or the human-readable rejection phrase.
+_LOOP_BACK_MARKERS = ("reviewer_rejected", "needs_changes", "review_needs_changes")
+
+
+def count_reviewer_loop_backs(events):
+    """Count RETRY events whose detail signals a reviewer rejection / NEEDS_CHANGES
+    loop-back. Pure function of recorded events — deterministic by construction."""
+    loop_backs = 0
+    for event in events or []:
+        if event.get("event") != "RETRY":
+            continue
+
+        detail = (event.get("detail") or "").lower()
+        if any(marker in detail for marker in _LOOP_BACK_MARKERS):
+            loop_backs += 1
+
+    return loop_backs
+
+
+def task_shape_signature(row):
+    """Derive a deterministic, low-cardinality task-shape signature from the
+    distilled task row. Used so a recalled AAR memo can be matched to a future
+    task of a similar shape. Pure function of task data — no clock, no entropy."""
+    stages = row.get("stages_total") or 0
+    blockers = row.get("blockers") or []
+
+    parts = [f"stages={stages}"]
+    if blockers:
+        # Sort for determinism; the first canonical blocker label is the most
+        # discriminating shape feature.
+        parts.append(f"blocker={sorted(blockers)[0]}")
+
+    return " ".join(parts)
+
+
+def build_aar_memo(row, events):
+    """Build the deterministic AAR memo dict from a distilled task row.
+
+    The memo body is a pure function of recorded task data — it embeds no
+    datetime.now() and no run-time entropy, so two debriefs of the same task
+    produce byte-identical output (determinism contract)."""
+    retries = int(row.get("retries") or 0)
+    loop_backs = count_reviewer_loop_backs(events)
+    blockers = list(row.get("blockers") or [])
+
+    # Guardrail-1 signal gate: meaningful iff at least one post-run signal exists.
+    meaningful = retries > 0 or loop_backs > 0 or bool(blockers)
+
+    shape = task_shape_signature(row)
+
+    # recall_hint is a deterministic, plan-shaping suggestion derived only from
+    # the signals. It is advisory — it never relaxes verification or the
+    # reviewer/quality loop.
+    if meaningful:
+        hint_parts = []
+        if loop_backs > 0:
+            hint_parts.append("enable tdd_parallel and widen test coverage")
+        if retries > 0 and loop_backs == 0:
+            hint_parts.append("expect retries; keep stages small and TDD-first")
+        if blockers:
+            hint_parts.append(
+                "prior blockers: " + ", ".join(sorted(blockers))
+            )
+        # Always retain the reviewer stage — it is the verification anchor.
+        hint_parts.append("retain the solo reviewer stage")
+        recall_hint = (
+            f"recurring signals on [{shape}]: " + "; ".join(hint_parts)
+        )
+    else:
+        recall_hint = ""
+
+    return {
+        "task_id":     row.get("task_id", ""),
+        "task":        row.get("task", ""),
+        "task_shape":  shape,
+        "meaningful":  meaningful,
+        "retries":     retries,
+        "loop_backs":  loop_backs,
+        "blockers":    blockers,
+        "recall_hint": recall_hint,
+    }
+
+
+def render_aar_text(memo):
+    """Render the AAR memo as a human-readable text block (deterministic)."""
+    lines = []
+    lines.append("AAR Debrief (After-Action Review)")
+    lines.append(f"  task_id     : {memo['task_id']}")
+    if memo.get("task"):
+        lines.append(f"  task        : {memo['task']}")
+    lines.append(f"  task_shape  : {memo['task_shape']}")
+    lines.append(f"  meaningful  : {'yes' if memo['meaningful'] else 'no'}")
+    lines.append(f"  retries     : {memo['retries']}")
+    lines.append(f"  loop_backs  : {memo['loop_backs']}")
+    blockers = memo.get("blockers") or []
+    lines.append(f"  blockers    : {', '.join(blockers) if blockers else 'none'}")
+
+    if memo["meaningful"]:
+        lines.append(f"  recall_hint : {memo['recall_hint']}")
+    else:
+        lines.append("  recall_hint : (none — clean run, nothing to capture)")
+
+    return "\n".join(lines)
+
+
+def run_debrief(state_dir, task_id, fmt):
+    """Debrief a single task by id. Reuses aggregate_task(). Returns an exit
+    code; exits 0 even when meaningful=false or the task has no signals."""
+    task_dir = state_dir / "tasks" / task_id
+    if not task_dir.is_dir():
+        print(f"error: task not found: {task_dir}", file=sys.stderr)
+        return 3
+
+    row = aggregate_task(state_dir, task_dir)
+    events = read_progress_buffer(task_dir)
+    memo = build_aar_memo(row, events)
+
+    if fmt == "json":
+        json.dump(memo, sys.stdout, indent=2, default=str, sort_keys=True)
+        sys.stdout.write("\n")
+    else:
+        print(render_aar_text(memo))
+
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # Driver                                                                      #
 # --------------------------------------------------------------------------- #
 
@@ -1170,12 +1308,22 @@ def main():
     p.add_argument("--since", help="YYYY-MM-DD lower bound on task start date")
     p.add_argument("--until", help="YYYY-MM-DD upper bound on task start date")
     p.add_argument("--format", choices=["text", "json"], default="text")
+    p.add_argument("--debrief", action="store_true",
+                   help="Distill a single task's post-run signals into an "
+                        "After-Action Review (AAR) memo. Requires --task-id.")
     args = p.parse_args()
 
     state_dir = resolve_state_dir(args.state_dir)
     if not state_dir.is_dir():
         print(f"error: state dir not found: {state_dir}", file=sys.stderr)
         return 3
+
+    # AAR debrief mode dispatches before the normal aggregate-all flow.
+    if args.debrief:
+        if not args.task_id:
+            print("error: --debrief requires --task-id", file=sys.stderr)
+            return 3
+        return run_debrief(state_dir, args.task_id, args.format)
 
     task_dirs = list_task_dirs(state_dir, args)
     rows = [aggregate_task(state_dir, p) for p in task_dirs]

@@ -541,6 +541,84 @@ in Phase 0 via the `log_progress` helper.
 
 If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
+#### 2c. AAR debrief — close the learning loop (After-Action Review)
+
+This step closes agent-crew's one open feedback loop: post-run signals
+(retries, reviewer `NEEDS_CHANGES` loop-backs, blockers) already exist in
+telemetry but never feed the NEXT plan. The debrief distills them into a
+compact After-Action Review (AAR) memo and captures it to memory so the
+analyst/planner can recall it as a deterministic **plan-time** hint on a
+future task of similar shape (see `core/agents/analyst.md` and
+`core/agents/planner.md` § plan-construction). This is a plan-time-feedback
+loop only — it makes **no** change to verification, the reviewer stage, or
+the quality loop. See `core/rules/memory-governance.md`
+§ After-Action Review (AAR) Memo for the full contract.
+
+Run this step after the `COMPLETED` event is emitted (so an interrupt before
+it never blocks task close-out). It is **out of band** of stage retries and
+**never** fails the pipeline.
+
+```bash
+# Distill the just-finished task into an AAR memo (reuses aggregate_task()).
+AAR_JSON=$(python3 "${AGENT_CREW_HOME}/scripts/telemetry-aggregate.py" \
+  --state-dir "${STATE_DIR}" \
+  --task-id "${TASK_ID}" \
+  --debrief --format json 2>/dev/null) || true
+
+AAR_MEANINGFUL=$(printf '%s' "${AAR_JSON}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('meaningful', False))" 2>/dev/null || echo "False")
+AAR_RECALL_HINT=$(printf '%s' "${AAR_JSON}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('recall_hint', ''))" 2>/dev/null || echo "")
+
+# Guardrail-2 (cost): skip capture when the cost circuit breaker is exhausted,
+# mirroring the handoff page-out precedent (Phase 3.5). A post-hoc capture must
+# never push an already-over-budget task further over budget.
+AAR_COST_OK=1
+if [ "${HAS_COST_TRACKING}" = "1" ]; then
+  AAR_COST_VERDICT=$(python3 "${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
+    --state-dir "${STATE_DIR}" --task-id "${TASK_ID}" --check-breaker 2>/dev/null) || true
+  if [ "${AAR_COST_VERDICT}" = "exceeded" ]; then
+    AAR_COST_OK=0
+  fi
+fi
+
+if [ "${AAR_COST_OK}" != "1" ]; then
+  # Guardrail-2 skip.
+  log_progress "AAR_DEBRIEF_SKIPPED" "reason=cost_exceeded"
+elif [ "${AAR_MEANINGFUL}" = "True" ]; then
+  # Guardrail-1 satisfied: meaningful signals present → capture to project layer.
+  # mnemos is the existing AI-agnostic memory contract; capture is a no-op when
+  # no memory backend is installed.
+  MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+  if command -v "${MEMORY}" >/dev/null 2>&1; then
+    "${MEMORY}" capture \
+      --content "AAR memo (task ${TASK_ID}): ${AAR_RECALL_HINT}" \
+      --layer project 2>/dev/null || true
+  fi
+  log_progress "AAR_DEBRIEF" "meaningful=true captured recall_hint to project memory"
+else
+  # Guardrail-1 gate: clean run, no signals worth capturing → skip (no noise).
+  log_progress "AAR_DEBRIEF_SKIPPED" "reason=not_meaningful"
+fi
+```
+
+The two events are added to the Phase 0 event catalog
+(`supervisor-bootstrap.md` Progress Mirroring):
+
+| EVENT | When emitted | Detail |
+|---|---|---|
+| `AAR_DEBRIEF` | Phase 3 close-out — debrief ran, signals were meaningful (Guardrail-1), cost breaker not exhausted (Guardrail-2), and the AAR memo was captured to project memory | `meaningful=true captured recall_hint to project memory` |
+| `AAR_DEBRIEF_SKIPPED` | Phase 3 close-out — debrief skipped without capture, either because no meaningful signals existed (Guardrail-1) or because the cost circuit breaker was exhausted (Guardrail-2) | `reason={not_meaningful\|cost_exceeded}` |
+
+**Ship-threshold (user-visible delta).** Over repeated runs of similar task
+shapes, the captured AAR memo is recalled by the analyst/planner and used to
+proactively harden the next `pipeline.json` (enable `tdd_parallel`, retain the
+reviewer stage, widen test coverage), **reducing repeat reviewer rejections and
+quality-loop loop-backs** on recurring work.
+
+If `telemetry-aggregate.py` is absent or the debrief crashes, this step is a
+no-op — it logs nothing and never blocks close-out (out-of-band rule).
+
 #### 3. Clear active task marker
 
 Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see
