@@ -45,6 +45,24 @@ fi
 
 If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
 
+### Consume a recalled AAR memo as a plan-shaping hint
+
+The recall above may surface an **After-Action Review (AAR) memo** captured by a
+prior run's Phase 3 close-out (see `core/rules/memory-governance.md`
+§ After-Action Review (AAR) Memo). When `memory.md` contains an AAR memo whose
+`task_shape` matches the current task, treat its `recall_hint` as a
+**deterministic plan-shaping hint** when you build `pipeline.json`:
+
+- Prefer `{ "agents": [...], "tdd_parallel": true }` for the recurring
+  implementation stage the memo flagged.
+- Retain the solo `["reviewer"]` stage (never drop it on the memo's advice).
+- Widen planned test coverage for the surface the memo identified as repeatedly
+  rejected.
+
+The AAR memo is a **hint only** — it shapes the plan, it never substitutes for
+verification, and it never relaxes the reviewer stage or the quality loop. If no
+AAR memo is present, plan exactly as before.
+
 ## Workflow
 
 ### Step 1 — Read context
