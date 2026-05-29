@@ -1187,3 +1187,246 @@ class TestTelemetryAggregate:
             env=env_with_home,
         )
         assert r.returncode == 3
+
+
+# --------------------------------------------------------------------------- #
+# AAR debrief mode (--debrief)                                                #
+# --------------------------------------------------------------------------- #
+#
+# Contract (issue #129, Big Five Closed-Loop Communication / AAR learning loop):
+#   --debrief --task-id <id> distills a single task's post-run signals into an
+#   After-Action Review memo. It reuses aggregate_task() — no new schema/state
+#   file. Output carries a deterministic `meaningful` flag, a `recall_hint`, and
+#   the distilled signal fields, in both --format text and --format json.
+
+
+def _seed_task(state_dir: Path, task_id: str, *, retry_rows: list[dict],
+               blockers: list[str], stages: int = 2) -> Path:
+    """Create a task dir with register + pipeline + a progress buffer whose
+    STARTED/STAGE/RETRY/COMPLETED rows model the post-run signals."""
+    td = state_dir / "tasks" / task_id
+    (td / "context").mkdir(parents=True)
+    _write_register(td, task_id=task_id, current_phase="completed")
+
+    pipeline = {
+        "schema_version": 1,
+        "task": "aar debrief test",
+        "stages": ["backend", "reviewer"],
+        "completed_stages": stages,
+    }
+    if blockers:
+        # A blocked register surfaces blockers in aggregate_task()'s row.
+        reg = json.loads((td / "register.json").read_text())
+        reg["current_phase"] = "blocked"
+        reg["blocked_by"] = blockers
+        (td / "register.json").write_text(json.dumps(reg))
+    (td / "pipeline.json").write_text(json.dumps(pipeline))
+
+    rows = [
+        {"ts": "2026-01-01T12:00:00Z", "trace_id": "x",
+         "task_id": task_id, "event": "STARTED"},
+        {"ts": "2026-01-01T12:00:30Z", "trace_id": "x",
+         "task_id": task_id, "event": "STAGE", "stage": 1},
+    ]
+    rows.extend(retry_rows)
+    terminal = "BLOCKED" if blockers else "COMPLETED"
+    rows.append({"ts": "2026-01-01T12:05:00Z", "trace_id": "x",
+                 "task_id": task_id, "event": terminal})
+    _write_progress_jsonl(td, rows)
+    return td
+
+
+def _retry_row(task_id: str, ts: str, detail: str) -> dict:
+    return {"ts": ts, "trace_id": "x", "task_id": task_id,
+            "event": "RETRY", "detail": detail}
+
+
+class TestAarDebrief:
+    def test_debrief_requires_task_id(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--debrief without --task-id → exit 3 (invalid args)."""
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--debrief",
+            env=env_with_home,
+        )
+        assert r.returncode == 3
+        assert "task-id" in r.stderr.lower()
+
+    def test_debrief_meaningful_on_retries_text(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """A task with retries → exit 0, meaningful, recall_hint present (text)."""
+        task_id = "20260101-130000-0"
+        _seed_task(
+            state_dir, task_id,
+            retry_rows=[_retry_row(task_id, "2026-01-01T12:01:00Z",
+                                   "attempt 2 — crash")],
+            blockers=[],
+        )
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            "--debrief",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        assert "AAR Debrief" in r.stdout
+        assert "meaningful  : yes" in r.stdout
+        # recall_hint line is present and non-empty for a meaningful debrief.
+        hint_line = next(
+            (ln for ln in r.stdout.splitlines() if ln.strip().startswith("recall_hint")),
+            "",
+        )
+        assert hint_line and "(none" not in hint_line
+
+    def test_debrief_meaningful_json_shape(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--format json emits a parseable object with the required fields."""
+        task_id = "20260101-130001-0"
+        _seed_task(
+            state_dir, task_id,
+            retry_rows=[
+                _retry_row(task_id, "2026-01-01T12:01:00Z",
+                           "attempt 2 — reviewer_rejected reason=review_needs_changes"),
+            ],
+            blockers=[],
+        )
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            "--debrief", "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        memo = json.loads(r.stdout)
+        assert memo["meaningful"] is True
+        assert isinstance(memo["recall_hint"], str) and memo["recall_hint"]
+        # Distilled signal fields are present.
+        assert memo["retries"] == 1
+        assert memo["loop_backs"] == 1
+        assert memo["blockers"] == []
+
+    def test_debrief_loop_back_detected_from_needs_changes_detail(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """A RETRY whose detail mentions NEEDS_CHANGES counts as a loop-back."""
+        task_id = "20260101-130002-0"
+        _seed_task(
+            state_dir, task_id,
+            retry_rows=[
+                _retry_row(task_id, "2026-01-01T12:01:00Z",
+                           "attempt 2 — reviewer NEEDS_CHANGES"),
+                _retry_row(task_id, "2026-01-01T12:02:00Z",
+                           "attempt 3 — reviewer_rejected reason=tests_failed"),
+            ],
+            blockers=[],
+        )
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            "--debrief", "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        memo = json.loads(r.stdout)
+        assert memo["loop_backs"] == 2
+
+    def test_debrief_meaningful_on_blockers_only(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Blockers with zero retries still makes the run meaningful."""
+        task_id = "20260101-130003-0"
+        _seed_task(
+            state_dir, task_id,
+            retry_rows=[],
+            blockers=["crash_budget_exceeded"],
+        )
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            "--debrief", "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        memo = json.loads(r.stdout)
+        assert memo["meaningful"] is True
+        assert memo["retries"] == 0
+        assert "crash_budget_exceeded" in memo["blockers"]
+
+    def test_debrief_clean_run_not_meaningful(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """A clean run (no retries, no loop-backs, no blockers) → meaningful=false,
+        empty recall_hint, exit 0 (Guardrail-1 polarity)."""
+        task_id = "20260101-130004-0"
+        _seed_task(state_dir, task_id, retry_rows=[], blockers=[])
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            "--debrief", "--format", "json",
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        memo = json.loads(r.stdout)
+        assert memo["meaningful"] is False
+        assert memo["recall_hint"] == ""
+        assert memo["retries"] == 0
+        assert memo["loop_backs"] == 0
+        assert memo["blockers"] == []
+
+    def test_debrief_missing_task_exits_3(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """--debrief on a non-existent task id → exit 3 (not a crash)."""
+        r = script_runner(
+            "telemetry-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", "20260101-999999-0",
+            "--debrief",
+            env=env_with_home,
+        )
+        assert r.returncode == 3
+
+    def test_debrief_is_deterministic(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Running --debrief twice on the same task yields identical output —
+        the memo body must be a pure function of task data (no now())."""
+        task_id = "20260101-130005-0"
+        _seed_task(
+            state_dir, task_id,
+            retry_rows=[_retry_row(task_id, "2026-01-01T12:01:00Z",
+                                   "attempt 2 — reviewer_rejected reason=review_needs_changes")],
+            blockers=[],
+        )
+        args = ("telemetry-aggregate.py", "--state-dir", str(state_dir),
+                "--task-id", task_id, "--debrief", "--format", "json")
+        r1 = script_runner(*args, env=env_with_home)
+        r2 = script_runner(*args, env=env_with_home)
+        assert r1.returncode == 0 and r2.returncode == 0
+        assert r1.stdout == r2.stdout
+
+    def test_debrief_direct_build_aar_memo_polarities(self):
+        """Direct unit test of build_aar_memo's meaningful gate, both polarities."""
+        clean_row = {"task_id": "t", "retries": 0, "blockers": [],
+                     "stages_total": 2}
+        memo = telemetry.build_aar_memo(clean_row, [])
+        assert memo["meaningful"] is False
+        assert memo["recall_hint"] == ""
+
+        noisy_row = {"task_id": "t", "retries": 2, "blockers": [],
+                     "stages_total": 2}
+        events = [{"event": "RETRY", "detail": "attempt 2 — reviewer_rejected"}]
+        memo2 = telemetry.build_aar_memo(noisy_row, events)
+        assert memo2["meaningful"] is True
+        assert memo2["loop_backs"] == 1
+        assert memo2["recall_hint"]
