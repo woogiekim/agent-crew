@@ -166,6 +166,17 @@ invocation in SKILL.md; generic adds guidance).
   rate, hallucination-signal rate, rollback frequency, and human-intervention
   rate. When `{TASK_DIR}/context/quality-metrics.json` exists, evaluator labels
   take precedence over weaker task/blocker text-signal fallbacks.
+- `smm-aggregate.py` — Shared Mental Model (SMM) single-view (issue #129
+  Finding #2). Renders the whole per-task state as one coherent read-only block
+  by uniting the five fragmented sources — `pipeline.json`, `progress.log`,
+  `progress.buffer.jsonl`, `register.json`, and `handoff.md` (the one source
+  `telemetry-aggregate.py` does not read). Reuses telemetry readers
+  (`resolve_state_dir`, `read_register`, `read_progress_buffer`,
+  `read_progress_log`, `list_task_dirs`, `aggregate_task`) so it adds only the
+  handoff reader and rendering layer — no net-new schema. Named as a renderer
+  (not `repair-*`/`update-*`) because it is strictly read-only; degrades
+  gracefully on any missing/malformed source and renders clear per-task blocks
+  for N>1 parallel runs. Backs `core/commands/smm.md`.
 - `auto-issue-reporter.py` — native reporting engine for explicit agent-crew
   bug/error reports. It detects narrow agent-crew + error signals, redacts
   common secrets, deduplicates locally, stores reports in the local outbox, and

@@ -885,6 +885,12 @@ Pipeline stages:
 - `crew:status` is read-only in snapshot mode. It never modifies any state file.
   The `--collect` flag is the only mode that modifies state (merging branches,
   marking session as completed, writing `approval.md`).
+- For the **expanded, on-demand single-view** that unites all five per-task
+  state sources (including `handoff.md`, which this snapshot does not read) into
+  one coherent read-only block per task, use `crew:smm`
+  (`core/commands/smm.md`, backed by `core/scripts/smm-aggregate.py`). It is the
+  Shared Mental Model counterpart to this compact snapshot and renders clear
+  per-task sections for N>1 interleaved parallel runs.
 - **Session-aware mode** is the primary mode when a background session (`session.json`
   with `status: running`) is detected. It shows all tasks in the session, not just
   the most recently modified task directory.
