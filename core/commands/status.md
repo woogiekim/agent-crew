@@ -264,8 +264,56 @@ To wait for all tasks and finalize: crew:status --collect
 Session completed. To see full results, read result.md for each task above.
 ```
 
-**If `--collect` was NOT passed** (snapshot mode): **STOP here**. Print the
-table above and exit. Do not wait or enter any loop.
+**If `--collect` was NOT passed** (snapshot mode): print the table, then run
+the opportunistic host-task reconcile pass described in §3S.bis, then exit.
+Do not wait or enter any loop.
+
+#### 3S.bis. Snapshot opportunistic host-task reconcile (issue #128)
+
+For each task in `session.json` whose `result.md` already carries a terminal
+`STATUS:` line, run the planner script once and apply any pending host
+TaskList transitions. This catches the issue-reported scenario where a P4
+background supervisor finished but the host TaskList rows stayed
+`in_progress`/`pending` — the user runs plain `crew:status` to check
+progress, the snapshot table prints first (the reconcile MUST NOT delay the
+return), and the reconcile then quietly flips any stale host rows to their
+correct terminal status.
+
+Gated on `HAS_TASK_TOOLS == 1`. When `task_tools=false` this entire block is
+a strict no-op. Per-call failures (host transient errors) are absorbed —
+never crash the snapshot command on a host race.
+
+```bash
+if [ "${HAS_TASK_TOOLS}" = "1" ]; then
+  python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s.get('tasks', []):
+    if t.get('status') in ('completed', 'blocked'):
+        print(t['task_dir'])
+" 2>/dev/null | while IFS= read -r TASK_DIR_ITER; do
+    [ -z "${TASK_DIR_ITER}" ] && continue
+    RECONCILE_PLAN=$(python3 "${AGENT_CREW_HOME}/scripts/reconcile-host-tasks.py" \
+      --task-dir "${TASK_DIR_ITER}" --format json 2>/dev/null) || continue
+    # For each action in the plan, TaskGet → skip if already terminal → TaskUpdate.
+    # The supervisor runtime issues the host calls; this Python block only emits
+    # the (host_task_id, target_status) pairs.
+    echo "${RECONCILE_PLAN}" | python3 -c "
+import json, sys
+plan = json.load(sys.stdin)
+for a in plan.get('reconcile_plan', []):
+    print(a['host_task_id'], a['target_status'], sep='\t')
+" 2>/dev/null | while IFS=$'\t' read -r HTID TARGET; do
+      [ -z "${HTID}" ] && continue
+      # CURRENT=$(TaskGet(taskId=${HTID}).status)
+      # if [ "${CURRENT}" != "completed" ] && [ "${CURRENT}" != "blocked" ] && [ "${CURRENT}" != "cancelled" ]; then
+      #   TaskUpdate(taskId=${HTID}, status="${TARGET}")
+      # fi
+      :  # capability-gated host calls issued by the runtime
+    done
+  done
+fi
+```
 
 ### 4S. Collect mode (--collect only)
 
@@ -346,6 +394,50 @@ Apply the same crash-retry rule as `crew:run` Step 7: if a task's `result.md`
 is missing or lacks a STATUS field after the poll loop exits, treat it as a
 crash and re-invoke the supervisor for that task (up to 3 retries, passing
 the same `TASK_DIR` so the supervisor resumes from `pipeline.json`).
+
+### 4S.5. Reconcile host TaskList (--collect only, capability-gated, issue #128)
+
+After the poll loop exits — every task is now in a terminal state — sweep the
+host TaskList one more time. This is the authoritative reconcile pass: it
+covers the case where a supervisor crashed before Phase 3 (so its in-process
+Step 2b never ran) or where stage close-out missed a per-stage `TaskUpdate`
+because of a transient host error.
+
+Gated on `HAS_TASK_TOOLS == 1`. When `task_tools=false` this block is a strict
+no-op — the file-based `result.md` STATUS remains the single source of truth.
+
+```bash
+if [ "${HAS_TASK_TOOLS}" = "1" ]; then
+  python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+for t in s.get('tasks', []):
+    if t.get('status') in ('completed', 'blocked'):
+        print(t['task_dir'])
+" 2>/dev/null | while IFS= read -r TASK_DIR_ITER; do
+    [ -z "${TASK_DIR_ITER}" ] && continue
+    RECONCILE_PLAN=$(python3 "${AGENT_CREW_HOME}/scripts/reconcile-host-tasks.py" \
+      --task-dir "${TASK_DIR_ITER}" --format json 2>/dev/null) || continue
+    echo "${RECONCILE_PLAN}" | python3 -c "
+import json, sys
+plan = json.load(sys.stdin)
+for a in plan.get('reconcile_plan', []):
+    print(a['host_task_id'], a['target_status'], sep='\t')
+" 2>/dev/null | while IFS=$'\t' read -r HTID TARGET; do
+      [ -z "${HTID}" ] && continue
+      # CURRENT=$(TaskGet(taskId=${HTID}).status)
+      # if [ "${CURRENT}" != "completed" ] && [ "${CURRENT}" != "blocked" ] && [ "${CURRENT}" != "cancelled" ]; then
+      #   TaskUpdate(taskId=${HTID}, status="${TARGET}")
+      # fi
+      :  # capability-gated host calls issued by the runtime
+    done
+  done
+fi
+```
+
+This sweep iterates **every** entry in the reconcile plan (parent + stage)
+because at this point no in-process supervisor remains — the orchestrator
+(via `crew:status --collect`) is the only party that can transition the rows.
 
 ### 5S. Run Summary (--collect only)
 

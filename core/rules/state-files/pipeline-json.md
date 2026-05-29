@@ -332,6 +332,8 @@ Primary consumers:
 - `core/agents/supervisor-bootstrap.md` Phase 0 — read `completed_stages` + `stage_agent_status` to drive resume.
 - `core/agents/supervisor-stages.md` Phase 2 — read `stages`, write per-agent + per-stage status.
 - `core/agents/supervisor-retry.md` Phase 2 — read `host_task_ids` for P7 crash classification.
+- `core/agents/supervisor-retry.md` Phase 3 Step 2b (issue #128) — pass `host_task_ids` plus `host-task-id.txt` plus `result.md` to `core/scripts/reconcile-host-tasks.py`, which emits a plan listing every `(host_task_id, target_status)` transition the supervisor's defensive sweep should perform. The helper is a pure planner and never calls the host directly.
+- `core/commands/status.md` Step 3S.bis (snapshot opportunistic) + Step 4S.5 (collect exhaustive) — same `reconcile-host-tasks.py` invocation. These call sites cover the case where a supervisor crashed before its own Phase 3 sweep could run.
 - `core/commands/status.md` Step 6 — read `stages` + `completed_stages` for the stages list.
 
 | Situation | Behavior |

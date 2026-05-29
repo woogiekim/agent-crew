@@ -500,6 +500,61 @@ The `FINAL_HOST_STATUS` mapping:
 - `STATUS: CANCELLED` in `result.md` (plan-approval gate cancel) → `TaskUpdate(status="completed")`
   so the host task list does not accumulate stale tasks.
 
+##### Defensive per-stage sweep (issue #128)
+
+Step 2b above transitions the supervisor's own parent host task. Per-stage
+child host tasks (recorded under `pipeline.json.host_task_ids` by Phase
+1c-bis) are normally transitioned at each stage's `STAGE_DONE` block in
+`supervisor-stages.md`. Those per-stage transitions can be missed when the
+stage was reached on the BLOCKED Recovery path, when a token-truncation
+interrupted the supervisor between `STAGE_DONE` and Phase 3, or when the host
+encountered a transient error on the per-stage call. Issue #128 reports this
+as stale `in_progress`/`pending` host TaskList rows after the task is
+actually terminal.
+
+Run the planner script once after Step 2b's parent transition. It reads
+`result.md` + `pipeline.json` + `host-task-id.txt` and emits a JSON plan
+listing every `(host_task_id, target_status)` transition the host should
+make. The supervisor then iterates **stage-scope** entries only (the parent
+was already handled above) and issues an idempotent `TaskGet`-then-`TaskUpdate`
+for each. The sweep is gated on `HAS_TASK_TOOLS == 1`; missing or non-terminal
+`result.md` and host transient errors are absorbed silently — this is a
+best-effort defensive sweep and must never block Phase 3 close-out.
+
+```bash
+if [ "${HAS_TASK_TOOLS}" = "1" ]; then
+  RECONCILE_PLAN=$(python3 "${AGENT_CREW_HOME}/scripts/reconcile-host-tasks.py" \
+    --task-dir "${TASK_DIR}" --format json 2>/dev/null) || RECONCILE_PLAN=""
+  if [ -n "${RECONCILE_PLAN}" ]; then
+    # Iterate stage-scope entries only — Step 2b already handled the parent.
+    # python3 emits one TSV row per pending stage entry; the supervisor then
+    # issues TaskGet + (conditional) TaskUpdate for each. Per-call failures
+    # are tolerated silently (host race conditions must never block Phase 3).
+    echo "${RECONCILE_PLAN}" | python3 -c "
+import json, sys
+plan = json.load(sys.stdin)
+for a in plan.get('reconcile_plan', []):
+    if a.get('scope') != 'stage':
+        continue
+    print(a['host_task_id'], a['target_status'], sep='\t')
+" 2>/dev/null | while IFS=$'\t' read -r STAGE_TASK_ID TARGET_STATUS; do
+      [ -z "${STAGE_TASK_ID}" ] && continue
+      # CURRENT_STATUS=$(TaskGet(taskId=${STAGE_TASK_ID}).status)
+      # if [ "${CURRENT_STATUS}" != "completed" ] && [ "${CURRENT_STATUS}" != "blocked" ] && [ "${CURRENT_STATUS}" != "cancelled" ]; then
+      #   TaskUpdate(taskId=${STAGE_TASK_ID}, status="${TARGET_STATUS}")
+      # fi
+      :  # host tool calls are issued by the runtime — guard each one with TaskGet
+    done
+  fi
+fi
+```
+
+The script never calls into the host itself — that separation keeps it
+AI-agnostic and unit-testable. Tests live at
+`tests/python/test_reconcile_host_tasks.py`. When `HAS_TASK_TOOLS == 0` or
+the script returns non-zero (no parseable STATUS, missing `result.md`), the
+sweep is a strict no-op.
+
 After calling `TaskUpdate`, collect the commit count and emit:
 
 ```
