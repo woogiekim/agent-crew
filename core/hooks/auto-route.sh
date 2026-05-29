@@ -589,6 +589,44 @@ if not detected_type:
         detected_type = "project implementation"
         suggested_pipeline = 'crew:run "your request"'
 
+# Issue #127 — mutating-verb-without-read-only-signal fallback.
+#
+# Before this guard, any ACTION_PAT match that did NOT also match a domain or
+# supplementary heuristic fell through to `emit_question_route("analyst",
+# "general user request")` below — routing clearly mutating requests like
+# "fix the bug", "add a test", "commit the changes", "rename a variable",
+# "refactor this function", "remove the legacy alias", "change the default
+# value", or "버그를 수정해주세요" to crew:agent instead of crew:run.
+#
+# Acceptance criterion #3 of issue #127 requires that mutating requests
+# always route through crew:run (STOP) with the existing approval and review
+# gates. This guard tightens the fallback so a bare mutating verb is treated
+# as a project implementation request unless a read-only signal is present.
+#
+# Read-only signals that override the mutating verb (preserve ROUTE):
+#   - QUESTION_PAT (the prompt is shaped as a question)
+#   - READONLY_REVIEW_PAT (review / evaluate / inspect / diagnose / 검토)
+#   - READONLY_COMPLAINT_PAT (안 쓰 / 안 되 / 자꾸 ...)
+#   - Explicit "do not edit / read-only / 수정하지 마 / 읽기 전용"
+#
+# This guard never relaxes STOP for any verb; it only converts ambiguous
+# "ACTION_PAT + no domain + no read-only signal" prompts from ROUTE to STOP.
+if not detected_type and match(ACTION_PAT):
+    has_readonly_signal = (
+        match(QUESTION_PAT)
+        or match(READONLY_REVIEW_PAT)
+        or match(READONLY_COMPLAINT_PAT)
+        or bool(re.search(
+            r"do\s+not\s+edit|read[- ]only|no\s+files?\s+edited|"
+            r"수정하지\s*마|읽기\s*전용",
+            prompt,
+            re.IGNORECASE,
+        ))
+    )
+    if not has_readonly_signal:
+        detected_type = "project implementation"
+        suggested_pipeline = 'crew:run "your request"'
+
 if not detected_type:
     emit_question_route("analyst", "general user request")
 

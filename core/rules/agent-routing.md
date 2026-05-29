@@ -107,6 +107,102 @@ because the user is asking about session state, not code semantics.
 
 ---
 
+## Read-only vs mutating: hook decision table
+
+This table is the **single source of truth** for the read-only vs mutating
+routing split that `core/hooks/auto-route.sh` enforces and that the README
+describes in the "Auto-Execution Triggers" section. Both the hook and the
+test suite (`tests/python/test_auto_route_issue_127.py`) read this table at
+runtime — adding or changing a row updates the live contract.
+
+The split (per issue #127):
+
+- **Read-only Q&A / explanations / diagnostics / status / history → ROUTE → `crew:agent`.**
+  Direct agent invocation, no supervisor pipeline, no worktree. crew:agent is
+  the default path for read-only work so simple lookups stay cheap.
+- **Implementation / mutation / issue publication / git ops → STOP → `crew:run`.**
+  Full supervisor pipeline with the existing requirements collection,
+  plan approval, stage execution, and reviewer gates.
+
+The row format is `| "prompt" | ROUTE | reason |` or `| "prompt" | STOP | reason |`.
+Every row is exercised by the docs/hook consistency test, so adding a new
+example automatically pins the hook's behavior for that input.
+
+| Example prompt | Directive | Reason |
+|---|---|---|
+| `"explain how the supervisor works"` | ROUTE | Question — codebase explanation |
+| `"what just ran in this session"` | ROUTE | Question — session history lookup |
+| `"show me the most recent commit"` | ROUTE | Question — git history Q (read-only) |
+| `"list the available agents"` | ROUTE | Question — read-only enumeration |
+| `"describe the routing flow"` | ROUTE | Question — codebase description |
+| `"어떻게 동작하나요?"` | ROUTE | Korean question (read-only) |
+| `"status"` | ROUTE | Trivial intent — read-only project status |
+| `"Review the routing classifier for gaps; do not edit files."` | ROUTE | Read-only review with explicit "do not edit" marker |
+| `"fix the bug in auto-route"` | STOP | Mutating verb (fix) — implementation |
+| `"add a new test for routing"` | STOP | Mutating verb (add) — implementation |
+| `"update README.md to mention X"` | STOP | Mutating verb (update) + file extension |
+| `"commit the staged changes"` | STOP | Git operation — mutating |
+| `"rename a variable"` | STOP | Mutating verb (rename) — refactor |
+| `"refactor this function"` | STOP | Mutating verb (refactor) |
+| `"remove the legacy alias"` | STOP | Mutating verb (remove) |
+| `"change the default value"` | STOP | Mutating verb (change) |
+| `"create issue for routing gap"` | STOP | Issue publication |
+| `"push"` | STOP | Git operation — push |
+| `"merge to main"` | STOP | Git operation — merge |
+| `"배포해주세요"` | STOP | Korean deploy — mutating |
+| `"버그를 수정해주세요"` | STOP | Korean fix (수정) — mutating |
+
+### Read-only signal overrides
+
+When a prompt mixes a mutating verb with an explicit read-only signal, the
+read-only signal wins (preserves ROUTE). Recognized signals:
+
+- A question marker (`QUESTION_PAT` in the hook: why / what / how / explain /
+  Korean question endings such as 어떻게 / 뭐야 / 인가요 / 됩니까).
+- A read-only review verb (`READONLY_REVIEW_PAT`: review / evaluate /
+  inspect / diagnose / 검토 / 평가).
+- A read-only complaint pattern (`READONLY_COMPLAINT_PAT`: 안 쓰 / 안 되 /
+  자꾸 ...) without a paired mutation verb.
+- An explicit marker: `do not edit`, `read-only`, `no files edited`,
+  `수정하지 마`, `읽기 전용`.
+
+This is why `"Inspect the routing classifier and identify gaps. Do not edit files."`
+still routes to `crew:agent` even though it contains the action verb
+"identify".
+
+### How the hook enforces the split
+
+Phases of `core/hooks/auto-route.sh` (in order):
+
+1. **Fast path** — short trivial intents (`status`, `push`, `merge`, `git push`, …)
+   are classified up front. `status` and `git status` go to ROUTE (read-only);
+   everything else goes to STOP.
+2. **Question detection** — prompts shaped as questions (`QUESTION_PAT` matches
+   AND no mutating action verb) route to ROUTE → analyst or historian per the
+   Auto-Routing Rules table above.
+3. **Read-only review detection** — `READONLY_REVIEW_PAT` + `QUESTION_PAT`
+   without `ACTION_PAT` (or with explicit "do not edit") routes to ROUTE → analyst.
+4. **Domain detection** — `ACTION_PAT` + (backend / frontend / fullstack /
+   design) routes to STOP → crew:run with a suggested pipeline.
+5. **Extended detection** — `ACTION_PAT` paired with a file extension,
+   agent-crew keyword, workflow verb, memory verb, or artifact verb routes
+   to STOP → crew:run.
+6. **Mutating-verb fallback (issue #127)** — `ACTION_PAT` matched but no
+   prior layer fired AND no read-only signal is present → STOP → crew:run.
+   This guard prevents bare mutating verbs (`fix`, `add`, `commit`, `rename`,
+   `refactor`, `remove`, `change`, Korean `수정`) from leaking into the
+   read-only ROUTE path.
+7. **General read-only fallback** — no `ACTION_PAT` match, no specific
+   domain match → ROUTE → analyst ("general user request"). This keeps
+   crew:agent as the default for non-action conversational prompts.
+
+The fallback ordering preserves both acceptance criteria of issue #127:
+read-only Q&A stays on crew:agent (#1, #2) while mutating requests always
+land on crew:run (#3). Docs and hook stay in sync because this table is
+testable from a single source (#4).
+
+---
+
 ## How orchestrators must use this file
 
 1. **Mutating-task guard** — if the task string requests any file/document/
