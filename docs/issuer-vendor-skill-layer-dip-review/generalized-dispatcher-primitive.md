@@ -15,8 +15,8 @@ case should ship on its own evidence regardless of how this doc lands.
 After classifying every agent currently under `core/agents/` (and the
 companion sub-modules), the dispatcher + `<agent>-<tool>` skill pattern is:
 
-- **Strong-fit (6 agents):** `backend`, `frontend`, `devops`, `issuer-done`,
-  `designer`, `documenter`.
+- **Strong-fit (6 agents):** `backend`, `frontend`, `devops`, `issuer`
+  (existing reference implementation), `designer`, `documenter`.
 - **Moderate-fit (4 agents):** `planner`, `mentor` (alias `learning-mentor`),
   `reviewer`, `analyst`.
 - **Weak-fit (9 agents):** `historian`, `resolver`, `requirements`,
@@ -42,7 +42,7 @@ vendor-specific prose into the agent file itself?**
 | `backend` | **strong** | Behaviour differs across runtimes (Spring Boot, NestJS, Express, FastAPI, Rails, Go HTTP, gRPC). Today the agent's prose stays generic but the *skills* it loads (`api-design.md`, `database-design.md`, `effective-java.md`, `effective-kotlin.md`, etc.) already lean to specific stacks. A `<agent>-<lang>-<framework>` dispatcher formalizes the split. |
 | `frontend` | **strong** | React vs Vue vs Angular vs Svelte vs Solid require distinct idioms. Today the agent must hold all of them; a dispatcher loads `frontend-react-vite`, `frontend-vue3`, etc. |
 | `devops` | **strong** | Cloud (AWS / GCP / Azure / fly.io / Vercel / on-prem k8s) and CI (GitHub Actions / GitLab CI / Buildkite / CircleCI) are the axis. Pattern is identical to `issuer`'s tracker axis. |
-| `issuer-done` | **strong** | The original case. Already done; this PR set ratifies it. |
+| `issuer` | **strong** | The original case — already shipped as the reference implementation (`core/agents/issuer.md` + `core/rules/agent-tool-dispatch.md`, commit `1f89c02`). This PR set ratifies the pattern; no further work on the issuer agent itself is required. |
 | `designer` | **strong** | Figma vs Sketch vs Penpot vs raw HTML mockup is a vendor axis. Today the agent prose handles only Figma-like tooling. |
 | `documenter` | **strong** | Notion vs Outline vs Confluence vs raw-markdown vs Slab is a vendor axis. Each tool's create / update / link semantics differ enough to dwarf the prose. |
 | `planner` | **moderate** | Behaviour is mostly LLM reasoning, but project-management tool integration (Plane / Jira / Linear / GitHub Projects) is a real axis when the planner writes the plan to a tracker. If the planner never writes to a tracker, dispatcher buys nothing. |
@@ -336,7 +336,10 @@ Three gains, in priority order:
    NestJS, FastAPI, Rails, Go HTTP and gRPC is **always** loaded in full
    by every backend invocation, even when the project is single-stack.
    Dispatcher + per-framework skills load only the relevant skill —
-   typical 4–8× token reduction on backend stages for single-stack repos.
+   expected several-fold reduction in always-loaded prompt size for
+   single-stack repositories; precise multiplier deferred to a Wave-B
+   operational measurement once at least one strong-fit agent has
+   shipped the dispatcher pattern.
 3. **Maintainability.** Today, when Spring Boot 3.5 changes a contract,
    the backend.md owner edits the monolithic file and risks regression
    for NestJS users. With dispatcher + per-framework skills, only

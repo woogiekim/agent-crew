@@ -221,6 +221,62 @@ channel is being adopted. This is the single design question this PR has to
 answer; if reviewers prefer channel 1 we keep the PR purely to the dispatcher
 + routing edits and ship the skill content in a doc.
 
+### 5.1 Channel B — operational design sketch
+
+The "reference-template" idea above is thin as a one-paragraph bullet. The
+remainder of § 5 expands it into a concrete operational design so it can be
+evaluated against Channel A on equal footing.
+
+**Template location.** Each tracker adapter ships as
+`core/agents/skills/templates/issuer-<tool>.md` (e.g.
+`core/agents/skills/templates/issuer-plane.md`,
+`core/agents/skills/templates/issuer-github.md`). Extension is `.md` —
+identical shape to the user-layer file at
+`~/.agent-crew/user/skills/issuer-<tool>.md`. The user-layer file remains
+the runtime artifact the dispatcher loads; the template is purely a *seed*.
+
+**`crew:setup` behaviour.** On first install (or first invocation of
+`crew:setup` after a fresh checkout), for each template:
+
+- If `~/.agent-crew/user/skills/issuer-<tool>.md` does NOT exist, copy from
+  the matching template.
+- If it DOES exist, log `user skill already present, template not applied`
+  and continue. NEVER overwrite.
+
+This makes onboarding "drop-the-tool-list and re-run setup", with no risk
+of clobbering a user's existing customisations.
+
+**`crew:update` behaviour (the critical piece).** Updates are where
+naïve template systems break the user-layer policy. The rule is:
+
+- NEVER overwrite a user-layer skill from a template. Period.
+- On every update, compare the installed user-layer skill against the
+  corresponding template byte-for-byte. If they differ, surface a single
+  advisory line per agent:
+  `[crew:update] templates/<name> diverged from user skill (N lines); run 'crew:update --reconcile-skills' to compare`.
+- `crew:update --reconcile-skills` is an opt-in flow: it writes a unified
+  diff to `~/.agent-crew/state/{PROJECT}/reconcile/<name>.diff` and stops.
+  The user reads the diff out-of-band and decides whether (and how) to
+  hand-merge. No automatic write to the user layer ever happens.
+
+**Policy alignment.** The `1f89c02` user-layer-only policy is honoured by
+construction: templates live under `core/agents/skills/templates/` (a *seed*
+path that is explicitly out of the dispatcher's load path), never under
+`core/agents/skills/<tool>.md` (which `1f89c02` explicitly removed). The
+dispatcher's runtime contract — "load `~/.agent-crew/user/skills/issuer-<tool>.md`
+into prompt" — does not change.
+
+**Implementation footprint.** Estimated ~30–60 LOC across
+`core/setup/install.sh` (the seed-on-first-install branch),
+`core/commands/update.md` (the diverged-advisory emit and the
+`--reconcile-skills` flag), and one new helper script
+`core/setup/reconcile-skills.sh` (the diff-to-state-dir flow). Wave-A scope.
+
+**Recommended channel: B**. Channel A is rejected because runtime
+knowledge-in-prompt is the whole point of the dispatcher; docs-as-reference
+defeats that. Channel C remains a tactical fallback if Wave-A framework
+appetite is constrained, but Channel B is the right durable shape.
+
 ---
 
 ## 6. Local prototype reference
