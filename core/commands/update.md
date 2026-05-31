@@ -34,6 +34,7 @@ Unlike `crew:setup`, this command:
 | none | — | `crew:update` always refreshes from the remote source repository. |
 | `--local [SOURCE_ROOT]` | — | Refresh from an existing local checkout instead of a fresh remote clone. |
 | `--all-projects` | off | After the global install and current project refresh, re-run project-local adapter setup for every registered project root. |
+| `--reconcile-skills` | off | After the standard refresh, write unified diffs for any Channel B adapter skill that has diverged from its template to `${STATE_DIR}/reconcile/<name>.diff`. NEVER mutates `~/.agent-crew/user/skills/`. The user reads each diff out-of-band and decides whether to hand-merge. See `core/rules/agent-tool-dispatch.md` § Channel B template seeding. |
 
 ## State Paths
 
@@ -174,6 +175,71 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    copy_dir_contents \
      "${AGENT_CREW_HOME}/skills" \
      "${CLAUDE_DIR}/agent-crew/skills"
+   ```
+
+   **Channel B template install + seed + reconcile** (Wave A — issue #131):
+
+   The framework ships canonical seed templates for dispatcher-pattern
+   adapter skills under `core/agents/skills/templates/` (see
+   `core/rules/agent-tool-dispatch.md` § Channel B template seeding).
+   Templates are deliberately **NOT** routed through `sync_system_skills`
+   or `merge_skills_to_discovery` — they are seeds, not runtime skills,
+   and must never land in the unified `~/.agent-crew/skills/` discovery
+   path. The flow is three explicit steps:
+
+   1. Install the templates from source → system mirror (overwrite OK —
+      this is the framework's canonical copy):
+
+      ```bash
+      mkdir -p "${AGENT_CREW_HOME}/system/agents/skills/templates"
+      if [ -d "${SOURCE_DIR}/agents/skills/templates" ]; then
+        cp -f "${SOURCE_DIR}/agents/skills/templates/"*.md \
+          "${AGENT_CREW_HOME}/system/agents/skills/templates/" 2>/dev/null || true
+      fi
+      ```
+
+      Use `cp -f` (not `cp -rf`) so only top-level `*.md` files are
+      copied; nested subdirectories under `templates/` are not used and
+      must not be installed even if a future commit accidentally adds
+      one.
+
+   2. Seed missing user-layer skills (copy-if-absent). NEVER overwrites
+      a user-edited file:
+
+      ```bash
+      AGENT_CREW_SEED_TAG="crew:update" \
+        bash "${AGENT_CREW_HOME}/setup/seed-skill-templates.sh"
+      ```
+
+   3. Reconcile-check existing user-layer skills against the new
+      templates. If any diverge, a single advisory line per skill is
+      printed; the user-skills layer is never mutated. To produce
+      actual diffs the user can review out-of-band, the operator
+      runs the opt-in `crew:update --reconcile-skills` flag (see
+      below).
+
+      ```bash
+      AGENT_CREW_RECONCILE_TAG="crew:update" \
+        bash "${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh"
+      ```
+
+   **`crew:update --reconcile-skills` (opt-in)**
+
+   When invoked with `--reconcile-skills`, run the reconcile helper in
+   `--write-diffs` mode. The helper writes a unified diff per diverged
+   skill to `${STATE_DIR}/reconcile/<name>.diff` and stops. The user
+   reads each diff out-of-band and decides whether to hand-merge. NO
+   automatic write to `~/.agent-crew/user/skills/` happens — the
+   user-layer-only policy from commit `1f89c02` is honoured by
+   construction.
+
+   ```bash
+   if [ "${1:-}" = "--reconcile-skills" ]; then
+     mkdir -p "${STATE_DIR}/reconcile"
+     AGENT_CREW_RECONCILE_TAG="crew:update" \
+       bash "${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh" \
+         --write-diffs "${STATE_DIR}/reconcile"
+   fi
    ```
 
 3.5. **Phase C3.0 Migration — Remove Stale `task-runner` Files**
@@ -454,6 +520,15 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   layer. `merge_skills_to_discovery` copies user skills after system skills
   so user skills take precedence in the unified `~/.agent-crew/skills/` view.
   User skill files are NEVER deleted or overwritten by `crew:update`.
+- Channel B adapter skill templates seeded from
+  `core/agents/skills/templates/` use copy-if-absent semantics: the
+  framework installs the template at
+  `~/.agent-crew/system/agents/skills/templates/<name>.md` (overwritable)
+  but only copies to `~/.agent-crew/user/skills/<name>.md` when the
+  user-layer file does not already exist. A user-edited adapter skill is
+  NEVER overwritten — even when the upstream template changes. The
+  `crew:update --reconcile-skills` flag surfaces divergence as diff
+  files; it never mutates the user layer.
 - Every local/remote update writes a preservation manifest under
   `${AGENT_CREW_HOME}/state/${PROJECT_NAME}/update-preservation/`. The manifest
   records before/after counts and hashes for user agents, user skills, and
@@ -1137,6 +1212,64 @@ a mock mnemos stub (no real installation required):
 no `capabilities.json` change is required.
 
 **No `settings.json` changes.** No new hook is registered.
+
+### Wave A (issue #131) — Channel B adapter skill templates
+
+Wave A formalizes the dispatcher + adapter-skill pattern that the `issuer`
+agent already proves. New framework primitives:
+
+- New rule `core/rules/agent-tool-dispatch.md` — the 5-step dispatch
+  protocol, naming convention, fallback-policy taxonomy, and Channel B
+  template seeding contract.
+- New helper `core/scripts/list-installed-adapters.sh` — enumerates
+  installed adapter skills for a dispatcher prefix (e.g. `issuer →
+  github plane`).
+- New directory `core/agents/skills/templates/` — Channel B seed source
+  with its own `README.md` describing the contract. Wave A ships the
+  primitive only; concrete templates (`issuer-plane.md`,
+  `backend-kotlin-spring.md`, etc.) land in the Wave-B/C exemplar PRs.
+- New helpers `core/setup/seed-skill-templates.sh` (copy-if-absent on
+  install/update) and `core/setup/reconcile-skill-templates.sh`
+  (advisory + opt-in `--write-diffs` mode). NEITHER helper ever
+  overwrites a user-edited file at `~/.agent-crew/user/skills/`.
+- New `crew:update --reconcile-skills` flag — opt-in diff-to-state-dir
+  flow when a user wants to see how their installed adapter skill has
+  diverged from the upstream template.
+
+**Policy invariants (preserved by construction):**
+
+1. The user-layer-only policy from commit `1f89c02` is honoured —
+   `~/.agent-crew/user/skills/` is NEVER overwritten by `crew:setup`,
+   `crew:update`, or either reconcile helper.
+2. Templates are NOT merged into the unified `~/.agent-crew/skills/`
+   discovery path. They are seeds, not runtime artifacts.
+3. The dispatcher runtime contract is unchanged: agents continue to load
+   `~/.agent-crew/user/skills/<agent>-<tool>.md` exactly as before.
+4. The pattern is AI-agnostic: the new rule documents Claude Skill tool,
+   Codex skill discovery, and generic-adapter `Read` as parallel paths;
+   helpers are pure POSIX shell with no host-tool coupling.
+
+**No migration code required.** Pure additive:
+
+- The new templates subdirectory under `core/agents/skills/` is
+  naturally excluded from the flat `*.md` copy performed by
+  `sync_system_skills` (`find -maxdepth 1`), so it does not appear in
+  the runtime `~/.agent-crew/skills/` view.
+- The new explicit install step (`mkdir -p` + `cp -f`) lands templates
+  under `~/.agent-crew/system/agents/skills/templates/` separately from
+  the runtime skill layer.
+- The new seed step is idempotent: re-running on a stable user/skills
+  layer produces zero writes.
+- The reconcile-check pass is read-only with respect to
+  `~/.agent-crew/user/skills/` — it cannot mutate the user layer even
+  when the operator explicitly asks for `--reconcile-skills` (the
+  `--write-diffs` mode writes only inside `${STATE_DIR}/reconcile/`).
+
+**Wave-B exemplars** (concrete `issuer` + `backend` agent refactors)
+are explicitly out of scope for this update and ship as separate
+follow-on PRs. See
+`docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md`
+§ 7 for the wave plan.
 
 ## Completion Message
 

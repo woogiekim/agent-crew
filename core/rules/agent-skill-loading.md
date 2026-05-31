@@ -149,3 +149,27 @@ Every skill file MUST follow the structure defined in
 > This matrix is informational. The authoritative source of truth is the
 > "## Skills (Loaded On Demand)" section in each agent file. Update both when
 > adding a new skill.
+
+---
+
+## Relation to `agent-tool-dispatch.md`
+
+This rule covers **declared** skill consumption: an agent file lists its
+required skills by path in a `## Skills (Loaded On Demand)` section.
+Dispatcher agents that load adapter skills by **convention** (e.g.
+`issuer` loading `~/.agent-crew/user/skills/issuer-<tool>.md` based on
+the detected git remote) follow the complementary 5-step protocol in
+`core/rules/agent-tool-dispatch.md`.
+
+The two conventions are not competing — they answer different
+questions:
+
+| Convention | Question answered |
+|---|---|
+| Declared skill loading (this file) | Which skills does this agent need *unconditionally*, and in what role (mandatory vs. on-demand)? |
+| Convention-based dispatch (`agent-tool-dispatch.md`) | Which adapter skill does this agent need *given runtime conditions* (git remote, framework manifest, etc.)? |
+
+An agent may use both simultaneously. For example, a future `backend`
+dispatcher MAY declare `tdd.md` + `effective-kotlin.md` via the
+on-demand section above while also dispatching to
+`backend-kotlin-spring` via convention.

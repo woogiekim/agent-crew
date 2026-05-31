@@ -151,6 +151,17 @@ install_global() {
   log_info "Agents installed → ${AGENT_CREW_DIR}/system/agents/"
   log_info "Skills installed → ${AGENT_CREW_DIR}/system/agents/skills/"
 
+  # Channel B — adapter skill templates (Wave A, issue #131).
+  # Templates ship with the framework but seed into the user layer
+  # (~/.agent-crew/user/skills/) via crew:setup / crew:update — never
+  # auto-merged. See core/rules/agent-tool-dispatch.md § Channel B.
+  if [ -d "${SOURCE_DIR}/agents/skills/templates" ]; then
+    mkdir -p "${AGENT_CREW_DIR}/system/agents/skills/templates"
+    cp -f "${SOURCE_DIR}/agents/skills/templates/"*.md \
+      "${AGENT_CREW_DIR}/system/agents/skills/templates/" 2>/dev/null || true
+    log_info "Adapter skill templates installed → ${AGENT_CREW_DIR}/system/agents/skills/templates/"
+  fi
+
   [ -f "${AGENT_CREW_DIR}/system/agents/reviewer.md" ] \
     || log_error "reviewer.md install failed — system/agents/reviewer.md not found"
   log_info "reviewer agent verified"
