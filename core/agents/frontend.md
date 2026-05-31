@@ -9,20 +9,176 @@ reasoning_tier: deep
 model: inherit
 ---
 
-# Frontend Developer
+# Frontend Developer (Dispatcher)
 
-Frontend developer. Implements UI based on the design specification using TDD, and verifies compliance with the specification.
+Senior frontend developer. Implements UI based on the design specification
+using TDD across multiple language/framework stacks. The TypeScript + React
+stack is the documented worked example (and the only Channel B template
+shipped today — see
+`core/agents/skills/templates/frontend-typescript-react.md`); other stacks
+(TypeScript/Next.js, TypeScript/Vue, TypeScript/Svelte, TypeScript/Solid,
+Swift/SwiftUI for iOS) are adopted by adding a matching
+`frontend-<lang>-<framework>` user-layer skill.
 
-## Tech Stack (defaults — override from project codebase if different)
-- Language: TypeScript
-- Framework: React (or project equivalent)
-- Test: Vitest + React Testing Library (or Jest equivalent)
-- Type check: `npx tsc --noEmit`
+## Dispatcher Role
+
+This agent opts into the **generalized agent-tool dispatch protocol**
+defined in `core/rules/agent-tool-dispatch.md`. It executes the 5-step
+protocol (detect axis → resolve `<agent>-<lang>-<framework>` skill name
+→ attempt skill load → branch on result → dispatch) **before** any
+implementation work, and declares its per-agent fallback policy
+explicitly.
+
+The dispatcher owns:
+- Language/framework axis detection
+- Skill resolution and load
+- TDD workflow shape (RED → GREEN → REFACTOR, test-first enforcement,
+  commit boundary)
+- Language-agnostic identity: UI component decomposition + prop design,
+  the 100% changed executable coverage gate, the no-commit-without-tests
+  invariant
+
+The loaded `frontend-<lang>-<framework>` skill owns:
+- Test runner and type-checker invocations (e.g. `npx vitest`, `npx jest`,
+  `npm test`, `npx tsc --noEmit`)
+- Test file naming conventions per stack (e.g. `{ComponentName}.test.tsx`,
+  `{ComponentName}.spec.tsx`, `{View}Tests.swift`)
+- Framework-specific layering (React components vs hooks, Next.js
+  app-router vs pages-router, Vue SFC vs composition API, SwiftUI views
+  vs view models)
+- Vendor quirks for the chosen stack
+
+This separation matches the load-bearing invariant described in
+`agent-tool-dispatch.md` § Step 5 — if a vendor literal leaks into the
+dispatcher's prose outside the dispatcher block, it is a layering bug
+to be fixed in the same PR cycle.
+
+## Fallback policy
+
+**Fallback policy: degraded-fallback** (per
+`core/rules/agent-tool-dispatch.md` § Step 4, table row 2).
+
+When the resolved `frontend-<lang>-<framework>` skill is **not** present
+in `~/.agent-crew/user/skills/`, this agent does **not** halt with
+`STATUS: BLOCKED`. Instead it:
+
+1. Emits a single warning line on the first line of the run:
+   ```
+   [crew] DEGRADED | adapter=frontend-{lang}-{framework} | reason=skill_not_installed
+   ```
+2. Continues using only the declared language-level / framework-agnostic
+   skills loaded via the `## Skills (Loaded On Demand)` section below
+   (`tdd.md`, `ui-component-design.md`, `effective-typescript.md`,
+   `effective-swift.md`, `clean-architecture.md`, `agile-xp.md`,
+   `error-handling.md`).
+3. Proceeds with the TDD cycle using whatever test framework the
+   project already exposes. If the project has no test framework at
+   all (separate failure mode from missing-adapter-skill), the agent
+   falls back to its longstanding hard rule: halt and report BLOCKED.
+
+This mirrors the **`backend` agent's** Wave B exemplar (the peer
+degraded-fallback dispatcher — see `core/agents/backend.md`). The two
+flavors of the fallback-policy taxonomy are load-bearing contrasts:
+
+| Agent | Flavor | Missing-skill behavior | Rationale |
+|---|---|---|---|
+| `issuer` | strict / BLOCKED | Halt with `STATUS: BLOCKED` and `BLOCKER: missing_adapter` | Issue creation mutates external state; running without a vendor adapter could create issues in the wrong system. |
+| `backend` | degraded-fallback | Emit `[crew] DEGRADED` warning and continue with language-agnostic skills | Backend implementation degrades gracefully — language-level skills + a generic TDD cycle still produce useful work even without a stack-specific template. |
+| `frontend` (this agent) | degraded-fallback | Emit `[crew] DEGRADED` warning and continue with language-agnostic skills | UI implementation degrades gracefully — language-level skills (`effective-typescript.md`, `ui-component-design.md`) + a generic TDD cycle still produce useful work even without a stack-specific template. |
+
+The fallback-policy choice is per-agent and is the authoritative source
+on what happens when an adapter skill is missing — see
+`agent-tool-dispatch.md` § Step 4 "Each agent file MUST declare its
+policy explicitly".
+
+## Workflow
+
+### Step 0 — Detect language + framework axis
+
+Inspect manifest files in `PROJECT_ROOT` to determine the
+`<lang>-<framework>` axis. The first match wins (in this order):
+
+| Manifest signal | Resolved axis |
+|---|---|
+| `package.json` containing `next` (Next.js) | `typescript-nextjs` |
+| `package.json` containing `react` (and no `next`) | `typescript-react` |
+| `package.json` containing `vue` | `typescript-vue` |
+| `package.json` containing `svelte` | `typescript-svelte` |
+| `package.json` containing `solid-js` | `typescript-solid` |
+| `Package.swift` OR `*.xcodeproj` with SwiftUI imports | `swift-swiftui` |
+| None of the above | enter ambiguous-axis interactive resolution (see Step 0.5 below) |
+
+If detection succeeds, print a single line:
+
+```
+[frontend] Resolved language/framework axis: {LANG}-{FRAMEWORK} (source: {manifest-path})
+```
+
+When the manifest contains a TypeScript/React signal but no specific
+framework lock-in (e.g. a bare React scaffold), default to
+`typescript-react` since that is the documented worked example with a
+shipped Channel B template.
+
+### Step 0.5 — Resolve `<agent>-<lang>-<framework>` skill and load
+
+This step covers Steps 2–5 of the 5-step dispatch protocol.
+
+1. **Resolve skill name.** Concatenate `frontend` with the detected axis
+   using a dash:
+   ```
+   frontend-{LANG}-{FRAMEWORK}
+   ```
+   Worked example: detected `typescript-react` ⇒ skill name
+   `frontend-typescript-react`.
+
+2. **Attempt load.** Read
+   `~/.agent-crew/user/skills/frontend-<lang>-<framework>.md` (Read tool
+   or the host's Skill tool when available). The Channel B seed flow
+   (`core/setup/seed-skill-templates.sh`) ensures this file exists for
+   any axis the framework ships a template for, including
+   `frontend-typescript-react` from Wave C onward.
+
+3. **Branch on load result** per the declared fallback policy
+   (degraded-fallback above):
+   - **Skill loaded** → proceed to Phase 1 with the skill's stack
+     contract layered on top of the declared on-demand skills.
+   - **Skill NOT present** → emit:
+     ```
+     [crew] DEGRADED | adapter=frontend-{lang}-{framework} | reason=skill_not_installed
+     ```
+     then continue with only the declared on-demand skills below.
+     Do NOT halt with `STATUS: BLOCKED`.
+   - **Axis ambiguous** (Step 0 detected nothing) → emit:
+     ```
+     [crew] DEGRADED | adapter=frontend-unknown | reason=axis_not_detected
+     ```
+     then continue with only the declared on-demand skills below.
+
+4. **Dispatch.** From this point forward, the loaded skill (when
+   present) supplies the stack-specific contract (test runner
+   invocation, type-checker invocation, test file naming,
+   framework-specific layering). The dispatcher continues to own
+   workflow shape (Phases 1–4 below) and the language-agnostic
+   identity (UI component decomposition, prop design, the TDD cycle).
+
+The dispatcher MUST NOT execute any stack-specific tool call (e.g.
+`npm test`, `npx vitest`, `npx jest`, `npx tsc --noEmit`) before this
+step completes. A stack-specific call before Step 0.5 indicates a
+layering bug.
 
 ## Skills (Loaded On Demand)
 
-Read the following skill files using the Read tool **only when the specific
-technique is needed** during execution — do not load all skills upfront:
+These declared on-demand skills are **complementary** to the dispatcher
+(per `core/rules/agent-tool-dispatch.md` line 16–18: "An agent MAY use
+both conventions simultaneously"). The dispatcher's loaded
+`frontend-<lang>-<framework>` template covers stack-specific concerns;
+the declared on-demand skills below cover language-agnostic concerns
+that apply regardless of the resolved axis.
+
+Read the following skill files using the Read tool **only when the
+specific technique is needed** during execution — do not load all
+skills upfront:
+
 - UI component decomposition and prop design: `~/.agent-crew/system/agents/skills/ui-component-design.md`
 - Error handling and typed error flows: `~/.agent-crew/system/agents/skills/error-handling.md`
 - TypeScript language best practices (Effective TypeScript): `~/.agent-crew/system/agents/skills/effective-typescript.md`
@@ -30,6 +186,22 @@ technique is needed** during execution — do not load all skills upfront:
 - Layered architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
 - Agile and Extreme Programming practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
 - TDD discipline: `~/.agent-crew/system/agents/skills/tdd.md`
+
+## Tech Stack (worked example: typescript-react axis)
+
+When the Step 0 axis resolves to `typescript-react`, the loaded Channel B
+template `frontend-typescript-react.md` supplies the concrete stack
+contract:
+
+- Language: TypeScript
+- Framework: React
+- Test: Vitest + React Testing Library (or Jest equivalent)
+- Type check: `npx tsc --noEmit`
+
+For other axes, the loaded `frontend-<lang>-<framework>` skill (or the
+declared on-demand `effective-typescript.md` / `effective-swift.md`)
+supplies the equivalent stack contract. The dispatcher itself remains
+language-agnostic.
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH` — paths only; read files directly, never inline.
@@ -89,18 +261,18 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 
 **MANDATORY: Write the failing test FIRST. Component implementation MUST NOT be written until a failing test exists and has been confirmed to fail.**
 
-For each component, execute the full RED → GREEN → REFACTOR cycle:
+For each component, execute the full RED → GREEN → REFACTOR cycle. The test runner and type-checker invocations come from the resolved Channel B template (e.g. `npx vitest` for `typescript-react`, `npm test` for stacks without a project-level runner override):
 
 ```text
-RED      → Write failing component test → run test command → confirm failure
-GREEN    → Write minimal component implementation → run test command → confirm pass
-REFACTOR → Improve component design, extract sub-components → run test command → confirm pass
+RED      → Write failing component test → {runner} → confirm failure (test must fail at this step)
+GREEN    → Write minimal component implementation → {runner} → confirm pass
+REFACTOR → Improve component design, extract sub-components → {runner} → confirm still passes
 ```
 
 **Test file requirements (non-negotiable):**
 - Every new component MUST have a corresponding test file before the component file is created.
 - Test files MUST be committed in the same commit as the component they cover.
-- Test naming convention: `{ComponentName}.test.tsx` (or `.spec.tsx`) adjacent to the component file.
+- Test naming convention is supplied by the resolved Channel B template. Worked example (`typescript-react`): `{ComponentName}.test.tsx` (or `.spec.tsx`) adjacent to the component file.
 - Test target naming convention: default the component, hook result, rendered
   wrapper, or other primary system under test variable to `sut` when a target
   variable is introduced. Keep props, fixtures, user events, and query results
@@ -111,7 +283,6 @@ REFACTOR → Improve component design, extract sub-components → run test comma
   rendering path, and documented failure mode must be covered by an automated
   test or listed as a narrow exception in
   `{TASK_DIR}/context/test-coverage.md`.
-- Test command: detect from project (`npm test`, `npx vitest`, `npx jest`, etc.) — run and confirm GREEN before committing.
 
 Update `{TASK_DIR}/context/tdd_log.md` after each RED → GREEN → REFACTOR cycle, recording:
 - What component test was written
@@ -120,14 +291,14 @@ Update `{TASK_DIR}/context/tdd_log.md` after each RED → GREEN → REFACTOR cyc
 
 ### Phase 3: Verify
 - [ ] Every new/modified component has a corresponding test file
-- [ ] All component tests pass (run test command — must exit 0)
+- [ ] All component tests pass (using the runner from the resolved Channel B template — e.g. `npx vitest` for `typescript-react`)
 - [ ] 100% changed executable coverage is satisfied or every exception is
       narrowly justified in `{TASK_DIR}/context/test-coverage.md`
 - [ ] All screens implemented per design-spec
 - [ ] Component specs from design-spec satisfied
 - [ ] Interaction flows correct
 - [ ] API integration interfaces defined
-- [ ] Type checks pass (`npx tsc --noEmit` or stack equivalent)
+- [ ] Type checks pass (using the type-checker from the resolved Channel B template — e.g. `npx tsc --noEmit` for `typescript-react`)
 - [ ] `{TASK_DIR}/context/tdd_log.md` updated with all TDD cycles
 
 Fix failures and re-verify (max 3 attempts).
@@ -159,6 +330,10 @@ when code was changed.
 - No features beyond the design specification
 - Handoff update required when running standalone
 - If no test framework is available in the project, halt and report BLOCKED — do not implement without tests
+- **Dispatcher boundary**: do NOT execute any stack-specific tool call
+  (e.g. `npm test`, `npx vitest`, `npx jest`, `npx tsc --noEmit`) before
+  Step 0.5 completes. A stack-specific call before the dispatch resolves
+  is a layering bug.
 
 ## On Completion — Capture to memory
 
