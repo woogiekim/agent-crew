@@ -505,23 +505,67 @@ crew routing already fired and the inner call is purely mechanical.
 
 ---
 
-### Step 5 — Input normalization
+### Step 5 — Input normalization (transform-and-deliver)
 
-If TASK_STRING is non-English, ambiguous, or conversational shorthand, normalize
-it to a canonical English workflow instruction before the intended direct agent
-answers (per `core/rules/normalization-adapter.md`).
+If TASK_STRING is non-English, ambiguous, or conversational shorthand,
+transform it into a canonical English workflow instruction and deliver that
+NORMALIZED_TASK to the intended direct agent (per
+`core/rules/normalization-adapter.md`). The direct agent never sees the raw
+input as canonical TASK — only the NORMALIZED_TASK is forwarded; the raw
+input is retained as `RAW_TASK` / `RAW_INPUT` provenance.
 
 This is a hard runtime gate for every direct-agent path. For lightweight
-`MODE=direct` host-bridge requests, normalization is an inline utility step
+`MODE=direct` host-bridge requests, the transform is an inline utility step
 inside the same bridge session, not a separate native agent spawn. The runtime
 MUST keep the intended direct agent as `AGENT`, write
 `NORMALIZATION_MODE: inline_direct_bridge`, and store the raw input only as
-`RAW_TASK` provenance. The bridge then performs the input-normalizer contract
-inline and continues as `INTENDED_AGENT_AFTER_NORMALIZATION`.
+`RAW_TASK` provenance. The bridge then performs the input-normalizer transform
+inline, delivers the NORMALIZED_TASK to the intended agent, and continues as
+`INTENDED_AGENT_AFTER_NORMALIZATION`.
 
 The runtime MUST NOT pass raw non-English or ambiguous text as canonical TASK
-to the intended downstream agent. It must also not ask the host to spawn
-`input-normalizer` or `korean-normalizer` while already in `MODE=direct`.
+to the intended downstream agent — only the NORMALIZED_TASK is delivered. It
+must also not ask the host to spawn `input-normalizer` or `korean-normalizer`
+while already in `MODE=direct`.
+
+#### Mandatory `normalized_task.md` audit artifact (bare direct path)
+
+Even though `crew:agent` allocates no TASK_DIR, the normalization audit
+artifact is still mandatory. Write it to:
+
+```text
+~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md
+```
+
+where `{ts}` is a UTC `YYYYMMDD-HHMMSS` timestamp. Required fields:
+
+```text
+RAW_INPUT: {original user input verbatim}
+SOURCE_LANGUAGE: {detected language code or "unknown"}
+NORMALIZED_TASK: {canonical English orchestration instruction}
+NORMALIZED_AT: {UTC ISO-8601 timestamp}
+NORMALIZED_BY: {host name — claude | codex | gemini | cursor | other}
+PATH: crew-agent
+```
+
+The artifact MUST exist on disk BEFORE Step 6 (emit visibility line) and
+Step 7 (invoke the agent). The user direction "에이전트크루 파이프라인이 실행
+안되더라도 정규화해서 ... ai 들에게 질문하게 하는것" is satisfied by this
+artifact-on-disk gate: normalization happens BEFORE any host AI is asked
+the question, and the artifact preserves the evidence regardless of which
+host fielded the question.
+
+On hosts that advertise `hook_system: true` in `capabilities.json`, the
+mechanical PreToolUse guard `core/hooks/normalize-task-guard.sh` (registered
+via `adapters/claude/setup.sh`) provides a defence-in-depth **last-resort
+backstop**: it blocks any Agent/Task tool call whose prompt still carries
+raw Hangul in TASK-shaped slots without a matching `NORMALIZED_TASK:`
+provenance line. The block reason reads as remediation that drives the
+transform — it tells the caller to run the input-normalizer transform and
+re-issue the call with the NORMALIZED_TASK form. The hook exempts the
+`input-normalizer` and `korean-normalizer` agents themselves. The canonical
+enforcement is this Step 5 rule, which delivers the transform-and-deliver
+primary behavior on every host; the hook is additive.
 
 ### Step 6 — Emit visibility line (mandatory)
 

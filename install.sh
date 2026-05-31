@@ -325,6 +325,11 @@ install_global() {
   merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Edit|Write" "${AGENT_CREW_DIR}/hooks/direct-edit-guard.sh"
   log_info "direct-edit-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
 
+  # Issue #130: normalize-task-guard.sh — capability-gated defence-in-depth for the
+  # AI-agnostic input normalization contract. See core/rules/normalization-adapter.md.
+  merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Agent|Task" "${AGENT_CREW_DIR}/hooks/normalize-task-guard.sh"
+  log_info "normalize-task-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
+
   merge_global_pretooluse  "${AGENT_CREW_HOME}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/agent-diff-pre.sh"
   merge_global_posttooluse "${AGENT_CREW_HOME}/settings.json" "Agent" "${AGENT_CREW_DIR}/hooks/agent-diff-post.sh"
   merge_global_posttooluse "${AGENT_CREW_HOME}/settings.json" "*"     "${AGENT_CREW_DIR}/hooks/cost-tracker.sh"
@@ -363,6 +368,8 @@ install_claude_compat() {
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
+  # Issue #130: AI-agnostic input normalization enforcement.
+  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task" "${CLAUDE_DIR}/agent-crew/hooks/normalize-task-guard.sh"
   merge_global_pretooluse  "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-pre.sh"
   merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-post.sh"
   merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "*"     "${CLAUDE_DIR}/agent-crew/hooks/cost-tracker.sh"
