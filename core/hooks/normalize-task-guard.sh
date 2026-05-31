@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
 # normalize-task-guard.sh
-# PreToolUse[Agent|Task] hook — defence-in-depth enforcement of the
-# input-normalization contract documented in core/rules/normalization-adapter.md
-# and core/rules/korean-input.md.
+# PreToolUse[Agent|Task] hook — last-resort backstop for the canonical
+# transform-and-deliver input-normalization contract documented in
+# core/rules/normalization-adapter.md and core/rules/korean-input.md.
+#
+# The PRIMARY behavior of the system is transform-and-deliver: orchestrator
+# surfaces (crew:run Step 1, crew:agent Step 5, bare interactive answer)
+# transform un-normalized input into a canonical English NORMALIZED_TASK
+# and deliver THAT form to every downstream agent and host AI. The transform
+# itself lives in the orchestrator/agent layer (canonical rule files) — a
+# shell hook cannot perform LLM translation, so this hook does not transform.
+#
+# This hook is the LAST-RESORT BACKSTOP. It fires only when an orchestrator
+# surface failed to transform first. Its block reason text is REMEDIATION
+# language that drives the transform-and-deliver path — it tells the caller
+# to run the input-normalizer transform (or inline equivalent) and re-issue
+# the call with the NORMALIZED_TASK form. It is not a terminal rejection.
 #
 # Blocks any Agent/Task tool call whose prompt carries raw non-English
 # (Hangul) content inside a TASK:/REQUIREMENTS: slot WITHOUT a matching
 # NORMALIZED_TASK: provenance line. The canonical AI-agnostic enforcement
 # remains the instruction/rule files themselves; this hook is one
-# capability-gated implementation that runs on Claude.
+# capability-gated, additive implementation that runs on Claude.
 #
 # Exemptions:
 #   - subagent_type == input-normalizer or korean-normalizer
@@ -17,7 +30,7 @@
 #
 # Exit codes (Claude Code PreToolUse contract):
 #   0  — allow (no block decision)
-#   2  — block (Claude sees the reason and the tool call is cancelled)
+#   2  — block (Claude sees the remediation reason and the tool call is cancelled)
 #
 # See also: core/rules/normalization-adapter.md (canonical contract),
 # core/rules/korean-input.md (Hangul rule), tests/shell/test_normalize_task_guard.bash.
@@ -133,23 +146,32 @@ if not violations:
 if HAS_NORMALIZED_TASK:
     allow()
 
-# Compose the block reason. Reference the canonical rule and the audit
-# artifact so the agent / operator knows exactly how to remediate.
+# Compose the block reason as REMEDIATION language that drives the
+# transform-and-deliver path. The canonical primary behavior is to transform
+# raw input into a NORMALIZED_TASK and deliver that form downstream; this
+# backstop only fires when that transform did not happen, and its job is to
+# tell the caller how to transform and re-issue, not to terminally reject.
 slots = ", ".join(sorted({slot for slot, _ in violations}))
 reason = (
-    "[agent-crew] normalize-task-guard blocked — raw non-English (Hangul) "
-    f"content detected in {slots} slot(s) of the Agent/Task prompt.\n\n"
-    "Input normalization must occur BEFORE any host AI is asked the question. "
+    "[agent-crew] normalize-task-guard fired (last-resort backstop) — "
+    f"raw non-English (Hangul) content detected in {slots} slot(s) of the "
+    "Agent/Task prompt without a paired NORMALIZED_TASK: provenance line.\n\n"
+    "The canonical contract is transform-and-deliver: transform the raw input "
+    "into a canonical English NORMALIZED_TASK and deliver that form downstream. "
     "This is an AI-agnostic contract — see core/rules/normalization-adapter.md "
-    "and core/rules/korean-input.md.\n\n"
-    "Remediation:\n"
-    "  1. Run the input-normalizer agent (or the inline equivalent in "
-    "core/commands/run.md Step 1 / core/commands/agent.md Step 5).\n"
+    "and core/rules/korean-input.md. Shell cannot perform LLM translation, so "
+    "this hook does not transform; it asks you to do so and re-issue.\n\n"
+    "Remediation (transform then re-issue):\n"
+    "  1. Run the input-normalizer transform (or the inline equivalent in "
+    "core/commands/run.md Step 1 / core/commands/agent.md Step 5) to produce "
+    "a canonical English NORMALIZED_TASK.\n"
     "  2. Write the audit artifact to "
     "{TASK_DIR}/context/normalized_task.md (or "
     "~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md when no "
     "TASK_DIR exists) with both RAW_INPUT and NORMALIZED_TASK fields.\n"
-    "  3. Pass NORMALIZED_TASK (English) downstream — never the raw input.\n\n"
+    "  3. Re-issue this Agent/Task call with NORMALIZED_TASK (English) "
+    "delivered as the canonical TASK; the raw input stays as RAW_INPUT "
+    "provenance only.\n\n"
     "Escape hatch (use only when normalization has happened upstream and the "
     "host stream has not yet been updated): set "
     "AGENT_CREW_ALLOW_RAW_NON_ASCII_TASK=1 in the environment."

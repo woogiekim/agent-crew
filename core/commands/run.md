@@ -170,12 +170,17 @@ Accept:
 
 Normalize the input into a task list with cardinality `N >= 1`.
 
-#### Input Normalization
+#### Input Normalization (transform-and-deliver)
 
 If any task description is non-English, ambiguous, or conversational shorthand,
-delegate to the **input-normalizer agent** before proceeding (or perform the
-inline equivalent when the host does not support agent spawning — see
-`core/rules/normalization-adapter.md` § How to Implement):
+transform it into a canonical English `NORMALIZED_TASK` and deliver that
+normalized form to the supervisor. The supervisor never receives the raw
+input as canonical task text — only `NORMALIZED_TASK` is forwarded; the raw
+input is retained as `RAW_INPUT` provenance in the audit artifact.
+
+Delegate to the **input-normalizer agent** to perform the transform (or
+perform the inline equivalent when the host does not support agent spawning —
+see `core/rules/normalization-adapter.md` § How to Implement):
 
 ```text
 RAW_INPUT: {original user input}
@@ -183,9 +188,9 @@ Apply core/rules/normalization-adapter.md and return the structured
 NORMALIZED_TASK contract.
 ```
 
-Use the returned `NORMALIZED_TASK` as the canonical TASK for all downstream
-agents and state files. See `core/rules/normalization-adapter.md` for the full
-adapter contract.
+Use the returned `NORMALIZED_TASK` as the canonical TASK delivered to the
+supervisor and to all downstream agents and state files. See
+`core/rules/normalization-adapter.md` for the full adapter contract.
 
 ##### Mandatory `normalized_task.md` audit artifact
 
@@ -221,11 +226,14 @@ PATH: crew-run
 > Claude, Codex, Gemini, Cursor, and any future host adapter.
 
 On hosts that advertise `hook_system: true` in `capabilities.json`, the
-mechanical PreToolUse guard `core/hooks/normalize-task-guard.sh` provides
-defence-in-depth by re-checking every Agent/Task tool prompt for raw Hangul
-in TASK-shaped slots. The hook is registered via `adapters/claude/setup.sh`.
-It is capability-gated and additive; this Step 1 rule is the canonical
-enforcement.
+mechanical PreToolUse guard `core/hooks/normalize-task-guard.sh` provides a
+defence-in-depth **last-resort backstop** by re-checking every Agent/Task
+tool prompt for raw Hangul in TASK-shaped slots. The hook reason names the
+transform-and-deliver remediation so the operator can re-issue the call
+after running the transform. The hook is registered via
+`adapters/claude/setup.sh`. It is capability-gated and additive; this Step 1
+rule is the canonical enforcement and delivers the transform-and-deliver
+primary behavior on every host.
 
 #### Issue Comment Ingestion
 
