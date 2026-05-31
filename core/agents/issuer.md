@@ -205,7 +205,7 @@ inspecting the current repository's git remote. This step MUST run before
    | Remote URL pattern | Action |
    |---|---|
    | Contains `github.com` | Set `BACKEND_ADAPTER=github`. Use `gh` CLI via the `issuer-github` user skill. |
-   | Contains `gitlab.com` OR matches a self-hosted GitLab URL (heuristic: path contains `/gitlab/` or remote URL resolves to a GitLab instance) | Set `BACKEND_ADAPTER=gitlab`. Use `mcp__gitlab` tools. |
+   | Contains `gitlab.com` OR matches a self-hosted GitLab URL (heuristic: path contains `/gitlab/` or remote URL resolves to a GitLab instance) | Set `BACKEND_ADAPTER=gitlab`. The `issuer-gitlab` skill owns the GitLab API surface. |
    | Empty / command failed (no remote configured) | Ask the user via the host's interactive question mechanism (see below). |
    | Any other URL (Bitbucket, Azure DevOps, etc.) | Present the detected remote to the user and ask for explicit consent before falling back to first-available adapter (see Fallback section below). |
 
@@ -219,9 +219,9 @@ inspecting the current repository's git remote. This step MUST run before
    - `question`: "No git remote origin was found in this repository. Which issue
      tracker should issues be published to?"
    - `options`:
-     - `[A] GitHub — use gh CLI (issuer-github)`
-     - `[B] GitLab — use mcp__gitlab (issuer-gitlab)`
-     - `[C] Plane — use mcp__plane (issuer-plane)` _(default)_
+     - `[A] GitHub — use issuer-github skill`
+     - `[B] GitLab — use issuer-gitlab skill`
+     - `[C] Plane — use issuer-plane skill` _(default)_
      - `[D] Other — specify adapter name`
 
    Map the user's choice to `BACKEND_ADAPTER` (`github`, `gitlab`, `plane`, or the
@@ -240,9 +240,9 @@ inspecting the current repository's git remote. This step MUST run before
    - `header`: "Select Issue Tracker Adapter"
    - `question`: "Remote origin is '{REMOTE_URL}'. Which adapter should be used?"
    - `options`:
-     - `[A] GitHub (gh CLI)`
-     - `[B] GitLab (mcp__gitlab)`
-     - `[C] Plane (mcp__plane)`
+     - `[A] GitHub (issuer-github skill)`
+     - `[B] GitLab (issuer-gitlab skill)`
+     - `[C] Plane (issuer-plane skill)`
      - `[D] Other — specify adapter name`
      - `[E] Cancel`
 
@@ -268,11 +268,21 @@ inspecting the current repository's git remote. This step MUST run before
 
 2. Resolve `OPERATION_MODE` using Operation Classification above.
 
-3. Load the skill named `issuer-{BACKEND_ADAPTER}`.
+3. **Load the skill `issuer-{BACKEND_ADAPTER}` before any tool-specific call.**
    The skill is installed at `~/.agent-crew/user/skills/issuer-{BACKEND_ADAPTER}.md`.
    This is a **convention-based load** — no registry lookup is needed.
    New adapters are auto-discoverable by placing the correctly-named skill file
    in `~/.agent-crew/user/skills/`.
+
+   On Claude Code, invoke the host's `Skill` tool with
+   `skill="issuer-{BACKEND_ADAPTER}"`. Other host adapters use their equivalent
+   skill-loading mechanism (the runtime contract is "load the file at the path
+   above and execute its Step 0 next").
+
+   The dispatcher MUST NOT execute any backend-specific tool call — no
+   `mcp__*` function, no `gh` / `glab` CLI command, no raw HTTP request —
+   before this skill load returns. All vendor-specific call signatures live
+   in the loaded skill, not in this dispatcher.
 
 4. If the skill file does not exist, return the following structured block
    and stop — do NOT attempt to call any external API, CLI, or service
