@@ -47,7 +47,34 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
    echo "setup_ok"
    ```
 
-5. Print the completion message.
+5. **Seed Channel B adapter skill templates** (idempotent — copy-if-absent).
+
+   The framework ships canonical seed templates for dispatcher-pattern
+   adapter skills under `core/agents/skills/templates/` (see
+   `core/rules/agent-tool-dispatch.md` § Channel B template seeding).
+   `crew:setup` seeds each template into `~/.agent-crew/user/skills/<name>.md`
+   ONLY when the user-layer file does not already exist.
+
+   The seed helper NEVER overwrites a user-edited file — this is the
+   load-bearing invariant from commit `1f89c02`. The runtime contract
+   (dispatcher loads `~/.agent-crew/user/skills/<name>.md`) is unchanged.
+
+   ```bash
+   AGENT_CREW_SEED_TAG="crew:setup" \
+     bash "${AGENT_CREW_HOME}/setup/seed-skill-templates.sh"
+   ```
+
+   The helper resolves its own defaults:
+   - Source: `${AGENT_CREW_HOME}/system/agents/skills/templates/`
+     (falls back to `${AGENT_CREW_HOME}/agents/skills/templates/` for
+     compat installations).
+   - Destination: `${AGENT_CREW_HOME}/user/skills/`.
+
+   When no templates are installed (fresh install with empty templates
+   directory), the helper exits 0 silently — this is the expected
+   steady-state when no dispatcher agents have shipped templates yet.
+
+6. Print the completion message.
 
 ## Completion Message
 
