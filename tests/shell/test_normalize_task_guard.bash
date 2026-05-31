@@ -11,8 +11,11 @@
 #   AC6 — AGENT_CREW_ALLOW_RAW_NON_ASCII_TASK=1 escape hatch (exit 0)
 #   AC7 — TASK: slot with paired NORMALIZED_TASK: provenance line passes (exit 0)
 #   AC8 — Block reason references the canonical rule
+#   AC8b — Block reason names the transform-and-deliver remediation
 #   AC9 — Hook is registered in adapters/claude/setup.sh
 #   AC10 — Canonical rule files document the audit artifact contract
+#   AC10b — Canonical rule files lead with transform-and-deliver as primary
+#           behavior and demote blocking to a last-resort backstop
 #   AC11 — Hook is composable: not registered for the same event/matcher as
 #          route-directive-guard / direct-edit-guard (no clobber)
 
@@ -219,6 +222,38 @@ assert_contains "$(cat "${STDERR_FILE}")" '"decision"' "stderr contains block JS
 assert_contains "$(cat "${STDERR_FILE}")" '"block"' "stderr decision is block"
 
 # --------------------------------------------------------------------------- #
+# AC8b — Block reason names the transform-and-deliver remediation              #
+# --------------------------------------------------------------------------- #
+#
+# Issue #130 follow-up: the canonical intent is to TRANSFORM un-normalized
+# input into a NORMALIZED_TASK and DELIVER that normalized form downstream.
+# Blocking is a last-resort backstop. The hook reason text must read as
+# remediation that drives the transform-and-deliver path — not as terminal
+# rejection — so an operator or agent sees how to re-issue the call.
+
+it "AC8b: block reason names the transform-and-deliver remediation (transform token present)"
+PROMPT="$(printf 'TASK: 한국어\n')"
+PAYLOAD="$(make_agent_payload Agent "${PROMPT}")"
+out=$(run_hook "${PAYLOAD}")
+assert_contains "${out}" "transform" "block reason must name the transform remediation"
+
+it "AC8b: block reason names the re-issue (or deliver) remediation"
+PROMPT="$(printf 'TASK: 한국어\n')"
+PAYLOAD="$(make_agent_payload Agent "${PROMPT}")"
+out=$(run_hook "${PAYLOAD}")
+# Accept either "re-issue" or "deliver" — both describe the transform-and-deliver path.
+case "${out}" in
+  *re-issue*|*deliver*) _pass ;;
+  *) _fail "block reason must name 're-issue' or 'deliver' as remediation" ;;
+esac
+
+it "AC8b: block reason preserves the existing 'normalize' anchor (AC8 still satisfied)"
+PROMPT="$(printf 'TASK: 한국어\n')"
+PAYLOAD="$(make_agent_payload Agent "${PROMPT}")"
+out=$(run_hook "${PAYLOAD}")
+assert_contains "${out}" "normaliz" "AC8 anchor 'normaliz' must survive the reframing"
+
+# --------------------------------------------------------------------------- #
 # AC9 — Hook is registered in setup.sh                                         #
 # --------------------------------------------------------------------------- #
 
@@ -269,6 +304,39 @@ assert_contains "${RUN_CONTENT}" "normalized_task.md" "run.md Step 1 requires th
 it "AC10: core/commands/agent.md Step 5 references the audit artifact"
 AGENT_CONTENT=$(cat "${REPO_ROOT}/core/commands/agent.md")
 assert_contains "${AGENT_CONTENT}" "normalized_task.md" "agent.md Step 5 requires the audit artifact"
+
+# --------------------------------------------------------------------------- #
+# AC10b — Canonical rule files lead with transform-and-deliver as PRIMARY      #
+#         behavior, with explicit fallback language for blocking               #
+# --------------------------------------------------------------------------- #
+#
+# The PRD demotes blocking to a last-resort backstop. Both canonical rule
+# files (korean-input.md and normalization-adapter.md) must lead with the
+# transform-and-deliver framing and explicitly name blocking as fallback.
+
+it "AC10b: korean-input.md names 'transform-and-deliver' as the contract"
+KI_CONTENT=$(cat "${REPO_ROOT}/core/rules/korean-input.md")
+assert_contains "${KI_CONTENT}" "transform-and-deliver" "korean-input.md leads with transform-and-deliver"
+
+it "AC10b: korean-input.md flags transform-and-deliver as the primary behavior"
+KI_CONTENT=$(cat "${REPO_ROOT}/core/rules/korean-input.md")
+assert_contains "${KI_CONTENT}" "primary behavior" "korean-input.md uses the 'primary behavior' token"
+
+it "AC10b: korean-input.md demotes blocking to a last-resort backstop"
+KI_CONTENT=$(cat "${REPO_ROOT}/core/rules/korean-input.md")
+assert_contains "${KI_CONTENT}" "last-resort backstop" "korean-input.md names blocking as last-resort backstop"
+
+it "AC10b: normalization-adapter.md names 'transform-and-deliver' as the contract"
+NA_CONTENT=$(cat "${REPO_ROOT}/core/rules/normalization-adapter.md")
+assert_contains "${NA_CONTENT}" "transform-and-deliver" "normalization-adapter.md leads with transform-and-deliver"
+
+it "AC10b: normalization-adapter.md flags transform-and-deliver as the primary behavior"
+NA_CONTENT=$(cat "${REPO_ROOT}/core/rules/normalization-adapter.md")
+assert_contains "${NA_CONTENT}" "primary behavior" "normalization-adapter.md uses the 'primary behavior' token"
+
+it "AC10b: normalization-adapter.md demotes blocking to a last-resort backstop"
+NA_CONTENT=$(cat "${REPO_ROOT}/core/rules/normalization-adapter.md")
+assert_contains "${NA_CONTENT}" "last-resort backstop" "normalization-adapter.md names blocking as last-resort backstop"
 
 # --------------------------------------------------------------------------- #
 # AC11 — Composability with existing PreToolUse guards                         #
