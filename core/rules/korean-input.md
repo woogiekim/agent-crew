@@ -91,13 +91,95 @@ their canonical English operational equivalents:
 
 ## Where Applied
 
-This normalization rule is enforced at three points in the execution pipeline:
+This normalization rule is enforced at **every interactive orchestrator path**
+in the system. The rule is AI-agnostic: it holds on Claude, Codex, Gemini, and
+Cursor. Host hooks are capability-gated augmentations, never the primary
+mechanism — the canonical enforcement is this rule file itself.
 
 | Location | When |
 |---|---|
 | `crew:run` Step 1 — Task collection | Before the raw input is normalized into the task list |
+| `crew:agent` Step 5 — Direct-agent path | Before the named agent is invoked, even when no TASK_DIR exists |
+| Bare interactive answer path | Before any host AI is asked the question (this is the path the user direction names explicitly) |
 | `supervisor` Phase 0 — TASK variable | Before writing TASK to `pipeline.json` or any state file |
 | Requirements agent task description | Before the TASK value is passed to the requirements interview |
+
+## Bypass Scenarios This Rule MUST Block
+
+Issue #130 documented that interactive orchestrators could skip the
+input-normalizer step entirely. The fix is now explicit: the contract MUST
+hold even when the full agent-crew pipeline does NOT run.
+
+1. **`crew:agent` direct path** — `crew:agent` writes no `pipeline.json` and
+   allocates no `TASK_DIR`. The contract still applies: the orchestrator must
+   normalize the input inline (per `core/rules/normalization-adapter.md`
+   § How to Implement — inline mode) BEFORE the named agent is invoked. The
+   audit artifact lands at
+   `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{timestamp}.md`.
+
+2. **Bare interactive answer path** — even when the user's input is going to
+   be answered by the host AI inline (no `crew:run`, no `crew:agent`), if the
+   input contains Hangul, the canonical English form must be derived first
+   and used as the question. The raw Korean string must not appear in the
+   prompt sent to the host AI.
+
+3. **Any downstream agent prompt** — once normalized, only the English
+   `NORMALIZED_TASK` must appear in the prompts sent to planner, supervisor,
+   stage agents, or any direct-agent spawn.
+
+## Audit Artifact — `normalized_task.md`
+
+Every interactive orchestrator path MUST write an audit artifact that records
+both the original raw input and the normalized English form. This is the
+"provenance contract" — it makes the normalization step recoverable and
+inspectable even when the full pipeline does not run.
+
+### Location
+
+| Path with TASK_DIR | Path without TASK_DIR (bare / `crew:agent`) |
+|---|---|
+| `{TASK_DIR}/context/normalized_task.md` | `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` |
+
+`{ts}` is a UTC timestamp matching the existing `TASK_ID` convention
+(`YYYYMMDD-HHMMSS`).
+
+### Required fields
+
+```text
+RAW_INPUT: {original user input verbatim — Hangul or other source language preserved}
+SOURCE_LANGUAGE: {detected language code or "unknown"}
+NORMALIZED_TASK: {canonical English orchestration instruction}
+NORMALIZED_AT: {UTC ISO-8601 timestamp}
+NORMALIZED_BY: {host name — claude | codex | gemini | cursor | other}
+PATH: {full source path — crew:run | crew:agent | bare-interactive | supervisor-phase-0}
+```
+
+The artifact is plain text (or Markdown frontmatter) so any host adapter can
+write and read it without depending on a specific data format. The contract
+is "both fields present, in that order, with NORMALIZED_TASK in English."
+
+### Hard gate
+
+The pipeline / direct-agent path MUST NOT proceed past the normalization step
+until the audit artifact is on disk AND `NORMALIZED_TASK` has been confirmed
+non-empty in English. Raw user input that requires normalization must never
+appear as canonical downstream task text in:
+
+- any agent prompt
+- `pipeline.json` or any other state file
+- `result.md`, `requirements.md`, or any downstream artifact
+
+### Capability-gated augmentation (Claude PreToolUse hook)
+
+On hosts that support `PreToolUse` hooks (`hook_system: true` —
+`capabilities.json`), the `normalize-task-guard.sh` hook
+(`core/hooks/normalize-task-guard.sh`) provides a mechanical defence-in-depth
+check: it scans every Agent/Task tool call for raw Hangul in `TASK:` /
+`REQUIREMENTS:` slots and blocks the call when no `NORMALIZED_TASK:` provenance
+line is present. The hook is registered through
+`adapters/claude/setup.sh`. On hosts without a hook surface (Codex, Gemini,
+Cursor), this rule file is the load-bearing enforcement; the hook is
+additive, not load-bearing.
 
 ## Examples
 

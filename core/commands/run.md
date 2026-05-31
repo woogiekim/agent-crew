@@ -173,7 +173,9 @@ Normalize the input into a task list with cardinality `N >= 1`.
 #### Input Normalization
 
 If any task description is non-English, ambiguous, or conversational shorthand,
-delegate to the **input-normalizer agent** before proceeding:
+delegate to the **input-normalizer agent** before proceeding (or perform the
+inline equivalent when the host does not support agent spawning — see
+`core/rules/normalization-adapter.md` § How to Implement):
 
 ```text
 RAW_INPUT: {original user input}
@@ -185,9 +187,45 @@ Use the returned `NORMALIZED_TASK` as the canonical TASK for all downstream
 agents and state files. See `core/rules/normalization-adapter.md` for the full
 adapter contract.
 
+##### Mandatory `normalized_task.md` audit artifact
+
+After normalization completes — and BEFORE proceeding to Step 2 — write the
+audit artifact to `{TASK_DIR}/context/normalized_task.md`. The artifact MUST
+record both the raw user input and the canonical English form so the
+normalization step is recoverable and inspectable.
+
+The TASK_DIR has not yet been allocated at this point (Step 2 builds it).
+Either:
+- defer the file write until Step 4 (`Prepare Each Task Context`), at which
+  point TASK_DIR exists; or
+- write the artifact to a temporary path
+  `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` and move it
+  into `{TASK_DIR}/context/normalized_task.md` during Step 4.
+
+Both approaches satisfy the contract. The required fields are:
+
+```text
+RAW_INPUT: {original user input verbatim}
+SOURCE_LANGUAGE: {detected language code or "unknown"}
+NORMALIZED_TASK: {canonical English orchestration instruction}
+NORMALIZED_AT: {UTC ISO-8601 timestamp}
+NORMALIZED_BY: {host name — claude | codex | gemini | cursor | other}
+PATH: crew-run
+```
+
 > **Hard gate**: If normalization is required, do not proceed to Step 2 until
-> `NORMALIZED_TASK` is confirmed. The raw input must not appear as canonical
-> downstream task text in any agent prompt, `pipeline.json`, or `result.md`.
+> (a) `NORMALIZED_TASK` is confirmed in English, AND (b) the
+> `normalized_task.md` audit artifact has been written. The raw input must
+> not appear as canonical downstream task text in any agent prompt,
+> `pipeline.json`, or `result.md`. This rule is AI-agnostic — it applies to
+> Claude, Codex, Gemini, Cursor, and any future host adapter.
+
+On hosts that advertise `hook_system: true` in `capabilities.json`, the
+mechanical PreToolUse guard `core/hooks/normalize-task-guard.sh` provides
+defence-in-depth by re-checking every Agent/Task tool prompt for raw Hangul
+in TASK-shaped slots. The hook is registered via `adapters/claude/setup.sh`.
+It is capability-gated and additive; this Step 1 rule is the canonical
+enforcement.
 
 #### Issue Comment Ingestion
 

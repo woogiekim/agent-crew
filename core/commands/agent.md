@@ -523,6 +523,41 @@ The runtime MUST NOT pass raw non-English or ambiguous text as canonical TASK
 to the intended downstream agent. It must also not ask the host to spawn
 `input-normalizer` or `korean-normalizer` while already in `MODE=direct`.
 
+#### Mandatory `normalized_task.md` audit artifact (bare direct path)
+
+Even though `crew:agent` allocates no TASK_DIR, the normalization audit
+artifact is still mandatory. Write it to:
+
+```text
+~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md
+```
+
+where `{ts}` is a UTC `YYYYMMDD-HHMMSS` timestamp. Required fields:
+
+```text
+RAW_INPUT: {original user input verbatim}
+SOURCE_LANGUAGE: {detected language code or "unknown"}
+NORMALIZED_TASK: {canonical English orchestration instruction}
+NORMALIZED_AT: {UTC ISO-8601 timestamp}
+NORMALIZED_BY: {host name — claude | codex | gemini | cursor | other}
+PATH: crew-agent
+```
+
+The artifact MUST exist on disk BEFORE Step 6 (emit visibility line) and
+Step 7 (invoke the agent). The user direction "에이전트크루 파이프라인이 실행
+안되더라도 정규화해서 ... ai 들에게 질문하게 하는것" is satisfied by this
+artifact-on-disk gate: normalization happens BEFORE any host AI is asked
+the question, and the artifact preserves the evidence regardless of which
+host fielded the question.
+
+On hosts that advertise `hook_system: true` in `capabilities.json`, the
+mechanical PreToolUse guard `core/hooks/normalize-task-guard.sh` (registered
+via `adapters/claude/setup.sh`) provides defence-in-depth: it blocks any
+Agent/Task tool call whose prompt still carries raw Hangul in TASK-shaped
+slots without a matching `NORMALIZED_TASK:` provenance line. The hook
+exempts the `input-normalizer` and `korean-normalizer` agents themselves.
+The canonical enforcement is this Step 5 rule; the hook is additive.
+
 ### Step 6 — Emit visibility line (mandatory)
 
 Always emit this line before invoking the agent:
