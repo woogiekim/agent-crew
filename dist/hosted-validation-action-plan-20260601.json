@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-01T00:00:00Z",
+  "status": "blocked_external_hosted_runs_required",
+  "scope": "clean hosted Codex and Claude evidence",
+  "current_session": {
+    "host": "codex",
+    "blocker": "nested Codex bridge execution is refused in the active Codex session",
+    "result": "cannot produce clean non-nested hosted Codex auto-completion evidence from this session"
+  },
+  "required_evidence": [
+    {
+      "adapter": "codex",
+      "environment": "approved non-nested Codex hosted execution environment",
+      "artifact": "dist/hosted-codex-validation.json",
+      "must_show": [
+        "task_success=true",
+        "host_bridge_status=auto_completed",
+        "manual_repairs=0",
+        "human_interventions=0",
+        "approval_gates_preserved=true",
+        "redaction statement"
+      ]
+    },
+    {
+      "adapter": "claude",
+      "environment": "approved Claude Code hosted execution environment",
+      "artifact": "dist/hosted-claude-validation.json",
+      "must_show": [
+        "task_success=true",
+        "host_bridge_status=auto_completed",
+        "manual_repairs=0",
+        "human_interventions=0",
+        "approval_gates_preserved=true",
+        "redaction statement"
+      ]
+    }
+  ],
+  "references": [
+    "docs/hosted-validation-evidence.md",
+    "docs/templates/hosted-adapter-validation.json"
+  ],
+  "notes": "This artifact records the exact blocker and required evidence instead of fabricating hosted completion from a nested local session."
+}

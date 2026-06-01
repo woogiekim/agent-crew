@@ -659,6 +659,8 @@ usage: crew doctor [--mode static|runtime|host|all] [--format text|json]
 
 Runs split operational checks. static delegates to framework review, runtime
 uses safe local probes, and host checks adapter/config visibility.
+Default text output ends with a compact pass/warn/info summary. Use
+--format json when you need every detail for an issue or readiness artifact.
 EOF
     return 0
   fi
@@ -992,6 +994,10 @@ resumable state. Tests may use --fake-host-result completed to exercise the E2E
 state path. Hosts may still set AGENT_CREW_HOST_BRIDGE_COMMAND, or pass
 --host-bridge-command, to invoke an adapter bridge after handoff creation; a
 zero exit status marks the run auto-completed with host bridge evidence.
+
+Common path: run this from the host AI session, follow the printed NEXT line,
+then use crew status to monitor or crew repair only if the host handoff had to
+be completed manually.
 EOF
     return 0
   fi
@@ -1018,6 +1024,9 @@ Use --status cancelled when a handoff was intentionally superseded or aborted by
 the user before implementation began.
 For mutating implementation tasks, completed repairs require TDD/test evidence
 and reviewer evidence unless an explicit quality bypass reason is recorded.
+For read-only validation or documentation-only handoffs, attach the generated
+report with --evidence and explain why the quality loop is not applicable with
+--quality-bypass-reason.
 EOF
     return 0
   fi

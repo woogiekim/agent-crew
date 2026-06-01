@@ -56,6 +56,21 @@ def load_json_file(path: Path) -> dict:
         return {}
 
 
+def resolve_fixture_path(value: str | None, *, fixture_path: Path, repo_root: Path) -> Path | None:
+    if not value:
+        return None
+
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+
+    fixture_relative = fixture_path.parent / path
+    if fixture_relative.exists():
+        return fixture_relative.resolve()
+
+    return (repo_root / path).resolve()
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent.parent
     default_fixture = repo_root / "core" / "evaluations" / "e2e-slo.json"
@@ -67,6 +82,9 @@ def main() -> int:
     parser.add_argument("--status-budget-ms", type=int)
     parser.add_argument("--telemetry-budget-ms", type=int)
     parser.add_argument("--memory-search-budget-ms", type=int)
+    parser.add_argument("--retrieval-fixture")
+    parser.add_argument("--retrieval-results-file")
+    parser.add_argument("--retrieval-elapsed-ms", type=float)
     parser.add_argument("--update-dry-run-budget-ms", type=int)
     parser.add_argument("--update-noop-local-budget-ms", type=int)
     parser.add_argument("--update-cold-local-budget-ms", type=int)
@@ -80,7 +98,8 @@ def main() -> int:
     args = parser.parse_args()
 
     project_root = Path(args.project_root).expanduser().resolve()
-    fixture = load_json_file(Path(args.fixture).expanduser().resolve())
+    fixture_path = Path(args.fixture).expanduser().resolve()
+    fixture = load_json_file(fixture_path)
     status_budget_ms = args.status_budget_ms or int(fixture.get("status_budget_ms", 500))
     telemetry_budget_ms = args.telemetry_budget_ms or int(fixture.get("telemetry_budget_ms", 500))
     memory_search_budget_ms = args.memory_search_budget_ms or int(fixture.get("memory_search_budget_ms", 500))
@@ -107,11 +126,35 @@ def main() -> int:
         checks.append(check_budget("memory_search", memory, memory_search_budget_ms, allowed_rc={0, 124}))
 
     if not args.skip_retrieval_eval:
-        retrieval = run_timed(
-            [sys.executable, str(repo_root / "core" / "scripts" / "memory-retrieval-eval.py"), "--format", "json"],
-            cwd=project_root,
-            env=env,
+        retrieval_command = [
+            sys.executable,
+            str(repo_root / "core" / "scripts" / "memory-retrieval-eval.py"),
+            "--format",
+            "json",
+        ]
+        retrieval_fixture = resolve_fixture_path(
+            args.retrieval_fixture or fixture.get("memory_retrieval_fixture"),
+            fixture_path=fixture_path,
+            repo_root=repo_root,
         )
+        retrieval_results = resolve_fixture_path(
+            args.retrieval_results_file or fixture.get("memory_retrieval_results_file"),
+            fixture_path=fixture_path,
+            repo_root=repo_root,
+        )
+        retrieval_elapsed_ms = (
+            args.retrieval_elapsed_ms
+            if args.retrieval_elapsed_ms is not None
+            else fixture.get("memory_retrieval_elapsed_ms")
+        )
+        if retrieval_fixture is not None:
+            retrieval_command.extend(["--fixture", str(retrieval_fixture)])
+        if retrieval_results is not None:
+            retrieval_command.extend(["--results-file", str(retrieval_results)])
+        if retrieval_elapsed_ms is not None:
+            retrieval_command.extend(["--elapsed-ms", str(retrieval_elapsed_ms)])
+
+        retrieval = run_timed(retrieval_command, cwd=project_root, env=env)
         retrieval_payload = load_json_text(retrieval["stdout"])
         retrieval_failures = []
         if retrieval["returncode"] != 0 or not retrieval_payload.get("passed"):

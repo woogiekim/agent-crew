@@ -1,0 +1,8 @@
+f6c6c59e-b4aa-4169-aa27-968de14a1e39 score=0.92 commercialization validation memory reporting telemetry blockers
+693036fb-febd-4d8a-b8c3-cf3a0d5c73f3 score=0.91 hosted validation evidence blocker follow-up
+c004a271-d86c-4467-bf54-29927887bbd6 score=0.9 memory reporting telemetry remediation
+84ce5062-ea82-4552-84eb-6aaa2c4e9638 score=0.89 commercialization readiness guardrails
+req-commercialization-eval-6-20260521 score=0.88 requirement commercialization evaluation
+a1fc78d0-14fd-45ae-a3e5-1363e328f813 score=0.87 cost telemetry validation evidence
+31ec5287-1233-426e-8e1f-241adff08cb3 score=0.86 memory retrieval blocker remediation
+d2d62df8-33c9-4d03-90b3-e2be9484f88f score=0.85 runtime reporting telemetry blocker

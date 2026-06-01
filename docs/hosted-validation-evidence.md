@@ -43,3 +43,17 @@ Do not run hosted validation from CI or local automation unless the operator has
 provided credentials, approved the billable/external run, and confirmed the
 target environment. Without those prerequisites, produce an action plan and mark
 the hosted gate blocked or deferred.
+
+## Current Blocker Artifact
+
+When a clean hosted run cannot be produced from the active session, write a
+machine-readable blocker/action-plan artifact instead of treating a repaired
+local handoff as hosted evidence. The current action-plan location is:
+
+```text
+dist/hosted-validation-action-plan-20260601.json
+```
+
+That file must list the blocked adapter, the required external environment, and
+the exact pass criteria for the replacement `dist/hosted-*-validation.json`
+artifact.

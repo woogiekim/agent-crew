@@ -667,6 +667,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             all_findings.extend(doctor_runtime(args))
         elif mode == "host":
             all_findings.extend(doctor_host(args))
+    if args.format == "text":
+        counts = {"pass": 0, "warn": 0, "info": 0}
+        for finding in all_findings:
+            status = str(finding.get("status") or "").lower()
+            if status in counts:
+                counts[status] += 1
+        print(
+            "Summary: "
+            f"{counts['pass']} pass, {counts['warn']} warn, {counts['info']} info"
+        )
+        if counts["warn"]:
+            print("Next: rerun with --format json for full machine-readable detail.")
     if args.format == "json":
         print(json.dumps({"findings": all_findings}, ensure_ascii=False, indent=2))
     return 0

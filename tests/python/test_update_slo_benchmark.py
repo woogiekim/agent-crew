@@ -332,6 +332,61 @@ def test_e2e_slo_runs_memory_search_and_retrieval_eval(tmp_path: Path):
     assert "memory_retrieval_eval" in names
 
 
+def test_e2e_slo_uses_fixture_retrieval_results_for_deterministic_full_mode(tmp_path: Path):
+    crew = tmp_path / "crew"
+    crew.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    crew.chmod(crew.stat().st_mode | stat.S_IXUSR)
+    memory = tmp_path / "memory"
+    memory.write_text("#!/usr/bin/env bash\nprintf 'live-noise score=0.1\\n'\n", encoding="utf-8")
+    memory.chmod(memory.stat().st_mode | stat.S_IXUSR)
+    results = tmp_path / "retrieval.txt"
+    results.write_text(
+        "\n".join([
+            "f6c6c59e-b4aa-4169-aa27-968de14a1e39 score=0.9",
+            "693036fb-febd-4d8a-b8c3-cf3a0d5c73f3 score=0.9",
+            "c004a271-d86c-4467-bf54-29927887bbd6 score=0.9",
+            "84ce5062-ea82-4552-84eb-6aaa2c4e9638 score=0.9",
+            "req-commercialization-eval-6-20260521 score=0.9",
+            "a1fc78d0-14fd-45ae-a3e5-1363e328f813 score=0.9",
+            "31ec5287-1233-426e-8e1f-241adff08cb3 score=0.9",
+            "d2d62df8-33c9-4d03-90b3-e2be9484f88f score=0.9",
+        ]),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(E2E_SLO),
+            "--project-root",
+            str(tmp_path),
+            "--crew-bin",
+            str(crew),
+            "--memory-bin",
+            str(memory),
+            "--retrieval-results-file",
+            str(results),
+            "--retrieval-elapsed-ms",
+            "100",
+            "--skip-update-dry-run",
+            "--status-budget-ms",
+            "10000",
+            "--telemetry-budget-ms",
+            "10000",
+            "--memory-search-budget-ms",
+            "10000",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    retrieval = next(check for check in json.loads(result.stdout)["checks"] if check["name"] == "memory_retrieval_eval")
+    assert retrieval["passed"] is True
+
+
 def test_e2e_slo_runs_update_dry_run_and_remote_benchmark_failure(tmp_path: Path):
     crew = tmp_path / "crew"
     crew.write_text(
