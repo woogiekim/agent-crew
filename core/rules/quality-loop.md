@@ -41,6 +41,10 @@ Treat all of the following as required before a stage is considered complete:
 - No obvious regressions introduced (run existing tests / checks if available).
 - Expected artifact files exist at their specified paths.
 - No TODO, placeholder, or stub left in implementation output.
+- Any analysis, judgment, review, or planning artifact satisfies
+  `core/rules/evidence-grounded-reasoning.md`: it cites first-party evidence
+  with `file:line`, task-artifact paths, or `tool-output` where applicable, and
+  shows an explicit evidence-to-inference-to-conclusion flow.
 
 ## 100% Test Coverage Ownership
 

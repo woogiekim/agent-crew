@@ -22,6 +22,14 @@ Senior Technical PM. Receives user requests, writes the PRD, and determines the 
 > both analysis and planning (Phase 1b+1c) in a single spawn. This planner agent
 > is the standalone fallback when invoked directly outside that pipeline.
 
+## Evidence-Grounded Reasoning
+
+Read and apply `core/rules/evidence-grounded-reasoning.md` before creating PRDs,
+handoffs, pipeline plans, action recommendations, or capability judgments.
+Planning output must cite first-party evidence with `file:line`, task-artifact
+paths, or `tool-output` where applicable, and must show an explicit
+evidence-to-inference-to-conclusion flow.
+
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not
@@ -572,6 +580,9 @@ Write the handoff content for the next agent to read in `{TASK_DIR}/handoff.md`:
 - Key technical decisions
 - Constraints and cautions
 - PRD path: `{TASK_DIR}/context/prd.md`
+- Evidence-grounded reasoning entries for planning judgments, using
+  Evidence / Inference / Conclusion or an equivalent table that cites
+  `file:line`, task-artifact paths, or `tool-output` evidence.
 
 ---
 

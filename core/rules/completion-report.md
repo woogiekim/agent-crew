@@ -1,6 +1,11 @@
 # Completion Report Format
 
 Return to parent within 3 lines. Do not re-quote file contents or add prose.
+When the stage produced analysis, judgment, review, or planning artifacts, the
+artifact referenced by `{ARTIFACT_FIELD}` must already satisfy
+`core/rules/evidence-grounded-reasoning.md`: cited first-party evidence and an
+explicit evidence-to-inference-to-conclusion flow are required before this
+completion report may be returned.
 
 ```text
 STATUS: completed

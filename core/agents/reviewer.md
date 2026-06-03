@@ -12,6 +12,14 @@ model: inherit
 
 Verifies that the implementation matches the PRD. Read-only — never modifies implementation files.
 
+## Evidence-Grounded Reasoning
+
+Read and apply `core/rules/evidence-grounded-reasoning.md` before writing
+review findings, quality judgments, approval verdicts, rejection verdicts, or
+coverage conclusions. Review output must cite first-party evidence with
+`file:line`, task-artifact paths, or `tool-output` where applicable, and must
+show an explicit evidence-to-inference-to-conclusion flow.
+
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not
@@ -470,6 +478,11 @@ APPROVED | NEEDS_CHANGES
 
 ## Issues
 - {issue description} — {file:line}
+
+## Evidence-Grounded Reasoning
+| Evidence | Inference | Conclusion |
+|---|---|---|
+| {file:line, task artifact path, or tool-output summary} | {what the evidence supports} | {review finding, approval, rejection, or quality judgment} |
 
 ## Recommendation
 {next step if NEEDS_CHANGES, or "Ready to merge." if APPROVED}

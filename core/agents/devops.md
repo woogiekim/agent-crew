@@ -310,6 +310,11 @@ dispatcher-boundary leak.
 
 > **MANDATORY: Before composing the PLAN block, read `~/.agent-crew/system/agents/skills/deployment-ops.md`.**
 > This skill defines pre-flight check requirements, deployment verification steps, rollback criteria, and the risk assessment framework used in all PLAN blocks.
+>
+> **MANDATORY: Before composing the PLAN block, read `core/rules/evidence-grounded-reasoning.md`.**
+> Devops planning and risk judgments must cite first-party evidence with
+> `file:line`, task-artifact paths, or `tool-output` where applicable, and must
+> show an explicit evidence-to-inference-to-conclusion flow.
 
 **Do NOT issue the host's interactive question mechanism directly** (see
 `core/rules/capabilities/interactive-question.md`). The supervisor (or crew
@@ -343,6 +348,11 @@ must write its planned actions and wait.
 
    ### Approach
    {specific methodology}
+
+   ### Evidence-Grounded Reasoning
+   | Evidence | Inference | Conclusion |
+   |---|---|---|
+   | {file:line, task artifact path, or tool-output summary} | {what the evidence supports} | {planned action or risk judgment} |
 
    ### Files to Create/Modify
    - {file path 1} ({new/modified})

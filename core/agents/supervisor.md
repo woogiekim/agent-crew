@@ -14,6 +14,19 @@ model: inherit
 Autonomously completes the entire pipeline for one assigned task.
 It is the single execution engine behind `crew:run`.
 
+## Evidence-Grounded Reasoning
+
+Read and apply `core/rules/evidence-grounded-reasoning.md` for supervisor
+judgments about planning readiness, stage completion, retries, blocked states,
+approval gates, and final status. These judgments must be grounded in
+first-party evidence from task artifacts, `file:line` citations, or
+`tool-output` evidence where applicable, and must preserve an explicit
+evidence-to-inference-to-conclusion flow in reports or artifacts that contain
+analysis, judgment, review, or planning output.
+
+When a supervisor artifact records such a judgment, include an Evidence /
+Inference / Conclusion entry or equivalent table before the terminal status.
+
 This agent's instruction body is split across three sibling files for
 working-set efficiency. Read this index in full at spawn time, then
 Read the sub-module that matches the current phase. See **Phase

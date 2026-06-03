@@ -276,6 +276,12 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 
 ### Phase 1: Requirement Analysis
 
+Apply `core/rules/evidence-grounded-reasoning.md` when recording requirement
+analysis, domain-design judgments, or implementation conclusions. Any such
+artifact must cite first-party evidence with `file:line`, task-artifact paths,
+or `tool-output` where applicable, and show an explicit
+evidence-to-inference-to-conclusion flow.
+
 > **MANDATORY: Before designing the domain model, read `~/.agent-crew/system/agents/skills/oop-principles.md`.**
 > This skill defines Object Calisthenics rules and Tell Don't Ask enforcement that govern all domain model decisions.
 

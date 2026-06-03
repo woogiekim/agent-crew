@@ -193,6 +193,11 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 
 > **MANDATORY: Before writing design-spec.md, read `~/.agent-crew/system/agents/skills/ux-design.md`.**
 > This skill defines screen specification format, component definition structure, interaction flow patterns, and quality criteria that design-spec.md must satisfy.
+>
+> **MANDATORY: Before writing design or planning judgments, read `core/rules/evidence-grounded-reasoning.md`.**
+> Design analysis must cite first-party evidence with `file:line`,
+> task-artifact paths, or `tool-output` where applicable, and must show an
+> explicit evidence-to-inference-to-conclusion flow.
 
 1. Read `{TASK_DIR}/context/prd.md` and handoff from `HANDOFF_PATH`.
 2. Write UI/UX specification to `{TASK_DIR}/context/design-spec.md`.
@@ -202,6 +207,9 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 - **Component Definitions**: name, props interface, state, event handlers
 - **User Interaction Flow**: screen transitions, form/validation flow, error states
 - **API Integration Points**: required endpoints per screen, request/response formats
+- **Evidence-Grounded Reasoning**: Evidence / Inference / Conclusion entries
+  for design or planning judgments, citing `file:line`, task-artifact paths, or
+  `tool-output` evidence where applicable.
 
 3. Update `handoff.md` only when running standalone (skip when prompt says "do not modify handoff.md"). Include: design-spec.md path, recommended stack, implementation priority.
 

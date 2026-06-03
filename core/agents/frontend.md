@@ -238,6 +238,12 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
 ## Execution Flow
 
 ### Phase 1: Analysis
+
+Apply `core/rules/evidence-grounded-reasoning.md` when recording UI analysis,
+component judgments, or implementation conclusions. Any such artifact must cite
+first-party evidence with `file:line`, task-artifact paths, or `tool-output`
+where applicable, and show an explicit evidence-to-inference-to-conclusion flow.
+
 1. Read `{TASK_DIR}/context/design-spec.md` and handoff from `HANDOFF_PATH`.
 2. Analyze existing project codebase: detect test framework, component patterns, naming conventions.
 3. For each component listed in design-spec, identify: expected props, rendered output, user interactions, edge cases.

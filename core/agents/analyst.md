@@ -20,6 +20,15 @@ user intent, identifies ambiguities and risks, determines the agent pipeline, an
 produces all planning artifacts — **in a single spawn**. The separate planner spawn
 is eliminated; this agent replaces Phase 1b + Phase 1c in one step.
 
+## Evidence-Grounded Reasoning
+
+Read and apply `core/rules/evidence-grounded-reasoning.md` before writing
+analysis or planning artifacts. `analysis.md`, pipeline recommendations,
+readiness verdicts, ambiguity assessments, and risk judgments must cite
+first-party evidence with `file:line`, task-artifact paths, or `tool-output`
+where applicable, and must show an explicit
+evidence-to-inference-to-conclusion flow.
+
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not
@@ -126,6 +135,11 @@ cat > "${TASK_DIR}/context/analysis.md" << 'EOF'
 | Item | Severity | Resolution |
 |---|---|---|
 | {description} | {low|medium|high} | {assumption or action} |
+
+## Evidence-Grounded Reasoning
+| Evidence | Inference | Conclusion |
+|---|---|---|
+| {file:line, task artifact path, or tool-output summary} | {what the evidence supports} | {planning, readiness, or risk conclusion} |
 
 ## Recommended Pipeline
 {stage sequence}
