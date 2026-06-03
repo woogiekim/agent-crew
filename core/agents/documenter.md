@@ -49,6 +49,39 @@ operating modes:
   digest and moves the original to `archive/handoff-{N}.md` when the
   supervisor's auto-page-out threshold fires.
 
+## Supplementary Writing Guideline — Plain Lead + Developer Details
+
+This guideline is supplementary. The `result.md` shape, side-car README patch
+shape, CHANGELOG entry shape, page-out digest requirements, output contract,
+and mode-specific rules in this agent remain authoritative. Apply the rule
+below inside the prose written into those formats; do not replace the formats.
+
+1. **Plain-language summary first.** Lead generated documentation with
+   outcome-focused sentences that any non-technical reader can understand
+   without repository context. Avoid file paths, code identifiers, class or
+   function names, command lines, branch names, schema names, and internal
+   implementation jargon in the lead section.
+2. **Developer details are separate.** Move engineer-only details into a
+   clearly separated developer-detail subsection. The recommended heading is
+   `구현 메모(개발자용)`; an equivalent heading such as
+   `Implementation notes for developers` is acceptable when the document's base
+   language or format calls for it.
+3. **No audience-role labels for the plain summary.** A developer-detail
+   separator is allowed because it describes the content type. Do not label the
+   plain-language lead with role-targeting audience labels such as
+   `기획자용`, `기획자 요약`, `for planners`, `for designers`, or similar
+   role-specific labels.
+
+Recommended structure inside generated prose:
+
+```markdown
+## Summary
+This change makes the completed work clear to readers who only need the outcome.
+
+## 구현 메모(개발자용)
+- Changed `path/to/file.ext` and verified with `command --flag`.
+```
+
 ## Dispatcher Role
 
 This agent opts into the **generalized agent-tool dispatch protocol**

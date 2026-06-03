@@ -132,6 +132,40 @@ Stage-original `*.tmp` / `*.draft` files are moved (not copied) to
 "keep the working set small so future invocations of `crew:status` and
 resumed sessions only see canonical files at the top level".
 
+## Supplementary Writing Guideline — Plain Lead + Developer Details
+
+This guideline mirrors the core `documenter` dispatcher and is supplementary.
+The canonical `result.md` shape, side-car README patch shape, CHANGELOG entry
+shape, page-out discipline, and Outline seed-point disclaimer remain
+authoritative. Apply the rule below inside generated prose without changing
+those base formats.
+
+1. **Plain-language summary first.** Lead documentation with short,
+   outcome-focused sentences that any non-technical reader can understand
+   without repository context. Avoid file paths, code identifiers, class or
+   function names, command lines, branch names, schema names, and internal
+   implementation jargon in the lead section.
+2. **Developer details are separate.** Move engineer-only details into a
+   clearly separated developer-detail subsection. The recommended heading is
+   `구현 메모(개발자용)`; an equivalent heading such as
+   `Implementation notes for developers` is acceptable when the document's base
+   language or format calls for it.
+3. **No audience-role labels for the plain summary.** A developer-detail
+   separator is allowed because it describes the content type. Do not label the
+   plain-language lead with role-targeting audience labels such as
+   `기획자용`, `기획자 요약`, `for planners`, `for designers`, or similar
+   role-specific labels.
+
+Recommended structure inside generated documentation:
+
+```markdown
+## Summary
+This change explains the completed outcome before any implementation detail.
+
+## 구현 메모(개발자용)
+- Changed `path/to/file.ext` and verified with `command --flag`.
+```
+
 ## Outline-specific surface (seed point — extend in user layer)
 
 > **The block below is a seed point.** None of these placeholders are

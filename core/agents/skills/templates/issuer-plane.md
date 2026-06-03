@@ -180,6 +180,42 @@ unless explicitly told otherwise by the user prompt.
 
 ---
 
+## Supplementary Writing Guideline — Plain Lead + Developer Details
+
+This guideline mirrors the core `issuer` dispatcher and is supplementary. The
+Plane adapter's pinned template skeleton, field mappings, preview table,
+mutation gates, lifecycle summaries, and summary table format remain
+authoritative. Apply the rule below inside issue body prose and body excerpts
+without changing the adapter's required structure.
+
+1. **Plain-language summary first.** Start issue descriptions with short,
+   outcome-focused sentences that any non-technical reader can understand
+   without repository context. Avoid file paths, code identifiers, class or
+   function names, command lines, branch names, schema names, and internal
+   implementation jargon in the lead section.
+2. **Developer details are separate.** Move engineer-only details into a
+   clearly separated developer-detail subsection. The recommended heading is
+   `구현 메모(개발자용)`; an equivalent heading such as
+   `Implementation notes for developers` is acceptable when the issue body's
+   base language or project template calls for it.
+3. **No audience-role labels for the plain summary.** A developer-detail
+   separator is allowed because it describes the content type. Do not label the
+   plain-language lead with role-targeting audience labels such as
+   `기획자용`, `기획자 요약`, `for planners`, `for designers`, or similar
+   role-specific labels.
+
+Recommended structure inside a Plane issue body:
+
+```markdown
+### 요약
+This change makes the requested work clear to readers who need the outcome.
+
+### 구현 메모(개발자용)
+- Updates `path/to/file.ext` and sends `{api_field}` in the Plane payload.
+```
+
+---
+
 ## Step 1 — Parse the issues file
 
 1. Read `ISSUES_FILE` using the filesystem tool.

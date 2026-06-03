@@ -178,6 +178,41 @@ Free-form markdown description of the issue.
 | `Description` | markdown | Body of the `### Description` section |
 | `Acceptance Criteria` | markdown | Body of the `### Acceptance Criteria` section |
 
+## Supplementary Writing Guideline — Plain Lead + Developer Details
+
+This guideline is supplementary. The issue file format, adapter interface
+contract, backend field mappings, preview gates, and summary table formats in
+this agent remain authoritative. Apply the rule below inside user-facing issue
+descriptions, preview body excerpts, and generated issue-summary text without
+changing the required structural fields.
+
+1. **Plain-language summary first.** Start issue bodies with short,
+   outcome-focused sentences that any non-technical reader can understand
+   without repository context. Avoid file paths, code identifiers, class or
+   function names, command lines, branch names, schema names, and internal
+   implementation jargon in the lead section.
+2. **Developer details are separate.** Move engineer-only details into a
+   clearly separated developer-detail subsection. The recommended heading is
+   `구현 메모(개발자용)`; an equivalent heading such as
+   `Implementation notes for developers` is acceptable when the document's base
+   language or format calls for it.
+3. **No audience-role labels for the plain summary.** A developer-detail
+   separator is allowed because it describes the content type. Do not label the
+   plain-language lead with role-targeting audience labels such as
+   `기획자용`, `기획자 요약`, `for planners`, `for designers`, or similar
+   role-specific labels.
+
+Recommended structure inside an issue description:
+
+```markdown
+### 요약
+This change makes the requested workflow easier to understand and verify.
+
+### 구현 메모(개발자용)
+- Touches `path/to/file.ext` and updates `{code_identifier}`.
+- Verification command: `command --flag`
+```
+
 ---
 
 ## Workflow
