@@ -1394,6 +1394,10 @@ Run the check and branch:
 ```bash
 SUFFICIENCY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
   --status "${TASK}")
+POLICY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
+  --policy \
+  --intensity "${AGENT_CREW_INTERACTION_INTENSITY:-balanced}" \
+  "${TASK}")
 ```
 
 **If `SUFFICIENCY == "SUFFICIENT"`:** Synthesize the REQUIREMENTS block inline
@@ -1415,12 +1419,20 @@ field to the synthesized block that points at that file; do not inline large
 skill output into requirements.
 
 **If `SUFFICIENCY == "AMBIGUOUS"`:** Proceed to Step 5 (collect via agent) with
-`MODE: single_round`.
+the mode selected by `POLICY`:
+
+- `single_round` — run the existing single structured-choice requirements
+  interview.
+- `deep_interview` — run `MODE: deep_interview` and keep implementation blocked
+  until `ambiguity <= ${AGENT_CREW_AMBIGUITY_THRESHOLD:-0.20}`.
+- `direct_answer` — valid only for question-shaped read-only work under
+  `light`; implementation/mutation requests must not use it to bypass
+  requirements.
 
 For parallel runs (`N > 1`), run the sufficiency check for each task
 independently. Tasks whose check returns `SUFFICIENT` skip Step 5 entirely;
 tasks whose check returns `AMBIGUOUS` spawn the requirements agent in
-single-round mode in parallel with the others.
+the selected requirements mode in parallel with the others.
 
 ### 5. Collect Requirements Per Task (AMBIGUOUS path only)
 
@@ -1442,23 +1454,25 @@ single-round mode in parallel with the others.
 TASK: {task description}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
-MODE: single_round
+MODE: {single_round|deep_interview from POLICY}
 CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md
   (include only when the file exists)
 
-Run a single-round structured user-choice interview (per
-`core/rules/capabilities/interactive-question.md`) (scope + target + constraints
-in one call), validate scope, detect ambiguities, write
-{TASK_DIR}/context/requirements.md, preserve CODEX_SKILL_CONTEXT_PATH in the
-requirements file when present, and return the REQUIREMENTS block.
+Run the selected structured user-choice interview (per
+`core/rules/capabilities/interactive-question.md`), validate scope, detect
+ambiguities, write {TASK_DIR}/context/requirements.md, preserve
+CODEX_SKILL_CONTEXT_PATH in the requirements file when present, and return the
+REQUIREMENTS block. In `MODE: deep_interview`, ask targeted follow-up questions
+until the ambiguity threshold is satisfied or report BLOCKED before
+implementation.
 ```
 
 Wait for the agent to return. Extract the `REQUIREMENTS` block and record it.
 
-> **`MODE: two_round` is a deeper fallback** for rare cases where the
-> single-round answers themselves contain ambiguity the agent decides it
-> cannot resolve without a domain-specific follow-up. The orchestrator does
-> NOT request `two_round` directly; only the agent may escalate.
+> **`MODE: two_round` is a compatibility fallback.** `MODE: deep_interview` is
+> the preferred deeper path for high-ambiguity `deep` / `strict` policy work.
+> `two_round` remains available for legacy callers, but the orchestrator should
+> prefer the policy-selected mode.
 
 **When `N > 1`:** Spawn all requirements agents for `AMBIGUOUS` tasks
 **simultaneously in a single response** (one Agent tool call per ambiguous task,
@@ -2374,9 +2388,11 @@ crew:run "resolve merge conflicts"
   requirements overhead from ~22 s to ~2 s on well-formed prompts. `AMBIGUOUS`
   means the requirements agent runs in single-round mode (one structured
   user-choice call (per `core/rules/capabilities/interactive-question.md`)
-  asking scope + target + constraints together). The legacy 2-round
-  interview remains available as a deeper escalation that only the agent
-  itself may request.
+  asking scope + target + constraints together) unless the interaction policy
+  selects `MODE: deep_interview` for high-ambiguity `deep` / `strict` work. The
+  default ambiguity threshold is `0.20`; implementation is allowed only when the
+  generated requirements report `implementation_allowed: true`. The legacy
+  2-round interview remains available for compatibility.
 - `crew:run` is the canonical workflow entry point.
 - Use plain `crew:<intent>` syntax in user-facing guidance.
 - Task dependencies still matter. If tasks depend on each other, pass them as a

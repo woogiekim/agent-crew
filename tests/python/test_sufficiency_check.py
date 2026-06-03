@@ -103,6 +103,10 @@ class TestCommercializationPrompt:
         )
         payload = json.loads(result.stdout)
         assert payload["status"] == "SUFFICIENT"
+        assert payload["intensity"] == "balanced"
+        assert payload["ambiguity_threshold"] == 0.2
+        assert payload["implementation_allowed"] is True
+        assert payload["next_action"] == "synthesize"
         assert payload["signals"]["has_perf"] is True
         assert payload["signals"]["has_quality"] is True
 
@@ -189,6 +193,16 @@ class TestCommercializationPrompt:
         assert "No remote publish without approval" in script_feature
         assert "Explicit function/interface spec" in script_feature
 
+    def test_synthesized_requirements_include_ambiguity_policy_fields(self):
+        requirements = _module.synthesize_requirements(
+            "Update the pipeline agent hook to use existing stack",
+            intensity="strict",
+        )
+        assert "ambiguity: 0.20" in requirements
+        assert "ambiguity_threshold: 0.20" in requirements
+        assert "interaction_intensity: strict" in requirements
+        assert "implementation_allowed: true" in requirements
+
     def test_second_commercialization_e2e_prompt_is_sufficient(self):
         task = (
             "Run a second commercialization-focused end-to-end validation of "
@@ -263,6 +277,59 @@ class TestRegressionAmbiguousCases:
         assert check()(
             "Write a Python script to parse CSV files using existing stack"
         ) == "AMBIGUOUS"
+
+
+class TestInteractionIntensityPolicy:
+    def test_strict_ambiguous_task_routes_to_deep_interview(self):
+        report = _module.policy_report(
+            "Create docs for the existing config",
+            intensity="strict",
+        )
+        assert report["status"] == "AMBIGUOUS"
+        assert report["ambiguity"] == 0.6
+        assert report["implementation_allowed"] is False
+        assert report["next_action"] == "deep_interview"
+        assert report["missing_dimensions"] == [
+            "target",
+            "constraints",
+            "success_criteria",
+        ]
+
+    def test_light_question_can_use_direct_answer_policy(self):
+        report = _module.policy_report(
+            "what is the current architecture?",
+            intensity="light",
+        )
+        assert report["status"] == "AMBIGUOUS"
+        assert report["implementation_allowed"] is False
+        assert report["next_action"] == "direct_answer"
+
+    def test_cli_policy_prints_next_action(self):
+        result = subprocess.run(
+            [
+                "python3",
+                str(SCRIPT),
+                "--policy",
+                "--intensity",
+                "deep",
+                "Create docs for the existing config",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert result.stdout.strip() == "deep_interview"
+
+    def test_custom_threshold_can_make_sufficient_task_require_more_clarity(self):
+        report = _module.policy_report(
+            "Update the pipeline agent hook to use existing stack",
+            intensity="strict",
+            threshold=0.0,
+        )
+        assert report["status"] == "SUFFICIENT"
+        assert report["ambiguity"] == 0.2
+        assert report["implementation_allowed"] is False
+        assert report["next_action"] == "deep_interview"
 
 
 class TestPromptSurface:

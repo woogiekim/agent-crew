@@ -34,10 +34,14 @@ load them at agent startup:
 - `TASK_DIR`: State storage path (to write requirements output)
 - `MODE` (optional): `single_round` (default for new callers — one structured
   user-choice call (per `core/rules/capabilities/interactive-question.md`)
-  with scope + target + constraints) or `two_round`
-  (legacy — preserves the original Round 1 + Round 2 flow). If `MODE` is
-  unset, default to `two_round` for backward compatibility with any caller
-  that has not been updated.
+  with scope + target + constraints), `deep_interview` (targeted ambiguity
+  reduction until the configured threshold is satisfied), or `two_round`
+  (legacy — preserves the original Round 1 + Round 2 flow). If `MODE` is unset,
+  default to `two_round` for backward compatibility with any caller that has not
+  been updated.
+- `AMBIGUITY_THRESHOLD` (optional): decimal from `0` to `1`; default `0.20`.
+- `INTERACTION_INTENSITY` (optional): `light`, `balanced`, `deep`, or `strict`;
+  record it in requirements output when provided.
 - `CODEX_SKILL_CONTEXT_PATH` (optional): path to preserved Codex skill context
   from the `crew-run` wrapper. If present, record the path in requirements
   without erasing or summarizing away the original skill context.
@@ -50,6 +54,10 @@ The execution flow branches on `MODE` at the top of the agent run:
   path and supervisor Phase 1a AMBIGUOUS path): run **Step 1S** below, then
   jump directly to Step 4 (write requirements.md). Round 2 domain-specific
   follow-up is skipped entirely.
+- **`MODE == "deep_interview"`** (preferred for `deep` / `strict` interaction
+  intensity when the deterministic helper reports ambiguity above threshold):
+  run **Step 1D** below, then jump directly to Step 4. Implementation remains
+  blocked unless the final ambiguity is at or below `AMBIGUITY_THRESHOLD`.
 - **`MODE == "two_round"` or unset**: run the original Step 1 → Step 2 →
   Step 3 → Step 4 flow exactly as before.
 
@@ -134,6 +142,55 @@ path.
 > the agent MAY issue one targeted structured user-choice call (see
 > `core/rules/capabilities/interactive-question.md`) before Step 4. This
 > escalation MUST be at most one extra call and MUST NOT recurse.
+
+---
+
+### Step 1D — Deep Interview (runs only when `MODE == "deep_interview"`)
+
+Deep interview is an OMC-inspired ambiguity-reduction mode. It asks the smallest
+set of targeted questions required to bring the task below the implementation
+gate instead of running a fixed two-round interview.
+
+Use `AMBIGUITY_THRESHOLD` if provided; otherwise use `0.20`. Track these
+dimensions:
+
+| Dimension | Meaning |
+|---|---|
+| `intent` | The user wants implementation, not only advice or comparison |
+| `scope` | Backend / UI / full-stack / tooling-docs-config is known |
+| `target` | The affected user, workflow, file, branch, or surface is known |
+| `constraints` | Dependency, MVP, performance, security, approval, or stack limits are known |
+| `success_criteria` | Observable completion or validation criteria are known |
+
+Start from the deterministic helper's missing dimensions when available. If no
+helper report was provided, infer missing dimensions conservatively from `TASK`
+and the current answers. Ask at most one structured user-choice call at a time,
+targeting the highest-impact missing dimension:
+
+1. `intent`
+2. `scope`
+3. `target`
+4. `constraints`
+5. `success_criteria`
+
+After each answer, recompute:
+
+```text
+ambiguity = missing_dimensions / 5
+```
+
+Stop when `ambiguity <= AMBIGUITY_THRESHOLD`. If ambiguity remains above the
+threshold after three targeted question turns, return:
+
+```text
+STATUS: BLOCKED
+BLOCKER: ambiguity_threshold_not_met
+AMBIGUITY: {current value}
+AMBIGUITY_THRESHOLD: {threshold}
+MISSING_DIMENSIONS: {comma-separated missing dimensions}
+```
+
+Do not proceed to implementation when returning this blocker.
 
 ---
 
@@ -319,6 +376,12 @@ Write `{TASK_DIR}/context/requirements.md`:
 ## Domain Details
 {r2 answers as key: value pairs, or "(none)" if Round 2 was skipped}
 
+## Ambiguity Gate
+ambiguity: {final ambiguity, default 0.00 for synthesized or fully answered requirements}
+ambiguity_threshold: {AMBIGUITY_THRESHOLD, or 0.20}
+interaction_intensity: {INTERACTION_INTENSITY, or "(none)"}
+implementation_allowed: {true if ambiguity <= threshold, else false}
+
 ## Codex Skill Context
 {CODEX_SKILL_CONTEXT_PATH, or "(none)" if not provided}
 
@@ -331,6 +394,10 @@ skill_context: {CODEX_SKILL_CONTEXT_PATH, or "(none)"}
 followup:
   {key}: {value}
   ...
+ambiguity: {final ambiguity}
+ambiguity_threshold: {threshold}
+interaction_intensity: {INTERACTION_INTENSITY, or "(none)"}
+implementation_allowed: {true|false}
 ```
 ```
 
@@ -350,6 +417,10 @@ REQUIREMENTS: |
   skill_context: {CODEX_SKILL_CONTEXT_PATH, or "(none)"}
   followup:
     {key}: {value}
+  ambiguity: {final ambiguity}
+  ambiguity_threshold: {threshold}
+  interaction_intensity: {INTERACTION_INTENSITY, or "(none)"}
+  implementation_allowed: {true|false}
 ```
 
 If Round 2 was skipped (scope is "Tooling / docs / config"), omit `followup` entries or set `followup: (none)`.

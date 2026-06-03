@@ -27,6 +27,15 @@ SUFFICIENCY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
   --status "${TASK}")
 ```
 
+Interaction policy check:
+
+```bash
+POLICY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
+  --policy \
+  --intensity "${AGENT_CREW_INTERACTION_INTENSITY:-balanced}" \
+  "${TASK}")
+```
+
 Inline synthesis:
 
 ```bash
@@ -45,6 +54,29 @@ python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
 
 Question-like prompts always return `AMBIGUOUS`.
 
+## Interaction Intensity Policy
+
+The helper keeps the legacy `SUFFICIENT` / `AMBIGUOUS` status contract stable,
+then adds an OMC-inspired policy layer for hosts and commands that need a finer
+decision:
+
+| Intensity | Policy |
+|---|---|
+| `light` | Question-shaped read-only work may use `direct_answer`; mutating ambiguous work still collects requirements. |
+| `balanced` | Default. Preserve the current single-round requirements interview for ambiguous implementation work. |
+| `deep` | If ambiguity is above the threshold, run `MODE=deep_interview`; otherwise use the single-round path. |
+| `strict` | Treat the threshold as the implementation gate. Implementation is allowed only when `ambiguity <= ambiguity_threshold`; otherwise run `MODE=deep_interview` and keep implementation blocked until the gate passes. |
+
+Configuration:
+
+```text
+AGENT_CREW_INTERACTION_INTENSITY=light|balanced|deep|strict
+AGENT_CREW_AMBIGUITY_THRESHOLD=0.20
+```
+
+The default threshold is `0.20`. This is a deterministic policy threshold, not
+a statistical confidence claim.
+
 ## Output Contract
 
 When `SUFFICIENT`, the helper writes the same block shape the requirements
@@ -57,8 +89,14 @@ REQUIREMENTS: |
   constraints: {comma-separated synthesized constraints}
   followup: (none)
   sufficiency: HIGH
+  ambiguity: {0.00-1.00}
+  ambiguity_threshold: {0.00-1.00}
+  interaction_intensity: {light|balanced|deep|strict}
+  implementation_allowed: {true|false}
   inline_synthesis: true
 ```
 
 When `AMBIGUOUS`, do not synthesize. Delegate to the requirements agent in
-single-round mode.
+the mode selected by the policy action: `single_round` for `balanced` and most
+`light` implementation work, or `deep_interview` for high-ambiguity `deep` /
+`strict` work.

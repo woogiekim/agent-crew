@@ -90,7 +90,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 
 ## Key Features
 
-- **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run
+- **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run; the same helper now reports interaction intensity, ambiguity score, and a default 20% ambiguity threshold for deep/strict workflows
 - **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
 - **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
 - **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
@@ -407,12 +407,25 @@ be intentional: `SUFFICIENT` tasks synthesize a `REQUIREMENTS` block inline and
 do not ask the user. `AMBIGUOUS` tasks must ask and wait through the host's
 structured-question surface or the adapter's markdown fallback.
 
+The gate also exposes an OMC-inspired interaction policy. `light` favors
+ordinary direct answers for read-only question-shaped work, `balanced` preserves
+the current single-round requirements behavior, `deep` escalates high-ambiguity
+implementation work to a deep interview, and `strict` treats the default
+`0.20` ambiguity threshold as the implementation gate. The policy is
+deterministic and additive: existing `SUFFICIENT` / `AMBIGUOUS` status output is
+unchanged, while JSON and synthesized `REQUIREMENTS` blocks include
+`ambiguity`, `ambiguity_threshold`, `interaction_intensity`, and
+`implementation_allowed`.
+
 #### Layer 1 — Orchestrator (crew:run Step 5)
 
 `crew:run` first runs `core/scripts/requirements-sufficiency.py` per task:
 
 - `SUFFICIENT` — synthesize the `REQUIREMENTS` block inline and continue.
 - `AMBIGUOUS` — delegate to the requirements agent for a structured interview.
+- `deep_interview` policy action — run the requirements agent in
+  `MODE=deep_interview` until the remaining ambiguity is at or below the
+  configured threshold, or block before implementation.
 
 When delegation is needed, the requirements agent asks:
 

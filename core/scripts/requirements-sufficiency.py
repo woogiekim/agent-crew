@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -124,6 +125,9 @@ QUALITY_KW = (
     "actionable",
     "user-visible",
 )
+INTENSITY_CHOICES = ("light", "balanced", "deep", "strict")
+DEFAULT_INTENSITY = "balanced"
+DEFAULT_AMBIGUITY_THRESHOLD = 0.20
 
 
 def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
@@ -231,6 +235,126 @@ def sufficiency_check(task: str) -> str:
     return "AMBIGUOUS"
 
 
+def _default_intensity() -> str:
+    return os.environ.get("AGENT_CREW_INTERACTION_INTENSITY", DEFAULT_INTENSITY)
+
+
+def _default_threshold() -> float:
+    raw = os.environ.get("AGENT_CREW_AMBIGUITY_THRESHOLD")
+    if raw is None:
+        return DEFAULT_AMBIGUITY_THRESHOLD
+    return float(raw)
+
+
+def normalize_intensity(value: str) -> str:
+    intensity = value.strip().lower()
+    if intensity not in INTENSITY_CHOICES:
+        choices = ", ".join(INTENSITY_CHOICES)
+        raise ValueError(f"intensity must be one of: {choices}")
+    return intensity
+
+
+def normalize_threshold(value: float) -> float:
+    threshold = float(value)
+    if threshold < 0 or threshold > 1:
+        raise ValueError("ambiguity threshold must be between 0 and 1")
+    return threshold
+
+
+def ambiguity_dimensions(signals: dict) -> list[dict]:
+    """Return deterministic ambiguity dimensions for policy decisions."""
+    has_acceptance_signal = (
+        signals["has_perf"]
+        or signals["has_quality"]
+        or signals["has_mvp"]
+        or signals["has_script_func_spec"]
+    )
+    dimensions = [
+        ("intent", not signals["has_question"]),
+        ("scope", signals["scope_hit"]),
+        ("target", signals["target_hit"]),
+        ("constraints", signals["constraint_hit"]),
+        ("success_criteria", has_acceptance_signal),
+    ]
+    return [
+        {"name": name, "present": bool(present)}
+        for name, present in dimensions
+    ]
+
+
+def ambiguity_score(dimensions: list[dict]) -> float:
+    missing = sum(1 for dimension in dimensions if not dimension["present"])
+    return round(missing / len(dimensions), 2)
+
+
+def policy_next_action(
+    *,
+    status: str,
+    ambiguity: float,
+    threshold: float,
+    intensity: str,
+    signals: dict,
+) -> str:
+    """Return the next workflow action for the interaction policy."""
+    if signals["has_question"] and intensity == "light":
+        return "direct_answer"
+
+    if status == "SUFFICIENT" and ambiguity <= threshold:
+        return "synthesize"
+
+    if intensity == "light":
+        return "single_round"
+    if intensity == "balanced":
+        return "single_round"
+    if intensity == "deep" and ambiguity > threshold:
+        return "deep_interview"
+    if intensity == "strict" and ambiguity > threshold:
+        return "deep_interview"
+    return "single_round"
+
+
+def policy_report(
+    task: str,
+    *,
+    intensity: str | None = None,
+    threshold: float | None = None,
+) -> dict:
+    """Return the full sufficiency and ambiguity policy report."""
+    resolved_intensity = normalize_intensity(intensity or _default_intensity())
+    resolved_threshold = normalize_threshold(
+        _default_threshold() if threshold is None else threshold
+    )
+    signals = sufficiency_signals(task)
+    status = sufficiency_check(task)
+    dimensions = ambiguity_dimensions(signals)
+    ambiguity = ambiguity_score(dimensions)
+    missing = [
+        dimension["name"]
+        for dimension in dimensions
+        if not dimension["present"]
+    ]
+    implementation_allowed = status == "SUFFICIENT" and ambiguity <= resolved_threshold
+    next_action = policy_next_action(
+        status=status,
+        ambiguity=ambiguity,
+        threshold=resolved_threshold,
+        intensity=resolved_intensity,
+        signals=signals,
+    )
+
+    return {
+        "status": status,
+        "intensity": resolved_intensity,
+        "ambiguity": ambiguity,
+        "ambiguity_threshold": resolved_threshold,
+        "implementation_allowed": implementation_allowed,
+        "next_action": next_action,
+        "dimensions": dimensions,
+        "missing_dimensions": missing,
+        "signals": signals,
+    }
+
+
 def codex_skill_context(task: str) -> str:
     """Return a compact marker for explicit Codex skill mentions in TASK."""
     skill_names = set(re.findall(r"(?<!\w)\$([A-Za-z][\w:-]*)", task))
@@ -240,9 +364,15 @@ def codex_skill_context(task: str) -> str:
     return ", ".join(sorted(skill_names))
 
 
-def synthesize_requirements(task: str) -> str:
+def synthesize_requirements(
+    task: str,
+    *,
+    intensity: str | None = None,
+    threshold: float | None = None,
+) -> str:
     """Return a requirements block compatible with the requirements agent."""
     signals = sufficiency_signals(task)
+    policy = policy_report(task, intensity=intensity, threshold=threshold)
 
     if signals["backend_hit"] and signals["ui_hit"]:
         scope = "Full-stack"
@@ -287,6 +417,10 @@ def synthesize_requirements(task: str) -> str:
         f"  skill_context: {codex_skill_context(task)}\n"
         "  followup: (none)\n"
         "  sufficiency: HIGH\n"
+        f"  ambiguity: {policy['ambiguity']:.2f}\n"
+        f"  ambiguity_threshold: {policy['ambiguity_threshold']:.2f}\n"
+        f"  interaction_intensity: {policy['intensity']}\n"
+        f"  implementation_allowed: {str(policy['implementation_allowed']).lower()}\n"
         "  inline_synthesis: true\n"
     )
 
@@ -299,11 +433,36 @@ def main() -> int:
     parser.add_argument("--status", action="store_true", help="print SUFFICIENT/AMBIGUOUS")
     parser.add_argument("--requirements", action="store_true", help="print synthesized requirements")
     parser.add_argument("--json", action="store_true", help="print status and signals as JSON")
+    parser.add_argument("--policy", action="store_true", help="print the interaction policy next action")
+    parser.add_argument(
+        "--intensity",
+        default=_default_intensity(),
+        help="interaction intensity: light, balanced, deep, or strict",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="ambiguity threshold from 0 to 1; defaults to AGENT_CREW_AMBIGUITY_THRESHOLD or 0.20",
+    )
     parser.add_argument("--write", help="write synthesized requirements to this path")
     args = parser.parse_args()
 
+    try:
+        intensity = normalize_intensity(args.intensity)
+        threshold = normalize_threshold(
+            _default_threshold() if args.threshold is None else args.threshold
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
     status = sufficiency_check(args.task)
-    requirements = synthesize_requirements(args.task)
+    report = policy_report(args.task, intensity=intensity, threshold=threshold)
+    requirements = synthesize_requirements(
+        args.task,
+        intensity=intensity,
+        threshold=threshold,
+    )
 
     if args.write:
         path = Path(args.write)
@@ -313,9 +472,18 @@ def main() -> int:
     if args.json:
         print(json.dumps({
             "status": status,
-            "signals": sufficiency_signals(args.task),
+            "intensity": report["intensity"],
+            "ambiguity": report["ambiguity"],
+            "ambiguity_threshold": report["ambiguity_threshold"],
+            "implementation_allowed": report["implementation_allowed"],
+            "next_action": report["next_action"],
+            "dimensions": report["dimensions"],
+            "missing_dimensions": report["missing_dimensions"],
+            "signals": report["signals"],
             "requirements": requirements,
         }, ensure_ascii=False, indent=2))
+    elif args.policy:
+        print(report["next_action"])
     elif args.requirements:
         print(requirements, end="")
     elif args.write and not args.status:

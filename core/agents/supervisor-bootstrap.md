@@ -605,11 +605,15 @@ into the supervisor prompt:
 ```bash
 SUFFICIENCY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
   --status "${TASK}")
+POLICY=$(python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
+  --policy \
+  --intensity "${AGENT_CREW_INTERACTION_INTENSITY:-balanced}" \
+  "${TASK}")
 ```
 
 The helper returns either `SUFFICIENT` (synthesize REQUIREMENTS inline, no agent
-spawn) or `AMBIGUOUS` (fall through to the agent in single-round mode). See
-`core/rules/requirements-sufficiency.md` for the helper contract.
+spawn) or `AMBIGUOUS` (fall through to the agent in the policy-selected mode).
+See `core/rules/requirements-sufficiency.md` for the helper contract.
 
 **If `SUFFICIENCY == "SUFFICIENT"`:** Synthesize the REQUIREMENTS block inline
 from the matched signals — do NOT delegate to the requirements agent. Write
@@ -626,26 +630,28 @@ python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
 The synthesized block has the exact same shape the requirements agent returns.
 
 **If `SUFFICIENCY == "AMBIGUOUS"`:** Delegate to the **requirements agent** in
-single-round mode (blocking):
+the mode selected by `POLICY` (blocking):
 
 ```text
 TASK: {TASK}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
-MODE: single_round
+MODE: {single_round|deep_interview from POLICY}
 
-Run a single-round structured user-choice interview (per
-`core/rules/capabilities/interactive-question.md`) (scope + target + constraints
-in one call), write requirements.md, and return the REQUIREMENTS block.
+Run the selected structured user-choice interview (per
+`core/rules/capabilities/interactive-question.md`), write requirements.md, and
+return the REQUIREMENTS block. In `MODE: deep_interview`, ask targeted follow-up
+questions until the ambiguity threshold is satisfied or report BLOCKED before
+implementation.
 ```
 
 Extract the `REQUIREMENTS` block from the requirements agent's response and use it as
 the `REQUIREMENTS` value for Phase 1b.
 
-> **`MODE: two_round` is a deeper fallback** for rare cases where the
-> single-round answers themselves contain ambiguity the agent decides it
-> cannot resolve without a domain-specific follow-up. The supervisor does
-> NOT request `two_round` directly; only the agent may escalate.
+> **`MODE: two_round` is a compatibility fallback.** `MODE: deep_interview` is
+> the preferred deeper path for high-ambiguity `deep` / `strict` policy work.
+> `two_round` remains available for legacy callers, but supervisors should
+> prefer the policy-selected mode.
 
 ---
 
