@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-01T00:00:00Z",
+  "purpose": "Timed, same-scenario benchmark plan for agent-crew and reference AI harnesses.",
+  "systems": [
+    {
+      "id": "agent-crew",
+      "role": "local workflow control plane"
+    },
+    {
+      "id": "reference-claude-first-harness",
+      "role": "productized Claude-first orchestration harness"
+    },
+    {
+      "id": "reference-cross-harness-catalog",
+      "role": "cross-harness skills and configuration catalog"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "first_handoff",
+      "title": "First project handoff",
+      "objective": "Install or refresh, initialize a repository, run the first read-only task, and produce visible task state.",
+      "required_metrics": [
+        "setup_elapsed_ms",
+        "task_start_elapsed_ms",
+        "first_status_elapsed_ms",
+        "human_interventions",
+        "evidence_files"
+      ],
+      "agent_crew_commands": [
+        "crew update",
+        "crew setup",
+        "crew run \"Summarize repository architecture and record evidence.\"",
+        "crew status --summary",
+        "crew trace --recent 1"
+      ]
+    },
+    {
+      "id": "implementation_with_tests",
+      "title": "Small implementation with verification",
+      "objective": "Run one scoped code or docs change with explicit verification and a durable result artifact.",
+      "required_metrics": [
+        "requirements_elapsed_ms",
+        "implementation_elapsed_ms",
+        "verification_elapsed_ms",
+        "retry_count",
+        "task_success",
+        "test_evidence_files"
+      ],
+      "agent_crew_commands": [
+        "crew run \"Make a scoped documentation or fixture change and verify it.\"",
+        "crew status --summary",
+        "crew telemetry --recent 5"
+      ]
+    },
+    {
+      "id": "approval_recovery_audit",
+      "title": "Approval, recovery, and audit trail",
+      "objective": "Exercise a guarded operation, preserve approval evidence, recover a host handoff if needed, and prove what happened from local state.",
+      "required_metrics": [
+        "approval_prompt_elapsed_ms",
+        "guard_decision",
+        "recovery_elapsed_ms",
+        "manual_repair_count",
+        "audit_artifacts",
+        "post_run_trace_completeness"
+      ],
+      "agent_crew_commands": [
+        "crew run \"Perform a guarded local workflow and record audit evidence.\"",
+        "crew status --summary",
+        "crew trace --recent 1 --include-tools",
+        "crew telemetry --recent 5 --format json"
+      ]
+    }
+  ],
+  "scoring": {
+    "setup_and_start_latency": "lower is better",
+    "completion_latency": "lower is better for equal task scope",
+    "evidence_completeness": "higher is better; count durable files and explicit pass/fail signals",
+    "operator_interventions": "lower is better",
+    "recovery_clarity": "higher is better; score whether a new operator can resume from printed state"
+  },
+  "non_goals": [
+    "Do not install or execute third-party harnesses in an unapproved environment.",
+    "Do not compare unrelated task scopes.",
+    "Do not treat marketing claims as measured runtime evidence."
+  ]
+}

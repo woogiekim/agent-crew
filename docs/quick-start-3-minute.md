@@ -70,15 +70,16 @@ crew repair TASK_ID \
 ## 2:15-3:00 — Monitor And Debug
 
 ```bash
-crew status
+crew status --summary
 crew trace --recent 1
 crew telemetry --recent 5
 crew doctor --mode runtime
 ```
 
-Use `crew status --json` or `crew doctor --format json` when another tool needs
-machine-readable evidence. Use text mode for operators; it now ends with a
-compact pass/warn/info summary.
+Use `crew status` when you need the full recent-task table. Use
+`crew status --json` or `crew doctor --format json` when another tool needs
+machine-readable evidence. Use text mode for operators; `crew doctor` ends with
+a compact pass/warn/info summary.
 
 ## What To Remember
 

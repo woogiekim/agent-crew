@@ -11,6 +11,7 @@
 
 - [Overview](#overview)
 - [Foundational Direction](#foundational-direction)
+- [Evaluation Artifacts](#evaluation-artifacts)
 - [Key Features](#key-features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -43,10 +44,16 @@ host AI prompt workflows. It is not a replacement for Codex, Claude, Copilot, or
 other execution platforms. The host AI remains the execution plane; agent-crew
 provides the local control plane: routing, workflow intent, deterministic state
 files, handoffs, guardrails, audit logs, update sync, and host adapters.
-Comparisons to commercial autonomous harnesses should be read at this layer
-only: agent-crew coordinates prompt-runtime orchestration above the host AI; it
-does not try to replace the host AI, own OS-level execution, or operate as an
+Comparisons to autonomous harnesses should be read at this layer only:
+agent-crew coordinates prompt-runtime orchestration above the host AI; it does
+not try to replace the host AI, own OS-level execution, or operate as an
 independent commercial harness.
+
+The best fit is a team or project that already uses AI coding assistants and
+needs a durable workflow ledger: requirements, approvals, state transitions,
+recovery steps, telemetry, and update evidence. agent-crew complements
+productized harnesses and broad skill catalogs by focusing on governance,
+auditability, and repeatable local control.
 
 The goal: let developers focus on *what* to build, while agent-crew keeps the
 AI-host workflow consistent and reproducible across requirements collection,
@@ -71,6 +78,15 @@ Workforce System:
 - [Persistent AI Workforce vision](docs/persistent-ai-workforce-vision.md)
 - [Durable workflow architecture](docs/durable-workflow-architecture.md)
 - [Persistent workflow test strategy](docs/persistent-workflow-test-strategy.md)
+
+## Evaluation Artifacts
+
+Use these artifacts to evaluate agent-crew on its own control-plane strengths:
+
+- [Harness benchmark](docs/harness-benchmark-omc-ecc.md)
+- [Timed scenario benchmark](docs/harness-scenario-benchmark.md)
+- [Approval, recovery, and audit demo](docs/approval-recovery-audit-demo.md)
+- [Hosted adapter validation evidence](docs/hosted-validation-evidence.md)
 
 ## Key Features
 
@@ -146,6 +162,7 @@ crew:run "implement order API" | "implement product API" | "implement user API"
 
 # 4. Check local pipeline state from any shell
 crew status
+crew status --summary
 
 # 5. Check cost summary from any shell
 crew cost
@@ -874,6 +891,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 |---|---|
 | `crew setup` | Native shell command: install the current host adapter and initialize the project workspace |
 | `crew status` | Native shell command: deterministic snapshot of local task state |
+| `crew status --summary` | Native shell command: compact operator view with counts, bridge state, next action, and JSON/detail pointers |
 | `crew trace` | Native shell command: read-only progress trace from `progress.buffer.jsonl` or `progress.log` |
 | `crew cost` | Native shell command: token/cost aggregates from local cost JSONL state |
 | `crew doctor` | Native shell command: split operational checks via `--mode static`, `--mode runtime`, `--mode host`, or `--mode all` |

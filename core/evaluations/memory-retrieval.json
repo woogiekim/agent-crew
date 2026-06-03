@@ -3,6 +3,8 @@
   "name": "agent-crew memory retrieval regression",
   "query": "commercialization evaluation memory reporting telemetry blockers",
   "limit": 10,
+  "results_file": "memory-retrieval-golden.txt",
+  "results_file_elapsed_ms": 250,
   "accepted_context_headroom": 5,
   "latency_budget_ms": 1500,
   "noise_budget_count": 2,

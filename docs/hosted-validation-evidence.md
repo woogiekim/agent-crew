@@ -44,6 +44,34 @@ provided credentials, approved the billable/external run, and confirmed the
 target environment. Without those prerequisites, produce an action plan and mark
 the hosted gate blocked or deferred.
 
+## Hosted Runbook
+
+Run this only in an approved non-nested hosted environment for the target
+adapter. The current local Codex session is not sufficient evidence when nested
+host bridge execution is refused.
+
+1. Start from a clean checkout at the candidate commit.
+2. Run `crew update` and `crew setup`.
+3. Run one realistic `crew:run` task that completes without manual repair.
+4. Run one `crew:agent` read-only analysis task that completes without manual
+   repair.
+5. Generate workload evidence:
+
+   ```bash
+   python3 core/scripts/hosted-workload-evidence.py \
+     --state-dir "${HOME}/.agent-crew/state/agent-crew" \
+     --adapter codex \
+     --include-agent-requests \
+     --output dist/hosted-codex-validation.json \
+     --format text
+   ```
+
+6. Repeat for Claude with `--adapter claude` and
+   `--output dist/hosted-claude-validation.json`.
+7. Confirm both artifacts show `manual_repairs: 0`,
+   `human_interventions: 0`, and completed host bridge evidence.
+8. Redact host-specific paths or private content before publishing the bundle.
+
 ## Current Blocker Artifact
 
 When a clean hosted run cannot be produced from the active session, write a

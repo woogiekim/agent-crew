@@ -75,12 +75,14 @@ def test_codex_guide_mirror_is_not_native_skill_directory():
 
 def test_readme_defines_prompt_internal_control_layer():
     text = readme_text()
+    compact = " ".join(text.split())
     assert "orchestration layer that runs inside\nhost AI prompt workflows" in text
     assert "It is not a replacement for Codex, Claude, Copilot" in text
     assert "The host AI remains the execution plane" in text
     assert "agent-crew\nprovides the local control plane" in text
-    assert "Comparisons to commercial autonomous harnesses should be read at this layer\nonly" in text
-    assert "does not try to replace the host AI, own OS-level execution, or operate as an\nindependent commercial harness" in text
+    assert "Comparisons to autonomous harnesses should be read at this layer only" in compact
+    assert "does not try to replace the host AI, own OS-level execution, or operate as an independent commercial harness" in compact
+    assert "agent-crew complements productized harnesses and broad skill catalogs" in compact
 
 
 def test_readme_documents_one_shot_dangerous_command_approval():

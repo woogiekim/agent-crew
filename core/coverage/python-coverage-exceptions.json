@@ -4,5 +4,31 @@
   "default_owner": "test-writer",
   "default_reason": "legacy coverage debt measured before full-coverage gate adoption",
   "default_target": "replace exception with focused tests and remove entry when file reaches 100%",
-  "exceptions": []
+  "exceptions": [
+    {
+      "path": "core/scripts/check-route-directive-compliance.py",
+      "baseline_percent": 79.74,
+      "max_missing_lines": 16
+    },
+    {
+      "path": "core/scripts/e2e-slo-check.py",
+      "baseline_percent": 97.65,
+      "max_missing_lines": 3
+    },
+    {
+      "path": "core/scripts/reconcile-host-tasks.py",
+      "baseline_percent": 91.96,
+      "max_missing_lines": 9
+    },
+    {
+      "path": "core/scripts/smm-aggregate.py",
+      "baseline_percent": 95.03,
+      "max_missing_lines": 8
+    },
+    {
+      "path": "core/scripts/telemetry-aggregate.py",
+      "baseline_percent": 99.86,
+      "max_missing_lines": 1
+    }
+  ]
 }

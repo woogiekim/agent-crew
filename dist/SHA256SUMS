@@ -1,0 +1,4 @@
+efc02a354b7eac70a0747aa37738b89d6b6a256169b0efe7c7a022f34f88956c  install.sh
+b87e6e1c16550b1505875e5998e06cee76f4e7c3ab75dcf3ce72104e88e10137  core/bin/crew
+aff9f3982cecbdb0059f05eb1e9da39ec1b9cb457872ff38662505e9e5f6d8ae  core/commands/update.md
+6ddbb339a46190aecf36cff305b32b6b7f6d37310dab4a48bfbadf491f2dcc4e  core/scripts/sync-local-install.sh

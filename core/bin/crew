@@ -32,7 +32,8 @@ adapter-sync helpers around that prompt runtime.
 
 Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
-  status [--json] [--recent N]     Show deterministic local task state
+  status [--json|--summary] [--recent N]
+                                    Show deterministic local task state
   telemetry [args]                 Show timing, retry, blocker, and token metrics
   trace [args]                     Show per-task progress trace events
   cost [args]                      Show token/cost aggregate metrics
@@ -397,13 +398,96 @@ cmd_status_json() {
     "${PROJECT_NAME}" "${STATE_DIR}"
 }
 
+cmd_status_summary() {
+  local recent="$1"
+  local telemetry="${ASSET_ROOT}/scripts/telemetry-aggregate.py"
+
+  printf 'Project: %s\n' "${PROJECT_NAME}"
+  printf 'State  : %s\n' "${STATE_DIR}"
+
+  if [ ! -d "${STATE_DIR}/tasks" ]; then
+    printf 'Tasks  : 0 total\n'
+    printf 'Next   : crew setup, then use crew:run in your host runtime.\n'
+    return 0
+  fi
+
+  if [ ! -f "${telemetry}" ]; then
+    printf 'Tasks  : telemetry unavailable\n'
+    printf 'Next   : rerun crew status for raw task directories.\n'
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  if grep -q -- "--project-root" "${telemetry}" 2>/dev/null; then
+    python3 "${telemetry}" --state-dir "${STATE_DIR}" --project-root "${PROJECT_ROOT}" --recent "${recent}" --format json > "${tmp}"
+  else
+    python3 "${telemetry}" --state-dir "${STATE_DIR}" --recent "${recent}" --format json > "${tmp}"
+  fi
+
+  python3 - "${tmp}" "${recent}" <<'PYEOF'
+import json
+import sys
+
+path, recent = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as f:
+    payload = json.load(f)
+
+summary = payload.get("summary", {})
+tasks = payload.get("tasks", [])
+quality = summary.get("operational_quality", {})
+
+def pct(value):
+    try:
+        return f"{float(value) * 100:.1f}%"
+    except Exception:
+        return "n/a"
+
+total = summary.get("tasks_total", len(tasks))
+completed = summary.get("tasks_completed", 0)
+running = summary.get("tasks_running", 0)
+blocked = summary.get("tasks_blocked", 0)
+cancelled = summary.get("tasks_cancelled", 0)
+
+print(f"Tasks  : {total} total | {completed} completed | {running} running | {blocked} blocked | {cancelled} cancelled")
+print(
+    "Quality: "
+    f"success={pct(quality.get('success_rate'))} | "
+    f"retry={pct(quality.get('retry_rate'))} | "
+    f"intervention={pct(quality.get('human_intervention_rate'))}"
+)
+
+bridge = summary.get("by_host_bridge_status") or {}
+bridge_text = ", ".join(f"{key}={value}" for key, value in bridge.items()) or "none"
+print(f"Bridge : {bridge_text}")
+
+blocked_tasks = [
+    task for task in tasks
+    if str(task.get("health") or task.get("status") or "").lower() == "blocked"
+       or task.get("blockers")
+]
+if blocked_tasks:
+    first = blocked_tasks[0]
+    guidance = first.get("guidance") or ["Inspect result.md and progress.log."]
+    print(f"Next   : {first.get('task_id')}: {guidance[0]}")
+else:
+    print("Next   : none")
+
+print(f"Detail : crew status --recent {recent}")
+print(f"JSON   : crew status --json --recent {recent}")
+PYEOF
+  rm -f "${tmp}"
+}
+
 cmd_status() {
   local format="text"
   local recent="10"
+  local summary="0"
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --json) format="json"; shift ;;
+      --summary) summary="1"; shift ;;
       --recent)
         [ -n "${2:-}" ] || die "--recent requires a number"
         recent="$2"
@@ -411,9 +495,11 @@ cmd_status() {
         ;;
       -h|--help)
         cat <<'EOF'
-usage: crew status [--json] [--recent N]
+usage: crew status [--json|--summary] [--recent N]
 
 Reads ~/.agent-crew/state/<project>/ and prints local task telemetry.
+
+Use --summary for a compact operator view. Use --json for tools.
 EOF
         return 0
         ;;
@@ -423,6 +509,11 @@ EOF
 
   if [ "${format}" = "json" ]; then
     cmd_status_json "${recent}"
+    return
+  fi
+
+  if [ "${summary}" = "1" ]; then
+    cmd_status_summary "${recent}"
     return
   fi
 

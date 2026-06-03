@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-03T14:56:04.764128Z",
+  "algorithm": "sha256",
+  "project_root": "/Users/wook/Developments/agent-crew",
+  "artifacts": [
+    {
+      "path": "install.sh",
+      "sha256": "efc02a354b7eac70a0747aa37738b89d6b6a256169b0efe7c7a022f34f88956c",
+      "bytes": 24949
+    },
+    {
+      "path": "core/bin/crew",
+      "sha256": "b87e6e1c16550b1505875e5998e06cee76f4e7c3ab75dcf3ce72104e88e10137",
+      "bytes": 45769
+    },
+    {
+      "path": "core/commands/update.md",
+      "sha256": "aff9f3982cecbdb0059f05eb1e9da39ec1b9cb457872ff38662505e9e5f6d8ae",
+      "bytes": 61068
+    },
+    {
+      "path": "core/scripts/sync-local-install.sh",
+      "sha256": "6ddbb339a46190aecf36cff305b32b6b7f6d37310dab4a48bfbadf491f2dcc4e",
+      "bytes": 12136
+    }
+  ]
+}

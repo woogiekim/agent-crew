@@ -53,6 +53,16 @@ assert_exit 0 "${rc}"
 it "crew status --json contains tasks key"
 assert_contains "${out}" "\"tasks\""
 
+it "crew status --summary exits 0"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --summary 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "crew status --summary prints compact operator fields"
+assert_contains "${out}" "Tasks  :"
+assert_contains "${out}" "Quality:"
+assert_contains "${out}" "JSON   : crew status --json"
+
 STALE_HOME=$(make_tmp)
 STALE_PROJECT=$(make_tmp)
 mkdir -p "${STALE_PROJECT}/.codex" "${STALE_HOME}/state/$(basename "${STALE_PROJECT}")/tasks"

@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MEMORY_EVAL = REPO_ROOT / "core" / "scripts" / "memory-retrieval-eval.py"
@@ -64,6 +66,8 @@ def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
     assert fixture["accepted_context_memory_id_patterns"] == [
         "commercialization-e2e-[0-9]+-(review|guardrails|remediation|risk-remediation)-[0-9]{8}"
     ]
+    assert fixture["results_file"] == "memory-retrieval-golden.txt"
+    assert fixture["results_file_elapsed_ms"] == 250
     assert fixture["accepted_context_headroom"] == 5
     assert fixture["latency_budget_ms"] > 0
     assert fixture["noise_budget_count"] >= 0
@@ -122,6 +126,10 @@ def test_memory_eval_helpers_cover_fixture_output_and_subprocess_edges(monkeypat
     assert output == "out\nerr\n"
     assert rc == 124
     assert elapsed_ms >= 0
+
+    assert memory_eval.resolve_fixture_path(None, fixture_path=fixture) is None
+    assert memory_eval.resolve_fixture_path(tmp_path / "absolute.txt", fixture_path=fixture) == tmp_path / "absolute.txt"
+    assert memory_eval.resolve_fixture_path("relative.txt", fixture_path=fixture) == tmp_path / "relative.txt"
 
 
 def test_memory_eval_enforces_optional_relevance_scores():
@@ -302,6 +310,139 @@ def test_memory_eval_cli_covers_results_file_and_memory_invocation(tmp_path: Pat
     payload = json.loads(json_result.stdout)
     assert payload["memory_rc"] == 0
     assert payload["passed"] is True
+
+
+def test_memory_eval_uses_fixture_results_file_by_default(tmp_path: Path):
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(
+        json.dumps({
+            "query": "probe",
+            "results_file": "golden.txt",
+            "results_file_elapsed_ms": 12.5,
+            "expected_memory_ids": ["expected-a"],
+            "latency_budget_ms": 10000,
+            "noise_budget_count": 0,
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "golden.txt").write_text("expected-a score=0.9 useful\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(MEMORY_EVAL),
+            "--fixture",
+            str(fixture),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["evidence_mode"] == "results_file"
+    assert payload["latency_ms"] == 12.5
+
+
+def test_memory_eval_main_covers_results_file_live_memory_json_and_text(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+):
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(
+        json.dumps({
+            "query": "probe",
+            "results_file": "golden.txt",
+            "results_file_elapsed_ms": 12.5,
+            "expected_memory_ids": ["expected-a"],
+            "latency_budget_ms": 10000,
+            "noise_budget_count": 0,
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "golden.txt").write_text("expected-a score=0.9 useful\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["memory-retrieval-eval.py", "--fixture", str(fixture), "--format", "json"],
+    )
+    assert memory_eval.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["evidence_mode"] == "results_file"
+
+    monkeypatch.setattr(
+        memory_eval,
+        "run_memory",
+        lambda _memory_bin, _query, _limit: ("expected-a score=0.9 useful\n", 124, 7.0),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["memory-retrieval-eval.py", "--fixture", str(fixture), "--live-memory", "--format", "json"],
+    )
+    assert memory_eval.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["evidence_mode"] == "live_memory"
+    assert payload["memory_rc"] == 124
+
+    noisy = tmp_path / "noisy.txt"
+    noisy.write_text("noisy-extra unrelated\n", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "memory-retrieval-eval.py",
+            "--fixture",
+            str(fixture),
+            "--results-file",
+            str(noisy),
+            "--elapsed-ms",
+            "20",
+        ],
+    )
+    assert memory_eval.main() == 1
+    output = capsys.readouterr().out
+    assert "FAIL: memory retrieval evaluation" in output
+    assert "missing: expected-a" in output
+    assert "noise: noisy-extra" in output
+
+
+def test_memory_eval_main_rejects_results_file_live_memory_conflict(
+    monkeypatch,
+    tmp_path: Path,
+):
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(
+        json.dumps({
+            "query": "probe",
+            "expected_memory_ids": ["expected-a"],
+            "latency_budget_ms": 10000,
+            "noise_budget_count": 0,
+        }),
+        encoding="utf-8",
+    )
+    results = tmp_path / "results.txt"
+    results.write_text("expected-a\n", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "memory-retrieval-eval.py",
+            "--fixture",
+            str(fixture),
+            "--results-file",
+            str(results),
+            "--live-memory",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        memory_eval.main()
 
 
 def test_report_quality_gate_passes_with_measurements_evidence_blocker_and_memory(

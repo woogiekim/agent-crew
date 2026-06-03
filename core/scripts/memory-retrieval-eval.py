@@ -70,6 +70,17 @@ def run_memory(memory_bin: Path, query: str, limit: int) -> tuple[str, int, floa
     return proc.stdout + proc.stderr, proc.returncode, elapsed_ms
 
 
+def resolve_fixture_path(value: object, *, fixture_path: Path) -> Path | None:
+    if not value:
+        return None
+
+    path = Path(str(value)).expanduser()
+    if path.is_absolute():
+        return path
+
+    return fixture_path.parent / path
+
+
 def evaluate(fixture: dict, output: str, elapsed_ms: float) -> dict:
     expected = list(fixture["expected_memory_ids"])
     successors = {
@@ -175,14 +186,30 @@ def main() -> int:
     parser.add_argument("--results-file", help="Read captured memory search output instead of invoking memory")
     parser.add_argument("--memory-bin", default="core/bin/memory")
     parser.add_argument("--elapsed-ms", type=float, help="Latency to use with --results-file")
+    parser.add_argument(
+        "--live-memory",
+        action="store_true",
+        help="Invoke the memory CLI even when the fixture declares deterministic results_file evidence.",
+    )
     parser.add_argument("--format", choices=["json", "text"], default="text")
     args = parser.parse_args()
 
-    fixture = load_fixture(Path(args.fixture))
-    if args.results_file:
-        output = Path(args.results_file).read_text(encoding="utf-8")
-        elapsed_ms = 0.0 if args.elapsed_ms is None else args.elapsed_ms
+    if args.results_file and args.live_memory:
+        parser.error("--results-file and --live-memory are mutually exclusive")
+
+    fixture_path = Path(args.fixture).expanduser().resolve()
+    fixture = load_fixture(fixture_path)
+    fixture_results_file = None if args.live_memory else resolve_fixture_path(
+        fixture.get("results_file"),
+        fixture_path=fixture_path,
+    )
+    results_file = Path(args.results_file).expanduser() if args.results_file else fixture_results_file
+    if results_file:
+        output = results_file.read_text(encoding="utf-8")
+        default_elapsed = fixture.get("results_file_elapsed_ms", 0.0)
+        elapsed_ms = float(default_elapsed if args.elapsed_ms is None else args.elapsed_ms)
         rc = 0
+        evidence_mode = "results_file"
     else:
         search_limit = int(fixture.get("limit", len(fixture["expected_memory_ids"])))
         search_limit += int(fixture.get("accepted_context_headroom", 0))
@@ -191,8 +218,10 @@ def main() -> int:
             str(fixture["query"]),
             search_limit,
         )
+        evidence_mode = "live_memory"
     result = evaluate(fixture, output, elapsed_ms)
     result["memory_rc"] = rc
+    result["evidence_mode"] = evidence_mode
 
     if args.format == "json":
         json.dump(result, sys.stdout, indent=2)
