@@ -49,6 +49,16 @@ entry must include `skill_path`, `applied_rules`, `evidence_refs`,
 evidence; other loaded skills require concrete use evidence, not only load
 evidence.
 
+Before applying each loaded non-TDD skill, record operational understanding in
+`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md`:
+`skill_path` plus rule-level `rule_id` or `invariant`,
+`task_interpretation`, and `planned_application`. After applying the rule, add
+matching `rule_evidence` to `{TASK_DIR}/context/skill-use.json` with
+`artifact_refs`, `diff_refs`, `verification`, `adversarial_checks`, and
+`reviewer_status: approved`. Repairing a mutating current-session fallback as
+completed may reject the handoff when a loaded non-TDD skill is used without
+this understanding evidence.
+
 For implementation or other production-code mutations with a testable surface,
 do not patch production code until the focused test target is identified,
 added or updated, run, and recorded as expected failing red-phase evidence in

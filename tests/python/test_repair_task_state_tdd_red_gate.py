@@ -113,6 +113,38 @@ def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
                         "evidence_refs": ["tests/python/test_repair_task_state_tdd_red_gate.py"],
                         "output_files": ["tests/python/test_repair_task_state_tdd_red_gate.py"],
                         "verification": ["python3 -m pytest tests/python/test_repair_task_state_tdd_red_gate.py -q"],
+                        "rule_evidence": [
+                            {
+                                "rule_id": "KISS",
+                                "artifact_refs": ["tests/python/test_repair_task_state_tdd_red_gate.py"],
+                                "diff_refs": ["tests/python/test_repair_task_state_tdd_red_gate.py"],
+                                "verification": [
+                                    "python3 -m pytest tests/python/test_repair_task_state_tdd_red_gate.py -q"
+                                ],
+                                "adversarial_checks": ["confirmed quality-loop failures still block first"],
+                                "reviewer_status": "approved",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "skill-plan.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "core/rules/code-quality.md",
+                        "rules": [
+                            {
+                                "rule_id": "KISS",
+                                "task_interpretation": "Keep TDD repair gate evidence scoped to repair state.",
+                                "planned_application": "Add no extra pipeline semantics beyond existing quality checks.",
+                            }
+                        ],
                     }
                 ]
             }

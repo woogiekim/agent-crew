@@ -72,6 +72,15 @@ TDD_SKILL_PATH_RE = re.compile(r"(?:^|[/`\\])tdd\.md\b", re.IGNORECASE)
 TDD_SKILL_SELECTION_RE = re.compile(r"\bselected_skill\s*[:=]\s*.*\btdd\b|\btdd_parallel\b|\bTDD\b", re.IGNORECASE)
 SKILL_USE_RE = re.compile(r"\b(skill[-_ ]?use|applied_rules|evidence_refs|output_files|verification)\b", re.IGNORECASE)
 SKILL_USE_REQUIRED_FIELDS = ("applied_rules", "evidence_refs", "output_files", "verification")
+SKILL_PLAN_RE = re.compile(r"\b(skill[-_ ]?plan|task_interpretation|planned_application|rule_id|invariant)\b", re.IGNORECASE)
+SKILL_PLAN_RULE_FIELDS = ("task_interpretation", "planned_application")
+SKILL_UNDERSTANDING_RULE_FIELDS = (
+    "artifact_refs",
+    "diff_refs",
+    "verification",
+    "adversarial_checks",
+    "reviewer_status",
+)
 
 
 def utc_now_z() -> str:
@@ -443,6 +452,215 @@ def skill_use_status(task_dir: Path, paths: list[str], required_skills: list[str
     }
 
 
+def resolve_skill_plan_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    candidates = [
+        task_dir / "context" / "skill-plan.json",
+        task_dir / "context" / "skill-plan.md",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+    return candidates
+
+
+def entries_from_json_collection(text: str, key: str) -> list[dict]:
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return []
+
+    entries = payload.get(key, payload) if isinstance(payload, dict) else payload
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return []
+
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def rule_id_from_entry(entry: dict) -> str:
+    return str(entry.get("rule_id") or entry.get("invariant") or "").strip()
+
+
+def record_incomplete_fields(incomplete: dict[str, list[str]], skill_name: str, fields: list[str]) -> None:
+    incomplete[skill_name] = sorted(set(incomplete.get(skill_name, []) + fields))
+
+
+def merge_incomplete_skills(*sources: dict[str, list[str]]) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    for source in sources:
+        for skill_name, fields in source.items():
+            record_incomplete_fields(merged, skill_name, list(fields))
+    return merged
+
+
+def skill_plan_entries_from_markdown(text: str) -> list[dict]:
+    if not SKILL_PLAN_RE.search(text):
+        return []
+
+    entries: list[dict] = []
+    current_skill: dict[str, object] = {}
+    current_rule: dict[str, object] = {}
+    for line in text.splitlines():
+        match = re.match(
+            r"\s*[-*]?\s*(skill_path|rule_id|invariant|task_interpretation|planned_application)\s*:\s*(.+)",
+            line,
+        )
+        if not match:
+            continue
+
+        field, value = match.group(1), match.group(2).strip()
+        if field == "skill_path":
+            if current_rule and current_skill:
+                current_skill.setdefault("rules", []).append(current_rule)
+            if current_skill:
+                entries.append(current_skill)
+            current_skill = {"skill_path": value, "rules": []}
+            current_rule = {}
+        elif field in {"rule_id", "invariant"}:
+            if current_rule and current_skill:
+                current_skill.setdefault("rules", []).append(current_rule)
+            current_rule = {field: value}
+        elif current_rule:
+            current_rule[field] = value
+    if current_rule and current_skill:
+        current_skill.setdefault("rules", []).append(current_rule)
+    if current_skill:
+        entries.append(current_skill)
+    return entries
+
+
+def skill_plan_status(task_dir: Path, paths: list[str], required_skills: list[str]) -> dict:
+    matched_paths: list[str] = []
+    inspected_paths: list[str] = []
+    planned_rules: dict[str, list[str]] = {}
+    incomplete: dict[str, list[str]] = {}
+    for path in resolve_skill_plan_paths(task_dir, paths):
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
+            continue
+
+        rel_name, text = inspected
+        entries = (
+            entries_from_json_collection(text, "skills")
+            if path.suffix.lower() == ".json"
+            else skill_plan_entries_from_markdown(text)
+        )
+        if entries:
+            matched_paths.append(rel_name)
+
+        for entry in entries:
+            skill_name = skill_name_from_path(str(entry.get("skill_path") or ""))
+            if skill_name not in required_skills:
+                continue
+
+            rules = entry.get("rules")
+            if not isinstance(rules, list) or not rules:
+                record_incomplete_fields(incomplete, skill_name, ["rules"])
+                continue
+
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    record_incomplete_fields(incomplete, skill_name, ["rules"])
+                    continue
+
+                missing_fields = []
+                if not rule_id_from_entry(rule):
+                    missing_fields.append("rule_id")
+                missing_fields.extend(
+                    field
+                    for field in SKILL_PLAN_RULE_FIELDS
+                    if not evidence_field_present(rule.get(field))
+                )
+                if missing_fields:
+                    record_incomplete_fields(incomplete, skill_name, missing_fields)
+                    continue
+
+                planned_rules.setdefault(skill_name, []).append(rule_id_from_entry(rule))
+
+    missing_skills = sorted(set(required_skills) - set(planned_rules) - set(incomplete))
+    return {
+        "matched_paths": sorted(set(matched_paths)),
+        "planned_rules": {skill: sorted(set(rules)) for skill, rules in planned_rules.items()},
+        "missing_skills": missing_skills,
+        "incomplete_skills": incomplete,
+        "inspected_paths": sorted(set(inspected_paths)),
+    }
+
+
+def skill_understanding_evidence_status(task_dir: Path, paths: list[str], planned_rules: dict[str, list[str]]) -> dict:
+    matched_paths: list[str] = []
+    inspected_paths: list[str] = []
+    complete_skills: set[str] = set()
+    complete_rules: dict[str, list[str]] = {}
+    incomplete: dict[str, list[str]] = {}
+    for path in resolve_skill_use_paths(task_dir, paths):
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
+            continue
+
+        rel_name, text = inspected
+        entries = (
+            skill_use_entries_from_json(text)
+            if path.suffix.lower() == ".json"
+            else skill_use_entries_from_markdown(text)
+        )
+        if entries:
+            matched_paths.append(rel_name)
+
+        for entry in entries:
+            skill_name = skill_name_from_path(str(entry.get("skill_path") or ""))
+            expected_rules = set(planned_rules.get(skill_name, []))
+            if not expected_rules:
+                continue
+
+            rule_evidence = entry.get("rule_evidence")
+            if not isinstance(rule_evidence, list) or not rule_evidence:
+                record_incomplete_fields(incomplete, skill_name, ["rule_evidence"])
+                continue
+
+            for rule in rule_evidence:
+                if not isinstance(rule, dict):
+                    record_incomplete_fields(incomplete, skill_name, ["rule_evidence"])
+                    continue
+
+                rule_id = rule_id_from_entry(rule)
+                if not rule_id:
+                    record_incomplete_fields(incomplete, skill_name, ["rule_id"])
+                    continue
+                if rule_id not in expected_rules:
+                    continue
+
+                missing_fields = [
+                    field
+                    for field in SKILL_UNDERSTANDING_RULE_FIELDS
+                    if not evidence_field_present(rule.get(field))
+                ]
+                if str(rule.get("reviewer_status") or "").strip().lower() != "approved":
+                    missing_fields.append("reviewer_status=approved")
+                if missing_fields:
+                    record_incomplete_fields(incomplete, skill_name, missing_fields)
+                    continue
+
+                complete_rules.setdefault(skill_name, []).append(rule_id)
+
+    for skill_name, expected_rules in planned_rules.items():
+        if set(complete_rules.get(skill_name, [])) >= set(expected_rules):
+            complete_skills.add(skill_name)
+
+    missing_skills = sorted(set(planned_rules) - complete_skills - set(incomplete))
+    return {
+        "matched_paths": sorted(set(matched_paths)),
+        "complete_skills": sorted(complete_skills),
+        "complete_rules": {skill: sorted(set(rules)) for skill, rules in complete_rules.items()},
+        "missing_skills": missing_skills,
+        "incomplete_skills": incomplete,
+        "inspected_paths": sorted(set(inspected_paths)),
+    }
+
+
 def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
     task = register.get("task", "")
     host_bridge_status = str(register.get("host_bridge_status") or "")
@@ -570,6 +788,94 @@ def enforce_skill_use_gate(
     )
 
 
+def enforce_skill_understanding_gate(
+    args: argparse.Namespace,
+    task_dir: Path,
+    register: dict,
+    skill_use_gate: dict,
+) -> dict:
+    task = register.get("task", "")
+    host_bridge_status = str(register.get("host_bridge_status") or "")
+    current_session_fallback = host_bridge_status == "current_session_required"
+    required_skills = sorted(skill_use_gate.get("complete_skills", []))
+    required = bool(
+        args.status == "completed"
+        and looks_mutating_task(task)
+        and current_session_fallback
+        and skill_use_gate.get("passed")
+        and required_skills
+    )
+    if not required:
+        return {"required": False, "passed": True, "bypassed": False, "required_skills": required_skills}
+
+    plan = skill_plan_status(task_dir, list(args.skill_understanding_evidence), required_skills)
+    understanding = skill_understanding_evidence_status(
+        task_dir,
+        list(args.skill_use_evidence),
+        plan["planned_rules"],
+    )
+    status = {
+        "required": True,
+        "passed": (
+            bool(required_skills)
+            and not plan["missing_skills"]
+            and not plan["incomplete_skills"]
+            and not understanding["missing_skills"]
+            and not understanding["incomplete_skills"]
+            and set(understanding["complete_skills"]) >= set(required_skills)
+        ),
+        "required_skills": required_skills,
+        "matched_paths": sorted(set(plan["matched_paths"] + understanding["matched_paths"])),
+        "complete_skills": understanding["complete_skills"],
+        "planned_rules": plan["planned_rules"],
+        "complete_rules": understanding["complete_rules"],
+        "missing_skills": sorted(set(plan["missing_skills"] + understanding["missing_skills"])),
+        "incomplete_skills": merge_incomplete_skills(
+            plan["incomplete_skills"],
+            understanding["incomplete_skills"],
+        ),
+        "inspected_paths": sorted(set(plan["inspected_paths"] + understanding["inspected_paths"])),
+        "bypassed": False,
+        "bypass_reason": "",
+    }
+    if status["passed"]:
+        return status
+
+    if args.skill_understanding_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.skill_understanding_bypass_reason
+        return status
+
+    if plan["missing_skills"] and not plan["matched_paths"]:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_skill_understanding_evidence\n"
+            "DETAIL: completed repair requires pre-use skill-plan evidence before "
+            "a loaded non-TDD skill can be treated as understood.\n"
+            "MISSING_SKILLS: " + ", ".join(plan["missing_skills"]) + "\n"
+            "NEXT: record context/skill-plan.json or context/skill-plan.md with skill_path, "
+            "rule_id or invariant, task_interpretation, and planned_application, or record "
+            "an explicit --skill-understanding-bypass-reason."
+        )
+
+    details = [
+        f"{skill}: {', '.join(fields)}"
+        for skill, fields in sorted(status["incomplete_skills"].items())
+    ]
+    if status["missing_skills"]:
+        details.append("missing: " + ", ".join(status["missing_skills"]))
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: incomplete_skill_understanding_evidence\n"
+        "DETAIL: skill understanding requires both pre-use plan evidence and rule-level "
+        "post-use evidence with artifact_refs, diff_refs, verification, adversarial_checks, "
+        "and reviewer_status=approved.\n"
+        "INCOMPLETE: " + "; ".join(details or required_skills) + "\n"
+        "NEXT: complete context/skill-plan.json and rule_evidence in context/skill-use.json, "
+        "or record an explicit --skill-understanding-bypass-reason."
+    )
+
+
 def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
     task = register.get("task", "")
     required = args.status == "completed" and looks_mutating_task(task)
@@ -664,7 +970,8 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   memory_context_reused: bool, quality_gate: dict | None = None,
                   specialist_gate: dict | None = None,
                   skill_load_gate: dict | None = None,
-                  skill_use_gate: dict | None = None) -> str:
+                  skill_use_gate: dict | None = None,
+                  skill_understanding_gate: dict | None = None) -> str:
     lines = [
         f"# {task or task_id}",
         "",
@@ -741,6 +1048,25 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         missing_skills = skill_use_gate.get("missing_skills", [])
         if missing_skills:
             lines.append("MISSING_SKILL_USE: " + ", ".join(missing_skills))
+    if skill_understanding_gate and skill_understanding_gate.get("required"):
+        if skill_understanding_gate.get("passed"):
+            lines.append("SKILL_UNDERSTANDING: passed")
+        elif skill_understanding_gate.get("bypassed"):
+            lines.append("SKILL_UNDERSTANDING: bypassed")
+            lines.append(
+                f"SKILL_UNDERSTANDING_BYPASS_REASON: "
+                f"{skill_understanding_gate.get('bypass_reason')}"
+            )
+        for path in skill_understanding_gate.get("matched_paths", []):
+            lines.append(f"SKILL_UNDERSTANDING_EVIDENCE: {path}")
+        for skill in skill_understanding_gate.get("complete_skills", []):
+            lines.append(f"UNDERSTOOD_SKILL: {skill}")
+        missing_skills = skill_understanding_gate.get("missing_skills", [])
+        if missing_skills:
+            lines.append("MISSING_SKILL_UNDERSTANDING: " + ", ".join(missing_skills))
+        incomplete_skills = skill_understanding_gate.get("incomplete_skills", {})
+        for skill, fields in sorted(incomplete_skills.items()):
+            lines.append(f"INCOMPLETE_SKILL_UNDERSTANDING: {skill}: {', '.join(fields)}")
     lines.append("UNCERTAINTY: Manual repair records the current-session outcome; original host bridge execution did not run automatically.")
     if note:
         lines.append(f"NOTE: {note}")
@@ -763,6 +1089,7 @@ def repair(args: argparse.Namespace) -> dict:
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
     skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
     skill_use_gate = enforce_skill_use_gate(args, task_dir, register, skill_load_gate)
+    skill_understanding_gate = enforce_skill_understanding_gate(args, task_dir, register, skill_use_gate)
     previous = {
         "status": register.get("current_phase"),
         "blocked_by": register.get("blocked_by", []),
@@ -810,6 +1137,7 @@ def repair(args: argparse.Namespace) -> dict:
         "specialist_dispatch_gate": specialist_gate,
         "skill_load_gate": skill_load_gate,
         "skill_use_gate": skill_use_gate,
+        "skill_understanding_gate": skill_understanding_gate,
         "previous": previous,
         "repaired_at": now,
     }
@@ -833,6 +1161,7 @@ def repair(args: argparse.Namespace) -> dict:
             specialist_gate,
             skill_load_gate,
             skill_use_gate,
+            skill_understanding_gate,
         ),
         encoding="utf-8",
     )
@@ -894,6 +1223,8 @@ def main() -> int:
     parser.add_argument("--skill-load-bypass-reason", default="")
     parser.add_argument("--skill-use-evidence", action="append", default=[])
     parser.add_argument("--skill-use-bypass-reason", default="")
+    parser.add_argument("--skill-understanding-evidence", action="append", default=[])
+    parser.add_argument("--skill-understanding-bypass-reason", default="")
     parser.add_argument("--memory-id", action="append", default=[])
     parser.add_argument("--reused-memory-context", action="store_true")
     parser.add_argument("--format", choices=["text", "json"], default="text")

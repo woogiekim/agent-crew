@@ -80,6 +80,29 @@ def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedP
     )
 
 
+def _write_skill_plan(task_dir: Path) -> None:
+    (task_dir / "context" / "skill-plan.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "core/rules/code-quality.md",
+                        "rules": [
+                            {
+                                "rule_id": "KISS",
+                                "task_interpretation": "Keep repair-state gate coverage focused.",
+                                "planned_application": "Add only evidence fields needed by this repair path.",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_mutating_current_session_repair_blocks_without_skill_use_evidence(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
@@ -160,6 +183,7 @@ def test_repair_accepts_skill_use_evidence_for_loaded_non_tdd_skill(tmp_path: Pa
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
+    _write_skill_plan(task_dir)
     (task_dir / "context" / "skill-use.json").write_text(
         json.dumps(
             {
@@ -178,6 +202,18 @@ def test_repair_accepts_skill_use_evidence_for_loaded_non_tdd_skill(tmp_path: Pa
                         "verification": [
                             "python3 -m pytest tests/python/test_repair_task_state_skill_use_gate.py -q"
                         ],
+                        "rule_evidence": [
+                            {
+                                "rule_id": "KISS",
+                                "artifact_refs": ["core/scripts/repair-task-state.py"],
+                                "diff_refs": ["core/scripts/repair-task-state.py"],
+                                "verification": [
+                                    "python3 -m pytest tests/python/test_repair_task_state_skill_use_gate.py -q"
+                                ],
+                                "adversarial_checks": ["verified no unrelated repair behavior changed"],
+                                "reviewer_status": "approved",
+                            }
+                        ],
                     }
                 ]
             }
@@ -193,10 +229,12 @@ def test_repair_accepts_skill_use_evidence_for_loaded_non_tdd_skill(tmp_path: Pa
     assert repair["skill_use_gate"]["passed"] is True
     assert repair["skill_use_gate"]["required_skills"] == ["code-quality.md"]
     assert repair["skill_use_gate"]["matched_paths"] == ["context/skill-use.json"]
+    assert repair["skill_understanding_gate"]["passed"] is True
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "SKILL_USE: passed" in result_text
     assert "SKILL_USE_EVIDENCE: context/skill-use.json" in result_text
     assert "USED_SKILL: code-quality.md" in result_text
+    assert "SKILL_UNDERSTANDING: passed" in result_text
 
 
 def test_skill_use_bypass_is_explicitly_recorded(tmp_path: Path):

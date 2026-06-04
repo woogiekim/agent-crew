@@ -66,6 +66,29 @@ def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedP
     )
 
 
+def _write_skill_plan(task_dir: Path) -> None:
+    (task_dir / "context" / "skill-plan.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "core/rules/code-quality.md",
+                        "rules": [
+                            {
+                                "rule_id": "KISS",
+                                "task_interpretation": "Keep skill-load fixture updates narrow.",
+                                "planned_application": "Record only the understood rule needed by the pass case.",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_mutating_current_session_repair_blocks_without_skill_load_evidence(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
@@ -100,6 +123,7 @@ def test_repair_accepts_skill_load_evidence_for_tdd_specialist(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
+    _write_skill_plan(task_dir)
     (task_dir / "context" / "skill-load.md").write_text(
         "SKILL_LOAD: passed\n"
         "Loaded before implementation:\n"
@@ -117,6 +141,18 @@ def test_repair_accepts_skill_load_evidence_for_tdd_specialist(tmp_path: Path):
                         "evidence_refs": ["tests/python/test_repair_task_state_skill_load_gate.py"],
                         "output_files": ["tests/python/test_repair_task_state_skill_load_gate.py"],
                         "verification": ["python3 -m pytest tests/python/test_repair_task_state_skill_load_gate.py -q"],
+                        "rule_evidence": [
+                            {
+                                "rule_id": "KISS",
+                                "artifact_refs": ["tests/python/test_repair_task_state_skill_load_gate.py"],
+                                "diff_refs": ["tests/python/test_repair_task_state_skill_load_gate.py"],
+                                "verification": [
+                                    "python3 -m pytest tests/python/test_repair_task_state_skill_load_gate.py -q"
+                                ],
+                                "adversarial_checks": ["confirmed TDD-only skill remains excluded"],
+                                "reviewer_status": "approved",
+                            }
+                        ],
                     }
                 ]
             }

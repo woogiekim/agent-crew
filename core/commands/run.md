@@ -2473,6 +2473,15 @@ use this sequence:
      `applied_rules`, `evidence_refs`, `output_files`, and `verification`.
      TDD remains covered by red/green/refactor evidence; other loaded skills
      require concrete use evidence, not only load evidence.
+   - Before applying each loaded non-TDD skill, record operational understanding
+     in `context/skill-plan.json` or `context/skill-plan.md`: `skill_path` plus
+     rule-level `rule_id` or `invariant`, `task_interpretation`, and
+     `planned_application`. After applying the rule, add matching
+     `rule_evidence` to `context/skill-use.json` with `artifact_refs`,
+     `diff_refs`, `verification`, `adversarial_checks`, and
+     `reviewer_status: approved`. `crew repair --status completed` may reject
+     a mutating current-session fallback when a loaded non-TDD skill is used
+     without this understanding evidence.
    - For implementation or other production-code mutations with a testable
      surface, follow the full Red → Green → Refactor cycle. Identify the focused
      test target, add or update it, run it, and record the expected failing

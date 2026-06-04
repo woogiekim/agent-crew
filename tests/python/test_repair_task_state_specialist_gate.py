@@ -88,6 +88,26 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
         "- ~/.agent-crew/user/skills/frontend-typescript-react.md\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "skill-plan.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "~/.agent-crew/user/skills/frontend-typescript-react.md",
+                        "rules": [
+                            {
+                                "rule_id": "component-contract",
+                                "task_interpretation": "Preserve the UI specialist contract in repair evidence.",
+                                "planned_application": "Record frontend skill understanding for the pass fixture.",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "skill-use.json").write_text(
         json.dumps(
             {
@@ -98,6 +118,18 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
                         "evidence_refs": ["tests/python/test_repair_task_state_specialist_gate.py"],
                         "output_files": ["tests/python/test_repair_task_state_specialist_gate.py"],
                         "verification": ["python3 -m pytest tests/python/test_repair_task_state_specialist_gate.py -q"],
+                        "rule_evidence": [
+                            {
+                                "rule_id": "component-contract",
+                                "artifact_refs": ["tests/python/test_repair_task_state_specialist_gate.py"],
+                                "diff_refs": ["tests/python/test_repair_task_state_specialist_gate.py"],
+                                "verification": [
+                                    "python3 -m pytest tests/python/test_repair_task_state_specialist_gate.py -q"
+                                ],
+                                "adversarial_checks": ["confirmed dispatch evidence still drives specialist gate"],
+                                "reviewer_status": "approved",
+                            }
+                        ],
                     }
                 ]
             }
