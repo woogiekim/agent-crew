@@ -2452,6 +2452,25 @@ use this sequence:
    the adapter refused nested `codex exec`; no background bridge is still
    running. Continue from `handoff.md` in the current Codex session, then repair
    after completion.
+   - Before executing any task work, re-apply the same specialist dispatch
+     contract the supervisor would have applied: select the appropriate
+     agent/user-agent and required agent skill(s) for the normalized task.
+     This is a general fallback invariant, not a commit/deploy-specific rule.
+   - If a concrete user agent or dispatcher skill is available for the task
+     axis, use it or load its instructions before acting. Do not substitute
+     ad hoc local execution just because the nested Codex bridge was refused.
+   - Record the selection in `context/specialist-dispatch.md` with at least:
+     `selected_agent`, `selected_skill` (or `none` with reason), `selection_reason`,
+     and `execution_mode`. `crew repair --status completed` for a mutating
+     current-session fallback may require this evidence.
+   - For implementation or other production-code mutations with a testable
+     surface, identify the focused test target, add or update it, run it, and
+     record the expected failing result in `context/tdd-red.md` before changing
+     production code. If no runnable harness or red failure is possible, record
+     the explicit reason first in `context/tdd-exception.md`.
+   - `crew repair --status completed` for a mutating fallback may reject the
+     completion when neither red-phase evidence nor an explicit TDD exception
+     exists, even if later green tests and reviewer evidence exist.
 4. For auto-completion:
    - Pass `--host-bridge-command "<command>"` on `crew run`, or
    - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.

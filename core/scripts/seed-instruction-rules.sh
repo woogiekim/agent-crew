@@ -317,6 +317,22 @@ a domain-specific Codex skill, let that skill load first and preserve its
 context as task input for requirements collection, supervisor handoffs, and
 generated prompts.
 
+When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
+the current session is only replacing the nested host bridge. It must not bypass
+agent-crew dispatch. Before executing task work, re-apply specialist
+agent/user-agent and agent-skill selection for the normalized task, use/load the
+selected specialist when available, and record the decision in
+`{TASK_DIR}/context/specialist-dispatch.md`.
+
+For implementation or production-code mutation work, the same fallback must not
+bypass TDD red-phase discipline. Before production-code mutation, identify the
+focused test target, add or update the test, run it, and record the expected
+failing result in `{TASK_DIR}/context/tdd-red.md`. If no runnable harness or red
+failure can reasonably be produced, record the explicit exception first in
+`{TASK_DIR}/context/tdd-exception.md`. Completion/repair for a mutating
+current-session fallback must reject or flag missing red-phase evidence or
+exception.
+
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
 resolver, or approval behavior in Codex-specific hooks or skills.

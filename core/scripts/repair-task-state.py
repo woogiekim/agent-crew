@@ -24,9 +24,32 @@ MUTATING_TASK_RE = re.compile(
 )
 
 TDD_RE = re.compile(r"\b(TDD|RED|GREEN|test evidence|tests? passed|pytest|JUnit|MockK)\b", re.IGNORECASE)
+RED_PHASE_RE = re.compile(
+    r"\b("
+    r"tdd[-_ ]?red|red[-_ ]?phase|expected\s+(?:failing|failure)|"
+    r"failed\s+as\s+expected|focused\s+test[^\n]*fail|"
+    r"fail(?:ed|ing)\s+test[^\n]*(?:before|pre[-_ ]?implementation)"
+    r")\b|레드\s*페이즈|실패\s*테스트",
+    re.IGNORECASE,
+)
+TDD_EXCEPTION_RE = re.compile(
+    r"\b("
+    r"tdd[-_ ]?exception|red[-_ ]?phase\s+exception|"
+    r"no\s+runnable\s+test\s+harness|no\s+test\s+harness|"
+    r"cannot\s+produce\s+red|red\s+failure\s+cannot|unrunnable\s+test"
+    r")\b|테스트\s*하네스.*없|레드.*예외",
+    re.IGNORECASE,
+)
 REVIEW_RE = re.compile(
     r"\b(REVIEW:\s*APPROVED|REVIEW_APPROVED|APPROVED|reviewer approved|"
     r"review findings.*remediated|CHANGES_REQUESTED.*remediated|재리뷰.*승인|리뷰.*승인)\b",
+    re.IGNORECASE,
+)
+SPECIALIST_DISPATCH_RE = re.compile(
+    r"\b("
+    r"selected_agent|specialist_agent|agent_selected|delegated_to|"
+    r"selected_skill|skill_loaded|skill_context|dispatcher"
+    r")\b|전문\s*에이전트|에이전트\s*스킬|스킬\s*선택|위임",
     re.IGNORECASE,
 )
 
@@ -78,6 +101,10 @@ def looks_mutating_task(task: str) -> bool:
 
 def resolve_quality_paths(task_dir: Path, paths: list[str]) -> list[Path]:
     candidates = [
+        task_dir / "context" / "tdd-red.md",
+        task_dir / "context" / "tdd-red.json",
+        task_dir / "context" / "tdd-exception.md",
+        task_dir / "context" / "tdd-exception.json",
         task_dir / "context" / "tdd_log.md",
         task_dir / "context" / "review.md",
         task_dir / "context" / "reviewer.md",
@@ -94,6 +121,8 @@ def resolve_quality_paths(task_dir: Path, paths: list[str]) -> list[Path]:
 
 def quality_evidence_status(task_dir: Path, paths: list[str]) -> dict:
     tdd_paths: list[str] = []
+    red_phase_paths: list[str] = []
+    exception_paths: list[str] = []
     review_paths: list[str] = []
     inspected_paths: list[str] = []
     for path in resolve_quality_paths(task_dir, paths):
@@ -104,15 +133,85 @@ def quality_evidence_status(task_dir: Path, paths: list[str]) -> dict:
         text = path.read_text(encoding="utf-8", errors="replace")
         if TDD_RE.search(text):
             tdd_paths.append(rel_name)
+        if RED_PHASE_RE.search(text):
+            red_phase_paths.append(rel_name)
+        if TDD_EXCEPTION_RE.search(text):
+            exception_paths.append(rel_name)
         if REVIEW_RE.search(text):
             review_paths.append(rel_name)
     return {
         "required": True,
         "passed": bool(tdd_paths and review_paths),
         "tdd_evidence_paths": sorted(set(tdd_paths)),
+        "red_phase_evidence_paths": sorted(set(red_phase_paths)),
+        "tdd_exception_paths": sorted(set(exception_paths)),
         "review_evidence_paths": sorted(set(review_paths)),
         "inspected_paths": sorted(set(inspected_paths)),
     }
+
+
+def resolve_specialist_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    candidates = [
+        task_dir / "context" / "specialist-dispatch.md",
+        task_dir / "context" / "specialist-dispatch.json",
+        task_dir / "context" / "codex-skill-context.md",
+        task_dir / "context" / "requirements.md",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+    return candidates
+
+
+def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
+    matched_paths: list[str] = []
+    inspected_paths: list[str] = []
+    for path in resolve_specialist_paths(task_dir, paths):
+        if not path.is_file():
+            continue
+        inspected_paths.append(str(path))
+        rel_name = str(path.relative_to(task_dir)) if path.is_relative_to(task_dir) else str(path)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if SPECIALIST_DISPATCH_RE.search(text):
+            matched_paths.append(rel_name)
+    return {
+        "required": True,
+        "passed": bool(matched_paths),
+        "matched_paths": sorted(set(matched_paths)),
+        "inspected_paths": sorted(set(inspected_paths)),
+        "bypassed": False,
+        "bypass_reason": "",
+    }
+
+
+def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
+    task = register.get("task", "")
+    host_bridge_status = str(register.get("host_bridge_status") or "")
+    current_session_fallback = host_bridge_status == "current_session_required"
+    required = args.status == "completed" and looks_mutating_task(task) and current_session_fallback
+    if not required:
+        return {"required": False, "passed": True, "bypassed": False}
+
+    status = specialist_dispatch_status(task_dir, list(args.evidence) + list(args.specialist_evidence))
+    if status["passed"]:
+        return status
+
+    if args.specialist_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.specialist_bypass_reason
+        return status
+
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: missing_specialist_dispatch_evidence\n"
+        "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+        "evidence that the task re-applied specialist agent and agent-skill selection "
+        "before manual execution.\n"
+        "NEXT: add --specialist-evidence pointing to context/specialist-dispatch.md "
+        "or record an explicit --specialist-bypass-reason."
+    )
 
 
 def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
@@ -124,9 +223,11 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     evidence_paths = list(args.evidence) + list(args.quality_evidence)
     status = quality_evidence_status(task_dir, evidence_paths)
     pipeline_status = check_quality_loop(task_dir, target_status=args.status)
+    red_phase_passed = bool(status["red_phase_evidence_paths"] or status["tdd_exception_paths"])
     status["pipeline_gate"] = pipeline_status
     status["pipeline_passed"] = pipeline_status["passed"]
-    status["passed"] = bool(status["passed"] and pipeline_status["passed"])
+    status["red_phase_passed"] = red_phase_passed
+    status["passed"] = bool(status["passed"] and pipeline_status["passed"] and red_phase_passed)
     status["bypassed"] = False
     status["bypass_reason"] = ""
     if status["passed"]:
@@ -136,6 +237,22 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
         status["bypassed"] = True
         status["bypass_reason"] = args.quality_bypass_reason
         return status
+
+    if (
+        status.get("tdd_evidence_paths")
+        and status.get("review_evidence_paths")
+        and status.get("pipeline_passed")
+        and not red_phase_passed
+    ):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_tdd_red_phase_evidence\n"
+            "DETAIL: completed repair for a mutating implementation task requires "
+            "TDD red-phase evidence before production-code mutation, or an explicit "
+            "TDD exception explaining why a runnable red failure could not be produced.\n"
+            "NEXT: record context/tdd-red.md with the focused failing test result, "
+            "or context/tdd-exception.md with the exception reason before repair."
+        )
 
     if status.get("tdd_evidence_paths") and status.get("review_evidence_paths"):
         raise SystemExit(
@@ -161,7 +278,8 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
 
 def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   evidence_paths: list[str], memory_ids: list[str],
-                  memory_context_reused: bool, quality_gate: dict | None = None) -> str:
+                  memory_context_reused: bool, quality_gate: dict | None = None,
+                  specialist_gate: dict | None = None) -> str:
     lines = [
         f"# {task or task_id}",
         "",
@@ -187,8 +305,25 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append("PIPELINE_QUALITY_FAILURES: " + ", ".join(pipeline_failures))
         for path in quality_gate.get("tdd_evidence_paths", []):
             lines.append(f"TDD_EVIDENCE: {path}")
+        if quality_gate.get("red_phase_passed"):
+            if quality_gate.get("tdd_exception_paths"):
+                lines.append("TDD_RED_PHASE: exception")
+            else:
+                lines.append("TDD_RED_PHASE: passed")
+        for path in quality_gate.get("red_phase_evidence_paths", []):
+            lines.append(f"TDD_RED_EVIDENCE: {path}")
+        for path in quality_gate.get("tdd_exception_paths", []):
+            lines.append(f"TDD_EXCEPTION: {path}")
         for path in quality_gate.get("review_evidence_paths", []):
             lines.append(f"REVIEW_EVIDENCE: {path}")
+    if specialist_gate and specialist_gate.get("required"):
+        if specialist_gate.get("passed"):
+            lines.append("SPECIALIST_DISPATCH: passed")
+        elif specialist_gate.get("bypassed"):
+            lines.append("SPECIALIST_DISPATCH: bypassed")
+            lines.append(f"SPECIALIST_BYPASS_REASON: {specialist_gate.get('bypass_reason')}")
+        for path in specialist_gate.get("matched_paths", []):
+            lines.append(f"SPECIALIST_EVIDENCE: {path}")
     lines.append("UNCERTAINTY: Manual repair records the current-session outcome; original host bridge execution did not run automatically.")
     if note:
         lines.append(f"NOTE: {note}")
@@ -208,6 +343,7 @@ def repair(args: argparse.Namespace) -> dict:
     register = load_json(register_path)
     pipeline = load_json(pipeline_path)
     quality_gate = enforce_quality_gate(args, task_dir, register)
+    specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
     previous = {
         "status": register.get("current_phase"),
         "blocked_by": register.get("blocked_by", []),
@@ -252,6 +388,7 @@ def repair(args: argparse.Namespace) -> dict:
         "memory_ids": args.memory_id,
         "memory_context_reused": args.reused_memory_context,
         "quality_gate": quality_gate,
+        "specialist_dispatch_gate": specialist_gate,
         "previous": previous,
         "repaired_at": now,
     }
@@ -272,6 +409,7 @@ def repair(args: argparse.Namespace) -> dict:
             args.memory_id,
             args.reused_memory_context,
             quality_gate,
+            specialist_gate,
         ),
         encoding="utf-8",
     )
@@ -327,6 +465,8 @@ def main() -> int:
     parser.add_argument("--evidence", action="append", default=[])
     parser.add_argument("--quality-evidence", action="append", default=[])
     parser.add_argument("--quality-bypass-reason", default="")
+    parser.add_argument("--specialist-evidence", action="append", default=[])
+    parser.add_argument("--specialist-bypass-reason", default="")
     parser.add_argument("--memory-id", action="append", default=[])
     parser.add_argument("--reused-memory-context", action="store_true")
     parser.add_argument("--format", choices=["text", "json"], default="text")

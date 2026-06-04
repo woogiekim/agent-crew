@@ -30,6 +30,9 @@ mkdir -p "${TASK_DIR}/context"
 cat > "${TASK_DIR}/context/tdd_log.md" <<'EOF'
 TDD: RED -> GREEN. 3 tests passed.
 EOF
+cat > "${TASK_DIR}/context/tdd-red.md" <<'EOF'
+TDD-RED: focused test failed as expected before implementation.
+EOF
 cat > "${TASK_DIR}/context/review.md" <<'EOF'
 REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.
 EOF
@@ -79,6 +82,9 @@ assert_contains "${result}" "PIPELINE_QUALITY_LOOP: passed"
 
 it "repair result records TDD evidence"
 assert_contains "${result}" "TDD_EVIDENCE: context/tdd_log.md"
+
+it "repair result records TDD red-phase evidence"
+assert_contains "${result}" "TDD_RED_EVIDENCE: context/tdd-red.md"
 
 it "repair result records reviewer evidence"
 assert_contains "${result}" "REVIEW_EVIDENCE: context/review.md"

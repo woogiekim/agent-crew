@@ -173,6 +173,10 @@ def test_repair_blocks_evidence_only_without_pipeline_quality_loop(tmp_path: Pat
         "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD-RED: focused pytest failed as expected before implementation.\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "review.md").write_text(
         "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
         encoding="utf-8",
@@ -203,6 +207,10 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
         "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD-RED: focused pytest failed as expected before implementation.\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "review.md").write_text(
         "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
         encoding="utf-8",
@@ -213,12 +221,14 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["quality_gate"]["passed"] is True
-    assert repair["quality_gate"]["tdd_evidence_paths"] == ["context/tdd_log.md"]
+    assert repair["quality_gate"]["tdd_evidence_paths"] == ["context/tdd-red.md", "context/tdd_log.md"]
+    assert repair["quality_gate"]["red_phase_evidence_paths"] == ["context/tdd-red.md"]
     assert repair["quality_gate"]["review_evidence_paths"] == ["context/review.md"]
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "QUALITY_LOOP: passed" in result_text
     assert "PIPELINE_QUALITY_LOOP: passed" in result_text
     assert "TDD_EVIDENCE: context/tdd_log.md" in result_text
+    assert "TDD_RED_EVIDENCE: context/tdd-red.md" in result_text
     assert "REVIEW_EVIDENCE: context/review.md" in result_text
 
 

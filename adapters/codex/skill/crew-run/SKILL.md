@@ -21,4 +21,27 @@ crew:run
 4. Follow the command definition exactly, including mandatory requirements collection.
 5. Delegate execution to supervisor as defined by the command.
 
+## Current-Session Fallback
+
+When `crew:run` returns `HOST_BRIDGE: current_session_required`, continue from
+the printed `handoff.md` in the current Codex session. Before doing any task
+work, re-apply specialist selection: choose the appropriate agent/user-agent and
+load any applicable agent skill(s) for the normalized task. This is a general
+dispatch requirement for all task axes. It is not limited to commits, deploys,
+or any single operation.
+
+Record the selection in `{TASK_DIR}/context/specialist-dispatch.md` before
+manual execution. Include `selected_agent`, `selected_skill` (or `none` with
+reason), `selection_reason`, and `execution_mode`. If no specialist exists,
+state why and proceed through the regular supervisor/planner path rather than
+inventing an ad hoc shortcut.
+
+For implementation or other production-code mutations with a testable surface,
+do not patch production code until the focused test target is identified,
+added or updated, run, and recorded as expected failing red-phase evidence in
+`{TASK_DIR}/context/tdd-red.md`. If a runnable harness or red failure cannot
+reasonably be produced, record the explicit exception first in
+`{TASK_DIR}/context/tdd-exception.md`. Repairing a mutating current-session
+fallback as completed may reject the handoff when neither artifact exists.
+
 Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate supervisor logic in this skill.
