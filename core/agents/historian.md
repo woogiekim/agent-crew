@@ -26,7 +26,7 @@ about code semantics, propose changes, or spawn other agents.
   history.
 - "이번 세션에서 뭘 했어?" / "what did this session do?" → activity summary
   built from `progress.log`, recent commits, and recent task IDs under
-  `~/.agent-crew/state/{PROJECT_NAME}/tasks/`.
+  `~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/`.
 - "this branch에 무슨 commit이 있어?" / "what commits are on this branch?" →
   `git log` summary against base.
 - "현재 어떤 task가 돌고 있어?" / "what tasks are running?" → list active
@@ -90,9 +90,9 @@ FILES: none
 
 Use the minimum tool set needed. Examples:
 
-- Recent agents: `cat ~/.agent-crew/state/{PROJECT_NAME}/tasks/*/progress.log | tail -n 50`
+- Recent agents: `cat ~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/*/progress.log | tail -n 50`
 - Branch commits: `git log --oneline {BASE}..HEAD`
-- Active tasks: `ls -lt ~/.agent-crew/state/{PROJECT_NAME}/tasks/ | head -10`
+- Active tasks: `ls -lt ~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/ | head -10`
 - Prior decisions: `mnemos search "<key terms from question>"`
 
 ### Step 3 — Return a factual answer

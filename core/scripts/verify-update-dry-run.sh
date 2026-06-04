@@ -66,6 +66,13 @@ CLAUDE_DIR="${CLAUDE_DIR}" \
 AGENT_CREW_PATH_BIN="${PATH_BIN}" \
   bash "${SOURCE_ROOT}/core/scripts/sync-local-install.sh" "${SOURCE_ROOT}" "${PROJECT_ROOT}" >/dev/null
 
+STATE_DIR="$(AGENT_CREW_HOME="${AGENT_CREW_HOME}" PROJECT_ROOT="${PROJECT_ROOT}" \
+  python3 "${SOURCE_ROOT}/core/scripts/project_state.py" resolve \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${PROJECT_ROOT}" \
+    --format json \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["state_dir"])')"
+
 assert_exists() {
   local path="$1"
   if [ ! -e "${path}" ]; then
@@ -97,7 +104,7 @@ assert_exists "${CODEX_HOME}/agents/supervisor.toml"
 assert_exists "${AGENT_CREW_HOME}/hooks/auto-route.sh"
 assert_exists "${PROJECT_ROOT}/.codex/hooks/auto-route.sh"
 assert_exists "${PROJECT_ROOT}/.codex/agents/supervisor.toml"
-assert_exists "${AGENT_CREW_HOME}/state/$(basename "${PROJECT_ROOT}")/update-preservation"
+assert_exists "${STATE_DIR}/update-preservation"
 assert_absent "${CODEX_HOME}/agents/task-runner.toml"
 assert_absent "${CODEX_HOME}/agent-crew/skills/stale.md"
 assert_absent "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
@@ -105,7 +112,7 @@ assert_contains "${CODEX_HOME}/agents/supervisor.toml" "${AGENT_CREW_HOME}/syste
 assert_contains "${PROJECT_ROOT}/.codex/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${AGENT_CREW_HOME}/hooks/auto-route.sh" 'Invoke Skill("crew-run")'
 assert_contains "${PROJECT_ROOT}/.codex/hooks/auto-route.sh" 'Invoke Skill("crew-run")'
-if ! find "${AGENT_CREW_HOME}/state/$(basename "${PROJECT_ROOT}")/update-preservation" \
+if ! find "${STATE_DIR}/update-preservation" \
   -type f -name '*.json' | grep -q .; then
   printf 'verify-update-dry-run: preservation manifest was not written\n' >&2
   exit 1

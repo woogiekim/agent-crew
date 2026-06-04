@@ -243,18 +243,24 @@ If no rule matched (NONE):
 
 When no auto-routing rule matches (NONE path above), the command MUST:
 
-1. **Write gap telemetry** to `~/.agent-crew/state/{PROJECT_NAME}/routing-misses.log`
+1. **Write gap telemetry** to `~/.agent-crew/state/{PROJECT_STATE_KEY}/routing-misses.log`
 2. **Detect repeat patterns** by reading that log
 3. **Present a structured choice UI** — never emit a plain-text error
 
 ##### Step 4a — Gap telemetry
 
-Determine `PROJECT_NAME` from the current working directory or git root:
+Resolve `PROJECT_NAME` as display metadata and `PROJECT_STATE_KEY` as the
+state identity from the current working directory or git root:
 
 ```bash
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-STATE_DIR="${HOME}/.agent-crew/state/${PROJECT_NAME}"
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --migrate-legacy \
+  --format shell)"
 ROUTING_MISSES_LOG="${STATE_DIR}/routing-misses.log"
 SESSION_ID="${CREW_SESSION_ID:-$(date -u +%Y%m%d-%H%M%S)}"
 ```
@@ -534,7 +540,7 @@ Even though `crew:agent` allocates no TASK_DIR, the normalization audit
 artifact is still mandatory. Write it to:
 
 ```text
-~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md
+~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md
 ```
 
 where `{ts}` is a UTC `YYYYMMDD-HHMMSS` timestamp. Required fields:

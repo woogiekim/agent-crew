@@ -57,7 +57,11 @@ def test_registry_marks_global_and_project_and_lists_project(tmp_path: Path):
 
     registry = json.loads((home / "state" / "update-registry.json").read_text())
     assert str(project.resolve()) in registry["projects"]
-    assert (home / "state" / project.name / "project-update.json").is_file()
+    entry = registry["projects"][str(project.resolve())]
+    assert entry["project_name"] == project.name
+    assert entry["project_state_key"].startswith(f"{project.name}-")
+    assert Path(entry["state_dir"]).name == entry["project_state_key"]
+    assert (Path(entry["state_dir"]) / "project-update.json").is_file()
 
     result = run_registry(
         "--agent-crew-home",

@@ -9,25 +9,49 @@
 # This hook is a no-op when no task is active or no usage data is present.
 
 python3 - <<'PYEOF'
-import sys, json, os, subprocess
+import sys, json, os, subprocess, hashlib, re
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def project_root():
+    for name in ("AGENT_CREW_PROJECT_ROOT", "PROJECT_ROOT"):
+        raw = os.environ.get(name)
+        if raw:
+            return Path(raw).expanduser().resolve()
+    try:
+        raw = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        if raw:
+            return Path(raw).resolve()
+    except Exception:
+        pass
+    return None
+
+
+def state_dir_for_project():
+    env = os.environ.get("AGENT_CREW_STATE_DIR")
+    if env:
+        return Path(env).expanduser()
+    home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))).expanduser()
+    root = project_root()
+    if root is None:
+        project = os.environ.get("AGENT_CREW_PROJECT", "default")
+        return home / "state" / project
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", root.name.strip()).strip(".-").lower() or "project"
+    digest = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:10]
+    keyed = home / "state" / f"{slug}-{digest}"
+    legacy = home / "state" / root.name
+    return keyed if keyed.exists() else legacy
 
 
 def resolve_task_id():
     env = os.environ.get("AGENT_CREW_TASK_ID")
     if env:
         return env
-    home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
-    project = os.environ.get("AGENT_CREW_PROJECT")
-    if not project:
-        try:
-            project = Path(subprocess.check_output(
-                ["git", "rev-parse", "--show-toplevel"],
-                stderr=subprocess.DEVNULL).decode().strip()).name
-        except Exception:
-            return None
-    tasks_dir = home / "state" / project / "tasks"
+    tasks_dir = state_dir_for_project() / "tasks"
     if not tasks_dir.is_dir():
         return None
     markers = sorted(tasks_dir.glob("active.*"),
@@ -58,17 +82,7 @@ task_id = resolve_task_id()
 if not task_id:
     sys.exit(0)  # no active task — skip silently
 
-home    = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
-project = os.environ.get("AGENT_CREW_PROJECT")
-if not project:
-    try:
-        project = Path(subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"],
-            stderr=subprocess.DEVNULL).decode().strip()).name
-    except Exception:
-        sys.exit(0)
-
-cost_dir = home / "state" / project / "cost"
+cost_dir = state_dir_for_project() / "cost"
 cost_dir.mkdir(parents=True, exist_ok=True)
 
 row = {

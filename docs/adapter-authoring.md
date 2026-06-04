@@ -139,8 +139,12 @@ copy_dir_contents "${AGENT_CREW_HOME}/scripts"  "${HOST_DIR}/scripts"
 copy_dir_contents "${AGENT_CREW_HOME}/schemas"  "${HOST_DIR}/schemas"
 
 # 2. Write capabilities.json
-STATE_DIR="${AGENT_CREW_HOME}/state/$(basename "${PROJECT_ROOT}")"
-mkdir -p "${STATE_DIR}"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --migrate-legacy \
+  --format shell)"
 cat > "${STATE_DIR}/capabilities.json" <<EOF
 {
   "host":                 "your-host",

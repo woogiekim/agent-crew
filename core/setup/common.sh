@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -f "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/project-state.sh" ]; then
+  # shellcheck source=/dev/null
+  . "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/project-state.sh"
+elif [ -n "${SOURCE_ROOT:-}" ] && [ -f "${SOURCE_ROOT}/core/scripts/project-state.sh" ]; then
+  # shellcheck source=/dev/null
+  . "${SOURCE_ROOT}/core/scripts/project-state.sh"
+fi
+
 # ── Visual diff helpers ────────────────────────────────────────────────────────
 # Accumulates per-file change summaries for the final summary block.
 # Each entry format: "<label>(<dest>)\t+<added> -<removed>"

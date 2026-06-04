@@ -27,6 +27,12 @@ import shutil
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from project_state import resolve_project_state
+
 
 def _resolve_executable(raw: str):
     """Return (resolved_path, reason, status_key)."""
@@ -81,7 +87,12 @@ def default_bridge_command(
     project = (project_root or Path(os.environ.get("PROJECT_ROOT", os.getcwd()))).resolve()
     detected_host = (host or os.environ.get("AGENT_CREW_HOST") or "").strip().lower()
     if not detected_host:
-        capabilities = _load_json(home / "state" / project.name / "capabilities.json")
+        state_info = resolve_project_state(
+            home=home,
+            project_root=project,
+            prefer_existing_legacy=True,
+        )
+        capabilities = _load_json(Path(state_info["state_dir"]) / "capabilities.json")
         detected_host = str(capabilities.get("host") or capabilities.get("adapter") or "").strip().lower()
 
     bridge_name_by_host = {

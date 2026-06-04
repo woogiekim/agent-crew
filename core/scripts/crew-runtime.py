@@ -15,6 +15,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from project_state import resolve_project_state
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from project_state import resolve_project_state
 from quality_loop_lib import check_quality_loop, looks_mutating_task
 
 
@@ -761,10 +766,12 @@ def default_host_bridge_command(agent_crew_home: Path, project_root: Path) -> st
     if env_flag("AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT") or env_flag("AGENT_CREW_DISABLE_DEFAULT_HOST_BRIDGE"):
         return ""
 
-    capabilities = load_json(
-        agent_crew_home / "state" / project_root.name / "capabilities.json",
-        {},
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        prefer_existing_legacy=True,
     )
+    capabilities = load_json(Path(state_info["state_dir"]) / "capabilities.json", {})
     host = str(
         os.environ.get("AGENT_CREW_HOST")
         or capabilities.get("host")
@@ -1116,9 +1123,15 @@ def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, st
 
 def command_run(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
-    project_name = project_root.name
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
-    state_dir = agent_crew_home / "state" / project_name
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    project_name = state_info["project_name"]
+    state_dir = Path(state_info["state_dir"])
     tasks_dir = state_dir / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1178,6 +1191,9 @@ def command_run(args: argparse.Namespace) -> int:
         "task": task,
         "branch": f"crew/{slug(task)}",
         "project_root": str(project_root),
+        "project_name": project_name,
+        "project_state_key": state_info["project_state_key"],
+        "state_dir": str(state_dir),
         "task_dir": str(task_dir),
         "execution_mode": "single",
         "current_phase": current_phase,
@@ -1579,9 +1595,15 @@ def command_agent(args: argparse.Namespace) -> int:
         return 2
 
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
-    project_name = project_root.name
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
-    state_dir = agent_crew_home / "state" / project_name
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    project_name = state_info["project_name"]
+    state_dir = Path(state_info["state_dir"])
     requests_dir = state_dir / "agent-requests"
     requests_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1601,6 +1623,9 @@ def command_agent(args: argparse.Namespace) -> int:
         "task": task,
         "route_reason": route_reason,
         "project_root": str(project_root),
+        "project_name": project_name,
+        "project_state_key": state_info["project_state_key"],
+        "state_dir": str(state_dir),
         "request_dir": str(request_dir),
         "status": "handoff_ready",
         "host_bridge_status": "pending" if bridge_command else "not_invoked",
@@ -1790,9 +1815,14 @@ def command_agent(args: argparse.Namespace) -> int:
 
 def command_issue_ingest(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
-    project_name = project_root.name
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
-    state_dir = agent_crew_home / "state" / project_name
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        prefer_existing_legacy=True,
+    )
+    project_name = state_info["project_name"]
+    state_dir = Path(state_info["state_dir"])
 
     issue, error = load_issue_payload(str(args.issue_number), repo=args.repo)
     if issue is None:

@@ -167,7 +167,7 @@ reason = (
     "a canonical English NORMALIZED_TASK.\n"
     "  2. Write the audit artifact to "
     "{TASK_DIR}/context/normalized_task.md (or "
-    "~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md when no "
+    "~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md when no "
     "TASK_DIR exists) with both RAW_INPUT and NORMALIZED_TASK fields.\n"
     "  3. Re-issue this Agent/Task call with NORMALIZED_TASK (English) "
     "delivered as the canonical TASK; the raw input stays as RAW_INPUT "

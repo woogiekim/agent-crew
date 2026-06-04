@@ -39,10 +39,14 @@ Unlike `crew:setup`, this command:
 ## State Paths
 
 ```bash
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --migrate-legacy \
+  --format shell)"
 UPDATE_REGISTRY="${AGENT_CREW_HOME}/state/update-registry.json"
 ```
 
@@ -530,7 +534,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   `crew:update --reconcile-skills` flag surfaces divergence as diff
   files; it never mutates the user layer.
 - Every local/remote update writes a preservation manifest under
-  `${AGENT_CREW_HOME}/state/${PROJECT_NAME}/update-preservation/`. The manifest
+  `${STATE_DIR}/update-preservation/`. The manifest
   records before/after counts and hashes for user agents, user skills, and
   relevant host settings. If a user-owned agent or skill disappears during the
   update, the update fails instead of silently reporting success.

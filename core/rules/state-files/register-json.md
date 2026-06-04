@@ -16,9 +16,12 @@ is the execution plan and how have stages progressed".
 ${STATE_DIR}/tasks/${TASK_ID}/register.json
 ```
 
-Where `STATE_DIR = ${AGENT_CREW_HOME}/state/${PROJECT_NAME}`. Sits
-alongside `pipeline.json`, `progress.log`, `progress.buffer.jsonl`, and
-the `context/`, `archive/` subdirectories in the per-task directory.
+Where `STATE_DIR = ${AGENT_CREW_HOME}/state/${PROJECT_STATE_KEY}`.
+`PROJECT_NAME` remains display metadata; `PROJECT_STATE_KEY` is the
+collision-safe directory key derived from the project basename plus a
+short hash of the canonical project root. Sits alongside `pipeline.json`,
+`progress.log`, `progress.buffer.jsonl`, and the `context/`, `archive/`
+subdirectories in the per-task directory.
 
 Created on Phase 0 of every new task (after path resolution, before
 capability bootstrap). Updated atomically at each phase boundary via
@@ -38,6 +41,9 @@ Canonical shape:
   "task":                "implement order API",
   "branch":              "feat/implement-order-api",
   "project_root":        "/path/to/project",
+  "project_name":        "project",
+  "project_state_key":   "project-1234abcd56",
+  "state_dir":           "/path/to/state/project-1234abcd56",
   "task_dir":            "/path/to/state/.../tasks/20260516-012345-0",
   "execution_mode":      "single",
   "current_phase":       "phase_2",
@@ -70,6 +76,9 @@ JSON Schema: `${AGENT_CREW_HOME}/schemas/register.schema.json`.
 | `task` | string | yes | original task description |
 | `branch` | string | yes | working branch name per `core/rules/branch-naming.md` |
 | `project_root` | string (absolute path) | yes | may be a worktree path in `parallel` execution mode |
+| `project_name` | string | optional | display name derived from `basename(project_root)`; not used as the state directory key |
+| `project_state_key` | string | optional | collision-safe state directory key: slugged project name plus canonical project-root hash |
+| `state_dir` | string (absolute path) | optional | resolved `${AGENT_CREW_HOME}/state/${PROJECT_STATE_KEY}` path |
 | `task_dir` | string (absolute path) | yes | self-referential; useful for tooling that received only register.json |
 | `execution_mode` | enum `single \| parallel` | yes | matches the `EXECUTION_MODE` supervisor input |
 | `current_phase` | enum (see below) | yes | updated at each phase boundary |

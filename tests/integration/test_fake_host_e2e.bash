@@ -15,6 +15,7 @@ rc=$?
 assert_exit 0 "${rc}"
 
 TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+STATE_DIR="$(cd "${TASK_DIR}/../.." && pwd)"
 
 it "fake-host run writes handoff"
 assert_file_exists "${TASK_DIR}/handoff.md"
@@ -28,11 +29,11 @@ status=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CRE
 assert_contains "${status}" "\"status\": \"completed\""
 
 it "fake-host status points at temp state dir"
-assert_contains "${status}" "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")"
+assert_contains "${status}" "\"state_dir\": \"${STATE_DIR}\""
 
 it "fake-host state has no schema errors"
 schema=$(AGENT_CREW_HOME="${TMP_HOME}" python3 "${REPO_ROOT}/core/scripts/validate-state-schema.py" \
-  --state-dir "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")" \
+  --state-dir "${STATE_DIR}" \
   --task-dir "${TASK_DIR}" \
   --format json 2>&1)
 assert_contains "${schema}" '"errors": 0'

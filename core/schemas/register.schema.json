@@ -49,6 +49,21 @@
       "minLength": 1,
       "description": "Absolute path to project root. May be a worktree path in parallel mode."
     },
+    "project_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name derived from the project root basename. Not used as the state directory key because duplicate basenames are possible."
+    },
+    "project_state_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9._-]+-[0-9a-f]{10}$",
+      "description": "Collision-safe state directory key: slug(project basename) plus a short hash of the canonical project root."
+    },
+    "state_dir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to ${AGENT_CREW_HOME}/state/${PROJECT_STATE_KEY}."
+    },
     "task_dir": {
       "type": "string",
       "minLength": 1,

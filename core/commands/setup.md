@@ -16,19 +16,28 @@ detection.
 ## State Paths
 
 ```bash
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --migrate-legacy \
+  --format shell)"
 ```
 
 ## Execution
 
-1. Resolve `PROJECT_NAME` and `PROJECT_ROOT` from the current directory.
+1. Resolve `PROJECT_NAME`, canonical `PROJECT_ROOT`, collision-safe
+   `PROJECT_STATE_KEY`, and `STATE_DIR` from the current directory.
 
-2. If `{STATE_DIR}` already exists, ask for confirmation before resetting state:
-   - "Cancel (Recommended)" exits setup without making any changes.
-   - "Reset" removes existing task state and continues with a clean slate.
+2. If `{STATE_DIR}` already exists, ask how to handle existing state:
+   - "Cancel" exits setup without making any changes.
+   - "Reset runtime state and preserve project-context" removes task/runtime
+     state and keeps `{STATE_DIR}/project-context/` (default).
+   - "Archive project-context and reset runtime state" moves project context
+     under `{STATE_DIR}/archive/project-context/` first.
+   - "Full state reset" removes the whole project state directory.
 
 3. Run the neutral host dispatcher (idempotent — safe to re-run):
 
@@ -42,7 +51,13 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 
    ```bash
    AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-   STATE_DIR="${AGENT_CREW_HOME}/state/$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+   PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+   eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+     --agent-crew-home "${AGENT_CREW_HOME}" \
+     --project-root "${PROJECT_ROOT}" \
+     --ensure \
+     --migrate-legacy \
+     --format shell)"
    mkdir -p "${STATE_DIR}/tasks"
    echo "setup_ok"
    ```
@@ -81,7 +96,8 @@ STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 ```text
 agent-crew workspace initialized.
 Project: {PROJECT_NAME}
-State path: ~/.agent-crew/state/{PROJECT_NAME}/
+Project state key: {PROJECT_STATE_KEY}
+State path: ~/.agent-crew/state/{PROJECT_STATE_KEY}/
 Host adapter: {adapter name}
 
 Usage:

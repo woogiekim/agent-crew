@@ -9,6 +9,25 @@ set +e
 
 CREW="${REPO_ROOT}/core/bin/crew"
 
+project_state_dir() {
+  python3 "${REPO_ROOT}/core/scripts/project_state.py" resolve \
+    --agent-crew-home "$1" \
+    --project-root "$2" \
+    --prefer-existing-legacy \
+    --format json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["state_dir"])'
+}
+
+ensure_project_state_dir() {
+  python3 "${REPO_ROOT}/core/scripts/project_state.py" resolve \
+    --agent-crew-home "$1" \
+    --project-root "$2" \
+    --ensure \
+    --migrate-legacy \
+    --format json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["state_dir"])'
+}
+
 it "crew help exits 0"
 out=$(bash "${CREW}" --help 2>&1)
 rc=$?
@@ -36,6 +55,7 @@ assert_contains "${out}" "local control plane for AI-host prompt workflows"
 TMP_HOME=$(make_tmp)
 TMP_PROJECT=$(make_tmp)
 mkdir -p "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks"
+TMP_STATE="$(project_state_dir "${TMP_HOME}" "${TMP_PROJECT}")"
 
 it "crew status exits 0 with empty task directory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status 2>&1)
@@ -43,7 +63,7 @@ rc=$?
 assert_exit 0 "${rc}"
 
 it "crew status prints project state path"
-assert_contains "${out}" "State  : ${TMP_HOME}/state/$(basename "${TMP_PROJECT}")"
+assert_contains "${out}" "State  : ${TMP_STATE}"
 
 it "crew status --json exits 0"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)
@@ -229,6 +249,29 @@ TRACE_TASK_DIR=$(printf '%s\n' "${out}" | awk '/^TASK_DIR:/ {print $2; exit}')
 assert_file_exists "${TRACE_TASK_DIR}/delegation.jsonl"
 assert_contains "$(cat "${TRACE_TASK_DIR}/delegation.jsonl")" "\"agent_role\": \"supervisor\""
 
+DUP_HOME=$(make_tmp)
+DUP_ROOT=$(make_tmp)
+mkdir -p "${DUP_ROOT}/one/app" "${DUP_ROOT}/two/app"
+
+it "crew run disambiguates duplicate project basenames with keyed state dirs"
+out_one=$(AGENT_CREW_HOME="${DUP_HOME}" PROJECT_ROOT="${DUP_ROOT}/one/app" bash "${CREW}" run "read duplicate basename one" 2>&1)
+rc_one=$?
+out_two=$(AGENT_CREW_HOME="${DUP_HOME}" PROJECT_ROOT="${DUP_ROOT}/two/app" bash "${CREW}" run "read duplicate basename two" 2>&1)
+rc_two=$?
+assert_exit 0 "${rc_one}"
+assert_exit 0 "${rc_two}"
+dir_one=$(printf '%s\n' "${out_one}" | awk '/^TASK_DIR:/ {print $2; exit}')
+dir_two=$(printf '%s\n' "${out_two}" | awk '/^TASK_DIR:/ {print $2; exit}')
+state_one=$(dirname "$(dirname "${dir_one}")")
+state_two=$(dirname "$(dirname "${dir_two}")")
+if [ "${state_one}" != "${state_two}" ] \
+  && [ "$(basename "${state_one}")" != "app" ] \
+  && [ "$(basename "${state_two}")" != "app" ]; then
+  _pass
+else
+  _fail "duplicate basename state dirs were not disambiguated: ${state_one} / ${state_two}"
+fi
+
 it "crew resume default records RESUME_REQUESTED and --print stays read-only"
 before_lines=$(wc -l < "${TRACE_TASK_DIR}/progress.buffer.jsonl" | tr -d ' ')
 out=$(AGENT_CREW_HOME="${TRACE_HOME}" PROJECT_ROOT="${TRACE_PROJECT}" bash "${CREW}" resume "${TRACE_TASK_ID}" 2>&1)
@@ -334,8 +377,9 @@ it "crew setup bootstrap installs agent skills"
 assert_file_exists "${SETUP_HOME}/system/agents/skills/tdd.md"
 
 it "crew setup bootstrap initializes project capabilities"
-assert_file_exists "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capabilities.json"
-assert_contains "$(cat "${SETUP_HOME}/state/$(basename "${SETUP_PROJECT}")/capabilities.json")" '"interactive_question_mode": "codex_plan_mode_conditional"'
+SETUP_STATE="$(project_state_dir "${SETUP_HOME}" "${SETUP_PROJECT}")"
+assert_file_exists "${SETUP_STATE}/capabilities.json"
+assert_contains "$(cat "${SETUP_STATE}/capabilities.json")" '"interactive_question_mode": "codex_plan_mode_conditional"'
 
 PATH_HOME=$(make_tmp)
 PATH_INSTALL=$(make_tmp)
@@ -422,7 +466,8 @@ assert_file_exists "${PATH_INSTALL}/user/agents/custom-agent.md"
 assert_file_exists "${PATH_INSTALL}/user/skills/custom-skill.md"
 
 it "local sync writes update preservation manifest"
-manifest_count=$(find "${PATH_INSTALL}/state/$(basename "${PATH_PROJECT}")/update-preservation" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+PATH_STATE="$(project_state_dir "${PATH_INSTALL}" "${PATH_PROJECT}")"
+manifest_count=$(find "${PATH_STATE}/update-preservation" -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
 test "${manifest_count}" -ge 1
 assert_true "$?" "preservation manifest count"
 
@@ -714,7 +759,7 @@ assert_contains "${out}" "NEXT: Continue in the host prompt runtime"
 
 it "crew resume blocks missing required workflow state markers"
 BROKEN_TASK_ID="20260101-999999-0"
-BROKEN_TASK_DIR="${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks/${BROKEN_TASK_ID}"
+BROKEN_TASK_DIR="$(project_state_dir "${TMP_HOME}" "${TMP_PROJECT}")/tasks/${BROKEN_TASK_ID}"
 mkdir -p "${BROKEN_TASK_DIR}"
 printf 'broken resume fixture\n' > "${BROKEN_TASK_DIR}/task.txt"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" resume "${BROKEN_TASK_ID}" 2>&1)
@@ -862,8 +907,9 @@ DEFAULT_BRIDGE_HOME="$(make_tmp)"
 DEFAULT_BRIDGE_PROJECT="$(make_tmp)"
 DEFAULT_BRIDGE_LOG="$(make_tmp)/default-bridge.log"
 DEFAULT_BRIDGE_BIN="${DEFAULT_BRIDGE_HOME}/adapters/codex/bin/codex-host-bridge"
-mkdir -p "$(dirname "${DEFAULT_BRIDGE_BIN}")" "${DEFAULT_BRIDGE_HOME}/state/$(basename "${DEFAULT_BRIDGE_PROJECT}")"
-cat > "${DEFAULT_BRIDGE_HOME}/state/$(basename "${DEFAULT_BRIDGE_PROJECT}")/capabilities.json" <<EOF
+DEFAULT_BRIDGE_STATE="$(ensure_project_state_dir "${DEFAULT_BRIDGE_HOME}" "${DEFAULT_BRIDGE_PROJECT}")"
+mkdir -p "$(dirname "${DEFAULT_BRIDGE_BIN}")" "${DEFAULT_BRIDGE_STATE}"
+cat > "${DEFAULT_BRIDGE_STATE}/capabilities.json" <<EOF
 {"host":"codex"}
 EOF
 cat > "${DEFAULT_BRIDGE_BIN}" <<'EOF'
@@ -1138,7 +1184,7 @@ JSON
 GH
 chmod +x "${ISSUE_BIN}/gh"
 ISSUE_TASK_ID="20260101-010101-0"
-ISSUE_TASK_DIR="${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks/${ISSUE_TASK_ID}"
+ISSUE_TASK_DIR="$(project_state_dir "${TMP_HOME}" "${TMP_PROJECT}")/tasks/${ISSUE_TASK_ID}"
 mkdir -p "${ISSUE_TASK_DIR}/context"
 
 it "crew issue-ingest records issue body and comments before planning"

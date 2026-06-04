@@ -19,8 +19,23 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
-PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+if [ -f "${ASSET_ROOT}/scripts/project-state.sh" ]; then
+  # shellcheck source=/dev/null
+  . "${ASSET_ROOT}/scripts/project-state.sh"
+elif [ -f "${AGENT_CREW_HOME}/scripts/project-state.sh" ]; then
+  # shellcheck source=/dev/null
+  . "${AGENT_CREW_HOME}/scripts/project-state.sh"
+fi
+if declare -F project_state_load >/dev/null 2>&1; then
+  project_state_load \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${PROJECT_ROOT}" \
+    --prefer-existing-legacy
+else
+  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+  PROJECT_STATE_KEY="${PROJECT_NAME}"
+  STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+fi
 
 usage() {
   cat <<'EOF'
@@ -149,6 +164,8 @@ sync_source_runtime_assets_if_drifted() {
   for check in \
     "core/bin/crew:${AGENT_CREW_HOME}/bin/crew" \
     "core/scripts/crew-runtime.py:${AGENT_CREW_HOME}/scripts/crew-runtime.py" \
+    "core/scripts/project_state.py:${AGENT_CREW_HOME}/scripts/project_state.py" \
+    "core/scripts/project-state.sh:${AGENT_CREW_HOME}/scripts/project-state.sh" \
     "core/scripts/crew-diagnostics.py:${AGENT_CREW_HOME}/scripts/crew-diagnostics.py" \
     "core/scripts/repair-task-state.py:${AGENT_CREW_HOME}/scripts/repair-task-state.py" \
     "core/scripts/pipeline-quality-plan-check.py:${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
@@ -269,10 +286,84 @@ sync_source_hooks_if_drifted() {
   printf 'crew: refreshed auto-route hooks from source checkout because installed hooks drifted\n' >&2
 }
 
+setup_existing_state_action() {
+  local action="${AGENT_CREW_SETUP_EXISTING_STATE_ACTION:-}"
+  if [ -n "${action}" ]; then
+    printf '%s\n' "${action}"
+    return 0
+  fi
+
+  if [ ! -t 0 ]; then
+    printf 'preserve-context\n'
+    return 0
+  fi
+
+  cat <<'EOF'
+Existing agent-crew project state was found.
+
+  1) Cancel setup
+  2) Reset task/runtime state, preserve project-context (default)
+  3) Archive project-context, then reset task/runtime state
+  4) Full state reset
+EOF
+  printf 'Choose [2]: ' >&2
+  local choice
+  read -r choice || choice=""
+  case "${choice:-2}" in
+    1|c|C|cancel) printf 'cancel\n' ;;
+    2|p|P|preserve|preserve-context) printf 'preserve-context\n' ;;
+    3|a|A|archive|archive-context) printf 'archive-context\n' ;;
+    4|f|F|full|full-reset) printf 'full-reset\n' ;;
+    *) printf 'preserve-context\n' ;;
+  esac
+}
+
+prepare_setup_state() {
+  local project="$1"
+  declare -F project_state_load >/dev/null 2>&1 || return 0
+
+  project_state_load \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${project}" \
+    --prefer-existing-legacy
+
+  if [ ! -d "${STATE_DIR}" ] && { [ -z "${LEGACY_STATE_DIR:-}" ] || [ ! -d "${LEGACY_STATE_DIR}" ]; }; then
+    project_state_load \
+      --agent-crew-home "${AGENT_CREW_HOME}" \
+      --project-root "${project}" \
+      --ensure \
+      --migrate-legacy
+    return 0
+  fi
+
+  local action setup_result_rc setup_exports
+  action="$(setup_existing_state_action)"
+  setup_result_rc=0
+  setup_exports="$(project_state_setup_existing \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${project}" \
+    --action "${action}")" || setup_result_rc=$?
+  [ -n "${setup_exports}" ] && eval "${setup_exports}"
+
+  if [ "${setup_result_rc}" = "10" ] || [ "${AGENT_CREW_SETUP_CANCELLED:-0}" = "1" ]; then
+    printf 'crew setup: cancelled; existing state was left unchanged.\n'
+    return 10
+  fi
+  if [ "${setup_result_rc}" != "0" ]; then
+    return "${setup_result_rc}"
+  fi
+}
+
 cmd_setup() {
   local project="${1:-${PROJECT_ROOT}}"
   local setup_script="${ASSET_ROOT}/setup/setup-host.sh"
   local install_setup="${AGENT_CREW_HOME}/setup/setup-host.sh"
+
+  prepare_setup_state "${project}" || {
+    local rc=$?
+    [ "${rc}" = "10" ] && return 0
+    return "${rc}"
+  }
 
   if [ ! -x "${install_setup}" ] && [ "${ASSET_ROOT}" != "${AGENT_CREW_HOME}" ]; then
     local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"

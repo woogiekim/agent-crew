@@ -227,7 +227,7 @@ Use `crew:<intent>` as the default invocation style.
 Project state is stored under:
 
 ```text
-~/.agent-crew/state/{PROJECT_NAME}/tasks/{TASK_ID}
+~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/{TASK_ID}
 ```
 
 ## Structured Choice Rules

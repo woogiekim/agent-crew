@@ -106,7 +106,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Conditional deployment gate** — after all supervisors complete, `crew:run` always displays a per-task summary; deployment approval via `AskUserQuestion` fires only when the pipeline included a `devops` stage
 - **Native sub-agent delegation where available** — orchestrator uses the host assistant's agent/delegation capability when advertised; adapters without background/task APIs fall back to inline execution and file-based state
 - **Git worktree isolation** — each task runs in its own branch and worktree; merged back after completion
-- **Project-clean state** — all state stored under `~/.agent-crew/state/{PROJECT_NAME}/`, never in your project directory
+- **Project-clean state** — all state stored under collision-safe `~/.agent-crew/state/{PROJECT_STATE_KEY}/`, never in your project directory
 - **Global install** — one install works across all your projects
 - **Provider-neutral capability framework** — every host-specific surface (task tools, background agents, monitor stream, hooks, structured questions, cost tracking) is gated by a flag in `capabilities.json` written by the active adapter (`claude`, `codex`, `generic`); core code never assumes unavailable host features. See `core/rules/host-capabilities.md`.
 - **Cost circuit breaker** — when the `cost_tracking` capability is advertised, the supervisor checks per-task token usage before every stage spawn and halts with `BLOCKER: cost_budget_exceeded` at 100% of the per-tier budget. Configure via `AGENT_CREW_BUDGET_DEEP|BALANCED|LIGHT`.
@@ -233,7 +233,7 @@ paths depending on the active host adapter:
   agent-crew will use documented fallback behavior, a mode-dependent native
   surface, or report the feature as unavailable.
 
-Always inspect `~/.agent-crew/state/{PROJECT_NAME}/capabilities.json` when
+Always inspect `~/.agent-crew/state/{PROJECT_STATE_KEY}/capabilities.json` when
 debugging host-specific behavior.
 
 ### Task-State Cleanup
@@ -245,6 +245,14 @@ marker/sentinel files under `archive/task-state-cleanup`; it does not delete
 blocked or repaired task directories. Those task artifacts are retained as
 diagnostic evidence (`result.md`, `register.json`, `pipeline.json`, progress,
 and `context/`).
+
+### Setup State Choices
+
+When `crew setup` finds existing project state, the default action is to reset
+task/runtime state while preserving `project-context/`. Operators can instead
+cancel setup, archive `project-context/` before regenerating it, or perform a
+full state reset. `crew update` never prompts for these choices and always
+preserves project state.
 
 ### Host Bridge Troubleshooting
 
@@ -454,8 +462,10 @@ If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned 
 ### State Directory Layout
 
 ```
-~/.agent-crew/state/{PROJECT_NAME}/
+~/.agent-crew/state/{PROJECT_STATE_KEY}/
+├── project.json               ← display PROJECT_NAME, canonical PROJECT_ROOT, PROJECT_STATE_KEY
 ├── capabilities.json          ← host capability flags (Phase A1)
+├── project-context/           ← durable project-level markdown context (preserved by default)
 ├── session.json               ← multi-task session registry; runs > 1 day stale-filtered
 ├── cost/
 │   └── {TASK_ID}.jsonl        ← per-call token usage (Phase 3.3, cost_tracking only)
@@ -478,6 +488,12 @@ If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned 
             ├── approval.md    ← PLAN_READY / APPROVED / CANCELLED protocol file
             └── review.md      ← review report written by reviewer
 ```
+
+`PROJECT_NAME` remains display metadata from the project root basename. The
+state directory uses `PROJECT_STATE_KEY={slug(PROJECT_NAME)}-{sha256(PROJECT_ROOT)[:10]}`
+so projects with the same basename do not collide. Legacy
+`~/.agent-crew/state/{PROJECT_NAME}/` legacy directories are migrated when setup/run
+can identify that they belong to the current canonical project root.
 
 All structured state files (`register.json`, `pipeline.json`, `session.json`,
 `capabilities.json`, `progress.buffer.jsonl`) are validated against JSON
@@ -846,7 +862,7 @@ new instructions to apply automatically. In the old session, explicitly invoke
 
 ### Direct-Edit Guard (`core/hooks/direct-edit-guard.sh`)
 
-A `PreToolUse` hook that intercepts `Edit` and `Write` tool calls. If the target file is inside the project root and no `active` marker exists at `~/.agent-crew/state/{PROJECT_NAME}/tasks/active`, the call is blocked with:
+A `PreToolUse` hook that intercepts `Edit` and `Write` tool calls. If the target file is inside the project root and no `active` marker exists at `~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/active`, the call is blocked with:
 
 ```
 [agent-crew] Direct edit blocked — no active crew task.
@@ -970,7 +986,7 @@ follow the one-page recovery SOP:
 All state is stored outside your project directory:
 
 ```
-~/.agent-crew/state/{PROJECT_NAME}/tasks/{TASK_ID}/
+~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/{TASK_ID}/
 ```
 
 Your project directory only gains a `.crew_task_id` file during an active task (removed on completion). Git worktrees for parallel tasks are created under `.crew-worktrees/` inside the project root and removed after completion.

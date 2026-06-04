@@ -287,7 +287,12 @@ def test_command_run_current_session_normalization_and_reported_block(monkeypatc
     assert runtime.command_run(args) == 0
     out = capsys.readouterr().out
     assert "HOST_BRIDGE: current_session_required" in out
-    task_dirs = sorted((tmp_path / "home" / "state" / project.name / "tasks").iterdir())
+    state_info = runtime.resolve_project_state(
+        home=tmp_path / "home",
+        project_root=project,
+        prefer_existing_legacy=True,
+    )
+    task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
     result_text = (task_dirs[-1] / "result.md").read_text(encoding="utf-8")
     assert "NORMALIZATION_GATE: required" in result_text
 
@@ -302,7 +307,12 @@ def test_command_run_current_session_normalization_and_reported_block(monkeypatc
     monkeypatch.setattr(runtime, "invoke_host_bridge", lambda *_args, **_kwargs: blocked_record)
     args.task = "investigate runtime"
     assert runtime.command_run(args) == 3
-    task_dirs = sorted((tmp_path / "home" / "state" / project.name / "tasks").iterdir())
+    state_info = runtime.resolve_project_state(
+        home=tmp_path / "home",
+        project_root=project,
+        prefer_existing_legacy=True,
+    )
+    task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
     register = json.loads((task_dirs[-1] / "register.json").read_text(encoding="utf-8"))
     assert register["host_bridge_failure_reason"] == "bridge_reported_blocked"
 

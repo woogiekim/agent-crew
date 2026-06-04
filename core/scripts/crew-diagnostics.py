@@ -18,6 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from core_objective_lib import capability_ceiling, format_ceiling_text
+from project_state import resolve_project_state
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -211,8 +212,12 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
     project_root = Path(args.project_root).resolve()
     asset_root = Path(args.asset_root).resolve()
     agent_crew_home = Path(args.agent_crew_home).expanduser()
-    project_name = project_root.name
-    state_dir = agent_crew_home / "state" / project_name
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        prefer_existing_legacy=True,
+    )
+    state_dir = Path(state_info["state_dir"])
     capabilities = load_json(state_dir / "capabilities.json")
     flags = {
         "task_tools": bool(capabilities.get("task_tools")),
@@ -259,6 +264,8 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
     report_publish = os.environ.get("AGENT_CREW_REPORT_PUBLISH") or os.environ.get("AGENT_CREW_AUTO_ISSUE_PUBLISH") or "none"
     return {
         "project_root": str(project_root),
+        "project_name": state_info["project_name"],
+        "project_state_key": state_info["project_state_key"],
         "state_dir": str(state_dir),
         "active_adapter": active_adapter,
         "capability_flags": flags,
@@ -556,7 +563,12 @@ def doctor_runtime(args: argparse.Namespace) -> list[dict[str, Any]]:
     asset_root = Path(args.asset_root)
     agent_crew_home = Path(args.agent_crew_home).expanduser()
     project_root = Path(args.project_root).resolve()
-    state_dir = agent_crew_home / "state" / project_root.name
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        prefer_existing_legacy=True,
+    )
+    state_dir = Path(state_info["state_dir"])
     findings: list[dict[str, Any]] = []
     for command in ("bash", "python3", "git"):
         findings.append(print_status(f"command available: {command}", shutil.which(command) is not None, emit=args.format == "text"))

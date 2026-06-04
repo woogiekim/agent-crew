@@ -39,7 +39,7 @@ Security response requirements:
 
 ## Privacy And Data Handling
 
-agent-crew stores workflow state locally under `~/.agent-crew/state/{project}`.
+agent-crew stores workflow state locally under collision-safe `~/.agent-crew/state/{PROJECT_STATE_KEY}`.
 Task state may contain prompts, progress logs, validation evidence, task
 results, adapter status, and operator notes.
 

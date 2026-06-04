@@ -38,9 +38,24 @@ CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 
 SOURCE_ROOT="$(cd "${SOURCE_ROOT}" && pwd)"
 PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
+ASSET_ROOT="${SOURCE_ROOT}/core"
+if [ -f "${SOURCE_ROOT}/core/scripts/project-state.sh" ]; then
+  # shellcheck source=/dev/null
+  . "${SOURCE_ROOT}/core/scripts/project-state.sh"
+fi
 PATH_CREW_CLI_MANAGED=0
-PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
-UPDATE_FINGERPRINT="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/update-fingerprint.json"
+if declare -F project_state_load >/dev/null 2>&1; then
+  project_state_load \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${PROJECT_ROOT}" \
+    --ensure \
+    --migrate-legacy
+else
+  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+  PROJECT_STATE_KEY="${PROJECT_NAME}"
+  STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+fi
+UPDATE_FINGERPRINT="${STATE_DIR}/update-fingerprint.json"
 UPDATE_TOTAL_START="${SECONDS}"
 UPDATE_PHASE_START="${SECONDS}"
 
@@ -96,7 +111,7 @@ print_update_total() {
 }
 
 write_update_integrity_manifest() {
-  local integrity_dir="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/integrity"
+  local integrity_dir="${STATE_DIR}/integrity"
 
   [ "${AGENT_CREW_WRITE_INSTALL_MANIFEST:-1}" = "1" ] || return 0
   [ -f "${AGENT_CREW_HOME}/system/scripts/generate-release-checksums.py" ] || return 0

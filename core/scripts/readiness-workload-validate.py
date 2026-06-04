@@ -31,6 +31,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from project_state import resolve_project_state
+
 
 SCENARIOS = [
     {
@@ -118,7 +124,12 @@ def build_validation_evidence(crew_bin: Path, *, keep_temp: bool = False) -> tup
                 "stderr_tail": result["stderr"][-2000:],
             })
 
-        state_dir = home / "state" / project_root.name
+        state_info = resolve_project_state(
+            home=home,
+            project_root=project_root,
+            prefer_existing_legacy=True,
+        )
+        state_dir = Path(state_info["state_dir"])
         evidence = workload.build_evidence(state_dir, adapter="validation-workload", include_agent_requests=True)
         evidence.update({
             "source": "agent-crew-readiness-validation-workload",

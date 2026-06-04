@@ -142,7 +142,7 @@ follows the same primary behavior; only the persistence surface differs.
    transforms the input inline (per `core/rules/normalization-adapter.md`
    § How to Implement — inline mode), delivers the NORMALIZED_TASK to the
    named agent, and lands the audit artifact at
-   `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{timestamp}.md`.
+   `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{timestamp}.md`.
 
 2. **Bare interactive answer path** — even when the user's input is going to
    be answered by the host AI inline (no `crew:run`, no `crew:agent`), if the
@@ -170,7 +170,7 @@ inspectable even when the full pipeline does not run.
 
 | Path with TASK_DIR | Path without TASK_DIR (bare / `crew:agent`) |
 |---|---|
-| `{TASK_DIR}/context/normalized_task.md` | `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` |
+| `{TASK_DIR}/context/normalized_task.md` | `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md` |
 
 `{ts}` is a UTC timestamp matching the existing `TASK_ID` convention
 (`YYYYMMDD-HHMMSS`).

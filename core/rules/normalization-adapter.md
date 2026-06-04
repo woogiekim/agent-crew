@@ -114,8 +114,8 @@ PATH: {entry point — crew-run | crew-agent | bare-interactive | supervisor-pha
 | Context | Path |
 |---|---|
 | `crew:run` / supervisor pipeline | `{TASK_DIR}/context/normalized_task.md` |
-| `crew:agent` direct path | `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` |
-| Bare interactive answer (no TASK_DIR) | `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` |
+| `crew:agent` direct path | `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md` |
+| Bare interactive answer (no TASK_DIR) | `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md` |
 
 `{ts}` matches the existing `TASK_ID` convention (`YYYYMMDD-HHMMSS`).
 
@@ -128,8 +128,8 @@ answer) differs.
 | Entry point | Enforcement site | What MUST happen |
 |---|---|---|
 | `crew:run` | `core/commands/run.md` Step 1 — Input Normalization | Write `{TASK_DIR}/context/normalized_task.md` before Step 2 (state init). |
-| `crew:agent` (direct) | `core/commands/agent.md` Step 5 — Input normalization | Write `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` before Step 6 (visibility line) and Step 7 (invoke the agent). |
-| Bare interactive answer | This rule file (host-agnostic) | Before the host AI is asked the question, normalize inline and write `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md`. |
+| `crew:agent` (direct) | `core/commands/agent.md` Step 5 — Input normalization | Write `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md` before Step 6 (visibility line) and Step 7 (invoke the agent). |
+| Bare interactive answer | This rule file (host-agnostic) | Before the host AI is asked the question, normalize inline and write `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md`. |
 
 This explicit triple-coverage exists because the user direction is verbatim:
 "에이전트크루 파이프라인이 실행 안되더라도 정규화해서 코덱스나, 클로드, 제미나이,

@@ -10,6 +10,7 @@ import shlex
 import sys
 import os
 import shutil
+import hashlib
 from pathlib import Path
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -55,7 +56,12 @@ def _default_bridge_command():
     host = os.environ.get("AGENT_CREW_HOST", "").strip().lower()
     if not host:
         try:
-            capabilities = json.loads((home / "state" / project_root.name / "capabilities.json").read_text(encoding="utf-8"))
+            slug = re.sub(r"[^A-Za-z0-9._-]+", "-", project_root.name.strip()).strip(".-").lower() or "project"
+            digest = hashlib.sha256(str(project_root).encode("utf-8")).hexdigest()[:10]
+            keyed = home / "state" / f"{slug}-{digest}"
+            legacy = home / "state" / project_root.name
+            state_dir = keyed if keyed.exists() else legacy
+            capabilities = json.loads((state_dir / "capabilities.json").read_text(encoding="utf-8"))
             host = str(capabilities.get("host") or capabilities.get("adapter") or "").strip().lower()
         except Exception:
             host = ""

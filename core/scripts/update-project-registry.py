@@ -7,8 +7,15 @@ import argparse
 import datetime as dt
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
+
+try:
+    from project_state import resolve_project_state
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from project_state import resolve_project_state
 
 
 def now_epoch() -> int:
@@ -98,11 +105,19 @@ def mark_global(args: argparse.Namespace) -> int:
     return 0
 
 
-def project_entry(project_root: Path, source_root: Path, timestamp: int) -> dict[str, Any]:
+def project_entry(agent_crew_home: Path, project_root: Path, source_root: Path, timestamp: int) -> dict[str, Any]:
     root = project_root.expanduser().resolve()
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=root,
+        ensure=True,
+        migrate_legacy=True,
+    )
     return {
         "project_name": root.name,
         "project_root": str(root),
+        "project_state_key": state_info["project_state_key"],
+        "state_dir": state_info["state_dir"],
         "updated_at_epoch": timestamp,
         "updated_at": iso_from_epoch(timestamp),
         "source_root": str(source_root.expanduser().resolve()),
@@ -117,12 +132,12 @@ def mark_project(args: argparse.Namespace) -> int:
     registry = read_json(registry_file)
     projects = as_dict(dict_value(registry, "projects", {}))
     timestamp = now_epoch()
-    entry = project_entry(project_root, source_root, timestamp)
+    entry = project_entry(home, project_root, source_root, timestamp)
     projects[project_key(project_root)] = entry
     registry["projects"] = projects
     write_json(registry_file, registry)
 
-    state_marker = home / "state" / project_root.name / "project-update.json"
+    state_marker = Path(entry["state_dir"]) / "project-update.json"
     write_json(state_marker, entry)
     print(f"update_scope: project={project_root}")
     return 0

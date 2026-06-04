@@ -36,9 +36,13 @@ Selection precedence (same as `crew:telemetry`): `--task-id` > `--session-id`
 ## Execution
 
 ```bash
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --prefer-existing-legacy \
+  --format shell)"
 
 if [ ! -d "${STATE_DIR}/tasks" ]; then
   echo "No tasks found. Run crew:setup or crew:run first."

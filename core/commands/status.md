@@ -29,8 +29,12 @@ available) and avoid long troubleshooting narration unless explicitly requested.
 
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --prefer-existing-legacy \
+  --format shell)"
 TASKS_DIR="${STATE_DIR}/tasks"
 SESSION_FILE="${STATE_DIR}/session.json"
 CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
@@ -1001,7 +1005,7 @@ Pipeline stages:
   even while a sub-agent is still running. The host-task event stream is the same
   data path with lower latency.
 - When the host adapter has advertised `task_tools: true` in
-  `~/.agent-crew/state/{project}/capabilities.json`, `crew:status` prefers the
+  `~/.agent-crew/state/{PROJECT_STATE_KEY}/capabilities.json`, `crew:status` prefers the
   host's `TaskList` output for the parent-task stage state because hosts like
   Claude Code stream that surface live.
 - When the host adapter has advertised `monitor_tool: true`, `crew:status`

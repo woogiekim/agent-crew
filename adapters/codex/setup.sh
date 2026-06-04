@@ -486,8 +486,17 @@ register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
 # Absence of this file MUST be treated as legacy behavior (all flags false),
 # so writing it explicitly here closes the documentation-implementation gap
 # described in issue #51.
-PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+if declare -F project_state_load >/dev/null 2>&1; then
+  project_state_load \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --project-root "${PROJECT_ROOT}" \
+    --ensure \
+    --migrate-legacy
+else
+  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+  PROJECT_STATE_KEY="${PROJECT_NAME}"
+  STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+fi
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
 if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   mkdir -p "${STATE_DIR}"

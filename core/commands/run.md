@@ -204,7 +204,7 @@ Either:
 - defer the file write until Step 4 (`Prepare Each Task Context`), at which
   point TASK_DIR exists; or
 - write the artifact to a temporary path
-  `~/.agent-crew/state/{PROJECT_NAME}/normalized-tasks/{ts}.md` and move it
+  `~/.agent-crew/state/{PROJECT_STATE_KEY}/normalized-tasks/{ts}.md` and move it
   into `{TASK_DIR}/context/normalized_task.md` during Step 4.
 
 Both approaches satisfy the contract. The required fields are:
@@ -289,9 +289,13 @@ Check whether an active parallel session exists by looking for a `session.json`
 file in the project's state directory:
 
 ```bash
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --prefer-existing-legacy \
+  --format shell)"
 SESSION_FILE="${STATE_DIR}/session.json"
 ```
 
@@ -305,8 +309,9 @@ Error: Project '{PROJECT_NAME}' is not initialized.
 Run crew:setup first to initialize the workspace.
 ```
 
-The `{PROJECT_NAME}` placeholder resolves to the `PROJECT_NAME` variable set in the
-bash block above. The guard is expressed as:
+The `{PROJECT_NAME}` placeholder resolves to display metadata from the bash
+block above. `STATE_DIR` resolves through `PROJECT_STATE_KEY` so duplicate
+project basenames do not collide. The guard is expressed as:
 
 ```bash
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
@@ -1076,10 +1081,14 @@ When `INTENT == "none"`, this step is a no-op. Proceed to Step 2.
 ### 2. Initialize State Paths
 
 ```bash
-PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --migrate-legacy \
+  --format shell)"
 ```
 
 If `STATE_DIR` does not exist **or** `${STATE_DIR}/capabilities.json` does not
@@ -1091,8 +1100,8 @@ Error: Project '{PROJECT_NAME}' is not initialized.
 Run crew:setup first to initialize the workspace.
 ```
 
-The `{PROJECT_NAME}` placeholder resolves to the `PROJECT_NAME` variable set in the
-bash block above.
+The `{PROJECT_NAME}` placeholder resolves to display metadata from the bash
+block above; `STATE_DIR` uses `PROJECT_STATE_KEY`.
 
 The check covers two distinct failure modes:
 
@@ -1515,7 +1524,7 @@ progress for any AMBIGUOUS task.
 > Forbidden behaviors (each one is a bug):
 > - Reading `supervisor.md` and "playing the role" of supervisor inline.
 > - Invoking the planner agent directly from this orchestrator step.
-> - Performing `touch ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks/active`
+> - Performing `touch ${STATE_DIR}/tasks/active`
 >   from the orchestrator — that marker is created by `supervisor` Phase 1c,
 >   and creating it elsewhere masks the underlying delegation failure.
 > - Editing project source files from the orchestrator. The orchestrator only
@@ -1917,7 +1926,7 @@ orchestrator:
 #### P2 — TaskList-based PLAN_READY detector (capability-gated)
 
 The orchestrator reads
-`${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json` once and caches
+`${STATE_DIR}/capabilities.json` once and caches
 `HAS_TASK_TOOLS`. When `HAS_TASK_TOOLS == 1` the preferred fan-in path is a
 single `TaskList()` round-trip filtered by `metadata.stage == "plan_ready"`
 matching the run's task IDs. The file write is still the contract — the

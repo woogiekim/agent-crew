@@ -7,9 +7,15 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from project_state import resolve_project_state
 
 CODEX_SYSTEM_AGENT_MARKER = "This is a Codex adapter bootstrap for the agent-crew system agent."
 LEGACY_SYSTEM_CODEX_AGENT_NAMES = {
@@ -136,8 +142,13 @@ def changed_settings(before: dict, after: dict) -> list[str]:
 def begin(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).expanduser().resolve()
     agent_crew_home = Path(args.agent_crew_home).expanduser().resolve()
-    project_name = project_root.name
-    manifest_dir = agent_crew_home / "state" / project_name / "update-preservation"
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    manifest_dir = Path(state_info["state_dir"]) / "update-preservation"
     manifest_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = manifest_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
     manifest = {
