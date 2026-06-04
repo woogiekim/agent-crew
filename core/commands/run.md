@@ -2463,6 +2463,11 @@ use this sequence:
      `selected_agent`, `selected_skill` (or `none` with reason), `selection_reason`,
      and `execution_mode`. `crew repair --status completed` for a mutating
      current-session fallback may require this evidence.
+   - Load the applicable skill files before acting and record the exact loaded
+     skill path(s) in `context/skill-load.md` or `context/skill-load.json`.
+     When `selected_skill` is `tdd`, the evidence must include `tdd.md`.
+     `crew repair --status completed` for a mutating current-session fallback
+     may reject completion when this skill-load evidence is missing.
    - For implementation or other production-code mutations with a testable
      surface, follow the full Red → Green → Refactor cycle. Identify the focused
      test target, add or update it, run it, and record the expected failing

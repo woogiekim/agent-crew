@@ -82,6 +82,12 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
         + "\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- ~/.agent-crew/user/skills/frontend-typescript-react.md\n",
+        encoding="utf-8",
+    )
 
     result = _repair(state_dir, task_id)
 
@@ -89,3 +95,4 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["specialist_dispatch_gate"]["passed"] is True
     assert repair["specialist_dispatch_gate"]["matched_paths"] == ["context/specialist-dispatch.md"]
+    assert repair["skill_load_gate"]["passed"] is True

@@ -61,6 +61,15 @@ SPECIALIST_DISPATCH_RE = re.compile(
     r")\b|전문\s*에이전트|에이전트\s*스킬|스킬\s*선택|위임",
     re.IGNORECASE,
 )
+SKILL_LOAD_RE = re.compile(
+    r"\b("
+    r"skill[-_ ]?load|loaded\s+(?:skill|before)|skill_loaded|"
+    r"read\s+.+skills?/.+\.md|applied\s+rule"
+    r")\b|스킬\s*(?:로드|사용|적용)",
+    re.IGNORECASE,
+)
+TDD_SKILL_PATH_RE = re.compile(r"(?:^|[/`\\])tdd\.md\b", re.IGNORECASE)
+TDD_SKILL_SELECTION_RE = re.compile(r"\bselected_skill\s*[:=]\s*.*\btdd\b|\btdd_parallel\b|\bTDD\b", re.IGNORECASE)
 
 
 def utc_now_z() -> str:
@@ -231,6 +240,74 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
     }
 
 
+def resolve_skill_load_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    candidates = [
+        task_dir / "context" / "skill-load.md",
+        task_dir / "context" / "skill-load.json",
+        task_dir / "context" / "codex-skill-context.md",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+    return candidates
+
+
+def required_skill_names(task_dir: Path, register: dict, specialist_paths: list[str]) -> list[str]:
+    snippets = [str(register.get("task") or "")]
+    for path in resolve_specialist_paths(task_dir, specialist_paths):
+        inspected: list[str] = []
+        evidence = inspect_evidence_file(task_dir, path, inspected)
+        if evidence is None:
+            continue
+
+        _rel_name, text = evidence
+        snippets.append(text)
+
+    required: list[str] = []
+    if any(TDD_SKILL_SELECTION_RE.search(text) for text in snippets):
+        required.append("tdd.md")
+    return sorted(set(required))
+
+
+def skill_load_status(
+    task_dir: Path,
+    register: dict,
+    skill_load_paths: list[str],
+    specialist_paths: list[str],
+) -> dict:
+    matched_paths: list[str] = []
+    inspected_paths: list[str] = []
+    loaded_text = ""
+    for path in resolve_skill_load_paths(task_dir, skill_load_paths):
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
+            continue
+
+        rel_name, text = inspected
+        loaded_text += "\n" + text
+        if SKILL_LOAD_RE.search(text):
+            matched_paths.append(rel_name)
+
+    required_skills = required_skill_names(task_dir, register, specialist_paths)
+    missing_required_skills: list[str] = []
+    for skill in required_skills:
+        if skill == "tdd.md" and not TDD_SKILL_PATH_RE.search(loaded_text):
+            missing_required_skills.append(skill)
+
+    return {
+        "required": True,
+        "passed": bool(matched_paths) and not missing_required_skills,
+        "matched_paths": sorted(set(matched_paths)),
+        "required_skills": required_skills,
+        "missing_required_skills": sorted(set(missing_required_skills)),
+        "inspected_paths": sorted(set(inspected_paths)),
+        "bypassed": False,
+        "bypass_reason": "",
+    }
+
+
 def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
     task = register.get("task", "")
     host_bridge_status = str(register.get("host_bridge_status") or "")
@@ -256,6 +333,50 @@ def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, r
         "before manual execution.\n"
         "NEXT: add --specialist-evidence pointing to context/specialist-dispatch.md "
         "or record an explicit --specialist-bypass-reason."
+    )
+
+
+def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
+    task = register.get("task", "")
+    host_bridge_status = str(register.get("host_bridge_status") or "")
+    current_session_fallback = host_bridge_status == "current_session_required"
+    required = args.status == "completed" and looks_mutating_task(task) and current_session_fallback
+    if not required:
+        return {"required": False, "passed": True, "bypassed": False}
+
+    status = skill_load_status(
+        task_dir,
+        register,
+        list(args.skill_load_evidence),
+        list(args.specialist_evidence),
+    )
+    if status["passed"]:
+        return status
+
+    if args.skill_load_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.skill_load_bypass_reason
+        return status
+
+    if status["matched_paths"] and status["missing_required_skills"]:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_required_skill_load_evidence\n"
+            "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+            "skill-load evidence for the selected mandatory skill(s): "
+            + ", ".join(status["missing_required_skills"])
+            + ".\n"
+            "NEXT: record context/skill-load.md with the loaded skill path(s), "
+            "or record an explicit --skill-load-bypass-reason."
+        )
+
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: missing_skill_load_evidence\n"
+        "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+        "evidence that applicable agent skills were actually loaded before manual execution.\n"
+        "NEXT: record context/skill-load.md or context/skill-load.json with loaded skill paths, "
+        "or record an explicit --skill-load-bypass-reason."
     )
 
 
@@ -351,7 +472,8 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
 def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   evidence_paths: list[str], memory_ids: list[str],
                   memory_context_reused: bool, quality_gate: dict | None = None,
-                  specialist_gate: dict | None = None) -> str:
+                  specialist_gate: dict | None = None,
+                  skill_load_gate: dict | None = None) -> str:
     lines = [
         f"# {task or task_id}",
         "",
@@ -402,6 +524,19 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"SPECIALIST_BYPASS_REASON: {specialist_gate.get('bypass_reason')}")
         for path in specialist_gate.get("matched_paths", []):
             lines.append(f"SPECIALIST_EVIDENCE: {path}")
+    if skill_load_gate and skill_load_gate.get("required"):
+        if skill_load_gate.get("passed"):
+            lines.append("SKILL_LOAD: passed")
+        elif skill_load_gate.get("bypassed"):
+            lines.append("SKILL_LOAD: bypassed")
+            lines.append(f"SKILL_LOAD_BYPASS_REASON: {skill_load_gate.get('bypass_reason')}")
+        for path in skill_load_gate.get("matched_paths", []):
+            lines.append(f"SKILL_LOAD_EVIDENCE: {path}")
+        for skill in skill_load_gate.get("required_skills", []):
+            lines.append(f"REQUIRED_SKILL: {skill}")
+        missing = skill_load_gate.get("missing_required_skills", [])
+        if missing:
+            lines.append("MISSING_REQUIRED_SKILLS: " + ", ".join(missing))
     lines.append("UNCERTAINTY: Manual repair records the current-session outcome; original host bridge execution did not run automatically.")
     if note:
         lines.append(f"NOTE: {note}")
@@ -422,6 +557,7 @@ def repair(args: argparse.Namespace) -> dict:
     pipeline = load_json(pipeline_path)
     quality_gate = enforce_quality_gate(args, task_dir, register)
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
+    skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
     previous = {
         "status": register.get("current_phase"),
         "blocked_by": register.get("blocked_by", []),
@@ -467,6 +603,7 @@ def repair(args: argparse.Namespace) -> dict:
         "memory_context_reused": args.reused_memory_context,
         "quality_gate": quality_gate,
         "specialist_dispatch_gate": specialist_gate,
+        "skill_load_gate": skill_load_gate,
         "previous": previous,
         "repaired_at": now,
     }
@@ -488,6 +625,7 @@ def repair(args: argparse.Namespace) -> dict:
             args.reused_memory_context,
             quality_gate,
             specialist_gate,
+            skill_load_gate,
         ),
         encoding="utf-8",
     )
@@ -545,6 +683,8 @@ def main() -> int:
     parser.add_argument("--quality-bypass-reason", default="")
     parser.add_argument("--specialist-evidence", action="append", default=[])
     parser.add_argument("--specialist-bypass-reason", default="")
+    parser.add_argument("--skill-load-evidence", action="append", default=[])
+    parser.add_argument("--skill-load-bypass-reason", default="")
     parser.add_argument("--memory-id", action="append", default=[])
     parser.add_argument("--reused-memory-context", action="store_true")
     parser.add_argument("--format", choices=["text", "json"], default="text")

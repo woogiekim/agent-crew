@@ -141,6 +141,12 @@ agent/user-agent and agent-skill selection for the normalized task, use/load the
 selected specialist when available, and record the decision in
 `{TASK_DIR}/context/specialist-dispatch.md`.
 
+Before acting, load the applicable skill files and record the exact loaded skill
+path(s) in `{TASK_DIR}/context/skill-load.md` or
+`{TASK_DIR}/context/skill-load.json`. When `selected_skill` is `tdd`, the
+evidence must include `tdd.md`. Completion/repair for a mutating current-session
+fallback must reject or flag missing skill-load evidence.
+
 For implementation or production-code mutation work, the same fallback must not
 bypass the full TDD Red → Green → Refactor cycle. Before production-code
 mutation, identify the focused test target, add or update the test, run it, and

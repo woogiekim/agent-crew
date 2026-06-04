@@ -36,6 +36,12 @@ reason), `selection_reason`, and `execution_mode`. If no specialist exists,
 state why and proceed through the regular supervisor/planner path rather than
 inventing an ad hoc shortcut.
 
+Load the applicable skill files before acting and record the exact loaded skill
+path(s) in `{TASK_DIR}/context/skill-load.md` or
+`{TASK_DIR}/context/skill-load.json`. When `selected_skill` is `tdd`, the
+evidence must include `tdd.md`. Repairing a mutating current-session fallback as
+completed may reject the handoff when skill-load evidence is missing.
+
 For implementation or other production-code mutations with a testable surface,
 do not patch production code until the focused test target is identified,
 added or updated, run, and recorded as expected failing red-phase evidence in

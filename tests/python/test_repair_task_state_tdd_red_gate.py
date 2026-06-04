@@ -96,6 +96,13 @@ def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
         "execution_mode: current_session_required fallback\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- ~/.agent-crew/system/agents/skills/tdd.md\n"
+        "- core/rules/code-quality.md\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "tdd_log.md").write_text(
         "TDD: RED -> GREEN -> REFACTOR. focused pytest passed.\n",
         encoding="utf-8",
