@@ -1204,8 +1204,9 @@ current host session. This updates local task state so telemetry stops reporting
 stale host_bridge_not_invoked blockers after the fallback has completed.
 Use --status cancelled when a handoff was intentionally superseded or aborted by
 the user before implementation began.
-For mutating implementation tasks, completed repairs require TDD/test evidence
-and reviewer evidence unless an explicit quality bypass reason is recorded.
+For mutating implementation tasks, completed repairs require full TDD-cycle
+evidence (Red, Green, Refactor) and reviewer evidence unless an explicit quality
+bypass reason is recorded.
 For read-only validation or documentation-only handoffs, attach the generated
 report with --evidence and explain why the quality loop is not applicable with
 --quality-bypass-reason.

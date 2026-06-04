@@ -325,13 +325,15 @@ selected specialist when available, and record the decision in
 `{TASK_DIR}/context/specialist-dispatch.md`.
 
 For implementation or production-code mutation work, the same fallback must not
-bypass TDD red-phase discipline. Before production-code mutation, identify the
-focused test target, add or update the test, run it, and record the expected
-failing result in `{TASK_DIR}/context/tdd-red.md`. If no runnable harness or red
-failure can reasonably be produced, record the explicit exception first in
-`{TASK_DIR}/context/tdd-exception.md`. Completion/repair for a mutating
-current-session fallback must reject or flag missing red-phase evidence or
-exception.
+bypass the full TDD Red → Green → Refactor cycle. Before production-code
+mutation, identify the focused test target, add or update the test, run it, and
+record the expected failing result in `{TASK_DIR}/context/tdd-red.md`. If no
+runnable harness or red failure can reasonably be produced, record the explicit
+exception first in `{TASK_DIR}/context/tdd-exception.md`. After green, perform
+the refactor review or document a no-op refactor decision, rerun focused
+verification, and record it in `{TASK_DIR}/context/tdd-refactor.md`.
+Completion/repair for a mutating current-session fallback must reject or flag
+missing red-phase/exception evidence or missing refactor-phase evidence.
 
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,

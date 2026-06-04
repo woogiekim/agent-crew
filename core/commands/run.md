@@ -2464,13 +2464,17 @@ use this sequence:
      and `execution_mode`. `crew repair --status completed` for a mutating
      current-session fallback may require this evidence.
    - For implementation or other production-code mutations with a testable
-     surface, identify the focused test target, add or update it, run it, and
-     record the expected failing result in `context/tdd-red.md` before changing
-     production code. If no runnable harness or red failure is possible, record
-     the explicit reason first in `context/tdd-exception.md`.
+     surface, follow the full Red → Green → Refactor cycle. Identify the focused
+     test target, add or update it, run it, and record the expected failing
+     result in `context/tdd-red.md` before changing production code. If no
+     runnable harness or red failure is possible, record the explicit reason
+     first in `context/tdd-exception.md`.
+   - After green, perform the refactor review or document a no-op refactor
+     decision, rerun the focused verification, and record the result in
+     `context/tdd-refactor.md`.
    - `crew repair --status completed` for a mutating fallback may reject the
-     completion when neither red-phase evidence nor an explicit TDD exception
-     exists, even if later green tests and reviewer evidence exist.
+     completion when red-phase/exception evidence or refactor-phase evidence is
+     missing, even if green tests and reviewer evidence exist.
 4. For auto-completion:
    - Pass `--host-bridge-command "<command>"` on `crew run`, or
    - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.

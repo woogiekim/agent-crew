@@ -1,4 +1,4 @@
-"""Tests for TDD red-phase evidence on manual Codex fallback repair."""
+"""Tests for TDD cycle evidence on manual Codex fallback repair."""
 
 from __future__ import annotations
 
@@ -151,7 +151,37 @@ def test_mutating_repair_blocks_without_red_phase_evidence(tmp_path: Path):
     assert "context/tdd-red.md" in result.stderr
 
 
-def test_mutating_repair_accepts_red_phase_evidence(tmp_path: Path):
+def test_mutating_repair_accepts_red_and_refactor_phase_evidence(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(state_dir, task_id)
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD-RED: focused pytest failed as expected before implementation.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd-refactor.md").write_text(
+        "TDD-REFACTOR: refactor review complete; post-refactor pytest passed.\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["red_phase_passed"] is True
+    assert repair["quality_gate"]["red_phase_evidence_paths"] == ["context/tdd-red.md"]
+    assert repair["quality_gate"]["green_phase_passed"] is True
+    assert repair["quality_gate"]["refactor_phase_passed"] is True
+    assert repair["quality_gate"]["refactor_phase_evidence_paths"] == ["context/tdd-refactor.md"]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "TDD_GREEN_PHASE: passed" in result_text
+    assert "TDD_RED_PHASE: passed" in result_text
+    assert "TDD_RED_EVIDENCE: context/tdd-red.md" in result_text
+    assert "TDD_REFACTOR_PHASE: passed" in result_text
+    assert "TDD_REFACTOR_EVIDENCE: context/tdd-refactor.md" in result_text
+
+
+def test_mutating_repair_blocks_with_red_but_without_refactor_phase_evidence(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -162,13 +192,25 @@ def test_mutating_repair_accepts_red_phase_evidence(tmp_path: Path):
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
-    assert repair["quality_gate"]["red_phase_passed"] is True
-    assert repair["quality_gate"]["red_phase_evidence_paths"] == ["context/tdd-red.md"]
-    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
-    assert "TDD_RED_PHASE: passed" in result_text
-    assert "TDD_RED_EVIDENCE: context/tdd-red.md" in result_text
+    assert result.returncode != 0
+    assert "BLOCKER: missing_tdd_refactor_phase_evidence" in result.stderr
+    assert "context/tdd-refactor.md" in result.stderr
+
+
+def test_mutating_repair_ignores_refactor_mentions_inside_red_artifact(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(state_dir, task_id)
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD-RED: focused pytest failed as expected before implementation.\n"
+        "Expected follow-up artifact: context/tdd-refactor.md.\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id, "--quality-evidence", "context/tdd-red.md")
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_tdd_refactor_phase_evidence" in result.stderr
 
 
 def test_mutating_repair_accepts_explicit_tdd_exception(tmp_path: Path):
@@ -179,6 +221,10 @@ def test_mutating_repair_accepts_explicit_tdd_exception(tmp_path: Path):
         "TDD_EXCEPTION: red failure cannot be produced because the target harness is unavailable.\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "tdd-refactor.md").write_text(
+        "TDD-REFACTOR: no-op refactor decision documented; post-refactor verification passed.\n",
+        encoding="utf-8",
+    )
 
     result = _repair(state_dir, task_id)
 
@@ -186,9 +232,11 @@ def test_mutating_repair_accepts_explicit_tdd_exception(tmp_path: Path):
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["quality_gate"]["red_phase_passed"] is True
     assert repair["quality_gate"]["tdd_exception_paths"] == ["context/tdd-exception.md"]
+    assert repair["quality_gate"]["refactor_phase_passed"] is True
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "TDD_RED_PHASE: exception" in result_text
     assert "TDD_EXCEPTION: context/tdd-exception.md" in result_text
+    assert "TDD_REFACTOR_PHASE: passed" in result_text
 
 
 def test_quality_bypass_records_missing_red_phase(tmp_path: Path):
@@ -208,3 +256,5 @@ def test_quality_bypass_records_missing_red_phase(tmp_path: Path):
     assert repair["quality_gate"]["bypassed"] is True
     assert repair["quality_gate"]["red_phase_passed"] is False
     assert repair["quality_gate"]["red_phase_evidence_paths"] == []
+    assert repair["quality_gate"]["refactor_phase_passed"] is False
+    assert repair["quality_gate"]["refactor_phase_evidence_paths"] == []

@@ -33,6 +33,9 @@ EOF
 cat > "${TASK_DIR}/context/tdd-red.md" <<'EOF'
 TDD-RED: focused test failed as expected before implementation.
 EOF
+cat > "${TASK_DIR}/context/tdd-refactor.md" <<'EOF'
+TDD-REFACTOR: refactor review complete; post-refactor tests passed.
+EOF
 cat > "${TASK_DIR}/context/review.md" <<'EOF'
 REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.
 EOF
@@ -85,6 +88,9 @@ assert_contains "${result}" "TDD_EVIDENCE: context/tdd_log.md"
 
 it "repair result records TDD red-phase evidence"
 assert_contains "${result}" "TDD_RED_EVIDENCE: context/tdd-red.md"
+
+it "repair result records TDD refactor-phase evidence"
+assert_contains "${result}" "TDD_REFACTOR_EVIDENCE: context/tdd-refactor.md"
 
 it "repair result records reviewer evidence"
 assert_contains "${result}" "REVIEW_EVIDENCE: context/review.md"

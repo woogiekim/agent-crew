@@ -41,7 +41,10 @@ do not patch production code until the focused test target is identified,
 added or updated, run, and recorded as expected failing red-phase evidence in
 `{TASK_DIR}/context/tdd-red.md`. If a runnable harness or red failure cannot
 reasonably be produced, record the explicit exception first in
-`{TASK_DIR}/context/tdd-exception.md`. Repairing a mutating current-session
-fallback as completed may reject the handoff when neither artifact exists.
+`{TASK_DIR}/context/tdd-exception.md`. After green, perform the refactor review
+or document a no-op refactor decision, rerun focused verification, and record it
+in `{TASK_DIR}/context/tdd-refactor.md`. Repairing a mutating current-session
+fallback as completed may reject the handoff when red-phase/exception evidence
+or refactor-phase evidence is missing.
 
 Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate supervisor logic in this skill.

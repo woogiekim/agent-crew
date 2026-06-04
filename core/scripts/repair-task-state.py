@@ -40,6 +40,15 @@ TDD_EXCEPTION_RE = re.compile(
     r")\b|테스트\s*하네스.*없|레드.*예외",
     re.IGNORECASE,
 )
+REFACTOR_PHASE_RE = re.compile(
+    r"\b("
+    r"tdd[-_ ]?refactor|refactor[-_ ]?phase|"
+    r"red\s*(?:->|→)\s*green\s*(?:->|→)\s*refactor|"
+    r"post[-_ ]?refactor(?:\s+verification)?|"
+    r"refactor(?:ed|ing)?[^\n]*(?:verified|verification|tests?\s+passed|no[-_ ]?op|complete)"
+    r")\b|리팩터(?:링)?[^\n]*(?:검증|완료|테스트|무변경)",
+    re.IGNORECASE,
+)
 REVIEW_RE = re.compile(
     r"\b(REVIEW:\s*APPROVED|REVIEW_APPROVED|APPROVED|reviewer approved|"
     r"review findings.*remediated|CHANGES_REQUESTED.*remediated|재리뷰.*승인|리뷰.*승인)\b",
@@ -99,6 +108,18 @@ def looks_mutating_task(task: str) -> bool:
     return bool(MUTATING_TASK_RE.search(task or ""))
 
 
+def evidence_name(task_dir: Path, path: Path) -> str:
+    return str(path.relative_to(task_dir)) if path.is_relative_to(task_dir) else str(path)
+
+
+def inspect_evidence_file(task_dir: Path, path: Path, inspected_paths: list[str]) -> tuple[str, str] | None:
+    if not path.is_file():
+        return None
+
+    inspected_paths.append(str(path))
+    return evidence_name(task_dir, path), path.read_text(encoding="utf-8", errors="replace")
+
+
 def resolve_quality_paths(task_dir: Path, paths: list[str]) -> list[Path]:
     candidates = [
         task_dir / "context" / "tdd-red.md",
@@ -119,18 +140,33 @@ def resolve_quality_paths(task_dir: Path, paths: list[str]) -> list[Path]:
     return candidates
 
 
+def resolve_refactor_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    candidates = [
+        task_dir / "context" / "tdd-refactor.md",
+        task_dir / "context" / "tdd-refactor.json",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        if "refactor" in path.name.lower():
+            candidates.append(path)
+    return candidates
+
+
 def quality_evidence_status(task_dir: Path, paths: list[str]) -> dict:
     tdd_paths: list[str] = []
     red_phase_paths: list[str] = []
     exception_paths: list[str] = []
+    refactor_phase_paths: list[str] = []
     review_paths: list[str] = []
     inspected_paths: list[str] = []
     for path in resolve_quality_paths(task_dir, paths):
-        if not path.is_file():
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
             continue
-        inspected_paths.append(str(path))
-        rel_name = str(path.relative_to(task_dir)) if path.is_relative_to(task_dir) else str(path)
-        text = path.read_text(encoding="utf-8", errors="replace")
+
+        rel_name, text = inspected
         if TDD_RE.search(text):
             tdd_paths.append(rel_name)
         if RED_PHASE_RE.search(text):
@@ -139,12 +175,21 @@ def quality_evidence_status(task_dir: Path, paths: list[str]) -> dict:
             exception_paths.append(rel_name)
         if REVIEW_RE.search(text):
             review_paths.append(rel_name)
+    for path in resolve_refactor_paths(task_dir, paths):
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
+            continue
+
+        rel_name, text = inspected
+        if REFACTOR_PHASE_RE.search(text):
+            refactor_phase_paths.append(rel_name)
     return {
         "required": True,
         "passed": bool(tdd_paths and review_paths),
         "tdd_evidence_paths": sorted(set(tdd_paths)),
         "red_phase_evidence_paths": sorted(set(red_phase_paths)),
         "tdd_exception_paths": sorted(set(exception_paths)),
+        "refactor_phase_evidence_paths": sorted(set(refactor_phase_paths)),
         "review_evidence_paths": sorted(set(review_paths)),
         "inspected_paths": sorted(set(inspected_paths)),
     }
@@ -169,11 +214,11 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
     matched_paths: list[str] = []
     inspected_paths: list[str] = []
     for path in resolve_specialist_paths(task_dir, paths):
-        if not path.is_file():
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
             continue
-        inspected_paths.append(str(path))
-        rel_name = str(path.relative_to(task_dir)) if path.is_relative_to(task_dir) else str(path)
-        text = path.read_text(encoding="utf-8", errors="replace")
+
+        rel_name, text = inspected
         if SPECIALIST_DISPATCH_RE.search(text):
             matched_paths.append(rel_name)
     return {
@@ -224,10 +269,20 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     status = quality_evidence_status(task_dir, evidence_paths)
     pipeline_status = check_quality_loop(task_dir, target_status=args.status)
     red_phase_passed = bool(status["red_phase_evidence_paths"] or status["tdd_exception_paths"])
+    green_phase_passed = bool(status["tdd_evidence_paths"] and pipeline_status["passed"])
+    refactor_phase_passed = bool(status["refactor_phase_evidence_paths"])
     status["pipeline_gate"] = pipeline_status
     status["pipeline_passed"] = pipeline_status["passed"]
     status["red_phase_passed"] = red_phase_passed
-    status["passed"] = bool(status["passed"] and pipeline_status["passed"] and red_phase_passed)
+    status["green_phase_passed"] = green_phase_passed
+    status["refactor_phase_passed"] = refactor_phase_passed
+    status["passed"] = bool(
+        status["passed"]
+        and pipeline_status["passed"]
+        and red_phase_passed
+        and green_phase_passed
+        and refactor_phase_passed
+    )
     status["bypassed"] = False
     status["bypass_reason"] = ""
     if status["passed"]:
@@ -252,6 +307,23 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
             "TDD exception explaining why a runnable red failure could not be produced.\n"
             "NEXT: record context/tdd-red.md with the focused failing test result, "
             "or context/tdd-exception.md with the exception reason before repair."
+        )
+
+    if (
+        status.get("tdd_evidence_paths")
+        and status.get("review_evidence_paths")
+        and status.get("pipeline_passed")
+        and red_phase_passed
+        and not refactor_phase_passed
+    ):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_tdd_refactor_phase_evidence\n"
+            "DETAIL: completed repair for a mutating implementation task requires "
+            "TDD refactor-phase evidence after green, including the refactor or no-op "
+            "refactor decision and post-refactor verification.\n"
+            "NEXT: record context/tdd-refactor.md with the refactor decision and "
+            "post-refactor verification before repair."
         )
 
     if status.get("tdd_evidence_paths") and status.get("review_evidence_paths"):
@@ -305,6 +377,8 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append("PIPELINE_QUALITY_FAILURES: " + ", ".join(pipeline_failures))
         for path in quality_gate.get("tdd_evidence_paths", []):
             lines.append(f"TDD_EVIDENCE: {path}")
+        if quality_gate.get("green_phase_passed"):
+            lines.append("TDD_GREEN_PHASE: passed")
         if quality_gate.get("red_phase_passed"):
             if quality_gate.get("tdd_exception_paths"):
                 lines.append("TDD_RED_PHASE: exception")
@@ -314,6 +388,10 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"TDD_RED_EVIDENCE: {path}")
         for path in quality_gate.get("tdd_exception_paths", []):
             lines.append(f"TDD_EXCEPTION: {path}")
+        if quality_gate.get("refactor_phase_passed"):
+            lines.append("TDD_REFACTOR_PHASE: passed")
+        for path in quality_gate.get("refactor_phase_evidence_paths", []):
+            lines.append(f"TDD_REFACTOR_EVIDENCE: {path}")
         for path in quality_gate.get("review_evidence_paths", []):
             lines.append(f"REVIEW_EVIDENCE: {path}")
     if specialist_gate and specialist_gate.get("required"):
