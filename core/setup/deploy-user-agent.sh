@@ -119,6 +119,8 @@ model = fm.get('model', '').strip()
 model_reasoning_effort = fm.get('model_reasoning_effort', '').strip()
 sandbox_mode = fm.get('sandbox_mode', '').strip()
 nickname_candidates = fm.get('nickname_candidates', '').strip()
+if model.lower() == 'inherit':
+    model = ''
 
 if not description:
     description = f'User agent: {name}'
@@ -133,7 +135,9 @@ lines = [
     f'description = "{desc_esc}"',
 ]
 # Preserve only official Codex per-agent config keys. `reasoning_tier` is an
-# agent-crew abstraction and is not accepted by Codex TOML agents.
+# agent-crew abstraction and is not accepted by Codex TOML agents. `model:
+# inherit` is a source-level host-default sentinel; Codex ChatGPT accounts
+# reject a literal `model = "inherit"` TOML value, so omit it.
 for key, value in (
     ('model', model),
     ('model_reasoning_effort', model_reasoning_effort),

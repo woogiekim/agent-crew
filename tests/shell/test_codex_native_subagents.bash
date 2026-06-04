@@ -30,13 +30,27 @@ nickname_candidates: Scout One, Scout Two
 Report local source evidence and do not edit files.
 EOF
 
+cat >"${ac_home}/user/agents/inherit-model.md" <<'EOF'
+---
+name: Inherit Model
+description: User agent that declares host-default model inheritance.
+model: inherit
+---
+
+# Inherit Model
+
+Report local source evidence and do not edit files.
+EOF
+
 (
   cd "${repo}" || exit 2
   git init -q
   AGENT_CREW_HOME="${ac_home}" bash "${REPO_ROOT}/core/setup/deploy-user-agent.sh" scout.md >/dev/null
+  AGENT_CREW_HOME="${ac_home}" bash "${REPO_ROOT}/core/setup/deploy-user-agent.sh" inherit-model.md >/dev/null
 )
 
 toml="${repo}/.codex/agents/scout-agent.toml"
+inherit_toml="${repo}/.codex/agents/inherit-model.toml"
 
 it "Codex project template defines native subagent concurrency defaults"
 config="$(cat "${REPO_ROOT}/adapters/codex/template/config.toml")"
@@ -54,6 +68,10 @@ assert_contains "${out}" 'name = "scout-agent"'
 
 it "Codex TOML preserves official per-agent model field"
 assert_contains "${out}" 'model = "gpt-5.4-mini"'
+
+it "Codex TOML omits unsupported inherit model sentinel"
+inherit_out="$(cat "${inherit_toml}")"
+assert_not_contains "${inherit_out}" 'model = "inherit"'
 
 it "Codex TOML preserves official per-agent reasoning effort field"
 assert_contains "${out}" 'model_reasoning_effort = "medium"'
@@ -79,9 +97,16 @@ printf 'name = "local-custom"\n' > "${setup_repo}/.codex/agents/local-custom.tom
     bash "${REPO_ROOT}/adapters/codex/setup.sh" "${setup_repo}" >/dev/null
 )
 setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
+setup_inherit_out="$(cat "${setup_repo}/.codex/agents/inherit-model.toml")"
 
 it "Codex setup user-agent conversion omits reasoning_tier"
 assert_not_contains "${setup_out}" 'reasoning_tier ='
+
+it "Codex setup user-agent conversion preserves explicit model override"
+assert_contains "${setup_out}" 'model = "gpt-5.4-mini"'
+
+it "Codex setup user-agent conversion omits unsupported inherit model sentinel"
+assert_not_contains "${setup_inherit_out}" 'model = "inherit"'
 
 it "Codex setup preserves project-local custom TOML agents"
 assert_file_exists "${setup_repo}/.codex/agents/local-custom.toml"
