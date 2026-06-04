@@ -103,6 +103,23 @@ def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
         "- core/rules/code-quality.md\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "skill-use.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "core/rules/code-quality.md",
+                        "applied_rules": ["KISS", "YAGNI", "DRY"],
+                        "evidence_refs": ["tests/python/test_repair_task_state_tdd_red_gate.py"],
+                        "output_files": ["tests/python/test_repair_task_state_tdd_red_gate.py"],
+                        "verification": ["python3 -m pytest tests/python/test_repair_task_state_tdd_red_gate.py -q"],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "tdd_log.md").write_text(
         "TDD: RED -> GREEN -> REFACTOR. focused pytest passed.\n",
         encoding="utf-8",

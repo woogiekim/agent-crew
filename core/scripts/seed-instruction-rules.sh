@@ -330,6 +330,13 @@ path(s) in `{TASK_DIR}/context/skill-load.md` or
 evidence must include `tdd.md`. Completion/repair for a mutating current-session
 fallback must reject or flag missing skill-load evidence.
 
+Record how every loaded non-TDD skill was applied in
+`{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each
+entry must include `skill_path`, `applied_rules`, `evidence_refs`,
+`output_files`, and `verification`. TDD remains covered by red/green/refactor
+evidence; other loaded skills require concrete use evidence, not only load
+evidence.
+
 For implementation or production-code mutation work, the same fallback must not
 bypass the full TDD Red → Green → Refactor cycle. Before production-code
 mutation, identify the focused test target, add or update the test, run it, and

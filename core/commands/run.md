@@ -2468,6 +2468,11 @@ use this sequence:
      When `selected_skill` is `tdd`, the evidence must include `tdd.md`.
      `crew repair --status completed` for a mutating current-session fallback
      may reject completion when this skill-load evidence is missing.
+   - Record how every loaded non-TDD skill was applied in `context/skill-use.json`
+     or `context/skill-use.md`. Each entry must include `skill_path`,
+     `applied_rules`, `evidence_refs`, `output_files`, and `verification`.
+     TDD remains covered by red/green/refactor evidence; other loaded skills
+     require concrete use evidence, not only load evidence.
    - For implementation or other production-code mutations with a testable
      surface, follow the full Red → Green → Refactor cycle. Identify the focused
      test target, add or update it, run it, and record the expected failing

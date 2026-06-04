@@ -88,6 +88,23 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
         "- ~/.agent-crew/user/skills/frontend-typescript-react.md\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "skill-use.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "~/.agent-crew/user/skills/frontend-typescript-react.md",
+                        "applied_rules": ["component contract applied"],
+                        "evidence_refs": ["tests/python/test_repair_task_state_specialist_gate.py"],
+                        "output_files": ["tests/python/test_repair_task_state_specialist_gate.py"],
+                        "verification": ["python3 -m pytest tests/python/test_repair_task_state_specialist_gate.py -q"],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     result = _repair(state_dir, task_id)
 

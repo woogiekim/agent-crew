@@ -70,6 +70,8 @@ SKILL_LOAD_RE = re.compile(
 )
 TDD_SKILL_PATH_RE = re.compile(r"(?:^|[/`\\])tdd\.md\b", re.IGNORECASE)
 TDD_SKILL_SELECTION_RE = re.compile(r"\bselected_skill\s*[:=]\s*.*\btdd\b|\btdd_parallel\b|\bTDD\b", re.IGNORECASE)
+SKILL_USE_RE = re.compile(r"\b(skill[-_ ]?use|applied_rules|evidence_refs|output_files|verification)\b", re.IGNORECASE)
+SKILL_USE_REQUIRED_FIELDS = ("applied_rules", "evidence_refs", "output_files", "verification")
 
 
 def utc_now_z() -> str:
@@ -254,6 +256,24 @@ def resolve_skill_load_paths(task_dir: Path, paths: list[str]) -> list[Path]:
     return candidates
 
 
+def skill_name_from_path(value: str) -> str:
+    return Path(value.strip().strip("`")).name
+
+
+def extract_loaded_skill_paths(text: str) -> list[str]:
+    paths: list[str] = []
+    for line in text.splitlines():
+        if not re.match(r"\s*[-*]\s+", line):
+            continue
+        for match in re.finditer(r"(?:~|/|\.\.?/|[A-Za-z0-9_.-]+/)[^\s`,'\")]+\.md", line):
+            path = match.group(0).strip()
+            if path.startswith("context/") or "/context/" in path:
+                continue
+            if "/skills/" in path or "/rules/" in path or path.startswith(("core/rules/", "core/agents/skills/")):
+                paths.append(path)
+    return sorted(set(paths))
+
+
 def required_skill_names(task_dir: Path, register: dict, specialist_paths: list[str]) -> list[str]:
     snippets = [str(register.get("task") or "")]
     for path in resolve_specialist_paths(task_dir, specialist_paths):
@@ -279,6 +299,7 @@ def skill_load_status(
 ) -> dict:
     matched_paths: list[str] = []
     inspected_paths: list[str] = []
+    loaded_skill_paths: list[str] = []
     loaded_text = ""
     for path in resolve_skill_load_paths(task_dir, skill_load_paths):
         inspected = inspect_evidence_file(task_dir, path, inspected_paths)
@@ -289,6 +310,7 @@ def skill_load_status(
         loaded_text += "\n" + text
         if SKILL_LOAD_RE.search(text):
             matched_paths.append(rel_name)
+            loaded_skill_paths.extend(extract_loaded_skill_paths(text))
 
     required_skills = required_skill_names(task_dir, register, specialist_paths)
     missing_required_skills: list[str] = []
@@ -300,8 +322,121 @@ def skill_load_status(
         "required": True,
         "passed": bool(matched_paths) and not missing_required_skills,
         "matched_paths": sorted(set(matched_paths)),
+        "loaded_skill_paths": sorted(set(loaded_skill_paths)),
+        "loaded_skill_names": sorted({skill_name_from_path(path) for path in loaded_skill_paths}),
         "required_skills": required_skills,
         "missing_required_skills": sorted(set(missing_required_skills)),
+        "inspected_paths": sorted(set(inspected_paths)),
+        "bypassed": False,
+        "bypass_reason": "",
+    }
+
+
+def resolve_skill_use_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    candidates = [
+        task_dir / "context" / "skill-use.json",
+        task_dir / "context" / "skill-use.md",
+    ]
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+    return candidates
+
+
+def evidence_field_present(value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(evidence_field_present(item) for item in value)
+    if isinstance(value, dict):
+        return any(evidence_field_present(item) for item in value.values())
+    return value is not None
+
+
+def skill_use_entries_from_json(text: str) -> list[dict]:
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return []
+
+    entries = payload.get("skills", payload) if isinstance(payload, dict) else payload
+    if isinstance(entries, dict):
+        entries = [entries]
+    if not isinstance(entries, list):
+        return []
+
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def skill_use_entries_from_markdown(text: str) -> list[dict]:
+    if not SKILL_USE_RE.search(text):
+        return []
+
+    entries: list[dict] = []
+    current: dict[str, object] = {}
+    for line in text.splitlines():
+        match = re.match(r"\s*[-*]?\s*(skill_path|applied_rules|evidence_refs|output_files|verification)\s*:\s*(.+)", line)
+        if not match:
+            continue
+
+        field, value = match.group(1), match.group(2).strip()
+        if field == "skill_path":
+            if current:
+                entries.append(current)
+            current = {"skill_path": value}
+        elif current:
+            current[field] = value
+    if current:
+        entries.append(current)
+    return entries
+
+
+def skill_use_status(task_dir: Path, paths: list[str], required_skills: list[str]) -> dict:
+    matched_paths: list[str] = []
+    inspected_paths: list[str] = []
+    complete_skills: set[str] = set()
+    incomplete: dict[str, list[str]] = {}
+    for path in resolve_skill_use_paths(task_dir, paths):
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
+            continue
+
+        rel_name, text = inspected
+        entries = (
+            skill_use_entries_from_json(text)
+            if path.suffix.lower() == ".json"
+            else skill_use_entries_from_markdown(text)
+        )
+        if entries:
+            matched_paths.append(rel_name)
+
+        for entry in entries:
+            skill_name = skill_name_from_path(str(entry.get("skill_path") or ""))
+            if skill_name not in required_skills:
+                continue
+
+            missing_fields = [
+                field
+                for field in SKILL_USE_REQUIRED_FIELDS
+                if not evidence_field_present(entry.get(field))
+            ]
+            if missing_fields:
+                incomplete[skill_name] = sorted(set(incomplete.get(skill_name, []) + missing_fields))
+                continue
+
+            complete_skills.add(skill_name)
+
+    missing_skills = sorted(set(required_skills) - complete_skills - set(incomplete))
+    return {
+        "required": True,
+        "passed": bool(required_skills) and not missing_skills and not incomplete,
+        "matched_paths": sorted(set(matched_paths)),
+        "required_skills": sorted(set(required_skills)),
+        "complete_skills": sorted(complete_skills),
+        "missing_skills": missing_skills,
+        "incomplete_skills": incomplete,
         "inspected_paths": sorted(set(inspected_paths)),
         "bypassed": False,
         "bypass_reason": "",
@@ -377,6 +512,61 @@ def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: 
         "evidence that applicable agent skills were actually loaded before manual execution.\n"
         "NEXT: record context/skill-load.md or context/skill-load.json with loaded skill paths, "
         "or record an explicit --skill-load-bypass-reason."
+    )
+
+
+def enforce_skill_use_gate(
+    args: argparse.Namespace,
+    task_dir: Path,
+    register: dict,
+    skill_load_gate: dict,
+) -> dict:
+    task = register.get("task", "")
+    host_bridge_status = str(register.get("host_bridge_status") or "")
+    current_session_fallback = host_bridge_status == "current_session_required"
+    loaded_skill_names = skill_load_gate.get("loaded_skill_names", [])
+    required_skills = sorted({name for name in loaded_skill_names if name and name != "tdd.md"})
+    required = bool(
+        args.status == "completed"
+        and looks_mutating_task(task)
+        and current_session_fallback
+        and required_skills
+    )
+    if not required:
+        return {"required": False, "passed": True, "bypassed": False, "required_skills": required_skills}
+
+    status = skill_use_status(task_dir, list(args.skill_use_evidence), required_skills)
+    if status["passed"]:
+        return status
+
+    if args.skill_use_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.skill_use_bypass_reason
+        return status
+
+    if status["incomplete_skills"]:
+        details = [
+            f"{skill}: {', '.join(fields)}"
+            for skill, fields in sorted(status["incomplete_skills"].items())
+        ]
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: incomplete_skill_use_evidence\n"
+            "DETAIL: skill-use evidence must include concrete applied_rules, evidence_refs, "
+            "output_files, and verification for each loaded non-TDD skill.\n"
+            "INCOMPLETE: " + "; ".join(details) + "\n"
+            "NEXT: complete context/skill-use.json or record an explicit --skill-use-bypass-reason."
+        )
+
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: missing_skill_use_evidence\n"
+        "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+        "evidence showing how each loaded non-TDD skill was applied, not only loaded.\n"
+        "MISSING_SKILLS: " + ", ".join(status["missing_skills"] or required_skills) + "\n"
+        "NEXT: record context/skill-use.json or context/skill-use.md with skill_path, "
+        "applied_rules, evidence_refs, output_files, and verification, or record an "
+        "explicit --skill-use-bypass-reason."
     )
 
 
@@ -473,7 +663,8 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   evidence_paths: list[str], memory_ids: list[str],
                   memory_context_reused: bool, quality_gate: dict | None = None,
                   specialist_gate: dict | None = None,
-                  skill_load_gate: dict | None = None) -> str:
+                  skill_load_gate: dict | None = None,
+                  skill_use_gate: dict | None = None) -> str:
     lines = [
         f"# {task or task_id}",
         "",
@@ -537,6 +728,19 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         missing = skill_load_gate.get("missing_required_skills", [])
         if missing:
             lines.append("MISSING_REQUIRED_SKILLS: " + ", ".join(missing))
+    if skill_use_gate and skill_use_gate.get("required"):
+        if skill_use_gate.get("passed"):
+            lines.append("SKILL_USE: passed")
+        elif skill_use_gate.get("bypassed"):
+            lines.append("SKILL_USE: bypassed")
+            lines.append(f"SKILL_USE_BYPASS_REASON: {skill_use_gate.get('bypass_reason')}")
+        for path in skill_use_gate.get("matched_paths", []):
+            lines.append(f"SKILL_USE_EVIDENCE: {path}")
+        for skill in skill_use_gate.get("complete_skills", []):
+            lines.append(f"USED_SKILL: {skill}")
+        missing_skills = skill_use_gate.get("missing_skills", [])
+        if missing_skills:
+            lines.append("MISSING_SKILL_USE: " + ", ".join(missing_skills))
     lines.append("UNCERTAINTY: Manual repair records the current-session outcome; original host bridge execution did not run automatically.")
     if note:
         lines.append(f"NOTE: {note}")
@@ -558,6 +762,7 @@ def repair(args: argparse.Namespace) -> dict:
     quality_gate = enforce_quality_gate(args, task_dir, register)
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
     skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
+    skill_use_gate = enforce_skill_use_gate(args, task_dir, register, skill_load_gate)
     previous = {
         "status": register.get("current_phase"),
         "blocked_by": register.get("blocked_by", []),
@@ -604,6 +809,7 @@ def repair(args: argparse.Namespace) -> dict:
         "quality_gate": quality_gate,
         "specialist_dispatch_gate": specialist_gate,
         "skill_load_gate": skill_load_gate,
+        "skill_use_gate": skill_use_gate,
         "previous": previous,
         "repaired_at": now,
     }
@@ -626,6 +832,7 @@ def repair(args: argparse.Namespace) -> dict:
             quality_gate,
             specialist_gate,
             skill_load_gate,
+            skill_use_gate,
         ),
         encoding="utf-8",
     )
@@ -685,6 +892,8 @@ def main() -> int:
     parser.add_argument("--specialist-bypass-reason", default="")
     parser.add_argument("--skill-load-evidence", action="append", default=[])
     parser.add_argument("--skill-load-bypass-reason", default="")
+    parser.add_argument("--skill-use-evidence", action="append", default=[])
+    parser.add_argument("--skill-use-bypass-reason", default="")
     parser.add_argument("--memory-id", action="append", default=[])
     parser.add_argument("--reused-memory-context", action="store_true")
     parser.add_argument("--format", choices=["text", "json"], default="text")

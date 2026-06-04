@@ -1198,6 +1198,7 @@ cmd_repair() {
 usage: crew repair [--status completed|blocked|cancelled] [--note TEXT] [--evidence PATH]
                    [--quality-evidence PATH] [--quality-bypass-reason TEXT]
                    [--skill-load-evidence PATH] [--skill-load-bypass-reason TEXT]
+                   [--skill-use-evidence PATH] [--skill-use-bypass-reason TEXT]
                    [--memory-id ID] TASK_ID
 
 Records the result of a task that was continued manually from handoff.md in the
@@ -1206,8 +1207,9 @@ stale host_bridge_not_invoked blockers after the fallback has completed.
 Use --status cancelled when a handoff was intentionally superseded or aborted by
 the user before implementation began.
 For mutating implementation tasks, completed repairs require full TDD-cycle
-evidence (Red, Green, Refactor), reviewer evidence, and skill-load evidence
-unless an explicit bypass reason is recorded.
+evidence (Red, Green, Refactor), reviewer evidence, skill-load evidence, and
+skill-use evidence for loaded non-TDD skills unless an explicit bypass reason is
+recorded.
 For read-only validation or documentation-only handoffs, attach the generated
 report with --evidence and explain why the quality loop is not applicable with
 --quality-bypass-reason.

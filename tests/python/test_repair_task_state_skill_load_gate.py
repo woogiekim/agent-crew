@@ -107,6 +107,23 @@ def test_repair_accepts_skill_load_evidence_for_tdd_specialist(tmp_path: Path):
         "- core/rules/code-quality.md\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "skill-use.json").write_text(
+        json.dumps(
+            {
+                "skills": [
+                    {
+                        "skill_path": "core/rules/code-quality.md",
+                        "applied_rules": ["KISS", "YAGNI", "DRY"],
+                        "evidence_refs": ["tests/python/test_repair_task_state_skill_load_gate.py"],
+                        "output_files": ["tests/python/test_repair_task_state_skill_load_gate.py"],
+                        "verification": ["python3 -m pytest tests/python/test_repair_task_state_skill_load_gate.py -q"],
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     result = _repair(state_dir, task_id)
 
