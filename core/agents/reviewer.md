@@ -58,6 +58,58 @@ load them at agent startup:
 > Enforce the software development three principles from that rule:
 > KISS, YAGNI, and DRY.
 
+## Review-Profile Dispatch (Loaded By Metadata)
+
+Before reviewing code, execute the metadata-driven review-profile dispatcher
+defined in `core/rules/agent-tool-dispatch.md` and implemented by
+`~/.agent-crew/system/scripts/review-profile-dispatch.py` (or the source copy at
+`core/scripts/review-profile-dispatch.py` when running from a checkout).
+
+The reviewer knows only the metadata contract, never a concrete user profile
+filename:
+
+```yaml
+loaded_by: reviewer
+profile_type: review-policy
+detection: {project/task/file matching expression}
+```
+
+Read every matched profile skill path returned by the dispatcher and apply it
+as an additional review policy lens. The profile owns all domain-specific
+heuristics, detection wording, severity mapping, and finding-shape details.
+
+If no profile matches, emit:
+
+```text
+[crew] DEGRADED | review-profile=none fallback=generic-review-skills
+```
+
+Then continue with the generic review skills declared above. Missing or
+non-matching review profiles must not block the reviewer.
+
+Reference invocation:
+
+```bash
+PROFILE_REPORT="${TASK_DIR}/context/review-profiles.json"
+DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
+[ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
+
+if [ -f "${DISPATCH}" ]; then
+  python3 "${DISPATCH}" \
+    --project-root "${PROJECT_ROOT}" \
+    --task "${TASK:-}" \
+    --format json > "${PROFILE_REPORT}"
+else
+  printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
+    > "${PROFILE_REPORT}"
+fi
+```
+
+After writing `${PROFILE_REPORT}`, read the file. If `.matched[]` is empty,
+print the degraded fallback line above and continue. If matches exist, read
+each `.matched[].path` before Step 2 and cite the profile path in
+`${TASK_DIR}/context/review.md`.
+
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.
 - `MODE` _(optional, default `final`)_: one of `final` | `streaming`. Selects

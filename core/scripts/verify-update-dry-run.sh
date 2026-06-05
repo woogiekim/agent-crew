@@ -56,6 +56,20 @@ cat > "${AGENT_CREW_HOME}/user/skills/local-skill.md" <<'EOF'
 User-owned skill preserved across update dry-run.
 EOF
 
+cat > "${AGENT_CREW_HOME}/user/skills/dobby-review-heuristics.md" <<'EOF'
+---
+name: dobby-review-heuristics
+description: User-owned review-profile fixture preserved across update dry-run.
+loaded_by: reviewer
+profile_type: review-policy
+detection: Dobby-style review fixture
+---
+
+# dobby-review-heuristics
+
+User-owned review-profile skill preserved across update dry-run.
+EOF
+
 printf 'stale\n' > "${CODEX_HOME}/agents/task-runner.toml"
 printf 'stale\n' > "${CODEX_HOME}/agent-crew/skills/stale.md"
 printf 'stale\n' > "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
@@ -106,7 +120,9 @@ assert_contains() {
 
 assert_exists "${AGENT_CREW_HOME}/user/agents/local-keeper.md"
 assert_exists "${AGENT_CREW_HOME}/user/skills/local-skill.md"
+assert_exists "${AGENT_CREW_HOME}/user/skills/dobby-review-heuristics.md"
 assert_exists "${AGENT_CREW_HOME}/skills/local-skill.md"
+assert_exists "${AGENT_CREW_HOME}/skills/dobby-review-heuristics.md"
 assert_exists "${CODEX_HOME}/agents/supervisor.toml"
 assert_exists "${AGENT_CREW_HOME}/hooks/auto-route.sh"
 assert_exists "${PROJECT_ROOT}/.codex/hooks/auto-route.sh"

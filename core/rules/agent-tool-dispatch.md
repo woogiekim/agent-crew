@@ -12,6 +12,7 @@ on-demand skill loading. The two rules are complementary:
 |---|---|---|
 | Declared skill loading (`agent-skill-loading.md`) | Agent file lists skills in a `## Skills (Loaded On Demand)` section, by path. | `backend` declares `core/agents/skills/effective-kotlin.md`, `core/agents/skills/tdd.md`. |
 | Convention-based dispatch (this rule) | Agent detects an axis at runtime, then loads `<agent>-<tool>.md` from `~/.agent-crew/user/skills/`. | `issuer` detects the git remote, resolves to `issuer-github` / `issuer-plane` / etc. |
+| Metadata-driven profile dispatch (this rule) | Agent scans user-owned skill frontmatter for an abstract contract and loads matching files by returned path, not by filename convention. | `reviewer` loads applicable `review-policy` / `review-profile` skills whose metadata says `loaded_by: reviewer`. |
 
 An agent MAY use both conventions simultaneously. For example, a future
 `backend` dispatcher MAY declare `tdd.md` + `effective-kotlin.md` via the
@@ -126,6 +127,66 @@ fixed in the same PR cycle.
 
 ---
 
+## Metadata-driven review-profile dispatch
+
+Reviewer policy profiles are not external vendor adapters. They are user-owned
+review lenses that may be named after a domain, codebase, review style, or
+local convention. Therefore, reviewer profile discovery MUST NOT depend on a
+`reviewer-<tool>.md` filename and the reviewer agent MUST NOT mention concrete
+project/user skill filenames.
+
+The reviewer uses `core/scripts/review-profile-dispatch.py` to scan
+`~/.agent-crew/user/skills/` and the unified `~/.agent-crew/skills/`
+discovery path. A skill qualifies as a reviewer review profile when its YAML
+frontmatter satisfies:
+
+```yaml
+loaded_by: reviewer
+profile_type: review-policy
+detection: {project/task/file matching expression}
+```
+
+`profile_type: review-profile` is also accepted. For backward compatibility
+with existing user skills, `loaded_by: reviewer` plus a review-oriented
+`axis`/`description`/`detection` contract is accepted when `profile_type` is
+absent. New skills SHOULD include `profile_type` explicitly.
+
+The dispatcher returns a JSON payload:
+
+```json
+{
+  "agent": "reviewer",
+  "matched": [
+    {
+      "name": "user-owned-skill-name",
+      "path": "/absolute/path/to/skill.md",
+      "axis": "review-axis",
+      "loaded_by": ["reviewer"],
+      "detection": "project/task/file matching expression",
+      "matched_by": "detection"
+    }
+  ],
+  "fallback": false,
+  "fallback_policy": "generic-review-skills"
+}
+```
+
+If no profile applies, reviewer follows the `degraded-fallback` policy:
+emit `[crew] DEGRADED | review-profile=none fallback=generic-review-skills`
+and continue with its generic review skills (`code-review.md`,
+`clean-architecture.md`, language-specific effective-* guidance, and
+`code-quality.md`). Missing review profiles never produce `STATUS: BLOCKED`.
+
+This is a DIP boundary:
+
+- Reviewer owns the abstract loading contract and fallback behavior.
+- User profile skills own domain-specific heuristics and detection wording.
+- `crew:setup` / `crew:update` continue preserving user-owned skills because
+  runtime profiles live under `~/.agent-crew/user/skills/` and are merged into
+  `~/.agent-crew/skills/` with user-wins semantics.
+
+---
+
 ## Naming convention
 
 Adapter skill files use **flat dashed** names:
@@ -235,6 +296,7 @@ whether it has opted in.
 | `devops` | Wave-C candidate | cloud / CI (manifest files) |
 | `designer` | Wave-C candidate | design tool |
 | `documenter` | Wave-C candidate | wiki / docs tool |
+| `reviewer` | Opted in (review-profile dispatch) | review-policy metadata |
 
 ## Agents not subject to dispatch
 
@@ -251,7 +313,7 @@ future drift in the form of "should we add dispatch to X?" discussions.
 | `requirements` | Interactive structured choice. Host-capability axis already covered by `core/rules/capabilities/interactive-question.md`. |
 | `supervisor` (+ `supervisor-bootstrap`, `supervisor-stages`, `supervisor-retry`) | Internal orchestration. The host-capability axis is its vendor axis and is already factored out via `capabilities.json`. |
 | `input-normalizer`, `korean-normalizer` | Pure-text utilities. No tool axis. |
-| `analyst`, `planner`, `mentor`, `learning-mentor`, `reviewer` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). |
+| `analyst`, `planner`, `mentor`, `learning-mentor` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). |
 | `test-writer` | Test framework variation is already covered by language skills (`tdd.md`, `effective-*.md`). Skill split would over-engineer. |
 
 ---

@@ -260,6 +260,35 @@ class TestValidateStateSchema:
             f"stderr:\n{r.stderr}"
         )
 
+    def test_issue_comment_ingestion_pointer_is_schema_valid(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """crew run records issue ingestion pointers in register.json."""
+        register = _valid_register()
+        register["issue_comment_ingestion"] = [
+            {
+                "issue_number": "137",
+                "path": f"{task_dir}/context/issue-137-ingestion.json",
+                "comments_ingested": True,
+                "comment_count": 1,
+            }
+        ]
+        (task_dir / "register.json").write_text(json.dumps(register))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, (
+            f"expected 0, got {r.returncode}\nstdout:\n{r.stdout}\n"
+            f"stderr:\n{r.stderr}"
+        )
+
     def test_missing_required_field_in_register_exits_2(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

@@ -24,6 +24,7 @@ PYTHON_SCRIPTS=(
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"
   "reviewer-loop-decision.py"
+  "review-profile-dispatch.py"
   "check-host-bridge.py"
   "hosted-workload-evidence.py"
   "interactive-question-state.py"

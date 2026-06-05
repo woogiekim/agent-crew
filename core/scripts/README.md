@@ -217,6 +217,12 @@ invocation in SKILL.md; generic adds guidance).
   `action=retry`; `REVIEW: APPROVED` returns `action=approve` only when the
   required `QUALITY_METRICS:` artifact pointer is present and, when a task dir
   is provided, resolves to an existing file.
+- `review-profile-dispatch.py` — read-only reviewer review-profile discovery.
+  It scans user-owned skill metadata for `loaded_by: reviewer` plus a
+  review-policy/profile contract, returns matched profile skill paths as JSON,
+  and emits a generic review fallback when no profile applies. This keeps the
+  reviewer DIP-safe because reviewer.md depends on metadata, not concrete
+  user skill filenames.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.

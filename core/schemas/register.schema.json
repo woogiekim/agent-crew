@@ -148,6 +148,41 @@
       "items": { "type": "string" },
       "description": "Cumulative list of files modified by stage agents during this task. Appended at each STAGE_DONE; deduplicated. Populated from git status --short diff against task_start_head."
     },
+    "issue_comment_ingestion": {
+      "type": "array",
+      "description": "Issue body/comment ingestion evidence pointers recorded before planning for tasks that reference external issue numbers.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issue_number",
+          "path",
+          "comments_ingested",
+          "comment_count"
+        ],
+        "properties": {
+          "issue_number": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Referenced issue number."
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Path to the issue ingestion evidence artifact."
+          },
+          "comments_ingested": {
+            "type": "boolean",
+            "description": "Whether issue comments were included in the evidence artifact."
+          },
+          "comment_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of issue comments recorded in the evidence artifact."
+          }
+        }
+      }
+    },
     "blocked_by": {
       "type": "array",
       "items": { "type": "string" },
