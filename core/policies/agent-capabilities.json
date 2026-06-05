@@ -304,6 +304,31 @@
       "destructive_requires_approval": false,
       "notes": "Writes and runs tests; deep reasoning improves coverage and failure diagnosis."
     },
+    "qa-owner": {
+      "role": "reviewer",
+      "model_tier": "high",
+      "reasoning_tier": "deep",
+      "allowed_capabilities": [
+        "policy_review",
+        "read_file",
+        "read_only",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "TC-driven QA planning and verification stage; records QA artifacts and may run tests, but never edits production code or replaces the final reviewer gate."
+    },
     "designer": {
       "role": "worker",
       "model_tier": "medium",

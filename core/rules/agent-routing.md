@@ -41,6 +41,7 @@ whether it is safe for direct invocation via `crew:agent`.
 | korean-normalizer | Korean text normalization compatibility alias (utility) | (legacy internal alias; prefer input-normalizer) | yes | — |
 | issuer | Issue lifecycle management for creation, state transitions, and field updates (user-installed, tool-agnostic dispatcher) | publish issues, create work items, issue tracking, task list import, import issues, bulk create issues, seed project, upload task list, issue file, issue lifecycle, status transition, state change, field update, label update, priority update, assignee update | yes | — |
 | reviewer | Code review (needs prior stage output) | review, lint, quality, approve, check | no | Requires completed stage output from supervisor context |
+| qa-owner | QA test-case planning and implementation verification (needs PRD and stage output) | qa, test case, tc, acceptance validation, regression, exploratory, verification | no | Requires supervisor context, qa_mode, PRD, and implementation evidence |
 | devops | Deploy, CI/CD, push, infrastructure | deploy, push, ci, cd, pipeline, infrastructure, release | no | Requires supervisor approval gate |
 | resolver | Merge conflict resolution (needs conflict state) | conflict, merge conflict, resolve | no | Requires git conflict state established by supervisor |
 | requirements | Requirements gathering (interactive multi-round) | requirements, scope, clarify, interview | no | Interactive multi-round mode only valid inside supervisor |
@@ -65,6 +66,7 @@ level, and a reason string shown to the user in the visibility line.
 | 0.5 | build OR implement OR create OR add OR update OR fix OR remove OR move OR change OR migrate OR refactor OR replace OR extend OR integrate OR test OR deploy OR merge OR rollback OR write OR save OR edit OR publish OR commit | — BLOCK — | — | Restricted: mutating work must use crew:run |
 | 1 | deploy OR "push to" OR "ci/cd" OR "cd pipeline" OR "release pipeline" | — BLOCK — | — | Restricted: devops requires supervisor approval gate — use crew:run |
 | 2 | " review" OR "lint " OR " approve" OR "code review" OR "quality check" | — BLOCK — | — | Restricted: reviewer requires prior stage output — use crew:run |
+| 2.5 | qa OR "test case" OR tc OR "acceptance validation" OR regression OR exploratory OR verification | — BLOCK — | — | Restricted: qa-owner requires supervisor context and QA mode — use crew:run |
 | 3 | api OR endpoint OR server OR database OR schema OR domain OR service OR repository OR entity | backend | high | Matched backend keywords |
 | 4 | component OR " page" OR " ui " OR " css" OR style OR layout OR button OR form OR modal OR react OR vue | frontend | high | Matched frontend keywords |
 | 5 | wireframe OR mockup OR figma OR prototype OR sketch | designer | high | Matched design/UX keywords |

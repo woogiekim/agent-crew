@@ -86,7 +86,7 @@ P7 host-status crash classifier.
 
 Before spawning any stage agent, determine whether it is a builtin or custom agent:
 
-BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, supervisor, documenter]
+BUILTIN_AGENTS = [planner, designer, frontend, backend, devops, resolver, reviewer, supervisor, documenter, qa-owner]
 
 If the agent name is NOT in BUILTIN_AGENTS:
   1. Read its definition from `${AGENT_CREW_HOME}/agents/{name}.md`
@@ -184,7 +184,8 @@ the single source of truth that other consumers (resume logic, `crew:status`
 fallback) read.
 
 Use `APPROVED` when the reviewer accepted the output, `NEEDS_CHANGES` when the reviewer
-requested changes (quality loop), or `N/A` for non-reviewer stages.
+requested changes (quality loop), `QA_PASSED` / `QA_NEEDS_CHANGES` for a
+`qa-owner` verify stage, or `N/A` for other non-reviewer stages.
 
 When a BLOCKED result is detected, emit before writing result.md:
 
@@ -281,6 +282,43 @@ The reviewer's Phase 0 / Phase 1 / Phase 1.5 honor this flag —
 `false` skips test runner discovery, test execution, and the
 cross-process path agreement check entirely (static review only).
 See `core/agents/reviewer.md` § Inputs and § Phase 0/1/1.5.
+
+##### QA-owner stage prompt addendum
+
+When `STAGE_AGENT == "qa-owner"`, append `MODE:` and `QA_LOOP_TARGET:`
+input lines to the standard prompt. Extract both fields from the current
+pipeline.json stage object:
+
+```bash
+read -r QA_MODE QA_LOOP_TARGET < <(python3 -c "
+import json
+try:
+    p = json.load(open('${PIPELINE_PATH}'))
+    stage = p['stages'][${i} - 1]
+    if isinstance(stage, dict):
+        print(str(stage.get('qa_mode', '') or ''), str(stage.get('qa_loop_target', '') or ''))
+    else:
+        print('', '')
+except Exception:
+    print('', '')
+")
+```
+
+Then append to the QA owner's prompt:
+
+```text
+MODE: ${QA_MODE}
+QA_LOOP_TARGET: ${QA_LOOP_TARGET}
+```
+
+`MODE: plan` makes `qa-owner` write `context/qa-test-cases.md` and
+`context/qa-plan.md` before implementation. `MODE: verify` makes it
+execute the QA plan after implementation and write `context/qa-report.md`
+and, when defects are found, `context/qa-defects.md`. A verify response with
+`QA_STATUS: needs_changes` is a validation failure handled by
+`supervisor-retry.md` § QA Verify Loop-Back Rule; it must not advance the
+pipeline to reviewer until the implementation stage has been retried and QA
+passes.
 
 ### Single Agent
 
@@ -502,7 +540,7 @@ When `STAGE_TDD_PARALLEL == 1`:
    ```bash
    TDD_IMPLEMENTER_COUNT=$(python3 -c "
 import json
-non_impl = {'analyst','devops','designer','documenter','historian','issuer','planner','requirements','resolver','reviewer','scribe','supervisor','test-writer'}
+non_impl = {'analyst','devops','designer','documenter','historian','issuer','planner','qa-owner','requirements','resolver','reviewer','scribe','supervisor','test-writer'}
 p = json.load(open('${PIPELINE_PATH}'))
 stage = p['stages'][${i} - 1]
 agents = stage.get('agents', []) if isinstance(stage, dict) else []

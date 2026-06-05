@@ -252,6 +252,82 @@ def test_quality_loop_checker_blocks_implementation_stage_without_immediate_revi
     assert payload["pipeline_shape"]["implementer_indexes_without_immediate_reviewer"] == [0]
 
 
+def test_quality_loop_checker_accepts_qa_verify_quality_gate(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "qa-owner", "QA_STATUS: passed", stage=1),
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=2),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=2),
+            row("STAGE_DONE", "qa-owner", "QA_STATUS: passed", stage=3),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=4),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement production behavior with QA validation",
+            "stages": [
+                {"agents": ["qa-owner"], "qa_mode": "plan"},
+                {"agents": ["backend"], "tdd_parallel": True},
+                {
+                    "agents": ["qa-owner"],
+                    "qa_mode": "verify",
+                    "qa_loop_target": "previous_implementation",
+                },
+                "reviewer",
+            ],
+            "completed_stages": 4,
+        },
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["pipeline_shape"]["qa_verify_indexes"] == [2]
+    assert payload["pipeline_shape"]["has_quality_gate_after_each_implementer"] is True
+
+
+def test_quality_loop_checker_reloops_reviewer_after_qa_to_implementation(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "qa-owner", "QA_STATUS: planned", stage=1),
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=2),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=2),
+            row("STAGE_DONE", "qa-owner", "QA_STATUS: passed", stage=3),
+            row("STAGE_DONE", "reviewer", "REVIEW: NEEDS_CHANGES", stage=4),
+            row("STAGE_DONE", "test-writer", "TDD REFACTOR, 5 tests passed", stage=2, attempt=2),
+            row("STAGE_DONE", "backend", "backend remediation - N/A", stage=2, attempt=2),
+            row("STAGE_DONE", "qa-owner", "QA_STATUS: passed", stage=3, attempt=2),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=4, attempt=2),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement production behavior with QA validation",
+            "stages": [
+                {"agents": ["qa-owner"], "qa_mode": "plan"},
+                {"agents": ["backend"], "tdd_parallel": True},
+                {
+                    "agents": ["qa-owner"],
+                    "qa_mode": "verify",
+                    "qa_loop_target": "previous_implementation",
+                },
+                "reviewer",
+            ],
+            "completed_stages": 4,
+        },
+    )
+
+    result = run_checker(task_dir, "--require-rework-cycle")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["rejection_followups"][0]["target_implementation_stage"] == 2
+    assert payload["rejection_followups"][0]["ordered"] is True
+
+
 def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(

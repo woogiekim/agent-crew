@@ -202,10 +202,11 @@ block); when absent (defensive default), the check measures from
 
 ### Reviewer Loop-Back Rule (Issue #3)
 
-When a reviewer stage that immediately follows a code implementation stage
-returns either `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES`, the supervisor
-MUST re-loop to that **immediately preceding implementer/TDD stage** instead of
-advancing `completed_stages`.
+When a reviewer stage follows a code implementation stage directly, or follows
+a `qa-owner` verify stage that follows a code implementation stage, and returns
+either `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES`, the supervisor MUST
+re-loop to that implementation/TDD stage instead of advancing
+`completed_stages`.
 This is the core commercial quality loop: implement through TDD,
 review, remediate/refactor through TDD, re-review, and repeat until
 approval or budget exhaustion.
@@ -276,16 +277,18 @@ if decision.action == "retry":
     continue  # re-enter the stage loop at the implementer index
 ```
 
-The `find_preceding_implementation_stage_index()` helper inspects only the
-stage immediately before the reviewer and requires it to be an implementation
-stage. The planner must emit a solo reviewer immediately after every code
-implementation stage; if a reviewer rejects after multiple implementation
-stages were batched, the supervisor must halt with
+The `find_preceding_implementation_stage_index()` helper first checks the
+stage immediately before the reviewer. If it is an implementation stage, that
+stage is the retry target. If the immediately preceding stage is a `qa-owner`
+verify stage, the helper checks the stage before QA and requires that stage to
+be an implementation/TDD stage. The planner must emit either
+`implementation -> reviewer` or `implementation -> qa-owner(verify) -> reviewer`
+for every code implementation stage. If a reviewer rejects after multiple
+implementation stages were batched, the supervisor must halt with
 `BLOCKER: quality_loop_ambiguous_rework_target` rather than guessing. When no
 implementer is found (degenerate pipeline of `[["reviewer"]]` only), the
-supervisor halts with
-`BLOCKER: quality_loop_no_implementer_to_retry` — re-running an empty
-pipeline cannot produce a different verdict.
+supervisor halts with `BLOCKER: quality_loop_no_implementer_to_retry` —
+re-running an empty pipeline cannot produce a different verdict.
 
 The Stage Retry Rule's two pre-existing budgets remain unchanged:
 
@@ -300,6 +303,59 @@ iteration, alongside `crash_attempts`. The two counters are independent
 consumes a crash retry; they cannot cross-deplete each other. `REVIEW:
 NEEDS_CHANGES` is no longer advisory-only; it is a hard quality-loop
 retry signal.
+
+### QA Verify Loop-Back Rule
+
+When a `qa-owner` stage with `qa_mode=verify` returns
+`QA_STATUS: needs_changes`, the supervisor MUST treat it as a validation
+failure and loop back to the preceding implementation/TDD stage when the stage
+contains `qa_loop_target: "previous_implementation"`.
+
+QA verify loop triggers:
+
+| QA return | Triggered when | Re-loop reason |
+|---|---|---|
+| `QA_STATUS: needs_changes` | Required TC failed, critical evidence is missing, or PRD behavior does not match the implementation. | `qa_needs_changes` |
+| `QA_STATUS: blocked` or `STATUS: BLOCKED` | QA cannot execute meaningful verification because required artifacts or environment are missing. | `qa_blocked` |
+
+Re-loop logic mirrors reviewer rejection and consumes the same validation budget
+of 3 retries:
+
+```python
+# Inside the stage loop, after the qa-owner verify agent returns:
+if qa_status == "needs_changes":
+    quality_retries += 1
+    log_progress("RETRY", f"attempt {quality_retries} — qa_needs_changes")
+
+    if quality_retries > 3:
+        log_progress("BLOCKED", "quality_loop_exhausted")
+        register_update current_phase blocked
+        register_update blocked_by --json '["quality_loop_exhausted"]'
+        write_blocker_to_result_md(
+            blocker="quality_loop_exhausted",
+            detail="QA verify requested changes 3 consecutive times. "
+                   "See ${TASK_DIR}/context/qa-defects.md and "
+                   "${TASK_DIR}/context/qa-report.md.",
+        )
+        return
+
+    impl_stage_index = find_preceding_implementation_stage_index_from_qa_verify()
+    append_directive_to_handoff(
+        "QA verify requested changes. Read context/qa-defects.md and "
+        "context/qa-report.md, then remediate through the TDD implementation stage."
+    )
+    pipeline.completed_stages = impl_stage_index - 1
+    pipeline.stage_agent_status.pop(str(impl_stage_index), None)
+    pipeline.stage_agent_status.pop(str(current_qa_stage_index), None)
+    save_pipeline_json()
+
+    continue  # re-enter the stage loop at the implementer index
+```
+
+If `qa_loop_target` is absent or not `previous_implementation`, halt with
+`BLOCKER: qa_loop_target_missing` instead of guessing. A QA verify stage must
+be followed by a solo reviewer stage; otherwise planning should already have
+failed with `missing_pipeline_reviewer_after_qa_verify`.
 
 ### Cost Circuit Breaker
 

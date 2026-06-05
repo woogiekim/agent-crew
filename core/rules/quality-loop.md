@@ -4,7 +4,7 @@ description: >
   Apply to all implementation stages.
   Enforces a validate → fix → re-validate loop until the stage output meets
   the acceptance criteria defined in the PRD, or until the retry limit is reached.
-applies-to: backend, frontend, designer, devops, reviewer, supervisor
+applies-to: backend, frontend, designer, devops, qa-owner, reviewer, supervisor
 ---
 
 # Quality Loop Rule
@@ -55,9 +55,10 @@ the stage can be considered complete.
 Coverage has three distinct owners:
 
 - **Planner / analyst** owns pipeline shape. It must emit
-  `tdd_parallel: true` for every code implementation stage and keep a solo
-  reviewer immediately after that stage, so coverage gaps have a deterministic
-  remediation target.
+  `tdd_parallel: true` for every code implementation stage and keep a
+  deterministic quality gate after that stage: either a solo reviewer, or
+  QA verify followed by a solo reviewer. This keeps coverage gaps and QA
+  defects tied to one remediation target.
 - **Test-writer** owns coverage planning and test creation. It must write or
   update `{TASK_DIR}/context/test-coverage.md` with a changed-surface coverage
   matrix mapping each PRD acceptance criterion, entry point, public method,
@@ -95,7 +96,7 @@ Reviewer rejection signals:
 
 | Reviewer signal | Triggered when | Supervisor action |
 |---|---|---|
-| `STATUS: REJECTED REASON: coverage_below_100` | Coverage tooling or the matrix shows an uncovered changed executable behavior. | Re-loop to the immediately preceding implementation/TDD stage with the missing coverage item. |
+| `STATUS: REJECTED REASON: coverage_below_100` | Coverage tooling or the matrix shows an uncovered changed executable behavior. | Re-loop to the target implementation/TDD stage with the missing coverage item. |
 | `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but neither coverage report nor `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
 | `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is claimed without a narrow, auditable reason. | Re-loop with directive to test the case or document a valid exception. |
 
@@ -240,8 +241,11 @@ After each stage returns, the supervisor checks:
 - If `STATUS: BLOCKED` → halt the pipeline and report the blocker to the
   orchestrator.
 - If `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES` (reviewer-only)
-  → re-loop to the immediately preceding implementation/TDD stage per
+  → re-loop to the target implementation/TDD stage per
   the Reviewer Loop-Back Rule below.
+- If `QA_STATUS: needs_changes` (qa-owner verify only)
+  → re-loop to the preceding implementation/TDD stage per the QA Verify
+  Loop-Back Rule.
 
 ## Quality Loop Enforcement (Issue #3)
 
@@ -269,13 +273,13 @@ Reviewer rejection signals include:
 
 | Reviewer signal | Triggered when | Supervisor action |
 |---|---|---|
-| `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to the immediately preceding implementation/TDD stage with the failing tail in handoff.md. |
+| `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to the target implementation/TDD stage with the failing tail in handoff.md. |
 | `STATUS: REJECTED REASON: tests_absent_for_code_change` | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
 | `STATUS: REJECTED REASON: cross_process_path_mismatch` | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
 | `STATUS: REJECTED REASON: coverage_below_100` | Coverage tooling or the coverage matrix shows uncovered changed executable behavior. | Re-loop with the missing coverage item in handoff.md. |
 | `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but no coverage report or `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
 | `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is broad, unauditable, or not tied to a concrete changed path/case. | Re-loop with directive to test the case or document a valid exception. |
-| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to the immediately preceding implementation/TDD stage with the issue list from `context/review.md`. |
+| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to the target implementation/TDD stage with the issue list from `context/review.md`. |
 
 ### Cross-process path agreement check
 
@@ -297,14 +301,15 @@ existing **Stage Retry Rule budget**:
   failure path).
 - After exhaustion: terminal blocker `quality_loop_exhausted` written
   to `result.md`; no further automatic recovery.
-- For code-review stages, the re-loop target is the **immediately preceding
-  implementation/TDD stage**. The planner must insert a solo reviewer directly
-  after every code implementation stage; batching multiple implementation stages
-  before one reviewer is a pipeline composition error because it makes
-  remediation target selection ambiguous. When no implementation stage exists
-  before the reviewer (degenerate pipeline of `[["reviewer"]]` only), the
-  supervisor halts with
-  `BLOCKER: quality_loop_no_implementer_to_retry`.
+- For code-review stages, the re-loop target is the implementation/TDD stage
+  immediately before the reviewer, or the implementation/TDD stage immediately
+  before a `qa-owner` verify stage when the reviewer follows QA. The planner
+  must emit `implementation -> reviewer` or
+  `implementation -> qa-owner(verify) -> reviewer` for every code stage;
+  batching multiple implementation stages before one gate is a pipeline
+  composition error because it makes remediation target selection ambiguous.
+  When no implementation stage exists before the gate, the supervisor halts
+  with `BLOCKER: quality_loop_no_implementer_to_retry`.
 
 ### Planner opt-out (`requires_test_execution: false`)
 

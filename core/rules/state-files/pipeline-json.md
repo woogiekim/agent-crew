@@ -64,7 +64,9 @@ Coverage contract: `test-writer` owns the stage's
 `{TASK_DIR}/context/test-coverage.md` matrix and maps the PRD contract
 to 100% changed-surface coverage evidence. The code implementer owns
 keeping its implementation inside that matrix, and the immediately
-following `reviewer` stage owns enforcement.
+following quality gate owns enforcement. The normal gate is a solo
+`["reviewer"]`; the extended QA gate is `qa-owner` in verify mode followed
+by a solo `["reviewer"]`.
 
 Planning contract: newly emitted mutating code implementation pipelines
 must use this form for each backend, frontend, or custom implementer
@@ -85,6 +87,44 @@ object with `tdd_parallel: false` (or omitted) is functionally
 identical to writing the `agents` list directly as the stage entry. See
 `core/agents/supervisor-stages.md` § TDD Parallel Dispatch for the spawn
 semantics.
+
+### QA owner stage form (`qa_mode`, `qa_loop_target`)
+
+A pipeline may insert a built-in `qa-owner` stage to separate professional
+QA ownership from final code review. QA planning runs before implementation;
+QA verification runs after the TDD implementation stage and before the final
+reviewer:
+
+```json
+{
+  "stages": [
+    { "agents": ["qa-owner"], "qa_mode": "plan" },
+    { "agents": ["backend"], "tdd_parallel": true },
+    {
+      "agents": ["qa-owner"],
+      "qa_mode": "verify",
+      "qa_loop_target": "previous_implementation"
+    },
+    ["reviewer"]
+  ]
+}
+```
+
+`qa_mode: "plan"` tells the QA owner to create
+`context/qa-test-cases.md` and `context/qa-plan.md` from the PRD and
+handoff before implementation starts.
+
+`qa_mode: "verify"` tells the QA owner to execute the planned test cases,
+write `context/qa-report.md`, and optionally write `context/qa-defects.md`.
+When the QA owner returns `QA_STATUS: needs_changes` and the stage has
+`qa_loop_target: "previous_implementation"`, the supervisor loops back to
+the preceding implementation/TDD stage. The reviewer still runs after QA
+passes and remains the final code quality gate.
+
+Planning contract: a QA verify stage is valid as a quality gate only when it
+is immediately followed by a solo reviewer stage. A code implementer followed
+by QA verify without a following reviewer fails the planning-time quality
+gate with `missing_pipeline_reviewer_after_qa_verify`.
 
 ### Sub-Task Fan-Out stage form (`parallelizable_units`)
 
@@ -250,7 +290,7 @@ and capability-gated fields evolve faster than the schema does.
 |---|---|---|---|---|
 | `schema_version` | integer (const 1) | optional in v1 | analyst (post-F4) | Pre-F4 pipeline.json omits this field; validators tolerate absence. |
 | `task` | string | yes | analyst Step 6 | Original task description (mirror of `register.json.task`). |
-| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...], streaming_review: bool, requires_test_execution: bool }` (TDD parallel form and/or sub-task fan-out and/or streaming review and/or reviewer opt-out — see the four stage-form sections below). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the `tdd_parallel`, `parallelizable_units`, `streaming_review`, and `requires_test_execution` flags. |
+| `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...], streaming_review: bool, requires_test_execution: bool, qa_mode: string, qa_loop_target: string }` (TDD parallel form and/or sub-task fan-out and/or streaming review and/or reviewer opt-out and/or QA owner mode — see the stage-form sections above). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the supported flags. |
 | `completed_stages` | integer | yes (starts at 0) | analyst Step 6, supervisor-stages | 0-based count of stages whose terminal state was successful completion. Drives the resume logic in Phase 0. |
 | `needs_creation` | array of objects | yes (may be `[]`) | analyst Step 6 / planner Step 3c | Per-entry: `{name, reason, role}`. Drives Phase 1.5 dynamic agent creation. |
 | `stage_agent_status` | object | optional (created on first parallel write) | supervisor-stages Phase 2 | Outer key = 1-based stage index as a string; inner key = agent name (legacy / TDD parallel form) or `agent:unit_id` (sub-task fan-out form); value = `completed \| crashed \| blocked`. |

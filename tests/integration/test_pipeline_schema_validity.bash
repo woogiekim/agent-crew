@@ -119,6 +119,27 @@ rc=$?
 # is optional in the synthetic fixture). Fail only on rc>=2.
 if [ "${rc}" -le 1 ]; then _pass; else _fail "validator rc=${rc}"; fi
 
+it "pipeline stage object with qa plan and verify passes"
+cat > "${TD}/pipeline.json" <<'EOF'
+{
+  "schema_version":1,
+  "task":"x",
+  "stages":[
+    {"agents":["qa-owner"],"qa_mode":"plan"},
+    {"agents":["backend"],"tdd_parallel":true},
+    {"agents":["qa-owner"],"qa_mode":"verify","qa_loop_target":"previous_implementation"},
+    "reviewer"
+  ],
+  "completed_stages":0
+}
+EOF
+AGENT_CREW_HOME="${HOME_T}" python3 "${VALIDATOR}" \
+  --state-dir "${SD}" --task-dir "${TD}" >/dev/null 2>&1
+rc=$?
+# Allow rc=1 (warnings only — e.g., missing progress.buffer.jsonl which
+# is optional in the synthetic fixture). Fail only on rc>=2.
+if [ "${rc}" -le 1 ]; then _pass; else _fail "validator rc=${rc}"; fi
+
 # --------------------------------------------------------------------------- #
 # Real-world scan: validate any existing pipeline.json files in $HOME         #
 # Skipped if dir doesn't exist.                                               #

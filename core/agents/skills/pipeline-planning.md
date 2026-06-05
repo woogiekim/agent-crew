@@ -71,9 +71,11 @@ frontend consumes: design-spec.md + OpenAPI contract
 Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
 run sequentially. Every code implementation stage must use the object form
 `{ "agents": ["backend"], "tdd_parallel": true }` (or frontend/custom
-equivalent) and must be followed immediately by a solo `["reviewer"]` stage.
+equivalent) and must be followed by a deterministic quality gate: either a solo
+`["reviewer"]` stage, or `{"agents":["qa-owner"],"qa_mode":"verify",
+"qa_loop_target":"previous_implementation"}` followed by a solo `["reviewer"]`.
 Do not emit bare code stages for new implementation work, and do not batch
-multiple code implementation stages before one reviewer.
+multiple code implementation stages before one quality gate.
 
 | Scope | stages |
 |---|---|
@@ -83,6 +85,7 @@ multiple code implementation stages before one reviewer.
 | Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | CI/CD / infra | `[["devops"], ["reviewer"]]` |
 | Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| High-risk/user-facing QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation" }, ["reviewer"]]` |
 
 Only place agents in the same inner array when their outputs are **independent**
 and the stage is not a code implementation stage that needs a TDD partner. If
@@ -107,6 +110,14 @@ both changes touch different files.
 }
 ```
 
+Use `qa-owner` when the task benefits from a professional QA owner:
+user-facing behavior, bug fixes with reproduction steps, release-risk changes,
+workflow regressions, multi-step business scenarios, or requests that explicitly
+ask for test cases/TCs. QA planning produces `context/qa-test-cases.md` and
+`context/qa-plan.md`; QA verification produces `context/qa-report.md` and
+optionally `context/qa-defects.md`. The reviewer still follows QA verification
+and remains the final code quality gate.
+
 ---
 
 ## Agent Sufficiency Evaluation
@@ -118,7 +129,7 @@ Before finalizing the pipeline, check whether each required role can be fulfille
 - A new agent is needed if more than two significant prompting workarounds would be required
 - Bias toward creating new agents; only reuse existing agents when the match is unambiguous
 
-**Built-in agents:** analyst, backend, designer, devops, documenter, frontend, planner, requirements, resolver, reviewer.
+**Built-in agents:** analyst, backend, designer, devops, documenter, frontend, planner, qa-owner, requirements, resolver, reviewer.
 
 ---
 

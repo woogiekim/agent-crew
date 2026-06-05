@@ -177,7 +177,11 @@ Default grouping:
 Always sequential (never group with others in the same stage):
 - `devops` — depends on prior stage artifacts; always its own sequential stage.
 - `resolver` — depends on prior stage artifacts; always its own sequential stage.
-- **MANDATORY: `reviewer` — immediately after every code implementation stage and as the final sequential stage. Never group reviewer with others. Omitting the reviewer after a TDD implementation stage is a pipeline composition error.**
+- **MANDATORY: quality gate after each code implementation stage.** Use either
+  a solo `["reviewer"]` immediately after implementation, or a solo
+  `qa-owner` verify stage immediately after implementation followed by a solo
+  `["reviewer"]`. Never group reviewer with others. Omitting the final
+  reviewer after TDD/QA verification is a pipeline composition error.
 
 When uncertain: **prefer parallel**. File-level merge conflicts, if any arise from
 parallel writes, are resolved by the resolver agent — that is its purpose.
@@ -193,6 +197,7 @@ Choosing sequential to avoid conflicts is the wrong trade-off.
 | Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
+| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation" }, ["reviewer"]]` |
 | Analysis only | `[]` |
 
 Write `{TASK_DIR}/pipeline.json`:
@@ -208,7 +213,8 @@ Write `{TASK_DIR}/pipeline.json`:
 
 Set `needs_creation` to a non-empty array only when a task requires domain-specific
 expertise that no builtin agent (planner, designer, frontend, backend, devops,
-resolver, reviewer) can provide without significant prompting workarounds.
+resolver, reviewer, qa-owner) can provide without significant prompting
+workarounds.
 
 #### Mandatory TDD implementation stage
 
@@ -235,10 +241,14 @@ test-writer to derive tests, stop in requirements collection or write
 the missing contract into `context/prd.md`; do not silently emit a
 non-TDD implementation stage.
 
-Every TDD implementation stage must be followed immediately by a solo
-`["reviewer"]` stage. Do not place another implementation stage, devops stage,
-or resolver stage between a code implementer and its reviewer; otherwise reviewer
-rejection cannot deterministically re-enter the stage that produced the defect.
+Every TDD implementation stage must be followed by a deterministic quality
+gate. The default is a solo `["reviewer"]` stage immediately after the
+implementation. For tasks that require professional QA ownership, insert a solo
+`{"agents":["qa-owner"],"qa_mode":"verify","qa_loop_target":"previous_implementation"}`
+stage immediately after the implementation and then a solo `["reviewer"]`
+stage. Do not place another implementation stage, devops stage, or resolver
+stage between a code implementer and its quality gate; otherwise rejection
+cannot deterministically re-enter the stage that produced the defect.
 
 Before handing off, validate the emitted pipeline:
 

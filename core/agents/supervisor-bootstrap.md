@@ -849,7 +849,7 @@ if [ "${PLAN_CHECK_RC}" -ne 0 ]; then
   cat > "${TASK_DIR}/result.md" <<EOF
 STATUS: BLOCKED
 BLOCKER: pipeline_quality_plan_failed
-DETAIL: pipeline.json contains code implementation stages that are not TDD-capable or are missing a later reviewer stage.
+DETAIL: pipeline.json contains code implementation stages that are not TDD-capable or are missing a later reviewer/QA verification quality gate.
 
 ${PLAN_CHECK_OUTPUT}
 EOF
@@ -859,7 +859,8 @@ fi
 
 Common remediation: rewrite bare code stages such as `["backend"]` or
 `["designer", "backend"]` into separate object stages with
-`{ "agents": ["backend"], "tdd_parallel": true }`, then keep a later solo
+`{ "agents": ["backend"], "tdd_parallel": true }`, then keep either a later
+solo `["reviewer"]` stage or a QA verify stage followed by a solo
 `["reviewer"]` stage.
 
 #### Phase 1b pipeline capability gate: runtime role/tool preflight

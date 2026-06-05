@@ -80,6 +80,14 @@ def test_mutating_agents_remain_covered_by_the_read_only_guard() -> None:
         assert row.split("|")[4].strip().lower() == "yes", row
 
 
+def test_qa_owner_requires_supervisor_context() -> None:
+    row = _agent_row("qa-owner")
+
+    assert row.split("|")[4].strip().lower() == "no", row
+    assert "supervisor context" in row.lower()
+    assert "qa_mode" in row
+
+
 def test_agent_command_and_codex_invocation_are_read_only() -> None:
     agent_command = _load(AGENT_COMMAND_PATH)
     codex_invocation = _load(CODEX_INVOCATION_PATH)

@@ -83,8 +83,10 @@ prior run's Phase 3 close-out (see `core/rules/memory-governance.md`
 
 - Set `tdd_parallel: true` on the recurring implementation stage the memo
   flagged.
-- Retain the solo `["reviewer"]` stage immediately after that implementation
-  stage (never drop it on the memo's advice).
+- Retain the deterministic quality gate after that implementation stage:
+  either the solo `["reviewer"]` stage, or QA verify followed by solo
+  `["reviewer"]` when QA ownership is planned. Never drop reviewer on the
+  memo's advice.
 - Widen planned test coverage for the surface the memo identified as repeatedly
   rejected.
 
@@ -154,7 +156,7 @@ Before determining the pipeline, enumerate all available agents and evaluate whe
 
 ```bash
 # Built-in agent list
-BUILTIN_AGENTS="planner designer frontend backend devops resolver supervisor reviewer documenter"
+BUILTIN_AGENTS="planner designer frontend backend devops resolver supervisor reviewer documenter qa-owner"
 
 # Discover custom agents
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -178,7 +180,7 @@ Decision criteria — a new agent is needed when ANY of the following is true:
 - The task requires domain-specific knowledge (e.g., a particular external system, protocol, or industry domain) that the generic agent cannot reliably provide without hallucinating.
 - The task requires a workflow or output format that differs significantly from what any built-in agent produces (e.g., a custom report format, specialized testing strategy, or integration-specific steps).
 - The task would require more than two significant prompting caveats or workarounds to coerce a generic agent into producing acceptable results.
-- The task is in a domain not covered by any built-in agent (planner, designer, frontend, backend, devops, resolver, reviewer, documenter).
+- The task is in a domain not covered by any built-in agent (planner, designer, frontend, backend, devops, resolver, reviewer, documenter, qa-owner).
 
 Bias toward creating a new agent. Only reuse an existing agent when it is an unambiguous match for the required role with no meaningful gaps.
 
@@ -200,8 +202,11 @@ Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipel
 `stages` is a 2D array:
 - Agents inside the same array are executed **in parallel**
 - Arrays themselves are executed **sequentially**
-- `reviewer` immediately follows every code implementation stage and is also
-  the final stage for any pipeline that produces implementation output.
+- Every code implementation stage is followed by a deterministic quality gate.
+  The default gate is a solo `["reviewer"]` stage. For user-facing, high-risk,
+  bug-fix, release, or explicit QA/TC work, use a solo `qa-owner` verify stage
+  immediately after implementation and then a solo `["reviewer"]`. The reviewer
+  is still the final stage for any pipeline that produces implementation output.
 
 **Parallelism guidance**: Prefer grouping independent agents in the same stage
 to reduce total wall-clock time:
@@ -224,6 +229,7 @@ to reduce total wall-clock time:
 | Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Design / Analysis only | `[]` |
 | Matches custom agent role | Include the custom agent in an appropriate stage, then `["reviewer"]` last |
+| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation" }, ["reviewer"]]` |
 
 ```json
 {
@@ -271,11 +277,13 @@ acceptance criteria that test-writer will map in
 Do not emit a code implementation stage whose contract is too vague to prove
 100% changed executable coverage.
 
-Place a solo `["reviewer"]` stage immediately after each TDD implementation
-stage. Do not batch multiple code implementation stages before one reviewer.
-The reviewer loop-back rule assumes reviewer rejection targets the immediately
-preceding implementation stage; batching implementation stages makes the TDD
-remediation target ambiguous.
+Place a deterministic quality gate immediately after each TDD implementation
+stage. The default gate is a solo `["reviewer"]`. When QA ownership is needed,
+insert `{"agents":["qa-owner"],"qa_mode":"verify","qa_loop_target":"previous_implementation"}`
+immediately after the implementation and place a solo `["reviewer"]` immediately
+after QA verification. Do not batch multiple code implementation stages before
+one gate. Rejection loop-back assumes the gate targets the immediately preceding
+implementation stage.
 
 After emitting `pipeline.json`, run the planning-time gate:
 
@@ -569,7 +577,7 @@ Run the following validation before returning:
 2. For every non-builtin agent name in `stages`, verify it has a corresponding entry in `needs_creation`. If missing, add a `needs_creation` entry with a best-effort `reason` and `role` derived from the stage context.
 
 Builtin agents that do NOT need `needs_creation` entries:
-  planner, designer, frontend, backend, devops, resolver, reviewer, supervisor, documenter
+  planner, designer, frontend, backend, devops, resolver, reviewer, supervisor, documenter, qa-owner
 
 ---
 

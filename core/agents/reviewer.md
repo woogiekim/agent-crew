@@ -211,8 +211,7 @@ REPORT: ${TASK_DIR}/context/review-tests.md
 (Detect code-file touches by running `git -C "${PROJECT_ROOT}" diff
 --name-only "${TASK_START_HEAD:-HEAD~5}..HEAD"` and matching the
 extension list above.) The supervisor's Reviewer Loop-Back Rule will
-re-spawn the immediately preceding implementation/TDD stage with the
-directive "add tests".
+re-spawn the target implementation/TDD stage with the directive "add tests".
 
 If `DISCOVERED == 0` AND the diff is docs-only / config-only, proceed
 to Step 1 (no test execution possible, static review continues —
@@ -539,8 +538,7 @@ QUALITY_METRICS: {TASK_DIR}/context/quality-metrics.json
 
 `REVIEW: NEEDS_CHANGES` is a loop-triggering rejection, not advisory text.
 The supervisor classifies it through `core/scripts/reviewer-loop-decision.py`
-and re-runs the immediately preceding implementation/TDD stage before
-re-running reviewer.
+and re-runs the target implementation/TDD stage before re-running reviewer.
 
 The `TEST_RUN_RESULT:` line is required so the supervisor's parser can
 confirm tests actually ran (or were intentionally skipped) — never

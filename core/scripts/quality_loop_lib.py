@@ -72,6 +72,7 @@ NON_IMPLEMENTER_AGENTS = {
     "historian",
     "issuer",
     "planner",
+    "qa-owner",
     "requirements",
     "resolver",
     "reviewer",
@@ -151,6 +152,34 @@ def is_single_reviewer_stage(stage) -> bool:
     return stage_agents(stage) == ["reviewer"]
 
 
+def is_qa_verify_stage(stage) -> bool:
+    return (
+        isinstance(stage, dict)
+        and stage_agents(stage) == ["qa-owner"]
+        and str(stage.get("qa_mode", "")).lower() == "verify"
+    )
+
+
+def is_qa_plan_stage(stage) -> bool:
+    return (
+        isinstance(stage, dict)
+        and stage_agents(stage) == ["qa-owner"]
+        and str(stage.get("qa_mode", "")).lower() == "plan"
+    )
+
+
+def has_quality_gate_after_implementer(stages: list, idx: int) -> bool:
+    if idx + 1 >= len(stages):
+        return False
+    if is_single_reviewer_stage(stages[idx + 1]):
+        return True
+    return (
+        is_qa_verify_stage(stages[idx + 1])
+        and idx + 2 < len(stages)
+        and is_single_reviewer_stage(stages[idx + 2])
+    )
+
+
 def is_tdd_capable_stage(stage) -> bool:
     agents = stage_agents(stage)
     if "test-writer" in agents:
@@ -166,9 +195,19 @@ def pipeline_shape(pipeline: dict) -> dict:
     stages = pipeline.get("stages") or []
     implementer_indexes = [idx for idx, stage in enumerate(stages) if is_implementation_stage(stage)]
     reviewer_indexes = [idx for idx, stage in enumerate(stages) if is_reviewer_stage(stage)]
+    qa_plan_indexes = [idx for idx, stage in enumerate(stages) if is_qa_plan_stage(stage)]
+    qa_verify_indexes = [idx for idx, stage in enumerate(stages) if is_qa_verify_stage(stage)]
     tdd_indexes = [idx for idx, stage in enumerate(stages) if is_tdd_capable_stage(stage)]
     implementer_indexes_without_immediate_reviewer = [
         idx for idx in implementer_indexes
+        if idx + 1 >= len(stages) or not is_single_reviewer_stage(stages[idx + 1])
+    ]
+    implementer_indexes_without_quality_gate = [
+        idx for idx in implementer_indexes
+        if not has_quality_gate_after_implementer(stages, idx)
+    ]
+    qa_verify_indexes_without_following_reviewer = [
+        idx for idx in qa_verify_indexes
         if idx + 1 >= len(stages) or not is_single_reviewer_stage(stages[idx + 1])
     ]
 
@@ -181,13 +220,21 @@ def pipeline_shape(pipeline: dict) -> dict:
         "stage_count": len(stages),
         "implementer_indexes": implementer_indexes,
         "reviewer_indexes": reviewer_indexes,
+        "qa_plan_indexes": qa_plan_indexes,
+        "qa_verify_indexes": qa_verify_indexes,
         "tdd_indexes": tdd_indexes,
         "has_implementation_stage": bool(implementer_indexes),
         "has_reviewer_stage": bool(reviewer_indexes),
+        "has_qa_plan_stage": bool(qa_plan_indexes),
+        "has_qa_verify_stage": bool(qa_verify_indexes),
         "has_tdd_stage": bool(tdd_indexes),
         "has_reviewer_after_implementer": reviewer_after_implementer,
         "implementer_indexes_without_immediate_reviewer": implementer_indexes_without_immediate_reviewer,
         "has_reviewer_after_each_implementer": not implementer_indexes_without_immediate_reviewer,
+        "implementer_indexes_without_quality_gate": implementer_indexes_without_quality_gate,
+        "has_quality_gate_after_each_implementer": not implementer_indexes_without_quality_gate,
+        "qa_verify_indexes_without_following_reviewer": qa_verify_indexes_without_following_reviewer,
+        "has_reviewer_after_each_qa_verify": not qa_verify_indexes_without_following_reviewer,
     }
 
 
@@ -332,6 +379,23 @@ def event_attempt(row: dict) -> int:
         return 0
 
 
+def reviewer_rework_target_stage(pipeline: dict, reviewer_stage: int | None) -> int | None:
+    if not reviewer_stage:
+        return None
+    stages = pipeline.get("stages") or []
+    reviewer_idx = reviewer_stage - 1
+    previous_idx = reviewer_idx - 1
+    if previous_idx < 0 or previous_idx >= len(stages):
+        return None
+    if is_implementation_stage(stages[previous_idx]):
+        return previous_idx + 1
+    if is_qa_verify_stage(stages[previous_idx]):
+        implementation_idx = previous_idx - 1
+        if implementation_idx >= 0 and is_implementation_stage(stages[implementation_idx]):
+            return implementation_idx + 1
+    return previous_idx + 1 if reviewer_stage > 1 else None
+
+
 def task_description(task_dir: Path, register: dict, pipeline: dict, result_text: str) -> str:
     if register.get("task"):
         return str(register["task"])
@@ -347,11 +411,11 @@ def is_completed(target_status: str | None, register: dict, result_text: str) ->
     return register.get("current_phase") == "completed" or bool(STATUS_COMPLETED_RE.search(result_text))
 
 
-def rejection_followups(events: list[dict], rejected_index: int) -> dict:
+def rejection_followups(events: list[dict], rejected_index: int, pipeline: dict | None = None) -> dict:
     rejected = events[rejected_index]
     rejected_stage = event_stage(rejected)
     rejected_attempt = event_attempt(rejected)
-    target_stage = rejected_stage - 1 if rejected_stage and rejected_stage > 1 else None
+    target_stage = reviewer_rework_target_stage(pipeline or {}, rejected_stage)
     later = events[rejected_index + 1:]
     implementer_candidates = [
         (idx, row)
@@ -424,7 +488,7 @@ def check_quality_loop(
         idx for idx, row in enumerate(events) if event_is_reviewer_rejected(row)
     ]
     followups = [
-        {"event_index": idx, **rejection_followups(events, idx)}
+        {"event_index": idx, **rejection_followups(events, idx, pipeline)}
         for idx in rejection_indexes
     ]
     approved_events = [
@@ -454,8 +518,10 @@ def check_quality_loop(
             failures.append("missing_pipeline_reviewer_stage")
         if not shape["has_reviewer_after_implementer"]:
             failures.append("missing_pipeline_reviewer_after_implementer")
-        if not shape["has_reviewer_after_each_implementer"]:
+        if not shape["has_quality_gate_after_each_implementer"]:
             failures.append("missing_pipeline_reviewer_after_each_implementer")
+        if not shape["has_reviewer_after_each_qa_verify"]:
+            failures.append("missing_pipeline_reviewer_after_qa_verify")
         if not events:
             failures.append("missing_progress_events")
         if events and not any(event_is_implementer_done(row) for row in events):

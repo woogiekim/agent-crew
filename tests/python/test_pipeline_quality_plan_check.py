@@ -141,6 +141,61 @@ def test_plan_checker_accepts_split_tdd_implementation_stages(tmp_path: Path):
     assert payload["required"] is True
 
 
+def test_plan_checker_accepts_qa_verify_between_implementation_and_reviewer(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a user-facing backend feature with QA validation",
+            "stages": [
+                {"agents": ["qa-owner"], "qa_mode": "plan"},
+                {"agents": ["backend"], "tdd_parallel": True},
+                {
+                    "agents": ["qa-owner"],
+                    "qa_mode": "verify",
+                    "qa_loop_target": "previous_implementation",
+                },
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["required"] is True
+    assert payload["pipeline_shape"]["qa_verify_indexes"] == [2]
+    assert payload["pipeline_shape"]["has_quality_gate_after_each_implementer"] is True
+
+
+def test_plan_checker_blocks_qa_verify_without_following_reviewer(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a user-facing backend feature with QA validation",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                {
+                    "agents": ["qa-owner"],
+                    "qa_mode": "verify",
+                    "qa_loop_target": "previous_implementation",
+                },
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_pipeline_reviewer_after_qa_verify" in payload["failures"]
+    assert payload["pipeline_shape"]["qa_verify_indexes_without_following_reviewer"] == [1]
+
+
 def test_plan_checker_blocks_implementation_stage_without_immediate_reviewer(tmp_path: Path):
     path = write_pipeline(
         tmp_path,
