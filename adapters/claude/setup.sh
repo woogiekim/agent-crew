@@ -315,6 +315,39 @@ with open(dest, "w") as f:
   f.write("\n")
 PYEOF
 
+# Defense-in-depth for supervisor pipeline bypasses: reject stage/completion
+# progress emitted before pipeline.json exists, even if the supervisor's own
+# log_progress guard is bypassed.
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/supervisor-progress-guard.sh" "*" "PostToolUse" <<'PYEOF'
+import sys, json, os
+dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 5}
+if os.path.exists(dest):
+  with open(dest) as f:
+    try: settings = json.load(f)
+    except json.JSONDecodeError: settings = {}
+else:
+  settings = {}
+hooks = settings.setdefault("hooks", {})
+hook_list = hooks.setdefault(hook_type, [])
+hook_path_base = os.path.basename(hook_path)
+for block in hook_list:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        h["timeout"] = hook_entry["timeout"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+
 # Phase 3.3: cost_tracking capability — cost-tracker.sh writes one JSONL
 # line per call to ${STATE_DIR}/cost/${TASK_ID}.jsonl. Schema documented
 # at core/rules/capabilities/cost-tracking.md § Required Adapter Surface.

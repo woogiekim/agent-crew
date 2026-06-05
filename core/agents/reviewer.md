@@ -269,6 +269,52 @@ If `DISCOVERED == 0` AND the diff is docs-only / config-only, proceed
 to Step 1 (no test execution possible, static review continues —
 equivalent to `REQUIRES_TEST_EXECUTION: false`).
 
+### Phase 0.5 — Reject code diffs with no changed tests
+
+If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to
+Step 1.
+
+After runner discovery and before executing any runner, inspect the changed
+files in the implementation diff. A code change cannot be approved solely
+because pre-existing tests happen to pass; the diff itself must include a test
+file unless the implementation stage recorded an explicit TDD exception.
+
+```bash
+CHANGED=$(git -C "${PROJECT_ROOT}" diff --name-only \
+          "${TASK_START_HEAD:-HEAD~5}..HEAD" 2>/dev/null)
+
+TOUCHED_CODE=0
+DIFF_TEST_FILE_COUNT=0
+for f in ${CHANGED}; do
+  case "${f}" in
+    *.py|*.ts|*.tsx|*.js|*.jsx|*.kt|*.java|*.go|*.rs|*.sh)
+      TOUCHED_CODE=1
+      ;;
+  esac
+  case "${f}" in
+    tests/*|test/*|*/tests/*|*/test/*|*_test.*|*.test.*|*.spec.*|*Test.*)
+      DIFF_TEST_FILE_COUNT=$((DIFF_TEST_FILE_COUNT + 1))
+      ;;
+  esac
+done
+
+TDD_EXCEPTION=false
+if [ -f "${TASK_DIR}/context/tdd-exception.md" ] \
+   || [ -f "${TASK_DIR}/context/tdd-exception.json" ]; then
+  TDD_EXCEPTION=true
+fi
+```
+
+If `TOUCHED_CODE == 1`, `DIFF_TEST_FILE_COUNT == 0`, and
+`TDD_EXCEPTION == false`, short-circuit with:
+
+```text
+STATUS: REJECTED
+REASON: tests_absent_for_code_change
+TEST_RUN_RESULT: touched_code=true; diff_tests=0; tdd_exception=false
+REPORT: ${TASK_DIR}/context/review-tests.md
+```
+
 ### Phase 1 — Execute discovered tests
 
 If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to

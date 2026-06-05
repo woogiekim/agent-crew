@@ -8,6 +8,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SUPERVISOR = REPO_ROOT / "core" / "agents" / "supervisor.md"
 BOOTSTRAP = REPO_ROOT / "core" / "agents" / "supervisor-bootstrap.md"
+RUN_COMMAND = REPO_ROOT / "core" / "commands" / "run.md"
+AGENT_COMMAND = REPO_ROOT / "core" / "commands" / "agent.md"
+ANALYST = REPO_ROOT / "core" / "agents" / "analyst.md"
+REVIEWER = REPO_ROOT / "core" / "agents" / "reviewer.md"
+CODEX_SETUP = REPO_ROOT / "adapters" / "codex" / "setup.sh"
+CLAUDE_SETUP = REPO_ROOT / "adapters" / "claude" / "setup.sh"
 
 
 def test_supervisor_absolute_rules_forbid_fresh_run_pipeline_bypass():
@@ -69,3 +75,68 @@ def test_bootstrap_phase_1d_requires_pipeline_before_approval():
     assert "Phase 1d pipeline existence gate" in text
     assert "[ ! -f \"${PIPELINE_PATH}\" ]" in text
     assert "pipeline_missing_before_plan_approval" in text
+
+
+def test_run_passes_supervisor_mode_sentinel_to_every_supervisor_spawn():
+    text = RUN_COMMAND.read_text(encoding="utf-8")
+
+    assert "MODE: supervisor" in text
+    assert "EXECUTION_MODE: single or parallel" in text
+    assert "TASK, TASK_ID, TASK_DIR, PROJECT_ROOT, BRANCH," in text
+
+
+def test_direct_command_keeps_direct_mode_sentinel():
+    text = AGENT_COMMAND.read_text(encoding="utf-8")
+
+    assert "MODE=direct" in text
+    assert "You are running in MODE=direct" in text
+
+
+def test_bootstrap_requires_supervisor_mode_sentinel_before_progress():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "supervisor_mode_sentinel_missing" in text
+    assert "[ \"${MODE:-}\" != \"supervisor\" ]" in text
+    assert "MODE=supervisor" in text
+    assert "exit 1" in text
+
+
+def test_supervisor_ignores_leaked_direct_mode_preamble():
+    text = SUPERVISOR.read_text(encoding="utf-8")
+
+    assert "MODE=direct" in text
+    assert "direct-mode stateless-invocation preamble" in text
+    assert "ignore it" in text
+    assert "supervisor contract prevails" in text
+
+
+def test_progress_guard_hook_is_registered_for_supported_hosts():
+    hook = REPO_ROOT / "core" / "hooks" / "supervisor-progress-guard.sh"
+    codex_setup = CODEX_SETUP.read_text(encoding="utf-8")
+    claude_setup = CLAUDE_SETUP.read_text(encoding="utf-8")
+
+    assert hook.is_file()
+    assert "supervisor-progress-guard.sh" in codex_setup
+    assert "supervisor-progress-guard.sh" in claude_setup
+
+
+def test_analyst_skill_reads_have_supervisor_verified_evidence():
+    analyst_text = ANALYST.read_text(encoding="utf-8")
+    bootstrap_text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "context/analyst-skill-load.md" in analyst_text
+    assert "requirement-gathering.md" in analyst_text
+    assert "pipeline-planning.md" in analyst_text
+    assert "analyst_skill_read_evidence_missing" in bootstrap_text
+    assert "context/analyst-skill-load.md" in bootstrap_text
+    assert "requirement-gathering.md" in bootstrap_text
+    assert "pipeline-planning.md" in bootstrap_text
+
+
+def test_reviewer_rejects_code_changes_without_test_files_or_tdd_exception():
+    text = REVIEWER.read_text(encoding="utf-8")
+
+    assert "tests_absent_for_code_change" in text
+    assert "context/tdd-exception.md" in text
+    assert "DIFF_TEST_FILE_COUNT" in text
+    assert "touched_code=true; diff_tests=0; tdd_exception=false" in text

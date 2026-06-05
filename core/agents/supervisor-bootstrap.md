@@ -36,6 +36,22 @@ CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
 # tasks always have TASK_ID = "{session_ts}-{idx}"). Ad-hoc manual invocations
 # with no `-` suffix collapse SESSION_ID to TASK_ID (acceptable fallback).
 SESSION_ID="${SESSION_ID:-${TASK_ID%-*}}"
+
+# Supervisor mode sentinel: crew:run must pass MODE=supervisor to every
+# supervisor spawn. If this variable is absent, the prompt may have inherited
+# a crew:agent direct-mode preamble and must fail before any pipeline state is
+# created or progress events are emitted.
+if [ "${MODE:-}" != "supervisor" ]; then
+  mkdir -p "${TASK_DIR}/context"
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "${ts} | BLOCKED | supervisor_mode_sentinel_missing: expected MODE=supervisor" >> "${TASK_DIR}/progress.log"
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: supervisor_mode_sentinel_missing
+DETAIL: Supervisor invocation did not include MODE=supervisor; refusing possible direct-mode prompt leakage.
+EOF
+  exit 1
+fi
 ```
 
 These six variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
@@ -782,6 +798,28 @@ Use the `PIPELINE_PATH` variable resolved in Phase 0:
 
 ```bash
 cat "${PIPELINE_PATH}"
+```
+
+#### Phase 1b analyst skill-read evidence gate
+
+Before trusting `pipeline.json`, verify that the analyst recorded its mandatory
+skill reads. This converts the analyst's "MANDATORY: Read X" instructions from
+prose-only guidance into a supervisor-enforced artifact contract.
+
+```bash
+ANALYST_SKILL_LOAD="${TASK_DIR}/context/analyst-skill-load.md"
+if ! grep -Fq "requirement-gathering.md" "${ANALYST_SKILL_LOAD}" 2>/dev/null \
+   || ! grep -Fq "pipeline-planning.md" "${ANALYST_SKILL_LOAD}" 2>/dev/null; then
+  log_progress "BLOCKED" "analyst_skill_read_evidence_missing"
+  register_update current_phase blocked
+  register_update blocked_by analyst_skill_read_evidence_missing
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: BLOCKED
+BLOCKER: analyst_skill_read_evidence_missing
+DETAIL: Missing ${TASK_DIR}/context/analyst-skill-load.md evidence for requirement-gathering.md and pipeline-planning.md.
+EOF
+  exit 1
+fi
 ```
 
 #### Phase 1b pipeline guard: mandatory reviewer-stage append

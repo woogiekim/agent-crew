@@ -93,6 +93,11 @@ settings = {
                 "hooks": [
                     {
                         "type": "command",
+                        "command": f"bash '{home}/hooks/supervisor-progress-guard.sh'",
+                        "timeout": 5,
+                    },
+                    {
+                        "type": "command",
                         # Issue #16: mnemos-capture-guard.sh — validates ✻ 🧠 capture notifications
                         # against actual mnemos captures. Advisory only: always exits 0.
                         # mnemos absence = silent no-op (graceful degradation).

@@ -1613,6 +1613,7 @@ for each task i:
     # its own TaskCreate in Phase 0 when task_tools capability is present.
     spawn supervisor as background agent with:
         TASK, TASK_ID, TASK_DIR, PROJECT_ROOT, BRANCH,
+        MODE: supervisor,
         EXECUTION_MODE=parallel,
         REQUIREMENTS=$REQUIREMENTS
 ```
@@ -1692,6 +1693,7 @@ TASK_ID: {TASK_ID}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {execution root for this task}
 BRANCH: {BRANCH}
+MODE: supervisor
 EXECUTION_MODE: single or parallel
 SESSION_ID: {SESSION_ID}
 CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md

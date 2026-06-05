@@ -96,6 +96,15 @@ Write a 2–4 sentence intent summary answering:
 > **MANDATORY: Before performing the ambiguity check, read `~/.agent-crew/system/agents/skills/requirement-gathering.md`.**
 > This skill defines the ambiguity detection criteria, severity classification rules, and resolution strategies that govern this step.
 
+Immediately after reading the skill, record the read in
+`{TASK_DIR}/context/analyst-skill-load.md`:
+
+```bash
+mkdir -p "${TASK_DIR}/context"
+printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/requirement-gathering.md" \
+  >> "${TASK_DIR}/context/analyst-skill-load.md"
+```
+
 For each item found, record description, severity (`low | medium | high`), and
 the recommended resolution (document as assumption, or flag for user).
 
@@ -156,6 +165,15 @@ If no ambiguities or risks are found, write the table with a single row:
 
 > **MANDATORY: Before composing the pipeline, read `~/.agent-crew/system/agents/skills/pipeline-planning.md`.**
 > This skill defines stage composition rules, parallelism guidance, flag selection criteria (tdd_parallel, streaming_review, parallelizable_units), and the stage type catalogue used to build pipeline.json.
+
+Immediately after reading the skill, record the read in
+`{TASK_DIR}/context/analyst-skill-load.md`:
+
+```bash
+mkdir -p "${TASK_DIR}/context"
+printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/pipeline-planning.md" \
+  >> "${TASK_DIR}/context/analyst-skill-load.md"
+```
 
 Based on scope, complexity, and the intent summary from Step 2, determine the
 full pipeline. Use the stage composition table below.

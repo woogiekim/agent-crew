@@ -668,7 +668,7 @@ def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementati
             "attempt": 1,
             "status": "completed",
             "detail": "TDD RED GREEN REFACTOR, 12 tests passed",
-            "files": [],
+            "files": ["tests/python/test_report_quality_gate.py"],
         },
         {
             "ts": "2026-05-22T00:00:01Z",
