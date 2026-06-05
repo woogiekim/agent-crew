@@ -66,6 +66,29 @@ def test_repair_blocks_mutating_current_session_without_specialist_evidence(tmp_
     assert "specialist agent and agent-skill selection" in result.stderr
 
 
+def test_repair_blocks_incomplete_specialist_dispatch_evidence(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(state_dir, task_id)
+    (task_dir / "context" / "specialist-dispatch.md").write_text(
+        "selected_skill: frontend-typescript-react\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-load-bypass-reason",
+        "isolate specialist dispatch shape",
+    )
+
+    assert result.returncode != 0
+    assert "BLOCKER: incomplete_specialist_dispatch_evidence" in result.stderr
+    assert "selected_agent" in result.stderr
+    assert "selection_reason" in result.stderr
+    assert "execution_mode" in result.stderr
+
+
 def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
@@ -145,3 +168,83 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
     assert repair["specialist_dispatch_gate"]["passed"] is True
     assert repair["specialist_dispatch_gate"]["matched_paths"] == ["context/specialist-dispatch.md"]
     assert repair["skill_load_gate"]["passed"] is True
+
+
+def test_repair_preserves_user_agent_and_subagent_dispatch_axes(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(state_dir, task_id)
+    (task_dir / "context" / "specialist-dispatch.md").write_text(
+        "\n".join(
+            [
+                "selected_agent: backend",
+                "selected_user_agent: kotlin-domain-specialist",
+                "selected_subagents: test-writer, reviewer",
+                "selected_skill: backend-kotlin-spring",
+                "selection_reason: backend Kotlin implementation with custom domain reviewer",
+                "execution_mode: current_session_required fallback",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--quality-bypass-reason",
+        "isolate specialist dispatch axis serialization",
+        "--skill-load-bypass-reason",
+        "isolate specialist dispatch axis serialization",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["specialist_dispatch_gate"]
+    assert gate["selected_agents"] == ["backend"]
+    assert gate["selected_user_agents"] == ["kotlin-domain-specialist"]
+    assert gate["selected_subagents"] == ["reviewer", "test-writer"]
+    assert gate["selected_skills"] == ["backend-kotlin-spring"]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "SPECIALIST_AGENT: backend" in result_text
+    assert "SPECIALIST_USER_AGENT: kotlin-domain-specialist" in result_text
+    assert "SPECIALIST_SUBAGENT: reviewer" in result_text
+    assert "SPECIALIST_SUBAGENT: test-writer" in result_text
+    assert "SPECIALIST_SKILL: backend-kotlin-spring" in result_text
+
+
+def test_repair_accepts_json_specialist_dispatch_axes(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(state_dir, task_id)
+    (task_dir / "context" / "specialist-dispatch.md").unlink(missing_ok=True)
+    (task_dir / "context" / "specialist-dispatch.json").write_text(
+        json.dumps(
+            {
+                "selected_agent": "backend",
+                "selected_user_agent": ["domain-reviewer"],
+                "selected_subagents": ["test-writer", "reviewer"],
+                "selected_skills": ["backend-kotlin-spring"],
+                "selection_reason": "backend change with custom review specialist",
+                "execution_mode": "current_session_required fallback",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--quality-bypass-reason",
+        "isolate JSON specialist dispatch parsing",
+        "--skill-load-bypass-reason",
+        "isolate JSON specialist dispatch parsing",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["specialist_dispatch_gate"]
+    assert gate["matched_paths"] == ["context/specialist-dispatch.json"]
+    assert gate["selected_user_agents"] == ["domain-reviewer"]
+    assert gate["selected_subagents"] == ["reviewer", "test-writer"]

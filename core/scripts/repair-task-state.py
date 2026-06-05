@@ -70,6 +70,14 @@ SKILL_LOAD_RE = re.compile(
 )
 TDD_SKILL_PATH_RE = re.compile(r"(?:^|[/`\\])tdd\.md\b", re.IGNORECASE)
 TDD_SKILL_SELECTION_RE = re.compile(r"\bselected_skill\s*[:=]\s*.*\btdd\b|\btdd_parallel\b|\bTDD\b", re.IGNORECASE)
+SPECIALIST_FIELD_RE = re.compile(
+    r"\s*[-*]?\s*("
+    r"selected_agent|selected_agents|selected_user_agent|selected_user_agents|"
+    r"selected_subagent|selected_subagents|selected_skill|selected_skills|"
+    r"selection_reason|execution_mode"
+    r")\s*[:=]\s*(.+)",
+    re.IGNORECASE,
+)
 SKILL_USE_RE = re.compile(r"\b(skill[-_ ]?use|applied_rules|evidence_refs|output_files|verification)\b", re.IGNORECASE)
 SKILL_USE_REQUIRED_FIELDS = ("applied_rules", "evidence_refs", "output_files", "verification")
 SKILL_PLAN_RE = re.compile(r"\b(skill[-_ ]?plan|task_interpretation|planned_application|rule_id|invariant)\b", re.IGNORECASE)
@@ -233,22 +241,138 @@ def resolve_specialist_paths(task_dir: Path, paths: list[str]) -> list[Path]:
 def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
     matched_paths: list[str] = []
     inspected_paths: list[str] = []
+    incomplete_paths: dict[str, list[str]] = {}
+    selected_agents: list[str] = []
+    selected_user_agents: list[str] = []
+    selected_subagents: list[str] = []
+    selected_skills: list[str] = []
     for path in resolve_specialist_paths(task_dir, paths):
         inspected = inspect_evidence_file(task_dir, path, inspected_paths)
         if inspected is None:
             continue
 
         rel_name, text = inspected
-        if SPECIALIST_DISPATCH_RE.search(text):
+        parsed = specialist_fields_from_text(text)
+        if parsed:
+            missing = [
+                field
+                for field in ("selected_agent", "selection_reason", "execution_mode")
+                if not parsed.get(field)
+            ]
+            if missing:
+                incomplete_paths[rel_name] = missing
+                continue
+
             matched_paths.append(rel_name)
+            selected_agents.extend(parsed.get("selected_agent", []))
+            selected_user_agents.extend(parsed.get("selected_user_agent", []))
+            selected_subagents.extend(parsed.get("selected_subagents", []))
+            selected_skills.extend(parsed.get("selected_skill", []))
+        elif SPECIALIST_DISPATCH_RE.search(text):
+            incomplete_paths[rel_name] = ["selected_agent", "selection_reason", "execution_mode"]
     return {
         "required": True,
-        "passed": bool(matched_paths),
+        "passed": bool(matched_paths) and not incomplete_paths,
         "matched_paths": sorted(set(matched_paths)),
+        "incomplete_paths": {path: sorted(set(fields)) for path, fields in incomplete_paths.items()},
+        "selected_agents": sorted(set(selected_agents)),
+        "selected_user_agents": sorted(set(selected_user_agents)),
+        "selected_subagents": sorted(set(selected_subagents)),
+        "selected_skills": sorted(set(selected_skills)),
         "inspected_paths": sorted(set(inspected_paths)),
         "bypassed": False,
         "bypass_reason": "",
     }
+
+
+def split_specialist_values(value: str) -> list[str]:
+    cleaned = value.strip().strip("[]")
+    parts = re.split(r"[,|]", cleaned)
+    values = [
+        part.strip().strip("'\"`")
+        for part in parts
+        if part.strip().strip("'\"`")
+    ]
+    return [
+        value for value in values
+        if not value.lower().startswith(("none", "n/a", "null", "reason"))
+    ]
+
+
+def normalize_skill_name(value: str) -> str:
+    raw = value.strip().strip("`")
+    if not raw:
+        return ""
+    name = Path(raw).name
+    if name.endswith(".md"):
+        return name
+    if "/" not in raw and "\\" not in raw:
+        return f"{raw}.md"
+    return f"{name}.md" if name else ""
+
+
+def specialist_fields_from_text(text: str) -> dict[str, list[str] | str]:
+    try:
+        payload = json.loads(text)
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        return specialist_fields_from_json(payload)
+
+    fields: dict[str, list[str] | str] = {}
+    for line in text.splitlines():
+        match = SPECIALIST_FIELD_RE.match(line)
+        if not match:
+            continue
+
+        key = match.group(1).lower()
+        value = match.group(2).strip()
+        if key in {"selection_reason", "execution_mode"}:
+            fields[key] = value
+            continue
+
+        canonical = {
+            "selected_agents": "selected_agent",
+            "selected_user_agents": "selected_user_agent",
+            "selected_subagent": "selected_subagents",
+            "selected_skill": "selected_skill",
+            "selected_skills": "selected_skill",
+        }.get(key, key)
+        existing = fields.get(canonical, [])
+        values = existing if isinstance(existing, list) else []
+        values.extend(split_specialist_values(value))
+        fields[canonical] = values
+    return fields
+
+
+def specialist_fields_from_json(payload: dict) -> dict[str, list[str] | str]:
+    fields: dict[str, list[str] | str] = {}
+    for source, canonical in (
+        ("selected_agent", "selected_agent"),
+        ("selected_agents", "selected_agent"),
+        ("selected_user_agent", "selected_user_agent"),
+        ("selected_user_agents", "selected_user_agent"),
+        ("selected_subagent", "selected_subagents"),
+        ("selected_subagents", "selected_subagents"),
+        ("selected_skill", "selected_skill"),
+        ("selected_skills", "selected_skill"),
+    ):
+        value = payload.get(source)
+        if value is None:
+            continue
+
+        values = value if isinstance(value, list) else [value]
+        existing = fields.get(canonical, [])
+        current = existing if isinstance(existing, list) else []
+        for item in values:
+            current.extend(split_specialist_values(str(item)))
+        fields[canonical] = current
+
+    for key in ("selection_reason", "execution_mode"):
+        value = payload.get(key)
+        if value is not None:
+            fields[key] = str(value).strip()
+    return fields
 
 
 def resolve_skill_load_paths(task_dir: Path, paths: list[str]) -> list[Path]:
@@ -271,6 +395,13 @@ def skill_name_from_path(value: str) -> str:
 
 def extract_loaded_skill_paths(text: str) -> list[str]:
     paths: list[str] = []
+    try:
+        payload = json.loads(text)
+    except Exception:
+        payload = None
+    if payload is not None:
+        paths.extend(extract_loaded_skill_paths_from_json(payload))
+
     for line in text.splitlines():
         if not re.match(r"\s*[-*]\s+", line):
             continue
@@ -283,8 +414,29 @@ def extract_loaded_skill_paths(text: str) -> list[str]:
     return sorted(set(paths))
 
 
+def extract_loaded_skill_paths_from_json(value: object) -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, str):
+        if value.endswith(".md"):
+            paths.append(value)
+        return paths
+    if isinstance(value, list):
+        for item in value:
+            paths.extend(extract_loaded_skill_paths_from_json(item))
+        return paths
+    if not isinstance(value, dict):
+        return paths
+
+    for key in ("loaded_skills", "skills"):
+        paths.extend(extract_loaded_skill_paths_from_json(value.get(key)))
+    for key in ("skill_path", "path"):
+        paths.extend(extract_loaded_skill_paths_from_json(value.get(key)))
+    return paths
+
+
 def required_skill_names(task_dir: Path, register: dict, specialist_paths: list[str]) -> list[str]:
     snippets = [str(register.get("task") or "")]
+    selected_skill_names: list[str] = []
     for path in resolve_specialist_paths(task_dir, specialist_paths):
         inspected: list[str] = []
         evidence = inspect_evidence_file(task_dir, path, inspected)
@@ -293,10 +445,18 @@ def required_skill_names(task_dir: Path, register: dict, specialist_paths: list[
 
         _rel_name, text = evidence
         snippets.append(text)
+        parsed = specialist_fields_from_text(text)
+        selected = parsed.get("selected_skill", []) if parsed else []
+        if isinstance(selected, list):
+            selected_skill_names.extend(selected)
 
     required: list[str] = []
     if any(TDD_SKILL_SELECTION_RE.search(text) for text in snippets):
         required.append("tdd.md")
+    for selected in selected_skill_names:
+        skill = normalize_skill_name(selected)
+        if skill:
+            required.append(skill)
     return sorted(set(required))
 
 
@@ -317,14 +477,18 @@ def skill_load_status(
 
         rel_name, text = inspected
         loaded_text += "\n" + text
-        if SKILL_LOAD_RE.search(text):
+        extracted_paths = extract_loaded_skill_paths(text)
+        if SKILL_LOAD_RE.search(text) or extracted_paths:
             matched_paths.append(rel_name)
-            loaded_skill_paths.extend(extract_loaded_skill_paths(text))
+            loaded_skill_paths.extend(extracted_paths)
 
     required_skills = required_skill_names(task_dir, register, specialist_paths)
     missing_required_skills: list[str] = []
+    loaded_skill_names = {skill_name_from_path(path) for path in loaded_skill_paths}
     for skill in required_skills:
         if skill == "tdd.md" and not TDD_SKILL_PATH_RE.search(loaded_text):
+            missing_required_skills.append(skill)
+        elif skill != "tdd.md" and skill not in loaded_skill_names:
             missing_required_skills.append(skill)
 
     return {
@@ -332,7 +496,7 @@ def skill_load_status(
         "passed": bool(matched_paths) and not missing_required_skills,
         "matched_paths": sorted(set(matched_paths)),
         "loaded_skill_paths": sorted(set(loaded_skill_paths)),
-        "loaded_skill_names": sorted({skill_name_from_path(path) for path in loaded_skill_paths}),
+        "loaded_skill_names": sorted(loaded_skill_names),
         "required_skills": required_skills,
         "missing_required_skills": sorted(set(missing_required_skills)),
         "inspected_paths": sorted(set(inspected_paths)),
@@ -678,6 +842,20 @@ def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, r
         status["bypass_reason"] = args.specialist_bypass_reason
         return status
 
+    if status.get("incomplete_paths"):
+        details = [
+            f"{path}: {', '.join(fields)}"
+            for path, fields in sorted(status["incomplete_paths"].items())
+        ]
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: incomplete_specialist_dispatch_evidence\n"
+            "DETAIL: specialist dispatch evidence must identify the selected agent/user-agent/subagent axis, "
+            "selection reason, and execution mode before manual execution.\n"
+            "INCOMPLETE: " + "; ".join(details) + "\n"
+            "NEXT: complete context/specialist-dispatch.md or record an explicit --specialist-bypass-reason."
+        )
+
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_specialist_dispatch_evidence\n"
@@ -1022,6 +1200,14 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"SPECIALIST_BYPASS_REASON: {specialist_gate.get('bypass_reason')}")
         for path in specialist_gate.get("matched_paths", []):
             lines.append(f"SPECIALIST_EVIDENCE: {path}")
+        for agent in specialist_gate.get("selected_agents", []):
+            lines.append(f"SPECIALIST_AGENT: {agent}")
+        for agent in specialist_gate.get("selected_user_agents", []):
+            lines.append(f"SPECIALIST_USER_AGENT: {agent}")
+        for agent in specialist_gate.get("selected_subagents", []):
+            lines.append(f"SPECIALIST_SUBAGENT: {agent}")
+        for skill in specialist_gate.get("selected_skills", []):
+            lines.append(f"SPECIALIST_SKILL: {skill}")
     if skill_load_gate and skill_load_gate.get("required"):
         if skill_load_gate.get("passed"):
             lines.append("SKILL_LOAD: passed")

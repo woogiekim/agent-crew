@@ -25,22 +25,25 @@ crew:run
 
 When `crew:run` returns `HOST_BRIDGE: current_session_required`, continue from
 the printed `handoff.md` in the current Codex session. Before doing any task
-work, re-apply specialist selection: choose the appropriate agent/user-agent and
-load any applicable agent skill(s) for the normalized task. This is a general
+work, re-apply specialist selection: choose the appropriate agent/user-agent,
+subagent(s), and agent skill(s) for the normalized task. This is a general
 dispatch requirement for all task axes. It is not limited to commits, deploys,
 or any single operation.
 
 Record the selection in `{TASK_DIR}/context/specialist-dispatch.md` before
-manual execution. Include `selected_agent`, `selected_skill` (or `none` with
-reason), `selection_reason`, and `execution_mode`. If no specialist exists,
-state why and proceed through the regular supervisor/planner path rather than
-inventing an ad hoc shortcut.
+manual execution. Include `selected_agent`, `selection_reason`, and
+`execution_mode`; include any applicable `selected_user_agent`,
+`selected_subagents`, and `selected_skill` / `selected_skills` entries. If no
+specialist exists, state why and proceed through the regular supervisor/planner
+path rather than inventing an ad hoc shortcut.
 
 Load the applicable skill files before acting and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
-`{TASK_DIR}/context/skill-load.json`. When `selected_skill` is `tdd`, the
-evidence must include `tdd.md`. Repairing a mutating current-session fallback as
-completed may reject the handoff when skill-load evidence is missing.
+`{TASK_DIR}/context/skill-load.json`. Every selected skill name must have
+matching load evidence (`selected_skill: frontend-typescript-react` requires
+`frontend-typescript-react.md`, `selected_skill: tdd` requires `tdd.md`).
+Repairing a mutating current-session fallback as completed may reject the
+handoff when skill-load evidence is missing.
 
 Record how every loaded non-TDD skill was applied in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each

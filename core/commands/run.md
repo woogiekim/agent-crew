@@ -2460,12 +2460,16 @@ use this sequence:
      axis, use it or load its instructions before acting. Do not substitute
      ad hoc local execution just because the nested Codex bridge was refused.
    - Record the selection in `context/specialist-dispatch.md` with at least:
-     `selected_agent`, `selected_skill` (or `none` with reason), `selection_reason`,
-     and `execution_mode`. `crew repair --status completed` for a mutating
-     current-session fallback may require this evidence.
+     `selected_agent`, `selection_reason`, and `execution_mode`; include any
+     applicable `selected_user_agent`, `selected_subagents`, and
+     `selected_skill` / `selected_skills` entries. `crew repair --status completed`
+     for a mutating current-session fallback may require this evidence and preserve
+     every selected axis.
    - Load the applicable skill files before acting and record the exact loaded
      skill path(s) in `context/skill-load.md` or `context/skill-load.json`.
-     When `selected_skill` is `tdd`, the evidence must include `tdd.md`.
+     Every selected skill name must have matching load evidence
+     (`selected_skill: frontend-typescript-react` requires
+     `frontend-typescript-react.md`, `selected_skill: tdd` requires `tdd.md`).
      `crew repair --status completed` for a mutating current-session fallback
      may reject completion when this skill-load evidence is missing.
    - Record how every loaded non-TDD skill was applied in `context/skill-use.json`

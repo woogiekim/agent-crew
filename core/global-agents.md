@@ -137,15 +137,18 @@ generated prompts.
 When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
 the current session is only replacing the nested host bridge. It must not bypass
 agent-crew dispatch. Before executing task work, re-apply specialist
-agent/user-agent and agent-skill selection for the normalized task, use/load the
-selected specialist when available, and record the decision in
-`{TASK_DIR}/context/specialist-dispatch.md`.
+agent/user-agent/subagent and agent-skill selection for the normalized task,
+use/load the selected specialist when available, and record every selected axis
+in `{TASK_DIR}/context/specialist-dispatch.md`.
 
 Before acting, load the applicable skill files and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
-`{TASK_DIR}/context/skill-load.json`. When `selected_skill` is `tdd`, the
-evidence must include `tdd.md`. Completion/repair for a mutating current-session
-fallback must reject or flag missing skill-load evidence.
+`{TASK_DIR}/context/skill-load.json`. Every `selected_skill` /
+`selected_skills` entry must have matching load evidence (for example,
+`selected_skill: frontend-typescript-react` requires
+`frontend-typescript-react.md`, and `selected_skill: tdd` requires `tdd.md`).
+Completion/repair for a mutating current-session fallback must reject or flag
+missing skill-load evidence.
 
 Record how every loaded non-TDD skill was applied in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each

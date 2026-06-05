@@ -119,6 +119,63 @@ def test_tdd_specialist_requires_loaded_tdd_skill_path(tmp_path: Path):
     assert "tdd.md" in result.stderr
 
 
+def test_non_tdd_selected_skill_requires_matching_loaded_skill_path(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Implement a frontend workflow",
+        selected_skill="frontend-typescript-react",
+    )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- ~/.agent-crew/system/agents/skills/tdd.md\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_required_skill_load_evidence" in result.stderr
+    assert "frontend-typescript-react.md" in result.stderr
+
+
+def test_json_skill_load_satisfies_non_tdd_selected_skill(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Implement a frontend workflow",
+        selected_skill="frontend-typescript-react",
+    )
+    (task_dir / "context" / "skill-load.json").write_text(
+        json.dumps(
+            {
+                "loaded_skills": [
+                    "~/.agent-crew/user/skills/frontend-typescript-react.md"
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-use-bypass-reason",
+        "isolate JSON skill-load parsing",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_load_gate"]["loaded_skill_names"] == ["frontend-typescript-react.md"]
+    assert repair["skill_load_gate"]["required_skills"] == ["frontend-typescript-react.md"]
+
+
 def test_repair_accepts_skill_load_evidence_for_tdd_specialist(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"

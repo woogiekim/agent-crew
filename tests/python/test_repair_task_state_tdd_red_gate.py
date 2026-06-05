@@ -56,7 +56,7 @@ def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
             "attempt": 1,
             "status": "completed",
             "detail": "TDD RED GREEN REFACTOR, focused pytest passed",
-            "files": ["context/tdd_log.md"],
+            "files": ["context/tdd_log.md", "tests/python/test_mapping_fix.py"],
         },
         {
             "ts": "2026-06-04T00:00:01Z",
