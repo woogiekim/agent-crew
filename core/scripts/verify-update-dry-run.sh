@@ -59,6 +59,13 @@ EOF
 printf 'stale\n' > "${CODEX_HOME}/agents/task-runner.toml"
 printf 'stale\n' > "${CODEX_HOME}/agent-crew/skills/stale.md"
 printf 'stale\n' > "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
+cat > "${CODEX_HOME}/config.toml" <<'EOF'
+model = "gpt-test"
+
+[mcp_servers.gitlab]
+command = "bash"
+args = ["-lc", "gitlab-mcp"]
+EOF
 
 AGENT_CREW_HOME="${AGENT_CREW_HOME}" \
 CODEX_HOME="${CODEX_HOME}" \
@@ -108,6 +115,8 @@ assert_exists "${STATE_DIR}/update-preservation"
 assert_absent "${CODEX_HOME}/agents/task-runner.toml"
 assert_absent "${CODEX_HOME}/agent-crew/skills/stale.md"
 assert_absent "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
+assert_contains "${CODEX_HOME}/config.toml" "[mcp_servers.gitlab]"
+assert_contains "${CODEX_HOME}/config.toml" 'args = ["-lc", "gitlab-mcp"]'
 assert_contains "${CODEX_HOME}/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${PROJECT_ROOT}/.codex/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${AGENT_CREW_HOME}/hooks/auto-route.sh" 'Invoke Skill("crew-run")'

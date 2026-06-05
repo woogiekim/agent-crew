@@ -88,6 +88,17 @@ assert_contains "${out}" 'nickname_candidates = ["Scout One", "Scout Two"]'
 mkdir -p "${setup_repo}"
 mkdir -p "${setup_repo}/.codex/agents"
 printf 'name = "local-custom"\n' > "${setup_repo}/.codex/agents/local-custom.toml"
+cat > "${setup_repo}/.codex/config.toml" <<'EOF'
+model = "gpt-test"
+
+[mcp_servers.gitlab]
+command = "bash"
+args = ["-lc", "gitlab-mcp"]
+
+[agents]
+max_threads = 2
+max_depth = 1
+EOF
 (
   cd "${setup_repo}" || exit 2
   git init -q
@@ -98,6 +109,7 @@ printf 'name = "local-custom"\n' > "${setup_repo}/.codex/agents/local-custom.tom
 )
 setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
 setup_inherit_out="$(cat "${setup_repo}/.codex/agents/inherit-model.toml")"
+setup_config_out="$(cat "${setup_repo}/.codex/config.toml")"
 
 it "Codex setup user-agent conversion omits reasoning_tier"
 assert_not_contains "${setup_out}" 'reasoning_tier ='
@@ -110,6 +122,16 @@ assert_not_contains "${setup_inherit_out}" 'model = "inherit"'
 
 it "Codex setup preserves project-local custom TOML agents"
 assert_file_exists "${setup_repo}/.codex/agents/local-custom.toml"
+
+it "Codex setup preserves user-owned MCP server config entries"
+assert_contains "${setup_config_out}" 'model = "gpt-test"'
+assert_contains "${setup_config_out}" "[mcp_servers.gitlab]"
+assert_contains "${setup_config_out}" 'command = "bash"'
+assert_contains "${setup_config_out}" 'args = ["-lc", "gitlab-mcp"]'
+
+it "Codex setup refreshes managed agent defaults without replacing config"
+assert_contains "${setup_config_out}" "max_threads = 6"
+assert_contains "${setup_config_out}" "max_depth = 1"
 
 it "Codex setup maps xhigh system agents to xhigh effort"
 assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model_reasoning_effort = "xhigh"'

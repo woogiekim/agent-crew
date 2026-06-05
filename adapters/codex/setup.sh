@@ -127,6 +127,82 @@ if not dest.exists() or dest.read_text(encoding="utf-8") != content:
 PYEOF
 }
 
+merge_codex_config_toml() {
+  local src="$1"
+  local dest="$2"
+
+  [ -f "${src}" ] || return 0
+  mkdir -p "$(dirname "${dest}")"
+
+  python3 - "${src}" "${dest}" <<'PYEOF'
+import re
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+
+section_re = re.compile(r"^\s*\[[^\]]+\]\s*(?:#.*)?$")
+
+
+def split_lines(text: str) -> list[str]:
+    return text.splitlines()
+
+
+def section_bounds(lines: list[str], header: str):
+    wanted = f"[{header}]"
+    start = None
+    for index, line in enumerate(lines):
+        if line.strip().split("#", 1)[0].strip() == wanted:
+            start = index
+            break
+
+    if start is None:
+        return None
+
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        if section_re.match(lines[index]):
+            end = index
+            break
+
+    return start, end
+
+
+def managed_section(template: str, header: str) -> list[str]:
+    lines = split_lines(template)
+    bounds = section_bounds(lines, header)
+    if bounds is None:
+        return []
+
+    start, end = bounds
+    return lines[start:end]
+
+
+template = src.read_text(encoding="utf-8")
+managed_agents = managed_section(template, "agents")
+
+if not dest.exists():
+    output = template
+else:
+    existing = split_lines(dest.read_text(encoding="utf-8", errors="replace"))
+    bounds = section_bounds(existing, "agents")
+    if bounds is None:
+        merged = existing[:]
+        if merged and merged[-1].strip():
+            merged.append("")
+        merged.extend(managed_agents)
+    else:
+        start, end = bounds
+        merged = existing[:start] + managed_agents + existing[end:]
+
+    output = "\n".join(merged).rstrip("\n") + "\n"
+
+if not dest.exists() or dest.read_text(encoding="utf-8", errors="replace") != output:
+    dest.write_text(output, encoding="utf-8")
+PYEOF
+}
+
 sync_codex_template_static() {
   local src="${AGENT_CREW_HOME}/adapters/codex/template"
   local dest="${PROJECT_ROOT}/.codex"
@@ -134,7 +210,7 @@ sync_codex_template_static() {
   mkdir -p "${dest}"
 
   copy_file_if_changed "${src}/README.md" "${dest}/README.md"
-  copy_file_if_changed "${src}/config.toml" "${dest}/config.toml"
+  merge_codex_config_toml "${src}/config.toml" "${dest}/config.toml"
 }
 
 install_codex_skills() {
