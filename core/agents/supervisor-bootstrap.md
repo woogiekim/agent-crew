@@ -196,6 +196,26 @@ log_progress() {
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+  # progress_event_requires_pipeline: a fresh supervisor run cannot enter
+  # stage execution or completion before analyst planning has produced
+  # pipeline.json. This hard precondition backs the prose-only Pipeline Bypass
+  # Prohibition with a fail-closed guard at every progress emit site.
+  case "${event}" in
+    STAGE|STAGE_DONE|STAGE_TDD_PARALLEL_STARTED|STAGE_TDD_PARALLEL_DONE|STAGE_FANOUT_STARTED|STAGE_FANOUT_UNIT_DONE|STAGE_FANOUT_DONE|STAGE_STREAMING_REVIEW_STARTED|STAGE_STREAMING_REVIEW_DONE|COMPLETED)
+      if [ ! -f "${PIPELINE_PATH}" ]; then
+        local blocker_line="${ts} | BLOCKED | supervisor_pipeline_bypass_prevented: ${event} before pipeline.json"
+        echo "${blocker_line}" >> "${TASK_DIR}/progress.log"
+        echo "[crew] ${blocker_line}" >&2
+        cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: supervisor_pipeline_bypass_prevented
+DETAIL: progress_event_requires_pipeline blocked ${event} before pipeline.json existed.
+EOF
+        exit 1
+      fi
+      ;;
+  esac
+
   # Sink 1: human-readable progress.log
   local line="${ts} | ${event} | ${detail}"
   echo "${line}" >> "${TASK_DIR}/progress.log"
@@ -973,6 +993,21 @@ Also append to the progress log:
 log_progress "PHASE" "1d — Plan approval"
 register_update current_phase phase_1d
 register_update approval_status pending
+
+# Phase 1d pipeline existence gate: plan approval is only meaningful after
+# Phase 1b+1c produced pipeline.json. Missing pipeline state here indicates
+# a supervisor pipeline bypass, not an approvable plan.
+if [ ! -f "${PIPELINE_PATH}" ]; then
+  log_progress "BLOCKED" "pipeline_missing_before_plan_approval"
+  register_update current_phase blocked
+  register_update blocked_by --json '["pipeline_missing_before_plan_approval"]'
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: supervisor_pipeline_bypass_prevented
+DETAIL: pipeline_missing_before_plan_approval
+EOF
+  exit 1
+fi
 ```
 
 Read `pipeline.json` (via `PIPELINE_PATH`), `{TASK_DIR}/context/analysis.md`, and

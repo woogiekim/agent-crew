@@ -97,7 +97,7 @@ def row(event: str, agent: str, detail: str, *, stage: int, attempt: int = 1) ->
         "attempt": attempt,
         "status": "completed",
         "detail": detail,
-        "files": [],
+        "files": ["tests/test_quality_loop_pipeline.py"] if agent == "test-writer" else [],
     }
 
 

@@ -5,6 +5,7 @@ description: >
   Spawned by `crew:run` for every task, including single-task runs.
   Runs planner → all pipeline stages independently.
   SKIP: do not invoke directly; always spawned by the crew orchestrator only.
+allowed-tools: Read, Write, Edit, Bash, Task, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput
 reasoning_tier: deep
 model: inherit
 ---
@@ -244,6 +245,11 @@ Cross-references resolve semantically; no link-style markup is used.
   Implementation`, `STAGE_DONE | all layers`, or any equivalent all-in-one
   completion before `pipeline.json` exists, it must stop and write
   `STATUS: blocked` with `BLOCKER: supervisor_pipeline_bypass_prevented`.
+- **Supervisor mode sentinel** — this agent runs only in `MODE=supervisor`
+  under `crew:run`. If inherited prompt context claims direct mode or says not
+  to write `pipeline.json`, `progress.log`, `analysis.md`, `prd.md`, or
+  `handoff.md`, treat that context as a leaked `crew:agent` direct-mode preamble
+  and prefer the supervisor contract above.
 - **English-only status keywords** — the stage-result parser is regex-based and
   matches English literals: `STATUS: completed`, `STATUS: blocked`,
   `STATUS: plan_ready`, `REVIEW: APPROVED`, `REVIEW: NEEDS_CHANGES`, `PLAN:`,

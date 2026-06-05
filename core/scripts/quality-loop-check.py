@@ -31,6 +31,7 @@ from quality_loop_lib import check_quality_loop
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-dir", required=True)
+    parser.add_argument("--target-status", choices=["completed", "blocked"], default=None)
     parser.add_argument("--require-rework-cycle", action="store_true")
     parser.add_argument("--format", choices=["json", "text"], default="text")
     args = parser.parse_args()
@@ -42,6 +43,7 @@ def main() -> int:
 
     result = check_quality_loop(
         task_dir,
+        target_status=args.target_status,
         require_rework_cycle=args.require_rework_cycle,
     )
     if args.format == "json":

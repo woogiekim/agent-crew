@@ -63,6 +63,18 @@ REVIEW_REJECTED_RE = re.compile(
     r"reviewer_rejected|CHANGES_REQUESTED)\b",
     re.I,
 )
+TDD_EXCEPTION_RE = re.compile(
+    r"\b(TDD[-_ ]?EXCEPTION|red[-_ ]?phase\s+exception|"
+    r"no\s+runnable\s+test\s+harness|cannot\s+produce\s+red|"
+    r"red\s+failure\s+cannot)\b",
+    re.I,
+)
+TEST_FILE_RE = re.compile(
+    r"(^|/)(tests?|spec|__tests__)/|"
+    r"(^|/)[^/]+(_test|_spec|\.test|\.spec)\.[A-Za-z0-9]+$|"
+    r"(^|/)test_[^/]+\.py$|"
+    r"(^|/)[^/]+Test\.(java|kt|kts|scala|go|swift)$"
+)
 
 NON_IMPLEMENTER_AGENTS = {
     "analyst",
@@ -109,6 +121,44 @@ def load_jsonl(path: Path) -> list[dict]:
             if isinstance(row, dict):
                 rows.append(row)
     return rows
+
+
+def looks_like_test_file(path: str) -> bool:
+    return bool(TEST_FILE_RE.search(path or ""))
+
+
+def has_tdd_exception(task_dir: Path) -> bool:
+    candidates = [
+        task_dir / "context" / "tdd-exception.md",
+        task_dir / "context" / "tdd-exception.json",
+    ]
+    return any(TDD_EXCEPTION_RE.search(load_text(path)) for path in candidates)
+
+
+def event_file_paths(events: list[dict]) -> list[str]:
+    paths: list[str] = []
+    for row in events:
+        files = row.get("files") or []
+        if isinstance(files, list):
+            paths.extend(str(item) for item in files)
+    return paths
+
+
+def result_changed_paths(result_text: str) -> list[str]:
+    paths: list[str] = []
+    for line in result_text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("- "):
+            continue
+        value = stripped[2:].split(":", 1)[0].strip()
+        if value:
+            paths.append(value)
+    return paths
+
+
+def has_test_file_evidence(events: list[dict], result_text: str) -> bool:
+    paths = event_file_paths(events) + result_changed_paths(result_text)
+    return any(looks_like_test_file(path) for path in paths)
 
 
 def looks_mutating_task(text: str) -> bool:
@@ -528,6 +578,8 @@ def check_quality_loop(
             failures.append("missing_pipeline_implementation_completion")
         if events and not any(event_is_tdd_done(row) for row in events):
             failures.append("missing_pipeline_tdd_event")
+        if shape["has_tdd_stage"] and not has_test_file_evidence(events, result_text) and not has_tdd_exception(task_dir):
+            failures.append("missing_tdd_test_file")
         if events and approved_events and not valid_approval_events:
             failures.append("missing_reviewer_quality_metrics_artifact")
         if any(error.startswith("invalid_") or error in {

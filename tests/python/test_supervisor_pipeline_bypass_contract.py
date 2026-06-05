@@ -13,6 +13,9 @@ BOOTSTRAP = REPO_ROOT / "core" / "agents" / "supervisor-bootstrap.md"
 def test_supervisor_absolute_rules_forbid_fresh_run_pipeline_bypass():
     text = SUPERVISOR.read_text(encoding="utf-8")
 
+    assert "allowed-tools:" in text
+    assert "TaskCreate" in text
+    assert "TaskOutput" in text
     assert "Pipeline Bypass Prohibition" in text
     assert "pipeline.json" in text
     assert "Phase 1b+1c" in text
@@ -49,3 +52,20 @@ def test_bootstrap_blocks_inline_all_layers_completion_pattern():
     assert "STAGE_DONE | all layers" in text
     assert "STATUS: blocked" in text
     assert "BLOCKER: supervisor_pipeline_bypass_prevented" in text
+
+
+def test_bootstrap_log_progress_hard_blocks_stage_events_without_pipeline():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "progress_event_requires_pipeline" in text
+    assert "STAGE|STAGE_DONE|STAGE_TDD_PARALLEL_STARTED" in text
+    assert "BLOCKER: supervisor_pipeline_bypass_prevented" in text
+    assert 'case "${event}" in' in text
+
+
+def test_bootstrap_phase_1d_requires_pipeline_before_approval():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "Phase 1d pipeline existence gate" in text
+    assert "[ ! -f \"${PIPELINE_PATH}\" ]" in text
+    assert "pipeline_missing_before_plan_approval" in text

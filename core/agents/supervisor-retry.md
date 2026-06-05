@@ -473,6 +473,36 @@ register_update current_phase phase_3
 git -C "${PROJECT_ROOT}" log --oneline -5
 ```
 
+#### 1b. Runtime quality-loop gate
+
+Before finalizing a completed mutating task, run the provider-neutral quality
+loop validator against the task state. This is the completion-time backstop for
+missing pipeline state, missing TDD evidence, missing reviewer approval, and
+TDD stages that produced no test file and no explicit `context/tdd-exception.md`.
+
+```bash
+QUALITY_LOOP_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/quality-loop-check.py" \
+  --task-dir "${TASK_DIR}" \
+  --target-status completed \
+  --format text 2>&1)
+QUALITY_LOOP_RC=$?
+
+if [ "${QUALITY_LOOP_RC}" -ne 0 ]; then
+  log_progress "BLOCKED" "missing_quality_loop_pipeline: ${QUALITY_LOOP_OUTPUT}"
+  register_update current_phase blocked
+  register_update blocked_by --json '["missing_quality_loop_pipeline"]'
+  printf '%s\n' "${QUALITY_LOOP_OUTPUT}" > "${TASK_DIR}/context/quality-loop-runtime-check.txt"
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: missing_quality_loop_pipeline
+DETAIL: Phase 3 quality-loop validation failed before completion.
+
+${QUALITY_LOOP_OUTPUT}
+EOF
+  exit 1
+fi
+```
+
 #### 2. Save concise result to `{TASK_DIR}/result.md`
 
 (Do not re-quote contents)

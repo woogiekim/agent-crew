@@ -123,7 +123,7 @@ with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
             "attempt": attempt,
             "status": "completed",
             "detail": detail,
-            "files": []
+            "files": ["tests/test_quality_loop_bridge.py"] if agent == "test-writer" else []
         }) + "\n")
 
 (task_dir / "result.md").write_text(

@@ -53,7 +53,7 @@ def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
     return state_dir, task_id, task_dir
 
 
-def write_quality_loop_trace(task_dir: Path) -> None:
+def write_quality_loop_trace(task_dir: Path, *, include_test_file: bool = True) -> None:
     task_id = "20260522-000000-0"
     session_id = "20260522-000000"
     (task_dir / "pipeline.json").write_text(
@@ -80,7 +80,7 @@ def write_quality_loop_trace(task_dir: Path) -> None:
             "attempt": 1,
             "status": "completed",
             "detail": "TDD RED GREEN REFACTOR, 3 tests passed",
-            "files": [],
+            "files": ["tests/test_update_gate.py"] if include_test_file else [],
         },
         {
             "ts": "2026-05-22T00:00:01Z",
@@ -331,3 +331,37 @@ def test_quality_loop_check_text_reports_failures(tmp_path: Path):
     assert result.returncode == 1
     assert "FAIL: pipeline quality loop" in result.stdout
     assert "- missing_pipeline_implementation_stage" in result.stdout
+
+
+def test_quality_loop_check_target_status_enforces_pre_completion_gate(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+
+    result = run_quality_loop_check(task_dir, "--target-status", "completed")
+
+    assert result.returncode == 1
+    assert "- missing_pipeline_tdd_stage" in result.stdout
+
+
+def test_quality_loop_check_requires_test_file_for_tdd_stage(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir, include_test_file=False)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "- missing_tdd_test_file" in result.stdout
+
+
+def test_quality_loop_check_accepts_tdd_exception_without_test_file(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir, include_test_file=False)
+    (task_dir / "context" / "tdd-exception.md").write_text(
+        "TDD-EXCEPTION: no runnable test harness for this host-only regression.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
