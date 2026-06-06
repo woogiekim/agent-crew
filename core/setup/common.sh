@@ -400,11 +400,14 @@ migrate_legacy_agents() {
 # user/agents/, emit a warning and skip copying that file from user/. The
 # system copy is always placed first; only non-conflicting user agents follow.
 #
-# Stale cleanup: any .md file in dest that is not present in system/agents/ AND
-# not present in user/agents/ is removed, preventing old removed agents from
-# lingering in the discovery path across updates. Stale .md files in the
-# dest/skills/ subdirectory (not present in system/agents/skills/) are also
-# removed.
+# Stale cleanup: any top-level .md file in dest that is not present in
+# system/agents/ AND not present in user/agents/ is removed, preventing old
+# removed agents from lingering in the discovery path across updates.
+#
+# The dest/skills/ subdirectory is a shared host discovery path. Agent-crew
+# refreshes skills that are present in system/agents/skills/ through the normal
+# copy step, but preserves unknown third-party skill files instead of deleting
+# them without an ownership manifest.
 #
 # Arguments:
 #   $1  system_agents  — e.g. ~/.agent-crew/system/agents/
@@ -434,14 +437,19 @@ merge_agents_to_discovery() {
     fi
   done < <(find "${dest}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
 
-  # Remove stale skills from dest/skills/: files not in system/agents/skills/
+  # Preserve third-party skills in the shared dest/skills/ discovery path.
   if [ -d "${dest}/skills" ]; then
     while IFS= read -r -d '' dest_skill; do
       local basename_file
       basename_file=$(basename "${dest_skill}")
-      if [ ! -f "${system_agents}/skills/${basename_file}" ]; then
-        printf '[agent-crew] Removing stale agent skill from discovery: %s\n' "${basename_file}"
-        rm -f "${dest_skill}"
+
+      local in_system_skill=0
+      local in_user_skill=0
+      [ -f "${system_agents}/skills/${basename_file}" ] && in_system_skill=1
+      [ -f "${user_agents}/skills/${basename_file}" ] && in_user_skill=1
+
+      if [ "${in_system_skill}" -eq 0 ] && [ "${in_user_skill}" -eq 0 ]; then
+        printf '[agent-crew] Preserving non-agent-crew skill in discovery: %s\n' "${basename_file}"
       fi
     done < <(find "${dest}/skills" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
   fi

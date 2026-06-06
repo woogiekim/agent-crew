@@ -158,6 +158,30 @@ it "merge_agents_to_discovery writes user-owned scribe to discovery"
 actual=$(cat "${TMP}/dest/scribe.md" 2>/dev/null || true)
 assert_eq "user-scribe" "${actual}"
 
+# Regression: merge_agents_to_discovery must not treat the shared host
+# dest/skills/ directory as wholly agent-crew-owned. Third-party skills placed
+# there by other tooling must survive crew:update.
+TMP=$(make_tmp)
+mkdir -p "${TMP}/sys-agents/skills" "${TMP}/user-agents" "${TMP}/dest/skills"
+echo "agent-crew-skill" > "${TMP}/sys-agents/skills/tdd.md"
+echo "third-party-devstack" > "${TMP}/dest/skills/devstack.md"
+
+it "merge_agents_to_discovery preserves third-party dest skill files"
+merge_agents_to_discovery \
+  "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest" >/dev/null 2>&1
+rc=$?
+assert_exit 0 "${rc}"
+
+it "merge_agents_to_discovery leaves third-party dest skill in place"
+assert_file_exists "${TMP}/dest/skills/devstack.md"
+
+it "merge_agents_to_discovery preserves third-party dest skill contents"
+actual=$(cat "${TMP}/dest/skills/devstack.md" 2>/dev/null || true)
+assert_eq "third-party-devstack" "${actual}"
+
+it "merge_agents_to_discovery still copies agent-crew system skills"
+assert_file_exists "${TMP}/dest/skills/tdd.md"
+
 # Now create a conflict
 TMP=$(make_tmp)
 mkdir -p "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest"

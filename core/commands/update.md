@@ -524,6 +524,10 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   layer. `merge_skills_to_discovery` copies user skills after system skills
   so user skills take precedence in the unified `~/.agent-crew/skills/` view.
   User skill files are NEVER deleted or overwritten by `crew:update`.
+- Third-party skill files under the shared Claude discovery path
+  `~/.claude/agents/skills/` are preserved. `merge_agents_to_discovery`
+  refreshes agent-crew system agent skills there, but does not delete unknown
+  skill files without ownership evidence.
 - Channel B adapter skill templates seeded from
   `core/agents/skills/templates/` use copy-if-absent semantics: the
   framework installs the template at
