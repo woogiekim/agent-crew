@@ -101,6 +101,13 @@ def row(event: str, agent: str, detail: str, *, stage: int, attempt: int = 1) ->
     }
 
 
+def write_finding_register(task_dir: Path, findings: list[dict]) -> None:
+    (task_dir / "context" / "finding-register.json").write_text(
+        json.dumps({"schema_version": 1, "findings": findings}),
+        encoding="utf-8",
+    )
+
+
 def run_checker(task_dir: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(CHECKER), "--task-dir", str(task_dir), "--format", "json", *extra],
@@ -286,6 +293,229 @@ def test_quality_loop_checker_accepts_qa_verify_quality_gate(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["pipeline_shape"]["qa_verify_indexes"] == [2]
     assert payload["pipeline_shape"]["has_quality_gate_after_each_implementer"] is True
+
+
+def test_quality_loop_checker_blocks_open_finding_register_entries(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
+                stage=2,
+            ),
+        ],
+    )
+    write_finding_register(
+        task_dir,
+        [
+            {
+                "id": "F-duplicate-nickname-self-exclude",
+                "title": "nickname duplicate guard lacks self-exclude",
+                "severity": "P1",
+                "status": "open",
+                "source": {"artifact": "context/review.md"},
+                "affected": [
+                    {
+                        "file": "BylineReviewProfileCommandService.kt",
+                        "function": "upsert",
+                    }
+                ],
+                "recommended_fix": "exclude the current profile id from duplicate checks",
+                "verification": {
+                    "test_targets": [
+                        "BylineReviewProfileCommandServiceTest::resaves existing nickname",
+                    ],
+                },
+            }
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "unresolved_finding_register_entries" in payload["failures"]
+    assert payload["finding_register"]["open_ids"] == ["F-duplicate-nickname-self-exclude"]
+
+
+def test_quality_loop_checker_blocks_terminal_finding_without_test_mapping(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
+                stage=2,
+            ),
+        ],
+    )
+    write_finding_register(
+        task_dir,
+        [
+            {
+                "id": "F-coverage-gap",
+                "title": "confirmed finding was fixed without linked verification",
+                "severity": "P1",
+                "status": "fixed",
+                "source": {"artifact": "context/review.md"},
+                "affected": [{"file": "core/scripts/quality_loop_lib.py"}],
+                "recommended_fix": "link the focused regression test",
+                "verification": {},
+            }
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_finding_test_mapping" in payload["failures"]
+    assert payload["finding_register"]["missing_test_mapping_ids"] == ["F-coverage-gap"]
+
+
+def test_quality_loop_checker_blocks_invalid_finding_register_status(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
+                stage=2,
+            ),
+        ],
+    )
+    write_finding_register(
+        task_dir,
+        [
+            {
+                "id": "F-invalid-status",
+                "title": "finding has an unsupported status",
+                "severity": "P2",
+                "status": "resolved-ish",
+                "source": {"artifact": "context/review.md"},
+                "affected": [{"file": "core/scripts/quality_loop_lib.py"}],
+                "recommended_fix": "use one of the documented statuses",
+                "verification": {"test_targets": "tests/python/test_quality_loop_pipeline_check.py"},
+            }
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_finding_register" in payload["failures"]
+    assert payload["finding_register"]["unknown_status_ids"] == ["F-invalid-status"]
+
+
+def test_quality_loop_checker_blocks_terminal_scope_status_without_owner(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
+                stage=2,
+            ),
+        ],
+    )
+    write_finding_register(
+        task_dir,
+        [
+            {
+                "id": "F-out-of-scope",
+                "title": "scoped-out finding lacks follow-up metadata",
+                "severity": "P2",
+                "status": "out-of-scope",
+                "source": {"artifact": "context/review.md"},
+                "affected": [{"file": "core/agents/reviewer.md"}],
+                "recommended_fix": "record owner or follow-up",
+                "verification": {
+                    "test_exception": "scope decision is verified by review artifact",
+                },
+            }
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_finding_owner_or_followup" in payload["failures"]
+    assert payload["finding_register"]["missing_owner_or_followup_ids"] == ["F-out-of-scope"]
+
+
+def test_quality_loop_checker_accepts_terminal_findings_with_test_mapping_or_exception(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row(
+                "STAGE_DONE",
+                "reviewer",
+                "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json",
+                stage=2,
+            ),
+        ],
+    )
+    write_finding_register(
+        task_dir,
+        [
+            {
+                "id": "F-fixed-with-test",
+                "title": "fixed finding includes focused verification",
+                "severity": "P1",
+                "status": "fixed",
+                "source": {"artifact": "context/review.md"},
+                "affected": [{"file": "core/scripts/quality_loop_lib.py"}],
+                "recommended_fix": "enforce register status",
+                "verification": {
+                    "test_targets": [
+                        "tests/python/test_quality_loop_pipeline_check.py::"
+                        "test_quality_loop_checker_blocks_open_finding_register_entries",
+                    ],
+                },
+            },
+            {
+                "id": "F-accepted-risk-with-exception",
+                "title": "accepted risk has an explicit verification exception",
+                "severity": "P2",
+                "status": "accepted-risk",
+                "source": {"artifact": "context/review.md"},
+                "affected": [{"file": "core/agents/reviewer.md"}],
+                "recommended_fix": "document accepted scope with owner",
+                "verification": {
+                    "test_exception": "Documentation-only reviewer guidance is verified by markdown review.",
+                },
+                "owner": "reviewer",
+            },
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["finding_register"]["terminal_count"] == 2
 
 
 def test_quality_loop_checker_reloops_reviewer_after_qa_to_implementation(tmp_path: Path):

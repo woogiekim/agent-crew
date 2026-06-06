@@ -500,6 +500,37 @@ COVERAGE_RESULT: unjustified_exception
 REPORT: ${TASK_DIR}/context/review.md
 ```
 
+### Phase 1.7 — Load and Maintain Finding Register
+
+Before static review, read `${TASK_DIR}/context/finding-register.json` if it
+exists. Treat it as the canonical lifecycle record for confirmed findings.
+Markdown ledgers and `review.md` may summarize findings, but must not replace
+the register.
+
+When a finding is confirmed by reviewer evidence, upsert it into
+`finding-register.json` with:
+
+- stable `id`, `title`, `severity`, `status`, `source`, `affected`,
+  `recommended_fix`, and `verification`;
+- `status: "open"` until it is fixed, accepted as risk, moved to a GitHub
+  issue, scoped out, or proven false-positive;
+- focused `verification.test_targets` or a narrow `test_exception`;
+- `owner`, `follow_up`, `follow_up_issue`, `follow_up_url`, or
+  `resolution_note` for accepted-risk, moved-to-issue, or out-of-scope
+  statuses.
+
+Allowed statuses are `open`, `fixed`, `accepted-risk`, `moved-to-issue`,
+`out-of-scope`, and `false-positive`.
+
+Approval rules:
+
+- `REVIEW: APPROVED` is forbidden while any register entry remains `open`.
+- Every terminal finding must map to focused tests or an explicit verification
+  exception.
+- The review report must separate `New findings in this review` from
+  `Existing unresolved findings`. Do not use "No new P0/P1 findings" as a
+  substitute for accounting for existing `open` entries.
+
 ### Step 1: Gather Context
 
 > **MANDATORY: Before performing the PRD coverage check, read `~/.agent-crew/system/agents/skills/code-review.md`.**
@@ -553,6 +584,24 @@ tiny single-expression branches where a blank line would split one semantic
 unit. When this rule is violated, report
 `context_break_missing_blank_line` with the file and nearest line number.
 
+### Step 2.6: Update/Upsert Unique-Check Review
+
+For changed update/upsert flows that perform uniqueness or duplicate-existence
+checks, verify whether the check must self-exclude the current record. A guard
+such as "nickname already exists" is defective when re-saving the existing
+record with the same value is rejected because the query matched itself.
+
+If the check lacks a proven self-exclude for the current owner/entity id,
+record a blocking finding in `finding-register.json` and require both focused
+regression tests:
+
+- re-saving the existing value for the same owner/entity is allowed;
+- using the same value for a different owner/entity is rejected.
+
+If the domain intentionally forbids same-value re-save, cite the PRD, schema,
+or legacy evidence and record the decision as `accepted-risk` or
+`out-of-scope` with owner/follow-up metadata.
+
 ### Step 3: Save Review Report
 Save to `{TASK_DIR}/context/review.md`:
 
@@ -575,6 +624,12 @@ APPROVED | NEEDS_CHANGES
 
 ## Issues
 - {issue description} — {file:line}
+
+## Finding Register
+- Register: context/finding-register.json
+- New findings in this review: {ids or "none"}
+- Existing unresolved findings: {open ids or "none"}
+- Terminal findings verified: {ids with tests/exceptions}
 
 ## Evidence-Grounded Reasoning
 | Evidence | Inference | Conclusion |
@@ -875,6 +930,10 @@ implementer/TDD stage, then re-run reviewer until approval or budget exhaustion.
 - Streaming mode: append to `review-stream.md` per commit; idempotent
   on commit SHA so a retry from the same `PRE_STAGE_HEAD` does not
   duplicate findings
+- Both modes: preserve confirmed findings in
+  `${TASK_DIR}/context/finding-register.json`; never approve with unresolved
+  `open` register entries, and never collapse existing open findings into
+  "no new findings" wording
 - Return within 6 lines for `final` mode (the optional `TEST_RUN_RESULT:` and
   `QUALITY_METRICS:` lines extend the historical 4-line contract); 5 lines for
   `streaming` mode

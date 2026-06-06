@@ -100,6 +100,57 @@ Reviewer rejection signals:
 | `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but neither coverage report nor `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
 | `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is claimed without a narrow, auditable reason. | Re-loop with directive to test the case or document a valid exception. |
 
+## Confirmed Finding Register
+
+When any agent records a confirmed defect, review finding, QA defect,
+resolver concern, or repair finding, it must persist that item in
+`{TASK_DIR}/context/finding-register.json`. Markdown reports are not the
+source of truth for finding lifecycle; they should cite the register ids.
+
+The register accepts this shape:
+
+```json
+{
+  "schema_version": 1,
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "short stable title",
+      "severity": "P1",
+      "status": "open",
+      "source": {"artifact": "context/review.md"},
+      "affected": [{"file": "path", "function": "optional"}],
+      "recommended_fix": "specific remediation",
+      "verification": {
+        "test_targets": ["tests/path.py::test_case"]
+      },
+      "owner": "backend"
+    }
+  ]
+}
+```
+
+Valid statuses:
+
+- `open` — nonterminal; completion must not pass while this remains.
+- `fixed`, `accepted-risk`, `moved-to-issue`, `out-of-scope`,
+  `false-positive` — terminal. Terminal findings still need focused test
+  targets or an explicit `test_exception`, `verification_exception`, or
+  `coverage_exception`.
+
+Completion and repair gates reject:
+
+| Failure label | Trigger |
+|---|---|
+| `invalid_finding_register` | Present register has invalid schema, missing required fields, or unknown statuses. |
+| `unresolved_finding_register_entries` | Any finding remains `open`. |
+| `missing_finding_test_mapping` | A finding lacks focused test targets and lacks an explicit verification exception. |
+| `missing_finding_owner_or_followup` | Accepted-risk, moved-to-issue, or out-of-scope finding lacks owner/follow-up/resolution metadata. |
+
+Completion output must distinguish **new findings in this stage** from
+**existing unresolved findings**. Text such as "No new P0/P1 findings" is not
+approval when `finding-register.json` still has `open` entries.
+
 ## Reporting
 
 Include the iteration count in the stage completion report:

@@ -48,6 +48,8 @@ Use these files as the canonical QA record:
 - `{TASK_DIR}/context/qa-report.md` — verification result, executed cases, and
   evidence.
 - `{TASK_DIR}/context/qa-defects.md` — required only when defects are found.
+- `{TASK_DIR}/context/finding-register.json` — canonical confirmed finding
+  lifecycle register, read and updated when QA confirms defects.
 
 ## Test Case Matrix Standard
 
@@ -103,7 +105,8 @@ STATUS: completed
 
 1. Read `qa-test-cases.md`, `qa-plan.md`, `HANDOFF_PATH`,
    `{TASK_DIR}/context/prd.md`, `{TASK_DIR}/context/test-coverage.md` if it
-   exists, and the latest git diff from `PROJECT_ROOT`.
+   exists, `{TASK_DIR}/context/finding-register.json` if it exists, and the
+   latest git diff from `PROJECT_ROOT`.
 2. Execute the commands from `qa-plan.md` when they are available and safe.
    Record exact commands and summarized results in `qa-report.md`.
 3. Mark each test case status as `passed`, `failed`, `blocked`, or
@@ -116,6 +119,11 @@ STATUS: completed
    - Severity (`critical`, `major`, `minor`).
    - Evidence path or command output summary.
    - Suggested implementation-stage focus.
+   Also upsert every confirmed QA defect into `finding-register.json` with
+   `status: "open"`, a stable id, affected surface, recommended fix, and
+   focused verification target. If no new QA defects are found but the register
+   already contains `open` findings, report them separately in `qa-report.md`;
+   do not summarize the result as simply "no new defects".
 5. Return one of:
 
 ```text
@@ -142,8 +150,10 @@ STATUS: BLOCKED
 ## Completion Rules
 
 - `QA_STATUS: passed` is allowed only when every required `P0` and `P1` case is
-  passed or explicitly not applicable with evidence.
+  passed or explicitly not applicable with evidence, and
+  `finding-register.json` has no unresolved `open` entries.
 - `QA_STATUS: needs_changes` is required for any failed required case, missing
-  critical evidence, or reproducible mismatch with the PRD.
+  critical evidence, reproducible mismatch with the PRD, or unresolved
+  `open` finding-register entry.
 - `STATUS: BLOCKED` is reserved for missing artifacts, unavailable environment,
   or unsafe commands that prevent meaningful verification.

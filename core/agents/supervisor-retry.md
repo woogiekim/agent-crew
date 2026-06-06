@@ -479,6 +479,8 @@ Before finalizing a completed mutating task, run the provider-neutral quality
 loop validator against the task state. This is the completion-time backstop for
 missing pipeline state, missing TDD evidence, missing reviewer approval, and
 TDD stages that produced no test file and no explicit `context/tdd-exception.md`.
+It also blocks invalid or unresolved `context/finding-register.json` entries
+so QA/MR/reviewer/repair findings cannot disappear from completion output.
 
 ```bash
 QUALITY_LOOP_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/quality-loop-check.py" \

@@ -245,6 +245,55 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
     assert "REVIEW_EVIDENCE: context/review.md" in result_text
 
 
+def test_repair_blocks_open_finding_register_entry(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "context" / "tdd_log.md").write_text(
+        "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD-RED: focused pytest failed as expected before implementation.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd-refactor.md").write_text(
+        "TDD-REFACTOR: no-op refactor review complete; post-refactor pytest passed.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "review.md").write_text(
+        "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "finding-register.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "findings": [
+                {
+                    "id": "F-open",
+                    "title": "confirmed finding remains unresolved",
+                    "severity": "P1",
+                    "status": "open",
+                    "source": {"artifact": "context/review.md"},
+                    "affected": [{"file": "core/scripts/quality_loop_lib.py"}],
+                    "recommended_fix": "move finding to a terminal status before completion",
+                    "verification": {
+                        "test_targets": [
+                            "tests/python/test_quality_loop_gate.py::"
+                            "test_repair_blocks_open_finding_register_entry",
+                        ],
+                    },
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "unresolved_finding_register_entries" in result.stderr
+
+
 def test_repair_records_explicit_quality_bypass_reason(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
 

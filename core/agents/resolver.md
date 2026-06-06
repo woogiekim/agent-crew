@@ -43,6 +43,8 @@ Check the following parameters from the prompt:
 - `BRANCH`: Name of the branch being merged
 - `TARGET`: Merge destination branch (usually `main`)
 - `PROJECT_ROOT`: Project root directory
+- `TASK_DIR` _(optional)_: task state directory containing
+  `context/finding-register.json`
 
 ## Before Work — Recall from Memory
 
@@ -65,7 +67,14 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
    git diff --name-only --diff-filter=U
    ```
 
-2. Analyze each conflicted file:
+2. If `TASK_DIR` is provided, read
+   `${TASK_DIR}/context/finding-register.json` before resolving. Preserve every
+   existing finding entry. If conflict resolution confirms a new defect or
+   leaves a known defect unresolved, upsert it with `status: "open"`; if the
+   resolution fixes an existing finding, move it to `fixed` and add focused
+   verification evidence or a narrow exception.
+
+3. Analyze each conflicted file:
    - Identify locations of conflict markers:
       - `<<<<<<<`
       - `=======`
@@ -77,7 +86,7 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
       - both changes should coexist
       - one side should replace the other
 
-3. Conflict Resolution Principles:
+4. Conflict Resolution Principles:
    - If both changes are functionally required:
       - merge and integrate both changes
    - If one change supersedes the other:
@@ -85,7 +94,7 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
    - If the correct resolution cannot be determined:
       - use the host AI tool's structured choice UI to request clarification from the user
 
-4. After resolving conflicts:
+5. After resolving conflicts:
    ```bash
    git add .
    git commit -m "merge: ${BRANCH} → ${TARGET} conflict resolution"
@@ -98,6 +107,9 @@ If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevan
    - `>>>>>>>`
 - Never arbitrarily choose one side when the conflict cannot be safely resolved
 - Always understand the intent of both changes before resolving conflicts
+- When `TASK_DIR` is available, never drop existing
+  `finding-register.json` entries; completion must account for every open
+  finding separately from any "no new conflict findings" statement.
 
 ---
 

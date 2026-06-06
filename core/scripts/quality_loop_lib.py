@@ -75,6 +75,38 @@ TEST_FILE_RE = re.compile(
     r"(^|/)test_[^/]+\.py$|"
     r"(^|/)[^/]+Test\.(java|kt|kts|scala|go|swift)$"
 )
+FINDING_TERMINAL_STATUSES = {
+    "fixed",
+    "accepted-risk",
+    "moved-to-issue",
+    "out-of-scope",
+    "false-positive",
+}
+FINDING_REQUIRED_FIELDS = (
+    "id",
+    "title",
+    "severity",
+    "status",
+    "source",
+    "affected",
+    "recommended_fix",
+)
+FINDING_TEST_TARGET_KEYS = (
+    "test_targets",
+    "focused_tests",
+    "tests",
+    "verification_targets",
+)
+FINDING_EXCEPTION_KEYS = (
+    "test_exception",
+    "verification_exception",
+    "coverage_exception",
+)
+FINDING_OWNER_STATUSES = {
+    "accepted-risk",
+    "moved-to-issue",
+    "out-of-scope",
+}
 
 NON_IMPLEMENTER_AGENTS = {
     "analyst",
@@ -159,6 +191,154 @@ def result_changed_paths(result_text: str) -> list[str]:
 def has_test_file_evidence(events: list[dict], result_text: str) -> bool:
     paths = event_file_paths(events) + result_changed_paths(result_text)
     return any(looks_like_test_file(path) for path in paths)
+
+
+def finding_ref(finding: dict, index: int) -> str:
+    value = finding.get("id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return f"index:{index}"
+
+
+def text_present(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def value_present(value) -> bool:
+    if text_present(value):
+        return True
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def finding_status(finding: dict) -> str:
+    value = finding.get("status")
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def has_target_value(value) -> bool:
+    if text_present(value):
+        return True
+    return isinstance(value, list) and any(text_present(item) for item in value)
+
+
+def has_exception_value(value) -> bool:
+    if text_present(value):
+        return True
+    if isinstance(value, dict):
+        reason = value.get("reason") or value.get("detail") or value.get("evidence")
+        return text_present(reason)
+    return False
+
+
+def finding_has_test_mapping(finding: dict) -> bool:
+    verification = finding.get("verification")
+    candidates = [finding]
+    if isinstance(verification, dict):
+        candidates.append(verification)
+
+    for candidate in candidates:
+        if any(has_target_value(candidate.get(key)) for key in FINDING_TEST_TARGET_KEYS):
+            return True
+        if any(has_exception_value(candidate.get(key)) for key in FINDING_EXCEPTION_KEYS):
+            return True
+
+    return False
+
+
+def finding_has_owner_or_followup(finding: dict) -> bool:
+    for key in ("owner", "follow_up", "follow_up_issue", "follow_up_url", "resolution_note"):
+        if value_present(finding.get(key)):
+            return True
+
+    resolution = finding.get("resolution")
+    return isinstance(resolution, dict) and any(
+        value_present(resolution.get(key))
+        for key in ("owner", "follow_up", "follow_up_issue", "note")
+    )
+
+
+def finding_register_payload(path: Path) -> tuple[list[dict], list[str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return [], ["malformed_finding_register_json"]
+    except Exception:
+        return [], ["unreadable_finding_register"]
+
+    findings = payload
+    if isinstance(payload, dict):
+        schema_version = payload.get("schema_version")
+        if schema_version != 1 or isinstance(schema_version, bool):
+            return [], ["invalid_finding_register_schema_version"]
+        findings = payload.get("findings")
+    if not isinstance(findings, list):
+        return [], ["finding_register_findings_not_list"]
+    if not all(isinstance(item, dict) for item in findings):
+        return [], ["finding_register_entries_not_object"]
+
+    return findings, []
+
+
+def finding_register_status(task_dir: Path) -> dict:
+    path = task_dir / "context" / "finding-register.json"
+    if not path.is_file():
+        return {
+            "present": False,
+            "valid": True,
+            "errors": [],
+            "count": 0,
+            "open_ids": [],
+            "terminal_count": 0,
+            "missing_required_field_ids": [],
+            "unknown_status_ids": [],
+            "missing_test_mapping_ids": [],
+            "missing_owner_or_followup_ids": [],
+        }
+
+    findings, errors = finding_register_payload(path)
+    missing_required_field_ids: list[str] = []
+    unknown_status_ids: list[str] = []
+    open_ids: list[str] = []
+    missing_test_mapping_ids: list[str] = []
+    missing_owner_or_followup_ids: list[str] = []
+    terminal_count = 0
+    for index, finding in enumerate(findings):
+        ref = finding_ref(finding, index)
+        missing_fields = [
+            field for field in FINDING_REQUIRED_FIELDS
+            if field not in finding or finding[field] in ("", None, [], {})
+        ]
+        if missing_fields:
+            missing_required_field_ids.append(ref)
+
+        status = finding_status(finding)
+        if status == "open":
+            open_ids.append(ref)
+        elif status in FINDING_TERMINAL_STATUSES:
+            terminal_count += 1
+        else:
+            unknown_status_ids.append(ref)
+
+        if not finding_has_test_mapping(finding):
+            missing_test_mapping_ids.append(ref)
+        if (
+            status in FINDING_OWNER_STATUSES
+            and not finding_has_owner_or_followup(finding)
+        ):
+            missing_owner_or_followup_ids.append(ref)
+
+    return {
+        "present": True,
+        "valid": not errors and not missing_required_field_ids and not unknown_status_ids,
+        "errors": sorted(set(errors)),
+        "count": len(findings),
+        "open_ids": open_ids,
+        "terminal_count": terminal_count,
+        "missing_required_field_ids": missing_required_field_ids,
+        "unknown_status_ids": unknown_status_ids,
+        "missing_test_mapping_ids": missing_test_mapping_ids,
+        "missing_owner_or_followup_ids": missing_owner_or_followup_ids,
+    }
 
 
 def looks_mutating_task(text: str) -> bool:
@@ -555,6 +735,7 @@ def check_quality_loop(
         for row in approved_events
         for error in event_quality_metrics_errors(row, task_dir)
     ]
+    finding_register = finding_register_status(task_dir)
 
     failures: list[str] = []
     if required:
@@ -578,7 +759,11 @@ def check_quality_loop(
             failures.append("missing_pipeline_implementation_completion")
         if events and not any(event_is_tdd_done(row) for row in events):
             failures.append("missing_pipeline_tdd_event")
-        if shape["has_tdd_stage"] and not has_test_file_evidence(events, result_text) and not has_tdd_exception(task_dir):
+        if (
+            shape["has_tdd_stage"]
+            and not has_test_file_evidence(events, result_text)
+            and not has_tdd_exception(task_dir)
+        ):
             failures.append("missing_tdd_test_file")
         if events and approved_events and not valid_approval_events:
             failures.append("missing_reviewer_quality_metrics_artifact")
@@ -589,6 +774,14 @@ def check_quality_loop(
             "unreadable_quality_metrics_artifact",
         } for error in approval_metric_errors):
             failures.append("invalid_reviewer_quality_metrics_artifact")
+        if finding_register["present"] and not finding_register["valid"]:
+            failures.append("invalid_finding_register")
+        if finding_register["open_ids"]:
+            failures.append("unresolved_finding_register_entries")
+        if finding_register["missing_test_mapping_ids"]:
+            failures.append("missing_finding_test_mapping")
+        if finding_register["missing_owner_or_followup_ids"]:
+            failures.append("missing_finding_owner_or_followup")
         if events and not valid_approval_events:
             failures.append("missing_pipeline_reviewer_approval")
         if require_rework_cycle and not rejection_indexes:
@@ -611,4 +804,5 @@ def check_quality_loop(
         "reviewer_approval_count": len(valid_approval_events),
         "reviewer_approved_without_quality_metrics_count": len(approved_events) - len(valid_approval_events),
         "reviewer_quality_metrics_errors": sorted(set(approval_metric_errors)),
+        "finding_register": finding_register,
     }
