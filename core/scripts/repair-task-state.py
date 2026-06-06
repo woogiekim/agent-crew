@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +60,13 @@ SPECIALIST_DISPATCH_RE = re.compile(
     r"selected_agent|specialist_agent|agent_selected|delegated_to|"
     r"selected_skill|skill_loaded|skill_context|dispatcher"
     r")\b|전문\s*에이전트|에이전트\s*스킬|스킬\s*선택|위임",
+    re.IGNORECASE,
+)
+COMMIT_MUTATION_RE = re.compile(
+    r"\b("
+    r"git\s+commit|crew:?commit|commit(?:\s+(?:message|checkpoint|changes?))?|"
+    r"amend|reword|squash"
+    r")\b|커밋",
     re.IGNORECASE,
 )
 SKILL_LOAD_RE = re.compile(
@@ -134,6 +142,10 @@ def backup_result(task_dir: Path) -> None:
 
 def looks_mutating_task(task: str) -> bool:
     return bool(MUTATING_TASK_RE.search(task or ""))
+
+
+def looks_commit_mutation_task(task: str) -> bool:
+    return bool(COMMIT_MUTATION_RE.search(task or ""))
 
 
 def evidence_name(task_dir: Path, path: Path) -> str:
@@ -283,6 +295,102 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
         "bypassed": False,
         "bypass_reason": "",
     }
+
+
+def git_committer_agent_paths(task_dir: Path, register: dict) -> list[str]:
+    candidates: list[Path] = []
+    project_root = str(register.get("project_root") or "").strip()
+    if project_root:
+        root = Path(project_root).expanduser()
+        candidates.extend(
+            [
+                root / ".agent-crew" / "agents" / "git-committer.md",
+                root / ".codex" / "agents" / "git-committer.toml",
+            ]
+        )
+
+    agent_crew_home = Path(
+        os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))
+    ).expanduser()
+    candidates.extend(
+        [
+            agent_crew_home / "user" / "agents" / "git-committer.md",
+            agent_crew_home / "system" / "agents" / "git-committer.md",
+            agent_crew_home / "agents" / "git-committer.md",
+        ]
+    )
+
+    local_state = task_dir.parent.parent
+    candidates.append(local_state / "agents" / "git-committer.md")
+
+    return [str(path) for path in candidates if path.is_file()]
+
+
+def normalize_agent_name(value: str) -> str:
+    raw = value.strip().strip("`'\"")
+    if not raw:
+        return ""
+
+    name = Path(raw).name
+    for suffix in (".md", ".toml"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name.lower()
+
+
+def git_committer_selected_user_agent(specialist_gate: dict) -> bool:
+    return any(
+        normalize_agent_name(agent) == "git-committer"
+        for agent in specialist_gate.get("selected_user_agents", [])
+    )
+
+
+def enforce_commit_specialist_gate(
+    args: argparse.Namespace,
+    task_dir: Path,
+    register: dict,
+    specialist_gate: dict,
+) -> dict:
+    task = register.get("task", "")
+    host_bridge_status = str(register.get("host_bridge_status") or "")
+    current_session_fallback = host_bridge_status == "current_session_required"
+    available_paths = git_committer_agent_paths(task_dir, register)
+    required = bool(
+        args.status == "completed"
+        and current_session_fallback
+        and looks_commit_mutation_task(task)
+        and available_paths
+    )
+    status = {
+        "required": required,
+        "passed": True,
+        "available_paths": available_paths,
+        "selected_user_agents": sorted(set(specialist_gate.get("selected_user_agents", []))),
+        "bypassed": False,
+        "bypass_reason": "",
+    }
+    if not required:
+        return status
+
+    if git_committer_selected_user_agent(specialist_gate):
+        return status
+
+    status["passed"] = False
+    if args.specialist_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.specialist_bypass_reason
+        return status
+
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: missing_git_committer_dispatch_evidence\n"
+        "DETAIL: completed repair for a commit/amend current-session fallback "
+        "requires selecting the git-committer user agent before mutating git history.\n"
+        "AVAILABLE: " + ", ".join(available_paths) + "\n"
+        "NEXT: record selected_user_agent: git-committer in "
+        "context/specialist-dispatch.md before running git commit or git commit --amend, "
+        "or record an explicit --specialist-bypass-reason."
+    )
 
 
 def split_specialist_values(value: str) -> list[str]:
@@ -1147,6 +1255,7 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   evidence_paths: list[str], memory_ids: list[str],
                   memory_context_reused: bool, quality_gate: dict | None = None,
                   specialist_gate: dict | None = None,
+                  commit_specialist_gate: dict | None = None,
                   skill_load_gate: dict | None = None,
                   skill_use_gate: dict | None = None,
                   skill_understanding_gate: dict | None = None) -> str:
@@ -1208,6 +1317,16 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"SPECIALIST_SUBAGENT: {agent}")
         for skill in specialist_gate.get("selected_skills", []):
             lines.append(f"SPECIALIST_SKILL: {skill}")
+    if commit_specialist_gate and commit_specialist_gate.get("required"):
+        if commit_specialist_gate.get("passed"):
+            lines.append("COMMIT_SPECIALIST: passed")
+        elif commit_specialist_gate.get("bypassed"):
+            lines.append("COMMIT_SPECIALIST: bypassed")
+            lines.append(f"COMMIT_SPECIALIST_BYPASS_REASON: {commit_specialist_gate.get('bypass_reason')}")
+        for agent in commit_specialist_gate.get("selected_user_agents", []):
+            lines.append(f"COMMIT_SPECIALIST_USER_AGENT: {agent}")
+        for path in commit_specialist_gate.get("available_paths", []):
+            lines.append(f"COMMIT_SPECIALIST_AVAILABLE: {path}")
     if skill_load_gate and skill_load_gate.get("required"):
         if skill_load_gate.get("passed"):
             lines.append("SKILL_LOAD: passed")
@@ -1273,6 +1392,7 @@ def repair(args: argparse.Namespace) -> dict:
     pipeline = load_json(pipeline_path)
     quality_gate = enforce_quality_gate(args, task_dir, register)
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
+    commit_specialist_gate = enforce_commit_specialist_gate(args, task_dir, register, specialist_gate)
     skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
     skill_use_gate = enforce_skill_use_gate(args, task_dir, register, skill_load_gate)
     skill_understanding_gate = enforce_skill_understanding_gate(args, task_dir, register, skill_use_gate)
@@ -1321,6 +1441,7 @@ def repair(args: argparse.Namespace) -> dict:
         "memory_context_reused": args.reused_memory_context,
         "quality_gate": quality_gate,
         "specialist_dispatch_gate": specialist_gate,
+        "commit_specialist_gate": commit_specialist_gate,
         "skill_load_gate": skill_load_gate,
         "skill_use_gate": skill_use_gate,
         "skill_understanding_gate": skill_understanding_gate,
@@ -1345,6 +1466,7 @@ def repair(args: argparse.Namespace) -> dict:
             args.reused_memory_context,
             quality_gate,
             specialist_gate,
+            commit_specialist_gate,
             skill_load_gate,
             skill_use_gate,
             skill_understanding_gate,

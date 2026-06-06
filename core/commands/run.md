@@ -642,7 +642,7 @@ lacks the metadata to support it.
 
 > **This step runs after Step 1.5 (Injection Detection) and before Step 2 (State
 > Init). It detects trivial operational intents — merge, push, deploy, tag,
-> rollback, status, commit-only — and dispatches them directly in the
+> rollback, status, commit-only — and dispatches them through the
 > orchestrator turn, bypassing requirements / analyst / planner / supervisor /
 > stage agents / reviewer entirely.**
 >
@@ -844,7 +844,7 @@ The function returns one of:
 | `tag`          | Create or push a git tag (destructive — needs approval) |
 | `rollback`     | Revert the last commit or roll back a deploy (destructive — needs approval) |
 | `status`       | Show repo state inline (read-only — no approval) |
-| `commit_only`  | Stage and commit current diff inline (local-only — no approval) |
+| `commit_only`  | Commit current diff through `git-committer`; never direct shell commit |
 | `ambiguous`    | Compound input mixes a trivial verb with implementation phrasing — route to a structured user-choice intent (see Step 1.7.5) |
 | `none`         | Not a trivial intent — fall through to Step 2 |
 
@@ -873,31 +873,42 @@ echo "\`\`\`"
 
 Then **STOP — end the turn**. Do not proceed to Step 2.
 
-##### `commit_only` — inline stage + commit
+##### `commit_only` — git-committer mediated commit
 
-Extract the commit message from the portion of TASK after the verb (everything
-after the first space, with surrounding whitespace stripped). When the message
-is empty, prompt via the host's interactive question mechanism (see
-`core/rules/capabilities/interactive-question.md`) for a one-line message
-before committing.
+Commit-only requests are local git mutations. They are not allowed to run a
+raw shell commit path from `crew:run`, even when the request appears trivial.
+If the `git-committer` user agent is installed and its trigger matches, the
+orchestrator must select it before any commit or amend command mutates history.
 
-```bash
-COMMIT_MSG=$(printf "%s" "${TASK}" | sed -E 's/^(commit|stage|git commit|git add)([[:space:]]+(changes))?[[:space:]]*//I')
-if [ -z "${COMMIT_MSG}" ]; then
-  # Ask for the commit message via the host's interactive question mechanism
-  # (fallback: prompt inline).
-  COMMIT_MSG="chore: commit local changes"
-fi
+Required dispatch record before mutation:
 
-git add -A
-git commit -m "${COMMIT_MSG}" || {
-  echo "Nothing to commit (working tree clean)."
-  exit 0
-}
-git log --oneline -1
+```text
+{TASK_DIR}/context/specialist-dispatch.md
+selected_agent: supervisor
+selected_user_agent: git-committer
+selection_reason: commit request / commit checkpoint
+execution_mode: fast-path commit intent
 ```
 
-Then **STOP — end the turn**.
+Commit flow:
+
+1. Resolve commit mode: `apply-new` for commit/stage requests, `apply-amend`
+   for amend/reword requests, or `recommend` for message-only requests.
+2. Pass branch context, issue refs, staged/unstaged diff summary, and the raw
+   user intent to `git-committer`.
+3. Display the proposed message and apply it only through the orchestrator-owned
+   structured approval/mutation path used by `crew:commit`.
+4. Record final audit fields in task context: selected commit agent, candidate
+   message source, final commit subject, and convention match result.
+
+If no task context exists yet, create one before continuing. If `git-committer`
+is not installed, fall through to the regular supervisor workflow instead of
+inventing an ad hoc commit message. Completion/repair for a current-session
+fallback must reject a commit-intent task when `selected_user_agent:
+git-committer` is missing while the agent is available.
+
+Then **STOP — end the turn** after the commit agent workflow completes or the
+request is explicitly cancelled.
 
 ##### Destructive intents (`merge` / `push` / `deploy` / `tag` / `rollback`)
 

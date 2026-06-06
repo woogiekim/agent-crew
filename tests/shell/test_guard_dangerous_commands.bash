@@ -204,6 +204,39 @@ rc=$?
 assert_exit 2 "${rc}"
 assert_contains "${out}" "Kind: push"
 
+COMMIT_PROJECT="$(make_tmp)"
+COMMIT_TASK_DIR="$(make_tmp)"
+mkdir -p "${COMMIT_PROJECT}/.agent-crew/agents" "${COMMIT_TASK_DIR}/context"
+printf '# git-committer\n' > "${COMMIT_PROJECT}/.agent-crew/agents/git-committer.md"
+
+it "git commit is blocked when git-committer dispatch is missing in task context"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: commit-specialist"
+assert_contains "${out}" "selected_user_agent: git-committer"
+
+cat > "${COMMIT_TASK_DIR}/context/specialist-dispatch.md" <<'EOF'
+selected_agent: backend
+selected_user_agent: git-committer
+selection_reason: commit request
+execution_mode: current_session_required fallback
+EOF
+
+it "git commit is allowed when git-committer dispatch is recorded in task context"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "git-committer dispatch should satisfy commit guard"
+
 it "legacy APPROVED marker does not allow git push"
 mkdir -p "${TMP_HOME}/approvals"
 printf 'APPROVED\n' > "${TMP_HOME}/approvals/dangerous-commands.approved"

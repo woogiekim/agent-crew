@@ -252,6 +252,7 @@ def command_haystack(kind, value):
         "force-push",
         "sudo",
         "credential-access",
+        "commit-specialist",
     ) and not runs_shell_evaluator(value):
         return mask_quoted_strings(value)
     return value
@@ -259,6 +260,140 @@ def command_haystack(kind, value):
 def block_with_reason(block_output):
     print(json.dumps(block_output), file=sys.stderr, flush=True)
     sys.exit(2)
+
+def is_git_commit_command(value):
+    haystack = command_haystack("commit-specialist", value)
+    return bool(re.search(r"(^|[;&|]\s*)(?:env\s+[^;&|\n]*\s+)?git\s+commit\b", haystack))
+
+def normalize_agent_name(value):
+    raw = str(value or "").strip().strip("`'\"")
+    if not raw:
+        return ""
+
+    name = Path(raw).name
+    for suffix in (".md", ".toml"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name.lower()
+
+def split_specialist_values(value):
+    cleaned = str(value or "").strip().strip("[]")
+    parts = re.split(r"[,|]", cleaned)
+    return [
+        part.strip().strip("'\"`")
+        for part in parts
+        if part.strip().strip("'\"`")
+    ]
+
+def configured_project_root():
+    value = os.environ.get("AGENT_CREW_PROJECT_ROOT", "").strip()
+    if value:
+        return Path(value).expanduser()
+    if isinstance(tool_input, dict):
+        cwd = str(tool_input.get("cwd") or "").strip()
+        if cwd:
+            return Path(cwd).expanduser()
+    return Path.cwd()
+
+def git_committer_agent_paths():
+    candidates = []
+    project_root = configured_project_root()
+    candidates.extend([
+        project_root / ".agent-crew" / "agents" / "git-committer.md",
+        project_root / ".codex" / "agents" / "git-committer.toml",
+    ])
+
+    agent_crew_home = Path(home).expanduser()
+    candidates.extend([
+        agent_crew_home / "user" / "agents" / "git-committer.md",
+        agent_crew_home / "system" / "agents" / "git-committer.md",
+        agent_crew_home / "agents" / "git-committer.md",
+    ])
+
+    return [str(path) for path in candidates if path.is_file()]
+
+def selected_user_agent_values_from_json(payload):
+    if not isinstance(payload, dict):
+        return []
+
+    values = []
+    for key in ("selected_user_agent", "selected_user_agents"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            values.extend(split_specialist_values(item))
+    return values
+
+def specialist_dispatch_selects_git_committer(task_dir):
+    context_dir = Path(task_dir) / "context"
+    for path in (
+        context_dir / "specialist-dispatch.json",
+        context_dir / "specialist-dispatch.md",
+    ):
+        if not path.is_file():
+            continue
+
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if path.suffix == ".json":
+            try:
+                values = selected_user_agent_values_from_json(json.loads(text))
+            except Exception:
+                values = []
+        else:
+            values = []
+            for line in text.splitlines():
+                match = re.match(r"\s*[-*]?\s*selected_user_agents?\s*[:=]\s*(.+)", line, re.I)
+                if match:
+                    values.extend(split_specialist_values(match.group(1)))
+
+        if any(normalize_agent_name(value) == "git-committer" for value in values):
+            return True
+    return False
+
+def enforce_commit_specialist_dispatch():
+    if not is_git_commit_command(command):
+        return
+
+    task_dir = os.environ.get("AGENT_CREW_TASK_DIR", "").strip()
+    if not task_dir or not Path(task_dir).is_dir():
+        return
+
+    available_paths = git_committer_agent_paths()
+    if not available_paths:
+        return
+
+    if specialist_dispatch_selects_git_committer(task_dir):
+        return
+
+    audit({
+        "decision": "block",
+        "kind": "commit-specialist",
+        "pattern": "git commit requires git-committer dispatch",
+        "command": command,
+        "tool_name": tool_name,
+        "approved": False,
+        "approval_reason": "missing_git_committer_dispatch",
+        "approval_source": "specialist-dispatch",
+        "approval_file": "",
+    })
+    block_with_reason({
+        "decision": "block",
+        "reason": (
+            "[agent-crew] Commit specialist dispatch required.\n\n"
+            "Kind: commit-specialist\n"
+            f"Command: {command}\n"
+            "Reason: git-committer is available, but the current task context "
+            "does not record selected_user_agent: git-committer before a git "
+            "history mutation.\n"
+            "Next: record selected_user_agent: git-committer in "
+            f"{task_dir}/context/specialist-dispatch.md before running git commit "
+            "or git commit --amend."
+        ),
+    })
+
+enforce_commit_specialist_dispatch()
 
 for kind, pattern in FORBIDDEN_PATTERNS:
     haystack = command_haystack(kind, command)

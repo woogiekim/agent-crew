@@ -9,16 +9,24 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
+RUN_COMMAND = REPO_ROOT / "core" / "commands" / "run.md"
 
 
-def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
+def _write_task(
+    state_dir: Path,
+    task_id: str = "20260604-000000-0",
+    task: str = "Implement a small change",
+    project_root: Path | None = None,
+) -> Path:
     task_dir = state_dir / "tasks" / task_id
     task_dir.mkdir(parents=True)
     (task_dir / "context").mkdir()
+    root = project_root or state_dir.parent / "project"
     (task_dir / "register.json").write_text(
         json.dumps(
             {
-                "task": "Implement a small change",
+                "task": task,
+                "project_root": str(root),
                 "current_phase": "handoff_ready",
                 "host_bridge_status": "current_session_required",
                 "blocked_by": [],
@@ -33,6 +41,15 @@ def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
     )
     (task_dir / "result.md").write_text("STATUS: handoff_ready\n", encoding="utf-8")
     return task_dir
+
+
+def _install_git_committer(project_root: Path) -> None:
+    agent_dir = project_root / ".agent-crew" / "agents"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "git-committer.md").write_text(
+        "# git-committer\n",
+        encoding="utf-8",
+    )
 
 
 def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedProcess[str]:
@@ -248,3 +265,88 @@ def test_repair_accepts_json_specialist_dispatch_axes(tmp_path: Path):
     assert gate["matched_paths"] == ["context/specialist-dispatch.json"]
     assert gate["selected_user_agents"] == ["domain-reviewer"]
     assert gate["selected_subagents"] == ["reviewer", "test-writer"]
+
+
+def test_commit_current_session_repair_blocks_without_git_committer_user_agent(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    project_root = tmp_path / "project"
+    _install_git_committer(project_root)
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Commit local changes",
+        project_root=project_root,
+    )
+    (task_dir / "context" / "specialist-dispatch.md").write_text(
+        "\n".join(
+            [
+                "selected_agent: backend",
+                "selected_skill: tdd",
+                "selection_reason: implementation finished and user requested commit",
+                "execution_mode: current_session_required fallback",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-load-bypass-reason",
+        "isolate git-committer dispatch gate",
+    )
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_git_committer_dispatch_evidence" in result.stderr
+    assert "selected_user_agent: git-committer" in result.stderr
+
+
+def test_commit_current_session_repair_accepts_git_committer_user_agent(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    project_root = tmp_path / "project"
+    _install_git_committer(project_root)
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Commit local changes",
+        project_root=project_root,
+    )
+    (task_dir / "context" / "specialist-dispatch.md").write_text(
+        "\n".join(
+            [
+                "selected_agent: backend",
+                "selected_user_agent: git-committer",
+                "selected_skill: tdd",
+                "selection_reason: commit request must use git-committer before mutating git history",
+                "execution_mode: current_session_required fallback",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- ~/.agent-crew/system/agents/skills/tdd.md\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["commit_specialist_gate"]
+    assert gate["passed"] is True
+    assert gate["selected_user_agents"] == ["git-committer"]
+
+
+def test_run_commit_fast_path_delegates_to_git_committer_not_direct_shell_commit():
+    command_doc = RUN_COMMAND.read_text(encoding="utf-8")
+    commit_section = command_doc.split("##### `commit_only`", 1)[1].split("##### Destructive intents", 1)[0]
+
+    assert 'git commit -m "${COMMIT_MSG}"' not in commit_section
+    assert "git-committer" in commit_section
+    assert "selected_user_agent: git-committer" in commit_section
