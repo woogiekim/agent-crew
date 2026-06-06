@@ -69,6 +69,17 @@ TDD_EXCEPTION_RE = re.compile(
     r"red\s+failure\s+cannot)\b",
     re.I,
 )
+TDD_RED_PHASE_RE = re.compile(
+    r"\b(TDD[-_ ]?RED|RED\s+PHASE|red[-_ ]?phase|"
+    r"expected\s+fail(?:ing|ure)|fail(?:ed|ing)\s+as\s+expected|"
+    r"failing\s+test)\b",
+    re.I,
+)
+TDD_REFACTOR_PHASE_RE = re.compile(
+    r"\b(TDD[-_ ]?REFACTOR|REFACTOR\s+PHASE|refactor[-_ ]?phase|"
+    r"no[- ]op\s+refactor|post[- ]refactor|refactor\s+review)\b",
+    re.I,
+)
 TEST_FILE_RE = re.compile(
     r"(^|/)(tests?|spec|__tests__)/|"
     r"(^|/)[^/]+(_test|_spec|\.test|\.spec)\.[A-Za-z0-9]+$|"
@@ -160,11 +171,64 @@ def looks_like_test_file(path: str) -> bool:
 
 
 def has_tdd_exception(task_dir: Path) -> bool:
-    candidates = [
-        task_dir / "context" / "tdd-exception.md",
-        task_dir / "context" / "tdd-exception.json",
-    ]
-    return any(TDD_EXCEPTION_RE.search(load_text(path)) for path in candidates)
+    return bool(tdd_exception_evidence_paths(task_dir))
+
+
+def relative_evidence_name(task_dir: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(task_dir))
+    except ValueError:
+        return str(path)
+
+
+def phase_evidence_paths(task_dir: Path, candidates: list[Path], pattern: re.Pattern[str]) -> list[str]:
+    paths: list[str] = []
+    for path in candidates:
+        if path.is_file() and pattern.search(load_text(path)):
+            paths.append(relative_evidence_name(task_dir, path))
+
+    return sorted(set(paths))
+
+
+def tdd_exception_evidence_paths(task_dir: Path) -> list[str]:
+    return phase_evidence_paths(
+        task_dir,
+        [
+            task_dir / "context" / "tdd-exception.md",
+            task_dir / "context" / "tdd-exception.json",
+        ],
+        TDD_EXCEPTION_RE,
+    )
+
+
+def tdd_red_phase_evidence_paths(task_dir: Path) -> list[str]:
+    return phase_evidence_paths(
+        task_dir,
+        [
+            task_dir / "context" / "tdd-red.md",
+            task_dir / "context" / "tdd-red.json",
+        ],
+        TDD_RED_PHASE_RE,
+    )
+
+
+def tdd_refactor_phase_evidence_paths(task_dir: Path) -> list[str]:
+    return phase_evidence_paths(
+        task_dir,
+        [
+            task_dir / "context" / "tdd-refactor.md",
+            task_dir / "context" / "tdd-refactor.json",
+        ],
+        TDD_REFACTOR_PHASE_RE,
+    )
+
+
+def has_tdd_red_or_exception(task_dir: Path) -> bool:
+    return bool(tdd_red_phase_evidence_paths(task_dir) or tdd_exception_evidence_paths(task_dir))
+
+
+def has_tdd_refactor_evidence(task_dir: Path) -> bool:
+    return bool(tdd_refactor_phase_evidence_paths(task_dir))
 
 
 def event_file_paths(events: list[dict]) -> list[str]:
@@ -765,6 +829,10 @@ def check_quality_loop(
             and not has_tdd_exception(task_dir)
         ):
             failures.append("missing_tdd_test_file")
+        if shape["has_tdd_stage"] and not has_tdd_red_or_exception(task_dir):
+            failures.append("missing_tdd_red_phase_evidence")
+        if shape["has_tdd_stage"] and not has_tdd_refactor_evidence(task_dir):
+            failures.append("missing_tdd_refactor_phase_evidence")
         if events and approved_events and not valid_approval_events:
             failures.append("missing_reviewer_quality_metrics_artifact")
         if any(error.startswith("invalid_") or error in {

@@ -318,8 +318,25 @@ context as task input for requirements collection, supervisor handoffs, and
 generated prompts.
 
 When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
-the current session is only replacing the nested host bridge. It must not bypass
-agent-crew dispatch. Before executing task work, re-apply specialist
+apply the provider-neutral Current-Session Fallback rule. The Codex session is
+only replacing the nested host bridge; it is not an exemption from agent,
+subagent, skill, TDD, reviewer, or repair evidence requirements.
+RULE_EOF
+capture_rule "rule:codex-routing-fallback" 70 BODY_CODEX_ROUTING
+
+# --- rule:current-session-fallback ----------------------------------------
+read -r -d '' BODY_CURRENT_SESSION_FALLBACK <<'RULE_EOF' || true
+---
+title: Current-Session Fallback
+applies_to: [all]
+priority: 75
+section: Auto-Execution Triggers
+---
+
+When any host `crew:run` handoff returns `HOST_BRIDGE: current_session_required`
+or the operator continues a host bridge handoff manually in the current host
+session, that current session is only replacing the nested host bridge. It must
+not bypass agent-crew dispatch. Before executing task work, re-apply specialist
 agent/user-agent/subagent and agent-skill selection for the normalized task,
 use/load the selected specialist when available, and record every selected axis
 in `{TASK_DIR}/context/specialist-dispatch.md`.
@@ -364,7 +381,7 @@ This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
 resolver, or approval behavior in Codex-specific hooks or skills.
 RULE_EOF
-capture_rule "rule:codex-routing-fallback" 70 BODY_CODEX_ROUTING
+capture_rule "rule:current-session-fallback" 75 BODY_CURRENT_SESSION_FALLBACK
 
 # --- rule:stop-directive --------------------------------------------------
 read -r -d '' BODY_STOP <<'RULE_EOF' || true

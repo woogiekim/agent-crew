@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-05-21T00:11:50Z from 14 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-06-06T13:47:48Z from 15 mnemos rules (host=repo) -->
 
 # agent-crew - Global Rules
 
@@ -135,8 +135,16 @@ context as task input for requirements collection, supervisor handoffs, and
 generated prompts.
 
 When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
-the current session is only replacing the nested host bridge. It must not bypass
-agent-crew dispatch. Before executing task work, re-apply specialist
+apply the provider-neutral Current-Session Fallback rule. The Codex session is
+only replacing the nested host bridge; it is not an exemption from agent,
+subagent, skill, TDD, reviewer, or repair evidence requirements.
+
+## Current-Session Fallback
+
+When any host `crew:run` handoff returns `HOST_BRIDGE: current_session_required`
+or the operator continues a host bridge handoff manually in the current host
+session, that current session is only replacing the nested host bridge. It must
+not bypass agent-crew dispatch. Before executing task work, re-apply specialist
 agent/user-agent/subagent and agent-skill selection for the normalized task,
 use/load the selected specialist when available, and record every selected axis
 in `{TASK_DIR}/context/specialist-dispatch.md`.

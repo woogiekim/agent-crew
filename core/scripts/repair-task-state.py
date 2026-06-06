@@ -967,7 +967,7 @@ def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, r
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_specialist_dispatch_evidence\n"
-        "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+        "DETAIL: completed repair for a mutating current-session fallback requires "
         "evidence that the task re-applied specialist agent and agent-skill selection "
         "before manual execution.\n"
         "NEXT: add --specialist-evidence pointing to context/specialist-dispatch.md "
@@ -1001,7 +1001,7 @@ def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: 
         raise SystemExit(
             "STATUS: blocked\n"
             "BLOCKER: missing_required_skill_load_evidence\n"
-            "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+            "DETAIL: completed repair for a mutating current-session fallback requires "
             "skill-load evidence for the selected mandatory skill(s): "
             + ", ".join(status["missing_required_skills"])
             + ".\n"
@@ -1012,7 +1012,7 @@ def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: 
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_skill_load_evidence\n"
-        "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+        "DETAIL: completed repair for a mutating current-session fallback requires "
         "evidence that applicable agent skills were actually loaded before manual execution.\n"
         "NEXT: record context/skill-load.md or context/skill-load.json with loaded skill paths, "
         "or record an explicit --skill-load-bypass-reason."
@@ -1065,7 +1065,7 @@ def enforce_skill_use_gate(
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_skill_use_evidence\n"
-        "DETAIL: completed repair for a mutating Codex current-session fallback requires "
+        "DETAIL: completed repair for a mutating current-session fallback requires "
         "evidence showing how each loaded non-TDD skill was applied, not only loaded.\n"
         "MISSING_SKILLS: " + ", ".join(status["missing_skills"] or required_skills) + "\n"
         "NEXT: record context/skill-use.json or context/skill-use.md with skill_path, "
@@ -1216,6 +1216,40 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
         status.get("tdd_evidence_paths")
         and status.get("review_evidence_paths")
         and status.get("pipeline_passed")
+        and red_phase_passed
+        and not refactor_phase_passed
+    ):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_tdd_refactor_phase_evidence\n"
+            "DETAIL: completed repair for a mutating implementation task requires "
+            "TDD refactor-phase evidence after green, including the refactor or no-op "
+            "refactor decision and post-refactor verification.\n"
+            "NEXT: record context/tdd-refactor.md with the refactor decision and "
+            "post-refactor verification before repair."
+        )
+
+    pipeline_failures = set(pipeline_status.get("failures", []))
+    if (
+        status.get("tdd_evidence_paths")
+        and status.get("review_evidence_paths")
+        and "missing_tdd_red_phase_evidence" in pipeline_failures
+        and not red_phase_passed
+    ):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_tdd_red_phase_evidence\n"
+            "DETAIL: completed repair for a mutating implementation task requires "
+            "TDD red-phase evidence before production-code mutation, or an explicit "
+            "TDD exception explaining why a runnable red failure could not be produced.\n"
+            "NEXT: record context/tdd-red.md with the focused failing test result, "
+            "or context/tdd-exception.md with the exception reason before repair."
+        )
+
+    if (
+        status.get("tdd_evidence_paths")
+        and status.get("review_evidence_paths")
+        and "missing_tdd_refactor_phase_evidence" in pipeline_failures
         and red_phase_passed
         and not refactor_phase_passed
     ):

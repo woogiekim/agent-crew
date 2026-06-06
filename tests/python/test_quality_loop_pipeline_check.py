@@ -65,6 +65,14 @@ def write_task(task_dir: Path, rows: list[dict], pipeline: dict | None = None) -
         "TDD: RED -> GREEN -> REFACTOR. tests passed 6.\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD-RED: focused test failed as expected before implementation.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd-refactor.md").write_text(
+        "TDD-REFACTOR: no-op refactor review complete; post-refactor verification passed.\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "review.md").write_text(
         "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.\n",
         encoding="utf-8",

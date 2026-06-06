@@ -402,11 +402,27 @@ def test_quality_loop_check_requires_test_file_for_tdd_stage(tmp_path: Path):
     assert "- missing_tdd_test_file" in result.stdout
 
 
+def test_quality_loop_check_requires_tdd_red_and_refactor_artifacts(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "- missing_tdd_red_phase_evidence" in result.stdout
+    assert "- missing_tdd_refactor_phase_evidence" in result.stdout
+
+
 def test_quality_loop_check_accepts_tdd_exception_without_test_file(tmp_path: Path):
     _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     write_quality_loop_trace(task_dir, include_test_file=False)
     (task_dir / "context" / "tdd-exception.md").write_text(
         "TDD-EXCEPTION: no runnable test harness for this host-only regression.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd-refactor.md").write_text(
+        "TDD-REFACTOR: no-op refactor review complete; post-refactor verification passed.\n",
         encoding="utf-8",
     )
     (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")

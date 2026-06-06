@@ -84,6 +84,13 @@ assert_file_exists "${TASK_DIR}/context/claude-host-bridge-prompt.md"
 assert_file_exists "${TASK_DIR}/context/claude-host-bridge-last-message.json"
 assert_contains "$(cat "${TASK_DIR}/context/claude-host-bridge-prompt.md")" "AGENT_CREW_TASK_ID: task-1"
 
+it "claude host bridge prompt preserves current-session TDD evidence requirements"
+prompt="$(cat "${TASK_DIR}/context/claude-host-bridge-prompt.md")"
+assert_contains "${prompt}" "Current-Session Fallback"
+assert_contains "${prompt}" "context/specialist-dispatch.md"
+assert_contains "${prompt}" "context/tdd-red.md"
+assert_contains "${prompt}" "context/tdd-refactor.md"
+
 it "claude direct-agent bridge forbids normalizer subagent spawn"
 out=$(
   AGENT_CREW_CLAUDE_BIN="${FAKE_CLAUDE}" \

@@ -2461,17 +2461,18 @@ use this sequence:
 2. In non-hosted/native runs, `STATUS: handoff_ready` is normal. Continue from
    `handoff.md`, then complete manually:
    - `crew repair <TASK_ID> --status completed --note "<summary>"`
-3. In Codex current-session runs, `HOST_BRIDGE: current_session_required` means
-   the adapter refused nested `codex exec`; no background bridge is still
-   running. Continue from `handoff.md` in the current Codex session, then repair
-   after completion.
+3. In current-session fallback runs, `HOST_BRIDGE: current_session_required`
+   means the host adapter requires the current host session to continue the
+   handoff; no background bridge is still running. Continue from `handoff.md` in
+   the current host session, then repair after completion.
    - Before executing any task work, re-apply the same specialist dispatch
      contract the supervisor would have applied: select the appropriate
      agent/user-agent and required agent skill(s) for the normalized task.
      This is a general fallback invariant, not a commit/deploy-specific rule.
    - If a concrete user agent or dispatcher skill is available for the task
      axis, use it or load its instructions before acting. Do not substitute
-     ad hoc local execution just because the nested Codex bridge was refused.
+     ad hoc local execution just because the nested host bridge was refused or
+     unavailable.
    - Record the selection in `context/specialist-dispatch.md` with at least:
      `selected_agent`, `selection_reason`, and `execution_mode`; include any
      applicable `selected_user_agent`, `selected_subagents`, and

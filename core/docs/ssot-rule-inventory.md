@@ -18,7 +18,8 @@ order (lower = renders earlier in assembled output).
 | 40 | `rule:agent-routing-criteria` | Agent Routing Criteria | all | `## Agent Routing Criteria` |
 | 50 | `rule:parallel-first` | Parallel-First Execution Rule | all | `## Parallel-First Execution Rule` |
 | 60 | `rule:auto-execution-triggers` | Auto-Execution Triggers | all | `## Auto-Execution Triggers` (includes commit 011e6be's crew:agent routing block) |
-| 70 | `rule:codex-routing-fallback` | Codex Routing Fallback | codex | `### Codex Routing Fallback` (host-specific sub-section) |
+| 70 | `rule:codex-routing-fallback` | Codex Routing Fallback | codex | `### Codex Routing Fallback` (host-specific adapter wrapper) |
+| 75 | `rule:current-session-fallback` | Current-Session Fallback | all | `### Current-Session Fallback` (host-neutral fallback evidence requirements) |
 | 80 | `rule:stop-directive` | STOP Directive Rule | all | `### STOP Directive Rule` |
 | 90 | `rule:workflow-intents` | Workflow Intents | all | `## Workflow Intents` |
 | 100 | `rule:structured-choice` | Structured Choice Rules | all | `## Structured Choice Rules` |
@@ -28,10 +29,10 @@ order (lower = renders earlier in assembled output).
 
 ## Notes
 
-- `rule:codex-routing-fallback` was previously a sub-section of
-  Auto-Execution Triggers. It is split out so that the Codex host
-  receives it but the others do not — demonstrating the per-host
-  filter capability.
+- `rule:codex-routing-fallback` contains only the Codex host adapter wrapper.
+  Current-session fallback evidence requirements are host-neutral and live in
+  `rule:current-session-fallback`, so Claude and Codex receive the same TDD,
+  skill-load, skill-use, specialist-dispatch, and repair obligations.
 - `rule:mnemos-capture` is Claude-specific because it documents the
   hook-injected `/compact` flow; Codex does not have an equivalent
   hook today.

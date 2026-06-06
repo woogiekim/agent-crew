@@ -80,6 +80,34 @@ AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
 EOF
 fi
 
+cat >> "${PROMPT_PATH}" <<'EOF'
+
+## Current-Session Fallback
+
+If this handoff continues manually in the current Claude session, the current
+session is only replacing the nested host bridge. It must not bypass
+agent-crew dispatch, agent/user-agent/subagent selection, skill selection, TDD,
+reviewer, QA, or repair evidence requirements.
+
+Before executing task work, re-apply specialist selection for the normalized
+task and record every selected axis in context/specialist-dispatch.md. Load
+applicable skill files and record exact paths in context/skill-load.md or
+context/skill-load.json.
+
+For implementation or production-code mutation work, complete the full TDD
+Red, Green, Refactor cycle before repair/completion. Before production-code
+mutation, identify the focused test target, add or update the test, run it, and
+record the expected failing result in context/tdd-red.md. If no runnable
+harness or red failure can reasonably be produced, record the explicit
+exception first in context/tdd-exception.md. After green, perform the refactor
+review or document a no-op refactor decision, rerun focused verification, and
+record it in context/tdd-refactor.md.
+
+Use the provider-neutral command definitions under ~/.agent-crew/commands/.
+Do not embed supervisor, planner, backend, frontend, resolver, or approval
+behavior in this bridge prompt.
+EOF
+
 SYSTEM_PROMPT="${AGENT_CREW_CLAUDE_BRIDGE_SYSTEM_PROMPT:-You are a minimal agent-crew host bridge executor. Follow only the provided handoff prompt. Do not invoke crew workflows unless the handoff explicitly requires it. Do not create a new task. Complete the existing handoff and exit.}"
 MODEL="${AGENT_CREW_CLAUDE_MODEL:-claude-haiku-4-5}"
 EFFORT="${AGENT_CREW_CLAUDE_EFFORT:-low}"
