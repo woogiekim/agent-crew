@@ -34,11 +34,13 @@ Consumers:
   `hook_system`.
 - **Automatic issue reporting** (implemented). A `UserPromptSubmit`
   observer and a `PostToolUse[Bash]` observer detect explicit
-  agent-crew bug/error reports or `crew` command payloads with explicit
-  bug/error output, then call `crew report auto` to store a deduplicated
-  native report/outbox entry. GitHub publication is an optional backend
-  through `crew report publish`. Script: `core/scripts/auto-issue-reporter.py`.
-  Hook wrapper: `core/hooks/auto-issue-report.sh`. Contract:
+  agent-crew bug/error reports or failed `crew` command payloads with
+  explicit/high-confidence bug evidence, then call `crew report auto` to store
+  a deduplicated native report/outbox entry. Successful diagnostic commands are
+  ignored even when filenames contain words such as `error`. GitHub publication
+  is an optional backend through `crew report publish`. Script:
+  `core/scripts/auto-issue-reporter.py`. Hook wrapper:
+  `core/hooks/auto-issue-report.sh`. Contract:
   `core/rules/auto-issue-reporting.md`.
 
 ## Required Adapter Surface (flag=true)

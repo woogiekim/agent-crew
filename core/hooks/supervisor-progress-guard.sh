@@ -26,6 +26,10 @@ FORBIDDEN_PROGRESS_RE = re.compile(
     r"STAGE_STREAMING_REVIEW_STARTED|STAGE_STREAMING_REVIEW_DONE|"
     r"COMPLETED)\s*\|"
 )
+TERMINAL_STATUS_RE = re.compile(
+    r"^\s*STATUS:\s*(completed|blocked|cancelled)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def block(reason: str) -> None:
@@ -73,6 +77,10 @@ def git_root(path_text: str):
 
 def resolved_state_dirs(project_root) -> list[Path]:
     dirs: list[Path] = []
+    if project_root is None:
+        override = os.environ.get("AGENT_CREW_STATE_DIR")
+        return [Path(override).expanduser()] if override else []
+
     if project_root is not None:
         resolver = agent_crew_home / "scripts" / "project_state.py"
         if resolver.is_file():
@@ -102,10 +110,6 @@ def resolved_state_dirs(project_root) -> list[Path]:
                     dirs.append(Path(state_dir))
         dirs.append(agent_crew_home / "state" / project_root.name)
 
-    state_root = agent_crew_home / "state"
-    if state_root.is_dir():
-        dirs.extend(path for path in state_root.iterdir() if path.is_dir())
-
     unique: list[Path] = []
     seen: set[str] = set()
     for path in dirs:
@@ -122,16 +126,28 @@ def task_dirs_for_state(state_dir: Path) -> list[Path]:
         return []
 
     markers = list(tasks_dir.glob("active.*"))
-    if (tasks_dir / "active").is_file():
-        return [path for path in tasks_dir.iterdir() if path.is_dir()]
-
     dirs: list[Path] = []
     for marker in markers:
+        if not marker.is_file():
+            continue
         task_id = marker.name.removeprefix("active.")
+        if not task_id:
+            continue
         task_dir = tasks_dir / task_id
         if task_dir.is_dir():
             dirs.append(task_dir)
     return dirs
+
+
+def has_terminal_result(task_dir: Path) -> bool:
+    result_path = task_dir / "result.md"
+    if not result_path.is_file():
+        return False
+    try:
+        result = result_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    return bool(TERMINAL_STATUS_RE.search(result))
 
 
 def latest_forbidden_line(progress_log: Path) -> str:
@@ -150,7 +166,7 @@ def latest_forbidden_line(progress_log: Path) -> str:
 
 
 def write_block_result(task_dir: Path, line: str) -> None:
-    result_path = task_dir / "result.md"
+    result_path = task_dir / "result.violation.md"
     result_path.write_text(
         "\n".join(
             [
@@ -170,6 +186,8 @@ project_root = git_root(candidate_path(payload))
 
 for state_dir in resolved_state_dirs(project_root):
     for task_dir in task_dirs_for_state(state_dir):
+        if has_terminal_result(task_dir):
+            continue
         if (task_dir / "pipeline.json").is_file():
             continue
         line = latest_forbidden_line(task_dir / "progress.log")

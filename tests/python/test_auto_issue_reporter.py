@@ -99,6 +99,26 @@ def test_signal_detection_infrastructure_bash_and_ignored():
     assert reporter.detect_signal({"prompt": "ordinary text"}) is None
 
 
+def test_signal_detection_ignores_successful_crew_output_with_error_words():
+    # given
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "status": "completed",
+        "tool_name": "Bash",
+        "tool_input": {"command": "crew update"},
+        "tool_response": {
+            "stdout": "Update(/tmp/agent-crew/skills/error-handling.md)\n  (no changes)",
+            "returncode": 0,
+        },
+    }
+
+    # when
+    signal = reporter.detect_signal(payload)
+
+    # then
+    assert signal is None
+
+
 def test_title_truncates_and_unknown_backend_is_returned():
     title = reporter.issue_title(_signal("agent-crew " + ("x" * 120)))
 

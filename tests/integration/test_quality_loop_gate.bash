@@ -39,6 +39,58 @@ EOF
 cat > "${TASK_DIR}/context/review.md" <<'EOF'
 REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.
 EOF
+cat > "${TASK_DIR}/context/specialist-dispatch.md" <<'EOF'
+selected_agent: backend
+selected_subagents: test-writer, reviewer
+selected_skill: tdd
+selection_reason: implementation task with TDD and reviewer evidence
+execution_mode: current_session_required fallback
+EOF
+cat > "${TASK_DIR}/context/skill-load.md" <<'EOF'
+SKILL_LOAD: passed
+Loaded before implementation:
+- ~/.agent-crew/system/agents/skills/tdd.md
+- core/rules/code-quality.md
+EOF
+cat > "${TASK_DIR}/context/skill-plan.json" <<'EOF'
+{
+  "skills": [
+    {
+      "skill_path": "core/rules/code-quality.md",
+      "rules": [
+        {
+          "rule_id": "KISS",
+          "task_interpretation": "Keep the integration fixture focused on repair gate evidence.",
+          "planned_application": "Record only the minimum quality-loop evidence needed by the manual fallback repair path."
+        }
+      ]
+    }
+  ]
+}
+EOF
+cat > "${TASK_DIR}/context/skill-use.json" <<'EOF'
+{
+  "skills": [
+    {
+      "skill_path": "core/rules/code-quality.md",
+      "applied_rules": ["KISS"],
+      "evidence_refs": ["tests/integration/test_quality_loop_gate.bash"],
+      "output_files": ["tests/integration/test_quality_loop_gate.bash"],
+      "verification": ["bash tests/integration/test_quality_loop_gate.bash"],
+      "rule_evidence": [
+        {
+          "rule_id": "KISS",
+          "artifact_refs": ["tests/integration/test_quality_loop_gate.bash"],
+          "diff_refs": ["tests/integration/test_quality_loop_gate.bash"],
+          "verification": ["bash tests/integration/test_quality_loop_gate.bash"],
+          "adversarial_checks": ["confirmed repair still blocks before pipeline quality-loop evidence"],
+          "reviewer_status": "approved"
+        }
+      ]
+    }
+  ]
+}
+EOF
 cat > "${TASK_DIR}/context/quality-metrics.json" <<'EOF'
 {"schema_version":1,"hallucination_detected":false,"rollback_performed":false,"human_intervention_required":false,"factuality_review":"passed","evidence_paths":["context/review.md"]}
 EOF
@@ -63,10 +115,10 @@ cat > "${TASK_DIR}/pipeline.json" <<'EOF'
 }
 EOF
 cat > "${TASK_DIR}/progress.buffer.jsonl" <<'EOF'
-{"ts":"2026-05-22T00:00:00Z","trace_id":"20260522-000000.20260522-000000-0.1.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"test-writer","attempt":1,"status":"completed","detail":"TDD RED GREEN, 3 tests passed","files":[]}
+{"ts":"2026-05-22T00:00:00Z","trace_id":"20260522-000000.20260522-000000-0.1.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"test-writer","attempt":1,"status":"completed","detail":"TDD RED GREEN, 3 tests passed","files":["tests/integration/test_quality_loop_gate.bash"]}
 {"ts":"2026-05-22T00:00:01Z","trace_id":"20260522-000000.20260522-000000-0.1.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"backend","attempt":1,"status":"completed","detail":"backend - N/A","files":[]}
 {"ts":"2026-05-22T00:00:02Z","trace_id":"20260522-000000.20260522-000000-0.2.1","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":2,"agent":"reviewer","attempt":1,"status":"completed","detail":"REVIEW: NEEDS_CHANGES","files":[]}
-{"ts":"2026-05-22T00:00:03Z","trace_id":"20260522-000000.20260522-000000-0.1.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"test-writer","attempt":2,"status":"completed","detail":"TDD REFACTOR, 4 tests passed","files":[]}
+{"ts":"2026-05-22T00:00:03Z","trace_id":"20260522-000000.20260522-000000-0.1.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"test-writer","attempt":2,"status":"completed","detail":"TDD REFACTOR, 4 tests passed","files":["tests/integration/test_quality_loop_gate.bash"]}
 {"ts":"2026-05-22T00:00:04Z","trace_id":"20260522-000000.20260522-000000-0.1.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":1,"agent":"backend","attempt":2,"status":"completed","detail":"backend remediation - N/A","files":[]}
 {"ts":"2026-05-22T00:00:05Z","trace_id":"20260522-000000.20260522-000000-0.2.2","task_id":"20260522-000000-0","session_id":"20260522-000000","event":"STAGE_DONE","stage":2,"agent":"reviewer","attempt":2,"status":"completed","detail":"REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json","files":[]}
 EOF

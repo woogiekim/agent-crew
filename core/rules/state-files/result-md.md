@@ -4,6 +4,11 @@
 supervisor at Phase 3 (close-out). The `crew:status` parser, `run.md` Step 7
 Run Summary, and `crew:status --collect` all read this file.
 
+Runtime guard evidence that is not a supervisor terminal close-out must not
+overwrite `result.md`. For example, `supervisor-progress-guard.sh` writes
+pipeline-bypass observer evidence to `result.violation.md` so completed
+historical task results remain authoritative.
+
 ---
 
 ## Schema
