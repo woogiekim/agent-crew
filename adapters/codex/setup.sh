@@ -39,6 +39,15 @@ settings = {
                 ],
             },
             {
+                "matcher": "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": f"bash '{home}/hooks/tracker-mutation-guard.sh'",
+                    }
+                ],
+            },
+            {
                 "matcher": "Agent",
                 "hooks": [
                     {
