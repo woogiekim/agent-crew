@@ -1270,8 +1270,8 @@ usage: crew report auto [--format json|text|none] [--publish github]
 
 Stores agent-crew bug/error reports in the native local report outbox. GitHub
 publication is an optional backend, not part of the hook contract. Cleanup
-quarantines malformed records and false-positive Bash reports whose command did
-not actually invoke crew.
+quarantines malformed records, internal handoff prompt captures, routine
+diagnostic output, and known false-positive Bash reports.
 EOF
     return 0
   fi

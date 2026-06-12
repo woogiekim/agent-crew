@@ -30,6 +30,25 @@ def test_project_state_key_disambiguates_duplicate_basenames(tmp_path: Path):
     assert first_key != second_key
 
 
+def test_write_json_uses_collision_resistant_temp_path(monkeypatch, tmp_path: Path):
+    module = load_module()
+    destination = tmp_path / "project.json"
+    replace_sources: list[str] = []
+
+    def fake_replace(source, _destination):
+        replace_sources.append(Path(source).name)
+
+    monkeypatch.setattr(module.os, "replace", fake_replace)
+
+    module.write_json(destination, {"seq": 1})
+    module.write_json(destination, {"seq": 2})
+
+    assert replace_sources[0] != "project.json.tmp"
+    assert replace_sources[1] != "project.json.tmp"
+    assert replace_sources[0] != replace_sources[1]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_resolve_migrates_matching_legacy_state_to_keyed_state(tmp_path: Path):
     module = load_module()
     home = tmp_path / "home"

@@ -704,6 +704,14 @@ def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementati
         "TDD: RED -> GREEN -> REFACTOR. tests passed 12.\n",
         encoding="utf-8",
     )
+    (task_dir / "context" / "tdd-red.md").write_text(
+        "TDD RED: failing test captured before implementation.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "tdd-refactor.md").write_text(
+        "TDD REFACTOR: refactor review complete; tests rerun and passed.\n",
+        encoding="utf-8",
+    )
     (task_dir / "context" / "review.md").write_text(
         "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
         encoding="utf-8",

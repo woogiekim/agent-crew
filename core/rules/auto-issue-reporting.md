@@ -112,8 +112,9 @@ To publish queued reports later:
 crew report publish --backend github
 ```
 
-To quarantine malformed local records and false-positive Bash reports whose
-command did not actually invoke crew:
+To quarantine malformed local records, internal handoff prompt captures,
+routine successful crew diagnostic output, and false-positive Bash reports
+whose command did not actually invoke crew:
 
 ```bash
 crew report cleanup --format json
@@ -122,10 +123,11 @@ crew report cleanup --format json
 ## Safeguards
 
 - **Narrow trigger**: prompt reports require both an agent-crew signal and a
-  bug/error signal; Bash reports require an actual `crew` invocation, a failed
-  or high-confidence failure outcome, and bug/error output. Generic application
-  errors, successful diagnostic commands, documentation/path reads, and normal
-  host-bridge handoff blockers are ignored.
+  bug/error signal in the direct prompt summary; internal agent-crew handoff
+  prompts are ignored. Bash reports require an actual `crew` invocation, a
+  failed or high-confidence failure outcome, and bug/error output. Generic
+  application errors, successful diagnostic commands, documentation/path reads,
+  and normal host-bridge handoff blockers are ignored.
 - **Local deduplication**: reports are fingerprinted and recorded under the
   native report state directory.
 - **Remote deduplication**: when `gh` works, the reporter searches existing

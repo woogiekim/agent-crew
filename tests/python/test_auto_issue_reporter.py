@@ -119,6 +119,25 @@ def test_signal_detection_ignores_successful_crew_output_with_error_words():
     assert signal is None
 
 
+def test_signal_detection_ignores_command_level_reporting_disable():
+    # given
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "AGENT_CREW_AUTO_ISSUE_REPORT=0 crew repair task-1"},
+        "tool_response": {
+            "stderr": "STATUS: blocked\nBLOCKER: missing_skill_use_evidence",
+            "returncode": 1,
+        },
+    }
+
+    # when
+    signal = reporter.detect_signal(payload)
+
+    # then
+    assert signal is None
+
+
 def test_signal_detection_ignores_read_only_agent_crew_path_output_without_status():
     # given
     payload = {
@@ -135,6 +154,29 @@ def test_signal_detection_ignores_read_only_agent_crew_path_output_without_statu
 
     # then
     assert signal is None
+
+
+def test_signal_detection_ignores_internal_agent_crew_prompt():
+    # given
+    payload = {
+        "prompt": (
+            "Resume this existing agent-crew crew:run handoff in Codex.\n"
+            "Do not create a new crew:run task. If the handoff failed, use repair guidance."
+        ),
+    }
+
+    # when
+    signal = reporter.detect_signal(payload)
+
+    # then
+    assert signal is None
+
+    assert reporter.detect_signal({
+        "prompt": (
+            "You are running as the agent-crew supervisor for an existing crew:run handoff.\n"
+            "Continue the task if a previous handoff failed."
+        ),
+    }) is None
 
 
 def test_signal_detection_records_actual_crew_invocation_without_status():
@@ -207,6 +249,156 @@ def test_cleanup_quarantines_false_positive_and_malformed_reports(tmp_path: Path
     assert (tmp_path / "quarantine" / "test-quarantine" / "outbox" / "false-positive.json").is_file()
     assert (tmp_path / "quarantine" / "test-quarantine" / "reported" / "false-positive.json").is_file()
     assert (tmp_path / "quarantine" / "test-quarantine" / "outbox" / "malformed.json").is_file()
+
+
+def test_cleanup_quarantines_routine_crew_output_and_internal_prompts(tmp_path: Path):
+    # given
+    routine_crew_output = {
+        "schema_version": 1,
+        "fingerprint": "routine-crew",
+        "repo": "woogiekim/agent-crew",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": "[auto-report] agent-crew error: crew status",
+        "evidence": (
+            "crew status\n"
+            "Project: agent-crew\n"
+            "Tasks: 10 total | 9 completed | 0 blocked | 0 running\n"
+            "Evidence: context/tdd-exception.md\n"
+            "Tool events: 10 total | 0 failed | 0 unrecovered"
+        ),
+    }
+    internal_prompt = {
+        "schema_version": 1,
+        "fingerprint": "internal-prompt",
+        "repo": "woogiekim/agent-crew",
+        "source": "UserPromptSubmit",
+        "classification": "user_reported_error",
+        "title": "[auto-report] agent-crew error: Resume this existing agent-crew crew:run handoff in Codex.",
+        "summary": "Resume this existing agent-crew crew:run handoff in Codex.",
+        "evidence": (
+            "Resume this existing agent-crew crew:run handoff in Codex.\n"
+            "Do not create a new crew:run task. If the handoff failed, use repair guidance."
+        ),
+    }
+    valid_crew_failure = {
+        "schema_version": 1,
+        "fingerprint": "valid-crew",
+        "repo": "woogiekim/agent-crew",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": "[auto-report] agent-crew error: crew status",
+        "evidence": "crew status\nSTATUS: blocked\nBLOCKER: state_schema_invalid",
+    }
+    valid_user_report = {
+        "schema_version": 1,
+        "fingerprint": "valid-user",
+        "repo": "woogiekim/agent-crew",
+        "source": "UserPromptSubmit",
+        "classification": "user_reported_error",
+        "title": "[auto-report] agent-crew error: agent-crew error happened",
+        "summary": "agent-crew error happened",
+        "evidence": "agent-crew error happened\nTraceback: runtime crash",
+    }
+
+    for document in (routine_crew_output, internal_prompt, valid_crew_failure, valid_user_report):
+        fingerprint = document["fingerprint"]
+        reporter.write_json(tmp_path / "outbox" / f"{fingerprint}.json", document)
+        reporter.write_json(tmp_path / "reported" / f"{fingerprint}.json", {
+            "fingerprint": fingerprint,
+            "source": document["source"],
+            "classification": document["classification"],
+            "title": document["title"],
+            "status": "recorded",
+        })
+
+    # when
+    result = reporter.cleanup_reports(tmp_path, quarantine_name="routine-quarantine")
+
+    # then
+    assert result["status"] == "cleaned"
+    assert result["quarantined"] == 4
+    assert (tmp_path / "outbox" / "valid-crew.json").is_file()
+    assert (tmp_path / "reported" / "valid-crew.json").is_file()
+    assert (tmp_path / "outbox" / "valid-user.json").is_file()
+    assert (tmp_path / "reported" / "valid-user.json").is_file()
+    assert not (tmp_path / "outbox" / "routine-crew.json").exists()
+    assert not (tmp_path / "reported" / "routine-crew.json").exists()
+    assert not (tmp_path / "outbox" / "internal-prompt.json").exists()
+    assert not (tmp_path / "reported" / "internal-prompt.json").exists()
+    assert (tmp_path / "quarantine" / "routine-quarantine" / "outbox" / "routine-crew.json").is_file()
+    assert (tmp_path / "quarantine" / "routine-quarantine" / "reported" / "internal-prompt.json").is_file()
+
+
+def test_cleanup_quarantines_malformed_outbox_schema(tmp_path: Path):
+    # given
+    reporter.write_json(tmp_path / "outbox" / "missing-schema.json", {
+        "fingerprint": "missing-schema",
+        "source": "UserPromptSubmit",
+        "title": "[auto-report] agent-crew error: <ta[REDACTED]>",
+        "summary": "<ta[REDACTED]>",
+    })
+
+    # when
+    result = reporter.cleanup_reports(tmp_path, quarantine_name="schema-quarantine")
+
+    # then
+    assert result["status"] == "cleaned"
+    assert result["quarantined"] == 1
+    assert not (tmp_path / "outbox" / "missing-schema.json").exists()
+    assert (tmp_path / "quarantine" / "schema-quarantine" / "outbox" / "missing-schema.json").is_file()
+
+
+def test_cleanup_quarantines_reporting_disabled_and_expected_gate_reports(tmp_path: Path):
+    # given
+    disabled_command = {
+        "schema_version": 1,
+        "fingerprint": "disabled-command",
+        "repo": "woogiekim/agent-crew",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": "[auto-report] agent-crew error: AGENT_CREW_AUTO_ISSUE_REPORT=0 crew repair task-1",
+        "summary": "AGENT_CREW_AUTO_ISSUE_REPORT=0 crew repair task-1",
+        "evidence": (
+            "AGENT_CREW_AUTO_ISSUE_REPORT=0 crew repair task-1\n"
+            "STATUS: blocked\n"
+            "BLOCKER: missing_skill_use_evidence"
+        ),
+    }
+    expected_gate = {
+        "schema_version": 1,
+        "fingerprint": "expected-gate",
+        "repo": "woogiekim/agent-crew",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": "[auto-report] agent-crew error: crew repair task-1",
+        "summary": "crew repair task-1",
+        "evidence": (
+            "crew repair task-1\n"
+            "STATUS: blocked\n"
+            "BLOCKER: missing_quality_loop_pipeline"
+        ),
+    }
+
+    for document in (disabled_command, expected_gate):
+        fingerprint = document["fingerprint"]
+        reporter.write_json(tmp_path / "outbox" / f"{fingerprint}.json", document)
+        reporter.write_json(tmp_path / "reported" / f"{fingerprint}.json", {
+            "fingerprint": fingerprint,
+            "source": document["source"],
+            "classification": document["classification"],
+            "title": document["title"],
+            "status": "recorded",
+        })
+
+    # when
+    result = reporter.cleanup_reports(tmp_path, quarantine_name="gate-quarantine")
+
+    # then
+    assert result["status"] == "cleaned"
+    assert result["quarantined"] == 4
+    assert not (tmp_path / "outbox" / "disabled-command.json").exists()
+    assert not (tmp_path / "reported" / "expected-gate.json").exists()
 
 
 def test_title_truncates_and_unknown_backend_is_returned():
