@@ -187,6 +187,35 @@ This is a DIP boundary:
 
 ---
 
+## Semantic evidence provider dispatch
+
+Code intelligence tools are another dispatch axis, but the generic framework
+must not bind itself to one language server. Implementation agents and
+reviewers follow `core/rules/code-intelligence-evidence.md` and treat each
+language server, compiler, type checker, or static analyzer as a semantic
+evidence provider.
+
+The dispatcher owns the abstract decision:
+
+- detect the project language and available provider;
+- record whether semantic capabilities are available;
+- require `context/code-intelligence-evidence.json` for code changes when
+  practical;
+- fall back to `fallback-static` with explicit `unsupported_capabilities` when
+  no stronger provider exists.
+
+Provider adapters own the concrete calls:
+
+- TypeScript LSP or `tsserver` queries for TypeScript / JavaScript;
+- Pyright, Jedi, `gopls`, `rust-analyzer`, JDT Language Server, Kotlin tooling,
+  compilers, or linters for their respective stacks;
+- provider-specific diagnostic shapes and symbol lookup quirks.
+
+This keeps TypeScript LSP as one semantic evidence provider while preserving a
+language-agnostic and provider-agnostic implementation gate.
+
+---
+
 ## Naming convention
 
 Adapter skill files use **flat dashed** names:

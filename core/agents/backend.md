@@ -168,6 +168,18 @@ The dispatcher MUST NOT execute any stack-specific tool call (e.g.
 `./gradlew test`, `mvn test`, `pytest`) before this step completes.
 A stack-specific call before Step 0.5 indicates a layering bug.
 
+### Step 0.6 — Record code intelligence evidence
+
+Run this step before modifying production code. Read and apply
+`core/rules/code-intelligence-evidence.md`. For code changes, record
+`context/code-intelligence-evidence.json` with the semantic evidence provider
+used for the current language/framework axis.
+
+Use the strongest available provider from the loaded stack skill or project
+tooling. If no language server or compiler-level provider is available, use
+`fallback-static`, record `unsupported_capabilities`, and lower confidence
+instead of guessing import paths, symbols, fields, or API shapes.
+
 ## Skills (Loaded On Demand)
 
 These declared on-demand skills are **complementary** to the dispatcher

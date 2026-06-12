@@ -166,6 +166,19 @@ The dispatcher MUST NOT execute any stack-specific tool call (e.g.
 step completes. A stack-specific call before Step 0.5 indicates a
 layering bug.
 
+### Step 0.6 — Record code intelligence evidence
+
+Run this step before modifying production code. Read and apply
+`core/rules/code-intelligence-evidence.md`. For code changes, record
+`context/code-intelligence-evidence.json` with the semantic evidence provider
+used for the current language/framework axis.
+
+Use TypeScript LSP only when it is the best available provider for the current
+stack. For other stacks, use the matching language server, compiler, type
+checker, or `fallback-static` path from `code-intelligence-evidence.md`.
+Record `unsupported_capabilities` and lower confidence instead of guessing
+component imports, props, events, routes, or data shapes.
+
 ## Skills (Loaded On Demand)
 
 These declared on-demand skills are **complementary** to the dispatcher
