@@ -20,6 +20,19 @@ coverage conclusions. Review output must cite first-party evidence with
 `file:line`, task-artifact paths, or `tool-output` where applicable, and must
 show an explicit evidence-to-inference-to-conclusion flow.
 
+## Code Intelligence Evidence
+
+Read and apply `core/rules/code-intelligence-evidence.md` before approving code
+changes. If the diff introduces or rewires symbols, imports, public APIs,
+routes, schemas, or cross-file calls, inspect
+`context/code-intelligence-evidence.json`.
+
+Return `NEEDS_CHANGES` when that artifact is missing for a semantic code change
+and there is no narrow implementation exception explaining why no language
+server, compiler, type checker, or `fallback-static` evidence was available.
+Treat the artifact as support for symbol and diagnostic correctness only; it
+does not replace tests, PRD coverage, security review, or runtime validation.
+
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not
