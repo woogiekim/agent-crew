@@ -64,7 +64,8 @@ Commands:
   update [--local [SOURCE_ROOT]] [--all-projects]
                                     Refresh installed assets
   run "task"                       Write state and host handoff for a task
-  report auto|publish [args]       Store/publish native agent-crew reports
+  report auto|publish|cleanup [args]
+                                    Store/publish/cleanup native agent-crew reports
   issue-ingest ISSUE [args]        Record issue body/comment ingestion evidence
   cancel [--note TEXT] TASK_ID     Mark a superseded handoff as cancelled
   repair [args] TASK_ID            Repair a manually completed handoff task
@@ -1265,9 +1266,12 @@ cmd_report() {
     cat <<'EOF'
 usage: crew report auto [--format json|text|none] [--publish github]
        crew report publish [--format json|text|none] [--backend github]
+       crew report cleanup [--format json|text|none] [--dry-run]
 
 Stores agent-crew bug/error reports in the native local report outbox. GitHub
-publication is an optional backend, not part of the hook contract.
+publication is an optional backend, not part of the hook contract. Cleanup
+quarantines malformed records, internal handoff prompt captures, routine
+diagnostic output, and known false-positive Bash reports.
 EOF
     return 0
   fi

@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,23 @@ BUG_RE = re.compile(
     r"오류|에러|버그|실패|크래시|안됨|안\s*됨|문제",
     re.IGNORECASE,
 )
+INTERNAL_AGENT_CREW_PROMPT_RE = re.compile(
+    r"^\s*(?:"
+    r"Resume (?:this )?existing agent-crew (?:crew:run|direct-agent) handoff\b|"
+    r"Resume existing agent-crew task\b|"
+    r"You are running under crew:run orchestration\b|"
+    r"You are running in MODE=direct\b|"
+    r"You are running as the agent-crew\b|"
+    r"You are acting as the agent-crew\b|"
+    r"You are the supervisor/planner for an agent-crew\b|"
+    r"TASK:\s|"
+    r"RAW_INPUT:\s|"
+    r"<ta\[REDACTED\]>|"
+    r"<task[-_A-Za-z0-9]*[>\s]|"
+    r"# (?:AI Agent Framework Review Guideline|GitHub .*Issue Creation Request|Overview)\b"
+    r")",
+    re.IGNORECASE,
+)
 INFRASTRUCTURE_FAILURE_RE = re.compile(
     r"schema|validator|capabilit|host[_ -]?bridge|task[_ -]?tool|"
     r"monitor[_ -]?tool|state[_ -]?schema|runtime|install[_ -]?drift|"
@@ -66,8 +84,38 @@ NORMAL_HOST_BRIDGE_RE = re.compile(
     re.IGNORECASE,
 )
 HIGH_CONFIDENCE_FAILURE_RE = re.compile(
-    r"traceback|exception|panic|segmentation\s+fault|core\s+dumped|fatal\s+error|"
+    r"traceback|exception(?:[:\s]|$)|panic|segmentation\s+fault|core\s+dumped|fatal\s+error|"
     r"STATUS:\s*blocked|BLOCKER:\s*[A-Za-z0-9_. -]+",
+    re.IGNORECASE,
+)
+CLEANUP_FAILURE_DETAIL_RE = re.compile(
+    r"exit\s*(?:code|status)\s*[:=]\s*[1-9]\d*|"
+    r"return\s*code\s*[:=]\s*[1-9]\d*|"
+    r"returncode\s*[:=]\s*[1-9]\d*|"
+    r"\bcommand failed\b|"
+    r"\bfailed to\b|"
+    r"\berror\s*[:=]|"
+    r"\bfatal\s*[:=]|"
+    r"\bno such file\b|"
+    r"\bnot found\b|"
+    r"\bpermission denied\b",
+    re.IGNORECASE,
+)
+EXPECTED_WORKFLOW_GATE_BLOCKER_RE = re.compile(
+    r"BLOCKER:\s*(?:"
+    r"missing_quality_loop_pipeline|"
+    r"missing_quality_loop_evidence|"
+    r"missing_specialist_dispatch_evidence|"
+    r"incomplete_specialist_dispatch_evidence|"
+    r"missing_skill_load_evidence|"
+    r"missing_required_skill_load_evidence|"
+    r"missing_skill_use_evidence|"
+    r"incomplete_skill_use_evidence|"
+    r"missing_skill_understanding_evidence|"
+    r"incomplete_skill_understanding_evidence|"
+    r"missing_tdd_red_phase_evidence|"
+    r"missing_tdd_refactor_phase_evidence"
+    r")\b",
     re.IGNORECASE,
 )
 FAILURE_STATUSES = {"failed", "failure", "error", "errored", "crashed", "blocked"}
@@ -75,6 +123,9 @@ SUCCESS_STATUSES = {"completed", "complete", "success", "succeeded", "ok", "pass
 EXIT_CODE_KEYS = {"returncode", "return_code", "exit_code", "exit_status", "rc"}
 STATUS_KEYS = {"status", "state", "outcome"}
 ERROR_BOOL_KEYS = {"is_error", "failed"}
+ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+SHELL_EXECUTABLES = {"bash", "sh", "zsh"}
+COMMAND_WRAPPERS = {"command", "builtin"}
 SECRET_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]+"),
     re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}"),
@@ -161,6 +212,10 @@ def has_bug_signal(text: str) -> bool:
     return bool(BUG_RE.search(text))
 
 
+def is_internal_agent_crew_prompt(text: str) -> bool:
+    return bool(INTERNAL_AGENT_CREW_PROMPT_RE.search(first_line(text)))
+
+
 def has_infrastructure_failure_signal(text: str) -> bool:
     return bool(STRUCTURED_BLOCKED_RE.search(text) and INFRASTRUCTURE_FAILURE_RE.search(text))
 
@@ -171,6 +226,108 @@ def is_normal_host_bridge_blocker(text: str) -> bool:
 
 def has_high_confidence_failure_signal(text: str) -> bool:
     return bool(HIGH_CONFIDENCE_FAILURE_RE.search(text))
+
+
+def command_invokes_crew(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+
+    executable = command_executable(tokens)
+    if executable is None:
+        return False
+    if executable.startswith("crew:"):
+        return True
+
+    return Path(executable).name == "crew"
+
+
+def command_disables_reporting(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+
+    index = 1 if tokens[:1] == ["env"] else 0
+    while index < len(tokens) and ENV_ASSIGNMENT_RE.fullmatch(tokens[index]):
+        key, value = tokens[index].split("=", 1)
+        normalized = value.strip().lower()
+        if key == "AGENT_CREW_AUTO_ISSUE_REPORT" and normalized in {"0", "false", "no", "off"}:
+            return True
+        if key == "AGENT_CREW_AUTO_ISSUE_REPORT_DISABLED" and normalized in {"1", "true", "yes", "on"}:
+            return True
+        index += 1
+
+    return False
+
+
+def command_executable(tokens: list[str]) -> str | None:
+    index = skip_env_assignments(tokens, 0)
+    if index >= len(tokens):
+        return None
+
+    if tokens[index] == "env":
+        index = skip_env_command(tokens, index + 1)
+        if index >= len(tokens):
+            return None
+
+    while index < len(tokens) and tokens[index] in COMMAND_WRAPPERS:
+        index += 1
+
+    if index >= len(tokens):
+        return None
+
+    executable = tokens[index]
+    if Path(executable).name in SHELL_EXECUTABLES:
+        return shell_wrapped_executable(tokens[index + 1 :])
+
+    return executable
+
+
+def skip_env_assignments(tokens: list[str], start: int) -> int:
+    index = start
+    while index < len(tokens) and ENV_ASSIGNMENT_RE.fullmatch(tokens[index]):
+        index += 1
+    return index
+
+
+def skip_env_command(tokens: list[str], start: int) -> int:
+    index = start
+    while index < len(tokens):
+        token = tokens[index]
+        if ENV_ASSIGNMENT_RE.fullmatch(token):
+            index += 1
+            continue
+        if token in {"-i", "--ignore-environment"}:
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return index
+    return index
+
+
+def shell_wrapped_executable(tokens: list[str]) -> str | None:
+    index = 0
+    while index < len(tokens) and tokens[index].startswith("-"):
+        option = tokens[index]
+        index += 1
+        if option in {"-c", "-lc"} and index < len(tokens):
+            try:
+                wrapped_tokens = shlex.split(tokens[index])
+            except ValueError:
+                return None
+
+            return command_executable(wrapped_tokens)
+
+    if index >= len(tokens):
+        return None
+
+    return tokens[index]
 
 
 def explicit_tool_failure(payload: dict[str, Any]) -> bool | None:
@@ -245,8 +402,13 @@ def detect_signal(payload: dict[str, Any]) -> Signal | None:
         )
 
     prompt = str(payload.get("prompt") or "")
-    if prompt and has_agent_crew_signal(prompt) and has_bug_signal(prompt):
-        summary = first_line(prompt)
+    summary = first_line(prompt)
+    if (
+        prompt
+        and not is_internal_agent_crew_prompt(prompt)
+        and has_agent_crew_signal(summary)
+        and has_bug_signal(summary)
+    ):
         return Signal(
             source="UserPromptSubmit",
             summary=summary,
@@ -264,7 +426,8 @@ def detect_signal(payload: dict[str, Any]) -> Signal | None:
     response_text = "\n".join(response_parts)
     combined = "\n".join(part for part in (command, response_text) if part)
 
-    command_is_crew = bool(command and has_agent_crew_signal(command))
+    command_is_crew = command_invokes_crew(command)
+    command_reporting_disabled = command_disables_reporting(command)
     failure_marker = explicit_tool_failure(payload)
     output_has_bug = has_bug_signal(response_text)
     output_has_infrastructure_failure = has_infrastructure_failure_signal(response_text)
@@ -279,8 +442,10 @@ def detect_signal(payload: dict[str, Any]) -> Signal | None:
     if (
         tool_name == "Bash"
         and command_is_crew
+        and not command_reporting_disabled
         and reportable_failure
         and not is_normal_host_bridge_blocker(response_text)
+        and not is_expected_workflow_gate_blocker(response_text)
     ):
         summary_source = command or combined
         return Signal(
@@ -408,6 +573,177 @@ def remove_outbox(root: Path, fingerprint: str) -> None:
         (root / "outbox" / f"{fingerprint}.json").unlink()
     except FileNotFoundError:
         pass
+
+
+def report_command(document: dict[str, Any]) -> str:
+    evidence = str(document.get("evidence") or "")
+    if evidence:
+        return first_line(evidence)
+
+    summary = str(document.get("summary") or "")
+    if summary:
+        return first_line(summary)
+
+    title = str(document.get("title") or "")
+    prefix = "[auto-report] agent-crew error:"
+    if title.startswith(prefix):
+        return title[len(prefix) :].strip()
+
+    return ""
+
+
+def is_false_positive_report(document: dict[str, Any]) -> bool:
+    return bool(false_positive_report_reason(document))
+
+
+def false_positive_report_reason(document: dict[str, Any]) -> str:
+    source = str(document.get("source") or "")
+    classification = str(document.get("classification") or "")
+    if source == "UserPromptSubmit" and classification == "user_reported_error":
+        evidence = str(document.get("evidence") or document.get("summary") or document.get("title") or "")
+        if evidence and is_internal_agent_crew_prompt(evidence):
+            return "false_positive_internal_prompt"
+        summary = first_line(evidence)
+        if not (has_agent_crew_signal(summary) and has_bug_signal(summary)):
+            return "false_positive_indirect_prompt"
+        return ""
+
+    if str(document.get("source") or "") != "PostToolUse:Bash":
+        return ""
+    if str(document.get("classification") or "") != "crew_command_failure":
+        return ""
+
+    command = report_command(document)
+    if not command:
+        return ""
+
+    if not command_invokes_crew(command):
+        return "false_positive_non_crew_command"
+    if command_disables_reporting(command):
+        return "false_positive_reporting_disabled_command"
+
+    evidence = str(document.get("evidence") or "")
+    if is_expected_workflow_gate_blocker(evidence):
+        return "false_positive_expected_workflow_gate"
+    if evidence and not has_reportable_crew_failure_evidence(evidence):
+        return "false_positive_routine_crew_output"
+
+    return ""
+
+
+def has_reportable_crew_failure_evidence(evidence: str) -> bool:
+    response_text = "\n".join(evidence.splitlines()[1:]) if evidence else ""
+    diagnostic_text = response_text or evidence
+    return (
+        has_high_confidence_failure_signal(diagnostic_text)
+        or has_infrastructure_failure_signal(diagnostic_text)
+        or bool(CLEANUP_FAILURE_DETAIL_RE.search(diagnostic_text))
+    )
+
+
+def is_expected_workflow_gate_blocker(text: str) -> bool:
+    return bool(EXPECTED_WORKFLOW_GATE_BLOCKER_RE.search(text))
+
+
+def cleanup_reports(root: Path, quarantine_name: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+    quarantine = root / "quarantine" / (quarantine_name or time.strftime("%Y%m%d-%H%M%S", time.gmtime()))
+    entries: list[dict[str, Any]] = []
+    invalid_fingerprints: set[str] = set()
+    scanned = 0
+
+    for folder in ("outbox", "reported"):
+        report_dir = root / folder
+        if not report_dir.is_dir():
+            continue
+
+        for path in sorted(report_dir.glob("*.json")):
+            scanned += 1
+            document = read_json(path)
+            reason = ""
+            fingerprint = path.stem
+            if document is None:
+                reason = "malformed_json"
+            else:
+                fingerprint = str(document.get("fingerprint") or path.stem)
+                if folder == "outbox" and not has_required_outbox_fields(document):
+                    reason = "malformed_schema"
+                else:
+                    reason = false_positive_report_reason(document)
+
+            if reason:
+                invalid_fingerprints.add(fingerprint)
+                entries.append({
+                    "path": path,
+                    "folder": folder,
+                    "reason": reason,
+                    "fingerprint": fingerprint,
+                })
+
+    known_paths = {entry["path"] for entry in entries}
+    for folder in ("outbox", "reported"):
+        report_dir = root / folder
+        if not report_dir.is_dir():
+            continue
+
+        for path in sorted(report_dir.glob("*.json")):
+            if path in known_paths:
+                continue
+            document = read_json(path)
+            if document is None:
+                continue
+            fingerprint = str(document.get("fingerprint") or path.stem)
+            if fingerprint not in invalid_fingerprints:
+                continue
+
+            entries.append({
+                "path": path,
+                "folder": folder,
+                "reason": "paired_false_positive",
+                "fingerprint": fingerprint,
+            })
+
+    moved: list[dict[str, str]] = []
+    for entry in entries:
+        path = entry["path"]
+        destination = unique_quarantine_path(quarantine / str(entry["folder"]) / path.name)
+        moved.append({
+            "path": str(path),
+            "quarantine_path": str(destination),
+            "reason": str(entry["reason"]),
+            "fingerprint": str(entry["fingerprint"]),
+        })
+        if dry_run:
+            continue
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        path.replace(destination)
+
+    status = "cleaned" if moved and not dry_run else "dry_run" if dry_run else "clean"
+    return result(
+        status,
+        scanned=scanned,
+        kept=max(scanned - len(moved), 0),
+        quarantined=len(moved),
+        quarantine_path=str(quarantine),
+        reports=moved,
+    )
+
+
+def has_required_outbox_fields(document: dict[str, Any]) -> bool:
+    required = ("schema_version", "fingerprint", "source", "classification", "title")
+    return all(document.get(field) is not None and str(document.get(field)).strip() for field in required)
+
+
+def unique_quarantine_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+
+    index = 1
+    while True:
+        candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 def gh_json(args: list[str], timeout: int) -> tuple[int, str, str]:
@@ -603,6 +939,10 @@ def handle_publish(backend: str | None = None) -> dict[str, Any]:
     return result(status, published=published, queued=queued, failed=failed, reports=details)
 
 
+def handle_cleanup(dry_run: bool = False) -> dict[str, Any]:
+    return cleanup_reports(state_dir(), dry_run=dry_run)
+
+
 def parse_args() -> argparse.Namespace:
     argv = sys.argv[1:]
     if not argv or argv[0].startswith("-"):
@@ -620,6 +960,10 @@ def parse_args() -> argparse.Namespace:
     publish.add_argument("--format", choices=("none", "json", "text"), default="none")
     publish.add_argument("--backend", choices=("github",), default="github")
 
+    cleanup = subparsers.add_parser("cleanup", help="quarantine invalid or false-positive native reports")
+    cleanup.add_argument("--format", choices=("none", "json", "text"), default="none")
+    cleanup.add_argument("--dry-run", action="store_true", help="show what would be quarantined without moving files")
+
     return parser.parse_args(argv)
 
 
@@ -631,6 +975,8 @@ def main() -> int:
             payload = handle_auto(raw, backend=args.publish)
         elif args.command == "publish":
             payload = handle_publish(args.backend)
+        elif args.command == "cleanup":
+            payload = handle_cleanup(dry_run=args.dry_run)
         else:
             payload = result("failed", detail=f"unsupported command: {args.command}")
     except Exception as exc:

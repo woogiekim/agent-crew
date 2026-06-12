@@ -35,14 +35,18 @@ Adapters wire it into:
 
 - `UserPromptSubmit` — detects explicit user reports such as "agent-crew
   error", "에이전트크루 오류", or "crew run traceback".
-- `PostToolUse[Bash]` — detects Bash tool payloads whose command is a `crew` /
-  agent-crew command and whose tool outcome is explicitly failed plus
-  bug/error output. When the host payload has no explicit outcome metadata, the
-  reporter accepts only high-confidence failure text such as tracebacks,
-  exceptions, panics, fatal errors, or structured infrastructure blockers.
-  Successful payloads are ignored even if their output contains words such as
-  `error` in filenames or documentation paths. A non-zero return code alone is
-  not enough because normal host handoff blockers also use non-zero exits.
+- `PostToolUse[Bash]` — detects Bash tool payloads whose command actually
+  invokes the `crew` executable or `crew:<intent>` notation, and whose tool
+  outcome is explicitly failed plus bug/error output. Paths such as
+  `.agent-crew/commands/agent.md`, documentation text, and read-only commands
+  that merely mention agent-crew are not treated as crew command executions.
+  When the host payload has no explicit outcome metadata, the reporter accepts
+  only high-confidence failure text from an actual crew invocation, such as
+  tracebacks, exceptions, panics, fatal errors, or structured infrastructure
+  blockers. Successful payloads are ignored even if their output contains words
+  such as `error` in filenames or documentation paths. A non-zero return code
+  alone is not enough because normal host handoff blockers also use non-zero
+  exits.
 - `source=supervisor_blocked` payloads — detects unexpected supervisor
   infrastructure blockers such as schema validation, capability, runtime,
   host-tool, or install drift failures. Normal host bridge handoff blockers
@@ -108,13 +112,22 @@ To publish queued reports later:
 crew report publish --backend github
 ```
 
+To quarantine malformed local records, internal handoff prompt captures,
+routine successful crew diagnostic output, and false-positive Bash reports
+whose command did not actually invoke crew:
+
+```bash
+crew report cleanup --format json
+```
+
 ## Safeguards
 
 - **Narrow trigger**: prompt reports require both an agent-crew signal and a
-  bug/error signal; Bash reports require a `crew` command, a failed or
-  high-confidence failure outcome, and bug/error output. Generic application
-  errors, successful diagnostic commands, and normal host-bridge handoff
-  blockers are ignored.
+  bug/error signal in the direct prompt summary; internal agent-crew handoff
+  prompts are ignored. Bash reports require an actual `crew` invocation, a
+  failed or high-confidence failure outcome, and bug/error output. Generic
+  application errors, successful diagnostic commands, documentation/path reads,
+  and normal host-bridge handoff blockers are ignored.
 - **Local deduplication**: reports are fingerprinted and recorded under the
   native report state directory.
 - **Remote deduplication**: when `gh` works, the reporter searches existing
