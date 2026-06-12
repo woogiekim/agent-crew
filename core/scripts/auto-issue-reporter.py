@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -75,6 +76,9 @@ SUCCESS_STATUSES = {"completed", "complete", "success", "succeeded", "ok", "pass
 EXIT_CODE_KEYS = {"returncode", "return_code", "exit_code", "exit_status", "rc"}
 STATUS_KEYS = {"status", "state", "outcome"}
 ERROR_BOOL_KEYS = {"is_error", "failed"}
+ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+SHELL_EXECUTABLES = {"bash", "sh", "zsh"}
+COMMAND_WRAPPERS = {"command", "builtin"}
 SECRET_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]+"),
     re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}"),
@@ -173,6 +177,89 @@ def has_high_confidence_failure_signal(text: str) -> bool:
     return bool(HIGH_CONFIDENCE_FAILURE_RE.search(text))
 
 
+def command_invokes_crew(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+
+    executable = command_executable(tokens)
+    if executable is None:
+        return False
+    if executable.startswith("crew:"):
+        return True
+
+    return Path(executable).name == "crew"
+
+
+def command_executable(tokens: list[str]) -> str | None:
+    index = skip_env_assignments(tokens, 0)
+    if index >= len(tokens):
+        return None
+
+    if tokens[index] == "env":
+        index = skip_env_command(tokens, index + 1)
+        if index >= len(tokens):
+            return None
+
+    while index < len(tokens) and tokens[index] in COMMAND_WRAPPERS:
+        index += 1
+
+    if index >= len(tokens):
+        return None
+
+    executable = tokens[index]
+    if Path(executable).name in SHELL_EXECUTABLES:
+        return shell_wrapped_executable(tokens[index + 1 :])
+
+    return executable
+
+
+def skip_env_assignments(tokens: list[str], start: int) -> int:
+    index = start
+    while index < len(tokens) and ENV_ASSIGNMENT_RE.fullmatch(tokens[index]):
+        index += 1
+    return index
+
+
+def skip_env_command(tokens: list[str], start: int) -> int:
+    index = start
+    while index < len(tokens):
+        token = tokens[index]
+        if ENV_ASSIGNMENT_RE.fullmatch(token):
+            index += 1
+            continue
+        if token in {"-i", "--ignore-environment"}:
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return index
+    return index
+
+
+def shell_wrapped_executable(tokens: list[str]) -> str | None:
+    index = 0
+    while index < len(tokens) and tokens[index].startswith("-"):
+        option = tokens[index]
+        index += 1
+        if option in {"-c", "-lc"} and index < len(tokens):
+            try:
+                wrapped_tokens = shlex.split(tokens[index])
+            except ValueError:
+                return None
+
+            return command_executable(wrapped_tokens)
+
+    if index >= len(tokens):
+        return None
+
+    return tokens[index]
+
+
 def explicit_tool_failure(payload: dict[str, Any]) -> bool | None:
     """Return True/False for explicit tool outcome, None when unavailable."""
     found_success = False
@@ -264,7 +351,7 @@ def detect_signal(payload: dict[str, Any]) -> Signal | None:
     response_text = "\n".join(response_parts)
     combined = "\n".join(part for part in (command, response_text) if part)
 
-    command_is_crew = bool(command and has_agent_crew_signal(command))
+    command_is_crew = command_invokes_crew(command)
     failure_marker = explicit_tool_failure(payload)
     output_has_bug = has_bug_signal(response_text)
     output_has_infrastructure_failure = has_infrastructure_failure_signal(response_text)
@@ -408,6 +495,130 @@ def remove_outbox(root: Path, fingerprint: str) -> None:
         (root / "outbox" / f"{fingerprint}.json").unlink()
     except FileNotFoundError:
         pass
+
+
+def report_command(document: dict[str, Any]) -> str:
+    evidence = str(document.get("evidence") or "")
+    if evidence:
+        return first_line(evidence)
+
+    summary = str(document.get("summary") or "")
+    if summary:
+        return first_line(summary)
+
+    title = str(document.get("title") or "")
+    prefix = "[auto-report] agent-crew error:"
+    if title.startswith(prefix):
+        return title[len(prefix) :].strip()
+
+    return ""
+
+
+def is_false_positive_report(document: dict[str, Any]) -> bool:
+    if str(document.get("source") or "") != "PostToolUse:Bash":
+        return False
+    if str(document.get("classification") or "") != "crew_command_failure":
+        return False
+
+    command = report_command(document)
+    if not command:
+        return False
+
+    return not command_invokes_crew(command)
+
+
+def cleanup_reports(root: Path, quarantine_name: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+    quarantine = root / "quarantine" / (quarantine_name or time.strftime("%Y%m%d-%H%M%S", time.gmtime()))
+    entries: list[dict[str, Any]] = []
+    invalid_fingerprints: set[str] = set()
+    scanned = 0
+
+    for folder in ("outbox", "reported"):
+        report_dir = root / folder
+        if not report_dir.is_dir():
+            continue
+
+        for path in sorted(report_dir.glob("*.json")):
+            scanned += 1
+            document = read_json(path)
+            reason = ""
+            fingerprint = path.stem
+            if document is None:
+                reason = "malformed_json"
+            else:
+                fingerprint = str(document.get("fingerprint") or path.stem)
+                if is_false_positive_report(document):
+                    reason = "false_positive_non_crew_command"
+
+            if reason:
+                invalid_fingerprints.add(fingerprint)
+                entries.append({
+                    "path": path,
+                    "folder": folder,
+                    "reason": reason,
+                    "fingerprint": fingerprint,
+                })
+
+    known_paths = {entry["path"] for entry in entries}
+    for folder in ("outbox", "reported"):
+        report_dir = root / folder
+        if not report_dir.is_dir():
+            continue
+
+        for path in sorted(report_dir.glob("*.json")):
+            if path in known_paths:
+                continue
+            document = read_json(path)
+            if document is None:
+                continue
+            fingerprint = str(document.get("fingerprint") or path.stem)
+            if fingerprint not in invalid_fingerprints:
+                continue
+
+            entries.append({
+                "path": path,
+                "folder": folder,
+                "reason": "paired_false_positive",
+                "fingerprint": fingerprint,
+            })
+
+    moved: list[dict[str, str]] = []
+    for entry in entries:
+        path = entry["path"]
+        destination = unique_quarantine_path(quarantine / str(entry["folder"]) / path.name)
+        moved.append({
+            "path": str(path),
+            "quarantine_path": str(destination),
+            "reason": str(entry["reason"]),
+            "fingerprint": str(entry["fingerprint"]),
+        })
+        if dry_run:
+            continue
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        path.replace(destination)
+
+    status = "cleaned" if moved and not dry_run else "dry_run" if dry_run else "clean"
+    return result(
+        status,
+        scanned=scanned,
+        kept=max(scanned - len(moved), 0),
+        quarantined=len(moved),
+        quarantine_path=str(quarantine),
+        reports=moved,
+    )
+
+
+def unique_quarantine_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+
+    index = 1
+    while True:
+        candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 def gh_json(args: list[str], timeout: int) -> tuple[int, str, str]:
@@ -603,6 +814,10 @@ def handle_publish(backend: str | None = None) -> dict[str, Any]:
     return result(status, published=published, queued=queued, failed=failed, reports=details)
 
 
+def handle_cleanup(dry_run: bool = False) -> dict[str, Any]:
+    return cleanup_reports(state_dir(), dry_run=dry_run)
+
+
 def parse_args() -> argparse.Namespace:
     argv = sys.argv[1:]
     if not argv or argv[0].startswith("-"):
@@ -620,6 +835,10 @@ def parse_args() -> argparse.Namespace:
     publish.add_argument("--format", choices=("none", "json", "text"), default="none")
     publish.add_argument("--backend", choices=("github",), default="github")
 
+    cleanup = subparsers.add_parser("cleanup", help="quarantine invalid or false-positive native reports")
+    cleanup.add_argument("--format", choices=("none", "json", "text"), default="none")
+    cleanup.add_argument("--dry-run", action="store_true", help="show what would be quarantined without moving files")
+
     return parser.parse_args(argv)
 
 
@@ -631,6 +850,8 @@ def main() -> int:
             payload = handle_auto(raw, backend=args.publish)
         elif args.command == "publish":
             payload = handle_publish(args.backend)
+        elif args.command == "cleanup":
+            payload = handle_cleanup(dry_run=args.dry_run)
         else:
             payload = result("failed", detail=f"unsupported command: {args.command}")
     except Exception as exc:

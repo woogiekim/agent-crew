@@ -119,6 +119,96 @@ def test_signal_detection_ignores_successful_crew_output_with_error_words():
     assert signal is None
 
 
+def test_signal_detection_ignores_read_only_agent_crew_path_output_without_status():
+    # given
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "cat /Users/wook/.agent-crew/commands/agent.md"},
+        "tool_response": {
+            "stdout": "STATUS: blocked\nBLOCKER: state_schema_invalid\ncrew:agent docs",
+        },
+    }
+
+    # when
+    signal = reporter.detect_signal(payload)
+
+    # then
+    assert signal is None
+
+
+def test_signal_detection_records_actual_crew_invocation_without_status():
+    # given
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "crew status"},
+        "tool_response": {
+            "stderr": "STATUS: blocked\nBLOCKER: state_schema_invalid",
+        },
+    }
+
+    # when
+    signal = reporter.detect_signal(payload)
+
+    # then
+    assert signal is not None
+    assert signal.classification == "crew_command_failure"
+
+
+def test_cleanup_quarantines_false_positive_and_malformed_reports(tmp_path: Path):
+    # given
+    false_positive = {
+        "schema_version": 1,
+        "fingerprint": "false-positive",
+        "repo": "woogiekim/agent-crew",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": "[auto-report] agent-crew error: cat /Users/wook/.agent-crew/commands/agent.md",
+        "evidence": "cat /Users/wook/.agent-crew/commands/agent.md\nSTATUS: blocked\nBLOCKER: state_schema_invalid",
+    }
+    valid_report = {
+        "schema_version": 1,
+        "fingerprint": "valid",
+        "repo": "woogiekim/agent-crew",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": "[auto-report] agent-crew error: crew status",
+        "evidence": "crew status\nSTATUS: blocked\nBLOCKER: state_schema_invalid",
+    }
+    reporter.write_json(tmp_path / "outbox" / "false-positive.json", false_positive)
+    reporter.write_json(tmp_path / "outbox" / "valid.json", valid_report)
+    reporter.write_json(tmp_path / "reported" / "false-positive.json", {
+        "fingerprint": "false-positive",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": false_positive["title"],
+        "status": "recorded",
+    })
+    reporter.write_json(tmp_path / "reported" / "valid.json", {
+        "fingerprint": "valid",
+        "source": "PostToolUse:Bash",
+        "classification": "crew_command_failure",
+        "title": valid_report["title"],
+        "status": "recorded",
+    })
+    (tmp_path / "outbox" / "malformed.json").write_text("{bad json", encoding="utf-8")
+
+    # when
+    result = reporter.cleanup_reports(tmp_path, quarantine_name="test-quarantine")
+
+    # then
+    assert result["status"] == "cleaned"
+    assert result["quarantined"] == 3
+    assert (tmp_path / "outbox" / "valid.json").is_file()
+    assert (tmp_path / "reported" / "valid.json").is_file()
+    assert not (tmp_path / "outbox" / "false-positive.json").exists()
+    assert not (tmp_path / "reported" / "false-positive.json").exists()
+    assert (tmp_path / "quarantine" / "test-quarantine" / "outbox" / "false-positive.json").is_file()
+    assert (tmp_path / "quarantine" / "test-quarantine" / "reported" / "false-positive.json").is_file()
+    assert (tmp_path / "quarantine" / "test-quarantine" / "outbox" / "malformed.json").is_file()
+
+
 def test_title_truncates_and_unknown_backend_is_returned():
     title = reporter.issue_title(_signal("agent-crew " + ("x" * 120)))
 
