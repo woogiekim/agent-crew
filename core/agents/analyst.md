@@ -376,7 +376,7 @@ full criteria, the interaction table with `tdd_parallel` /
 `parallelizable_units` — the reviewer is added to whatever single host
 message the other flags' dispatch already issues.
 
-### Step 7 — Write PRD and handoff.md
+### Step 7 — Write PRD
 
 Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
 - Feature goals and background
@@ -386,9 +386,66 @@ Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
   and review when code changes are planned
 - Implementation scope and exclusions
 
+### Step 7.5 — PRD self-review (writing-plans gate)
+
+After drafting `prd.md` and BEFORE writing `handoff.md` (or any other
+downstream artifact derived from the PRD), the analyst MUST run an in-spawn
+self-review checklist. This is a mandatory gate, not optional commentary —
+the next step cannot be entered until all three checks pass.
+
+Run the following three checks against the drafted PRD:
+
+1. **Placeholder scan.** Re-read the drafted `prd.md` and search for any of
+   the forbidden tokens (case-insensitive, whole-word/phrase):
+   `TBD`, `TODO`, `FIXME`, `XXX`, `implement later`, `fill in details`,
+   `add appropriate error handling`. A hit in non-blockquote, non-fenced-block
+   body content is a contract violation — REWRITE the affected section with
+   concrete content. Quoted tokens inside markdown blockquotes (lines starting
+   with `>`) or fenced code blocks (` ``` `) are allowed so the rule itself
+   and test fixtures can document the forbidden tokens.
+2. **Spec coverage.** For every non-empty field in
+   `{TASK_DIR}/context/requirements.md` (scope, target, constraints,
+   deliverable, acceptance criteria, etc.), confirm at least one PRD section
+   addresses that field. If a field is missing coverage, add a section before
+   proceeding.
+3. **Type/contract consistency.** Re-read the PRD's referenced file paths,
+   function signatures, CLI flags, exit codes, and output formats. Confirm
+   they are internally consistent (the same path/signature/flag used the
+   same way throughout) and consistent with the existing codebase contract
+   where one exists (an extended script's argv shape must not break callers;
+   a function rename must propagate to every reference).
+
+If any check fails, rewrite `prd.md` and re-run all three checks. Only
+after every check passes does the analyst proceed to Step 7.6.
+
+Write the self-review evidence to `{TASK_DIR}/context/prd-self-review.md`,
+recording — for each of the three checks — the outcome (PASS or REWRITTEN),
+any rewrites performed, and a brief justification when a forbidden token was
+intentionally retained inside a blockquote or fenced block:
+
+```text
+# PRD Self-Review
+
+## Placeholder scan
+{PASS | REWRITTEN — short rewrite summary}
+
+## Spec coverage
+{PASS | REWRITTEN — fields added / sections added}
+
+## Type/contract consistency
+{PASS | REWRITTEN — inconsistencies corrected}
+```
+
+The file is mandatory; absence is itself a contract violation surfaced by
+the existing readiness/repair tooling. The step text is AI-agnostic — no
+host-specific tool calls are required, only re-reading the artifacts and
+applying the checklist.
+
+### Step 7.6 — Write handoff.md
+
 Write handoff content to `{TASK_DIR}/handoff.md`:
 - Summarized requirements
-- Preserved Codex skill context path when `requirements.md` contains
+- Preserved skill context path when `requirements.md` contains
   `skill_context` other than `(none)`
 - Key technical decisions from the PRD
 - Constraints and cautions

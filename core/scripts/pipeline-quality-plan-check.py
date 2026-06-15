@@ -14,6 +14,60 @@ Exit codes:
   0 - plan is valid or quality-loop planning is not required
   1 - validation failed
   2 - invalid arguments
+
+PRD placeholder scan
+--------------------
+
+In addition to pipeline-shape checks, this script scans the PRD that lives
+alongside the pipeline (``<dirname(pipeline.json)>/context/prd.md``) for a
+closed list of placeholder tokens. The scan is provider-neutral
+(python stdlib only) and runs automatically when ``prd.md`` exists. There
+is no CLI flag to enable or disable it.
+
+Forbidden tokens (case-insensitive, whole-word/phrase):
+
+- ``TBD``
+- ``TODO``
+- ``FIXME``
+- ``XXX``
+- ``implement later``
+- ``fill in details``
+- ``add appropriate error handling``
+
+Multi-word phrases match with arbitrary internal whitespace collapsed to a
+single space (``implement   later`` matches ``implement later``).
+
+Skip rules:
+
+- Markdown blockquote lines (lines whose first non-whitespace character is
+  ``>``) are skipped, so the analyst rule itself can document the
+  forbidden tokens without triggering a failure.
+- Lines inside fenced code blocks (between paired ``\`\`\``` fences) are
+  skipped for the same reason.
+
+Failure labels emitted (one per matched token type, deduplicated):
+
+- ``prd_placeholder_tbd``
+- ``prd_placeholder_todo``
+- ``prd_placeholder_fixme``
+- ``prd_placeholder_xxx``
+- ``prd_placeholder_implement_later``
+- ``prd_placeholder_fill_in_details``
+- ``prd_placeholder_add_appropriate_error_handling``
+
+Result payload additions:
+
+- ``prd_path`` (str) — resolved PRD path (whether or not it exists).
+- ``prd_missing`` (bool) — ``True`` when no PRD file was found; the scan
+  is skipped and the gate is not failed by the PRD's absence (preserves
+  backward compatibility for legacy pipelines and design-only flows).
+- ``prd_placeholder_hits`` (list of ``{token, line, snippet}`` dicts) —
+  one entry per hit (NOT deduplicated). ``snippet`` is the stripped
+  matched line, truncated to 120 characters.
+
+Exit code interaction: any placeholder hit causes exit 1 (joins the
+existing failure-driven exit logic). A missing PRD has no effect on the
+exit code by itself.
 """
 
 from __future__ import annotations
@@ -44,8 +98,93 @@ CODE_IMPLEMENTATION_TASK_RE = re.compile(
 )
 
 
+# Closed list of forbidden PRD placeholder tokens. Each entry is a
+# (regex_pattern, slug) tuple. Multi-word phrases use ``\s+`` so arbitrary
+# internal whitespace still matches. Word boundaries (``\b``) ensure
+# ``TODO`` does not match inside ``TODOIST``.
+#
+# Keep this list closed (KISS / YAGNI / false-positive conservatism). Do
+# not add fuzzy English-prose heuristics — the goal is to catch known
+# placeholder tokens, not to police prose.
+PRD_PLACEHOLDER_PATTERNS: list[tuple[str, str]] = [
+    (r"\bTBD\b", "tbd"),
+    (r"\bTODO\b", "todo"),
+    (r"\bFIXME\b", "fixme"),
+    (r"\bXXX\b", "xxx"),
+    (r"\bimplement\s+later\b", "implement_later"),
+    (r"\bfill\s+in\s+details\b", "fill_in_details"),
+    (r"\badd\s+appropriate\s+error\s+handling\b", "add_appropriate_error_handling"),
+]
+
+_COMPILED_PRD_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(pattern, re.IGNORECASE), slug)
+    for pattern, slug in PRD_PLACEHOLDER_PATTERNS
+]
+
+_BLOCKQUOTE_RE = re.compile(r"^\s*>")
+_FENCE_RE = re.compile(r"^\s*```")
+_SNIPPET_MAX = 120
+
+
 def looks_code_implementation_task(text: str) -> bool:
     return bool(CODE_IMPLEMENTATION_TASK_RE.search(text or ""))
+
+
+def scan_prd_placeholders(prd_path: Path) -> dict:
+    """Scan ``prd_path`` for forbidden placeholder tokens.
+
+    Returns a dict with three keys:
+
+    - ``prd_path`` (str): the resolved path (always present).
+    - ``prd_missing`` (bool): ``True`` when the file does not exist.
+    - ``hits`` (list[dict]): one ``{token, line, snippet}`` entry per
+      match. Lines inside markdown blockquotes (``>``) and fenced code
+      blocks (``\`\`\```` toggled) are skipped. Slugs are NOT
+      deduplicated here — callers dedupe when building failure labels.
+    """
+
+    result: dict = {
+        "prd_path": str(prd_path),
+        "prd_missing": False,
+        "hits": [],
+    }
+
+    if not prd_path.is_file():
+        result["prd_missing"] = True
+        return result
+
+    text = prd_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    in_fence = False
+    for lineno, raw_line in enumerate(lines, start=1):
+        if _FENCE_RE.match(raw_line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if _BLOCKQUOTE_RE.match(raw_line):
+            continue
+
+        for pattern, slug in _COMPILED_PRD_PATTERNS:
+            match = pattern.search(raw_line)
+            if not match:
+                continue
+
+            snippet = raw_line.strip()
+            if len(snippet) > _SNIPPET_MAX:
+                snippet = snippet[:_SNIPPET_MAX]
+
+            result["hits"].append(
+                {
+                    "token": match.group(0),
+                    "line": lineno,
+                    "snippet": snippet,
+                    "slug": slug,
+                }
+            )
+
+    return result
 
 
 def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> dict:
@@ -103,6 +242,39 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
     }
 
 
+def _apply_prd_scan(result: dict, pipeline_path: Path) -> dict:
+    """Merge placeholder-scan output into ``result`` and update failures.
+
+    The scan runs automatically when ``<pipeline_dir>/context/prd.md``
+    exists. A missing PRD does not fail the gate (only sets
+    ``prd_missing: True``). Any hit adds one ``prd_placeholder_<slug>``
+    label per distinct slug to ``failures`` and flips ``passed`` to
+    ``False``.
+    """
+
+    prd_path = pipeline_path.parent / "context" / "prd.md"
+    scan = scan_prd_placeholders(prd_path)
+
+    hits = scan["hits"]
+    placeholder_hits = [
+        {"token": hit["token"], "line": hit["line"], "snippet": hit["snippet"]}
+        for hit in hits
+    ]
+
+    result["prd_path"] = scan["prd_path"]
+    result["prd_missing"] = scan["prd_missing"]
+    result["prd_placeholder_hits"] = placeholder_hits
+
+    if hits:
+        slugs = {hit["slug"] for hit in hits}
+        new_labels = {f"prd_placeholder_{slug}" for slug in slugs}
+        existing = set(result.get("failures") or [])
+        result["failures"] = sorted(existing | new_labels)
+        result["passed"] = False
+
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pipeline", required=True)
@@ -117,6 +289,8 @@ def main() -> int:
 
     pipeline = load_json(pipeline_path)
     result = validate_pipeline_quality_plan(pipeline, task=args.task)
+    _apply_prd_scan(result, pipeline_path)
+
     if args.format == "json":
         json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
