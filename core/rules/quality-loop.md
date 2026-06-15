@@ -327,10 +327,44 @@ Reviewer rejection signals include:
 | `STATUS: REJECTED REASON: tests_failed` | A discovered runner returned non-zero exit. | Re-loop to the target implementation/TDD stage with the failing tail in handoff.md. |
 | `STATUS: REJECTED REASON: tests_absent_for_code_change` | No runner discovered AND the diff touches code files. | Re-loop with directive to add a runner config + tests, OR mark the reviewer stage `requires_test_execution: false` with a justification. |
 | `STATUS: REJECTED REASON: cross_process_path_mismatch` | The diff touches BOTH `*.sh` AND `*.py / *.ts / *.tsx / *.js / *.jsx`, and the two sides disagree on filesystem path literals. | Re-loop with the conflicting path pair in handoff.md. |
+| `STATUS: REJECTED REASON: missing_verification_evidence` | An implementer stage (`backend`, `frontend`, `test-writer`, generic implementer) returned `STATUS: completed` but its return block lacks a `VERIFIED:` line, OR the line does not match the grammar in `core/rules/self-verification.md`, OR the line uses a `skipped:*` form with no matching `{TASK_DIR}/context/tdd-exception.md`. | Re-loop to the target implementation/TDD stage with directive to re-run the test/build command and emit a valid `VERIFIED:` line. |
 | `STATUS: REJECTED REASON: coverage_below_100` | Coverage tooling or the coverage matrix shows uncovered changed executable behavior. | Re-loop with the missing coverage item in handoff.md. |
 | `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but no coverage report or `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
 | `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is broad, unauditable, or not tied to a concrete changed path/case. | Re-loop with directive to test the case or document a valid exception. |
 | `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | Re-loop to the target implementation/TDD stage with the issue list from `context/review.md`. |
+
+### Implementer self-verification gate (cross-reference)
+
+The `missing_verification_evidence` signal above enforces the
+implementer-side discipline defined in `core/rules/self-verification.md`.
+Every non-reviewer implementer (`backend`, `frontend`, `test-writer`,
+and any generic implementer) MUST emit a `VERIFIED:` line on its
+completion report:
+
+```text
+VERIFIED: tests=<RESULT> cmd=<CMD> exit=<CODE>
+```
+
+where `<RESULT>` is `<N>/<M>` (passing/total integers) or
+`skipped:<reason>` with `<reason>` ∈ `{no_runnable_harness, opt_out}`.
+
+The reviewer treats a stage as exempt from this gate when either of
+the following holds:
+
+1. **Planner opt-out.** The reviewer stage was passed
+   `REQUIRES_TEST_EXECUTION: false` (planner set
+   `requires_test_execution: false` on the reviewer stage object).
+   `VERIFIED: tests=skipped:opt_out cmd=none exit=0` is automatically
+   valid.
+2. **Skip form with recorded exception.** The implementer emitted
+   `VERIFIED: tests=skipped:<reason> cmd=none exit=0` AND
+   `{TASK_DIR}/context/tdd-exception.md` exists and records the
+   reason for the skip.
+
+The optional enforcement script
+`core/scripts/check-verification-evidence.py` (stdlib-only Python 3)
+mechanically validates the `VERIFIED:` line's shape and is invoked by
+the reviewer during its quality-loop pass.
 
 ### Cross-process path agreement check
 
