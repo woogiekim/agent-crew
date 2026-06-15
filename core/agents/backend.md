@@ -384,14 +384,50 @@ Update `handoff.md` only when running standalone (skip when prompt says "do not 
 
 Read and apply `QUALITY_RULE_PATH` before returning.
 
-Return: `STATUS: completed` | `COMMIT: {hash}` | `APIS: {endpoint list}` | `TESTS: {test file list}`
+**Mandatory self-verification before returning.** Per
+`core/rules/self-verification.md`, run the IDENTIFY → RUN → READ →
+VERIFY four-step gate against the resolved Channel B template's
+runner (e.g. `./gradlew test` for `kotlin-spring`, `mvn test` for
+`java-spring`, `pytest` for `python-fastapi`) **fresh in this spawn**.
+Quote the result on a single `VERIFIED:` line in the return block:
+
+```text
+VERIFIED: tests=<N>/<M> cmd=<runner> exit=<code>
+```
+
+Use the skip form `VERIFIED: tests=skipped:<reason> cmd=none exit=n/a`
+only when the change has no runnable harness (docs-only / scaffold-only
+/ planner opt-out). `<reason>` is one of `no_runnable_harness` or
+`opt_out`. When skipping, also write `{TASK_DIR}/context/tdd-exception.md`
+recording the reason. See `core/rules/self-verification.md` for the
+full shape grammar and exception path.
+
+Return block (in order):
+
+```text
+STATUS: completed
+COMMIT: {hash}
+APIS: {endpoint list}
+FILES: {test file list, implementation file list}
+VERIFIED: tests=<N>/<M> cmd=<runner> exit=<code>
+```
+
 Include `COVERAGE: 100% changed executable coverage; evidence={TASK_DIR}/context/test-coverage.md`
-when code was changed.
+when code was changed. The `FILES:` line replaces the old `TESTS:` shape;
+the `VERIFIED:` line is the proof-of-execution that the file list alone
+no longer provides.
 
 ## Absolute Rules
 
 - **Test file MUST be written and confirmed failing BEFORE implementation code is written** — no exceptions
 - **No commit without test files** — implementation-only commits are forbidden
+- **No `STATUS: completed` without a `VERIFIED:` line in the return block.**
+  Per `core/rules/self-verification.md`, the implementer MUST run the
+  resolved Channel B template's runner fresh in this spawn and quote
+  the result on the mandatory `VERIFIED: tests=<RESULT> cmd=<CMD> exit=<CODE>`
+  line. A return block lacking a valid `VERIFIED:` line is rejected by
+  the reviewer with `STATUS: REJECTED REASON: missing_verification_evidence`
+  (see `core/rules/quality-loop.md`).
 - Every public method must be covered by at least one test
 - Every changed executable branch or behavior must be covered by a test before
   completion; reviewer owns final enforcement, but backend owns fixing coverage

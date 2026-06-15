@@ -259,7 +259,37 @@ implementer runs in parallel and lands its code on the same branch.
 "
 ```
 
-### Step 6 — Return
+### Step 6 — Self-verify and return
+
+**Mandatory self-verification before returning.** Per
+`core/rules/self-verification.md`, the test-writer MUST run the test
+file it just authored — even in the red phase — and quote the result
+on the mandatory `VERIFIED:` line. The red-phase failing exit code IS
+the verification: the test file parses, the runner enumerates it, and
+either the implementation module is missing (legitimate red-phase
+`skipped:no_runnable_harness`) or the test asserts against a missing
+implementation and fails (legitimate `<failed>/<total>` count, with
+the failing exit code captured). The point is that the run happened
+in this spawn and the agent reports the fresh result.
+
+When the parallel implementer's module does not yet exist (the common
+TDD-RED case), use the skip form:
+
+```text
+VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=n/a
+```
+
+and write `{TASK_DIR}/context/tdd-exception.md` recording the reason
+(e.g. "implementer module not yet present on branch — red phase"). The
+reviewer cross-references the exception file.
+
+When the test file parses and runs end-to-end (because the
+implementer landed on the same branch by the time test-writer ran the
+runner), use the pass form:
+
+```text
+VERIFIED: tests=<N>/<M> cmd=<runner> exit=<code>
+```
 
 Return the standard STATUS block (one of the two forms below). The
 supervisor's regex parser expects English-only status keywords.
@@ -271,6 +301,7 @@ TEST_FILES:
   - {test file 1}
   - {test file 2}
 COVERAGE: 100% changed-surface coverage; evidence={TASK_DIR}/context/test-coverage.md
+VERIFIED: tests=<RESULT> cmd=<CMD> exit=<CODE>
 STATUS: completed
 ```
 
@@ -317,3 +348,13 @@ Note: `memory capture` is a no-op if no memory backend is installed.
   orchestrator owns the push gate.
 - `STATUS:` must be one of `STATUS: completed` or `STATUS: BLOCKED`
   (English literals, regex-parsed by the supervisor).
+- **No `STATUS: completed` without a `VERIFIED:` line in the return
+  block.** Per `core/rules/self-verification.md`, the test-writer MUST
+  run its newly-authored test file fresh in this spawn (even in the
+  red phase) and quote `VERIFIED: tests=<RESULT> cmd=<CMD> exit=<CODE>`.
+  The red-phase legitimate skip form is
+  `VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=n/a` when
+  the implementer's module does not yet exist; the agent writes
+  `{TASK_DIR}/context/tdd-exception.md` recording the reason. A return
+  block lacking a valid `VERIFIED:` line is rejected by the reviewer
+  with `STATUS: REJECTED REASON: missing_verification_evidence`.
