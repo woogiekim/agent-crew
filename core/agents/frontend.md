@@ -345,7 +345,7 @@ a single `VERIFIED:` line in the return block:
 VERIFIED: tests=<N>/<M> cmd=<runner> exit=<code>
 ```
 
-Use the skip form `VERIFIED: tests=skipped:<reason> cmd=none exit=n/a`
+Use the skip form `VERIFIED: tests=skipped:<reason> cmd=none exit=0`
 only when the change has no runnable harness (docs-only / scaffold-only
 / planner opt-out). `<reason>` is one of `no_runnable_harness` or
 `opt_out`. When skipping, also write `{TASK_DIR}/context/tdd-exception.md`

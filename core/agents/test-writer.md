@@ -276,7 +276,7 @@ When the parallel implementer's module does not yet exist (the common
 TDD-RED case), use the skip form:
 
 ```text
-VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=n/a
+VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=0
 ```
 
 and write `{TASK_DIR}/context/tdd-exception.md` recording the reason
@@ -353,7 +353,7 @@ Note: `memory capture` is a no-op if no memory backend is installed.
   run its newly-authored test file fresh in this spawn (even in the
   red phase) and quote `VERIFIED: tests=<RESULT> cmd=<CMD> exit=<CODE>`.
   The red-phase legitimate skip form is
-  `VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=n/a` when
+  `VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=0` when
   the implementer's module does not yet exist; the agent writes
   `{TASK_DIR}/context/tdd-exception.md` recording the reason. A return
   block lacking a valid `VERIFIED:` line is rejected by the reviewer

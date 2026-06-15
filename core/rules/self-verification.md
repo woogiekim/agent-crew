@@ -98,7 +98,7 @@ upgrades the gate to also reject `N < M`.
 When no runnable test harness exists for the change (pure markdown
 rule, docs-only, scaffold-only) the agent MUST:
 
-1. Emit the skip form `VERIFIED: tests=skipped:<reason> cmd=none exit=n/a`
+1. Emit the skip form `VERIFIED: tests=skipped:<reason> cmd=none exit=0`
    with `<reason>` set to `no_runnable_harness` or `opt_out` per the
    definitions above.
 2. Write `{TASK_DIR}/context/tdd-exception.md` recording the reason and

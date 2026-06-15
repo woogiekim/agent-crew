@@ -354,10 +354,10 @@ the following holds:
 1. **Planner opt-out.** The reviewer stage was passed
    `REQUIRES_TEST_EXECUTION: false` (planner set
    `requires_test_execution: false` on the reviewer stage object).
-   `VERIFIED: tests=skipped:opt_out cmd=none exit=n/a` is automatically
+   `VERIFIED: tests=skipped:opt_out cmd=none exit=0` is automatically
    valid.
 2. **Skip form with recorded exception.** The implementer emitted
-   `VERIFIED: tests=skipped:<reason> cmd=none exit=n/a` AND
+   `VERIFIED: tests=skipped:<reason> cmd=none exit=0` AND
    `{TASK_DIR}/context/tdd-exception.md` exists and records the
    reason for the skip.
 

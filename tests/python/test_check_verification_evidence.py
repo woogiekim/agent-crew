@@ -74,6 +74,29 @@ class TestValidVerifiedLine:
         )
         assert "PASS" in r.stdout
 
+    def test_canonical_agent_prescribed_skip_line_returns_pass(self, script_runner):
+        """F-001 regression lock-in.
+
+        The agent prompts (backend.md, frontend.md, test-writer.md) and the
+        rule narrative (self-verification.md, quality-loop.md) all prescribe
+        the exact canonical skip-form literal:
+
+            VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=0
+
+        This test asserts that the validator accepts that exact line shape,
+        preventing any future drift back to `exit=n/a` (which the script's
+        `_validate_exit` would reject because `int('n/a')` raises ValueError).
+        """
+        report = _completion_block(
+            "VERIFIED: tests=skipped:no_runnable_harness cmd=none exit=0"
+        )
+        r = script_runner(SCRIPT_NAME, input_text=report)
+        assert r.returncode == 0, (
+            f"canonical agent-prescribed skip line must exit 0; "
+            f"got {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+        )
+        assert "PASS" in r.stdout
+
     def test_passed_equals_total_zero_returns_pass(self, script_runner):
         """tests=0/0 (no tests run, none failed) is a valid degenerate pass."""
         report = _completion_block("VERIFIED: tests=0/0 cmd=pytest exit=0")
