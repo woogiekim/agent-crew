@@ -66,6 +66,7 @@ Retry logic per agent:
 RETRY_ATTEMPT = 1
 crash_attempts = 0
 token_limit_resumes_used = 0
+clarification_attempts = 0
 while crash_attempts <= 5:
     invoke agent
     if response contains "STATUS: completed":
@@ -74,6 +75,20 @@ while crash_attempts <= 5:
         break  # agent submitted a plan — Phase 2.5 will handle approval
     elif response contains "STATUS: BLOCKED":
         halt pipeline — write blocker to result.md and return STATUS: blocked
+    elif response contains "STATUS: needs_clarification":
+        clarification_attempts += 1
+        if clarification_attempts > 2:
+            # fall through to standard BLOCKED path — bounce budget exhausted
+            halt pipeline — write blocker to result.md
+            BLOCKER: clarification_loop_exhausted
+            return STATUS: blocked
+        log_progress "RETRY" "attempt {clarification_attempts} — needs_clarification (analyst re-plan)"
+        extract CLARIFICATION_REQUEST and CLARIFICATION_DETAIL from response
+        spawn analyst agent with CLARIFICATION_REQUEST and the existing TASK_DIR;
+          analyst updates pipeline.json / prd.md / handoff.md as needed
+        append the analyst's clarification response to handoff.md
+        continue   # re-spawn current stage agent — do NOT bump
+                   # RETRY_ATTEMPT, do NOT bump crash_attempts
     else:  # no STATUS line — classify
         classification = "crash"
         if HAS_TASK_TOOLS == 1 AND host_task_ids[i-1][agent_name] is set:
@@ -109,6 +124,16 @@ single token-truncation resume does not count against this budget), report
 BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
 host task id is absent, every "no STATUS line" outcome is classified as a
 crash — identical to pre-P7 behavior.
+
+`clarification_attempts` is independent of the validation (3) and crash (5)
+budgets and has its own hard budget of **2 bounces** per stage. A
+`STATUS: needs_clarification` return triggers an analyst re-plan and an
+implicit re-spawn of the same stage agent — it never increments
+`RETRY_ATTEMPT` or `crash_attempts`. Once two clarification bounces are
+exhausted, the supervisor falls through to the standard BLOCKED path with
+`BLOCKER: clarification_loop_exhausted`. This keeps a misclassified
+ambiguous-plan failure from silently burning the validation budget that
+should be reserved for true reviewer-driven re-loops.
 
 ### Pre-retry clean state for fan-out units
 
@@ -296,6 +321,7 @@ The Stage Retry Rule's two pre-existing budgets remain unchanged:
 |---|---|---|
 | `validation = 3` | Reviewer-driven re-loops (this rule) AND any explicit "validation failure" reported by a stage agent. | Hard stop, `BLOCKER: quality_loop_exhausted`. |
 | `crash = 5`      | Stage agent crashes (no STATUS line, host-detected `error`). | Hard stop, crash details to result.md. |
+| `clarification = 2` | Implementer-driven plan-clarify bounce (`STATUS: needs_clarification`). Each bounce routes the request to the analyst, then re-spawns the same stage agent. | Hard stop, `BLOCKER: clarification_loop_exhausted`. |
 
 `quality_retries` is initialized to 0 at the top of the reviewer stage
 iteration, alongside `crash_attempts`. The two counters are independent
