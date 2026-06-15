@@ -137,6 +137,31 @@ Valid statuses:
   `false-positive` — terminal. Terminal findings still need focused test
   targets or an explicit `test_exception`, `verification_exception`, or
   `coverage_exception`.
+- `deferred-minor` — terminal, **auto-promoted**, **owner-exempt**. The
+  reviewer assigns this status from its Step 4.5 MINOR auto-promotion flow
+  (see `core/agents/reviewer.md` § Step 4.5) when every finding in the
+  current review is severity `MINOR`. Pipeline proceeds (no loop-back),
+  the supervisor appends a `DEFERRED_MINOR:` pointer block to `handoff.md`,
+  and the finding is carried forward into the next handoff. No follow-up
+  owner or remediation issue is required — `deferred-minor` is a
+  by-design parking status. The entry still needs focused
+  `verification.test_targets` OR
+  `verification.verification_exception: "deferred-minor"`.
+
+The canonical allowed-status set is the Python set
+`FINDING_TERMINAL_STATUSES` in `core/scripts/quality_loop_lib.py`. This
+markdown list mirrors that set (single source of truth = the Python set;
+this documentation must be kept in lock-step with it).
+
+Reviewer severity gate (cross-reference): the reviewer emits
+`REVIEW: NEEDS_CHANGES` only when at least one finding is severity
+`CRITICAL` or `IMPORTANT`. When every finding is `MINOR`, the reviewer
+emits `REVIEW: APPROVED` plus a `MINOR_DEFERRED: <count> ids=<...>`
+annotation and upserts each MINOR finding into `finding-register.json`
+with `status: "deferred-minor"` before returning. See
+`core/agents/reviewer.md` § Step 4.5 and
+`core/agents/supervisor-retry.md` § Reviewer Loop-Back Rule for the
+end-to-end contract.
 
 Completion and repair gates reject:
 

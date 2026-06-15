@@ -218,9 +218,59 @@ Both reviewer rejection forms are mandatory loop triggers:
 | `STATUS: REJECTED` + `REASON: tests_failed` | A discovered test runner failed. | `tests_failed` |
 | `STATUS: REJECTED` + `REASON: tests_absent_for_code_change` | Code changed but no test runner was discoverable. | `tests_absent_for_code_change` |
 | `STATUS: REJECTED` + `REASON: cross_process_path_mismatch` | Cross-process path agreement failed. | `cross_process_path_mismatch` |
-| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues. | `review_needs_changes` |
+| `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues classified as `CRITICAL` or `IMPORTANT`. | `review_needs_changes` |
 | `REVIEW: APPROVED` without `QUALITY_METRICS:` | Reviewer omitted the required evaluator-labeled quality artifact pointer. | `quality_metrics_missing` |
 | `REVIEW: APPROVED` with missing quality metrics file | Reviewer returned a `QUALITY_METRICS:` path that does not exist. | `quality_metrics_file_missing` |
+
+Loop-back fires only on `CRITICAL` or `IMPORTANT` findings. `MINOR`
+findings never trigger `REVIEW: NEEDS_CHANGES` — they are auto-promoted
+to `deferred-minor` by the reviewer's Step 4.5 flow and carried forward
+in `handoff.md` instead. See the § MINOR auto-promotion subsection below
+for the supervisor's handoff-append responsibility.
+
+#### MINOR auto-promotion
+
+When the reviewer returns `REVIEW: APPROVED` AND a `MINOR_DEFERRED:`
+annotation line (emitted by the reviewer's Step 4.5 when every finding
+was severity `MINOR`), the classifier maps the response to
+`action=approve` — there is no loop-back. The pipeline proceeds to the
+next stage / Phase 3 close-out, but the supervisor MUST append a
+`DEFERRED_MINOR:` pointer block to `${TASK_DIR}/handoff.md` BEFORE
+advancing `completed_stages` so the deferred entries are carried forward
+into the next handoff:
+
+```text
+DEFERRED_MINOR:
+  register: context/finding-register.json
+  ids: F-NNN, F-NNN
+  note: Auto-deferred by reviewer; carry into next handoff.
+  count: {N}
+```
+
+The `ids` and `count` values are parsed from the reviewer's
+`MINOR_DEFERRED: <count> ids=<comma_list>` return line. The reviewer's
+Step 4.5 has already upserted each finding into
+`context/finding-register.json` with `status: "deferred-minor"` and
+`severity: "P3"` (see `core/agents/reviewer.md` § Step 4.5), so the
+supervisor only writes the pointer block — it does not mutate the
+register itself.
+
+`deferred-minor` is a terminal, **owner-exempt** status per
+`core/rules/quality-loop.md` § Confirmed Finding Register. No follow-up
+owner or remediation issue is required for these entries; the next
+handoff merely surfaces them so a future stage or task can address them
+opportunistically. The Phase 3 quality-loop completion gate
+(`core/scripts/quality-loop-check.py`) accepts `deferred-minor` as a
+valid terminal status — see `FINDING_TERMINAL_STATUSES` in
+`core/scripts/quality_loop_lib.py`.
+
+When the reviewer returns `REVIEW: APPROVED` without a `MINOR_DEFERRED:`
+line (the issue list was empty), behavior is unchanged: the supervisor
+advances to the next stage with no handoff-append step. When the
+reviewer returns `REVIEW: NEEDS_CHANGES`, the existing loop-back path
+fires unchanged — the severity gate sits on the reviewer side, so
+`NEEDS_CHANGES` already implies at least one `CRITICAL` or `IMPORTANT`
+finding was present.
 
 Use the provider-neutral classifier before deciding whether to advance
 or re-loop:
