@@ -816,9 +816,45 @@ for adapters that have opted into background fan-out.
 
 #### 4. Remove isolated worktree when applicable
 
+Worktree teardown evaluates the harness-provenance guard before invoking
+`git worktree remove` and unconditionally settles administrative state with
+`git worktree prune` after a successful removal. Both guards use bash + git
+only so the supervisor stays AI-agnostic.
+
 ```bash
+# Shared realpath shim (matches core/commands/run.md and supervisor-stages.md).
+crew_realpath() {
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$1" 2>/dev/null
+  else
+    ( cd "$1" 2>/dev/null && pwd -P ) || printf '%s' "$1"
+  fi
+}
+
 if [ "${EXECUTION_MODE}" = "parallel" ] && [ "${PROJECT_ROOT}" != "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" ]; then
-  git worktree remove "${PROJECT_ROOT}" --force 2>/dev/null || true
+  # Guard 4: Provenance-based cleanup
+  # Only remove worktrees whose realpath is a descendant of
+  # `<harness-root>/.crew-worktrees/`. Reject (log STATE_WARN + skip) anything
+  # outside that base so user-owned or external worktrees are never removed.
+  CREW_HARNESS_ROOT="$(git -C "${PROJECT_ROOT}" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+  if [ -z "${CREW_HARNESS_ROOT}" ]; then
+    CREW_HARNESS_ROOT="$(git -C "${PROJECT_ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's@/\.git$@@' || true)"
+  fi
+  CREW_WORKTREES_BASE="${CREW_WORKTREES_BASE:-${CREW_HARNESS_ROOT%/}/.crew-worktrees}"
+  CREW_WORKTREES_BASE_REAL="$(crew_realpath "${CREW_WORKTREES_BASE}")"
+  CREW_CANDIDATE_REAL="$(crew_realpath "${PROJECT_ROOT}")"
+  case "${CREW_CANDIDATE_REAL}/" in
+    "${CREW_WORKTREES_BASE_REAL}/"*)
+      git worktree remove "${PROJECT_ROOT}" --force 2>/dev/null || true
+      # Guard 5: Post-remove prune
+      # Reclaim stale administrative entries left behind by the removal.
+      git -C "${CREW_HARNESS_ROOT:-.}" worktree prune 2>/dev/null || true
+      ;;
+    *)
+      printf '[crew] STATE_WARN worktree-guard 4: refusing to remove non-harness path %s (base=%s)\n' \
+        "${CREW_CANDIDATE_REAL}" "${CREW_WORKTREES_BASE_REAL}" >&2
+      ;;
+  esac
 fi
 ```
 

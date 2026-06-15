@@ -938,11 +938,65 @@ when N units write concurrently.
 
 Before dispatching N parallel unit agents, create one git worktree per
 unit so that concurrent `git add` / `git commit` operations never
-contend on the same `index.lock` file:
+contend on the same `index.lock` file. The setup block applies the same
+worktree lifecycle guards as `core/commands/run.md` Step 4 so the
+behavior is symmetric across the orchestrator and supervisor seams. The
+primitives it uses are:
+
+- `git rev-parse --git-dir` and `git rev-parse --git-common-dir` (Guard 1
+  comparison probes).
+- `git rev-parse --show-superproject-working-tree` (Guard 2 submodule probe).
+- `git check-ignore -q .crew-worktrees` (Guard 3 ignore verification before
+  `git worktree add`).
 
 ```bash
 CREW_WORKTREES_BASE="${PROJECT_ROOT}/.crew-worktrees/${TASK_ID}"
 mkdir -p "${CREW_WORKTREES_BASE}"
+
+# Shared realpath shim (matches core/commands/run.md and supervisor-retry.md).
+crew_realpath() {
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$1" 2>/dev/null
+  else
+    ( cd "$1" 2>/dev/null && pwd -P ) || printf '%s' "$1"
+  fi
+}
+
+# Guard 2: Submodule guard
+# Run first so Guard 1 cannot misclassify a submodule as a linked worktree.
+CREW_SUPERPROJECT="$(git -C "${PROJECT_ROOT}" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+
+# Guard 1: Detect existing isolation (linked-worktree reuse)
+# If PROJECT_ROOT is already a linked worktree (git-dir != git-common-dir) AND
+# we are not inside a submodule, units share that worktree's lock surface;
+# nested unit worktrees still need their own index, so we proceed with creation
+# but log the detection for parity with run.md and to aid debugging.
+CREW_GIT_DIR_RAW="$(git -C "${PROJECT_ROOT}" rev-parse --git-dir 2>/dev/null || true)"
+CREW_GIT_COMMON_RAW="$(git -C "${PROJECT_ROOT}" rev-parse --git-common-dir 2>/dev/null || true)"
+CREW_GIT_DIR="$(crew_realpath "${CREW_GIT_DIR_RAW}")"
+CREW_GIT_COMMON="$(crew_realpath "${CREW_GIT_COMMON_RAW}")"
+if [ -z "${CREW_SUPERPROJECT}" ] \
+   && [ -n "${CREW_GIT_DIR}" ] \
+   && [ -n "${CREW_GIT_COMMON}" ] \
+   && [ "${CREW_GIT_DIR}" != "${CREW_GIT_COMMON}" ]; then
+  printf '[crew] worktree-guard 1: PROJECT_ROOT is a linked worktree (git-dir=%s common=%s) — per-unit worktrees will be created under %s\n' \
+    "${CREW_GIT_DIR}" "${CREW_GIT_COMMON}" "${CREW_WORKTREES_BASE}"
+fi
+
+# Guard 3: Ignore verification
+# `.crew-worktrees/` MUST be git-ignored before any `git worktree add`.
+if ! git -C "${PROJECT_ROOT}" check-ignore -q .crew-worktrees 2>/dev/null; then
+  GITIGNORE_PATH="${PROJECT_ROOT}/.gitignore"
+  if ! grep -Fxq '.crew-worktrees/' "${GITIGNORE_PATH}" 2>/dev/null; then
+    printf '%s\n' '.crew-worktrees/' >> "${GITIGNORE_PATH}"
+  fi
+  git -C "${PROJECT_ROOT}" add .gitignore
+  git -C "${PROJECT_ROOT}" commit -m "chore(repo): ignore .crew-worktrees harness directory"
+  if ! git -C "${PROJECT_ROOT}" check-ignore -q .crew-worktrees 2>/dev/null; then
+    printf '[crew] worktree-guard 3: .crew-worktrees still not ignored after .gitignore update — halting\n' >&2
+    exit 1
+  fi
+fi
 
 # Build a mapping: UNIT_ID → WORKTREE_PATH
 declare -A UNIT_WORKTREE_MAP
@@ -1081,14 +1135,33 @@ When `STAGE_UNITS_COUNT >= 2`:
 After all N units have reached a terminal state (all `completed`, or
 any failed after exhausting retries), remove the per-unit worktrees
 regardless of outcome. Cleanup runs before advancing `completed_stages`
-or halting with BLOCKED:
+or halting with BLOCKED. Guard 4 (provenance-based cleanup) gates every
+`git worktree remove` call and Guard 5 follows each successful removal
+with `git worktree prune` so administrative state is settled — the
+behavior mirrors `supervisor-retry.md` Step 4:
 
 ```bash
+# Guards 4 + 5 mirror supervisor-retry.md so per-unit cleanup is symmetric with
+# end-of-pipeline teardown. Only paths under `<harness-root>/.crew-worktrees/`
+# may be removed, and every successful removal is followed by `worktree prune`.
+CREW_WORKTREES_BASE_REAL="$(crew_realpath "${CREW_WORKTREES_BASE}")"
 for UNIT_ID in ${UNIT_IDS}; do
   WT_PATH="${UNIT_WORKTREE_MAP[${UNIT_ID}]}"
   WT_BRANCH="unit-${TASK_ID}-${UNIT_ID}"
-  git -C "${PROJECT_ROOT}" worktree remove --force "${WT_PATH}" 2>/dev/null || true
-  git -C "${PROJECT_ROOT}" branch -D "${WT_BRANCH}" 2>/dev/null || true
+  # Guard 4: Provenance-based cleanup
+  CREW_CANDIDATE_REAL="$(crew_realpath "${WT_PATH}")"
+  case "${CREW_CANDIDATE_REAL}/" in
+    "${CREW_WORKTREES_BASE_REAL}/"*)
+      git -C "${PROJECT_ROOT}" worktree remove --force "${WT_PATH}" 2>/dev/null || true
+      git -C "${PROJECT_ROOT}" branch -D "${WT_BRANCH}" 2>/dev/null || true
+      # Guard 5: Post-remove prune
+      git -C "${PROJECT_ROOT}" worktree prune 2>/dev/null || true
+      ;;
+    *)
+      printf '[crew] STATE_WARN worktree-guard 4: refusing to remove non-harness unit path %s (base=%s)\n' \
+        "${CREW_CANDIDATE_REAL}" "${CREW_WORKTREES_BASE_REAL}" >&2
+      ;;
+  esac
 done
 rmdir "${CREW_WORKTREES_BASE}" 2>/dev/null || true
 ```
