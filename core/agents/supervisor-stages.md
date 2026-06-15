@@ -13,6 +13,65 @@
 
 ---
 
+#### Plan-Critical Review (pre-stage gate)
+
+Run this gate immediately before the Phase 2 stage loop begins (after
+Phase 1.5 agent-creation, before the first stage spawn). It is the
+last opportunity to catch a plan-quality issue (gap, contradiction,
+unclear stage brief) without consuming any stage retry budget.
+
+Gating env var: `AGENT_CREW_PLAN_CRITICAL_REVIEW` (default ON). When
+set to `"0"`, this subsection is a strict no-op — pipeline behavior
+is identical to pre-gate runs.
+
+```bash
+if [ "${AGENT_CREW_PLAN_CRITICAL_REVIEW:-1}" = "0" ]; then
+  : # operator-disabled — skip the review
+else
+  # 1. Re-read the three plan artifacts. Paths only — never inline
+  #    contents into a follow-up prompt.
+  #    - PIPELINE_PATH = ${TASK_DIR}/pipeline.json
+  #    - PRD_PATH      = ${TASK_DIR}/context/prd.md
+  #    - HANDOFF_PATH  = ${TASK_DIR}/handoff.md
+  #
+  # 2. Run the deterministic plan-quality checklist:
+  #    - gap            — required AC missing from the pipeline, or no
+  #                       implementation stage owns a required artifact
+  #    - contradiction  — handoff guidance disagrees with the PRD, or
+  #                       two stages disagree on the same artifact owner
+  #    - unclear_brief  — a stage's brief lacks an acceptance criterion,
+  #                       a deliverable path, or a runnable check
+  #
+  # 3. When ANY concern is surfaced, fire the structured user-choice
+  #    intent (see core/rules/capabilities/interactive-question.md):
+  #
+  #      header:   "Plan-Critical Review"
+  #      question: "{one-line summary of the surfaced concern(s)}"
+  #      options:
+  #        [A] Proceed as planned
+  #        [B] Send back to analyst (re-plan)
+  #        [C] Cancel
+  #
+  #    Operator response routing:
+  #      A → proceed to Phase 2 unchanged
+  #      B → invoke analyst (MODE=re-plan) with the concern list, then
+  #          re-run this gate against the rewritten pipeline.json
+  #      C → halt with STATUS: blocked, BLOCKER: plan_review_cancelled
+  #
+  # 4. When NO concerns are surfaced, skip the prompt entirely and
+  #    proceed silently to Phase 2 — operators see no interruption on
+  #    a clean plan.
+  log_progress "PLAN_CRITICAL_REVIEW" "gate=open default=on"
+fi
+```
+
+The interactive-question intent shape is defined in
+`core/rules/capabilities/interactive-question.md`. The gate honors the
+same absence-behavior: when no host-side interactive UI is available,
+the supervisor falls back to the documented markdown prompt and
+records the operator's selection in
+`${TASK_DIR}/context/plan-critical-review.md`.
+
 ### Phase 2: Execute stages
 
 Execute the `stages` from `pipeline.json` sequentially.

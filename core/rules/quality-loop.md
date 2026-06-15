@@ -167,6 +167,21 @@ If `BLOCKED`, include:
 BLOCKER: {what failed after all retry attempts}
 ```
 
+If `needs_clarification`, include:
+
+```text
+STATUS: needs_clarification
+CLARIFICATION_REQUEST: {one-line question}
+CLARIFICATION_DETAIL: {path to context file}
+```
+
+Do NOT include a `VERIFIED:` line — no fresh test run is claimed.
+The supervisor routes the request to the analyst (see
+`core/agents/supervisor-retry.md` § Stage Retry Rule) and does NOT
+consume the validation or crash budgets. The clarification bounce has
+its own per-stage budget of 2 attempts; after that, the supervisor
+halts with `BLOCKER: clarification_loop_exhausted`.
+
 ## Cost Circuit Breaker
 
 In addition to the validation 3x / crash 5x retry budgets, the supervisor
@@ -291,6 +306,11 @@ After each stage returns, the supervisor checks:
   retries). After all crash retries are exhausted, report BLOCKED.
 - If `STATUS: BLOCKED` → halt the pipeline and report the blocker to the
   orchestrator.
+- If `STATUS: needs_clarification` → spawn the analyst with the
+  CLARIFICATION_REQUEST, append the response to handoff.md, then
+  re-spawn the same stage agent. Capped at 2 bounces per stage;
+  after that, halt with `BLOCKER: clarification_loop_exhausted`.
+  Independent of validation (3) and crash (5) retry budgets.
 - If `STATUS: REJECTED` or `REVIEW: NEEDS_CHANGES` (reviewer-only)
   → re-loop to the target implementation/TDD stage per
   the Reviewer Loop-Back Rule below.

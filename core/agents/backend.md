@@ -417,6 +417,27 @@ when code was changed. The `FILES:` line replaces the old `TESTS:` shape;
 the `VERIFIED:` line is the proof-of-execution that the file list alone
 no longer provides.
 
+**Alternative return block — `STATUS: needs_clarification`.** When the
+PRD is ambiguous, `handoff.md` is contradictory, or an acceptance
+criterion is missing (input/output shape, target file path, expected
+runtime behavior), do NOT guess and do NOT halt with
+`STATUS: BLOCKED`. Emit the clarification return shape instead:
+
+```text
+STATUS: needs_clarification
+CLARIFICATION_REQUEST: {one-line question or ambiguity statement}
+CLARIFICATION_DETAIL: {path to context file with full request}
+```
+
+Do NOT emit a `VERIFIED:` line — no test run is claimed for an aborted
+spawn (the self-verification rule applies only to `STATUS: completed`).
+Do NOT also emit `STATUS: completed` with a guessed output; the
+supervisor classifier rejects mixed verdicts. The supervisor routes
+the request to the analyst for a focused re-plan via the
+`needs_clarification` branch in `core/agents/supervisor-retry.md`
+§ Stage Retry Rule; this bounce does NOT consume the validation (3)
+or crash (5) retry budgets (it has its own 2-bounce budget per stage).
+
 ## Absolute Rules
 
 - **Test file MUST be written and confirmed failing BEFORE implementation code is written** — no exceptions
@@ -428,6 +449,13 @@ no longer provides.
   line. A return block lacking a valid `VERIFIED:` line is rejected by
   the reviewer with `STATUS: REJECTED REASON: missing_verification_evidence`
   (see `core/rules/quality-loop.md`).
+- When the plan or handoff is ambiguous (missing AC, contradictory
+  guidance, undefined input/output shape), emit
+  `STATUS: needs_clarification` with `CLARIFICATION_REQUEST:` and
+  `CLARIFICATION_DETAIL:` lines — do NOT guess, do NOT halt with
+  `STATUS: BLOCKED`. The supervisor routes the request to the analyst
+  for a focused re-plan; this bounce does NOT consume the validation
+  (3) or crash (5) retry budgets.
 - Every public method must be covered by at least one test
 - Every changed executable branch or behavior must be covered by a test before
   completion; reviewer owns final enforcement, but backend owns fixing coverage
