@@ -17,6 +17,34 @@ def write_pipeline(tmp_path: Path, pipeline: dict) -> Path:
     return path
 
 
+def write_prd(tmp_path: Path, content: str) -> Path:
+    """Write `content` to ``<tmp_path>/context/prd.md`` (creating the dir)."""
+    context_dir = tmp_path / "context"
+    context_dir.mkdir(parents=True, exist_ok=True)
+    path = context_dir / "prd.md"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _passing_pipeline() -> dict:
+    """Minimal pipeline that passes plan-quality checks.
+
+    Mirrors ``test_plan_checker_accepts_split_tdd_implementation_stages`` —
+    a single TDD-parallel implementation stage followed by a reviewer, which
+    is the smallest known shape the checker accepts.
+    """
+
+    return {
+        "schema_version": 1,
+        "task": "Implement a backend feature",
+        "stages": [
+            {"agents": ["backend"], "tdd_parallel": True},
+            "reviewer",
+        ],
+        "completed_stages": 0,
+    }
+
+
 def run_checker(path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(CHECKER), "--pipeline", str(path), "--format", "json"],
@@ -295,3 +323,149 @@ def test_plan_checker_ignores_design_only_pipeline(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["required"] is False
+
+
+# ---------------------------------------------------------------------------
+# Placeholder scan over prd.md (PRD §F2 / §F3)
+# ---------------------------------------------------------------------------
+#
+# These tests exercise the placeholder scan that
+# ``core/scripts/pipeline-quality-plan-check.py`` runs whenever a ``prd.md``
+# exists at ``<dirname(pipeline.json)>/context/prd.md``. The scan emits
+# ``prd_placeholder_<token_slug>`` failure labels (one per token type
+# detected), populates ``prd_missing`` / ``prd_path`` / ``prd_placeholder_hits``
+# on the JSON payload, and fails the gate (exit 1) on any hit. Blockquote
+# lines and fenced code blocks are skipped so the rule itself can be
+# documented; matching is case-insensitive on whole word/phrase boundaries
+# so real words containing a token (e.g. ``TODOIST``) do not match.
+
+
+def test_plan_checker_blocks_prd_with_todo_placeholder(tmp_path: Path):
+    # Spec: prd.md § F3 — bullet 1: bare TODO placeholder fails the gate.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n## Implementation\n\nTODO: finish later\n",
+    )
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert "prd_placeholder_todo" in payload["failures"]
+
+
+def test_plan_checker_blocks_prd_with_implement_later_phrase(tmp_path: Path):
+    # Spec: prd.md § F3 — bullet 2: multi-word "implement later" phrase fails.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n## Plan\n\nwe will implement later once design lands.\n",
+    )
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert "prd_placeholder_implement_later" in payload["failures"]
+
+
+def test_plan_checker_allows_blockquoted_forbidden_token(tmp_path: Path):
+    # Spec: prd.md § F3 — bullet 3: blockquote lines (starting with `>`) are
+    # skipped so the rule itself can quote the forbidden token.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n## Notes\n\n> TODO: this rule documents the forbidden token\n",
+    )
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert "prd_placeholder_todo" not in payload["failures"]
+    # PRD is present, so the scan must have run and emitted these fields.
+    assert payload["prd_missing"] is False
+    assert payload["prd_placeholder_hits"] == []
+
+
+def test_plan_checker_allows_fenced_code_block_forbidden_token(tmp_path: Path):
+    # Spec: prd.md § F3 — bullet 4: lines inside ``` fences are skipped so
+    # test fixtures / docs can include the forbidden token verbatim.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n## Example\n\n```\nTODO: example\n```\n",
+    )
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    placeholder_failures = [
+        label
+        for label in payload["failures"]
+        if label.startswith("prd_placeholder_")
+    ]
+    assert placeholder_failures == []
+    assert payload["prd_missing"] is False
+    assert payload["prd_placeholder_hits"] == []
+
+
+def test_plan_checker_ignores_substring_match_of_placeholder_token(tmp_path: Path):
+    # Spec: prd.md § F3 — bullet 5: whole-word boundary. `TODOIST` contains
+    # `TODO` as a substring but must not trigger the scan.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n## Integration\n\nTODOIST integration plan goes here.\n",
+    )
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    placeholder_failures = [
+        label
+        for label in payload["failures"]
+        if label.startswith("prd_placeholder_")
+    ]
+    assert placeholder_failures == []
+    assert payload["prd_missing"] is False
+    assert payload["prd_placeholder_hits"] == []
+
+
+def test_plan_checker_passes_when_prd_missing(tmp_path: Path):
+    # Spec: prd.md § F2 — PRD-absent case must not fail the gate. Payload
+    # carries ``prd_missing: true`` and no ``prd_placeholder_*`` entries.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    # Deliberately do NOT call write_prd — no context/prd.md on disk.
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["prd_missing"] is True
+    placeholder_failures = [
+        label
+        for label in payload["failures"]
+        if label.startswith("prd_placeholder_")
+    ]
+    assert placeholder_failures == []
+
+
+def test_plan_checker_reports_multiple_distinct_placeholder_tokens(tmp_path: Path):
+    # Spec: prd.md § F3 — bullet 7: one failure label per distinct token type
+    # detected. TBD and FIXME on different lines → both labels present.
+    pipeline = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n## Open items\n\nTBD\n\nFIXME\n",
+    )
+
+    result = run_checker(pipeline)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert "prd_placeholder_tbd" in payload["failures"]
+    assert "prd_placeholder_fixme" in payload["failures"]
