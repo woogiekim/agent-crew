@@ -1284,13 +1284,75 @@ Execution context depends on cardinality:
   single-task runs.
 - If `N > 1`, create one isolated git worktree per task. **Pre-create all
   worktrees before starting requirements collection** so that I/O-bound worktree
-  setup overlaps with the user-facing requirement interview:
+  setup overlaps with the user-facing requirement interview.
+
+Before invoking `git worktree add`, evaluate the worktree lifecycle guards.
+These guards keep the harness AI-agnostic (bash + git only) and prevent
+nested-worktree, submodule, and untracked-isolation-directory regressions.
+The primitives the block uses are:
+
+- `git rev-parse --git-dir` and `git rev-parse --git-common-dir` (Guard 1
+  comparison probes — when they differ the caller is in a linked worktree).
+- `git rev-parse --show-superproject-working-tree` (Guard 2 submodule probe).
+- `git check-ignore -q .crew-worktrees` (Guard 3 ignore verification).
 
 ```bash
-# Pre-create worktrees for all tasks up-front (before Step 5)
+# Guard 2: Submodule guard
+# A submodule context must NOT be classified as "already in a linked worktree"
+# in Guard 1. Detect it first so Guard 1 can fall through correctly.
+CREW_SUPERPROJECT="$(git -C "${PROJECT_ROOT}" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+
+# Guard 1: Detect existing isolation (linked-worktree reuse)
+# If GIT_DIR and GIT_COMMON_DIR differ AND we are NOT inside a submodule, the
+# caller is already in a linked worktree — reuse it and SKIP `git worktree add`.
+CREW_GIT_DIR_RAW="$(git -C "${PROJECT_ROOT}" rev-parse --git-dir 2>/dev/null || true)"
+CREW_GIT_COMMON_RAW="$(git -C "${PROJECT_ROOT}" rev-parse --git-common-dir 2>/dev/null || true)"
+# Normalize relative paths via realpath; fall back to `cd && pwd -P` if realpath
+# is unavailable on the host.
+crew_realpath() {
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$1" 2>/dev/null
+  else
+    ( cd "$1" 2>/dev/null && pwd -P ) || printf '%s' "$1"
+  fi
+}
+CREW_GIT_DIR="$(crew_realpath "${CREW_GIT_DIR_RAW}")"
+CREW_GIT_COMMON="$(crew_realpath "${CREW_GIT_COMMON_RAW}")"
+
 WORKTREE_PATH="${PROJECT_ROOT}/.crew-worktrees/${TASK_ID}"
+SKIP_WORKTREE_ADD=0
+if [ -z "${CREW_SUPERPROJECT}" ] \
+   && [ -n "${CREW_GIT_DIR}" ] \
+   && [ -n "${CREW_GIT_COMMON}" ] \
+   && [ "${CREW_GIT_DIR}" != "${CREW_GIT_COMMON}" ]; then
+  SKIP_WORKTREE_ADD=1
+  WORKTREE_PATH="${PROJECT_ROOT}"
+  printf '[crew] worktree-guard 1: already in linked worktree (git-dir=%s common=%s) — reusing %s\n' \
+    "${CREW_GIT_DIR}" "${CREW_GIT_COMMON}" "${WORKTREE_PATH}"
+fi
+
+# Guard 3: Ignore verification
+# `.crew-worktrees/` MUST be git-ignored before any `git worktree add`, so the
+# harness's per-task isolation directory never bleeds into commits.
+if [ "${SKIP_WORKTREE_ADD}" -eq 0 ]; then
+  if ! git -C "${PROJECT_ROOT}" check-ignore -q .crew-worktrees 2>/dev/null; then
+    GITIGNORE_PATH="${PROJECT_ROOT}/.gitignore"
+    if ! grep -Fxq '.crew-worktrees/' "${GITIGNORE_PATH}" 2>/dev/null; then
+      printf '%s\n' '.crew-worktrees/' >> "${GITIGNORE_PATH}"
+    fi
+    git -C "${PROJECT_ROOT}" add .gitignore
+    git -C "${PROJECT_ROOT}" commit -m "chore(repo): ignore .crew-worktrees harness directory"
+    if ! git -C "${PROJECT_ROOT}" check-ignore -q .crew-worktrees 2>/dev/null; then
+      printf '[crew] worktree-guard 3: .crew-worktrees still not ignored after .gitignore update — halting\n' >&2
+      exit 1
+    fi
+  fi
+fi
+
 mkdir -p "${TASK_DIR}/context"
-git worktree add -b "${BRANCH}" "${WORKTREE_PATH}" HEAD
+if [ "${SKIP_WORKTREE_ADD}" -eq 0 ]; then
+  git -C "${PROJECT_ROOT}" worktree add -b "${BRANCH}" "${WORKTREE_PATH}" HEAD
+fi
 ```
 
 The orchestrator owns context preparation only. The execution engine remains the
