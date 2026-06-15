@@ -67,7 +67,7 @@ Check the changed code for each applicable risk:
 | A09 | Logging Failures | Sensitive data (PII, tokens) logged; insufficient audit trail |
 | A10 | SSRF | User-controlled URLs fetched server-side without allowlist |
 
-Flag any hit as `BLOCKER`.
+Flag any hit as `CRITICAL`.
 
 ---
 
@@ -103,7 +103,7 @@ Flag any hit as `BLOCKER`.
       flow without a separating blank line.
 
 ### Cognitive Complexity
-Flag methods with complexity > 15 as a WARNING. (Reference: SonarSource "Cognitive Complexity", 2017)
+Flag methods with complexity > 15 as a `IMPORTANT`. (Reference: SonarSource "Cognitive Complexity", 2017)
 
 ```bash
 # Quick proxy: count decision points in a function
@@ -135,22 +135,22 @@ Check that new commits follow the format:
 Types: feat | fix | docs | style | refactor | test | chore | perf | ci
 ```
 
-Flag non-conforming commit messages as `NOTE`.
+Flag non-conforming commit messages as `MINOR`.
 
 ---
 
 ## Anti-Pattern Reference
 
-Flag the following as `WARNING` or `BLOCKER` depending on context:
+Flag the following as `IMPORTANT` or `CRITICAL` depending on context:
 
 | Anti-pattern | Severity | Fix |
 |---|---|---|
-| God class (> 300 lines, > 10 methods) | WARNING | Split by SRP |
-| Feature envy (method uses another class's data more than its own) | WARNING | Move method |
-| Primitive obsession (raw `String` for domain concepts) | WARNING | Wrap in Value Object |
-| Anemic domain model (entity is a data bag; logic in service) | WARNING | Move logic to entity |
-| Hardcoded configuration (URLs, timeouts, credentials) | BLOCKER | Move to env / config |
-| Catch-all exception handler swallowing errors | BLOCKER | Narrow the catch clause |
+| God class (> 300 lines, > 10 methods) | IMPORTANT | Split by SRP |
+| Feature envy (method uses another class's data more than its own) | IMPORTANT | Move method |
+| Primitive obsession (raw `String` for domain concepts) | IMPORTANT | Wrap in Value Object |
+| Anemic domain model (entity is a data bag; logic in service) | IMPORTANT | Move logic to entity |
+| Hardcoded configuration (URLs, timeouts, credentials) | CRITICAL | Move to env / config |
+| Catch-all exception handler swallowing errors | CRITICAL | Narrow the catch clause |
 
 ---
 
@@ -169,9 +169,9 @@ APPROVED | NEEDS_CHANGES
 - [ ] {feature}: missing — {reason}
 
 ## Issues
-- [BLOCKER] {description} — {file:line}
-- [WARNING] {description} — {file:line}
-- [NOTE] {description}
+- [CRITICAL] {description} — {file:line}
+- [IMPORTANT] {description} — {file:line}
+- [MINOR] {description}
 
 ## Recommendation
 {next step if NEEDS_CHANGES, or "Ready to merge." if APPROVED}
@@ -181,9 +181,19 @@ APPROVED | NEEDS_CHANGES
 
 | Severity | Meaning | Blocks merge? |
 |---|---|---|
-| `BLOCKER` | Missing feature, security hole, broken test | Yes |
-| `WARNING` | Style, naming, minor gap | No (but should fix soon) |
-| `NOTE` | Informational observation | No |
+| `CRITICAL` | Missing feature, security hole, broken test | Yes |
+| `IMPORTANT` | Style, naming, minor gap that should still block merge | Yes |
+| `MINOR` | Informational observation or low-impact polish | No — auto-promoted to `deferred-minor` |
+
+`CRITICAL` and `IMPORTANT` both trigger the reviewer's
+`REVIEW: NEEDS_CHANGES` verdict. `MINOR` does NOT block merge — when the
+only findings in a review are `MINOR`, the reviewer auto-promotes each one
+into `finding-register.json` with `status: deferred-minor` and emits
+`REVIEW: APPROVED` plus a `MINOR_DEFERRED: <count> ids=<...>` annotation
+so the supervisor can carry the deferred items forward in `handoff.md`.
+See `core/agents/reviewer.md` § Step 4.5 for the upsert flow and
+`core/rules/quality-loop.md` § Confirmed Finding Register for the
+terminal-status contract.
 
 ---
 

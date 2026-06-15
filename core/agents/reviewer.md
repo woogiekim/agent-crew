@@ -533,7 +533,10 @@ When a finding is confirmed by reviewer evidence, upsert it into
   statuses.
 
 Allowed statuses are `open`, `fixed`, `accepted-risk`, `moved-to-issue`,
-`out-of-scope`, and `false-positive`.
+`out-of-scope`, `false-positive`, and `deferred-minor`. The
+`deferred-minor` status is reserved for the Step 4.5 MINOR auto-promotion
+flow described below; reviewers MUST NOT hand-write it for findings that
+the severity gate did not classify as MINOR-only.
 
 Approval rules:
 
@@ -636,7 +639,14 @@ APPROVED | NEEDS_CHANGES
   - COVERAGE_EXCEPTION: {path_or_case} - {reason}
 
 ## Issues
-- {issue description} — {file:line}
+- [CRITICAL] {description} — {file:line}
+- [IMPORTANT] {description} — {file:line}
+- [MINOR] {description} — {file:line}
+
+`CRITICAL` and `IMPORTANT` block merge and trigger the supervisor's
+loop-back via `REVIEW: NEEDS_CHANGES`. `MINOR` is auto-promoted (see
+Step 4.5) — the pipeline proceeds and the deferred entries are carried
+forward in `handoff.md`.
 
 ## Finding Register
 - Register: context/finding-register.json
@@ -692,6 +702,57 @@ The reviewer may still return `NEEDS_CHANGES` for ordinary code quality,
 test, architecture, or security issues without setting
 `hallucination_detected=true`.
 
+### Step 4.5: MINOR Auto-Promotion
+
+Before emitting the final verdict in Step 4, classify every entry in the
+`## Issues` section by severity. Apply the severity-driven verdict gate:
+
+- If at least one finding is `CRITICAL` or `IMPORTANT`, the verdict is
+  `REVIEW: NEEDS_CHANGES`. Continue to Step 4 unchanged; do NOT auto-promote.
+- If every finding is `MINOR` (or the issue list is empty), the verdict
+  is `REVIEW: APPROVED`. When at least one `MINOR` is present, the
+  reviewer MUST auto-promote each `MINOR` finding into
+  `${TASK_DIR}/context/finding-register.json` BEFORE returning, with:
+
+  - `status: "deferred-minor"` (terminal — see
+    `core/rules/quality-loop.md` § Confirmed Finding Register),
+  - `severity: "P3"` (the register's CRITICAL→P1 / IMPORTANT→P2 / MINOR→P3
+    mapping; the review-report vocabulary is review-side only),
+  - narrow `affected[]`, a one-line `recommended_fix`, a `source` pointer
+    to `context/review.md`, and either focused
+    `verification.test_targets` or
+    `verification.verification_exception: "deferred-minor"`.
+
+The upsert is provider-neutral. Use the helper at
+`core/scripts/auto-record-minor-findings.py` (or call
+`quality_loop_lib.auto_record_minor_findings(register_path, findings)`
+directly from Python):
+
+```bash
+REGISTER="${TASK_DIR}/context/finding-register.json"
+SCRIPT="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/auto-record-minor-findings.py"
+[ -f "${SCRIPT}" ] || SCRIPT="${PROJECT_ROOT}/core/scripts/auto-record-minor-findings.py"
+
+python3 "${SCRIPT}" --register "${REGISTER}" --findings - <<'JSON'
+[
+  {
+    "id": "F-MINOR-001",
+    "title": "short stable title",
+    "source": {"artifact": "context/review.md"},
+    "affected": [{"file": "path/to/file", "line": 42}],
+    "recommended_fix": "specific remediation",
+    "verification": {"verification_exception": "deferred-minor"}
+  }
+]
+JSON
+```
+
+The helper forces `status="deferred-minor"`, `severity="P3"`, fills sensible
+defaults for `owner` and timestamps, and upserts by `id` (existing entries
+are updated in place; new ids are appended). After the upsert succeeds,
+record the comma-separated id list and the count — Step 4 emits them in
+the `MINOR_DEFERRED:` annotation line.
+
 ### Step 4: Return
 ```text
 REVIEW: {APPROVED | NEEDS_CHANGES}
@@ -700,7 +761,17 @@ ISSUES: {issue count}
 TEST_RUN_RESULT: {one of: passed | skipped_opt_out | skipped_no_runner_docs_only | rejected_short_circuit_above}
 COVERAGE_RESULT: {one of: passed_100_changed_surface | skipped_opt_out | skipped_no_code_change | rejected_short_circuit_above}
 QUALITY_METRICS: {TASK_DIR}/context/quality-metrics.json
+MINOR_DEFERRED: {count} ids={comma_separated_ids}
 ```
+
+The `MINOR_DEFERRED:` line is OPTIONAL — emit it only when the verdict is
+`REVIEW: APPROVED` AND at least one MINOR finding was auto-promoted in
+Step 4.5. When the issue list is empty, omit the line entirely. The
+supervisor's Reviewer Loop-Back Rule treats the presence of this line as
+the signal to append a `DEFERRED_MINOR:` pointer block to `handoff.md`
+before advancing `completed_stages` (see
+`core/agents/supervisor-retry.md` § Reviewer Loop-Back Rule § MINOR
+auto-promotion).
 
 `REVIEW: NEEDS_CHANGES` is a loop-triggering rejection, not advisory text.
 The supervisor classifies it through `core/scripts/reviewer-loop-decision.py`

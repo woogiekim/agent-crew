@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import re
 from pathlib import Path
@@ -92,6 +93,7 @@ FINDING_TERMINAL_STATUSES = {
     "moved-to-issue",
     "out-of-scope",
     "false-positive",
+    "deferred-minor",
 }
 FINDING_REQUIRED_FIELDS = (
     "id",
@@ -403,6 +405,95 @@ def finding_register_status(task_dir: Path) -> dict:
         "missing_test_mapping_ids": missing_test_mapping_ids,
         "missing_owner_or_followup_ids": missing_owner_or_followup_ids,
     }
+
+
+def _utc_now_iso() -> str:
+    """Return a UTC timestamp in ISO-8601 form with trailing Z."""
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def auto_record_minor_findings(
+    register_path: Path | str,
+    findings: list[dict],
+) -> list[dict]:
+    """Upsert MINOR findings into ``finding-register.json`` as ``deferred-minor``.
+
+    This helper is invoked by the reviewer's Step 4.5 MINOR auto-promotion flow
+    when the only findings in the review are MINOR severity. It is intentionally
+    pure-Python and provider-neutral so the reviewer can call it from any host.
+
+    For each entry in ``findings`` the helper:
+
+    * Loads the existing register (or creates an empty schema-versioned payload).
+    * Locates an existing finding by ``id`` and updates it in place when found,
+      otherwise appends a new entry.
+    * Forces ``status="deferred-minor"`` and ``severity="P3"`` on every upserted
+      entry — the MINOR -> deferred-minor mapping is the contract.
+    * Fills sensible defaults for ``owner`` and timestamp fields when missing
+      so the persisted entry is well-formed without requiring the caller to
+      compute them.
+
+    Args:
+        register_path: Path to ``finding-register.json``. Created if missing.
+        findings: List of MINOR findings the reviewer wants to defer. Each
+            entry SHOULD carry at least an ``id``, ``title``, ``affected``,
+            ``recommended_fix``, and ``source``. Missing fields receive defaults.
+
+    Returns:
+        The updated list of findings persisted to disk.
+    """
+    path = Path(register_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload: dict
+    if path.is_file():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {"schema_version": 1, "findings": []}
+    else:
+        payload = {"schema_version": 1, "findings": []}
+
+    if not isinstance(payload, dict):
+        payload = {"schema_version": 1, "findings": []}
+    payload.setdefault("schema_version", 1)
+    existing = payload.get("findings")
+    if not isinstance(existing, list):
+        existing = []
+    payload["findings"] = existing
+
+    now = _utc_now_iso()
+
+    for finding in findings or []:
+        if not isinstance(finding, dict):
+            continue
+        merged = dict(finding)
+        merged["status"] = "deferred-minor"
+        merged["severity"] = "P3"
+        merged.setdefault("owner", "auto-promoted")
+        merged.setdefault("created_at", now)
+        merged["last_updated_at"] = now
+
+        finding_id = merged.get("id")
+        match_index = None
+        if isinstance(finding_id, str) and finding_id.strip():
+            for idx, candidate in enumerate(existing):
+                if isinstance(candidate, dict) and candidate.get("id") == finding_id:
+                    match_index = idx
+                    break
+
+        if match_index is None:
+            existing.append(merged)
+        else:
+            updated = dict(existing[match_index])
+            updated.update(merged)
+            existing[match_index] = updated
+
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return existing
 
 
 def looks_mutating_task(text: str) -> bool:
