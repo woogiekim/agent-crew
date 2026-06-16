@@ -8,10 +8,12 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
+ANALYST_PATH = REPO_ROOT / "core" / "agents" / "analyst.md"
+
 RULE_PATH = REPO_ROOT / "core" / "rules" / "evidence-grounded-reasoning.md"
 
 AGENT_PATHS = [
-    REPO_ROOT / "core" / "agents" / "analyst.md",
+    ANALYST_PATH,
     REPO_ROOT / "core" / "agents" / "planner.md",
     REPO_ROOT / "core" / "agents" / "reviewer.md",
     REPO_ROOT / "core" / "agents" / "supervisor.md",
@@ -39,6 +41,29 @@ def test_provider_neutral_core_rule_requires_first_party_evidence() -> None:
     assert "Evidence:" in text
     assert "Inference:" in text
     assert "Conclusion:" in text
+
+
+def test_analyst_prior_art_search_uses_runtime_task_keywords() -> None:
+    text = read(ANALYST_PATH)
+
+    assert "#### 1a. Prior-Art Pre-Search" in text
+    assert "TASK_KEYWORDS" in text
+    assert "echo '${TASK}'" not in text
+    assert 'printf \'%s\\n\' "${TASK}"' in text
+    assert "grep -E" in text
+    assert '"${TASK_KEYWORDS}"' in text
+
+
+def test_absence_proof_discipline_defines_operational_search_obligations() -> None:
+    text = read(RULE_PATH)
+
+    assert "## Absence-Proof Discipline" in text
+    assert "Search the sibling set" in text
+    assert "Follow every cross-reference" in text
+    assert "Search by surface, not by file" in text
+    assert "Record the search in evidence" in text
+    assert "single-file line-range claim" in text
+    assert "no `grep -rln` / `find` evidence" in text
 
 
 @pytest.mark.parametrize("path", AGENT_PATHS)

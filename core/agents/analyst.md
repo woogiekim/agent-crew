@@ -89,11 +89,20 @@ ls "${PROJECT_ROOT}/.claude-plugin/" 2>/dev/null || true
 # Documentation tree: list existing conclusions
 ls "${PROJECT_ROOT}/docs/" 2>/dev/null || true
 find "${PROJECT_ROOT}/docs/" -maxdepth 1 -type d \
-  -name '*-benchmark' -o -name '*-verdict' -o -name '*-findings' -o -name '*-evaluation' \
+  \( -name '*-benchmark' -o -name '*-verdict' -o -name '*-findings' -o -name '*-evaluation' \) \
   2>/dev/null | sort
 
 # Prior-art keyword search: search for related prior conclusions
-grep -rln "$(echo '${TASK}' | tr ' ' '|')" "${PROJECT_ROOT}/docs/" 2>/dev/null || true
+TASK_KEYWORDS=$(
+  printf '%s\n' "${TASK}" \
+    | tr -cs '[:alnum:]_-' '\n' \
+    | awk 'length($0) >= 3 { print tolower($0) }' \
+    | sort -u \
+    | paste -sd'|' -
+)
+if [ -n "${TASK_KEYWORDS}" ]; then
+  grep -Erl -i -- "${TASK_KEYWORDS}" "${PROJECT_ROOT}/docs/" 2>/dev/null || true
+fi
 ```
 
 When the grep search returns prior conclusions (e.g., an existing benchmark
