@@ -76,6 +76,35 @@ AAR memo is present, plan exactly as before.
 
 ### Step 1 — Read context
 
+#### 1a. Prior-Art Pre-Search
+
+Before producing fresh analysis, survey the project's own documentation to avoid
+duplicate re-analysis of topics already covered:
+
+```bash
+# Orientation: top-level markers
+ls "${PROJECT_ROOT}"
+ls "${PROJECT_ROOT}/.claude-plugin/" 2>/dev/null || true
+
+# Documentation tree: list existing conclusions
+ls "${PROJECT_ROOT}/docs/" 2>/dev/null || true
+find "${PROJECT_ROOT}/docs/" -maxdepth 1 -type d \
+  -name '*-benchmark' -o -name '*-verdict' -o -name '*-findings' -o -name '*-evaluation' \
+  2>/dev/null | sort
+
+# Prior-art keyword search: search for related prior conclusions
+grep -rln "$(echo '${TASK}' | tr ' ' '|')" "${PROJECT_ROOT}/docs/" 2>/dev/null || true
+```
+
+When the grep search returns prior conclusions (e.g., an existing benchmark
+document like `docs/superpowers-benchmark/findings.md`, or a verdict document),
+**you MUST read them first**. Treat their conclusions as the **starting point**
+for your present analysis — carry them forward, refine them with new evidence,
+or explicitly contradict them and explain why. Document the prior art in your
+Evidence table (see § Step 5 below) with citations like `docs/superpowers-benchmark/findings.md:line`.
+
+#### 1b. Read requirements and list agents
+
 ```bash
 cat "${TASK_DIR}/context/requirements.md"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
