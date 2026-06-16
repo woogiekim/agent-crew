@@ -176,6 +176,21 @@ Completion output must distinguish **new findings in this stage** from
 **existing unresolved findings**. Text such as "No new P0/P1 findings" is not
 approval when `finding-register.json` still has `open` entries.
 
+## Optional Human Acceptance and EDD Gates
+
+Two optional pipeline fields add task-specific completion evidence:
+
+| Field | Required artifact | Runtime failure when missing |
+|---|---|---|
+| `requires_human_acceptance: true` | `context/human-acceptance-matrix.md` or `.json` | `missing_human_acceptance_matrix` |
+| `eval_command: "..."` | `context/evaluation-metrics.json` | `missing_evaluation_metrics` |
+
+Human acceptance follows `core/rules/human-acceptance-matrix.md` and is used
+for user-facing behavior that needs manual or browser-observable proof.
+Evaluation-Driven Development follows
+`core/rules/evaluation-driven-development.md` and is used for prompt,
+retrieval, or agentic workflow metrics.
+
 ## Reporting
 
 Include the iteration count in the stage completion report:

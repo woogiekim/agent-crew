@@ -71,6 +71,34 @@ def test_review_needs_changes_triggers_retry():
     assert "re-run reviewer" in payload["directive"]
 
 
+def test_review_needs_changes_preserves_spec_incomplete_reason():
+    result = run_decision(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REASON: spec_incomplete\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "spec_incomplete"
+    assert "PRD acceptance criteria" in payload["directive"]
+
+
+def test_review_needs_changes_preserves_code_quality_reason():
+    result = run_decision(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REASON: code_quality\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "code_quality"
+    assert "code-quality" in payload["directive"]
+
+
 def test_review_approved_does_not_retry():
     result = run_decision(
         "REVIEW: APPROVED\n"

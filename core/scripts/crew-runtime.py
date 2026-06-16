@@ -839,17 +839,7 @@ def read_agent_registry(root: Path) -> dict[str, dict]:
 
 
 def looks_mutating(task: str) -> bool:
-    return bool(
-        re.search(
-            r"\b(build|implement|create|add|update|fix|remove|move|change|migrate|"
-            r"refactor|replace|extend|integrate|test|deploy|merge|rollback|write|"
-            r"save|edit|publish|commit)\b|"
-            r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
-            r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐",
-            task,
-            re.IGNORECASE,
-        )
-    )
+    return looks_mutating_task(task)
 
 
 def contains_hangul(text: str) -> bool:

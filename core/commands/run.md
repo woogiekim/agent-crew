@@ -2343,6 +2343,27 @@ Commits :
 
 ---
 
+### 9.5. Explicit Close-Out Menu
+
+This step runs only when the user explicitly asks to close out a completed
+branch after Step 9. Do not show it proactively.
+
+Use the structured user-choice mechanism from
+`core/rules/capabilities/interactive-question.md`:
+
+- `Merge locally` — merge the completed branch into the selected base branch
+  after approval.
+- `Push / PR` — push the branch or prepare the configured PR handoff after
+  approval.
+- `Keep branch` — leave the local branch as-is and record no mutation.
+- `Discard` — perform approved cleanup for the branch/worktree only after the
+  destructive-action approval gate.
+
+All merge, push, PR, and discard actions remain subject to the centralized
+approval gate. A plain-text "shall I?" prompt is still forbidden.
+
+---
+
 ### 10. Deployment Approval
 
 > **Explicit deploy requests only.** Steps 10–11 execute only when the user

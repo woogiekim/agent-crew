@@ -1,0 +1,14 @@
+{
+  "name": "agent-crew",
+  "version": "1.0.0",
+  "description": "Provider-neutral workflow control plane for Claude Code and other AI coding hosts.",
+  "repository": "https://github.com/woogiekim/agent-crew",
+  "entrypoints": {
+    "provider_neutral_core": "core/",
+    "commands": "core/commands/",
+    "agents": "core/agents/",
+    "hooks": "core/hooks/",
+    "rules": "core/rules/"
+  },
+  "notes": "Experimental Claude plugin packaging. The provider-neutral core remains the source of truth."
+}

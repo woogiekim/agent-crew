@@ -143,6 +143,91 @@ def test_quality_loop_checker_blocks_reviewer_rejection_without_rework(tmp_path:
     assert "missing_rework_after_review_rejection" in payload["failures"]
 
 
+def test_quality_loop_checker_blocks_missing_delegation_fidelity_evidence(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement production quality-loop behavior",
+            "requires_delegation_fidelity": True,
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 2,
+        },
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_delegation_fidelity_evidence" in payload["failures"]
+    assert "missing_tool_event_fidelity_evidence" in payload["failures"]
+
+
+def test_quality_loop_checker_blocks_missing_human_acceptance_matrix(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement user-facing workflow",
+            "requires_human_acceptance": True,
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 2,
+        },
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_human_acceptance_matrix" in payload["failures"]
+
+
+def test_quality_loop_checker_blocks_missing_edd_metrics(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+        pipeline={
+            "schema_version": 1,
+            "task": "Implement agentic evaluation workflow",
+            "eval_command": "python3 evals/run.py",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 2,
+        },
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_evaluation_metrics" in payload["failures"]
+
+
 def test_quality_loop_checker_blocks_multi_agent_tdd_stage(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(

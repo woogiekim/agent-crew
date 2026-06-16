@@ -75,6 +75,14 @@ context.mkdir(parents=True, exist_ok=True)
     "TDD: RED -> GREEN -> REFACTOR. 6 tests passed.\n",
     encoding="utf-8",
 )
+(context / "tdd-red.md").write_text(
+    "TDD-RED: focused test failed as expected before implementation.\n",
+    encoding="utf-8",
+)
+(context / "tdd-refactor.md").write_text(
+    "TDD-REFACTOR: no-op refactor review complete; post-refactor verification passed.\n",
+    encoding="utf-8",
+)
 (context / "review.md").write_text(
     "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after remediation.\n",
     encoding="utf-8",

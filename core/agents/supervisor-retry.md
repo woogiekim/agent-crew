@@ -243,6 +243,8 @@ Both reviewer rejection forms are mandatory loop triggers:
 | `STATUS: REJECTED` + `REASON: tests_failed` | A discovered test runner failed. | `tests_failed` |
 | `STATUS: REJECTED` + `REASON: tests_absent_for_code_change` | Code changed but no test runner was discoverable. | `tests_absent_for_code_change` |
 | `STATUS: REJECTED` + `REASON: cross_process_path_mismatch` | Cross-process path agreement failed. | `cross_process_path_mismatch` |
+| `REVIEW: NEEDS_CHANGES` + `REASON: spec_incomplete` | Reviewer found missing PRD acceptance criteria or core behavior. | `spec_incomplete` |
+| `REVIEW: NEEDS_CHANGES` + `REASON: code_quality` | Reviewer found blocking maintainability, architecture, security, or quality issues after spec compliance passed. | `code_quality` |
 | `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues classified as `CRITICAL` or `IMPORTANT`. | `review_needs_changes` |
 | `REVIEW: APPROVED` without `QUALITY_METRICS:` | Reviewer omitted the required evaluator-labeled quality artifact pointer. | `quality_metrics_missing` |
 | `REVIEW: APPROVED` with missing quality metrics file | Reviewer returned a `QUALITY_METRICS:` path that does not exist. | `quality_metrics_file_missing` |
@@ -532,6 +534,23 @@ devops failure in Phase 2.5) halts the pipeline. The supervisor MUST:
 The crash-exhaustion path (Stage Retry Rule budget reached) and the
 explicit-BLOCKED path are identical from this point on — the close-out
 is uniform.
+
+### Architecture Recovery Before Quality-Loop Exhaustion
+
+Before writing terminal `quality_loop_exhausted` after three reviewer or QA
+rejections on the same implementation surface, the supervisor performs one
+architecture recovery pass:
+
+1. Load `core/agents/skills/systematic-debugging.md`.
+2. Invoke analyst/planner recovery with the repeated rejection reason, PRD,
+   handoff, pipeline, and review evidence paths.
+3. Ask the recovery pass to decide whether to decompose the stage, restructure
+   the contract, or confirm that the current design is still correct.
+4. Retry once with the recovery directive. If that retry is rejected, then write
+   `BLOCKER: quality_loop_exhausted`.
+
+This mirrors the "three failures means question architecture" debugging rule
+without bypassing TDD, reviewer approval, or evidence gates.
 
 ---
 

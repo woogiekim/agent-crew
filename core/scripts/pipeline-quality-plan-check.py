@@ -123,6 +123,7 @@ _COMPILED_PRD_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 _BLOCKQUOTE_RE = re.compile(r"^\s*>")
 _FENCE_RE = re.compile(r"^\s*```")
+_AC_ID_RE = re.compile(r"\bAC-\d+\b", re.IGNORECASE)
 _SNIPPET_MAX = 120
 
 
@@ -185,6 +186,45 @@ def scan_prd_placeholders(prd_path: Path) -> dict:
             )
 
     return result
+
+
+def extract_prd_acceptance_criteria(prd_path: Path) -> list[str]:
+    if not prd_path.is_file():
+        return []
+
+    ids: list[str] = []
+    in_fence = False
+    for raw_line in prd_path.read_text(encoding="utf-8").splitlines():
+        if _FENCE_RE.match(raw_line):
+            in_fence = not in_fence
+            continue
+        if in_fence or _BLOCKQUOTE_RE.match(raw_line):
+            continue
+        for match in _AC_ID_RE.finditer(raw_line):
+            value = match.group(0).upper()
+            if value not in ids:
+                ids.append(value)
+
+    return ids
+
+
+def stage_acceptance_criteria_ids(stages: list) -> list[str]:
+    ids: list[str] = []
+    for stage in stages:
+        if not isinstance(stage, dict):
+            continue
+        values = stage.get("acceptance_criteria") or []
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            for match in _AC_ID_RE.finditer(str(value)):
+                item = match.group(0).upper()
+                if item not in ids:
+                    ids.append(item)
+
+    return ids
 
 
 def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> dict:
@@ -264,12 +304,30 @@ def _apply_prd_scan(result: dict, pipeline_path: Path) -> dict:
     result["prd_path"] = scan["prd_path"]
     result["prd_missing"] = scan["prd_missing"]
     result["prd_placeholder_hits"] = placeholder_hits
+    prd_acceptance = extract_prd_acceptance_criteria(prd_path)
+    stage_acceptance = stage_acceptance_criteria_ids(
+        load_json(pipeline_path).get("stages") or []
+    )
+    acceptance_mapping_required = bool(result.get("required") and stage_acceptance)
+    unmapped = [
+        item for item in prd_acceptance
+        if acceptance_mapping_required and item not in stage_acceptance
+    ]
+    result["prd_acceptance_criteria"] = prd_acceptance
+    result["pipeline_acceptance_criteria"] = stage_acceptance
+    result["prd_acceptance_mapping_required"] = acceptance_mapping_required
+    result["prd_unmapped_acceptance_criteria"] = unmapped
 
     if hits:
         slugs = {hit["slug"] for hit in hits}
         new_labels = {f"prd_placeholder_{slug}" for slug in slugs}
         existing = set(result.get("failures") or [])
         result["failures"] = sorted(existing | new_labels)
+        result["passed"] = False
+    if unmapped:
+        existing = set(result.get("failures") or [])
+        existing.add("prd_acceptance_criteria_unmapped")
+        result["failures"] = sorted(existing)
         result["passed"] = False
 
     return result

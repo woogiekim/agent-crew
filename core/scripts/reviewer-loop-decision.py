@@ -54,6 +54,16 @@ DIRECTIVES = {
         "to the immediately preceding implementation/TDD stage, remediate every "
         "listed issue, run the relevant tests, and then re-run reviewer."
     ),
+    "spec_incomplete": (
+        "Reviewer found missing PRD acceptance criteria in ${TASK_DIR}/context/review.md. "
+        "Return to the immediately preceding implementation/TDD stage and implement "
+        "the missing PRD acceptance criteria before addressing code-quality polish."
+    ),
+    "code_quality": (
+        "Reviewer found code-quality issues in ${TASK_DIR}/context/review.md. Return "
+        "to the immediately preceding implementation/TDD stage, remediate the "
+        "code-quality findings, run the relevant tests, and then re-run reviewer."
+    ),
     "quality_metrics_missing": (
         "Reviewer approved without the required QUALITY_METRICS line. Re-run "
         "the reviewer stage and require it to write "
@@ -111,17 +121,19 @@ def classify(text: str, task_dir: str | None = None) -> dict:
         }
 
     if REVIEW_NEEDS_CHANGES_RE.search(text):
+        reason_match = REASON_RE.search(text)
+        reason = reason_match.group(1) if reason_match else "review_needs_changes"
         issues_match = ISSUES_RE.search(text)
         issues = int(issues_match.group(1)) if issues_match else None
         report = report_path(text)
-        directive = DIRECTIVES["review_needs_changes"].replace(
+        directive = DIRECTIVES.get(reason, DIRECTIVES["review_needs_changes"]).replace(
             "${TASK_DIR}/context/review.md",
             report,
         )
         return {
             "action": "retry",
             "trigger": "REVIEW: NEEDS_CHANGES",
-            "reason": "review_needs_changes",
+            "reason": reason,
             "directive": directive,
             "issues": issues,
             "report": report,

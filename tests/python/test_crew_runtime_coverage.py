@@ -264,6 +264,21 @@ def test_language_normalization_and_issue_helpers(monkeypatch, tmp_path: Path):
     assert records == [{"issue_number": "123", "path": str(tmp_path / "task" / "context" / "issue-123-ingestion.json"), "comments_ingested": False, "comment_count": 0}]
 
 
+def test_agent_mutating_guard_honors_read_only_overrides():
+    assert runtime.looks_mutating(
+        "Evaluate routing behavior and identify gaps only; do not edit files."
+    ) is False
+    assert runtime.looks_mutating(
+        "검토만 해주세요. 수정하지 말고 부족한 점만 알려주세요."
+    ) is False
+
+    assert runtime.looks_mutating("Review and update README.md with the findings.") is True
+    assert runtime.looks_mutating("검토 후 README를 수정해주세요.") is True
+    assert runtime.looks_mutating("기존 동작을 변경하지 않으면서 새 기능을 만들어주세요.") is True
+    assert runtime.looks_mutating("기존 동작을 변경하지 않고 리포트를 작성해주세요.") is True
+    assert runtime.looks_mutating("설정을 건드리지 말고 새 파일을 생성해주세요.") is True
+
+
 def test_command_run_current_session_normalization_and_reported_block(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
     project = tmp_path / "project"
