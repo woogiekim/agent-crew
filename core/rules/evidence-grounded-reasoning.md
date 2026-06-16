@@ -67,6 +67,44 @@ Apply this rule before returning or writing:
 - Keep conclusions narrower than the evidence. If the evidence only supports a
   partial claim, the conclusion must say so.
 
+## Absence-Proof Discipline
+
+Any claim that a feature, wiring, configuration, rule, or item is **ABSENT** or
+constitutes a **GAP** requires evidence of an exhaustive search across adjacent,
+sibling, and cross-referenced files. Declaring absence from a single file's
+line-range alone is forbidden.
+
+Four obligations when claiming absence:
+
+1. **Search the sibling set.** Before claiming a rule is absent from
+   `core/rules/`, list the directory and `grep` for the concept across all
+   sibling files. The rule may live in an adjacently named file.
+
+2. **Follow every cross-reference.** When the inspected file contains a pointer
+   like "see `other-file.md` § X" or "applies the discipline from
+   `path/foo.md`", open the referenced file before any absence claim. A pointer
+   is a load-bearing dependency, not commentary.
+
+3. **Search by surface, not by file.** Use concept keywords (the rule name, the
+   function name, the symbol, the feature label) with `grep -rln` or `find`
+   across the whole repository or the relevant subtree — not only the file you
+   started from.
+
+4. **Record the search in evidence.** The absence claim's Evidence column must
+   enumerate the directories listed, the grep patterns run, and the
+   cross-references followed — not just the single file inspected.
+
+Forbidden patterns (must be flagged as a contract violation):
+
+- "X is absent because lines N–M of `file.md` do not mention it"
+  (single-file line-range claim).
+- "There is no Y in the codebase" with no `grep -rln` / `find` evidence cited.
+- An absence claim that cites a file containing a "see also" pointer without
+  showing that the referenced file was opened.
+
+The Evidence Standard (§ Evidence Standard above) and the Completion Gate
+(below) enforce this discipline.
+
 ## Completion Gate
 
 A stage that produces analysis, judgment, review, or planning output is not
