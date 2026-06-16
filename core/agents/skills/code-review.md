@@ -24,6 +24,21 @@ For each item in the PRD's Core Features list, verify whether it is present in t
 
 Mark any missing feature as a NEEDS_CHANGES finding.
 
+## Two-Stage Review Order
+
+Run review in this order:
+
+1. **Spec compliance** — complete the PRD coverage matrix first. If any required
+   acceptance criterion or core feature is missing, return
+   `REVIEW: NEEDS_CHANGES` with `REASON: spec_incomplete`. Do not mix polish
+   findings into the first loop-back directive.
+2. **Code quality** — after spec compliance passes, review maintainability,
+   architecture, security, tests, and style. Return `REVIEW: NEEDS_CHANGES` with
+   `REASON: code_quality` for blocking code-quality findings.
+
+This ordering keeps implementation loop-backs focused: complete missing
+behavior before polishing code that may still need structural changes.
+
 ---
 
 ## Git Diff Analysis

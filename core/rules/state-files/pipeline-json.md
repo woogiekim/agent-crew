@@ -35,7 +35,10 @@ Canonical shape:
   "host_task_ids":    [
     {"test-writer": "task-abc", "backend": "task-def"},
     {"reviewer": "task-jkl"}
-  ]
+  ],
+  "requires_delegation_fidelity": false,
+  "requires_human_acceptance": false,
+  "eval_command": ""
 }
 ```
 
@@ -125,6 +128,18 @@ Planning contract: a QA verify stage is valid as a quality gate only when it
 is immediately followed by a solo reviewer stage. A code implementer followed
 by QA verify without a following reviewer fails the planning-time quality
 gate with `missing_pipeline_reviewer_after_qa_verify`.
+
+### Optional quality evidence fields
+
+`requires_delegation_fidelity: true` tells the runtime quality-loop gate to
+require provider-neutral `delegation.jsonl` and `tool-events.jsonl` evidence
+before a mutating completion can pass.
+
+`requires_human_acceptance: true` tells QA/reviewer stages that
+`context/human-acceptance-matrix.md` or `.json` must exist before completion.
+
+`eval_command` records an Evaluation-Driven Development command. When present,
+the completed task must write `context/evaluation-metrics.json`.
 
 ### Sub-Task Fan-Out stage form (`parallelizable_units`)
 

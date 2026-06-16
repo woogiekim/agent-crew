@@ -32,7 +32,7 @@ whether it is safe for direct invocation via `crew:agent`.
 | frontend | UI components, client-side code, CSS, UX | component, page, ui, css, style, layout, button, form, modal, react, vue | yes | — |
 | planner | Architecture, design, decomposition, analysis | design, plan, architecture, decompose, analyze, structure, diagram | yes | — |
 | designer | Wireframes, UX specs, visual design | wireframe, mockup, visual, figma, sketch, prototype | yes | — |
-| analyst | Codebase understanding, domain investigation | explain, investigate, understand, map, trace, explore, audit | yes | — |
+| analyst | Codebase understanding, domain investigation, read-only debugging | explain, investigate, understand, map, trace, explore, audit, debug, root cause, failing test | yes | — |
 | historian | Session / git / project state Q&A (factual lookups only) | 어떤 에이전트, 방금, what just, what did, what ran, this session, this branch, history, spawned, running, recent activity | yes | — |
 | documenter | Documentation, README, API docs | docs, readme, documentation, guide, reference, changelog, comment | yes | — |
 | mentor | Mentoring, coaching, concept teaching, growth feedback, engineering guidance Q&A | mentor, mentoring, coach, guide, teach, learn, explain, concept, pattern, question, example, tutorial, feedback, study plan, growth, 멘토, 코칭, 가르쳐, 학습, 개념, 설명 | yes | — |
@@ -72,7 +72,7 @@ level, and a reason string shown to the user in the visibility line.
 | 5 | wireframe OR mockup OR figma OR prototype OR sketch | designer | high | Matched design/UX keywords |
 | 6 | design OR architecture OR plan OR decompose OR structure OR diagram | planner | high | Matched planning/architecture keywords |
 | 6.5 | "어떤 에이전트" OR 방금 OR "what just" OR "what did this session" OR "what did we" OR "what ran" OR "what agent" OR "this session" OR "이번 세션" OR "this branch" OR "session history" OR "spawned agent" OR "what's running" OR "currently running" OR "recent activity" OR "어떤 commit" OR "무슨 commit" | historian | high | Matched session/git/project-state Q pattern |
-| 7 | explain OR investigate OR understand OR trace OR audit OR explore | analyst | high | Matched analysis/exploration keywords |
+| 7 | explain OR investigate OR understand OR trace OR audit OR explore OR debug OR "root cause" OR "failing test" | analyst | high | Matched analysis/exploration/debugging keywords |
 | 8 | docs OR readme OR documentation OR guide OR reference OR changelog | documenter | high | Matched documentation keywords |
 | 9 | mentor OR mentoring OR coach OR guide OR teach OR learn OR concept OR pattern OR tutorial OR example OR feedback OR study plan OR growth OR 멘토 OR 코칭 OR 가르쳐 OR 학습 OR 개념 OR 설명 | mentor | high | Matched mentoring/learning keywords |
 | 9.5 | publish issues OR create work items OR issue tracking OR task list import OR import issues OR bulk create issues OR seed project OR upload task list OR issue file OR issue lifecycle OR status transition OR state change OR field update OR label update OR priority update OR assignee update | issuer | medium | Matched issue lifecycle / work-item keywords |

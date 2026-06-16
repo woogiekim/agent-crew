@@ -69,6 +69,23 @@ reason: missing_quality_loop_pipeline
 EOF
 }
 
+make_active_task_contract() {
+  local home_dir="$1"
+  local state_key="$2"
+  local task_id="$3"
+  local project_root="$4"
+  local task_dir="${home_dir}/state/${state_key}/tasks/${task_id}"
+  mkdir -p "${home_dir}/state/${state_key}/tasks"
+  make_task_contract "${task_dir}" "passed"
+  cat >"${task_dir}/register.json" <<EOF
+{
+  "task_id": "${task_id}",
+  "project_root": "${project_root}"
+}
+EOF
+  : >"${home_dir}/state/${state_key}/tasks/active.${task_id}"
+}
+
 plain_tracker_payload='{
   "project_identifier": "TRACKER",
   "title": "Follow-up work item",
@@ -98,6 +115,16 @@ out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_pa
 rc=$?
 assert_exit 2 "${rc}" "missing_quality_loop_pipeline must not allow direct mutation"
 assert_contains "${out}" "tracker fallback contract" "blocked issuer pipeline still requires fallback contract"
+
+it "active tracker fallback evidence from another project is ignored"
+TMP_HOME="$(make_tmp)/home"
+OTHER_PROJECT="$(make_tmp)/other-project"
+CURRENT_PROJECT="$(make_tmp)/current-project"
+make_active_task_contract "${TMP_HOME}" "other-state" "active-task" "${OTHER_PROJECT}"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 2 "${rc}" "cross-project active fallback evidence must not allow mutation"
+assert_contains "${out}" "tracker fallback contract" "cross-project active evidence is ignored"
 
 it "failed tracker fallback validation evidence still blocks"
 TASK_DIR="$(make_tmp)/task"

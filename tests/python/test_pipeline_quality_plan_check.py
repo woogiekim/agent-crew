@@ -169,6 +169,126 @@ def test_plan_checker_accepts_split_tdd_implementation_stages(tmp_path: Path):
     assert payload["required"] is True
 
 
+def test_plan_checker_blocks_unmapped_prd_acceptance_criteria(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a backend feature",
+            "stages": [
+                {
+                    "agents": ["backend"],
+                    "tdd_parallel": True,
+                    "acceptance_criteria": ["AC-001"],
+                },
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- AC-001: first behavior is implemented.\n"
+        "- AC-002: second behavior is implemented.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "prd_acceptance_criteria_unmapped" in payload["failures"]
+    assert payload["prd_unmapped_acceptance_criteria"] == ["AC-002"]
+
+
+def test_plan_checker_does_not_require_prd_acceptance_mapping_by_default(tmp_path: Path):
+    path = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- AC-001: documented but not mapped by this legacy pipeline.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["required"] is True
+    assert payload["pipeline_acceptance_criteria"] == []
+    assert payload["prd_unmapped_acceptance_criteria"] == []
+    assert "prd_acceptance_criteria_unmapped" not in payload["failures"]
+
+
+def test_plan_checker_does_not_map_acceptance_ids_for_design_only_pipeline(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Create a UI design specification",
+            "stages": [
+                {
+                    "agents": ["designer"],
+                    "acceptance_criteria": ["AC-001"],
+                },
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- AC-001: design covers the primary state.\n"
+        "- AC-002: design covers the empty state.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["required"] is False
+    assert payload["prd_unmapped_acceptance_criteria"] == []
+    assert "prd_acceptance_criteria_unmapped" not in payload["failures"]
+
+
+def test_plan_checker_acceptance_mapping_supports_short_ac_ids(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a backend feature",
+            "stages": [
+                {
+                    "agents": ["backend"],
+                    "tdd_parallel": True,
+                    "acceptance_criteria": ["AC-1"],
+                },
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- AC-1: first behavior is implemented.\n"
+        "- AC-2: second behavior is implemented.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["prd_acceptance_criteria"] == ["AC-1", "AC-2"]
+    assert payload["pipeline_acceptance_criteria"] == ["AC-1"]
+    assert payload["prd_unmapped_acceptance_criteria"] == ["AC-2"]
+    assert "prd_acceptance_criteria_unmapped" in payload["failures"]
+
+
 def test_plan_checker_accepts_qa_verify_between_implementation_and_reviewer(tmp_path: Path):
     path = write_pipeline(
         tmp_path,

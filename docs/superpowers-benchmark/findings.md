@@ -18,6 +18,35 @@ The top 3 adopt candidates by impact are:
 
 The next explicit-pick session should prioritize these three as quick wins; the remaining six (Findings 4–9) are lower-impact or defer-able.
 
+## 1.1. Current Status Update — New 2026-06
+
+Implemented:
+- Self-verification discipline now exists at `core/rules/self-verification.md`.
+- PRD placeholder review now exists in `core/agents/analyst.md` and
+  `core/scripts/pipeline-quality-plan-check.py`.
+- Two-stage reviewer split: spec-compliance before code-quality.
+- Architecture recovery before terminal `quality_loop_exhausted`.
+- Systematic debugging workflow for root-cause-before-fix.
+- Post-run close-out menu.
+- Read-only `crew agent` guard alignment.
+- Semantic completion, delegation-fidelity, Human Acceptance Matrix, and EDD
+  evidence gates.
+- Experimental `.claude-plugin/plugin.json` packaging while keeping
+  provider-neutral core source of truth.
+
+Still Open:
+- Exercise the new optional gates on a real multi-agent task after the next
+  host-adapter release cycle.
+
+New 2026-06:
+- Align `crew agent` read-only guard behavior with `agent-routing.md`.
+- Add semantic completion and delegation-fidelity gates for host bridge and
+  subagent handoff results.
+- Add cross-artifact consistency checking for PRD, pipeline, and handoff.
+- Add Human Acceptance Matrix and Evaluation-Driven Development task evidence.
+- Add experimental `.claude-plugin/plugin.json` packaging while keeping the
+  provider-neutral core as the source of truth.
+
 ## 2. Skill-by-Skill Mapping Table
 
 | superpowers skill | agent-crew counterpart | exists / partial / missing | verdict |
@@ -185,4 +214,3 @@ This benchmark checked but explicitly defers re-evaluation of three settled deci
 | Superpowers' five mechanisms depend on Claude Code specific tools (Skill dispatcher, Task API, TodoWrite, EnterPlanMode, EnterWorktree). Agent-crew is multi-host (Codex, generic + Claude bridge). | AI-agnostic posture forbids Claude-only mechanisms as clean adopts because they cannot degrade on alternate hosts. | All 5 are classified EXCLUDE (already covered in more robust form or irrelevant to multi-host design). Zero clean ADOPT verdicts. |
 | Ship-threshold filter requires user-visible delta to clear; internal hygiene is defer-by-default. Findings 6–9 are documentation, optional skills, authoring-process hygiene. | Internal-only work is assumed defer-by-default absent explicit operator request. | Findings 6–9 carry ship-threshold=N and are marked defer-by-default. |
 | Findings 1–5 each reduce retry counts, clarify signals, enable recovery, or prevent under-specified PRDs. Validated against PRD acceptance criteria and handoff constraints. | Visible operator benefit is the ship-threshold pass criterion. | Findings 1–5 carry ship-threshold=Y and ranked by impact in backlog. Next explicit-pick session should implement these in priority order. |
-

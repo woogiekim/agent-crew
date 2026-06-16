@@ -15,6 +15,7 @@ MUTATING_TASK_RE = re.compile(
     r"save|edit|publish|commit|resolve|close"
     r")\b|"
     r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"작성|생성|만들|"
     r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
     re.IGNORECASE,
 )
@@ -25,6 +26,7 @@ STRONG_MUTATING_TASK_RE = re.compile(
     r"save|edit|publish|commit|resolve|close"
     r")\b|"
     r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"작성|생성|만들|"
     r"리팩터|배포|머지|롤백|반영|저장|발행|고쳐|해결",
     re.IGNORECASE,
 )
@@ -45,6 +47,11 @@ NON_MUTATING_CONSTRAINT_RE = re.compile(
     r"refactor|replace|extend|integrate|deploy|merge|rollback|write|"
     r"save|edit|publish|commit|push|resolve|close|mutate"
     r")\b",
+    re.IGNORECASE,
+)
+KOREAN_NON_MUTATING_CONSTRAINT_RE = re.compile(
+    r"((?:수정|변경|편집|저장|발행|커밋|푸시|배포|작성|생성)하지|(?:고치|만들)지)"
+    r"\s*(?:마|말고|않고|않으며|않기)?",
     re.IGNORECASE,
 )
 STATUS_COMPLETED_RE = re.compile(r"^STATUS\s*:\s*completed\b", re.I | re.M)
@@ -499,7 +506,10 @@ def auto_record_minor_findings(
 def looks_mutating_task(text: str) -> bool:
     value = text or ""
     constrained_value = NON_MUTATING_CONSTRAINT_RE.sub("", value)
-    if READ_ONLY_TASK_RE.search(value) and not STRONG_MUTATING_TASK_RE.search(constrained_value):
+    has_read_only_signal = bool(READ_ONLY_TASK_RE.search(value))
+    if has_read_only_signal:
+        constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
+    if has_read_only_signal and not STRONG_MUTATING_TASK_RE.search(constrained_value):
         return False
     return bool(MUTATING_TASK_RE.search(constrained_value))
 
@@ -796,6 +806,80 @@ def is_completed(target_status: str | None, register: dict, result_text: str) ->
     return register.get("current_phase") == "completed" or bool(STATUS_COMPLETED_RE.search(result_text))
 
 
+def human_acceptance_matrix_status(task_dir: Path) -> dict:
+    markdown = task_dir / "context" / "human-acceptance-matrix.md"
+    payload = task_dir / "context" / "human-acceptance-matrix.json"
+    paths = [
+        relative_evidence_name(task_dir, path)
+        for path in (markdown, payload)
+        if path.is_file()
+    ]
+
+    return {
+        "required": False,
+        "present": bool(paths),
+        "paths": paths,
+    }
+
+
+def evaluation_metrics_status(task_dir: Path) -> dict:
+    path = task_dir / "context" / "evaluation-metrics.json"
+    if not path.is_file():
+        return {
+            "required": False,
+            "present": False,
+            "errors": [],
+            "path": relative_evidence_name(task_dir, path),
+        }
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {
+            "required": False,
+            "present": True,
+            "errors": ["malformed_evaluation_metrics_json"],
+            "path": relative_evidence_name(task_dir, path),
+        }
+    except Exception:
+        return {
+            "required": False,
+            "present": True,
+            "errors": ["unreadable_evaluation_metrics"],
+            "path": relative_evidence_name(task_dir, path),
+        }
+
+    errors: list[str] = []
+    if not isinstance(payload, dict):
+        errors.append("evaluation_metrics_not_object")
+    else:
+        if payload.get("schema_version") != 1 or isinstance(payload.get("schema_version"), bool):
+            errors.append("invalid_evaluation_metrics_schema_version")
+        for key in ("command", "status"):
+            if not text_present(payload.get(key)):
+                errors.append(f"missing_evaluation_metrics_{key}")
+
+    return {
+        "required": False,
+        "present": True,
+        "errors": errors,
+        "path": relative_evidence_name(task_dir, path),
+    }
+
+
+def delegation_fidelity_status(task_dir: Path) -> dict:
+    delegation_events = load_jsonl(task_dir / "delegation.jsonl")
+    tool_events = load_jsonl(task_dir / "tool-events.jsonl")
+
+    return {
+        "required": False,
+        "delegation_events": len(delegation_events),
+        "tool_events": len(tool_events),
+        "has_delegation": bool(delegation_events),
+        "has_tool_events": bool(tool_events),
+    }
+
+
 def rejection_followups(events: list[dict], rejected_index: int, pipeline: dict | None = None) -> dict:
     rejected = events[rejected_index]
     rejected_stage = event_stage(rejected)
@@ -891,6 +975,15 @@ def check_quality_loop(
         for error in event_quality_metrics_errors(row, task_dir)
     ]
     finding_register = finding_register_status(task_dir)
+    delegation_fidelity = delegation_fidelity_status(task_dir)
+    human_acceptance = human_acceptance_matrix_status(task_dir)
+    evaluation_metrics = evaluation_metrics_status(task_dir)
+    delegation_required = bool(pipeline.get("requires_delegation_fidelity"))
+    human_acceptance_required = bool(pipeline.get("requires_human_acceptance"))
+    evaluation_required = bool(pipeline.get("eval_command"))
+    delegation_fidelity["required"] = delegation_required
+    human_acceptance["required"] = human_acceptance_required
+    evaluation_metrics["required"] = evaluation_required
 
     failures: list[str] = []
     if required:
@@ -941,6 +1034,16 @@ def check_quality_loop(
             failures.append("missing_finding_test_mapping")
         if finding_register["missing_owner_or_followup_ids"]:
             failures.append("missing_finding_owner_or_followup")
+        if delegation_required and not delegation_fidelity["has_delegation"]:
+            failures.append("missing_delegation_fidelity_evidence")
+        if delegation_required and not delegation_fidelity["has_tool_events"]:
+            failures.append("missing_tool_event_fidelity_evidence")
+        if human_acceptance_required and not human_acceptance["present"]:
+            failures.append("missing_human_acceptance_matrix")
+        if evaluation_required and not evaluation_metrics["present"]:
+            failures.append("missing_evaluation_metrics")
+        if evaluation_required and evaluation_metrics["errors"]:
+            failures.extend(evaluation_metrics["errors"])
         if events and not valid_approval_events:
             failures.append("missing_pipeline_reviewer_approval")
         if require_rework_cycle and not rejection_indexes:
@@ -964,4 +1067,7 @@ def check_quality_loop(
         "reviewer_approved_without_quality_metrics_count": len(approved_events) - len(valid_approval_events),
         "reviewer_quality_metrics_errors": sorted(set(approval_metric_errors)),
         "finding_register": finding_register,
+        "delegation_fidelity": delegation_fidelity,
+        "human_acceptance": human_acceptance,
+        "evaluation_metrics": evaluation_metrics,
     }

@@ -33,6 +33,20 @@ server, compiler, type checker, or `fallback-static` evidence was available.
 Treat the artifact as support for symbol and diagnostic correctness only; it
 does not replace tests, PRD coverage, security review, or runtime validation.
 
+## Two-Stage Review Order
+
+Review spec compliance before code quality:
+
+1. Complete the PRD coverage matrix from the code-review skill. If required
+   behavior is missing, return `REVIEW: NEEDS_CHANGES` and
+   `REASON: spec_incomplete`.
+2. Only after spec compliance passes, review maintainability, architecture,
+   security, style, and other code-quality findings. For blocking issues return
+   `REVIEW: NEEDS_CHANGES` and `REASON: code_quality`.
+
+Do not collapse these reasons into a generic `review_needs_changes` verdict
+when the narrower reason is known.
+
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not

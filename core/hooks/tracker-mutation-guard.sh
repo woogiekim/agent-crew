@@ -54,6 +54,42 @@ def read_text(path: Path) -> str:
         return ""
 
 
+def current_project_path() -> Path:
+    raw = os.environ.get("PROJECT_ROOT", "").strip()
+    try:
+        return Path(raw or os.getcwd()).expanduser().resolve()
+    except Exception:
+        return Path(raw or os.getcwd()).expanduser()
+
+
+def is_same_or_child(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+    except Exception:
+        return str(path) == str(parent)
+
+
+def active_marker_matches_current_project(task_dir: Path) -> bool:
+    register = load_json(task_dir / "register.json")
+    if not isinstance(register, dict):
+        return False
+
+    raw_project_root = str(register.get("project_root") or "").strip()
+    if not raw_project_root:
+        return False
+
+    try:
+        project_root = Path(raw_project_root).expanduser().resolve()
+    except Exception:
+        project_root = Path(raw_project_root).expanduser()
+
+    current_path = current_project_path()
+    return current_path == project_root or is_same_or_child(current_path, project_root)
+
+
 def task_dir_candidates(tool_input: dict[str, Any]) -> list[Path]:
     candidates: list[Path] = []
     for key in ("AGENT_CREW_TASK_DIR", "TASK_DIR"):
@@ -70,8 +106,9 @@ def task_dir_candidates(tool_input: dict[str, Any]) -> list[Path]:
     if state_root.is_dir():
         for marker in state_root.glob("*/tasks/active.*"):
             task_id = marker.name.removeprefix("active.")
-            if task_id:
-                candidates.append(marker.parent / task_id)
+            task_dir = marker.parent / task_id if task_id else None
+            if task_dir and active_marker_matches_current_project(task_dir):
+                candidates.append(task_dir)
 
     seen: set[str] = set()
     unique: list[Path] = []

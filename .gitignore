@@ -7,6 +7,8 @@
 
 # Dot-prefixed directories (catch-all)
 .*/
+!.claude-plugin/
+!.claude-plugin/plugin.json
 
 # Generated worktrees
 .crew-worktrees/

@@ -61,6 +61,19 @@ Agent and hook outputs that affect workflow control must be parser-friendly:
 Free-form prose may explain a decision, but it must not be the only source of
 truth for state transitions, approvals, blockers, or issue publication.
 
+## Semantic Completion And Delegation Fidelity
+
+Host bridge success, subagent process success, or `HOST_BRIDGE: auto_completed`
+is transport evidence only. A mutating task is semantically complete only when
+task-local artifacts prove the planned implementation stages, TDD evidence,
+reviewer approval, quality metrics, and any opt-in gates required by
+`pipeline.json`.
+
+When `pipeline.json` sets `requires_delegation_fidelity: true`, completion also
+requires provider-neutral `delegation.jsonl` and `tool-events.jsonl` evidence.
+The runtime must reject metadata-only completion with explicit failure labels
+instead of treating bridge exit status as task completion.
+
 ## Retrieval Scoring
 
 Memory retrieval must score and filter candidates before they enter prompts.

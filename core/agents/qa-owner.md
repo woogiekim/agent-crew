@@ -48,6 +48,9 @@ Use these files as the canonical QA record:
 - `{TASK_DIR}/context/qa-report.md` — verification result, executed cases, and
   evidence.
 - `{TASK_DIR}/context/qa-defects.md` — required only when defects are found.
+- `{TASK_DIR}/context/human-acceptance-matrix.md` — required when
+  `pipeline.json` sets `requires_human_acceptance: true`; follow
+  `core/rules/human-acceptance-matrix.md`.
 - `{TASK_DIR}/context/finding-register.json` — canonical confirmed finding
   lifecycle register, read and updated when QA confirms defects.
 
