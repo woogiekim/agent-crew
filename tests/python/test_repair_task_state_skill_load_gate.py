@@ -176,6 +176,35 @@ def test_json_skill_load_satisfies_non_tdd_selected_skill(tmp_path: Path):
     assert repair["skill_load_gate"]["required_skills"] == ["frontend-typescript-react.md"]
 
 
+def test_skill_directory_skill_md_satisfies_selected_skill_name(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Implement a current-session fallback repair",
+        selected_skill="current-session-fallback-repair",
+    )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- /Users/wook/.codex/memories/skills/current-session-fallback-repair/SKILL.md\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-use-bypass-reason",
+        "isolate Codex skill directory load parsing",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert "current-session-fallback-repair.md" in repair["skill_load_gate"]["loaded_skill_names"]
+    assert repair["skill_load_gate"]["required_skills"] == ["current-session-fallback-repair.md"]
+
+
 def test_repair_accepts_skill_load_evidence_for_tdd_specialist(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"

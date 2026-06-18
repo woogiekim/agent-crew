@@ -233,6 +233,11 @@ def test_language_normalization_and_issue_helpers(monkeypatch, tmp_path: Path):
     assert "missing-context" in runtime.ambiguous_input_reason("do this")
     assert runtime.needs_input_normalization("ok") is True
     assert "Normalize raw user input" in runtime.korean_normalization_task("진행", next_target="crew run")
+    commit_metadata = runtime.input_normalization_metadata("변경사항 커밋해줘", next_target="crew run supervisor")
+    assert "vcs.commit.message.compose" in commit_metadata["required_capabilities"]
+    assert "vcs.history.local_mutation" in commit_metadata["required_capabilities"]
+    issue_resolution_metadata = runtime.input_normalization_metadata("열려있는 이슈 해결", next_target="crew run supervisor")
+    assert "tracker.issue.mutate" not in issue_resolution_metadata["required_capabilities"]
     handoff = runtime.korean_normalization_handoff(
         request_id="r1",
         project_root=tmp_path,

@@ -871,8 +871,12 @@ Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see
 Each supervisor removes only the marker it owns:
 
 ```bash
-PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --format shell)"
+TASKS_DIR="${STATE_DIR}/tasks"
 
 # Per-task marker: always safe to remove our own
 rm -f "${TASKS_DIR}/active.${TASK_ID}"
@@ -892,8 +896,12 @@ The Phase 1c create step (`touch ${TASKS_DIR}/active`) must also write the
 per-task variant when running under background fan-out:
 
 ```bash
-PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --format shell)"
+TASKS_DIR="${STATE_DIR}/tasks"
 mkdir -p "${TASKS_DIR}"
 
 # Always write the per-task marker — it is the canonical marker under P4.

@@ -26,8 +26,11 @@ QUALITY_RULE_PATH="${AGENT_CREW_HOME}/rules/quality-loop.md"
 PIPELINE_PATH="${TASK_DIR}/pipeline.json"
 HANDOFF_PATH="${TASK_DIR}/handoff.md"
 PRD_PATH="${TASK_DIR}/context/prd.md"
-PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --format shell)"
 CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
 
 # Phase F5: derive SESSION_ID for the structured progress buffer's trace_id.
@@ -729,8 +732,12 @@ within this pipeline. Use `AGENT_CREW_HOME` resolved in Phase 0.
 > letting stage agents hit cryptic hook-blocked errors later.
 
 ```bash
-PROJECT_NAME=$(basename "${PROJECT_ROOT}")
-TASKS_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}/tasks"
+eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --project-root "${PROJECT_ROOT}" \
+  --ensure \
+  --format shell)"
+TASKS_DIR="${STATE_DIR}/tasks"
 mkdir -p "${TASKS_DIR}"
 
 # Legacy singleton marker — preserved for backward compatibility with codex

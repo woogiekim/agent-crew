@@ -78,9 +78,16 @@ SKILL_LOAD_RE = re.compile(
 )
 TDD_SKILL_PATH_RE = re.compile(r"(?:^|[/`\\])tdd\.md\b", re.IGNORECASE)
 TDD_SKILL_SELECTION_RE = re.compile(r"\bselected_skill\s*[:=]\s*.*\btdd\b|\btdd_parallel\b|\bTDD\b", re.IGNORECASE)
+LEGACY_AGENT_CAPABILITIES = {
+    "git-committer": [
+        "vcs.commit.message.compose",
+        "vcs.history.local_mutation",
+    ],
+}
 SPECIALIST_FIELD_RE = re.compile(
     r"\s*[-*]?\s*("
     r"selected_agent|selected_agents|selected_user_agent|selected_user_agents|"
+    r"selected_handler|selected_handlers|"
     r"selected_subagent|selected_subagents|selected_skill|selected_skills|"
     r"selection_reason|execution_mode"
     r")\s*[:=]\s*(.+)",
@@ -258,6 +265,7 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
     selected_user_agents: list[str] = []
     selected_subagents: list[str] = []
     selected_skills: list[str] = []
+    selected_handlers: dict[str, set[str]] = {}
     for path in resolve_specialist_paths(task_dir, paths):
         inspected = inspect_evidence_file(task_dir, path, inspected_paths)
         if inspected is None:
@@ -280,6 +288,8 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
             selected_user_agents.extend(parsed.get("selected_user_agent", []))
             selected_subagents.extend(parsed.get("selected_subagents", []))
             selected_skills.extend(parsed.get("selected_skill", []))
+            for capability, handlers in parsed.get("selected_handlers", {}).items():
+                selected_handlers.setdefault(capability, set()).update(handlers)
         elif SPECIALIST_DISPATCH_RE.search(text):
             incomplete_paths[rel_name] = ["selected_agent", "selection_reason", "execution_mode"]
     return {
@@ -291,13 +301,17 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
         "selected_user_agents": sorted(set(selected_user_agents)),
         "selected_subagents": sorted(set(selected_subagents)),
         "selected_skills": sorted(set(selected_skills)),
+        "selected_handlers": {
+            capability: sorted(handlers)
+            for capability, handlers in sorted(selected_handlers.items())
+        },
         "inspected_paths": sorted(set(inspected_paths)),
         "bypassed": False,
         "bypass_reason": "",
     }
 
 
-def git_committer_agent_paths(task_dir: Path, register: dict) -> list[str]:
+def legacy_commit_capability_provider_paths(task_dir: Path, register: dict) -> list[str]:
     candidates: list[Path] = []
     project_root = str(register.get("project_root") or "").strip()
     if project_root:
@@ -338,10 +352,191 @@ def normalize_agent_name(value: str) -> str:
     return name.lower()
 
 
-def git_committer_selected_user_agent(specialist_gate: dict) -> bool:
-    return any(
-        normalize_agent_name(agent) == "git-committer"
-        for agent in specialist_gate.get("selected_user_agents", [])
+def split_handler_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        values: list[str] = []
+        for item in value:
+            values.extend(split_handler_values(item))
+        return values
+    return [
+        normalize_agent_name(part)
+        for part in split_specialist_values(str(value))
+        if normalize_agent_name(part)
+    ]
+
+
+def selected_handlers_from_value(value: object) -> dict[str, list[str]]:
+    handlers: dict[str, list[str]] = {}
+    if value is None:
+        return handlers
+    if isinstance(value, dict):
+        items = [{"capability": capability, "handler": handler} for capability, handler in value.items()]
+    elif isinstance(value, list):
+        items = value
+    else:
+        items = [value]
+
+    for item in items:
+        capability = ""
+        handler_values: list[str] = []
+        if isinstance(item, dict):
+            capability = str(item.get("capability") or "").strip()
+            handler_values = split_handler_values(item.get("handler") or item.get("handlers"))
+        else:
+            text = str(item or "").strip()
+            if "=" in text:
+                capability, raw_handler = text.split("=", 1)
+                capability = capability.strip()
+                handler_values = split_handler_values(raw_handler)
+        if not capability:
+            continue
+        handlers.setdefault(capability, [])
+        for handler in handler_values:
+            if handler and handler not in handlers[capability]:
+                handlers[capability].append(handler)
+    return handlers
+
+
+def merge_handler_maps(target: dict[str, list[str]], source: dict[str, list[str]]) -> dict[str, list[str]]:
+    for capability, handlers in source.items():
+        target.setdefault(capability, [])
+        for handler in handlers:
+            normalized = normalize_agent_name(handler)
+            if normalized and normalized not in target[capability]:
+                target[capability].append(normalized)
+    return target
+
+
+def legacy_agent_handlers(values: object) -> dict[str, list[str]]:
+    handlers: dict[str, list[str]] = {}
+    for agent in split_handler_values(values):
+        for capability in LEGACY_AGENT_CAPABILITIES.get(agent, []):
+            handlers.setdefault(capability, [])
+            if agent not in handlers[capability]:
+                handlers[capability].append(agent)
+    return handlers
+
+
+def apply_legacy_agent_translation(fields: dict[str, list[str] | str]) -> dict[str, list[str] | str]:
+    selected_user_agents = fields.get("selected_user_agent", [])
+    if not isinstance(selected_user_agents, list):
+        return fields
+
+    existing_handlers = fields.get("selected_handlers", {})
+    handlers = existing_handlers if isinstance(existing_handlers, dict) else {}
+    handlers = merge_handler_maps(handlers, legacy_agent_handlers(selected_user_agents))
+    if handlers:
+        fields["selected_handlers"] = handlers
+    else:
+        fields.pop("selected_handlers", None)
+    return fields
+
+
+def required_capabilities_for_task(task: str) -> list[str]:
+    value = " ".join((task or "").strip().lower().split())
+    capabilities: list[str] = []
+
+    def add(capability: str) -> None:
+        if capability not in capabilities:
+            capabilities.append(capability)
+
+    if re.search(r"\b(git\s+commit|commit|amend|reword|squash)\b|커밋", value):
+        add("vcs.commit.message.compose")
+        add("vcs.history.local_mutation")
+    if re.search(r"\b(git\s+push|push)\b|푸시", value):
+        add("vcs.remote_mutation")
+    if re.search(r"\b(git\s+merge|merge)\b|머지", value):
+        add("vcs.history.local_mutation")
+    if re.search(r"\b(deploy|release|rollback)\b|배포|릴리즈|롤백", value):
+        add("deployment.mutate")
+    if re.search(r"\b(publish|close|update\s+issue|comment\s+on\s+issue)\b|이슈.*(발행|닫|종료|수정|댓글)", value):
+        add("tracker.issue.mutate")
+
+    return capabilities
+
+
+def required_capabilities_from_context(task_dir: Path, register: dict) -> list[str]:
+    capabilities: list[str] = []
+
+    def add_many(values: object) -> None:
+        if isinstance(values, str):
+            iterable = split_specialist_values(values)
+        elif isinstance(values, list):
+            iterable = [str(value) for value in values]
+        else:
+            iterable = []
+        for value in iterable:
+            capability = value.strip()
+            if capability and capability not in capabilities:
+                capabilities.append(capability)
+
+    add_many(register.get("required_capabilities"))
+    add_many(required_capabilities_for_task(str(register.get("task") or "")))
+    for path in (
+        task_dir / "context" / "required-capabilities.json",
+        task_dir / "context" / "input-normalization.json",
+    ):
+        payload = load_json(path)
+        if payload:
+            add_many(payload.get("required_capabilities"))
+    return capabilities
+
+
+def capability_satisfied(capability: str, specialist_gate: dict) -> bool:
+    selected_handlers = specialist_gate.get("selected_handlers", {})
+    handlers = [normalize_agent_name(handler) for handler in selected_handlers.get(capability, [])]
+    return bool(handlers)
+
+
+def enforce_required_capability_gate(
+    args: argparse.Namespace,
+    task_dir: Path,
+    register: dict,
+    specialist_gate: dict,
+) -> dict:
+    host_bridge_status = str(register.get("host_bridge_status") or "")
+    current_session_fallback = host_bridge_status == "current_session_required"
+    required_capabilities = required_capabilities_from_context(task_dir, register)
+    capability_specialist_gate = specialist_gate
+    if required_capabilities and not specialist_gate.get("selected_handlers"):
+        capability_specialist_gate = specialist_dispatch_status(
+            task_dir,
+            list(args.evidence) + list(args.specialist_evidence),
+        )
+    required = bool(args.status == "completed" and current_session_fallback and required_capabilities)
+    missing = [
+        capability
+        for capability in required_capabilities
+        if not capability_satisfied(capability, capability_specialist_gate)
+    ]
+    status = {
+        "required": required,
+        "passed": not missing,
+        "required_capabilities": required_capabilities,
+        "missing_capabilities": missing,
+        "selected_handlers": capability_specialist_gate.get("selected_handlers", {}),
+        "bypassed": False,
+        "bypass_reason": "",
+    }
+    if not required or not missing:
+        return status
+
+    if args.specialist_bypass_reason:
+        status["bypassed"] = True
+        status["bypass_reason"] = args.specialist_bypass_reason
+        return status
+
+    raise SystemExit(
+        "STATUS: blocked\n"
+        "BLOCKER: missing_required_capability_evidence\n"
+        "DETAIL: completed repair for a current-session fallback with downstream "
+        "mutation capabilities requires selected handler evidence for every required capability.\n"
+        "MISSING: " + ", ".join(missing) + "\n"
+        "NEXT: record selected_handlers in context/specialist-dispatch.json or "
+        "context/specialist-dispatch.md before repairing completion, or record an explicit "
+        "--specialist-bypass-reason."
     )
 
 
@@ -354,28 +549,38 @@ def enforce_commit_specialist_gate(
     task = register.get("task", "")
     host_bridge_status = str(register.get("host_bridge_status") or "")
     current_session_fallback = host_bridge_status == "current_session_required"
-    available_paths = git_committer_agent_paths(task_dir, register)
+    available_paths = legacy_commit_capability_provider_paths(task_dir, register)
+    required_capabilities = required_capabilities_for_task(task)
     required = bool(
         args.status == "completed"
         and current_session_fallback
         and looks_commit_mutation_task(task)
         and available_paths
+        and required_capabilities
     )
     status = {
         "required": required,
         "passed": True,
         "available_paths": available_paths,
         "selected_user_agents": sorted(set(specialist_gate.get("selected_user_agents", []))),
+        "selected_handlers": specialist_gate.get("selected_handlers", {}),
+        "required_capabilities": required_capabilities,
         "bypassed": False,
         "bypass_reason": "",
     }
     if not required:
         return status
 
-    if git_committer_selected_user_agent(specialist_gate):
+    missing = [
+        capability
+        for capability in required_capabilities
+        if not capability_satisfied(capability, specialist_gate)
+    ]
+    if not missing:
         return status
 
     status["passed"] = False
+    status["missing_capabilities"] = missing
     if args.specialist_bypass_reason:
         status["bypassed"] = True
         status["bypass_reason"] = args.specialist_bypass_reason
@@ -383,11 +588,11 @@ def enforce_commit_specialist_gate(
 
     raise SystemExit(
         "STATUS: blocked\n"
-        "BLOCKER: missing_git_committer_dispatch_evidence\n"
+        "BLOCKER: missing_required_capability_evidence\n"
         "DETAIL: completed repair for a commit/amend current-session fallback "
-        "requires selecting the git-committer user agent before mutating git history.\n"
-        "AVAILABLE: " + ", ".join(available_paths) + "\n"
-        "NEXT: record selected_user_agent: git-committer in "
+        "requires selected handler evidence for every commit mutation capability.\n"
+        "MISSING: " + ", ".join(missing) + "\n"
+        "NEXT: record selected_handlers in context/specialist-dispatch.json or "
         "context/specialist-dispatch.md before running git commit or git commit --amend, "
         "or record an explicit --specialist-bypass-reason."
     )
@@ -438,6 +643,16 @@ def specialist_fields_from_text(text: str) -> dict[str, list[str] | str]:
         if key in {"selection_reason", "execution_mode"}:
             fields[key] = value
             continue
+        if key in {"selected_handler", "selected_handlers"}:
+            existing_handlers = fields.get("selected_handlers", {})
+            handlers = existing_handlers if isinstance(existing_handlers, dict) else {}
+            for capability, selected in selected_handlers_from_value(value).items():
+                handlers.setdefault(capability, [])
+                for handler in selected:
+                    if handler not in handlers[capability]:
+                        handlers[capability].append(handler)
+            fields["selected_handlers"] = handlers
+            continue
 
         canonical = {
             "selected_agents": "selected_agent",
@@ -450,7 +665,7 @@ def specialist_fields_from_text(text: str) -> dict[str, list[str] | str]:
         values = existing if isinstance(existing, list) else []
         values.extend(split_specialist_values(value))
         fields[canonical] = values
-    return fields
+    return apply_legacy_agent_translation(fields)
 
 
 def specialist_fields_from_json(payload: dict) -> dict[str, list[str] | str]:
@@ -480,7 +695,10 @@ def specialist_fields_from_json(payload: dict) -> dict[str, list[str] | str]:
         value = payload.get(key)
         if value is not None:
             fields[key] = str(value).strip()
-    return fields
+    handlers = selected_handlers_from_value(payload.get("selected_handlers") or payload.get("selected_handler"))
+    if handlers:
+        fields["selected_handlers"] = handlers
+    return apply_legacy_agent_translation(fields)
 
 
 def resolve_skill_load_paths(task_dir: Path, paths: list[str]) -> list[Path]:
@@ -498,7 +716,11 @@ def resolve_skill_load_paths(task_dir: Path, paths: list[str]) -> list[Path]:
 
 
 def skill_name_from_path(value: str) -> str:
-    return Path(value.strip().strip("`")).name
+    path = Path(value.strip().strip("`"))
+    name = path.name
+    if name == "SKILL.md" and path.parent.name:
+        return f"{path.parent.name}.md"
+    return name
 
 
 def extract_loaded_skill_paths(text: str) -> list[str]:
@@ -1289,6 +1511,7 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   evidence_paths: list[str], memory_ids: list[str],
                   memory_context_reused: bool, quality_gate: dict | None = None,
                   specialist_gate: dict | None = None,
+                  required_capability_gate: dict | None = None,
                   commit_specialist_gate: dict | None = None,
                   skill_load_gate: dict | None = None,
                   skill_use_gate: dict | None = None,
@@ -1351,6 +1574,17 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"SPECIALIST_SUBAGENT: {agent}")
         for skill in specialist_gate.get("selected_skills", []):
             lines.append(f"SPECIALIST_SKILL: {skill}")
+    if required_capability_gate and required_capability_gate.get("required"):
+        if required_capability_gate.get("passed"):
+            lines.append("REQUIRED_CAPABILITIES: passed")
+        elif required_capability_gate.get("bypassed"):
+            lines.append("REQUIRED_CAPABILITIES: bypassed")
+            lines.append(f"REQUIRED_CAPABILITY_BYPASS_REASON: {required_capability_gate.get('bypass_reason')}")
+        for capability in required_capability_gate.get("required_capabilities", []):
+            lines.append(f"REQUIRED_CAPABILITY: {capability}")
+        for capability, handlers in required_capability_gate.get("selected_handlers", {}).items():
+            for handler in handlers:
+                lines.append(f"SELECTED_HANDLER: {capability}={handler}")
     if commit_specialist_gate and commit_specialist_gate.get("required"):
         if commit_specialist_gate.get("passed"):
             lines.append("COMMIT_SPECIALIST: passed")
@@ -1426,6 +1660,7 @@ def repair(args: argparse.Namespace) -> dict:
     pipeline = load_json(pipeline_path)
     quality_gate = enforce_quality_gate(args, task_dir, register)
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
+    required_capability_gate = enforce_required_capability_gate(args, task_dir, register, specialist_gate)
     commit_specialist_gate = enforce_commit_specialist_gate(args, task_dir, register, specialist_gate)
     skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
     skill_use_gate = enforce_skill_use_gate(args, task_dir, register, skill_load_gate)
@@ -1475,6 +1710,7 @@ def repair(args: argparse.Namespace) -> dict:
         "memory_context_reused": args.reused_memory_context,
         "quality_gate": quality_gate,
         "specialist_dispatch_gate": specialist_gate,
+        "required_capability_gate": required_capability_gate,
         "commit_specialist_gate": commit_specialist_gate,
         "skill_load_gate": skill_load_gate,
         "skill_use_gate": skill_use_gate,
@@ -1500,6 +1736,7 @@ def repair(args: argparse.Namespace) -> dict:
             args.reused_memory_context,
             quality_gate,
             specialist_gate,
+            required_capability_gate,
             commit_specialist_gate,
             skill_load_gate,
             skill_use_gate,
