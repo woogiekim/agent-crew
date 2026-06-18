@@ -209,7 +209,7 @@ COMMIT_TASK_DIR="$(make_tmp)"
 mkdir -p "${COMMIT_PROJECT}/.agent-crew/agents" "${COMMIT_TASK_DIR}/context"
 printf '# git-committer\n' > "${COMMIT_PROJECT}/.agent-crew/agents/git-committer.md"
 
-it "git commit is blocked when git-committer dispatch is missing in task context"
+it "git commit is blocked when commit message capability dispatch is missing in task context"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
   "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR}" \
@@ -218,7 +218,8 @@ out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
 rc=$?
 assert_exit 2 "${rc}"
 assert_contains "${out}" "Kind: commit-specialist"
-assert_contains "${out}" "selected_user_agent: git-committer"
+assert_contains "${out}" "vcs.commit.message.compose"
+assert_not_contains "${out}" "selected_user_agent: git-committer"
 
 cat > "${COMMIT_TASK_DIR}/context/specialist-dispatch.md" <<'EOF'
 selected_agent: backend
@@ -227,7 +228,7 @@ selection_reason: commit request
 execution_mode: current_session_required fallback
 EOF
 
-it "git commit is allowed when git-committer dispatch is recorded in task context"
+it "git commit accepts legacy git-committer user-agent evidence through capability translation"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
   "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR}" \
@@ -235,7 +236,83 @@ out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
-assert_eq "" "${out}" "git-committer dispatch should satisfy commit guard"
+assert_eq "" "${out}" "legacy user-agent evidence should translate to commit capability evidence"
+
+COMMIT_TASK_DIR_WITH_CAPABILITY="$(make_tmp)"
+mkdir -p "${COMMIT_TASK_DIR_WITH_CAPABILITY}/context"
+cat > "${COMMIT_TASK_DIR_WITH_CAPABILITY}/context/specialist-dispatch.json" <<'EOF'
+{
+  "selected_agent": "supervisor",
+  "selected_handlers": [
+    {
+      "capability": "vcs.commit.message.compose",
+      "handler": "git-committer"
+    },
+    {
+      "capability": "vcs.history.local_mutation",
+      "handler": "git"
+    }
+  ],
+  "selection_reason": "commit request capability handlers",
+  "execution_mode": "current_session_required fallback"
+}
+EOF
+
+it "git commit is allowed when commit capabilities are satisfied by selected handlers"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_CAPABILITY}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "capability handler dispatch should satisfy commit guard"
+
+COMMIT_TASK_DIR_WITH_MD_CAPABILITY="$(make_tmp)"
+mkdir -p "${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}/context"
+cat > "${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}/context/specialist-dispatch.md" <<'EOF'
+selected_agent: supervisor
+selected_handler: vcs.commit.message.compose=git-committer
+selected_handler: vcs.history.local_mutation=git
+selection_reason: commit request capability handlers
+execution_mode: current_session_required fallback
+EOF
+
+it "git commit is allowed when markdown capability handlers satisfy dispatch"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "markdown capability handler dispatch should satisfy commit guard"
+
+COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY="$(make_tmp)"
+mkdir -p "${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}/context"
+cat > "${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}/context/specialist-dispatch.json" <<'EOF'
+{
+  "selected_agent": "supervisor",
+  "selected_handlers": [
+    {
+      "capability": "vcs.commit.message.compose",
+      "handler": "commit-message-specialist"
+    }
+  ],
+  "selection_reason": "commit request capability handler",
+  "execution_mode": "current_session_required fallback"
+}
+EOF
+
+it "git commit is allowed when an abstract commit-message capability handler is selected"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "policy should require capability evidence, not a concrete agent name"
 
 it "legacy APPROVED marker does not allow git push"
 mkdir -p "${TMP_HOME}/approvals"

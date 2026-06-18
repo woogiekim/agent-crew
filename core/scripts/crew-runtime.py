@@ -884,6 +884,29 @@ def ambiguous_input_reason(text: str) -> str:
     return ""
 
 
+def required_capabilities_for_task(raw_task: str) -> list[str]:
+    value = " ".join((raw_task or "").strip().lower().split())
+    capabilities: list[str] = []
+
+    def add(capability: str) -> None:
+        if capability not in capabilities:
+            capabilities.append(capability)
+
+    if re.search(r"\b(git\s+commit|commit|amend|reword|squash)\b|커밋", value):
+        add("vcs.commit.message.compose")
+        add("vcs.history.local_mutation")
+    if re.search(r"\b(git\s+push|push)\b|푸시", value):
+        add("vcs.remote_mutation")
+    if re.search(r"\b(git\s+merge|merge)\b|머지", value):
+        add("vcs.history.local_mutation")
+    if re.search(r"\b(deploy|release|rollback)\b|배포|릴리즈|롤백", value):
+        add("deployment.mutate")
+    if re.search(r"\b(publish|close|update\s+issue|comment\s+on\s+issue)\b|이슈.*(발행|닫|종료|수정|댓글)", value):
+        add("tracker.issue.mutate")
+
+    return capabilities
+
+
 def input_normalization_metadata(raw_task: str, *, next_target: str) -> dict:
     source_language = detect_source_language(raw_task)
     ambiguity = ambiguous_input_reason(raw_task)
@@ -902,6 +925,7 @@ def input_normalization_metadata(raw_task: str, *, next_target: str) -> dict:
         "translation_required": translation_required,
         "ambiguity_flags": [ambiguity] if ambiguity else [],
         "confidence": confidence,
+        "required_capabilities": required_capabilities_for_task(raw_task),
         "raw_input_ref": "handoff.md#RAW_INPUT",
         "downstream_route_hint": next_target,
         "normalization_sources": [

@@ -85,6 +85,16 @@ FAKE_AGENT_CREW_HOME="$(make_tmp)"
 FAKE_PROJECT_NAME="$(basename "${REPO_ROOT}")"
 FAKE_TASKS_DIR="${FAKE_AGENT_CREW_HOME}/state/${FAKE_PROJECT_NAME}/tasks"
 mkdir -p "${FAKE_TASKS_DIR}"
+FAKE_KEYED_STATE_DIR="$(
+  python3 "${REPO_ROOT}/core/scripts/project_state.py" resolve \
+    --agent-crew-home "${FAKE_AGENT_CREW_HOME}" \
+    --project-root "${REPO_ROOT}" \
+    --ensure \
+    --format json \
+    | python3 -c "import json, sys; print(json.load(sys.stdin)['state_dir'])"
+)"
+FAKE_KEYED_TASKS_DIR="${FAKE_KEYED_STATE_DIR}/tasks"
+mkdir -p "${FAKE_KEYED_TASKS_DIR}"
 
 # --------------------------------------------------------------------------- #
 # AC2 + AC4: 2026-05-17 incident pattern — no active marker, must block       #
@@ -184,6 +194,24 @@ rc=$(run_hook_env_rc "${PAYLOAD}" \
 assert_exit 0 "${rc}" "per-task marker allows edit"
 rm -f "${FAKE_TASKS_DIR}/active.20260517-170632-0"
 
+it "AC5: hash-keyed STATE_DIR active marker allows Edit — exits 0"
+touch "${FAKE_KEYED_TASKS_DIR}/active"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 0 "${rc}" "hash-keyed STATE_DIR singleton marker allows edit"
+rm -f "${FAKE_KEYED_TASKS_DIR}/active"
+
+it "AC5: hash-keyed STATE_DIR per-task marker allows Edit — exits 0"
+touch "${FAKE_KEYED_TASKS_DIR}/active.20260618-093049-0"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 0 "${rc}" "hash-keyed STATE_DIR per-task marker allows edit"
+rm -f "${FAKE_KEYED_TASKS_DIR}/active.20260618-093049-0"
+
 # --------------------------------------------------------------------------- #
 # AC3: Escape hatch — AGENT_CREW_ALLOW_DIRECT_EDIT=1                         #
 # --------------------------------------------------------------------------- #
@@ -276,6 +304,18 @@ assert_contains "${SETUP_CONTENT}" "direct-edit-guard.sh" "setup.sh registers gu
 it "direct-edit-guard.sh is registered in install.sh (claude compat layer)"
 INSTALL_CONTENT=$(cat "${REPO_ROOT}/install.sh")
 assert_contains "${INSTALL_CONTENT}" "direct-edit-guard.sh" "install.sh registers guard"
+
+it "supervisor active-marker creation resolves canonical STATE_DIR"
+BOOTSTRAP_CONTENT=$(cat "${REPO_ROOT}/core/agents/supervisor-bootstrap.md")
+assert_contains "${BOOTSTRAP_CONTENT}" "project_state.py" "bootstrap resolves project state"
+assert_contains "${BOOTSTRAP_CONTENT}" "STATE_DIR" "bootstrap uses STATE_DIR for marker path"
+assert_not_contains "${BOOTSTRAP_CONTENT}" 'PROJECT_NAME=$(basename "${PROJECT_ROOT}")' "bootstrap must not derive marker path from basename"
+
+it "supervisor active-marker cleanup resolves canonical STATE_DIR"
+RETRY_CONTENT=$(cat "${REPO_ROOT}/core/agents/supervisor-retry.md")
+assert_contains "${RETRY_CONTENT}" "project_state.py" "retry cleanup resolves project state"
+assert_contains "${RETRY_CONTENT}" "STATE_DIR" "retry cleanup uses STATE_DIR for marker path"
+assert_not_contains "${RETRY_CONTENT}" 'PROJECT_NAME=$(basename "${PROJECT_ROOT}")' "retry cleanup must not derive marker path from basename"
 
 # --------------------------------------------------------------------------- #
 # Summary                                                                     #

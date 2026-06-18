@@ -20,14 +20,18 @@
 #   on the block path. See GitHub issue #17.
 
 INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$INPUT" <<'PYEOF'
+python3 - "$INPUT" "$HOOK_DIR" <<'PYEOF'
+import importlib.util
 import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+hook_dir = sys.argv[2] if len(sys.argv) > 2 else ""
 
 def block_with_reason(reason):
     print(json.dumps({"decision": "block", "reason": reason}), file=sys.stderr, flush=True)
@@ -97,19 +101,72 @@ if any(file_path.startswith(p) for p in allowed_prefixes):
 # The legacy singleton is inherently less reliable (no task-id binding) but
 # is still accepted for backward compatibility. Callers must clean up markers
 # in Phase 3 (supervisor-retry.md "Clear active task marker").
-tasks_dir = os.path.join(agent_crew_home, "state", os.path.basename(project_root), "tasks")
+def load_project_state_module():
+    candidates = [
+        Path(agent_crew_home) / "scripts" / "project_state.py",
+        Path(agent_crew_home) / "system" / "scripts" / "project_state.py",
+        Path(hook_dir).parent / "scripts" / "project_state.py",
+        Path(project_root) / "core" / "scripts" / "project_state.py",
+    ]
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("agent_crew_project_state", candidate)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        except Exception:
+            continue
+    return None
 
-if os.path.exists(os.path.join(tasks_dir, "active")):
-    sys.exit(0)  # Inside a crew task (legacy singleton marker) — allow
+def marker_task_dirs():
+    dirs = []
+    module = load_project_state_module()
+    if module is not None:
+        try:
+            info = module.resolve_project_state(
+                home=agent_crew_home,
+                project_root=project_root,
+                ensure=False,
+                migrate_legacy=False,
+                prefer_existing_legacy=False,
+            )
+            for key in ("state_dir", "legacy_state_dir"):
+                value = info.get(key)
+                if value:
+                    dirs.append(Path(value) / "tasks")
+        except Exception:
+            pass
 
-try:
-    if os.path.isdir(tasks_dir):
-        with os.scandir(tasks_dir) as it:
-            for entry in it:
-                if entry.name.startswith("active.") and entry.is_file():
-                    sys.exit(0)  # Inside a crew task (per-task marker) — allow
-except Exception:
-    pass
+    # Last-resort compatibility for old installs where project_state.py is not
+    # available to the hook. Keep basename lookup as a fallback, not primary.
+    dirs.append(Path(agent_crew_home) / "state" / os.path.basename(project_root) / "tasks")
+
+    seen = set()
+    unique = []
+    for path in dirs:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+for tasks_dir in marker_task_dirs():
+    if (tasks_dir / "active").exists():
+        sys.exit(0)  # Inside a crew task (legacy singleton marker) — allow
+
+    try:
+        if tasks_dir.is_dir():
+            with os.scandir(tasks_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("active.") and entry.is_file():
+                        sys.exit(0)  # Inside a crew task (per-task marker) — allow
+    except Exception:
+        pass
 
 # No active crew task found — block with exit code 2.
 #

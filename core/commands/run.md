@@ -885,7 +885,8 @@ Required dispatch record before mutation:
 ```text
 {TASK_DIR}/context/specialist-dispatch.md
 selected_agent: supervisor
-selected_user_agent: git-committer
+selected_handler: vcs.commit.message.compose=git-committer
+selected_handler: vcs.history.local_mutation=git-committer
 selection_reason: commit request / commit checkpoint
 execution_mode: fast-path commit intent
 ```
@@ -901,11 +902,12 @@ Commit flow:
 4. Record final audit fields in task context: selected commit agent, candidate
    message source, final commit subject, and convention match result.
 
-If no task context exists yet, create one before continuing. If `git-committer`
-is not installed, fall through to the regular supervisor workflow instead of
-inventing an ad hoc commit message. Completion/repair for a current-session
-fallback must reject a commit-intent task when `selected_user_agent:
-git-committer` is missing while the agent is available.
+If no task context exists yet, create one before continuing. If no commit
+message capability provider is installed, fall through to the regular
+supervisor workflow instead of inventing an ad hoc commit message.
+Completion/repair for a current-session fallback must reject a commit-intent
+task when required commit mutation capability handler evidence is missing
+while such a provider is available.
 
 Then **STOP — end the turn** after the commit agent workflow completes or the
 request is explicitly cancelled.

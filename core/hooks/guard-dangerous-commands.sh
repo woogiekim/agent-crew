@@ -295,7 +295,12 @@ def configured_project_root():
             return Path(cwd).expanduser()
     return Path.cwd()
 
-def git_committer_agent_paths():
+COMMIT_MESSAGE_CAPABILITY = "vcs.commit.message.compose"
+LEGACY_AGENT_CAPABILITIES = {
+    "git-committer": [COMMIT_MESSAGE_CAPABILITY],
+}
+
+def legacy_commit_capability_provider_paths():
     candidates = []
     project_root = configured_project_root()
     candidates.extend([
@@ -312,6 +317,15 @@ def git_committer_agent_paths():
 
     return [str(path) for path in candidates if path.is_file()]
 
+def merge_handler_maps(target, source):
+    for capability, selected in source.items():
+        target.setdefault(capability, [])
+        for handler in selected:
+            normalized = normalize_agent_name(handler)
+            if normalized and normalized not in target[capability]:
+                target[capability].append(normalized)
+    return target
+
 def selected_user_agent_values_from_json(payload):
     if not isinstance(payload, dict):
         return []
@@ -326,7 +340,54 @@ def selected_user_agent_values_from_json(payload):
             values.extend(split_specialist_values(item))
     return values
 
-def specialist_dispatch_selects_git_committer(task_dir):
+def legacy_agent_handlers(values):
+    handlers = {}
+    for agent in values:
+        normalized = normalize_agent_name(agent)
+        for capability in LEGACY_AGENT_CAPABILITIES.get(normalized, []):
+            handlers.setdefault(capability, [])
+            if normalized not in handlers[capability]:
+                handlers[capability].append(normalized)
+    return handlers
+
+def selected_handlers_from_json(payload):
+    if not isinstance(payload, dict):
+        return {}
+
+    handlers = {}
+    raw = payload.get("selected_handlers") or payload.get("selected_handler") or []
+    if isinstance(raw, dict):
+        raw = [
+            {"capability": capability, "handler": handler}
+            for capability, handler in raw.items()
+        ]
+    if not isinstance(raw, list):
+        raw = [raw]
+
+    for item in raw:
+        capability = ""
+        handler_values = []
+        if isinstance(item, dict):
+            capability = str(item.get("capability") or "").strip()
+            handler = item.get("handler") or item.get("handlers") or []
+            handler_values = handler if isinstance(handler, list) else [handler]
+        else:
+            text = str(item or "").strip()
+            if "=" in text:
+                capability, handler = text.split("=", 1)
+                capability = capability.strip()
+                handler_values = split_specialist_values(handler)
+        if not capability:
+            continue
+        handlers.setdefault(capability, [])
+        for value in handler_values:
+            normalized = normalize_agent_name(value)
+            if normalized and normalized not in handlers[capability]:
+                handlers[capability].append(normalized)
+    merge_handler_maps(handlers, legacy_agent_handlers(selected_user_agent_values_from_json(payload)))
+    return handlers
+
+def specialist_dispatch_satisfies_capability(task_dir, capability):
     context_dir = Path(task_dir) / "context"
     for path in (
         context_dir / "specialist-dispatch.json",
@@ -338,17 +399,31 @@ def specialist_dispatch_selects_git_committer(task_dir):
         text = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix == ".json":
             try:
-                values = selected_user_agent_values_from_json(json.loads(text))
+                payload = json.loads(text)
+                values = selected_user_agent_values_from_json(payload)
+                handlers = selected_handlers_from_json(payload)
             except Exception:
                 values = []
+                handlers = {}
         else:
             values = []
+            handlers = {}
             for line in text.splitlines():
                 match = re.match(r"\s*[-*]?\s*selected_user_agents?\s*[:=]\s*(.+)", line, re.I)
                 if match:
                     values.extend(split_specialist_values(match.group(1)))
+                    continue
+                match = re.match(r"\s*[-*]?\s*selected_handlers?\s*[:=]\s*(.+)", line, re.I)
+                if match:
+                    parsed = selected_handlers_from_json({"selected_handlers": match.group(1)})
+                    for parsed_capability, selected in parsed.items():
+                        handlers.setdefault(parsed_capability, [])
+                        for handler in selected:
+                            if handler not in handlers[parsed_capability]:
+                                handlers[parsed_capability].append(handler)
+            merge_handler_maps(handlers, legacy_agent_handlers(values))
 
-        if any(normalize_agent_name(value) == "git-committer" for value in values):
+        if handlers.get(capability):
             return True
     return False
 
@@ -360,21 +435,21 @@ def enforce_commit_specialist_dispatch():
     if not task_dir or not Path(task_dir).is_dir():
         return
 
-    available_paths = git_committer_agent_paths()
+    available_paths = legacy_commit_capability_provider_paths()
     if not available_paths:
         return
 
-    if specialist_dispatch_selects_git_committer(task_dir):
+    if specialist_dispatch_satisfies_capability(task_dir, COMMIT_MESSAGE_CAPABILITY):
         return
 
     audit({
         "decision": "block",
         "kind": "commit-specialist",
-        "pattern": "git commit requires git-committer dispatch",
+        "pattern": "git commit requires commit message capability dispatch",
         "command": command,
         "tool_name": tool_name,
         "approved": False,
-        "approval_reason": "missing_git_committer_dispatch",
+        "approval_reason": "missing_commit_capability_dispatch",
         "approval_source": "specialist-dispatch",
         "approval_file": "",
     })
@@ -384,10 +459,10 @@ def enforce_commit_specialist_dispatch():
             "[agent-crew] Commit specialist dispatch required.\n\n"
             "Kind: commit-specialist\n"
             f"Command: {command}\n"
-            "Reason: git-committer is available, but the current task context "
-            "does not record selected_user_agent: git-committer before a git "
-            "history mutation.\n"
-            "Next: record selected_user_agent: git-committer in "
+            "Reason: a commit message capability provider is available, but the current task context "
+            f"does not record the {COMMIT_MESSAGE_CAPABILITY} capability handler "
+            "before a git history mutation.\n"
+            f"Next: record selected_handlers capability={COMMIT_MESSAGE_CAPABILITY} handler=<selected-handler> in "
             f"{task_dir}/context/specialist-dispatch.md before running git commit "
             "or git commit --amend."
         ),
