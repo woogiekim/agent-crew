@@ -151,4 +151,10 @@ AGENT_CREW_AUTO_ROUTE_DISABLED=1 \
     bash "${BRIDGE_CWD}" "${CLAUDE_BIN}" "${CLAUDE_ARGS[@]}" "$(cat "${PROMPT_PATH}")" \
     > "${LAST_MESSAGE_PATH}"
 
+if ! grep -q '[^[:space:]]' "${LAST_MESSAGE_PATH}" 2>/dev/null; then
+  printf 'AGENT_CREW_BRIDGE_STATUS: current_session_required\n' >&2
+  printf 'claude-host-bridge: empty completion payload; current session must complete task %s\n' "${TASK_ID}" >&2
+  exit 2
+fi
+
 cat "${LAST_MESSAGE_PATH}"

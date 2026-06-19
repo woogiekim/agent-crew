@@ -115,4 +115,29 @@ assert_contains "${argv}" "perform the input-normalizer contract inline"
 assert_contains "${argv}" "Do not spawn input-normalizer"
 assert_contains "${argv}" "AGENT_CREW_AGENT_NAME: analyst"
 
+EMPTY_CLAUDE="${TMP_ROOT}/claude-empty"
+EMPTY_TASK_DIR="${TMP_ROOT}/empty-task"
+mkdir -p "${EMPTY_TASK_DIR}"
+cat > "${EMPTY_CLAUDE}" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "${EMPTY_CLAUDE}"
+
+it "claude host bridge does not treat empty success output as completed"
+out=$(
+  AGENT_CREW_CLAUDE_BIN="${EMPTY_CLAUDE}" \
+  AGENT_CREW_TASK_ID="empty-task-1" \
+  AGENT_CREW_TASK_DIR="${EMPTY_TASK_DIR}" \
+  AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
+  AGENT_CREW_RESULT_PATH="${TMP_ROOT}/result.md" \
+  AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
+  bash "${BRIDGE}" 2>&1
+)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "AGENT_CREW_BRIDGE_STATUS: current_session_required"
+assert_contains "${out}" "empty completion payload"
+assert_file_exists "${EMPTY_TASK_DIR}/context/claude-host-bridge-last-message.json"
+
 end_report
