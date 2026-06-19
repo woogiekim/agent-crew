@@ -209,6 +209,24 @@ COMMIT_TASK_DIR="$(make_tmp)"
 mkdir -p "${COMMIT_PROJECT}/.agent-crew/agents" "${COMMIT_TASK_DIR}/context"
 printf '# git-committer\n' > "${COMMIT_PROJECT}/.agent-crew/agents/git-committer.md"
 
+write_capability_result() {
+  local task_dir="$1"
+  local capability="$2"
+  local handler="$3"
+  mkdir -p "${task_dir}/context/capabilities"
+  python3 -c '
+import json, pathlib, sys
+capability = sys.argv[2]
+path = pathlib.Path(sys.argv[1]) / "context" / "capabilities" / f"{capability}.json"
+path.write_text(json.dumps({
+    "capability": capability,
+    "handler": sys.argv[3],
+    "state": "completed",
+    "artifact": f"context/capabilities/{capability}.json",
+}) + "\n", encoding="utf-8")
+' "${task_dir}" "${capability}" "${handler}"
+}
+
 it "git commit is blocked when commit message capability dispatch is missing in task context"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
@@ -228,7 +246,19 @@ selection_reason: commit request
 execution_mode: current_session_required fallback
 EOF
 
-it "git commit accepts legacy git-committer user-agent evidence through capability translation"
+it "git commit blocks legacy git-committer selection without capability completion"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Commit capability completion"
+
+write_capability_result "${COMMIT_TASK_DIR}" "vcs.commit.message.compose" "git-committer"
+
+it "git commit accepts legacy git-committer user-agent after capability completion"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
   "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR}" \
@@ -236,7 +266,7 @@ out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
-assert_eq "" "${out}" "legacy user-agent evidence should translate to commit capability evidence"
+assert_eq "" "${out}" "legacy user-agent evidence with completion should satisfy commit capability evidence"
 
 COMMIT_TASK_DIR_WITH_CAPABILITY="$(make_tmp)"
 mkdir -p "${COMMIT_TASK_DIR_WITH_CAPABILITY}/context"
@@ -258,7 +288,19 @@ cat > "${COMMIT_TASK_DIR_WITH_CAPABILITY}/context/specialist-dispatch.json" <<'E
 }
 EOF
 
-it "git commit is allowed when commit capabilities are satisfied by selected handlers"
+it "git commit blocks selected handlers without capability completion"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_CAPABILITY}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Commit capability completion"
+
+write_capability_result "${COMMIT_TASK_DIR_WITH_CAPABILITY}" "vcs.commit.message.compose" "git-committer"
+
+it "git commit is allowed when commit capabilities are completed by selected handlers"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
   "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_CAPABILITY}" \
@@ -266,7 +308,7 @@ out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
-assert_eq "" "${out}" "capability handler dispatch should satisfy commit guard"
+assert_eq "" "${out}" "capability handler completion should satisfy commit guard"
 
 COMMIT_TASK_DIR_WITH_MD_CAPABILITY="$(make_tmp)"
 mkdir -p "${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}/context"
@@ -278,7 +320,19 @@ selection_reason: commit request capability handlers
 execution_mode: current_session_required fallback
 EOF
 
-it "git commit is allowed when markdown capability handlers satisfy dispatch"
+it "git commit blocks markdown capability handlers without completion"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Commit capability completion"
+
+write_capability_result "${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}" "vcs.commit.message.compose" "git-committer"
+
+it "git commit is allowed when markdown capability handlers completed"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
   "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_MD_CAPABILITY}" \
@@ -286,7 +340,7 @@ out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
-assert_eq "" "${out}" "markdown capability handler dispatch should satisfy commit guard"
+assert_eq "" "${out}" "markdown capability handler completion should satisfy commit guard"
 
 COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY="$(make_tmp)"
 mkdir -p "${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}/context"
@@ -304,7 +358,19 @@ cat > "${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}/context/specialist-dispatch.j
 }
 EOF
 
-it "git commit is allowed when an abstract commit-message capability handler is selected"
+it "git commit blocks an abstract commit-message handler without completion"
+out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}" \
+  "AGENT_CREW_PROJECT_ROOT=${COMMIT_PROJECT}" \
+  "AGENT_CREW_APPROVED_DANGEROUS=")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Commit capability completion"
+
+write_capability_result "${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}" "vcs.commit.message.compose" "commit-message-specialist"
+
+it "git commit is allowed when an abstract commit-message capability handler completed"
 out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_HOME=${TMP_HOME}" \
   "AGENT_CREW_TASK_DIR=${COMMIT_TASK_DIR_WITH_ABSTRACT_CAPABILITY}" \
@@ -312,7 +378,7 @@ out=$(run_hook "$(payload_for "git commit -m 'fix: demo'")" \
   "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?
 assert_exit 0 "${rc}"
-assert_eq "" "${out}" "policy should require capability evidence, not a concrete agent name"
+assert_eq "" "${out}" "policy should require completed capability evidence, not a concrete agent name"
 
 it "legacy APPROVED marker does not allow git push"
 mkdir -p "${TMP_HOME}/approvals"

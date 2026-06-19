@@ -198,12 +198,78 @@ companion object {
 
 ## Test Naming Convention
 
+Test name = `<nature-prefix>[(<qualifier>)] - <behavior>`
+
+The nature prefix declares the case type before the behavior. Project teams may
+localize the prefix words, but the structure is the contract:
+
+- `success-case` / `성공케이스` — happy path or explicitly valid input.
+- `failure-case` / `실패케이스` — error, exception, rejection, rollback, or
+  validation path.
+- Optional qualifier in parentheses names the mechanism or condition, for
+  example `(boundary)`, `(validation)`, `(timeout)`, `(concurrency)`,
+  `(propagation-rollback)`, or `(ordering-effect)`.
+
+Use the canonical display string when the framework supports free-form test
+names. When the framework requires identifier names, encode the same structure
+in the identifier and keep the canonical display string in a docstring,
+comment, subtest name, or closest equivalent.
+
+Positive examples across supported test families:
+
 ```kotlin
-// Pattern: `should [expected result] when [condition]`
-@Test fun `should have PENDING status when order is first created`() { }
-@Test fun `should throw IllegalArgumentException when items list is empty`() { }
-@Test fun `should return zero total when no items are present`() { }
+// Kotest
+test("성공케이스 - 정상 upsert면 byline과 profile이 모두 커밋된다") { }
+test("실패케이스(전파 롤백) - profile 저장 실패면 byline INSERT가 롤백된다") { }
+
+// JUnit5
+@DisplayName("failure-case(validation) - rejects a blank nickname")
+@Test
+fun rejectsBlankNickname() { }
 ```
+
+```typescript
+// Jest / Vitest
+test("success-case(boundary) - accepts a 500-char URL at the limit", () => {})
+test("failure-case(timeout) - shows retry affordance when lookup times out", () => {})
+```
+
+```python
+# pytest
+def test_failure_case_validation_rejects_blank_nickname():
+    """failure-case(validation) - rejects a blank nickname."""
+```
+
+```go
+// Go testing
+func TestValidateNicknameFailureCaseValidation(t *testing.T) {
+    t.Run("failure-case(validation) - rejects a blank nickname", func(t *testing.T) {})
+}
+```
+
+```rust
+// Rust test
+#[test]
+fn failure_case_validation_rejects_blank_nickname() {
+    // failure-case(validation) - rejects a blank nickname
+}
+```
+
+```scala
+// ScalaTest / MUnit
+test("success-case(boundary) - accepts a nickname at the length limit") { }
+```
+
+```swift
+// XCTest
+func testFailureCaseValidationRejectsBlankNickname() {
+    // failure-case(validation) - rejects a blank nickname
+}
+```
+
+Reviewer guidance: flag changed tests whose test name, display name, subtest
+name, or documented equivalent lacks a nature prefix as
+`missing_test_nature_prefix`.
 
 `given / when / then` comments are mandatory in every test body.
 

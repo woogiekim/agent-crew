@@ -296,6 +296,7 @@ def configured_project_root():
     return Path.cwd()
 
 COMMIT_MESSAGE_CAPABILITY = "vcs.commit.message.compose"
+COMPLETED_CAPABILITY_STATES = {"completed", "succeeded", "success", "passed", "approved", "done"}
 LEGACY_AGENT_CAPABILITIES = {
     "git-committer": [COMMIT_MESSAGE_CAPABILITY],
 }
@@ -387,6 +388,77 @@ def selected_handlers_from_json(payload):
     merge_handler_maps(handlers, legacy_agent_handlers(selected_user_agent_values_from_json(payload)))
     return handlers
 
+def completed_handlers_from_value(value, default_completed=False):
+    completed = {}
+    if value is None:
+        return completed
+    if isinstance(value, dict):
+        if "capability" in value or any(k in value for k in ("handler_results", "capability_results", "completed_handlers")):
+            for key in ("handler_results", "capability_results"):
+                if key in value:
+                    merge_handler_maps(
+                        completed,
+                        completed_handlers_from_value(value.get(key), default_completed=False),
+                    )
+            if "completed_handlers" in value:
+                merge_handler_maps(
+                    completed,
+                    completed_handlers_from_value(value.get("completed_handlers"), default_completed=True),
+                )
+            capability = str(value.get("capability") or "").strip()
+            state = str(value.get("state") or "").strip().lower()
+            handler = value.get("handler") or value.get("handlers") or []
+            handler_values = handler if isinstance(handler, list) else [handler]
+            handlers = [normalize_agent_name(item) for item in handler_values if normalize_agent_name(item)]
+            if capability and handlers and (default_completed or state in COMPLETED_CAPABILITY_STATES):
+                merge_handler_maps(completed, {capability: handlers})
+            return completed
+        if default_completed:
+            return selected_handlers_from_json({"selected_handlers": value})
+        return completed
+    if isinstance(value, list):
+        for item in value:
+            merge_handler_maps(completed, completed_handlers_from_value(item, default_completed=default_completed))
+        return completed
+    if default_completed:
+        return selected_handlers_from_json({"selected_handlers": value})
+    return completed
+
+def capability_completion_satisfies(task_dir, capability):
+    context_dir = Path(task_dir) / "context"
+    candidates = [
+        context_dir / "handler-results.json",
+        context_dir / "capability-results.json",
+    ]
+    capabilities_dir = context_dir / "capabilities"
+    if capabilities_dir.is_dir():
+        candidates.extend(sorted(capabilities_dir.glob("*.json")))
+
+    for path in candidates:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        handlers = {}
+        try:
+            handlers = completed_handlers_from_value(json.loads(text))
+        except Exception:
+            handlers = {}
+        if not handlers:
+            for line in text.splitlines():
+                match = re.match(
+                    r"\s*[-*]?\s*(?:completed_handler|completed_handlers|handler_result|capability_result)\s*[:=]\s*(.+)",
+                    line,
+                    re.I,
+                )
+                if match:
+                    merge_handler_maps(
+                        handlers,
+                        completed_handlers_from_value(match.group(1), default_completed=True),
+                    )
+        if handlers.get(capability):
+            return True
+    return False
+
 def specialist_dispatch_satisfies_capability(task_dir, capability):
     context_dir = Path(task_dir) / "context"
     for path in (
@@ -440,7 +512,34 @@ def enforce_commit_specialist_dispatch():
         return
 
     if specialist_dispatch_satisfies_capability(task_dir, COMMIT_MESSAGE_CAPABILITY):
-        return
+        if capability_completion_satisfies(task_dir, COMMIT_MESSAGE_CAPABILITY):
+            return
+
+        audit({
+            "decision": "block",
+            "kind": "commit-specialist",
+            "pattern": "git commit requires commit capability completion",
+            "command": command,
+            "tool_name": tool_name,
+            "approved": False,
+            "approval_reason": "missing_commit_capability_completion",
+            "approval_source": "capability-completion",
+            "approval_file": "",
+        })
+        block_with_reason({
+            "decision": "block",
+            "reason": (
+                "[agent-crew] Commit capability completion required.\n\n"
+                "Kind: commit-specialist\n"
+                f"Command: {command}\n"
+                "Reason: a commit message capability handler was selected, but the current task context "
+                f"does not record completed {COMMIT_MESSAGE_CAPABILITY} handler evidence before "
+                "a raw git history mutation.\n"
+                f"Next: record handler_results in {task_dir}/context/handler-results.json or "
+                f"{task_dir}/context/capabilities/{COMMIT_MESSAGE_CAPABILITY}.json with "
+                "state=completed and the selected handler id before running git commit or git commit --amend."
+            ),
+        })
 
     audit({
         "decision": "block",
