@@ -2223,7 +2223,7 @@ fi
 ```
 
 ```text
-## 📦 Run Summary
+**📦 Run Summary**
 
 \`\`\`
 Task 1 : {description}  [injected]    ← "(injected)" tag when task.injected == true
@@ -2311,7 +2311,7 @@ whether a devops stage was included in the pipeline:
 **When N > 1 (after merge):**
 
 ```text
-## 🛠️ Implementation Summary
+**🛠️ Implementation Summary**
 
 \`\`\`
 Merged branches into main (local):
@@ -2328,7 +2328,7 @@ Commits ready for push (origin/main..HEAD):
 **When N == 1:**
 
 ```text
-## 🛠️ Implementation Summary
+**🛠️ Implementation Summary**
 
 \`\`\`
 Branch  : {BRANCH}  ({N} commits)
@@ -2555,10 +2555,10 @@ use this sequence:
      response. Do not replace the structured closeout with a plain prose-only
      update.
      ```text
-     ## 📦 Run Summary
+     **📦 Run Summary**
      {task status, branch/change evidence, blockers if any}
 
-     ## 🛠️ Implementation Summary
+     **🛠️ Implementation Summary**
      {merged/local implementation state, commits ready for push, or explicit no-code-change result}
      ```
      Build the summary from `result.md`, task context evidence, and local git
