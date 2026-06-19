@@ -900,14 +900,39 @@ Commit flow:
 3. Display the proposed message and apply it only through the orchestrator-owned
    structured approval/mutation path used by `crew:commit`.
 4. Record final audit fields in task context: selected commit agent, candidate
-   message source, final commit subject, and convention match result.
+   message source, final commit subject, convention match result, and completed
+   capability handler results. The completion record is provider-agnostic; for
+   example:
+
+   ```json
+   {
+     "handler_results": [
+       {
+         "capability": "vcs.commit.message.compose",
+         "handler": "git-committer",
+         "state": "completed",
+         "artifact": "context/git-committer-result.md"
+       },
+       {
+         "capability": "vcs.history.local_mutation",
+         "handler": "git-committer",
+         "state": "completed",
+         "artifact": "context/git-committer-result.md"
+       }
+     ]
+   }
+   ```
+
+   Store that payload at `{TASK_DIR}/context/handler-results.json` or one JSON
+   file per capability under `{TASK_DIR}/context/capabilities/`.
 
 If no task context exists yet, create one before continuing. If no commit
 message capability provider is installed, fall through to the regular
 supervisor workflow instead of inventing an ad hoc commit message.
 Completion/repair for a current-session fallback must reject a commit-intent
-task when required commit mutation capability handler evidence is missing
-while such a provider is available.
+task when required commit mutation capability handler completion evidence is
+missing while such a provider is available. Selected handler fields are audit
+metadata; they are not proof that the selected handler ran to completion.
 
 Then **STOP — end the turn** after the commit agent workflow completes or the
 request is explicitly cancelled.

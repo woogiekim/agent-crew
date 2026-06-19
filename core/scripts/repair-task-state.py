@@ -104,6 +104,7 @@ SKILL_UNDERSTANDING_RULE_FIELDS = (
     "adversarial_checks",
     "reviewer_status",
 )
+COMPLETED_CAPABILITY_STATES = {"completed", "succeeded", "success", "passed", "approved", "done"}
 
 
 def utc_now_z() -> str:
@@ -399,6 +400,67 @@ def selected_handlers_from_value(value: object) -> dict[str, list[str]]:
     return handlers
 
 
+def merge_completed_handler_maps(target: dict[str, list[str]], source: dict[str, list[str]]) -> dict[str, list[str]]:
+    for capability, handlers in source.items():
+        target.setdefault(capability, [])
+        for handler in handlers:
+            normalized = normalize_agent_name(handler)
+            if normalized and normalized not in target[capability]:
+                target[capability].append(normalized)
+    return target
+
+
+def completed_handlers_from_result_item(item: object, *, default_completed: bool = False) -> dict[str, list[str]]:
+    if not isinstance(item, dict):
+        if default_completed:
+            return selected_handlers_from_value(item)
+        return {}
+
+    nested: dict[str, list[str]] = {}
+    for key in ("handler_results", "capability_results"):
+        if key in item:
+            merge_completed_handler_maps(
+                nested,
+                completed_handlers_from_value(item.get(key), default_completed=False),
+            )
+    if "completed_handlers" in item:
+        merge_completed_handler_maps(
+            nested,
+            completed_handlers_from_value(item.get("completed_handlers"), default_completed=True),
+        )
+
+    capability = str(item.get("capability") or "").strip()
+    state = str(item.get("state") or "").strip().lower()
+    handlers = split_handler_values(item.get("handler") or item.get("handlers"))
+    if capability and handlers and (default_completed or state in COMPLETED_CAPABILITY_STATES):
+        merge_completed_handler_maps(nested, {capability: handlers})
+    return nested
+
+
+def completed_handlers_from_value(value: object, *, default_completed: bool = False) -> dict[str, list[str]]:
+    completed: dict[str, list[str]] = {}
+    if value is None:
+        return completed
+    if isinstance(value, dict):
+        if "capability" in value or any(
+            key in value for key in ("handler_results", "capability_results", "completed_handlers")
+        ):
+            return completed_handlers_from_result_item(value, default_completed=default_completed)
+        if default_completed:
+            return selected_handlers_from_value(value)
+        return completed
+    if isinstance(value, list):
+        for item in value:
+            merge_completed_handler_maps(
+                completed,
+                completed_handlers_from_value(item, default_completed=default_completed),
+            )
+        return completed
+    if default_completed:
+        return selected_handlers_from_value(value)
+    return completed
+
+
 def merge_handler_maps(target: dict[str, list[str]], source: dict[str, list[str]]) -> dict[str, list[str]]:
     for capability, handlers in source.items():
         target.setdefault(capability, [])
@@ -484,10 +546,84 @@ def required_capabilities_from_context(task_dir: Path, register: dict) -> list[s
     return capabilities
 
 
-def capability_satisfied(capability: str, specialist_gate: dict) -> bool:
+def resolve_capability_result_paths(task_dir: Path, paths: list[str]) -> list[Path]:
+    context_dir = task_dir / "context"
+    candidates = [
+        context_dir / "handler-results.json",
+        context_dir / "capability-results.json",
+    ]
+    capabilities_dir = context_dir / "capabilities"
+    if capabilities_dir.is_dir():
+        candidates.extend(sorted(capabilities_dir.glob("*.json")))
+    for value in paths:
+        path = Path(value)
+        if not path.is_absolute():
+            path = task_dir / value
+        candidates.append(path)
+    return candidates
+
+
+def capability_completion_status(task_dir: Path, paths: list[str]) -> dict:
+    matched_paths: list[str] = []
+    inspected_paths: list[str] = []
+    completed_handlers: dict[str, set[str]] = {}
+    for path in resolve_capability_result_paths(task_dir, paths):
+        inspected = inspect_evidence_file(task_dir, path, inspected_paths)
+        if inspected is None:
+            continue
+
+        rel_name, text = inspected
+        parsed: dict[str, list[str]] = {}
+        try:
+            parsed = completed_handlers_from_value(json.loads(text))
+        except Exception:
+            parsed = {}
+        if not parsed:
+            for line in text.splitlines():
+                match = re.match(
+                    r"\s*[-*]?\s*(?:completed_handler|completed_handlers|handler_result|capability_result)\s*[:=]\s*(.+)",
+                    line,
+                    re.I,
+                )
+                if match:
+                    merge_completed_handler_maps(
+                        parsed,
+                        completed_handlers_from_value(match.group(1), default_completed=True),
+                    )
+        if not parsed:
+            continue
+
+        matched_paths.append(rel_name)
+        for capability, handlers in parsed.items():
+            completed_handlers.setdefault(capability, set()).update(handlers)
+    return {
+        "required": True,
+        "passed": bool(matched_paths),
+        "matched_paths": sorted(set(matched_paths)),
+        "inspected_paths": sorted(set(inspected_paths)),
+        "completed_handlers": {
+            capability: sorted(handlers)
+            for capability, handlers in sorted(completed_handlers.items())
+        },
+    }
+
+
+def capability_selected(capability: str, specialist_gate: dict) -> bool:
     selected_handlers = specialist_gate.get("selected_handlers", {})
     handlers = [normalize_agent_name(handler) for handler in selected_handlers.get(capability, [])]
     return bool(handlers)
+
+
+def capability_satisfied(capability: str, specialist_gate: dict, completion_gate: dict) -> bool:
+    selected_handlers = {
+        normalize_agent_name(handler)
+        for handler in specialist_gate.get("selected_handlers", {}).get(capability, [])
+    }
+    completed_handlers = {
+        normalize_agent_name(handler)
+        for handler in completion_gate.get("completed_handlers", {}).get(capability, [])
+    }
+    return bool(selected_handlers.intersection(completed_handlers))
 
 
 def enforce_required_capability_gate(
@@ -505,22 +641,35 @@ def enforce_required_capability_gate(
             task_dir,
             list(args.evidence) + list(args.specialist_evidence),
         )
+    completion_gate = capability_completion_status(
+        task_dir,
+        list(args.evidence) + list(args.specialist_evidence),
+    )
     required = bool(args.status == "completed" and current_session_fallback and required_capabilities)
-    missing = [
+    missing_selection = [
         capability
         for capability in required_capabilities
-        if not capability_satisfied(capability, capability_specialist_gate)
+        if not capability_selected(capability, capability_specialist_gate)
+    ]
+    missing_completion = [
+        capability
+        for capability in required_capabilities
+        if capability_selected(capability, capability_specialist_gate)
+        and not capability_satisfied(capability, capability_specialist_gate, completion_gate)
     ]
     status = {
         "required": required,
-        "passed": not missing,
+        "passed": not missing_selection and not missing_completion,
         "required_capabilities": required_capabilities,
-        "missing_capabilities": missing,
+        "missing_capabilities": missing_selection,
+        "missing_completion_capabilities": missing_completion,
         "selected_handlers": capability_specialist_gate.get("selected_handlers", {}),
+        "completed_handlers": completion_gate.get("completed_handlers", {}),
+        "completion_evidence_paths": completion_gate.get("matched_paths", []),
         "bypassed": False,
         "bypass_reason": "",
     }
-    if not required or not missing:
+    if not required or (not missing_selection and not missing_completion):
         return status
 
     if args.specialist_bypass_reason:
@@ -528,12 +677,26 @@ def enforce_required_capability_gate(
         status["bypass_reason"] = args.specialist_bypass_reason
         return status
 
+    if missing_completion:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_required_capability_completion_evidence\n"
+            "DETAIL: completed repair for a current-session fallback with downstream "
+            "mutation capabilities requires completed handler evidence for every selected "
+            "required capability.\n"
+            "MISSING: " + ", ".join(missing_completion) + "\n"
+            "NEXT: record handler_results in context/handler-results.json, "
+            "context/capability-results.json, or context/capabilities/<capability>.json "
+            "with state=completed and the selected handler id, or record an explicit "
+            "--specialist-bypass-reason."
+        )
+
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_required_capability_evidence\n"
         "DETAIL: completed repair for a current-session fallback with downstream "
         "mutation capabilities requires selected handler evidence for every required capability.\n"
-        "MISSING: " + ", ".join(missing) + "\n"
+        "MISSING: " + ", ".join(missing_selection) + "\n"
         "NEXT: record selected_handlers in context/specialist-dispatch.json or "
         "context/specialist-dispatch.md before repairing completion, or record an explicit "
         "--specialist-bypass-reason."
@@ -565,33 +728,61 @@ def enforce_commit_specialist_gate(
         "selected_user_agents": sorted(set(specialist_gate.get("selected_user_agents", []))),
         "selected_handlers": specialist_gate.get("selected_handlers", {}),
         "required_capabilities": required_capabilities,
+        "completed_handlers": {},
+        "completion_evidence_paths": [],
         "bypassed": False,
         "bypass_reason": "",
     }
     if not required:
         return status
 
-    missing = [
+    completion_gate = capability_completion_status(
+        task_dir,
+        list(args.evidence) + list(args.specialist_evidence),
+    )
+    status["completed_handlers"] = completion_gate.get("completed_handlers", {})
+    status["completion_evidence_paths"] = completion_gate.get("matched_paths", [])
+    missing_selection = [
         capability
         for capability in required_capabilities
-        if not capability_satisfied(capability, specialist_gate)
+        if not capability_selected(capability, specialist_gate)
     ]
-    if not missing:
+    missing_completion = [
+        capability
+        for capability in required_capabilities
+        if capability_selected(capability, specialist_gate)
+        and not capability_satisfied(capability, specialist_gate, completion_gate)
+    ]
+    if not missing_selection and not missing_completion:
         return status
 
     status["passed"] = False
-    status["missing_capabilities"] = missing
+    status["missing_capabilities"] = missing_selection
+    status["missing_completion_capabilities"] = missing_completion
     if args.specialist_bypass_reason:
         status["bypassed"] = True
         status["bypass_reason"] = args.specialist_bypass_reason
         return status
+
+    if missing_completion:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: missing_required_capability_completion_evidence\n"
+            "DETAIL: completed repair for a commit/amend current-session fallback "
+            "requires completed handler evidence for every selected commit mutation capability.\n"
+            "MISSING: " + ", ".join(missing_completion) + "\n"
+            "NEXT: record handler_results in context/handler-results.json, "
+            "context/capability-results.json, or context/capabilities/<capability>.json "
+            "with state=completed and the selected handler id before repair, or record "
+            "an explicit --specialist-bypass-reason."
+        )
 
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_required_capability_evidence\n"
         "DETAIL: completed repair for a commit/amend current-session fallback "
         "requires selected handler evidence for every commit mutation capability.\n"
-        "MISSING: " + ", ".join(missing) + "\n"
+        "MISSING: " + ", ".join(missing_selection) + "\n"
         "NEXT: record selected_handlers in context/specialist-dispatch.json or "
         "context/specialist-dispatch.md before running git commit or git commit --amend, "
         "or record an explicit --specialist-bypass-reason."
@@ -1585,6 +1776,11 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         for capability, handlers in required_capability_gate.get("selected_handlers", {}).items():
             for handler in handlers:
                 lines.append(f"SELECTED_HANDLER: {capability}={handler}")
+        for capability, handlers in required_capability_gate.get("completed_handlers", {}).items():
+            for handler in handlers:
+                lines.append(f"COMPLETED_HANDLER: {capability}={handler}")
+        for path in required_capability_gate.get("completion_evidence_paths", []):
+            lines.append(f"CAPABILITY_COMPLETION_EVIDENCE: {path}")
     if commit_specialist_gate and commit_specialist_gate.get("required"):
         if commit_specialist_gate.get("passed"):
             lines.append("COMMIT_SPECIALIST: passed")
@@ -1595,6 +1791,9 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"COMMIT_SPECIALIST_USER_AGENT: {agent}")
         for path in commit_specialist_gate.get("available_paths", []):
             lines.append(f"COMMIT_SPECIALIST_AVAILABLE: {path}")
+        for capability, handlers in commit_specialist_gate.get("completed_handlers", {}).items():
+            for handler in handlers:
+                lines.append(f"COMMIT_SPECIALIST_COMPLETED_HANDLER: {capability}={handler}")
     if skill_load_gate and skill_load_gate.get("required"):
         if skill_load_gate.get("passed"):
             lines.append("SKILL_LOAD: passed")

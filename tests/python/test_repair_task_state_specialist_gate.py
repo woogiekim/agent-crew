@@ -52,6 +52,24 @@ def _install_git_committer(project_root: Path) -> None:
     )
 
 
+def _write_capability_result(task_dir: Path, capability: str, handler: str) -> Path:
+    path = task_dir / "context" / "capabilities" / f"{capability}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "capability": capability,
+                "handler": handler,
+                "state": "completed",
+                "artifact": f"context/capabilities/{capability}.json",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -177,7 +195,6 @@ def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
         + "\n",
         encoding="utf-8",
     )
-
     result = _repair(state_dir, task_id)
 
     assert result.returncode == 0
@@ -333,6 +350,8 @@ def test_commit_current_session_repair_translates_legacy_user_agent_to_capabilit
         "- ~/.agent-crew/system/agents/skills/tdd.md\n",
         encoding="utf-8",
     )
+    _write_capability_result(task_dir, "vcs.commit.message.compose", "git-committer")
+    _write_capability_result(task_dir, "vcs.history.local_mutation", "git-committer")
 
     result = _repair(state_dir, task_id)
 
@@ -343,9 +362,11 @@ def test_commit_current_session_repair_translates_legacy_user_agent_to_capabilit
     assert gate["passed"] is True
     assert gate["selected_handlers"]["vcs.commit.message.compose"] == ["git-committer"]
     assert gate["selected_handlers"]["vcs.history.local_mutation"] == ["git-committer"]
+    assert gate["completed_handlers"]["vcs.commit.message.compose"] == ["git-committer"]
+    assert gate["completed_handlers"]["vcs.history.local_mutation"] == ["git-committer"]
 
 
-def test_required_capability_gate_accepts_abstract_handler_names(tmp_path: Path):
+def test_required_capability_gate_blocks_selected_handlers_without_completion(tmp_path: Path):
     state_dir = tmp_path / "state"
     project_root = tmp_path / "project"
     _install_git_committer(project_root)
@@ -390,6 +411,124 @@ def test_required_capability_gate_accepts_abstract_handler_names(tmp_path: Path)
         + "\n",
         encoding="utf-8",
     )
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_required_capability_completion_evidence" in result.stderr
+    assert "vcs.commit.message.compose" in result.stderr
+    assert "vcs.history.local_mutation" in result.stderr
+
+
+def test_required_capability_gate_rejects_non_completed_handler_results(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    project_root = tmp_path / "project"
+    _install_git_committer(project_root)
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Normalize raw user input into a canonical English agent-crew workflow instruction",
+        project_root=project_root,
+    )
+    (task_dir / "context" / "input-normalization.json").write_text(
+        json.dumps(
+            {
+                "required_capabilities": [
+                    "vcs.commit.message.compose",
+                ],
+                "raw_input_ref": "handoff.md#RAW_TASK",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "specialist-dispatch.json").write_text(
+        json.dumps(
+            {
+                "selected_agent": "supervisor",
+                "selected_handlers": [
+                    {
+                        "capability": "vcs.commit.message.compose",
+                        "handler": "commit-message-specialist",
+                    },
+                ],
+                "selection_reason": "capability handler selected",
+                "execution_mode": "current_session_required fallback",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "handler-results.json").write_text(
+        json.dumps(
+            {
+                "handler_results": [
+                    {
+                        "capability": "vcs.commit.message.compose",
+                        "handler": "commit-message-specialist",
+                        "state": "failed",
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_required_capability_completion_evidence" in result.stderr
+    assert "vcs.commit.message.compose" in result.stderr
+
+
+def test_required_capability_gate_accepts_completed_abstract_handler_names(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    project_root = tmp_path / "project"
+    _install_git_committer(project_root)
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Normalize raw user input into a canonical English agent-crew workflow instruction",
+        project_root=project_root,
+    )
+    (task_dir / "context" / "input-normalization.json").write_text(
+        json.dumps(
+            {
+                "required_capabilities": [
+                    "vcs.commit.message.compose",
+                    "vcs.history.local_mutation",
+                ],
+                "raw_input_ref": "handoff.md#RAW_TASK",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "specialist-dispatch.json").write_text(
+        json.dumps(
+            {
+                "selected_agent": "supervisor",
+                "selected_handlers": [
+                    {
+                        "capability": "vcs.commit.message.compose",
+                        "handler": "commit-message-specialist",
+                    },
+                    {
+                        "capability": "vcs.history.local_mutation",
+                        "handler": "local-git",
+                    },
+                ],
+                "selection_reason": "capability handlers satisfy the required abstractions",
+                "execution_mode": "current_session_required fallback",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_capability_result(task_dir, "vcs.commit.message.compose", "commit-message-specialist")
+    _write_capability_result(task_dir, "vcs.history.local_mutation", "local-git")
 
     result = _repair(state_dir, task_id)
 
@@ -399,6 +538,8 @@ def test_required_capability_gate_accepts_abstract_handler_names(tmp_path: Path)
     assert gate["passed"] is True
     assert gate["selected_handlers"]["vcs.commit.message.compose"] == ["commit-message-specialist"]
     assert gate["selected_handlers"]["vcs.history.local_mutation"] == ["local-git"]
+    assert gate["completed_handlers"]["vcs.commit.message.compose"] == ["commit-message-specialist"]
+    assert gate["completed_handlers"]["vcs.history.local_mutation"] == ["local-git"]
 
 
 def test_required_capability_policy_has_no_concrete_git_committer_branch():
@@ -497,6 +638,8 @@ def test_normalization_current_session_repair_accepts_selected_capability_handle
         + "\n",
         encoding="utf-8",
     )
+    _write_capability_result(task_dir, "vcs.commit.message.compose", "git-committer")
+    _write_capability_result(task_dir, "vcs.history.local_mutation", "git")
 
     result = _repair(state_dir, task_id)
 
@@ -506,6 +649,8 @@ def test_normalization_current_session_repair_accepts_selected_capability_handle
     assert gate["passed"] is True
     assert gate["selected_handlers"]["vcs.commit.message.compose"] == ["git-committer"]
     assert gate["selected_handlers"]["vcs.history.local_mutation"] == ["git"]
+    assert gate["completed_handlers"]["vcs.commit.message.compose"] == ["git-committer"]
+    assert gate["completed_handlers"]["vcs.history.local_mutation"] == ["git"]
 
 
 def test_normalization_current_session_repair_accepts_markdown_selected_handlers(tmp_path: Path):
@@ -545,6 +690,8 @@ def test_normalization_current_session_repair_accepts_markdown_selected_handlers
         + "\n",
         encoding="utf-8",
     )
+    _write_capability_result(task_dir, "vcs.commit.message.compose", "git-committer")
+    _write_capability_result(task_dir, "vcs.history.local_mutation", "git")
 
     result = _repair(state_dir, task_id)
 
@@ -554,6 +701,8 @@ def test_normalization_current_session_repair_accepts_markdown_selected_handlers
     assert gate["passed"] is True
     assert gate["selected_handlers"]["vcs.commit.message.compose"] == ["git-committer"]
     assert gate["selected_handlers"]["vcs.history.local_mutation"] == ["git"]
+    assert gate["completed_handlers"]["vcs.commit.message.compose"] == ["git-committer"]
+    assert gate["completed_handlers"]["vcs.history.local_mutation"] == ["git"]
 
 
 def test_run_commit_fast_path_delegates_to_git_committer_not_direct_shell_commit():
