@@ -344,6 +344,14 @@ REFACTOR → Remove duplication, improve design → {runner} → confirm still p
 - Every new class or function MUST have a corresponding test file before the implementation file is created.
 - Test files MUST be committed in the same commit as the implementation they cover.
 - Test naming convention is supplied by the resolved Channel B template. Worked example (`kotlin-spring`): `{ClassName}Test.kt` for unit tests, `{ClassName}IntegrationTest.kt` for integration tests.
+- Test case names MUST follow the language-agnostic nature prefix contract from
+  `tdd.md`: `<nature-prefix>[(<qualifier>)] - <behavior>`. Use
+  `success-case` for happy paths and `failure-case` for error, rollback,
+  rejection, validation, timeout, boundary, or branch paths. Project-localized
+  equivalents such as `성공케이스` and `실패케이스` are valid when the project
+  naturally uses Korean. If the framework only accepts identifier-style test
+  names, encode the prefix in the identifier and keep the canonical string in a
+  docstring, comment, subtest name, or display-name annotation.
 - Test target naming convention: default the class, service, function wrapper,
   repository adapter, or other primary system under test variable to `sut`.
   Keep collaborators, inputs, expected values, and results domain-specific.

@@ -55,6 +55,23 @@ REFACTOR → Remove duplication, improve design → ./gradlew test → confirm s
 | Unit test | `{ClassName}Test.kt` |
 | Integration test | `{ClassName}IntegrationTest.kt` |
 
+## Test Case Name Convention
+
+Test case names follow the language-agnostic nature prefix contract from
+`tdd.md`: `<nature-prefix>[(<qualifier>)] - <behavior>`.
+
+Kotlin/JUnit examples:
+
+```kotlin
+@DisplayName("success-case - saves author byline and profile in one transaction")
+@Test
+fun savesAuthorBylineAndProfile() { }
+
+@DisplayName("failure-case(propagation-rollback) - rolls back byline insert when profile write fails")
+@Test
+fun rollsBackBylineInsertWhenProfileWriteFails() { }
+```
+
 **Test target naming convention**: default the class, service, function
 wrapper, repository adapter, or other primary system under test variable
 to `sut`. Keep collaborators, inputs, expected values, and results

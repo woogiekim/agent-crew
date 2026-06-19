@@ -527,6 +527,29 @@ COVERAGE_RESULT: unjustified_exception
 REPORT: ${TASK_DIR}/context/review.md
 ```
 
+### Phase 1.6.5 — Enforce Test-Name Nature Prefixes
+
+For changed or newly added tests, verify that each test case name follows the
+language-agnostic contract from `tdd.md`:
+`<nature-prefix>[(<qualifier>)] - <behavior>`.
+
+Accept `success-case` and `failure-case`, plus project-localized equivalents
+such as `성공케이스` and `실패케이스`. If the test framework requires
+identifier-style names, the equivalent prefix may appear in the identifier,
+display-name annotation, docstring, comment immediately adjacent to the test,
+subtest name, or table-case label.
+
+Reject immediately when changed tests omit the nature prefix and no narrow
+project-convention exception is recorded in `{TASK_DIR}/context/tdd_log.md` or
+`{TASK_DIR}/context/tdd-exception.md`:
+
+```text
+STATUS: REJECTED
+REASON: missing_test_nature_prefix
+TEST_NAME_RESULT: missing_nature_prefix
+REPORT: ${TASK_DIR}/context/review.md
+```
+
 ### Phase 1.7 — Load and Maintain Finding Register
 
 Before static review, read `${TASK_DIR}/context/finding-register.json` if it

@@ -65,6 +65,18 @@ Test files live **adjacent to the component file** they cover (sibling
 file, not a separate test tree), so a developer reading `Button.tsx`
 finds `Button.test.tsx` in the same directory.
 
+## Test Case Name Convention
+
+Test case names follow the language-agnostic nature prefix contract from
+`tdd.md`: `<nature-prefix>[(<qualifier>)] - <behavior>`.
+
+Vitest / Jest examples:
+
+```typescript
+test("success-case - renders the enabled submit button", () => {})
+test("failure-case(validation) - disables submit when the form is invalid", () => {})
+```
+
 **Test target naming convention**: default the component, hook result,
 rendered wrapper, or other primary system under test variable to `sut`
 when a target variable is introduced. Keep props, fixtures, user events,

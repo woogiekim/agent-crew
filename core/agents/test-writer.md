@@ -170,6 +170,14 @@ if one is detectable from `${TEST_DIR}` contents; otherwise default to
 Each test must:
 - Reference the spec section it derives from (one-line comment at the
   top: `# Spec: prd.md § "<section>" — acceptance criterion #<n>`).
+- Name the test case with the language-agnostic nature prefix contract from
+  `tdd.md`: `<nature-prefix>[(<qualifier>)] - <behavior>`. Use
+  `success-case` for happy paths and `failure-case` for error, rollback,
+  rejection, validation, timeout, boundary, or branch paths. Project-localized
+  equivalents such as `성공케이스` and `실패케이스` are valid when the project
+  naturally uses Korean. If the framework only accepts identifier-style test
+  names, encode the prefix in the identifier and keep the canonical string in a
+  docstring, comment, subtest name, or display-name annotation.
 - Exercise the documented contract — not the (yet-to-exist)
   implementation internals.
 - Name the primary test target variable `sut` by default when the test creates
@@ -195,6 +203,10 @@ inputs, expected values, fixtures, and observed results domain-specific
 (`repository`, `request`, `expectedTotal`, `result`, etc.). If a repository has
 an explicit conflicting convention, follow it and record the exception in
 `{TASK_DIR}/context/tdd_log.md`.
+
+Test-name rule: every changed test must carry the nature prefix in its test
+name, display name, nested/subtest label, or documented equivalent. Missing
+prefixes are reviewer-blocking as `missing_test_nature_prefix`.
 
 ### Step 5 — Coverage matrix, quality loop, and commit
 
