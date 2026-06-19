@@ -478,7 +478,7 @@ fi
 ```
 
 ```text
-## Run Summary
+## 📦 Run Summary
 
 Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == true
   Status : completed | blocked
@@ -531,7 +531,7 @@ crew:run "resolve merge conflicts"
 After all merges succeed:
 
 ```text
-## Implementation Summary
+## 🛠️ Implementation Summary
 
 Merged branches into main (local):
   - {BRANCH_1}  ({N} commits)

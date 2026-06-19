@@ -2550,6 +2550,20 @@ use this sequence:
    means the host adapter requires the current host session to continue the
    handoff; no background bridge is still running. Continue from `handoff.md` in
    the current host session, then repair after completion.
+   - During current-session closeout, relay the same summary contract before
+     `crew repair <TASK_ID> --status completed` or before the final user
+     response. Do not replace the structured closeout with a plain prose-only
+     update.
+     ```text
+     ## 📦 Run Summary
+     {task status, branch/change evidence, blockers if any}
+
+     ## 🛠️ Implementation Summary
+     {merged/local implementation state, commits ready for push, or explicit no-code-change result}
+     ```
+     Build the summary from `result.md`, task context evidence, and local git
+     state where applicable. If no merge, push, deploy, or production-code
+     change occurred, say that explicitly in the corresponding block.
    - Before executing any task work, re-apply the same specialist dispatch
      contract the supervisor would have applied: select the appropriate
      agent/user-agent and required agent skill(s) for the normalized task.
