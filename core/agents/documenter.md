@@ -316,6 +316,43 @@ The dispatcher MUST NOT execute any vendor-specific tool call (e.g.
 Outline `/api/documents.create`) before this step completes. A
 vendor-specific call before Step 0.5 indicates a layering bug.
 
+### Capability Dispatch (Loaded By Metadata)
+
+Before beginning work, execute the metadata-driven capability-skill dispatcher to
+discover any user-owned skills that declare `loaded_by: documenter` in their frontmatter
+(see `core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
+
+```bash
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-documenter.json"
+DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
+[ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
+
+_DISPATCH_TMP="${DISPATCH_REPORT}.tmp"
+if [ -f "${DISPATCH}" ]; then
+  if python3 "${DISPATCH}" \
+      --agent documenter \
+      --project-root "${PROJECT_ROOT}" \
+      --task "${TASK:-}" \
+      --format json > "${_DISPATCH_TMP}" 2>/dev/null; then
+    mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}"
+  else
+    rm -f "${_DISPATCH_TMP}"
+    printf '{"agent":"documenter","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+      > "${DISPATCH_REPORT}"
+    printf '[crew] DEGRADED | capability-dispatch=script_failed agent=documenter\n'
+  fi
+else
+  printf '{"agent":"documenter","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+    > "${DISPATCH_REPORT}"
+  printf '[crew] DEGRADED | capability-dispatch=script_missing agent=documenter\n'
+fi
+```
+
+After writing the report:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=documenter` and continue.
+- `.matched[]` non-empty → read each `.matched[].path` before Phase 1 and cite loaded skill paths in the task context.
+- DEGRADED emitted → continue with declared skills only.
+
 ### Step 1 — Gather context
 
 > **MANDATORY: Before documenting, read `~/.agent-crew/system/agents/skills/code-review.md`.**

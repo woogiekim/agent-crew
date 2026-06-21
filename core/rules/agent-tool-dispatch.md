@@ -184,11 +184,13 @@ The dispatcher returns a JSON payload:
 }
 ```
 
-If no profile applies, reviewer follows the `degraded-fallback` policy:
-emit `[crew] DEGRADED | review-profile=none fallback=generic-review-skills`
-and continue with its generic review skills (`code-review.md`,
-`clean-architecture.md`, language-specific effective-* guidance, and
-`code-quality.md`). Missing review profiles never produce `STATUS: BLOCKED`.
+**Three-state dispatch result:**
+
+1. **Script missing or crashed** → emit `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` (script absent) or `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` (script crashed); write a fallback JSON report with `"fallback": true`; continue with the agent's declared base skills only.
+2. **Script succeeded, no matches** (`.matched[] == []`) → emit `[crew] CAPABILITY_SKILLS: none agent=<name>` and continue normally. This is the **expected** state when no user-owned capability skills are installed for this agent — it is NOT a degraded condition.
+3. **Script succeeded, matches found** → read each `.matched[].path`; load the matched skills before the first execution step; cite the loaded skill paths in task context (e.g. `context/skill-use.json` or equivalent).
+
+For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-review-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none` line; both refer to the same "empty match, continue with generic review skills" state. New agents SHOULD emit only the canonical `CAPABILITY_SKILLS: none agent=<name>` token. Missing profiles never produce `STATUS: BLOCKED` regardless of agent.
 
 This is a DIP boundary:
 
@@ -370,12 +372,21 @@ continues to list **base** language-agnostic skills explicitly (TDD,
 `oop-principles`, etc.); cross-cutting capability skills are picked up
 through metadata dispatch only.
 
-The dispatcher fallback policy for capability skills is the same
-`degraded-fallback` rule reviewer uses: when no capability skill
-matches, the dispatcher emits
-`[crew] DEGRADED | backend-skill=none fallback=generic-backend-skills`
-(or `frontend-skill=none …`) and continues with its declared base
-skills. Missing capability skills never produce `STATUS: BLOCKED`.
+The dispatcher fallback policy for capability skills follows the same
+three-state semantics described in § "Metadata-driven skill dispatch":
+
+| State | Token emitted | Continue? |
+|---|---|---|
+| Script missing | `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` | Yes — declared base skills only |
+| Script crashed | `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` | Yes — declared base skills only |
+| No matches (expected) | `[crew] CAPABILITY_SKILLS: none agent=<name>` | Yes — normal flow |
+| Matches found | (none — read `.matched[].path` and load) | Yes — normal flow with loaded skills |
+
+For backend / frontend specifically, `<name>` is `backend` or `frontend`.
+The canonical token is emitted by the dispatch block in each agent's
+`.md` file (see `core/agents/backend.md` § "Capability Dispatch" and
+`core/agents/frontend.md` § "Capability Dispatch"). Missing capability
+skills never produce `STATUS: BLOCKED`.
 
 ## Agents not subject to dispatch
 
