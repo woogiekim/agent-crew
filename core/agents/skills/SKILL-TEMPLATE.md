@@ -4,7 +4,21 @@
 SKILL TEMPLATE — copy this file to create a new skill.
 File naming convention: {topic}.md (kebab-case, lowercase)
 Location: core/agents/skills/{skill-name}.md
+
+YAML frontmatter slots below are consumed by the metadata-driven skill
+dispatcher (`core/scripts/review-profile-dispatch.py`, see
+`core/rules/agent-tool-dispatch.md` § "Metadata-driven skill
+dispatch"). The dispatcher is parametrized by `--agent <name>` and selects
+skills whose `loaded_by` list contains the requesting agent.
 -->
+
+---
+name: {skill-name}
+description: {one-line summary of what this skill provides}
+loaded_by: {comma-separated agent names — e.g. backend,frontend,reviewer}
+axis: {capability axis — e.g. code-cleanup, error-handling, review-policy}
+detection: {task/project/file matching expression — keywords or OR-clauses}
+---
 
 ## Source
 <!-- Canonical reference(s) this skill distills. -->

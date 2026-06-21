@@ -189,6 +189,18 @@ both conventions simultaneously"). The dispatcher's loaded
 the declared on-demand skills below cover language-agnostic concerns
 that apply regardless of the resolved axis.
 
+**Capability/domain skills load via metadata dispatch (#186).**
+Additional cross-cutting capability skills (e.g.
+`dead-code-elimination`, project-specific review lenses) are
+discovered at runtime via
+`core/scripts/review-profile-dispatch.py --agent backend` when their
+frontmatter declares `loaded_by: backend` and the `detection`
+expression matches the task / project / changed-file context (see
+`core/rules/agent-tool-dispatch.md` § "Metadata-driven skill
+dispatch"). Only the **base, language-agnostic / language-adapter**
+skills listed below need explicit declaration; capability skills flow
+through metadata dispatch and need not be enumerated here.
+
 Read the following skill files using the Read tool **only when the
 specific technique is needed** during execution — do not load all
 skills upfront:

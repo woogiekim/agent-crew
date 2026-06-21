@@ -127,29 +127,42 @@ fixed in the same PR cycle.
 
 ---
 
-## Metadata-driven review-profile dispatch
+## Metadata-driven skill dispatch
 
-Reviewer policy profiles are not external vendor adapters. They are user-owned
-review lenses that may be named after a domain, codebase, review style, or
-local convention. Therefore, reviewer profile discovery MUST NOT depend on a
-`reviewer-<tool>.md` filename and the reviewer agent MUST NOT mention concrete
-project/user skill filenames.
+> Originally introduced as "Metadata-driven review-profile dispatch" in
+> #137 and generalized to all opted-in agents in #186.
 
-The reviewer uses `core/scripts/review-profile-dispatch.py` to scan
+Capability and policy skills are not external vendor adapters. They are
+user-owned lenses that may be named after a domain, codebase, capability,
+or local convention. Therefore, capability/policy skill discovery MUST
+NOT depend on a `<agent>-<tool>.md` filename and the requesting agent
+MUST NOT mention concrete project/user skill filenames in its prose.
+
+Agents use `core/scripts/review-profile-dispatch.py --agent <name>` to scan
 `~/.agent-crew/user/skills/` and the unified `~/.agent-crew/skills/`
-discovery path. A skill qualifies as a reviewer review profile when its YAML
-frontmatter satisfies:
+discovery path. The default `--agent reviewer` preserves the original
+review-profile contract (#137); `--agent backend` and `--agent frontend`
+opt in to the same primitive for capability-skill discovery (#186).
+
+A skill qualifies for an agent when its YAML frontmatter satisfies:
 
 ```yaml
-loaded_by: reviewer
-profile_type: review-policy
+loaded_by: reviewer            # or: backend,frontend,reviewer (CSV)
+profile_type: review-policy    # reviewer-only; optional for backend/frontend
+axis: {capability-axis}        # e.g. code-cleanup, review-policy
 detection: {project/task/file matching expression}
 ```
 
-`profile_type: review-profile` is also accepted. For backward compatibility
-with existing user skills, `loaded_by: reviewer` plus a review-oriented
-`axis`/`description`/`detection` contract is accepted when `profile_type` is
-absent. New skills SHOULD include `profile_type` explicitly.
+For the reviewer agent, `profile_type: review-profile` is also accepted.
+For backward compatibility with existing reviewer skills, `loaded_by:
+reviewer` plus a review-oriented `axis`/`description`/`detection`
+contract is accepted when `profile_type` is absent. New reviewer skills
+SHOULD include `profile_type` explicitly.
+
+For `backend` / `frontend` (#186), the qualifying contract is simpler:
+`loaded_by` containing the agent name plus an `axis` and `detection`
+expression is sufficient. The reviewer-specific `profile_type` /
+"review" keyword check does NOT apply.
 
 The dispatcher returns a JSON payload:
 
@@ -320,12 +333,42 @@ whether it has opted in.
 | Agent | Status | Axis |
 |---|---|---|
 | `issuer` | Opted in (reference implementation, commit `1f89c02`) | tracker (git remote) |
-| `backend` | Wave-B candidate | language / framework (manifest file) |
-| `frontend` | Wave-C candidate | framework (`package.json`) |
+| `backend` | Opted in (metadata-driven skill dispatch, #186) | language / framework manifest **and** capability-skill metadata |
+| `frontend` | Opted in (metadata-driven skill dispatch, #186) | framework (`package.json`) **and** capability-skill metadata |
 | `devops` | Wave-C candidate | cloud / CI (manifest files) |
 | `designer` | Wave-C candidate | design tool |
 | `documenter` | Wave-C candidate | wiki / docs tool |
 | `reviewer` | Opted in (review-profile dispatch) | review-policy metadata |
+
+### Capability/domain skill flow for `backend` / `frontend`
+
+The `backend` and `frontend` dispatchers participate in two complementary
+load paths:
+
+1. **Adapter skill load** — the existing 5-step convention picks one
+   `<agent>-<lang>-<framework>` template per dispatch (e.g.
+   `backend-kotlin-spring`, `frontend-typescript-react`).
+2. **Metadata-driven capability skill load** — additional skills whose
+   frontmatter declares `loaded_by: backend` (or `frontend`) plus a
+   capability `axis` and a `detection` expression are discovered at
+   runtime via `core/scripts/review-profile-dispatch.py --agent backend`
+   (or `--agent frontend`). These cover language-/framework-agnostic
+   capabilities such as `code-cleanup`, `error-handling`, and similar
+   cross-cutting concerns.
+
+Because capability skills are user-named and may evolve per project,
+they MUST NOT be hard-coded into the dispatcher's prose. The
+`## Skills (Loaded On Demand)` section of `backend.md` / `frontend.md`
+continues to list **base** language-agnostic skills explicitly (TDD,
+`oop-principles`, etc.); cross-cutting capability skills are picked up
+through metadata dispatch only.
+
+The dispatcher fallback policy for capability skills is the same
+`degraded-fallback` rule reviewer uses: when no capability skill
+matches, the dispatcher emits
+`[crew] DEGRADED | backend-skill=none fallback=generic-backend-skills`
+(or `frontend-skill=none …`) and continues with its declared base
+skills. Missing capability skills never produce `STATUS: BLOCKED`.
 
 ## Agents not subject to dispatch
 

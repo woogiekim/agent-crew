@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Discover reviewer review-profile skills from user-owned metadata.
+"""Discover skills loaded by an agent from user-owned metadata.
+
+Generalized from reviewer-only (#137) to any opted-in agent (#186).
+The `--agent` flag selects which agent's `loaded_by` declaration to
+match. Defaults to `reviewer` for backward compatibility with existing
+callers.
 
 Inputs:
+  --agent NAME         Requesting agent name (default: reviewer).
+                       Matched against skill frontmatter `loaded_by` lists.
   --skills-dir DIR     Skill directory to scan. Repeatable.
   --project-root DIR   Repository root used as detection context.
   --task TEXT          Normalized task or review request text.
@@ -14,8 +21,15 @@ Exit codes:
   0 - discovery completed, with or without matches
   2 - malformed arguments
 
-Example:
+Examples:
+  # Reviewer (backward-compatible default)
   python3 review-profile-dispatch.py \
+    --skills-dir ~/.agent-crew/user/skills \
+    --project-root "$PROJECT_ROOT" \
+    --task "$TASK"
+
+  # Backend / frontend dispatch
+  python3 review-profile-dispatch.py --agent backend \
     --skills-dir ~/.agent-crew/user/skills \
     --project-root "$PROJECT_ROOT" \
     --task "$TASK"
@@ -131,17 +145,34 @@ def metadata_value(metadata: dict[str, str], *keys: str) -> str:
     return ""
 
 
-def loaded_by_reviewer(metadata: dict[str, str]) -> tuple[bool, list[str]]:
+def loaded_by(metadata: dict[str, str], agent_name: str) -> tuple[bool, list[str]]:
+    """Return (is_loaded_by_agent, raw loaded_by list) for the given agent."""
     loaded = split_list(metadata_value(metadata, "loaded_by", "loaded-by"))
     lowered = [entry.lower() for entry in loaded]
 
-    return "reviewer" in lowered, loaded
+    return agent_name.lower() in lowered, loaded
 
 
-def is_review_profile(metadata: dict[str, str]) -> bool:
-    reviewer_loaded, _loaded = loaded_by_reviewer(metadata)
-    if not reviewer_loaded:
+# Backward-compatible alias retained for external callers that imported the
+# reviewer-specific helper before #186 generalized the dispatcher.
+def loaded_by_reviewer(metadata: dict[str, str]) -> tuple[bool, list[str]]:
+    return loaded_by(metadata, "reviewer")
+
+
+def is_loaded_by(metadata: dict[str, str], agent_name: str) -> bool:
+    """Return True when the skill metadata qualifies for the given agent.
+
+    For `reviewer`, the legacy review-profile contract is preserved
+    (profile_type or detection + "review" keyword). For other agents,
+    qualifying solely on the `loaded_by` declaration is sufficient — the
+    `detection` clause is then applied separately to filter by context.
+    """
+    agent_loaded, _loaded = loaded_by(metadata, agent_name)
+    if not agent_loaded:
         return False
+
+    if agent_name.lower() != "reviewer":
+        return True
 
     profile_type = metadata_value(
         metadata,
@@ -160,6 +191,11 @@ def is_review_profile(metadata: dict[str, str]) -> bool:
     ).lower()
 
     return bool(metadata_value(metadata, "detection")) and "review" in legacy_contract
+
+
+def is_review_profile(metadata: dict[str, str]) -> bool:
+    """Backward-compatible alias for callers pre-#186."""
+    return is_loaded_by(metadata, "reviewer")
 
 
 def normalize_text(text: str) -> str:
@@ -232,9 +268,10 @@ def iter_skill_files(skills_dirs: Iterable[Path]) -> Iterable[Path]:
             yield path
 
 
-def discover_review_profiles(
+def discover_skills_for_agent(
     skills_dirs: Iterable[Path],
     *,
+    agent_name: str,
     project_root: Path,
     task: str,
     changed_files: Iterable[str],
@@ -245,56 +282,95 @@ def discover_review_profiles(
     for path in iter_skill_files(skills_dirs):
         text = path.read_text(encoding="utf-8", errors="replace")
         metadata = parse_frontmatter(text)
-        if not is_review_profile(metadata):
+        if not is_loaded_by(metadata, agent_name):
             continue
 
         detection = metadata_value(metadata, "detection")
         if not detection_matches(detection, context_text, context_tokens):
             continue
 
-        _reviewer_loaded, loaded_by = loaded_by_reviewer(metadata)
+        _agent_loaded, loaded_list = loaded_by(metadata, agent_name)
         matches.append(
             {
                 "name": metadata_value(metadata, "name") or path.stem,
                 "path": str(path),
                 "axis": metadata_value(metadata, "axis"),
-                "loaded_by": loaded_by,
+                "loaded_by": loaded_list,
                 "detection": detection,
-                "matched_by": "detection" if detection else "global-review-profile",
+                "matched_by": "detection" if detection else f"global-{agent_name}-skill",
             }
         )
 
     return sorted(matches, key=lambda item: (item["name"], item["path"]))
 
 
+# Backward-compatible alias for pre-#186 callers.
+def discover_review_profiles(
+    skills_dirs: Iterable[Path],
+    *,
+    project_root: Path,
+    task: str,
+    changed_files: Iterable[str],
+) -> list[dict]:
+    return discover_skills_for_agent(
+        skills_dirs,
+        agent_name="reviewer",
+        project_root=project_root,
+        task=task,
+        changed_files=changed_files,
+    )
+
+
+def fallback_policy_for(agent_name: str) -> str:
+    if agent_name.lower() == "reviewer":
+        return "generic-review-skills"
+    return f"generic-{agent_name.lower()}-skills"
+
+
 def build_payload(args: argparse.Namespace) -> dict:
     skills_dirs = [Path(path).expanduser() for path in args.skills_dir] or default_skill_dirs()
-    matches = discover_review_profiles(
+    matches = discover_skills_for_agent(
         skills_dirs,
+        agent_name=args.agent,
         project_root=Path(args.project_root).expanduser(),
         task=args.task,
         changed_files=args.changed_file,
     )
 
     return {
-        "agent": "reviewer",
+        "agent": args.agent,
         "matched": matches,
         "fallback": not bool(matches),
-        "fallback_policy": "generic-review-skills",
+        "fallback_policy": fallback_policy_for(args.agent),
     }
 
 
 def print_text(payload: dict) -> None:
+    agent_name = payload.get("agent", "reviewer")
     if payload["matched"]:
+        label = "review_profile" if agent_name == "reviewer" else f"{agent_name}_skill"
         for match in payload["matched"]:
-            print(f"review_profile: {match['name']} path={match['path']}")
+            print(f"{label}: {match['name']} path={match['path']}")
         return
 
-    print("[crew] DEGRADED | review-profile=none fallback=generic-review-skills")
+    if agent_name == "reviewer":
+        print("[crew] DEGRADED | review-profile=none fallback=generic-review-skills")
+    else:
+        print(
+            f"[crew] DEGRADED | {agent_name}-skill=none "
+            f"fallback={payload['fallback_policy']}"
+        )
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Discover reviewer review-profile skills.")
+    parser = argparse.ArgumentParser(
+        description="Discover skills loaded by an agent via frontmatter metadata."
+    )
+    parser.add_argument(
+        "--agent",
+        default="reviewer",
+        help="Requesting agent name (default: reviewer for backward compatibility).",
+    )
     parser.add_argument("--skills-dir", action="append", default=[])
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--task", default="")
