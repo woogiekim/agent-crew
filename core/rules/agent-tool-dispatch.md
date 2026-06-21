@@ -333,12 +333,19 @@ whether it has opted in.
 | Agent | Status | Axis |
 |---|---|---|
 | `issuer` | Opted in (reference implementation, commit `1f89c02`) | tracker (git remote) |
+| `issuer` (capability axis) | Opted in (metadata-driven skill dispatch) | cross-cutting issue/policy metadata (in addition to backend adapter row above) |
 | `backend` | Opted in (metadata-driven skill dispatch, #186) | language / framework manifest **and** capability-skill metadata |
 | `frontend` | Opted in (metadata-driven skill dispatch, #186) | framework (`package.json`) **and** capability-skill metadata |
-| `devops` | Wave-C candidate | cloud / CI (manifest files) |
-| `designer` | Wave-C candidate | design tool |
-| `documenter` | Wave-C candidate | wiki / docs tool |
+| `devops` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | cloud / CI (manifest files) **and** capability-skill metadata |
+| `designer` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | design tool **and** capability-skill metadata |
+| `documenter` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | wiki / docs tool **and** capability-skill metadata |
 | `reviewer` | Opted in (review-profile dispatch) | review-policy metadata |
+| `test-writer` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `qa-owner` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `planner` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `analyst` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `requirements` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `resolver` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
 
 ### Capability/domain skill flow for `backend` / `frontend`
 
@@ -372,21 +379,28 @@ skills. Missing capability skills never produce `STATUS: BLOCKED`.
 
 ## Agents not subject to dispatch
 
-The following agents are **explicitly excluded** from the dispatch
-pattern. They are weak-fit because they either have no external vendor
+> Scope: this section excludes the listed agents from the **vendor-adapter**
+> 5-step dispatch pattern (Channel B / `<agent>-<tool>.md` flat-name lookup)
+> only. Some agents listed here participate in the **metadata-driven
+> capability-skill dispatch** path (see the catalog table above) even though
+> they have no vendor adapter; the inline notes record that overlap.
+
+The following agents are **explicitly excluded** from the vendor-adapter
+dispatch pattern. They are weak-fit because they either have no external vendor
 axis, or their vendor axis is already factored out elsewhere
 (host-capability flags, git itself). Documenting the exclusion prevents
-future drift in the form of "should we add dispatch to X?" discussions.
+future drift in the form of "should we add a vendor adapter to X?" discussions.
 
-| Agent | Reason |
+| Agent | Reason (vendor-adapter exclusion only) |
 |---|---|
 | `historian` | Internal git + state lookups only. No external vendor axis. |
-| `resolver` | Pure git operation. `git` is the only "tool". |
-| `requirements` | Interactive structured choice. Host-capability axis already covered by `core/rules/capabilities/interactive-question.md`. |
+| `resolver` | Pure git operation. `git` is the only "tool". (Capability-skill dispatch: opted in — see catalog above.) |
+| `requirements` | Interactive structured choice. Host-capability axis already covered by `core/rules/capabilities/interactive-question.md`. (Capability-skill dispatch: opted in.) |
 | `supervisor` (+ `supervisor-bootstrap`, `supervisor-stages`, `supervisor-retry`) | Internal orchestration. The host-capability axis is its vendor axis and is already factored out via `capabilities.json`. |
 | `input-normalizer`, `korean-normalizer` | Pure-text utilities. No tool axis. |
-| `analyst`, `planner`, `mentor`, `learning-mentor` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). |
-| `test-writer` | Test framework variation is already covered by language skills (`tdd.md`, `effective-*.md`). Skill split would over-engineer. |
+| `analyst`, `planner` | Moderate-fit candidates for vendor adapters; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). (Capability-skill dispatch: opted in.) |
+| `mentor`, `learning-mentor` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears. |
+| `test-writer` | Test framework variation is already covered by language skills (`tdd.md`, `effective-*.md`). Vendor-adapter split would over-engineer. (Capability-skill dispatch: opted in.) |
 
 ---
 

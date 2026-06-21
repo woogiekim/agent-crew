@@ -57,6 +57,36 @@ fi
 
 If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior conflict resolution patterns before proceeding.
 
+## Capability Dispatch (Loaded By Metadata)
+
+Before beginning work, execute the metadata-driven capability-skill dispatcher to
+discover any user-owned skills that declare `loaded_by: resolver` in their frontmatter
+(see `core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
+
+```bash
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills.json"
+DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
+[ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
+
+if [ -f "${DISPATCH}" ]; then
+  python3 "${DISPATCH}" \
+    --agent resolver \
+    --project-root "${PROJECT_ROOT}" \
+    --task "${TASK:-}" \
+    --format json > "${DISPATCH_REPORT}" \
+    || printf '[crew] DEGRADED | capability-dispatch=script_failed agent=resolver\n'
+else
+  printf '{"agent":"resolver","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+    > "${DISPATCH_REPORT}"
+  printf '[crew] DEGRADED | capability-dispatch=script_missing agent=resolver\n'
+fi
+```
+
+After writing the report:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=resolver` and continue.
+- `.matched[]` non-empty → read each `.matched[].path` before Step 1 and cite loaded skill paths in the task context.
+- DEGRADED emitted → continue with declared skills only; the supervisor surfaces the marker.
+
 ## Execution Steps
 
 > **MANDATORY: Before analyzing conflicts, read `~/.agent-crew/system/agents/skills/conflict-resolution.md`.**
