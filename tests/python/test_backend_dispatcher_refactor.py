@@ -184,6 +184,19 @@ def test_backend_md_declares_kotlin_spring_axis_example(backend_md_text: str) ->
 
 
 def test_dispatch_rule_lists_backend_as_dispatcher_candidate(dispatch_rule_text: str) -> None:
-    """Sanity check on the Wave A primitive — backend is still listed."""
+    """Backend is listed in the dispatch-eligible agents table.
+
+    #186 graduated backend from "Wave-B candidate" to "Opted in" via
+    metadata-driven skill dispatch. The Wave-A primitive still references
+    backend as the canonical Wave-B exemplar in commentary; the candidates
+    table row must now record opted-in status.
+    """
     assert "backend" in dispatch_rule_text.lower()
-    assert "Wave-B" in dispatch_rule_text or "wave-b" in dispatch_rule_text.lower()
+    assert "| `backend` | Opted in" in dispatch_rule_text
+    # Wave-B remains as a label in commentary (e.g. "Wave B exemplar") and
+    # in adapter-skill descriptions; only the candidates-table row changed.
+    assert (
+        "Wave B" in dispatch_rule_text
+        or "Wave-B" in dispatch_rule_text
+        or "wave-b" in dispatch_rule_text.lower()
+    )
