@@ -208,6 +208,7 @@ DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-
 
 _DISPATCH_TMP="${DISPATCH_REPORT}.tmp"
 _DISPATCH_LOG="${TASK_DIR}/context/capability-dispatch-frontend.log"
+
 if [ -f "${DISPATCH}" ]; then
   if python3 "${DISPATCH}" \
       --agent frontend \

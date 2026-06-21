@@ -28,16 +28,20 @@ DISPATCH_SCRIPT = REPO_ROOT / "core" / "scripts" / "review-profile-dispatch.py"
 DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "dead-code-elimination.md"
 SKILL_TEMPLATE = REPO_ROOT / "core" / "agents" / "skills" / "SKILL-TEMPLATE.md"
 DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
-BACKEND_MD = REPO_ROOT / "core" / "agents" / "backend.md"
-FRONTEND_MD = REPO_ROOT / "core" / "agents" / "frontend.md"
 
-# Agents that must have a Capability Dispatch section with agent-specific
-# output path and explicit --agent <name> flag.
 # Agents whose `.md` files carry a Capability Dispatch block with the
 # agent-specific `context/capability-skills-<name>.json` output path and an
 # explicit `--agent <name>` flag. This excludes `reviewer`, which adopted
 # the dispatcher first (#137) with a legacy `context/review-profiles.json`
 # path and keeps that path for backward compatibility.
+#
+# MAINTENANCE NOTE: This list is a third hardcoded copy of the enrollment
+# roster — the other two are the catalog table in
+# `core/rules/agent-tool-dispatch.md` and the 13 individual agent `.md`
+# files under `core/agents/`. When agents are added to or removed from
+# metadata-driven dispatch, all three locations must stay in sync. See
+# Findings 8/10 in the review tracker for the long-term consolidation
+# plan (introduce a single canonical source).
 DISPATCH_AGENTS = [
     "analyst",
     "backend",
@@ -143,10 +147,27 @@ def test_dispatch_rule_marks_all_opted_in_agents() -> None:
     assert "| `frontend` | Wave-C candidate" not in text
 
 
-def test_agent_files_reference_metadata_dispatch_for_capability_skills() -> None:
+@pytest.fixture(scope="module")
+def dispatch_agent_texts() -> dict[str, tuple[Path, str]]:
+    """Read each enrolled agent's `.md` file once per test session.
+
+    Previously, three separate tests each opened and read all 12+ agent
+    files individually (36+ disk reads). This fixture reads each file
+    once and returns a mapping of `agent_name -> (path, text)` shared
+    across all three tests.
+    """
+    texts: dict[str, tuple[Path, str]] = {}
     for agent in DISPATCH_AGENTS:
         agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
-        text = agent_file.read_text(encoding="utf-8")
+        texts[agent] = (agent_file, agent_file.read_text(encoding="utf-8"))
+    return texts
+
+
+def test_agent_files_reference_metadata_dispatch_for_capability_skills(
+    dispatch_agent_texts: dict[str, tuple[Path, str]],
+) -> None:
+    for agent in DISPATCH_AGENTS:
+        agent_file, text = dispatch_agent_texts[agent]
         lowered = text.lower()
         assert "review-profile-dispatch.py" in text, agent_file
         # Accept either phrasing — backend/frontend say "metadata dispatch",
@@ -156,13 +177,14 @@ def test_agent_files_reference_metadata_dispatch_for_capability_skills() -> None
         )
 
 
-def test_dispatch_agents_use_agent_specific_output_path() -> None:
+def test_dispatch_agents_use_agent_specific_output_path(
+    dispatch_agent_texts: dict[str, tuple[Path, str]],
+) -> None:
     """Each enrolled agent must write its dispatch report to an agent-specific
     output path (`capability-skills-<name>.json`) so parallel stages can run
     without clobbering each other's report files."""
     for agent in DISPATCH_AGENTS:
-        agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
-        text = agent_file.read_text(encoding="utf-8")
+        agent_file, text = dispatch_agent_texts[agent]
         expected = f"context/capability-skills-{agent}.json"
         assert expected in text, (
             f"{agent_file} must reference {expected} in its dispatch block"
@@ -175,12 +197,13 @@ def test_dispatch_agents_use_agent_specific_output_path() -> None:
         )
 
 
-def test_dispatch_agents_pass_explicit_agent_flag() -> None:
+def test_dispatch_agents_pass_explicit_agent_flag(
+    dispatch_agent_texts: dict[str, tuple[Path, str]],
+) -> None:
     """Each enrolled agent must pass `--agent <name>` explicitly to the
     dispatcher rather than relying on the default (reviewer)."""
     for agent in DISPATCH_AGENTS:
-        agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
-        text = agent_file.read_text(encoding="utf-8")
+        agent_file, text = dispatch_agent_texts[agent]
         expected_flag = f"--agent {agent}"
         assert expected_flag in text, (
             f"{agent_file} must pass `{expected_flag}` to "
