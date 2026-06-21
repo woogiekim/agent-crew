@@ -91,13 +91,21 @@ DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
 _DISPATCH_TMP="${DISPATCH_REPORT}.tmp"
+_DISPATCH_LOG="${TASK_DIR}/context/capability-dispatch-requirements.log"
 if [ -f "${DISPATCH}" ]; then
   if python3 "${DISPATCH}" \
       --agent requirements \
       --project-root "${PROJECT_ROOT}" \
       --task "${TASK:-}" \
-      --format json > "${_DISPATCH_TMP}" 2>/dev/null; then
-    mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}"
+      --format json > "${_DISPATCH_TMP}" 2>"${_DISPATCH_LOG}"; then
+    if mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}" 2>/dev/null; then
+      :  # success — DISPATCH_REPORT is now valid
+    else
+      rm -f "${_DISPATCH_TMP}"
+      printf '{"agent":"requirements","matched":[],"fallback":true,"fallback_policy":"generic-requirements-skills"}\n' \
+        > "${DISPATCH_REPORT}"
+      printf '[crew] DEGRADED | capability-dispatch=mv_failed agent=requirements\n'
+    fi
   else
     rm -f "${_DISPATCH_TMP}"
     printf '{"agent":"requirements","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \

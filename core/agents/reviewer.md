@@ -134,18 +134,26 @@ Missing or non-matching review profiles must not block the reviewer.
 Reference invocation:
 
 ```bash
-DISPATCH_REPORT="${TASK_DIR}/context/review-profiles.json"
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-reviewer.json"
 DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
 _DISPATCH_TMP="${DISPATCH_REPORT}.tmp"
+_DISPATCH_LOG="${TASK_DIR}/context/capability-dispatch-reviewer.log"
 if [ -f "${DISPATCH}" ]; then
   if python3 "${DISPATCH}" \
       --agent reviewer \
       --project-root "${PROJECT_ROOT}" \
       --task "${TASK:-}" \
-      --format json > "${_DISPATCH_TMP}" 2>/dev/null; then
-    mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}"
+      --format json > "${_DISPATCH_TMP}" 2>"${_DISPATCH_LOG}"; then
+    if mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}" 2>/dev/null; then
+      :  # success — DISPATCH_REPORT is now valid
+    else
+      rm -f "${_DISPATCH_TMP}"
+      printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
+        > "${DISPATCH_REPORT}"
+      printf '[crew] DEGRADED | capability-dispatch=mv_failed agent=reviewer\n'
+    fi
   else
     rm -f "${_DISPATCH_TMP}"
     printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
@@ -155,7 +163,7 @@ if [ -f "${DISPATCH}" ]; then
 else
   printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
     > "${DISPATCH_REPORT}"
-  printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
+  printf '[crew] DEGRADED | capability-dispatch=script_missing agent=reviewer\n'
 fi
 ```
 
