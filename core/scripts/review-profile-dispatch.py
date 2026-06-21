@@ -340,7 +340,14 @@ def build_payload(args: argparse.Namespace) -> dict:
     return {
         "agent": args.agent,
         "matched": matches,
-        "fallback": not bool(matches),
+        # Per the 3-state dispatch result spec (see
+        # core/rules/agent-tool-dispatch.md § "Metadata-driven skill dispatch"),
+        # zero-match is the NORMAL state when no user-owned capability skills are
+        # installed for this agent — it is NOT a degraded/fallback condition.
+        # `fallback=True` is reserved for the degraded paths (script missing /
+        # script failed), which are emitted as a fallback JSON report by the
+        # agents' dispatch blocks, not by this happy-path entry point.
+        "fallback": False,
         "fallback_policy": fallback_policy_for(args.agent),
     }
 
