@@ -107,14 +107,19 @@ heuristics, detection wording, severity mapping, and finding-shape details.
 
 Three-state outcome:
 
-- **Script missing or crashed (error path)** — emit:
+- **Script missing or crashed (error path)** — emit one of:
 
   ```text
-  [crew] DEGRADED | review-profile=none fallback=generic-review-skills
+  [crew] DEGRADED | capability-dispatch=script_missing agent=reviewer
+  [crew] DEGRADED | capability-dispatch=script_failed agent=reviewer
+  [crew] DEGRADED | capability-dispatch=mv_failed agent=reviewer
   ```
 
-  This indicates the dispatcher itself could not be run and is treated as
-  a degraded condition.
+  This indicates the dispatcher itself could not be run (or its report
+  could not be atomically moved into place) and is treated as a degraded
+  condition. The specific subtype (`script_missing` / `script_failed` /
+  `mv_failed`) is selected by the bash block below based on which failure
+  was observed.
 
 - **`.matched[]` is empty (normal path, no user profile installed)** — emit:
 

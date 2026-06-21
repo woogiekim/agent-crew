@@ -31,13 +31,13 @@ DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
 BACKEND_MD = REPO_ROOT / "core" / "agents" / "backend.md"
 FRONTEND_MD = REPO_ROOT / "core" / "agents" / "frontend.md"
 
-# Agents that must have a Capability Dispatch section with agent-specific
-# output path and explicit --agent <name> flag.
 # Agents whose `.md` files carry a Capability Dispatch block with the
 # agent-specific `context/capability-skills-<name>.json` output path and an
-# explicit `--agent <name>` flag. This excludes `reviewer`, which adopted
-# the dispatcher first (#137) with a legacy `context/review-profiles.json`
-# path and keeps that path for backward compatibility.
+# explicit `--agent <name>` flag. `reviewer` is excluded from this list
+# because the rule-doc catalog test below asserts it separately; it now
+# writes to `context/capability-skills-reviewer.json` like every other
+# enrolled agent — the legacy `context/review-profiles.json` path was
+# retired during the dispatch consolidation.
 DISPATCH_AGENTS = [
     "analyst",
     "backend",
@@ -138,9 +138,13 @@ def test_dispatch_rule_marks_all_opted_in_agents() -> None:
             f"agent `{agent}` must appear as 'Opted in' (or "
             "'Opted in (metadata-driven…') in agent-tool-dispatch.md catalog"
         )
-    # Ensure the old Wave-B / Wave-C labels no longer appear for backend/frontend.
+    # Ensure the old Wave-B / Wave-C labels no longer appear for any
+    # agent that has since been enrolled in metadata-driven dispatch.
     assert "| `backend` | Wave-B candidate" not in text
     assert "| `frontend` | Wave-C candidate" not in text
+    assert "| `devops` | Wave-C candidate" not in text
+    assert "| `designer` | Wave-C candidate" not in text
+    assert "| `documenter` | Wave-C candidate" not in text
 
 
 def test_agent_files_reference_metadata_dispatch_for_capability_skills() -> None:
