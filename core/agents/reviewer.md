@@ -105,14 +105,31 @@ Read every matched profile skill path returned by the dispatcher and apply it
 as an additional review policy lens. The profile owns all domain-specific
 heuristics, detection wording, severity mapping, and finding-shape details.
 
-If no profile matches, emit:
+Three-state outcome:
 
-```text
-[crew] DEGRADED | review-profile=none fallback=generic-review-skills
-```
+- **Script missing or crashed (error path)** — emit:
 
-Then continue with the generic review skills declared above. Missing or
-non-matching review profiles must not block the reviewer.
+  ```text
+  [crew] DEGRADED | review-profile=none fallback=generic-review-skills
+  ```
+
+  This indicates the dispatcher itself could not be run and is treated as
+  a degraded condition.
+
+- **`.matched[]` is empty (normal path, no user profile installed)** — emit:
+
+  ```text
+  [crew] CAPABILITY_SKILLS: none agent=reviewer
+  ```
+
+  Then continue with the generic review skills declared above. An empty
+  match list is the normal case when no project-specific review profile is
+  installed and must not be reported as DEGRADED.
+
+- **`.matched[]` non-empty** — read each `.matched[].path` before Step 2 and
+  cite the profile path in `${TASK_DIR}/context/review.md`.
+
+Missing or non-matching review profiles must not block the reviewer.
 
 Reference invocation:
 
@@ -125,17 +142,19 @@ if [ -f "${DISPATCH}" ]; then
   python3 "${DISPATCH}" \
     --project-root "${PROJECT_ROOT}" \
     --task "${TASK:-}" \
-    --format json > "${PROFILE_REPORT}"
+    --format json > "${PROFILE_REPORT}" \
+    || printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
 else
   printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
     > "${PROFILE_REPORT}"
+  printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
 fi
 ```
 
 After writing `${PROFILE_REPORT}`, read the file. If `.matched[]` is empty,
-print the degraded fallback line above and continue. If matches exist, read
-each `.matched[].path` before Step 2 and cite the profile path in
-`${TASK_DIR}/context/review.md`.
+emit `[crew] CAPABILITY_SKILLS: none agent=reviewer` and continue normally.
+If matches exist, read each `.matched[].path` before Step 2 and cite the
+profile path in `${TASK_DIR}/context/review.md`.
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.

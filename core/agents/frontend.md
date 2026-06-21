@@ -199,6 +199,29 @@ skill dispatch"). Only the **base, language-agnostic / language-adapter**
 skills listed below need explicit declaration; capability skills flow
 through metadata dispatch and need not be enumerated here.
 
+### Capability Dispatch (Step 0.7)
+
+```bash
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills.json"
+DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
+[ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
+
+if [ -f "${DISPATCH}" ]; then
+  python3 "${DISPATCH}" \
+    --agent frontend \
+    --project-root "${PROJECT_ROOT}" \
+    --task "${TASK:-}" \
+    --format json > "${DISPATCH_REPORT}" \
+    || printf '[crew] DEGRADED | capability-dispatch=script_failed agent=frontend\n'
+else
+  printf '{"agent":"frontend","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+    > "${DISPATCH_REPORT}"
+  printf '[crew] DEGRADED | capability-dispatch=script_missing agent=frontend\n'
+fi
+```
+
+After writing the report, read it. If `.matched[]` is empty → emit `[crew] CAPABILITY_SKILLS: none agent=frontend` and continue. If non-empty → read each `.matched[].path` before Phase 1 and cite loaded skill paths in `context/skill-use.json`.
+
 Read the following skill files using the Read tool **only when the
 specific technique is needed** during execution — do not load all
 skills upfront:
