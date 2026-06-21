@@ -190,12 +190,12 @@ if [ -f "${DISPATCH}" ]; then
     fi
   else
     rm -f "${_DISPATCH_TMP}"
-    printf '{"agent":"designer","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+    printf '{"agent":"designer","matched":[],"fallback":true,"fallback_policy":"generic-designer-skills"}\n' \
       > "${DISPATCH_REPORT}"
     printf '[crew] DEGRADED | capability-dispatch=script_failed agent=designer\n'
   fi
 else
-  printf '{"agent":"designer","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"designer","matched":[],"fallback":true,"fallback_policy":"generic-designer-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=designer\n'
 fi

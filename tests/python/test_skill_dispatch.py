@@ -33,17 +33,30 @@ FRONTEND_MD = REPO_ROOT / "core" / "agents" / "frontend.md"
 
 # Agents that must have a Capability Dispatch section with agent-specific
 # output path and explicit --agent <name> flag.
+# Agents whose `.md` files carry a Capability Dispatch block with the
+# agent-specific `context/capability-skills-<name>.json` output path and an
+# explicit `--agent <name>` flag. This excludes `reviewer`, which adopted
+# the dispatcher first (#137) with a legacy `context/review-profiles.json`
+# path and keeps that path for backward compatibility.
 DISPATCH_AGENTS = [
-    "backend",
-    "frontend",
     "analyst",
+    "backend",
+    "designer",
+    "devops",
+    "documenter",
+    "frontend",
+    "issuer",
     "planner",
+    "qa-owner",
     "requirements",
     "resolver",
     "test-writer",
-    "qa-owner",
-    "issuer",
 ]
+
+# All agents that have opted in to metadata-driven dispatch, including
+# `reviewer`. Used by the rule-doc catalog assertion only (the catalog
+# row's prose is uniform across all 13 agents).
+ALL_OPTED_IN_AGENTS = DISPATCH_AGENTS + ["reviewer"]
 
 
 def _load_module(path: Path, name: str):
@@ -108,11 +121,24 @@ def test_skill_template_documents_dispatcher_slots() -> None:
     assert "detection:" in text
 
 
-def test_dispatch_rule_marks_backend_and_frontend_opted_in() -> None:
+def test_dispatch_rule_marks_all_opted_in_agents() -> None:
+    """Every agent enrolled in metadata-driven capability-skill dispatch
+    (ALL_OPTED_IN_AGENTS — including the legacy reviewer adopter) must
+    appear in the catalog table of `core/rules/agent-tool-dispatch.md`
+    with an "Opted in" status row.
+
+    The row may carry either the bare label (`| <agent> | Opted in`) or the
+    metadata-driven variant (`| <agent> | Opted in (metadata-driven`), since
+    different waves were enrolled with slightly different prose."""
     text = DISPATCH_RULE.read_text(encoding="utf-8")
-    assert "| `backend` | Opted in" in text
-    assert "| `frontend` | Opted in" in text
-    # Ensure the old Wave-B / Wave-C labels no longer appear for these rows.
+    for agent in ALL_OPTED_IN_AGENTS:
+        opted_in_bare = f"| `{agent}` | Opted in"
+        opted_in_metadata = f"| `{agent}` | Opted in (metadata-driven"
+        assert opted_in_bare in text or opted_in_metadata in text, (
+            f"agent `{agent}` must appear as 'Opted in' (or "
+            "'Opted in (metadata-driven…') in agent-tool-dispatch.md catalog"
+        )
+    # Ensure the old Wave-B / Wave-C labels no longer appear for backend/frontend.
     assert "| `backend` | Wave-B candidate" not in text
     assert "| `frontend` | Wave-C candidate" not in text
 
@@ -370,7 +396,12 @@ def test_cli_explicit_reviewer_matches_default(tmp_path: Path) -> None:
     assert [m["name"] for m in payload["matched"]] == ["dobby-review-heuristics"]
 
 
-def test_cli_agent_with_no_match_reports_agent_specific_fallback(tmp_path: Path) -> None:
+def test_cli_agent_with_no_match(tmp_path: Path) -> None:
+    """Zero-match is NORMAL per the 3-state dispatch result spec
+    (`core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch"):
+    the script succeeded and simply found no user-owned capability skills.
+    That is NOT a degraded/fallback condition — `fallback` must be False
+    and the CLI must exit 0 with an empty `matched` array."""
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     # No skill that loads for backend.
@@ -390,7 +421,7 @@ def test_cli_agent_with_no_match_reports_agent_specific_fallback(tmp_path: Path)
 
     assert payload["agent"] == "backend"
     assert payload["matched"] == []
-    assert payload["fallback"] is True
+    assert payload["fallback"] is False
     assert payload["fallback_policy"] == "generic-backend-skills"
 
 

@@ -144,7 +144,16 @@ def test_dispatcher_excludes_non_reviewer_or_non_matching_profiles(tmp_path: Pat
     assert matches == []
 
 
-def test_cli_reports_generic_fallback_when_no_profile_matches(tmp_path: Path) -> None:
+def test_cli_reports_generic_fallback_policy_when_no_profile_matches(
+    tmp_path: Path,
+) -> None:
+    """Zero-match is NORMAL per the 3-state dispatch result spec
+    (`core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
+
+    The reviewer's happy-path CLI exits 0 with an empty `matched` array and
+    `fallback=False`. The `fallback_policy` field is still populated so the
+    caller's degraded-path JSON blob (script missing / script crashed) can
+    reuse the same policy string when it manually writes a fallback report."""
     skills_dir = tmp_path / "skills"
     project_root = tmp_path / "project"
     skills_dir.mkdir()
@@ -170,7 +179,7 @@ def test_cli_reports_generic_fallback_when_no_profile_matches(tmp_path: Path) ->
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["matched"] == []
-    assert payload["fallback"] is True
+    assert payload["fallback"] is False
     assert payload["fallback_policy"] == "generic-review-skills"
 
 

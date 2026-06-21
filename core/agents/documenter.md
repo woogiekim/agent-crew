@@ -345,12 +345,12 @@ if [ -f "${DISPATCH}" ]; then
     fi
   else
     rm -f "${_DISPATCH_TMP}"
-    printf '{"agent":"documenter","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+    printf '{"agent":"documenter","matched":[],"fallback":true,"fallback_policy":"generic-documenter-skills"}\n' \
       > "${DISPATCH_REPORT}"
     printf '[crew] DEGRADED | capability-dispatch=script_failed agent=documenter\n'
   fi
 else
-  printf '{"agent":"documenter","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"documenter","matched":[],"fallback":true,"fallback_policy":"generic-documenter-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=documenter\n'
 fi
