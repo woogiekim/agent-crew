@@ -138,12 +138,19 @@ PROFILE_REPORT="${TASK_DIR}/context/review-profiles.json"
 DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
+_PROFILE_TMP="${PROFILE_REPORT}.tmp"
 if [ -f "${DISPATCH}" ]; then
-  python3 "${DISPATCH}" \
-    --project-root "${PROJECT_ROOT}" \
-    --task "${TASK:-}" \
-    --format json > "${PROFILE_REPORT}" \
-    || printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
+  if python3 "${DISPATCH}" \
+      --project-root "${PROJECT_ROOT}" \
+      --task "${TASK:-}" \
+      --format json > "${_PROFILE_TMP}" 2>/dev/null; then
+    mv "${_PROFILE_TMP}" "${PROFILE_REPORT}"
+  else
+    rm -f "${_PROFILE_TMP}"
+    printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
+      > "${PROFILE_REPORT}"
+    printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
+  fi
 else
   printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
     > "${PROFILE_REPORT}"
