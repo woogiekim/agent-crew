@@ -78,7 +78,7 @@ if [ -f "${DISPATCH}" ]; then
     fi
   else
     rm -f "${_DISPATCH_TMP}"
-    printf '{"agent":"issuer","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+    printf '{"agent":"issuer","matched":[],"fallback":true,"fallback_policy":"generic-issuer-skills"}\n' \
       > "${DISPATCH_REPORT}"
     printf '[crew] DEGRADED | capability-dispatch=script_failed agent=issuer\n'
   fi
