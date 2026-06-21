@@ -204,7 +204,7 @@ through metadata dispatch and need not be enumerated here.
 ### Capability Dispatch (Step 0.7)
 
 ```bash
-DISPATCH_REPORT="${TASK_DIR}/context/capability-skills.json"
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-backend.json"
 DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
@@ -216,7 +216,7 @@ if [ -f "${DISPATCH}" ]; then
     --format json > "${DISPATCH_REPORT}" \
     || printf '[crew] DEGRADED | capability-dispatch=script_failed agent=backend\n'
 else
-  printf '{"agent":"backend","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"backend","matched":[],"fallback":true,"fallback_policy":"generic-backend-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=backend\n'
 fi

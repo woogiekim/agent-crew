@@ -134,24 +134,25 @@ Missing or non-matching review profiles must not block the reviewer.
 Reference invocation:
 
 ```bash
-PROFILE_REPORT="${TASK_DIR}/context/review-profiles.json"
+DISPATCH_REPORT="${TASK_DIR}/context/review-profiles.json"
 DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
 if [ -f "${DISPATCH}" ]; then
   python3 "${DISPATCH}" \
+    --agent reviewer \
     --project-root "${PROJECT_ROOT}" \
     --task "${TASK:-}" \
-    --format json > "${PROFILE_REPORT}" \
+    --format json > "${DISPATCH_REPORT}" \
     || printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
 else
   printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
-    > "${PROFILE_REPORT}"
+    > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | review-profile=none fallback=generic-review-skills\n'
 fi
 ```
 
-After writing `${PROFILE_REPORT}`, read the file. If `.matched[]` is empty,
+After writing `${DISPATCH_REPORT}`, read the file. If `.matched[]` is empty,
 emit `[crew] CAPABILITY_SKILLS: none agent=reviewer` and continue normally.
 If matches exist, read each `.matched[].path` before Step 2 and cite the
 profile path in `${TASK_DIR}/context/review.md`.

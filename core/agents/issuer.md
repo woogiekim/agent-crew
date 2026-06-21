@@ -56,7 +56,7 @@ taxonomies, and similar cross-cutting concerns that apply regardless of the
 backend tracker.
 
 ```bash
-DISPATCH_REPORT="${TASK_DIR}/context/capability-skills.json"
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-issuer.json"
 DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
@@ -68,7 +68,7 @@ if [ -f "${DISPATCH}" ]; then
     --format json > "${DISPATCH_REPORT}" \
     || printf '[crew] DEGRADED | capability-dispatch=script_failed agent=issuer\n'
 else
-  printf '{"agent":"issuer","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"issuer","matched":[],"fallback":true,"fallback_policy":"generic-issuer-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=issuer\n'
 fi

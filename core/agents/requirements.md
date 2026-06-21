@@ -86,7 +86,7 @@ discover any user-owned skills that declare `loaded_by: requirements` in their f
 (see `core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
 
 ```bash
-DISPATCH_REPORT="${TASK_DIR}/context/capability-skills.json"
+DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-requirements.json"
 DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
 [ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
 
@@ -98,7 +98,7 @@ if [ -f "${DISPATCH}" ]; then
     --format json > "${DISPATCH_REPORT}" \
     || printf '[crew] DEGRADED | capability-dispatch=script_failed agent=requirements\n'
 else
-  printf '{"agent":"requirements","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"requirements","matched":[],"fallback":true,"fallback_policy":"generic-requirements-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=requirements\n'
 fi
