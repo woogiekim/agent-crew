@@ -83,7 +83,7 @@ if [ -f "${DISPATCH}" ]; then
     printf '[crew] DEGRADED | capability-dispatch=script_failed agent=resolver\n'
   fi
 else
-  printf '{"agent":"resolver","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"resolver","matched":[],"fallback":true,"fallback_policy":"generic-resolver-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=resolver\n'
 fi

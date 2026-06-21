@@ -105,7 +105,7 @@ if [ -f "${DISPATCH}" ]; then
     printf '[crew] DEGRADED | capability-dispatch=script_failed agent=qa-owner\n'
   fi
 else
-  printf '{"agent":"qa-owner","matched":[],"fallback":true,"fallback_policy":"base-skills-only"}\n' \
+  printf '{"agent":"qa-owner","matched":[],"fallback":true,"fallback_policy":"generic-qa-owner-skills"}\n' \
     > "${DISPATCH_REPORT}"
   printf '[crew] DEGRADED | capability-dispatch=script_missing agent=qa-owner\n'
 fi

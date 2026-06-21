@@ -31,6 +31,20 @@ DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
 BACKEND_MD = REPO_ROOT / "core" / "agents" / "backend.md"
 FRONTEND_MD = REPO_ROOT / "core" / "agents" / "frontend.md"
 
+# Agents that must have a Capability Dispatch section with agent-specific
+# output path and explicit --agent <name> flag.
+DISPATCH_AGENTS = [
+    "backend",
+    "frontend",
+    "analyst",
+    "planner",
+    "requirements",
+    "resolver",
+    "test-writer",
+    "qa-owner",
+    "issuer",
+]
+
 
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -104,10 +118,48 @@ def test_dispatch_rule_marks_backend_and_frontend_opted_in() -> None:
 
 
 def test_agent_files_reference_metadata_dispatch_for_capability_skills() -> None:
-    for agent_file in (BACKEND_MD, FRONTEND_MD):
+    for agent in DISPATCH_AGENTS:
+        agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
         text = agent_file.read_text(encoding="utf-8")
+        lowered = text.lower()
         assert "review-profile-dispatch.py" in text, agent_file
-        assert "metadata dispatch" in text.lower(), agent_file
+        # Accept either phrasing — backend/frontend say "metadata dispatch",
+        # the agents enrolled in later waves say "metadata-driven … dispatch".
+        assert "metadata dispatch" in lowered or "metadata-driven" in lowered, (
+            agent_file
+        )
+
+
+def test_dispatch_agents_use_agent_specific_output_path() -> None:
+    """Each enrolled agent must write its dispatch report to an agent-specific
+    output path (`capability-skills-<name>.json`) so parallel stages can run
+    without clobbering each other's report files."""
+    for agent in DISPATCH_AGENTS:
+        agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
+        text = agent_file.read_text(encoding="utf-8")
+        expected = f"context/capability-skills-{agent}.json"
+        assert expected in text, (
+            f"{agent_file} must reference {expected} in its dispatch block"
+        )
+        # Must not still use the generic, non-namespaced path.
+        assert "context/capability-skills.json" not in text, (
+            f"{agent_file} still references the generic path "
+            "context/capability-skills.json — switch to "
+            f"{expected}"
+        )
+
+
+def test_dispatch_agents_pass_explicit_agent_flag() -> None:
+    """Each enrolled agent must pass `--agent <name>` explicitly to the
+    dispatcher rather than relying on the default (reviewer)."""
+    for agent in DISPATCH_AGENTS:
+        agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
+        text = agent_file.read_text(encoding="utf-8")
+        expected_flag = f"--agent {agent}"
+        assert expected_flag in text, (
+            f"{agent_file} must pass `{expected_flag}` to "
+            "review-profile-dispatch.py in its dispatch block"
+        )
 
 
 # ---------------------------------------------------------------------------
