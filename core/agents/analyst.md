@@ -72,6 +72,39 @@ The AAR memo is a **hint only** — it shapes the plan, it never substitutes for
 verification, and it never relaxes the reviewer stage or the quality loop. If no
 AAR memo is present, plan exactly as before.
 
+### Progressive Learning — consume recalled candidates as advisory hints only
+
+The recall above may also surface a **learning candidate** that conforms to
+`core/schemas/learning-candidate.schema.json`. These are records produced by
+the Progressive Agent Learning Loop documented in
+`core/rules/progressive-learning.md`. They generalize the AAR memo pattern to
+*any* recalled lesson — context-break spacing, recurring test gaps, repeated
+review findings, and similar.
+
+Treat every recalled candidate as **advisory input only**, never ground truth:
+
+- A candidate may inform your `analysis.md` risk table (e.g. add a row noting a
+  surface that has been reviewer-rejected before) and may suggest pipeline
+  shape adjustments to the planner step (e.g. `tdd_parallel: true`, widened
+  test coverage).
+- A candidate may **not** remove the reviewer stage, shorten the quality loop,
+  skip the TDD red/green/refactor cycle, or bypass the centralized approval
+  gate for destructive actions.
+- When the current task's requirements, PRD, or actual code contradict a
+  recalled candidate, the current-task evidence wins. Record the candidate in
+  the `ignored_ids` list of `memory-evidence.json` (see below).
+- Only candidates at the `project` or `global` (already-promoted) maturity
+  level should auto-shape the plan. `session` and `global_candidate` records
+  surface as context for your judgment but do not deterministically alter
+  `pipeline.json`.
+
+Before writing `analysis.md`, record the memory-evidence trace at
+`${TASK_DIR}/context/memory-evidence.json` following the format documented in
+`core/rules/progressive-learning.md` § Memory-Evidence Tracing. The trace must
+list `retrieved_ids`, `accepted_ids`, and `ignored_ids` so that downstream
+reviewers can audit which memories influenced the plan and confirm that no
+verification gate was relaxed on the strength of a recalled candidate.
+
 ## Workflow
 
 ### Step 1 — Read context

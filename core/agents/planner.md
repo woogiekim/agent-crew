@@ -94,6 +94,37 @@ The AAR memo is a **hint only** — it shapes `pipeline.json`, it never substitu
 for verification, and it never relaxes the reviewer stage or the quality loop. If
 no AAR memo is present, generate the pipeline exactly as before.
 
+### Progressive Learning — consume recalled candidates as advisory hints only
+
+The recall above may also surface one or more **learning candidates** that
+conform to `core/schemas/learning-candidate.schema.json`. These are records
+produced by the Progressive Agent Learning Loop documented in
+`core/rules/progressive-learning.md`. They generalize the AAR memo to any
+recurring lesson the system has previously verified: context-break spacing,
+recurring test gaps, repeated review findings, recurrent risk shapes, and
+similar.
+
+When you fold a recalled candidate into `pipeline.json`:
+
+- Treat it as **advisory input only**. The candidate may inform stage selection,
+  `tdd_parallel` flags, test-coverage breadth, or risk-table entries in
+  `prd.md`. It must not remove the trailing reviewer stage, shorten the quality
+  loop, skip the TDD red/green/refactor cycle, or bypass the framework-level
+  approval gate for destructive actions.
+- Only candidates at the `project` or `global` (already-promoted) maturity
+  level deterministically shape the plan. `session` and `global_candidate`
+  records are visible to your judgment but do not auto-modify `pipeline.json`.
+- If the current task's requirements, PRD draft, or codebase reality
+  contradicts a recalled candidate, the current-task evidence wins. Record the
+  candidate in the `ignored_ids` list of `memory-evidence.json`.
+
+Before writing `pipeline.json`, record the memory-evidence trace at
+`${TASK_DIR}/context/memory-evidence.json` following the format documented in
+`core/rules/progressive-learning.md` § Memory-Evidence Tracing. The trace must
+list `retrieved_ids`, `accepted_ids`, and `ignored_ids` so that downstream
+reviewers can audit which memories influenced the pipeline shape and confirm
+that no verification gate was relaxed on the strength of a recalled candidate.
+
 ## Execution Flow
 
 ### Step 1: Requirement Collection
