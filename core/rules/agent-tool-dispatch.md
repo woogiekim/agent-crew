@@ -83,7 +83,7 @@ fallback policy:
 |---|---|---|
 | `BLOCKED` | Emit `STATUS: BLOCKED` with `BLOCKER: missing_adapter=<tool>` and stop. Do not call any external API as a workaround. | `issuer` (today) |
 | `degraded-fallback` | Continue using only language-level / framework-agnostic skills (e.g., `tdd.md`, `effective-kotlin.md`). Emit a `[crew] DEGRADED | adapter=<tool>` warning before continuing. | `backend` (proposed Wave B) |
-| `prompt-user` | Present a structured user-choice (`core/rules/capabilities/interactive-question.md`) offering "run in safe-mode / dry-plan-only" vs. "cancel". | `devops` (proposed Wave C) |
+| `prompt-user` | Present a structured user-choice (`core/rules/capabilities/interactive-question.md`) offering "run in safe-mode / dry-plan-only" vs. "cancel". | (no current adopter — reserved for future agents whose missing adapter has a meaningful dry-plan fallback) |
 
 Each agent file MUST declare its policy explicitly. If no policy is
 declared, the default is `BLOCKED` (most restrictive — safest for
@@ -334,8 +334,7 @@ whether it has opted in.
 
 | Agent | Status | Axis |
 |---|---|---|
-| `issuer` | Opted in (reference implementation, commit `1f89c02`) | tracker (git remote) |
-| `issuer` (capability axis) | Opted in (metadata-driven skill dispatch) | cross-cutting issue/policy metadata (in addition to backend adapter row above) |
+| `issuer` | Opted in (reference implementation, commit `1f89c02`; also metadata-driven skill dispatch) | tracker (git remote) **and** cross-cutting issue/policy metadata |
 | `backend` | Opted in (metadata-driven skill dispatch, #186) | language / framework manifest **and** capability-skill metadata |
 | `frontend` | Opted in (metadata-driven skill dispatch, #186) | framework (`package.json`) **and** capability-skill metadata |
 | `devops` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | cloud / CI (manifest files) **and** capability-skill metadata |
