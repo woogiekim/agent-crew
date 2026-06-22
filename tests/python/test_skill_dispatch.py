@@ -692,6 +692,13 @@ def test_success_case_discover_skills_for_agent_returns_loaded_by_list(
     with the parsed `loaded_by` list populated. This test exercises the
     function end-to-end so that the implementer's refactor (collapsing
     the duplicate `loaded_by()` parse call) cannot regress behavior.
+
+    Uses the same detection vocabulary as the existing
+    `test_discover_skills_for_agent_backend_returns_dead_code_skill`
+    fixture (proven to exercise the detection path) but expands
+    `loaded_by` to span all three primary roles — backend, frontend,
+    AND reviewer — so the test exercises the full parsed list that
+    the [11] refactor must preserve.
     """
     module = _load_module(
         DISPATCH_SCRIPT, "review_profile_dispatch_module_finding11"
@@ -702,14 +709,14 @@ def test_success_case_discover_skills_for_agent_returns_loaded_by_list(
     _write_skill(
         skill,
         loaded_by="backend,frontend,reviewer",
-        detection="cleanup|refactor",
+        detection="cleanup|refactor|dead.code|unused",
     )
 
     matches = module.discover_skills_for_agent(
         [skills_dir],
         agent_name="backend",
         project_root=tmp_path,
-        task="Cleanup pass on legacy module.",
+        task="Refactor module to remove unused helpers.",
         changed_files=[],
     )
 
@@ -719,10 +726,11 @@ def test_success_case_discover_skills_for_agent_returns_loaded_by_list(
     # full loaded_by list — the refactor is BEHAVIOR-PRESERVING.
     assert sut["name"] == "shared-skill"
     assert sut["loaded_by"] == ["backend", "frontend", "reviewer"]
-    # And the matched_by token must use the generic agent-name form for
-    # non-reviewer agents (finding [2] specifically reserves the legacy
-    # `global-review-profile` token for `--agent reviewer`).
-    assert sut.get("matched_by") in ("detection", "global-backend-skill")
+    # And the matched_by token must use the detection form (since the
+    # task body matches the detection regex). Finding [2] specifically
+    # reserves the legacy `global-review-profile` token for the
+    # no-detection reviewer path only.
+    assert sut.get("matched_by") == "detection"
 
 
 # ---------------------------------------------------------------------------
