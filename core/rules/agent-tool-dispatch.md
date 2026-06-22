@@ -180,17 +180,21 @@ The dispatcher returns a JSON payload:
     }
   ],
   "fallback": false,
-  "fallback_policy": "generic-review-skills"
+  "fallback_policy": "generic-reviewer-skills"
 }
 ```
 
 **Three-state dispatch result:**
 
-1. **Script missing or crashed** → emit `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` (script absent) or `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` (script crashed); write a fallback JSON report with `"fallback": true`; continue with the agent's declared base skills only.
+1. **Script missing, crashed, or report-move failed** → emit one of three documented DEGRADED tokens:
+   - `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` (the dispatcher script itself is absent).
+   - `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` (the dispatcher ran but exited non-zero).
+   - `[crew] DEGRADED | capability-dispatch=mv_failed agent=<name>` (the dispatcher succeeded but the atomic `mv` of the JSON report into the canonical path failed, e.g. due to a read-only TASK_DIR or a cross-device move).
+   In every case, write a fallback JSON report with `"fallback": true`; continue with the agent's declared base skills only.
 2. **Script succeeded, no matches** (`.matched[] == []`) → emit `[crew] CAPABILITY_SKILLS: none agent=<name>` and continue normally. This is the **expected** state when no user-owned capability skills are installed for this agent — it is NOT a degraded condition.
 3. **Script succeeded, matches found** → read each `.matched[].path`; load the matched skills before the first execution step; cite loaded skill paths in `${TASK_DIR}/context/skill-use.json` (append a `{skill_path: ..., loaded_by: ...}` entry per matched skill, creating the file if absent). Agents that already write a more specific skill-use artifact (e.g. `context/review.md` for reviewer) record paths there instead.
 
-For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-review-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none` line; both refer to the same "empty match, continue with generic review skills" state. New agents SHOULD emit only the canonical `CAPABILITY_SKILLS: none agent=<name>` token. Missing profiles never produce `STATUS: BLOCKED` regardless of agent.
+For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-reviewer-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none` line; both refer to the same "empty match, continue with generic review skills" state. (Finding [13]: the fallback policy literal is now the uniform `generic-reviewer-skills` form; the legacy `generic-review-skills` singular was retired.) New agents SHOULD emit only the canonical `CAPABILITY_SKILLS: none agent=<name>` token. Missing profiles never produce `STATUS: BLOCKED` regardless of agent.
 
 This is a DIP boundary:
 
@@ -378,6 +382,7 @@ three-state semantics described in § "Metadata-driven skill dispatch":
 |---|---|---|
 | Script missing | `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` | Yes — declared base skills only |
 | Script crashed | `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` | Yes — declared base skills only |
+| Report move failed | `[crew] DEGRADED | capability-dispatch=mv_failed agent=<name>` | Yes — declared base skills only |
 | No matches (expected) | `[crew] CAPABILITY_SKILLS: none agent=<name>` | Yes — normal flow |
 | Matches found | (none — read `.matched[].path` and load) | Yes — normal flow with loaded skills |
 
