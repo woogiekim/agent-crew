@@ -180,7 +180,10 @@ def test_cli_reports_generic_fallback_policy_when_no_profile_matches(
     payload = json.loads(result.stdout)
     assert payload["matched"] == []
     assert payload["fallback"] is False
-    assert payload["fallback_policy"] == "generic-review-skills"
+    # Finding [13]: reviewer fallback policy follows the uniform
+    # `generic-<agent>-skills` rule. The legacy asymmetric
+    # `generic-review-skills` (singular) is intentionally retired.
+    assert payload["fallback_policy"] == "generic-reviewer-skills"
 
 
 def test_update_dry_run_preserves_user_review_profile_skill() -> None:

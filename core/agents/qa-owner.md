@@ -86,43 +86,22 @@ discover any user-owned skills that declare `loaded_by: qa-owner` in their front
 (see `core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
 
 ```bash
-DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-qa-owner.json"
-DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
-[ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
-
-_DISPATCH_TMP="${DISPATCH_REPORT}.tmp"
-_DISPATCH_LOG="${TASK_DIR}/context/capability-dispatch-qa-owner.log"
-if [ -f "${DISPATCH}" ]; then
-  if python3 "${DISPATCH}" \
-      --agent qa-owner \
-      --project-root "${PROJECT_ROOT}" \
-      --task "${TASK:-}" \
-      --format json > "${_DISPATCH_TMP}" 2>"${_DISPATCH_LOG}"; then
-    if mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}" 2>/dev/null; then
-      :  # success — DISPATCH_REPORT is now valid
-    else
-      rm -f "${_DISPATCH_TMP}"
-      printf '{"agent":"qa-owner","matched":[],"fallback":true,"fallback_policy":"generic-qa-owner-skills"}\n' \
-        > "${DISPATCH_REPORT}"
-      printf '[crew] DEGRADED | capability-dispatch=mv_failed agent=qa-owner\n'
-    fi
-  else
-    rm -f "${_DISPATCH_TMP}"
-    printf '{"agent":"qa-owner","matched":[],"fallback":true,"fallback_policy":"generic-qa-owner-skills"}\n' \
-      > "${DISPATCH_REPORT}"
-    printf '[crew] DEGRADED | capability-dispatch=script_failed agent=qa-owner\n'
-  fi
-else
-  printf '{"agent":"qa-owner","matched":[],"fallback":true,"fallback_policy":"generic-qa-owner-skills"}\n' \
-    > "${DISPATCH_REPORT}"
-  printf '[crew] DEGRADED | capability-dispatch=script_missing agent=qa-owner\n'
-fi
+# Shared capability-dispatch helper (finding [8]). The helper
+# internally invokes `review-profile-dispatch.py --agent qa-owner`
+# and writes the report to
+# `${TASK_DIR}/context/capability-skills-qa-owner.json`. It also
+# appends `{skill_path, loaded_by}` citation entries to
+# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
+# state 3, so the agent does not write that file by hand.
+CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
+[ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
+bash "${CAPABILITY_DISPATCH}" qa-owner
 ```
 
-After writing the report:
-- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=qa-owner` and continue.
-- `.matched[]` non-empty → read each `.matched[].path` before Step 1 and cite loaded skill paths in the task context.
-- DEGRADED emitted → continue with declared skills only; the supervisor surfaces the marker.
+After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-qa-owner.json`:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=qa-owner` and continue normally (NORMAL state).
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
 ## Workflow
 

@@ -25,7 +25,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DISPATCH_SCRIPT = REPO_ROOT / "core" / "scripts" / "review-profile-dispatch.py"
-DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "dead-code-elimination.md"
+# Finding [1]: the dead-code-elimination capability skill ships as a
+# copy-if-absent SEED under `core/agents/skills/templates/` to prevent
+# framework-wide auto-loading. The top-of-discovery-dir location is
+# explicitly guarded against in test_skill_locations.py.
+DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "templates" / "dead-code-elimination.md"
 SKILL_TEMPLATE = REPO_ROOT / "core" / "agents" / "skills" / "SKILL-TEMPLATE.md"
 DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
 
@@ -37,12 +41,47 @@ DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
 # enrolled agent — the legacy `context/review-profiles.json` path was
 # retired during the dispatch consolidation.
 #
-# MAINTENANCE NOTE: This list is a third hardcoded copy of the enrollment
-# roster — the other two are the catalog table in
-# `core/rules/agent-tool-dispatch.md` and the 13 individual agent `.md`
-# files under `core/agents/`. When agents are added to or removed from
-# metadata-driven dispatch, all three locations must stay in sync.
-DISPATCH_AGENTS = [
+# Derived from disk (finding [10]): glob `core/agents/*.md` for any file
+# carrying a `--agent <name>` invocation. This removes the third
+# hardcoded copy of the enrollment roster (the other two are the
+# catalog table in `core/rules/agent-tool-dispatch.md` and the
+# individual agent `.md` files). `reviewer` is intentionally excluded
+# from this roster — it is appended separately into
+# `ALL_OPTED_IN_AGENTS` below.
+def _derive_dispatch_agents_from_disk() -> list[str]:
+    """Scan core/agents/*.md for `--agent <name>` invocations.
+
+    Returns the sorted list of agent names that pass the explicit
+    `--agent <name>` flag to `review-profile-dispatch.py`, EXCLUDING
+    `reviewer` (which is the dispatcher's default and is asserted
+    separately by the catalog-row test).
+    """
+    import re
+
+    agents_dir = REPO_ROOT / "core" / "agents"
+    pattern = re.compile(r"--agent\s+([a-z][a-z0-9-]*)")
+    found: set[str] = set()
+    for md in agents_dir.glob("*.md"):
+        text = md.read_text(encoding="utf-8")
+        for match in pattern.finditer(text):
+            name = match.group(1)
+            # The file's own basename must match the --agent argument
+            # to count as an enrollment (otherwise a doc file that
+            # merely references another agent's name would inflate
+            # the roster).
+            if md.stem == name:
+                found.add(name)
+    found.discard("reviewer")
+    return sorted(found)
+
+
+DISPATCH_AGENTS = _derive_dispatch_agents_from_disk()
+
+# Self-check: the derived roster MUST match the canonical set of
+# enrolled agents (finding [10]). If a future contributor adds a new
+# agent enrollment, the disk-derived list will pick it up automatically
+# and this assertion will continue to hold without manual maintenance.
+_EXPECTED_DISPATCH_AGENTS = sorted([
     "analyst",
     "backend",
     "designer",
@@ -55,7 +94,12 @@ DISPATCH_AGENTS = [
     "requirements",
     "resolver",
     "test-writer",
-]
+])
+assert DISPATCH_AGENTS == _EXPECTED_DISPATCH_AGENTS, (
+    f"DISPATCH_AGENTS derived from disk does not match the expected "
+    f"enrollment roster.\n  derived: {DISPATCH_AGENTS}\n  expected: "
+    f"{_EXPECTED_DISPATCH_AGENTS}"
+)
 
 # All agents that have opted in to metadata-driven dispatch, including
 # `reviewer`. Used by the rule-doc catalog assertion only (the catalog
@@ -390,7 +434,10 @@ def test_cli_default_agent_is_reviewer_backward_compatible(tmp_path: Path) -> No
     )
 
     assert payload["agent"] == "reviewer"
-    assert payload["fallback_policy"] == "generic-review-skills"
+    # Finding [13]: reviewer fallback policy normalized to the uniform
+    # `generic-<agent>-skills` rule. The previous asymmetric value
+    # `generic-review-skills` (singular) is intentionally retired.
+    assert payload["fallback_policy"] == "generic-reviewer-skills"
     assert payload["fallback"] is False
     assert [m["name"] for m in payload["matched"]] == ["dobby-review-heuristics"]
 
@@ -419,7 +466,9 @@ def test_cli_explicit_reviewer_matches_default(tmp_path: Path) -> None:
     )
 
     assert payload["agent"] == "reviewer"
-    assert payload["fallback_policy"] == "generic-review-skills"
+    # Finding [13]: reviewer fallback policy normalized to the uniform
+    # `generic-<agent>-skills` rule (was `generic-review-skills`).
+    assert payload["fallback_policy"] == "generic-reviewer-skills"
     assert [m["name"] for m in payload["matched"]] == ["dobby-review-heuristics"]
 
 
@@ -476,12 +525,34 @@ def test_cli_text_format_for_backend(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_shipped_dead_code_skill_is_discovered_by_dispatcher() -> None:
-    """The shipped `core/agents/skills/dead-code-elimination.md` must be picked up
-    by `--agent backend` and `--agent frontend` when the dispatcher is pointed at
-    the source `core/agents/skills/` directory."""
-    skills_dir = REPO_ROOT / "core" / "agents" / "skills"
+def test_shipped_dead_code_skill_lives_under_templates_not_discovery_dir() -> None:
+    """Finding [1] — the dead-code-elimination capability skill MUST NOT
+    ship at the top of `core/agents/skills/` (the dispatcher discovery
+    dir). Auto-loading framework-wide on every backend/frontend refactor
+    task was the original HIGH-severity finding.
 
+    Post-fix contract: the skill lives as a copy-if-absent SEED under
+    `core/agents/skills/templates/dead-code-elimination.md`, and the
+    dispatcher pointed at the discovery dir MUST NOT match it.
+    """
+    skills_dir = REPO_ROOT / "core" / "agents" / "skills"
+    templates_path = skills_dir / "templates" / "dead-code-elimination.md"
+    discovery_path = skills_dir / "dead-code-elimination.md"
+
+    # Seed exists under templates/ — opt-in flow.
+    assert templates_path.is_file(), (
+        f"dead-code-elimination must ship as a seed under {templates_path}"
+    )
+    # Discovery dir does not auto-load it.
+    assert not discovery_path.exists(), (
+        f"dead-code-elimination must NOT exist at {discovery_path} — that "
+        "would auto-load framework-wide (finding [1] HIGH)."
+    )
+
+    # Sanity check: running the dispatcher against the discovery dir
+    # must report zero matches for the skill (since it lives under the
+    # templates subtree which the dispatcher does not scan recursively
+    # by default).
     for agent in ("backend", "frontend"):
         payload = _run_cli(
             "--agent", agent,
@@ -491,7 +562,196 @@ def test_shipped_dead_code_skill_is_discovered_by_dispatcher() -> None:
             "--format", "json",
         )
         names = [m["name"] for m in payload["matched"]]
-        assert "dead-code-elimination" in names, (
-            f"dead-code-elimination not picked up for --agent {agent}: "
+        assert "dead-code-elimination" not in names, (
+            f"dead-code-elimination must NOT be auto-discovered for "
+            f"--agent {agent} when it lives only under templates/: "
             f"matched={names}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Finding [2] — reviewer matched_by legacy #137 token
+# ---------------------------------------------------------------------------
+
+
+def test_failure_case_reviewer_no_detection_matched_by_legacy_token(
+    tmp_path: Path,
+) -> None:
+    """Finding [2] — when `--agent reviewer` runs with NO detection
+    signals (empty task body, no changed files, no project marker),
+    `matched_by` MUST emit the documented #137 legacy token
+    `global-review-profile` — NOT the generalized
+    `global-reviewer-skill` token that broke the contract.
+
+    Setup uses a reviewer skill that has no `detection` regex so the
+    match is purely on `loaded_by: reviewer`. That is exactly the
+    no-detection path #137 documents.
+    """
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    # Reviewer skill with NO detection clause (empty string).
+    skill_path = skills_dir / "reviewer-baseline.md"
+    skill_path.write_text(
+        """---
+name: reviewer-baseline
+description: Baseline reviewer skill used to exercise the no-detection path.
+loaded_by: reviewer
+axis: review-baseline
+detection:
+---
+
+# reviewer-baseline
+
+Fixture body.
+""",
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "reviewer",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(tmp_path),
+        "--task", "",
+        "--format", "json",
+    )
+
+    assert payload["agent"] == "reviewer"
+    matched = payload["matched"]
+    assert matched, "expected the reviewer-baseline skill to match on loaded_by"
+    matched_by_values = {m.get("matched_by") for m in matched}
+    assert "global-review-profile" in matched_by_values, (
+        "Finding [2]: reviewer no-detection case MUST emit the legacy "
+        "`global-review-profile` matched_by token (per #137 contract). "
+        f"Got matched_by values: {matched_by_values}"
+    )
+    assert "global-reviewer-skill" not in matched_by_values, (
+        "Finding [2]: the generalized `global-reviewer-skill` token broke "
+        "the documented #137 contract — reviewer must keep its legacy "
+        "token."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Finding [6] — zero-match emits NORMAL, not DEGRADED
+# ---------------------------------------------------------------------------
+
+
+def test_failure_case_text_format_zero_match_emits_normal_token(
+    tmp_path: Path,
+) -> None:
+    """Finding [6] — when zero skills match, `print_text()` MUST emit
+    the canonical NORMAL token `CAPABILITY_SKILLS: none`, NOT a
+    `DEGRADED ...=none` token. Zero-match is NORMAL state per the
+    3-state dispatch model in `core/rules/agent-tool-dispatch.md`.
+    """
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    # No backend-loadable skill; deliberate zero-match condition.
+    _write_skill(
+        skills_dir / "frontend-only.md",
+        loaded_by="frontend",
+        detection="cleanup|refactor",
+    )
+
+    result = subprocess.run(
+        [
+            "python3", str(DISPATCH_SCRIPT),
+            "--agent", "backend",
+            "--skills-dir", str(skills_dir),
+            "--project-root", str(tmp_path),
+            "--task", "Add new feature.",
+            "--format", "text",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    # NORMAL token must be present.
+    assert "CAPABILITY_SKILLS: none" in result.stdout, (
+        "Finding [6]: zero-match text output MUST emit "
+        "`CAPABILITY_SKILLS: none` (NORMAL state). Got:\n"
+        f"{result.stdout}"
+    )
+    # DEGRADED ...=none token MUST be absent — zero-match is NORMAL.
+    assert "=none" not in result.stdout.replace("CAPABILITY_SKILLS: none", ""), (
+        "Finding [6]: zero-match MUST NOT emit `...=none` after stripping "
+        "the canonical NORMAL token — any residual `=none` would conflate "
+        f"zero-match with the script_failed DEGRADED state. Got:\n{result.stdout}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Finding [11] — discover_skills_for_agent calls loaded_by() once
+# ---------------------------------------------------------------------------
+
+
+def test_success_case_discover_skills_for_agent_returns_loaded_by_list(
+    tmp_path: Path,
+) -> None:
+    """Finding [11] — `discover_skills_for_agent()` must return matches
+    with the parsed `loaded_by` list populated. This test exercises the
+    function end-to-end so that the implementer's refactor (collapsing
+    the duplicate `loaded_by()` parse call) cannot regress behavior.
+
+    Uses the same detection vocabulary as the existing
+    `test_discover_skills_for_agent_backend_returns_dead_code_skill`
+    fixture (proven to exercise the detection path) but expands
+    `loaded_by` to span all three primary roles — backend, frontend,
+    AND reviewer — so the test exercises the full parsed list that
+    the [11] refactor must preserve.
+    """
+    module = _load_module(
+        DISPATCH_SCRIPT, "review_profile_dispatch_module_finding11"
+    )
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    skill = skills_dir / "shared-skill.md"
+    _write_skill(
+        skill,
+        loaded_by="backend,frontend,reviewer",
+        detection="cleanup|refactor|dead.code|unused",
+    )
+
+    matches = module.discover_skills_for_agent(
+        [skills_dir],
+        agent_name="backend",
+        project_root=tmp_path,
+        task="Refactor module to remove unused helpers.",
+        changed_files=[],
+    )
+
+    assert len(matches) == 1
+    sut = matches[0]
+    # The collapsed single-parse implementation must still surface the
+    # full loaded_by list — the refactor is BEHAVIOR-PRESERVING.
+    assert sut["name"] == "shared-skill"
+    assert sut["loaded_by"] == ["backend", "frontend", "reviewer"]
+    # And the matched_by token must use the detection form (since the
+    # task body matches the detection regex). Finding [2] specifically
+    # reserves the legacy `global-review-profile` token for the
+    # no-detection reviewer path only.
+    assert sut.get("matched_by") == "detection"
+
+
+# ---------------------------------------------------------------------------
+# Finding [13] — uniform fallback_policy_for() rule
+# ---------------------------------------------------------------------------
+
+
+def test_success_case_fallback_policy_for_reviewer_is_uniform() -> None:
+    """Finding [13] — `fallback_policy_for('reviewer')` MUST return the
+    uniform `generic-reviewer-skills` form, eliminating the previous
+    asymmetric `generic-review-skills` (singular) special case.
+    """
+    module = _load_module(
+        DISPATCH_SCRIPT, "review_profile_dispatch_module_finding13"
+    )
+    assert module.fallback_policy_for("reviewer") == "generic-reviewer-skills", (
+        "Finding [13]: reviewer must follow the uniform "
+        "`generic-<agent>-skills` rule like every other agent."
+    )
+    # Sanity: the rule is uniform across the roster.
+    for agent in ("backend", "frontend", "designer", "devops"):
+        assert (
+            module.fallback_policy_for(agent) == f"generic-{agent}-skills"
+        ), f"fallback_policy_for({agent!r}) drifted from the uniform rule"

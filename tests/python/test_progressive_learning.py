@@ -71,9 +71,12 @@ def _valid_candidate() -> dict:
         "candidate_id": "ctx-break-spacing-2026-06",
         "source": "reviewer_finding",
         "memory_layer": "project",
+        # Finding [7]: progressive-learning.md no longer cites brittle
+        # line numbers; the example fixture mirrors the rule's
+        # section-heading anchor form.
         "evidence_refs": [
-            "core/agents/backend.md:240",
-            "core/agents/frontend.md:224",
+            "core/agents/backend.md#code-style-context-breaks",
+            "core/agents/frontend.md#code-style-context-breaks",
         ],
         "promotion_reason": (
             "Context-break spacing was flagged by reviewer on two independent "
