@@ -199,17 +199,25 @@ skill dispatch"). Only the **base, language-agnostic / language-adapter**
 skills listed below need explicit declaration; capability skills flow
 through metadata dispatch and need not be enumerated here.
 
-Read the following skill files using the Read tool **only when the
-specific technique is needed** during execution — do not load all
-skills upfront:
+### Capability Dispatch (Step 0.7)
 
-- UI component decomposition and prop design: `~/.agent-crew/system/agents/skills/ui-component-design.md`
-- Error handling and typed error flows: `~/.agent-crew/system/agents/skills/error-handling.md`
-- TypeScript language best practices (Effective TypeScript): `~/.agent-crew/system/agents/skills/effective-typescript.md`
-- Swift language best practices (Effective Swift — for iOS/macOS projects): `~/.agent-crew/system/agents/skills/effective-swift.md`
-- Layered architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
-- Agile and Extreme Programming practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
-- TDD discipline: `~/.agent-crew/system/agents/skills/tdd.md`
+```bash
+# Shared capability-dispatch helper (finding [8]). The helper
+# internally invokes `review-profile-dispatch.py --agent frontend`
+# and writes the report to
+# `${TASK_DIR}/context/capability-skills-frontend.json`. It also
+# appends `{skill_path, loaded_by}` citation entries to
+# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
+# state 3, so the agent does not write that file by hand.
+CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
+[ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
+bash "${CAPABILITY_DISPATCH}" frontend
+```
+
+After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-frontend.json`:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=frontend` and continue normally (NORMAL state).
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
 ## Tech Stack (worked example: typescript-react axis)
 

@@ -42,6 +42,37 @@ Supported adapters (loaded by convention):
 To add a new adapter, create `~/.agent-crew/user/skills/issuer-{BACKEND_ADAPTER}.md`
 following the Adapter Interface Contract below. No changes to this file are needed.
 
+## Capability Dispatch (Loaded By Metadata)
+
+Before beginning work, execute the metadata-driven capability-skill dispatcher to
+discover any user-owned skills that declare `loaded_by: issuer` in their frontmatter
+(see `core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
+
+This dispatch is **cross-cutting** and runs alongside the backend-specific adapter
+dispatch (`issuer-{BACKEND_ADAPTER}`) above. The adapter axis covers vendor-specific
+tracker integrations (GitHub, Plane, GitLab); the capability axis covers
+organization-specific issue policies, plain-lead writing conventions, label
+taxonomies, and similar cross-cutting concerns that apply regardless of the
+backend tracker.
+
+```bash
+# Shared capability-dispatch helper (finding [8]). The helper
+# internally invokes `review-profile-dispatch.py --agent issuer`
+# and writes the report to
+# `${TASK_DIR}/context/capability-skills-issuer.json`. It also
+# appends `{skill_path, loaded_by}` citation entries to
+# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
+# state 3, so the agent does not write that file by hand.
+CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
+[ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
+bash "${CAPABILITY_DISPATCH}" issuer
+```
+
+After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-issuer.json`:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=issuer` and continue normally (NORMAL state).
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
+
 ## Inputs
 
 - `OPERATION_MODE` — Operation to run: `create`, `transition`, `update`, or

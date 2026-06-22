@@ -105,37 +105,60 @@ Read every matched profile skill path returned by the dispatcher and apply it
 as an additional review policy lens. The profile owns all domain-specific
 heuristics, detection wording, severity mapping, and finding-shape details.
 
-If no profile matches, emit:
+Three-state outcome:
 
-```text
-[crew] DEGRADED | review-profile=none fallback=generic-review-skills
-```
+- **Script missing or crashed (error path)** — emit one of:
 
-Then continue with the generic review skills declared above. Missing or
-non-matching review profiles must not block the reviewer.
+  ```text
+  [crew] DEGRADED | capability-dispatch=script_missing agent=reviewer
+  [crew] DEGRADED | capability-dispatch=script_failed agent=reviewer
+  [crew] DEGRADED | capability-dispatch=mv_failed agent=reviewer
+  ```
+
+  This indicates the dispatcher itself could not be run (or its report
+  could not be atomically moved into place) and is treated as a degraded
+  condition. The specific subtype (`script_missing` / `script_failed` /
+  `mv_failed`) is selected by the bash block below based on which failure
+  was observed.
+
+- **`.matched[]` is empty (normal path, no user profile installed)** — emit:
+
+  ```text
+  [crew] CAPABILITY_SKILLS: none agent=reviewer
+  ```
+
+  Then continue with the generic review skills declared above. An empty
+  match list is the normal case when no project-specific review profile is
+  installed and must not be reported as DEGRADED.
+
+- **`.matched[]` non-empty** — read each `.matched[].path` before Step 2 and
+  cite the profile path in `${TASK_DIR}/context/review.md`.
+
+Missing or non-matching review profiles must not block the reviewer.
 
 Reference invocation:
 
 ```bash
-PROFILE_REPORT="${TASK_DIR}/context/review-profiles.json"
-DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/review-profile-dispatch.py"
-[ -f "${DISPATCH}" ] || DISPATCH="${PROJECT_ROOT}/core/scripts/review-profile-dispatch.py"
-
-if [ -f "${DISPATCH}" ]; then
-  python3 "${DISPATCH}" \
-    --project-root "${PROJECT_ROOT}" \
-    --task "${TASK:-}" \
-    --format json > "${PROFILE_REPORT}"
-else
-  printf '{"agent":"reviewer","matched":[],"fallback":true,"fallback_policy":"generic-review-skills"}\n' \
-    > "${PROFILE_REPORT}"
-fi
+# Shared capability-dispatch helper (finding [8]). The helper
+# internally invokes `review-profile-dispatch.py --agent reviewer`
+# and writes the report to
+# `${TASK_DIR}/context/capability-skills-reviewer.json`. It also
+# appends `{skill_path, loaded_by}` citation entries to
+# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
+# state 3, so the agent does not write that file by hand.
+CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
+[ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
+bash "${CAPABILITY_DISPATCH}" reviewer
 ```
 
-After writing `${PROFILE_REPORT}`, read the file. If `.matched[]` is empty,
-print the degraded fallback line above and continue. If matches exist, read
-each `.matched[].path` before Step 2 and cite the profile path in
-`${TASK_DIR}/context/review.md`.
+After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-reviewer.json`:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=reviewer` and continue normally (NORMAL state).
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
+
+For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-reviewer-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none agent=reviewer` line; both refer to the same "empty match, continue with generic review skills" state.
+
+Reviewer-specific note: in addition to the shared `${TASK_DIR}/context/skill-use.json` citation that the helper writes, the reviewer also records the matched profile paths in `${TASK_DIR}/context/review.md` for the review report.
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.

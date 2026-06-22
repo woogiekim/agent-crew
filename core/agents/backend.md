@@ -201,27 +201,25 @@ dispatch"). Only the **base, language-agnostic / language-adapter**
 skills listed below need explicit declaration; capability skills flow
 through metadata dispatch and need not be enumerated here.
 
-Read the following skill files using the Read tool **only when the
-specific technique is needed** during execution — do not load all
-skills upfront:
+### Capability Dispatch (Step 0.7)
 
-- TDD cycle: `~/.agent-crew/system/agents/skills/tdd.md`
-- Object Calisthenics principles: `~/.agent-crew/system/agents/skills/oop-principles.md`
-- API design and contract definition: `~/.agent-crew/system/agents/skills/api-design.md`
-- Domain modeling and aggregate design: `~/.agent-crew/system/agents/skills/domain-modeling.md`
-- Database schema design and indexing strategies: `~/.agent-crew/system/agents/skills/database-design.md`
-- DGS GraphQL and Feign DataLoader batching: `~/.agent-crew/system/agents/skills/dgs-dataloader.md`
-- Error handling and typed error flows: `~/.agent-crew/system/agents/skills/error-handling.md`
-- Security hardening (auth, secrets, transport): `~/.agent-crew/system/agents/skills/security-hardening.md`
-- Kotlin language best practices (Effective Kotlin): `~/.agent-crew/system/agents/skills/effective-kotlin.md`
-- Java language best practices (Effective Java): `~/.agent-crew/system/agents/skills/effective-java.md`
-- Python language best practices (Effective Python): `~/.agent-crew/system/agents/skills/effective-python.md`
-- Go language best practices (Effective Go): `~/.agent-crew/system/agents/skills/effective-go.md`
-- Rust language best practices (Effective Rust): `~/.agent-crew/system/agents/skills/effective-rust.md`
-- Scala language best practices (Effective Scala): `~/.agent-crew/system/agents/skills/effective-scala.md`
-- Layered architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
-- Agile and Extreme Programming practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
-- Domain-Driven Design patterns: `~/.agent-crew/system/agents/skills/domain-driven-design.md`
+```bash
+# Shared capability-dispatch helper (finding [8]). The helper
+# internally invokes `review-profile-dispatch.py --agent backend`
+# and writes the report to
+# `${TASK_DIR}/context/capability-skills-backend.json`. It also
+# appends `{skill_path, loaded_by}` citation entries to
+# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
+# state 3, so the agent does not write that file by hand.
+CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
+[ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
+bash "${CAPABILITY_DISPATCH}" backend
+```
+
+After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-backend.json`:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=backend` and continue normally (NORMAL state).
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
 ## Tech Stack (worked example: kotlin-spring axis)
 

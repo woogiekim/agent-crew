@@ -83,7 +83,7 @@ fallback policy:
 |---|---|---|
 | `BLOCKED` | Emit `STATUS: BLOCKED` with `BLOCKER: missing_adapter=<tool>` and stop. Do not call any external API as a workaround. | `issuer` (today) |
 | `degraded-fallback` | Continue using only language-level / framework-agnostic skills (e.g., `tdd.md`, `effective-kotlin.md`). Emit a `[crew] DEGRADED | adapter=<tool>` warning before continuing. | `backend` (proposed Wave B) |
-| `prompt-user` | Present a structured user-choice (`core/rules/capabilities/interactive-question.md`) offering "run in safe-mode / dry-plan-only" vs. "cancel". | `devops` (proposed Wave C) |
+| `prompt-user` | Present a structured user-choice (`core/rules/capabilities/interactive-question.md`) offering "run in safe-mode / dry-plan-only" vs. "cancel". | (no current adopter — reserved for future agents whose missing adapter has a meaningful dry-plan fallback) |
 
 Each agent file MUST declare its policy explicitly. If no policy is
 declared, the default is `BLOCKED` (most restrictive — safest for
@@ -180,15 +180,21 @@ The dispatcher returns a JSON payload:
     }
   ],
   "fallback": false,
-  "fallback_policy": "generic-review-skills"
+  "fallback_policy": "generic-reviewer-skills"
 }
 ```
 
-If no profile applies, reviewer follows the `degraded-fallback` policy:
-emit `[crew] DEGRADED | review-profile=none fallback=generic-review-skills`
-and continue with its generic review skills (`code-review.md`,
-`clean-architecture.md`, language-specific effective-* guidance, and
-`code-quality.md`). Missing review profiles never produce `STATUS: BLOCKED`.
+**Three-state dispatch result:**
+
+1. **Script missing, crashed, or report-move failed** → emit one of three documented DEGRADED tokens:
+   - `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` (the dispatcher script itself is absent).
+   - `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` (the dispatcher ran but exited non-zero).
+   - `[crew] DEGRADED | capability-dispatch=mv_failed agent=<name>` (the dispatcher succeeded but the atomic `mv` of the JSON report into the canonical path failed, e.g. due to a read-only TASK_DIR or a cross-device move).
+   In every case, write a fallback JSON report with `"fallback": true`; continue with the agent's declared base skills only.
+2. **Script succeeded, no matches** (`.matched[] == []`) → emit `[crew] CAPABILITY_SKILLS: none agent=<name>` and continue normally. This is the **expected** state when no user-owned capability skills are installed for this agent — it is NOT a degraded condition.
+3. **Script succeeded, matches found** → read each `.matched[].path`; load the matched skills before the first execution step; cite loaded skill paths in `${TASK_DIR}/context/skill-use.json` (append a `{skill_path: ..., loaded_by: ...}` entry per matched skill, creating the file if absent). Agents that already write a more specific skill-use artifact (e.g. `context/review.md` for reviewer) record paths there instead.
+
+For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-reviewer-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none` line; both refer to the same "empty match, continue with generic review skills" state. (Finding [13]: the fallback policy literal is now the uniform `generic-reviewer-skills` form; the legacy `generic-review-skills` singular was retired.) New agents SHOULD emit only the canonical `CAPABILITY_SKILLS: none agent=<name>` token. Missing profiles never produce `STATUS: BLOCKED` regardless of agent.
 
 This is a DIP boundary:
 
@@ -332,13 +338,19 @@ whether it has opted in.
 
 | Agent | Status | Axis |
 |---|---|---|
-| `issuer` | Opted in (reference implementation, commit `1f89c02`) | tracker (git remote) |
+| `issuer` | Opted in (reference implementation, commit `1f89c02`; also metadata-driven skill dispatch) | tracker (git remote) **and** cross-cutting issue/policy metadata |
 | `backend` | Opted in (metadata-driven skill dispatch, #186) | language / framework manifest **and** capability-skill metadata |
 | `frontend` | Opted in (metadata-driven skill dispatch, #186) | framework (`package.json`) **and** capability-skill metadata |
-| `devops` | Wave-C candidate | cloud / CI (manifest files) |
-| `designer` | Wave-C candidate | design tool |
-| `documenter` | Wave-C candidate | wiki / docs tool |
+| `devops` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | cloud / CI (manifest files) **and** capability-skill metadata |
+| `designer` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | design tool **and** capability-skill metadata |
+| `documenter` | Opted in (metadata-driven skill dispatch) — formerly Wave-C candidate | wiki / docs tool **and** capability-skill metadata |
 | `reviewer` | Opted in (review-profile dispatch) | review-policy metadata |
+| `test-writer` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `qa-owner` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `planner` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `analyst` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `requirements` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
+| `resolver` | Opted in (metadata-driven skill dispatch) | capability-skill metadata |
 
 ### Capability/domain skill flow for `backend` / `frontend`
 
@@ -363,30 +375,47 @@ continues to list **base** language-agnostic skills explicitly (TDD,
 `oop-principles`, etc.); cross-cutting capability skills are picked up
 through metadata dispatch only.
 
-The dispatcher fallback policy for capability skills is the same
-`degraded-fallback` rule reviewer uses: when no capability skill
-matches, the dispatcher emits
-`[crew] DEGRADED | backend-skill=none fallback=generic-backend-skills`
-(or `frontend-skill=none …`) and continues with its declared base
-skills. Missing capability skills never produce `STATUS: BLOCKED`.
+The dispatcher fallback policy for capability skills follows the same
+three-state semantics described in § "Metadata-driven skill dispatch":
+
+| State | Token emitted | Continue? |
+|---|---|---|
+| Script missing | `[crew] DEGRADED | capability-dispatch=script_missing agent=<name>` | Yes — declared base skills only |
+| Script crashed | `[crew] DEGRADED | capability-dispatch=script_failed agent=<name>` | Yes — declared base skills only |
+| Report move failed | `[crew] DEGRADED | capability-dispatch=mv_failed agent=<name>` | Yes — declared base skills only |
+| No matches (expected) | `[crew] CAPABILITY_SKILLS: none agent=<name>` | Yes — normal flow |
+| Matches found | (none — read `.matched[].path` and load) | Yes — normal flow with loaded skills |
+
+For backend / frontend specifically, `<name>` is `backend` or `frontend`.
+The canonical token is emitted by the dispatch block in each agent's
+`.md` file (see `core/agents/backend.md` § "Capability Dispatch" and
+`core/agents/frontend.md` § "Capability Dispatch"). Missing capability
+skills never produce `STATUS: BLOCKED`.
 
 ## Agents not subject to dispatch
 
-The following agents are **explicitly excluded** from the dispatch
-pattern. They are weak-fit because they either have no external vendor
+> Scope: this section excludes the listed agents from the **vendor-adapter**
+> 5-step dispatch pattern (Channel B / `<agent>-<tool>.md` flat-name lookup)
+> only. Some agents listed here participate in the **metadata-driven
+> capability-skill dispatch** path (see the catalog table above) even though
+> they have no vendor adapter; the inline notes record that overlap.
+
+The following agents are **explicitly excluded** from the vendor-adapter
+dispatch pattern. They are weak-fit because they either have no external vendor
 axis, or their vendor axis is already factored out elsewhere
 (host-capability flags, git itself). Documenting the exclusion prevents
-future drift in the form of "should we add dispatch to X?" discussions.
+future drift in the form of "should we add a vendor adapter to X?" discussions.
 
-| Agent | Reason |
+| Agent | Reason (vendor-adapter exclusion only) |
 |---|---|
 | `historian` | Internal git + state lookups only. No external vendor axis. |
-| `resolver` | Pure git operation. `git` is the only "tool". |
-| `requirements` | Interactive structured choice. Host-capability axis already covered by `core/rules/capabilities/interactive-question.md`. |
+| `resolver` | Pure git operation. `git` is the only "tool". (Capability-skill dispatch: opted in — see catalog above.) |
+| `requirements` | Interactive structured choice. Host-capability axis already covered by `core/rules/capabilities/interactive-question.md`. (Capability-skill dispatch: opted in.) |
 | `supervisor` (+ `supervisor-bootstrap`, `supervisor-stages`, `supervisor-retry`) | Internal orchestration. The host-capability axis is its vendor axis and is already factored out via `capabilities.json`. |
 | `input-normalizer`, `korean-normalizer` | Pure-text utilities. No tool axis. |
-| `analyst`, `planner`, `mentor`, `learning-mentor` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). |
-| `test-writer` | Test framework variation is already covered by language skills (`tdd.md`, `effective-*.md`). Skill split would over-engineer. |
+| `analyst`, `planner` | Moderate-fit candidates for vendor adapters; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). (Capability-skill dispatch: opted in.) |
+| `mentor`, `learning-mentor` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears. |
+| `test-writer` | Test framework variation is already covered by language skills (`tdd.md`, `effective-*.md`). Vendor-adapter split would over-engineer. (Capability-skill dispatch: opted in.) |
 
 ---
 

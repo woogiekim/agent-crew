@@ -306,6 +306,30 @@ dispatcher-boundary leak.
 
 ---
 
+## Capability Dispatch (Loaded By Metadata)
+
+Before beginning work, execute the metadata-driven capability-skill dispatcher to
+discover any user-owned skills that declare `loaded_by: devops` in their frontmatter
+(see `core/rules/agent-tool-dispatch.md` § "Metadata-driven skill dispatch").
+
+```bash
+# Shared capability-dispatch helper (finding [8]). The helper
+# internally invokes `review-profile-dispatch.py --agent devops`
+# and writes the report to
+# `${TASK_DIR}/context/capability-skills-devops.json`. It also
+# appends `{skill_path, loaded_by}` citation entries to
+# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
+# state 3, so the agent does not write that file by hand.
+CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
+[ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
+bash "${CAPABILITY_DISPATCH}" devops
+```
+
+After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-devops.json`:
+- `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=devops` and continue normally (NORMAL state).
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
+
 ## Step 1: Plan Summary — Write PLAN Block and Wait for Approval
 
 > **MANDATORY: Before composing the PLAN block, read `~/.agent-crew/system/agents/skills/deployment-ops.md`.**

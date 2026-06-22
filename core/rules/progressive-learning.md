@@ -99,8 +99,8 @@ Each candidate is materialized as a JSON record conforming to
   "source": "reviewer_finding",
   "memory_layer": "project",
   "evidence_refs": [
-    "core/agents/backend.md:240",
-    "core/agents/frontend.md:224"
+    "core/agents/backend.md#code-style-context-breaks",
+    "core/agents/frontend.md#code-style-context-breaks"
   ],
   "promotion_reason": "Context-break spacing was flagged by reviewer on two independent runs and the diff was approved both times after the fix.",
   "trust_boundary": "advisory_until_rule_promotion"
@@ -162,9 +162,13 @@ verification gate was relaxed on the strength of a recalled memory.
 
 ## Guardrails
 
-These guardrails are normative. They are duplicated here (and machine-checked
-by `tests/python/test_progressive_learning.py`) so that the loop cannot
-silently widen its trust scope as agents evolve.
+These guardrails are normative. The guardrail **prose** is presence-checked
+by `tests/python/test_progressive_learning.py` — the tests assert that the
+sentences below remain in this rule file, so they cannot silently disappear
+from the documented contract. Full behavioral enforcement (e.g. asserting
+that a recalled candidate did not in fact relax a TDD gate in an agent run)
+is a follow-up; today it is the reviewer stage's responsibility, not the
+test suite's.
 
 1. **Memory is not ground truth.** A recalled candidate is operational input,
    never a substitute for the current task's evidence (PRD, requirements, the
@@ -201,11 +205,13 @@ silently widen its trust scope as agents evolve.
 Context-break spacing — the convention that an agent inserts a blank line at
 implementation context boundaries (setup, validation, transformation, side
 effects, rendering, error handling, reporting) — is currently documented in
-three places:
+three places. Citations use stable section-heading anchors instead of
+line numbers because the underlying agent prompts churn frequently
+(line numbers drift on every refactor; section headings are stable):
 
-- `core/agents/backend.md:240`
-- `core/agents/frontend.md:224`
-- `core/agents/devops.md:147`
+- `core/agents/backend.md` § "Code Style Context Breaks"
+- `core/agents/frontend.md` § "Code Style Context Breaks"
+- `core/agents/devops.md` § "Code Style Context Breaks"
 
 This is exactly the shape of a candidate that has already been **promoted out
 of memory and into a managed rule**: it lives in the agent prompts (high trust)
@@ -214,8 +220,9 @@ how a candidate could *reach* that promoted state:
 
 1. **work + review.** A reviewer run flags missing spacing between a service
    call and its error-handling block. The reviewer's finding cites
-   `core/agents/backend.md:240`. The candidate is recorded at the `session`
-   layer with `evidence_refs: ["core/agents/backend.md:240"]`.
+   `core/agents/backend.md` § "Code Style Context Breaks". The candidate is
+   recorded at the `session` layer with
+   `evidence_refs: ["core/agents/backend.md#code-style-context-breaks"]`.
 2. **capture.** Phase 3 close-out runs, observes a reviewer loop-back, and
    captures an AAR memo at the `project` layer because the run was
    `meaningful` (Guardrail-1 in memory-governance.md). The memo's
