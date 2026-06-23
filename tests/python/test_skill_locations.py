@@ -1,16 +1,19 @@
 """Regression coverage for capability-skill on-disk layout.
 
 These tests lock in the structural invariants documented in PRD
-acceptance criteria for finding [1] (dead-code-elimination skill
-location) and finding [8] (shared `capability-dispatch.sh` helper):
+acceptance criteria for the dead-code-elimination system-skill
+reversal of finding [1] and finding [8] (shared
+`capability-dispatch.sh` helper):
 
-* `core/agents/skills/dead-code-elimination.md` MUST NOT exist at the
-  top of the discovery dir. It auto-loads on every backend/frontend
-  refactor task when present there, which is the HIGH-severity bug
-  finding [1] addresses.
-* `core/agents/skills/templates/dead-code-elimination.md` MUST exist
-  as the copy-if-absent seed (per the PRD's "Contract: dead-code-
-  elimination not auto-loaded" section).
+* `core/agents/skills/dead-code-elimination.md` MUST exist at the top
+  of the discovery dir. It is the single explicit exception to the
+  user-opt-in-only capability-skill rule: a low-risk pre-deletion
+  safety checklist that the framework ships as a system-wide default
+  and the dispatcher auto-matches for backend/frontend on
+  refactor/cleanup tasks via its `loaded_by` / `detection` frontmatter.
+* `core/agents/skills/templates/dead-code-elimination.md` MUST NOT
+  exist — the `git mv` reversal removes the seed copy in favor of the
+  framework-default discovery-path location.
 * `core/scripts/capability-dispatch.sh` MUST exist, MUST be
   executable, and each of the 13 dispatch-enabled agent `.md` files
   MUST invoke it (per the PRD's "Contract: shared script" section,
@@ -53,29 +56,43 @@ DISPATCH_ENABLED_AGENTS = (
 
 
 # ---------------------------------------------------------------------------
-# Finding [1] — dead-code-elimination must live under templates/
+# dead-code-elimination ships as a framework-default system skill
+#
+# Deliberate reversal of finding [1]: the skill lives at the top of the
+# discovery dir so the dispatcher auto-matches it for backend/frontend
+# on refactor/cleanup tasks. The PRD documents this as the single
+# explicit exception to the user-opt-in-only capability-skill rule.
 # ---------------------------------------------------------------------------
 
 
-def test_failure_case_dead_code_skill_not_in_discovery_dir() -> None:
-    """failure-case: dead-code-elimination MUST NOT live at the top of
+def test_success_case_dead_code_skill_is_framework_default_system_skill() -> None:
+    """success-case: dead-code-elimination MUST live at the top of
     `core/agents/skills/` — that path is `crew:update`'s discovery dir
-    and would auto-load the skill on every backend/frontend refactor
-    task (finding [1] HIGH).
+    and the dispatcher auto-matches the skill from its frontmatter for
+    every backend/frontend refactor/cleanup task. This is the single
+    explicit exception to the user-opt-in-only capability-skill rule
+    (see the "Exception" subsection in
+    `core/rules/agent-tool-dispatch.md`).
     """
-    assert not DEAD_CODE_DISCOVERY_PATH.exists(), (
-        f"{DEAD_CODE_DISCOVERY_PATH} must NOT exist — it would auto-load "
-        "framework-wide. The skill lives under templates/ as a "
-        "copy-if-absent seed (finding [1])."
+    assert DEAD_CODE_DISCOVERY_PATH.is_file(), (
+        f"{DEAD_CODE_DISCOVERY_PATH} must exist at the top of the "
+        "discovery dir — dead-code-elimination ships system-wide as a "
+        "framework default so the dispatcher auto-matches it for "
+        "backend/frontend on refactor/cleanup tasks."
     )
 
 
-def test_success_case_dead_code_skill_lives_under_templates() -> None:
-    """success-case: the templates copy of dead-code-elimination must
-    exist so adopters can opt in via crew:update's seed flow."""
-    assert DEAD_CODE_TEMPLATE_PATH.is_file(), (
-        f"{DEAD_CODE_TEMPLATE_PATH} must exist as the copy-if-absent "
-        "seed for the dead-code-elimination capability skill (finding [1])."
+def test_failure_case_dead_code_skill_no_longer_seeded_under_templates() -> None:
+    """failure-case: the templates/ seed copy of dead-code-elimination
+    MUST NOT exist. The `git mv` reversal moves the file out of
+    templates/ and into the discovery dir; leaving a stale copy under
+    templates/ would create a duplicate-source surface that drifts from
+    the framework-default file.
+    """
+    assert not DEAD_CODE_TEMPLATE_PATH.exists(), (
+        f"{DEAD_CODE_TEMPLATE_PATH} must NOT exist — the skill now ships "
+        "as a framework default at the discovery-dir location; the "
+        "templates/ seed copy was removed by the `git mv` reversal."
     )
 
 

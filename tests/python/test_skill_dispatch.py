@@ -25,11 +25,14 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DISPATCH_SCRIPT = REPO_ROOT / "core" / "scripts" / "review-profile-dispatch.py"
-# Finding [1]: the dead-code-elimination capability skill ships as a
-# copy-if-absent SEED under `core/agents/skills/templates/` to prevent
-# framework-wide auto-loading. The top-of-discovery-dir location is
-# explicitly guarded against in test_skill_locations.py.
-DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "templates" / "dead-code-elimination.md"
+# Reversal of finding [1]: the dead-code-elimination capability skill
+# ships system-wide as a framework default at the top of the discovery
+# dir `core/agents/skills/`. The dispatcher auto-matches it for
+# backend/frontend on refactor/cleanup tasks via its `loaded_by` /
+# `detection` frontmatter. The discovery-dir location is explicitly
+# asserted (and the templates/ seed copy is explicitly absent) in
+# test_skill_locations.py.
+DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "dead-code-elimination.md"
 SKILL_TEMPLATE = REPO_ROOT / "core" / "agents" / "skills" / "SKILL-TEMPLATE.md"
 DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
 
@@ -525,34 +528,41 @@ def test_cli_text_format_for_backend(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_shipped_dead_code_skill_lives_under_templates_not_discovery_dir() -> None:
-    """Finding [1] — the dead-code-elimination capability skill MUST NOT
-    ship at the top of `core/agents/skills/` (the dispatcher discovery
-    dir). Auto-loading framework-wide on every backend/frontend refactor
-    task was the original HIGH-severity finding.
+def test_success_case_shipped_dead_code_skill_is_framework_default_system_skill() -> None:
+    """success-case: dead-code-elimination ships system-wide as a
+    framework default at the top of `core/agents/skills/` (the
+    dispatcher discovery dir). This is the deliberate reversal of
+    finding [1]: the framework auto-matches the skill for
+    backend/frontend on refactor/cleanup tasks via its `loaded_by` /
+    `detection` frontmatter, with no user-opt-in step.
 
-    Post-fix contract: the skill lives as a copy-if-absent SEED under
-    `core/agents/skills/templates/dead-code-elimination.md`, and the
-    dispatcher pointed at the discovery dir MUST NOT match it.
+    Contract:
+      * discovery-dir copy exists; templates/ seed copy does NOT;
+      * running the live dispatcher CLI against the repo's discovery
+        dir with a cleanup-keyword task body MUST report
+        `dead-code-elimination` matched for BOTH `--agent backend` AND
+        `--agent frontend`.
     """
     skills_dir = REPO_ROOT / "core" / "agents" / "skills"
     templates_path = skills_dir / "templates" / "dead-code-elimination.md"
     discovery_path = skills_dir / "dead-code-elimination.md"
 
-    # Seed exists under templates/ — opt-in flow.
-    assert templates_path.is_file(), (
-        f"dead-code-elimination must ship as a seed under {templates_path}"
+    # Framework-default copy exists at the discovery-dir location.
+    assert discovery_path.is_file(), (
+        f"dead-code-elimination must ship as a framework default at "
+        f"{discovery_path} (reversal of finding [1])."
     )
-    # Discovery dir does not auto-load it.
-    assert not discovery_path.exists(), (
-        f"dead-code-elimination must NOT exist at {discovery_path} — that "
-        "would auto-load framework-wide (finding [1] HIGH)."
+    # Templates/ seed copy is removed by the `git mv` reversal.
+    assert not templates_path.exists(), (
+        f"dead-code-elimination must NOT exist at {templates_path} — the "
+        "`git mv` reversal moved the file into the discovery dir; "
+        "leaving a stale templates/ copy would create a duplicate-source "
+        "surface."
     )
 
-    # Sanity check: running the dispatcher against the discovery dir
-    # must report zero matches for the skill (since it lives under the
-    # templates subtree which the dispatcher does not scan recursively
-    # by default).
+    # End-to-end: running the dispatcher against the repo's actual
+    # discovery dir with a cleanup-keyword task body MUST report the
+    # skill matched for both backend and frontend.
     for agent in ("backend", "frontend"):
         payload = _run_cli(
             "--agent", agent,
@@ -562,10 +572,10 @@ def test_shipped_dead_code_skill_lives_under_templates_not_discovery_dir() -> No
             "--format", "json",
         )
         names = [m["name"] for m in payload["matched"]]
-        assert "dead-code-elimination" not in names, (
-            f"dead-code-elimination must NOT be auto-discovered for "
-            f"--agent {agent} when it lives only under templates/: "
-            f"matched={names}"
+        assert "dead-code-elimination" in names, (
+            f"dead-code-elimination MUST be auto-discovered for "
+            f"--agent {agent} from the discovery-dir location "
+            f"(framework default): matched={names}"
         )
 
 
