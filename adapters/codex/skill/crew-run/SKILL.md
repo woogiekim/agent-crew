@@ -15,9 +15,10 @@ crew:run
 
 1. Load `~/.agent-crew/commands/run.md`.
 2. Treat any user text after `$crew-run` as the task description.
-3. Preserve any explicitly invoked or domain-specific Codex skill context as
-   task input for requirements collection, supervisor handoffs, and generated
-   prompts.
+3. Preserve explicitly invoked Codex skill context as task input for
+   requirements collection, supervisor handoffs, and generated prompts.
+   Do not auto-load non-agent-crew or third-party Codex/plugin skills from
+   trigger-description matches during agent-crew execution.
 4. Follow the command definition exactly, including mandatory requirements collection.
 5. Delegate execution to supervisor as defined by the command.
 
@@ -37,13 +38,22 @@ manual execution. Include `selected_agent`, `selection_reason`, and
 specialist exists, state why and proceed through the regular supervisor/planner
 path rather than inventing an ad hoc shortcut.
 
-Load the applicable skill files before acting and record the exact loaded skill
-path(s) in `{TASK_DIR}/context/skill-load.md` or
-`{TASK_DIR}/context/skill-load.json`. Every selected skill name must have
-matching load evidence (`selected_skill: frontend-typescript-react` requires
-`frontend-typescript-react.md`, `selected_skill: tdd` requires `tdd.md`).
+Load only applicable agent-crew skills before acting and record the exact loaded
+skill path(s) in `{TASK_DIR}/context/skill-load.md` or
+`{TASK_DIR}/context/skill-load.json`. Agent-crew skills are the framework
+system/user skills under `~/.agent-crew/system/skills/`,
+`~/.agent-crew/user/skills/`, `~/.agent-crew/skills/`,
+`~/.agent-crew/system/agents/skills/`, or the Codex agent-crew mirrors under
+`~/.codex/skills/agent-crew/` and `~/.codex/agent-crew/skills/`. Every selected
+skill name must have matching load evidence (`selected_skill:
+frontend-typescript-react` requires `frontend-typescript-react.md`,
+`selected_skill: tdd` requires `tdd.md`). Do not load unrelated Codex/plugin
+skills, including plugin cache skills, by description match. If a
+non-agent-crew skill is genuinely needed, ask for explicit user approval first
+and record it in `{TASK_DIR}/context/external-skill-approval.md` or `.json`.
 Repairing a mutating current-session fallback as completed may reject the
-handoff when skill-load evidence is missing.
+handoff when skill-load evidence is missing or when an external skill lacks
+approval.
 
 Record how every loaded non-TDD skill was applied in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each

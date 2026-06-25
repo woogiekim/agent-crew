@@ -1,6 +1,6 @@
 ---
 name: agent-crew
-description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked or domain-specific Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
+description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
 ---
 
 # Agent Crew Command Bootstrap
@@ -31,11 +31,13 @@ Gradle, run npm, run CI, lint, test, or perform a host-default validation pass.
 
 ## Natural-Language Routing
 
-If the user explicitly invoked another Codex skill, or the request clearly
-matches a domain-specific Codex skill, let that skill load first. Preserve the
-skill name and any context it establishes when routing into `crew-run` or
-`crew-agent`; this context must remain visible to requirements collection,
-supervisor handoffs, and generated prompts.
+If the user explicitly invoked another Codex skill, preserve the skill name and
+any context it establishes when routing into `crew-run` or `crew-agent`; this
+context must remain visible to requirements collection, supervisor handoffs,
+and generated prompts. Do not auto-load a non-agent-crew or third-party
+Codex/plugin skill merely because its description appears to match the request.
+When an agent-crew run would benefit from such a skill, ask for explicit user
+approval first and record the approval in the task context.
 
 When the user asks Codex to build, implement, create, add, update, fix, remove,
 move, change, migrate, refactor, replace, extend, integrate, test, deploy,
@@ -163,9 +165,9 @@ crew:run "{original request}"
 Then execute the full `crew:run` workflow from `~/.agent-crew/commands/run.md`.
 Preserve the original user wording as the task input, subject to the command
 definition's required normalization and requirements-collection steps. If a
-Codex skill was explicitly invoked or domain-selected before routing, preserve
-that skill context as task metadata and include it in requirements and handoff
-inputs.
+Codex skill was explicitly invoked before routing, preserve that skill context
+as task metadata and include it in requirements and handoff inputs. Do not treat
+domain-selected third-party/plugin skills as implicitly approved.
 
 For a natural-language read-only question, explanation, diagnostic, status, or
 history request, load the `crew-agent` skill wrapper and behave as if the user

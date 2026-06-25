@@ -347,10 +347,10 @@ def emit_question_route(target_agent: str, route_reason: str):
         f"TARGET_AGENT: {target_agent}\n"
         f"FIRST_ACTION_ONLY:\n"
         f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
-        f"In Codex: let any explicitly invoked or domain-specific Codex skill load first, "
-        f"then Invoke Skill(\"crew-agent\"). Preserve that skill context as "
-        f"direct-agent input and execute the workflow intent; preserve any loaded "
-        f"Codex skill context.\n\n"
+        f"In Codex: let explicitly invoked Codex skill context pass through, "
+        f"then Invoke Skill(\"crew-agent\"). Do not auto-load non-agent-crew "
+        f"or third-party Codex/plugin skills by description match; preserve only "
+        f"explicitly invoked Codex skill context.\n\n"
         f"INLINE_ANSWER: FORBIDDEN\n"
         f"NO_PRELUDE: do not explain, summarize, inspect files, run Bash, or answer before crew-agent starts.\n"
         f"COMPLIANCE: route-directive-guard checks Agent responses for this lock."
@@ -379,11 +379,11 @@ ROUTE_LOCK: crew-run
 FIRST_ACTION_ONLY:
 {action_line}
 
-In Codex: let any explicitly invoked or domain-specific Codex skill load first,
-then load Skill("crew-run"), preserve explicit/domain-specific
-skill context in requirements collection, then execute the workflow intent.
-Preserve that skill context in requirements collection, supervisor handoffs,
-and generated prompts.
+In Codex: let explicitly invoked Codex skill context pass through, then load
+Skill("crew-run"), preserve explicit skill context in requirements collection,
+then execute the workflow intent. Do not auto-load non-agent-crew or third-party
+Codex/plugin skills by description match. Preserve explicitly invoked skill
+context in requirements collection, supervisor handoffs, and generated prompts.
 
 INLINE_IMPLEMENTATION_OR_ANSWER: FORBIDDEN
 NO_PRELUDE: do not explain, diagnose, inspect files, run Bash, ask questions,
@@ -392,7 +392,7 @@ COMPLIANCE: route-directive-guard checks Agent responses for this lock.
 
 CODEX SKILL WORKFLOW:
 1. Invoke Skill("crew-run") — loads the full crew:run wrapper and command spec.
-2. Pass the original request plus any explicit/domain-specific Codex skill context
+2. Pass the original request plus any explicitly invoked Codex skill context
    into the workflow so Step 5 requirements and supervisor prompts retain it.
 
 Enter the crew-run workflow now."""

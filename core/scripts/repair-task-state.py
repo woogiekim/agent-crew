@@ -933,6 +933,86 @@ def extract_loaded_skill_paths_from_json(value: object) -> list[str]:
     return paths
 
 
+def expanded_skill_path(value: str) -> str:
+    return str(Path(value.strip().strip("`")).expanduser())
+
+
+def is_agent_crew_owned_skill_path(value: str) -> bool:
+    expanded = expanded_skill_path(value)
+    normalized = expanded.replace("\\", "/")
+    return (
+        "/.agent-crew/system/skills/" in normalized
+        or "/.agent-crew/user/skills/" in normalized
+        or "/.agent-crew/skills/" in normalized
+        or "/.agent-crew/system/agents/skills/" in normalized
+        or "/.agent-crew/agents/skills/" in normalized
+        or "/core/agents/skills/" in normalized
+        or normalized.startswith("core/agents/skills/")
+        or normalized.startswith("core/rules/")
+        or "/.codex/skills/agent-crew/" in normalized
+        or "/.codex/skills/crew-" in normalized
+        or "/.codex/agent-crew/skills/" in normalized
+        or "/adapters/codex/skill/crew-" in normalized
+        or "/adapters/codex/skill/agent-crew/" in normalized
+    )
+
+
+def external_skill_approval_text(task_dir: Path) -> str:
+    texts: list[str] = []
+    for path in (
+        task_dir / "context" / "external-skill-approval.md",
+        task_dir / "context" / "external-skill-approval.json",
+    ):
+        if path.is_file():
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(texts)
+
+
+def approved_external_skill_paths(task_dir: Path) -> set[str]:
+    text = external_skill_approval_text(task_dir)
+    if not text:
+        return set()
+
+    approved: set[str] = set()
+    for path in extract_loaded_skill_paths(text):
+        approved.add(expanded_skill_path(path))
+    for match in re.finditer(r"(?:~|/|\.\.?/|[A-Za-z0-9_.-]+/)[^\s`,'\")]+\.md", text):
+        approved.add(expanded_skill_path(match.group(0).strip()))
+    try:
+        payload = json.loads(text)
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        for key in ("approved_skills", "approved_skill_paths", "skills"):
+            for path in extract_loaded_skill_paths_from_json(payload.get(key)):
+                approved.add(expanded_skill_path(path))
+    return approved
+
+
+def external_skill_load_status(task_dir: Path, loaded_skill_paths: list[str]) -> dict:
+    external = sorted({
+        path for path in loaded_skill_paths
+        if path and not is_agent_crew_owned_skill_path(path)
+    })
+    approved = approved_external_skill_paths(task_dir)
+    unapproved = [
+        path for path in external
+        if expanded_skill_path(path) not in approved
+    ]
+    return {
+        "external_skill_paths": external,
+        "unapproved_external_skill_paths": sorted(unapproved),
+        "approval_paths": [
+            evidence_name(task_dir, path)
+            for path in (
+                task_dir / "context" / "external-skill-approval.md",
+                task_dir / "context" / "external-skill-approval.json",
+            )
+            if path.is_file()
+        ],
+    }
+
+
 def required_skill_names(task_dir: Path, register: dict, specialist_paths: list[str]) -> list[str]:
     snippets = [str(register.get("task") or "")]
     selected_skill_names: list[str] = []
@@ -989,15 +1069,23 @@ def skill_load_status(
             missing_required_skills.append(skill)
         elif skill != "tdd.md" and skill not in loaded_skill_names:
             missing_required_skills.append(skill)
+    external_status = external_skill_load_status(task_dir, loaded_skill_paths)
 
     return {
         "required": True,
-        "passed": bool(matched_paths) and not missing_required_skills,
+        "passed": (
+            bool(matched_paths)
+            and not missing_required_skills
+            and not external_status["unapproved_external_skill_paths"]
+        ),
         "matched_paths": sorted(set(matched_paths)),
         "loaded_skill_paths": sorted(set(loaded_skill_paths)),
         "loaded_skill_names": sorted(loaded_skill_names),
         "required_skills": required_skills,
         "missing_required_skills": sorted(set(missing_required_skills)),
+        "external_skill_paths": external_status["external_skill_paths"],
+        "unapproved_external_skill_paths": external_status["unapproved_external_skill_paths"],
+        "external_skill_approval_paths": external_status["approval_paths"],
         "inspected_paths": sorted(set(inspected_paths)),
         "bypassed": False,
         "bypass_reason": "",
@@ -1387,6 +1475,19 @@ def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: 
         status["bypassed"] = True
         status["bypass_reason"] = args.skill_load_bypass_reason
         return status
+
+    if status["matched_paths"] and status.get("unapproved_external_skill_paths"):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: unapproved_external_skill_load\n"
+            "DETAIL: current-session fallback may not auto-load non-agent-crew "
+            "Codex/plugin skills without explicit user approval. "
+            "UNAPPROVED: "
+            + ", ".join(status["unapproved_external_skill_paths"])
+            + ".\n"
+            "NEXT: use only agent-crew system/user skills, or record explicit approval "
+            "in context/external-skill-approval.md or context/external-skill-approval.json."
+        )
 
     if status["matched_paths"] and status["missing_required_skills"]:
         raise SystemExit(

@@ -1399,11 +1399,12 @@ printf '%s | ORCHESTRATOR_HANDOFF | task context prepared; requirements pending\
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${TASK_DIR}/progress.log"
 ```
 
-When Codex routed the request through a skill wrapper after another explicit or
-domain-specific Codex skill loaded, preserve that context as task metadata. Do
-not strip `$skill` mentions or app-provided context from `TASK`; additionally,
+When Codex routed the request through a skill wrapper after another explicitly
+invoked Codex skill loaded, preserve that context as task metadata. Do not strip
+explicit `$skill` mentions or app-provided context from `TASK`; additionally,
 when the wrapper provides a `CODEX_SKILL_CONTEXT` string, write it before
-requirements collection:
+requirements collection. Domain-match alone is not approval to auto-load a
+non-agent-crew or third-party Codex/plugin skill:
 
 ```bash
 if [ -n "${CODEX_SKILL_CONTEXT:-}" ]; then
@@ -2605,11 +2606,20 @@ use this sequence:
      every selected axis.
    - Load the applicable skill files before acting and record the exact loaded
      skill path(s) in `context/skill-load.md` or `context/skill-load.json`.
+     Automatically loaded skills must come from agent-crew system/user skill
+     locations (`~/.agent-crew/system/skills/`, `~/.agent-crew/user/skills/`,
+     `~/.agent-crew/skills/`, `~/.agent-crew/system/agents/skills/`) or from the
+     Codex agent-crew mirrors (`~/.codex/skills/agent-crew/`,
+     `~/.codex/agent-crew/skills/`). Do not auto-load unrelated Codex/plugin
+     skills such as plugin cache skills from trigger-description matches. If a
+     non-agent-crew skill is needed, ask the user first and record the explicit
+     approval in `context/external-skill-approval.md` or `.json`.
      Every selected skill name must have matching load evidence
      (`selected_skill: frontend-typescript-react` requires
      `frontend-typescript-react.md`, `selected_skill: tdd` requires `tdd.md`).
      `crew repair --status completed` for a mutating current-session fallback
-     may reject completion when this skill-load evidence is missing.
+     may reject completion when this skill-load evidence is missing or when an
+     external skill was loaded without approval.
    - Record how every loaded non-TDD skill was applied in `context/skill-use.json`
      or `context/skill-use.md`. Each entry must include `skill_path`,
      `applied_rules`, `evidence_refs`, `output_files`, and `verification`.

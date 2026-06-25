@@ -98,7 +98,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
-- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; after any explicitly invoked Codex skill loads, the AI must enter the `crew-run` workflow with no preamble, no file reads, no Bash commands, and no clarifying questions
+- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; explicitly invoked Codex skill context is preserved, but non-agent-crew or third-party Codex/plugin skills must not be auto-loaded by description match; the AI must enter the `crew-run` workflow with no preamble, no file reads, no Bash commands, and no clarifying questions
 - **All-response agent routing** — substantive user-facing answers route through agent-crew first: implementation/mutation/git work enters `crew:run`, while questions, explanations, diagnostics, status, and history lookups enter `crew:agent`
 - **Route directive guard** — when a host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` detects Agent responses that received a STOP/ROUTE route lock but answered inline instead of entering `crew:run` / `crew:agent`
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
@@ -833,7 +833,7 @@ Machine-control replies used by structured-choice fallbacks, such as a bare
 option number, are the only prompt-level bypass.
 
 When `[agent-crew] STOP` is present, the first agent-crew workflow action is to
-invoke `crew:run`. In Codex, explicitly invoked or domain-specific Codex skills
+invoke `crew:run`. In Codex, explicitly invoked Codex skills
 may load first; their context must be preserved for requirements collection,
 supervisor handoffs, and generated prompts. All of the following are forbidden
 before the `crew-run` workflow begins:
