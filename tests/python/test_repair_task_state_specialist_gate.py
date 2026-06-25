@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
 RUN_COMMAND = REPO_ROOT / "core" / "commands" / "run.md"
+SCRIPTS_DIR = REPO_ROOT / "core" / "scripts"
+
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+repair_state = _load_module(SCRIPT, "repair_task_state_specialist_gate")
 
 
 def _write_task(
@@ -318,6 +336,25 @@ def test_commit_current_session_repair_blocks_without_git_committer_user_agent(t
     assert result.returncode != 0
     assert "BLOCKER: missing_required_capability_evidence" in result.stderr
     assert "vcs.commit.message.compose" in result.stderr
+
+
+def test_required_capability_inference_ignores_negative_remote_constraints():
+    capabilities = repair_state.required_capabilities_for_task(
+        "Implement the quality coverage change. Do not push, merge, deploy, or perform remote operations."
+    )
+
+    assert capabilities == []
+
+
+def test_required_capability_inference_preserves_commit_without_push_or_deploy():
+    capabilities = repair_state.required_capabilities_for_task(
+        "Commit local changes without pushing or deploying."
+    )
+
+    assert "vcs.commit.message.compose" in capabilities
+    assert "vcs.history.local_mutation" in capabilities
+    assert "vcs.remote_mutation" not in capabilities
+    assert "deployment.mutate" not in capabilities
 
 
 def test_commit_current_session_repair_translates_legacy_user_agent_to_capability_handlers(tmp_path: Path):

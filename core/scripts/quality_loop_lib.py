@@ -936,6 +936,160 @@ def rejection_followups(events: list[dict], rejected_index: int, pipeline: dict 
     }
 
 
+def quality_coverage_dimension(name: str, points: int, checks: list[tuple[str, bool]]) -> dict:
+    if not checks:
+        return {
+            "name": name,
+            "points": points,
+            "earned": points,
+            "passed": True,
+            "checks": [],
+        }
+
+    passed_count = sum(1 for _name, passed in checks if passed)
+    earned = points if passed_count == len(checks) else round(points * passed_count / len(checks))
+
+    return {
+        "name": name,
+        "points": points,
+        "earned": earned,
+        "passed": earned == points,
+        "checks": [
+            {"name": check_name, "passed": bool(passed)}
+            for check_name, passed in checks
+        ],
+    }
+
+
+def quality_coverage_status(
+    *,
+    required: bool,
+    failures: list[str],
+    pipeline: dict,
+    shape: dict,
+    events: list[dict],
+    result_text: str,
+    task_dir: Path,
+    valid_approval_events: list[dict],
+    approval_metric_errors: list[str],
+    finding_register: dict,
+    delegation_fidelity: dict,
+    human_acceptance: dict,
+    evaluation_metrics: dict,
+) -> dict:
+    threshold = 80
+    max_score = 100
+    if not required:
+        return {
+            "required": False,
+            "score": max_score,
+            "max_score": max_score,
+            "threshold": threshold,
+            "passed_threshold": True,
+            "hard_blockers": [],
+            "warnings": [],
+            "dimensions": [],
+        }
+
+    if pipeline:
+        pipeline_shape_checks = [
+            ("pipeline_present", True),
+            ("implementation_stage", shape["has_implementation_stage"]),
+            ("tdd_stage", shape["has_tdd_stage"]),
+            ("reviewer_stage", shape["has_reviewer_stage"]),
+            ("reviewer_after_implementer", shape["has_reviewer_after_implementer"]),
+            ("reviewer_after_each_implementer", shape["has_quality_gate_after_each_implementer"]),
+            ("reviewer_after_qa_verify", shape["has_reviewer_after_each_qa_verify"]),
+        ]
+    else:
+        pipeline_shape_checks = [
+            ("pipeline_present", False),
+            ("implementation_stage", False),
+            ("tdd_stage", False),
+            ("reviewer_stage", False),
+            ("reviewer_after_implementer", False),
+            ("reviewer_after_each_implementer", False),
+            ("reviewer_after_qa_verify", False),
+        ]
+
+    tdd_required = bool(shape["has_tdd_stage"])
+    has_valid_review = bool(valid_approval_events)
+    invalid_metric_errors = [
+        error for error in approval_metric_errors
+        if error.startswith("invalid_") or error in {
+            "malformed_quality_metrics_json",
+            "quality_metrics_not_object",
+            "unexpected_quality_metrics_fields",
+            "unreadable_quality_metrics_artifact",
+        }
+    ]
+    dimensions = [
+        quality_coverage_dimension("pipeline_shape", 20, pipeline_shape_checks),
+        quality_coverage_dimension(
+            "pipeline_events",
+            20,
+            [
+                ("progress_events", bool(events)),
+                ("implementer_completion", any(event_is_implementer_done(row) for row in events)),
+                ("tdd_completion", any(event_is_tdd_done(row) for row in events)),
+                ("reviewer_approval", has_valid_review),
+            ],
+        ),
+        quality_coverage_dimension(
+            "tdd_evidence",
+            20,
+            [
+                ("test_file_or_exception", (not tdd_required) or has_test_file_evidence(events, result_text) or has_tdd_exception(task_dir)),
+                ("red_or_exception", (not tdd_required) or has_tdd_red_or_exception(task_dir)),
+                ("refactor_review", (not tdd_required) or has_tdd_refactor_evidence(task_dir)),
+            ],
+        ),
+        quality_coverage_dimension(
+            "reviewer_evidence",
+            20,
+            [
+                ("approval_with_quality_metrics", has_valid_review),
+                ("quality_metrics_schema_valid", has_valid_review and not invalid_metric_errors),
+            ],
+        ),
+        quality_coverage_dimension(
+            "finding_register",
+            10,
+            [
+                ("schema_valid", not finding_register["present"] or finding_register["valid"]),
+                ("no_open_findings", not finding_register["open_ids"]),
+                ("terminal_findings_have_tests", not finding_register["missing_test_mapping_ids"]),
+                ("scope_status_has_owner_or_followup", not finding_register["missing_owner_or_followup_ids"]),
+            ],
+        ),
+        quality_coverage_dimension(
+            "optional_gates",
+            10,
+            [
+                (
+                    "delegation_fidelity",
+                    (not delegation_fidelity["required"])
+                    or (delegation_fidelity["has_delegation"] and delegation_fidelity["has_tool_events"]),
+                ),
+                ("human_acceptance", (not human_acceptance["required"]) or human_acceptance["present"]),
+                ("evaluation_metrics", (not evaluation_metrics["required"]) or (evaluation_metrics["present"] and not evaluation_metrics["errors"])),
+            ],
+        ),
+    ]
+    score = min(max_score, sum(dimension["earned"] for dimension in dimensions))
+
+    return {
+        "required": True,
+        "score": score,
+        "max_score": max_score,
+        "threshold": threshold,
+        "passed_threshold": score >= threshold and not failures,
+        "hard_blockers": sorted(set(failures)),
+        "warnings": [],
+        "dimensions": dimensions,
+    }
+
+
 def check_quality_loop(
     task_dir: Path,
     *,
@@ -1051,12 +1205,30 @@ def check_quality_loop(
         if any(not item["ordered"] for item in followups):
             failures.append("missing_rework_after_review_rejection")
 
+    unique_failures = sorted(set(failures))
+    quality_coverage = quality_coverage_status(
+        required=required,
+        failures=unique_failures,
+        pipeline=pipeline,
+        shape=shape,
+        events=events,
+        result_text=result_text,
+        task_dir=task_dir,
+        valid_approval_events=valid_approval_events,
+        approval_metric_errors=approval_metric_errors,
+        finding_register=finding_register,
+        delegation_fidelity=delegation_fidelity,
+        human_acceptance=human_acceptance,
+        evaluation_metrics=evaluation_metrics,
+    )
+
     return {
-        "passed": not failures,
+        "passed": not unique_failures,
         "required": required,
         "bypassed": bypassed,
-        "failures": sorted(set(failures)),
+        "failures": unique_failures,
         "task": task,
+        "quality_coverage": quality_coverage,
         "pipeline_shape": shape,
         "event_count": len(events),
         "rejection_indexes": rejection_indexes,

@@ -236,6 +236,18 @@ def test_language_normalization_and_issue_helpers(monkeypatch, tmp_path: Path):
     commit_metadata = runtime.input_normalization_metadata("변경사항 커밋해줘", next_target="crew run supervisor")
     assert "vcs.commit.message.compose" in commit_metadata["required_capabilities"]
     assert "vcs.history.local_mutation" in commit_metadata["required_capabilities"]
+    negative_remote_metadata = runtime.input_normalization_metadata(
+        "성능 개선 반영해줘. Do not push, merge, deploy, or perform remote operations.",
+        next_target="crew run supervisor",
+    )
+    assert negative_remote_metadata["required_capabilities"] == []
+    commit_without_remote = runtime.required_capabilities_for_task(
+        "Commit local changes without pushing or deploying."
+    )
+    assert "vcs.commit.message.compose" in commit_without_remote
+    assert "vcs.history.local_mutation" in commit_without_remote
+    assert "vcs.remote_mutation" not in commit_without_remote
+    assert "deployment.mutate" not in commit_without_remote
     issue_resolution_metadata = runtime.input_normalization_metadata("열려있는 이슈 해결", next_target="crew run supervisor")
     assert "tracker.issue.mutate" not in issue_resolution_metadata["required_capabilities"]
     handoff = runtime.korean_normalization_handoff(

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from quality_loop_lib import check_quality_loop
+from task_capability_lib import required_capabilities_for_task
 
 
 MUTATING_TASK_RE = re.compile(
@@ -494,29 +495,6 @@ def apply_legacy_agent_translation(fields: dict[str, list[str] | str]) -> dict[s
     else:
         fields.pop("selected_handlers", None)
     return fields
-
-
-def required_capabilities_for_task(task: str) -> list[str]:
-    value = " ".join((task or "").strip().lower().split())
-    capabilities: list[str] = []
-
-    def add(capability: str) -> None:
-        if capability not in capabilities:
-            capabilities.append(capability)
-
-    if re.search(r"\b(git\s+commit|commit|amend|reword|squash)\b|커밋", value):
-        add("vcs.commit.message.compose")
-        add("vcs.history.local_mutation")
-    if re.search(r"\b(git\s+push|push)\b|푸시", value):
-        add("vcs.remote_mutation")
-    if re.search(r"\b(git\s+merge|merge)\b|머지", value):
-        add("vcs.history.local_mutation")
-    if re.search(r"\b(deploy|release|rollback)\b|배포|릴리즈|롤백", value):
-        add("deployment.mutate")
-    if re.search(r"\b(publish|close|update\s+issue|comment\s+on\s+issue)\b|이슈.*(발행|닫|종료|수정|댓글)", value):
-        add("tracker.issue.mutate")
-
-    return capabilities
 
 
 def required_capabilities_from_context(task_dir: Path, register: dict) -> list[str]:
