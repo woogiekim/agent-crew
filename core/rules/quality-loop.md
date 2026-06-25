@@ -46,6 +46,36 @@ Treat all of the following as required before a stage is considered complete:
   with `file:line`, task-artifact paths, or `tool-output` where applicable, and
   shows an explicit evidence-to-inference-to-conclusion flow.
 
+## Runtime Completion Gate
+
+The runtime checker reports a machine-observed `quality_coverage` score rather
+than treating every missing self-reported artifact as an automatic hard block.
+This prevents evidence-only churn from replacing output-quality review.
+
+For standard-risk mutating tasks, missing post-hoc evidence records are soft
+failures when the observed pipeline, TDD, reviewer, finding-register, and
+optional-gate coverage score reaches the configured threshold. The checker must
+still report those gaps in `failures`, `soft_failures`, and
+`quality_coverage.warnings`; passing only means the gaps should not trigger an
+extra work-about-work retry by themselves.
+
+The following remain hard failures for standard-risk tasks:
+
+- Missing test file or TDD exception evidence for a TDD-required stage.
+- Invalid or unresolved finding-register entries.
+- Invalid reviewer quality metrics.
+- Missing task-specific optional gates such as delegation fidelity, human
+  acceptance, or evaluation metrics when the pipeline explicitly requires them.
+- Invalid pipeline shape, such as implementation stages without a following
+  reviewer quality gate.
+- Required rework-cycle failures when a rework cycle was explicitly requested.
+
+High-risk tasks use strict gating: every quality-loop failure remains hard even
+when the coverage score is above threshold. High-risk includes push, merge,
+deploy, release, rollback, destructive operations, and automatic host-bridge
+completion. Negated constraints such as "do not push" or "do not deploy" do not
+make a task high-risk.
+
 ## 100% Test Coverage Ownership
 
 For mutating code work, "100% test coverage" means every new or modified

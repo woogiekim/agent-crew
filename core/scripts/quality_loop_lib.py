@@ -39,6 +39,51 @@ READ_ONLY_TASK_RE = re.compile(
     r"읽기\s*전용|조회|분석|검토|확인|진단",
     re.IGNORECASE,
 )
+HIGH_RISK_TASK_RE = re.compile(
+    r"\b("
+    r"git\s+push|push|git\s+merge|merge|deploy|release|rollback|"
+    r"destructive|delete|overwrite|branch\s+cleanup|rm\s+-rf"
+    r")\b|"
+    r"푸시|머지|병합|배포|릴리즈|롤백|파괴|삭제",
+    re.IGNORECASE,
+)
+HIGH_RISK_NEGATED_CLAUSE_RE = re.compile(
+    r"\b(?P<prefix>do\s+not|don't|dont|must\s+not|should\s+not|never|without|no)"
+    r"(?P<body>[^.;\n]*)",
+    re.IGNORECASE,
+)
+HIGH_RISK_GOVERNANCE_CONTEXT_RE = re.compile(
+    r"\b(?:preserv(?:e|es|ing)|keep(?:s|ing)?|maintain(?:s|ing)?|"
+    r"document(?:s|ing)?|test(?:s|ing)?|validat(?:e|es|ing)|"
+    r"verif(?:y|ies|ying)|enforc(?:e|es|ing)|cover(?:s|ing)?|"
+    r"improv(?:e|es|ing)|implement(?:s|ing)?|add(?:s|ing)?|"
+    r"updat(?:e|es|ing)|apply|applies|applying)\b"
+    r"[^.;\n]*\b(?:gate|gates|guard|guards|policy|policies|check|checker|"
+    r"validation|detector|rule|rules|handling)\b"
+    r"[^.;\n]*\b(?:push|merge|deploy|release|rollback|destructive)\b"
+    r"[^.;\n]*",
+    re.IGNORECASE,
+)
+KOREAN_HIGH_RISK_NEGATED_ACTION_RE = re.compile(
+    r"(?:푸시|머지|병합|배포|릴리즈|롤백|삭제)"
+    r"\s*(?:하지\s*마|하지\s*말고|하지\s*않고|하지\s*않으며|않고|없이|금지)",
+    re.IGNORECASE,
+)
+AUTO_COMPLETION_RE = re.compile(
+    r"\b("
+    r"auto[-_ ]?completed|host_bridge:\s*auto_completed|automatic\s+host\s+bridge"
+    r")\b",
+    re.IGNORECASE,
+)
+SOFT_QUALITY_FAILURES = {
+    "missing_progress_events",
+    "missing_pipeline_implementation_completion",
+    "missing_pipeline_tdd_event",
+    "missing_tdd_red_phase_evidence",
+    "missing_tdd_refactor_phase_evidence",
+    "missing_reviewer_quality_metrics_artifact",
+    "missing_pipeline_reviewer_approval",
+}
 NON_MUTATING_CONSTRAINT_RE = re.compile(
     r"\b("
     r"do\s+not|don't|dont|must\s+not|should\s+not|never|without|no"
@@ -514,6 +559,41 @@ def looks_mutating_task(text: str) -> bool:
     return bool(MUTATING_TASK_RE.search(constrained_value))
 
 
+def strip_high_risk_negative_constraints(text: str) -> str:
+    value = " ".join((text or "").strip().lower().split())
+
+    def strip_english_action(match: re.Match[str]) -> str:
+        body = HIGH_RISK_TASK_RE.sub(" ", match.group("body"))
+        return f" {body} "
+
+    value = HIGH_RISK_NEGATED_CLAUSE_RE.sub(strip_english_action, value)
+    value = KOREAN_HIGH_RISK_NEGATED_ACTION_RE.sub(" ", value)
+    value = HIGH_RISK_GOVERNANCE_CONTEXT_RE.sub(" ", value)
+    return " ".join(value.split())
+
+
+def quality_gate_risk_level(task: str, result_text: str) -> str:
+    if AUTO_COMPLETION_RE.search(result_text or ""):
+        return "high"
+    if HIGH_RISK_TASK_RE.search(strip_high_risk_negative_constraints(task)):
+        return "high"
+    return "standard"
+
+
+def classify_quality_failures(
+    failures: list[str],
+    *,
+    strict_gate_required: bool,
+) -> tuple[list[str], list[str]]:
+    unique = sorted(set(failures))
+    if strict_gate_required:
+        return unique, []
+
+    hard = [failure for failure in unique if failure not in SOFT_QUALITY_FAILURES]
+    soft = [failure for failure in unique if failure in SOFT_QUALITY_FAILURES]
+    return hard, soft
+
+
 def stage_agents(stage) -> list[str]:
     if isinstance(stage, str):
         return [stage]
@@ -964,7 +1044,8 @@ def quality_coverage_dimension(name: str, points: int, checks: list[tuple[str, b
 def quality_coverage_status(
     *,
     required: bool,
-    failures: list[str],
+    hard_failures: list[str],
+    soft_failures: list[str],
     pipeline: dict,
     shape: dict,
     events: list[dict],
@@ -1083,9 +1164,9 @@ def quality_coverage_status(
         "score": score,
         "max_score": max_score,
         "threshold": threshold,
-        "passed_threshold": score >= threshold and not failures,
-        "hard_blockers": sorted(set(failures)),
-        "warnings": [],
+        "passed_threshold": score >= threshold,
+        "hard_blockers": sorted(set(hard_failures)),
+        "warnings": sorted(set(soft_failures)),
         "dimensions": dimensions,
     }
 
@@ -1206,9 +1287,16 @@ def check_quality_loop(
             failures.append("missing_rework_after_review_rejection")
 
     unique_failures = sorted(set(failures))
+    risk_level = quality_gate_risk_level(task, result_text)
+    strict_gate_required = required and risk_level == "high"
+    hard_failures, soft_failures = classify_quality_failures(
+        unique_failures,
+        strict_gate_required=strict_gate_required,
+    )
     quality_coverage = quality_coverage_status(
         required=required,
-        failures=unique_failures,
+        hard_failures=hard_failures,
+        soft_failures=soft_failures,
         pipeline=pipeline,
         shape=shape,
         events=events,
@@ -1221,12 +1309,26 @@ def check_quality_loop(
         human_acceptance=human_acceptance,
         evaluation_metrics=evaluation_metrics,
     )
+    if not required:
+        quality_gate_mode = "bypassed" if bypassed else "not_required"
+    elif strict_gate_required:
+        quality_gate_mode = "strict"
+    else:
+        quality_gate_mode = "coverage"
+    passed = (not required) or (
+        not hard_failures and bool(quality_coverage.get("passed_threshold"))
+    )
 
     return {
-        "passed": not unique_failures,
+        "passed": passed,
         "required": required,
         "bypassed": bypassed,
+        "risk_level": risk_level,
+        "quality_gate_mode": quality_gate_mode,
+        "strict_gate_required": strict_gate_required,
         "failures": unique_failures,
+        "hard_failures": hard_failures,
+        "soft_failures": soft_failures,
         "task": task,
         "quality_coverage": quality_coverage,
         "pipeline_shape": shape,

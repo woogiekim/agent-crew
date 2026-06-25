@@ -409,7 +409,9 @@ def test_quality_loop_check_requires_tdd_red_and_refactor_artifacts(tmp_path: Pa
 
     result = run_quality_loop_check(task_dir)
 
-    assert result.returncode == 1
+    assert result.returncode == 0
+    assert "PASS: pipeline quality loop" in result.stdout
+    assert "WARNINGS: missing_tdd_red_phase_evidence, missing_tdd_refactor_phase_evidence" in result.stdout
     assert "- missing_tdd_red_phase_evidence" in result.stdout
     assert "- missing_tdd_refactor_phase_evidence" in result.stdout
 

@@ -241,6 +241,11 @@ def test_language_normalization_and_issue_helpers(monkeypatch, tmp_path: Path):
         next_target="crew run supervisor",
     )
     assert negative_remote_metadata["required_capabilities"] == []
+    gate_reference_metadata = runtime.input_normalization_metadata(
+        "Improve the runtime checker and preserve hard gates for push, merge, and deploy.",
+        next_target="crew run supervisor",
+    )
+    assert gate_reference_metadata["required_capabilities"] == []
     commit_without_remote = runtime.required_capabilities_for_task(
         "Commit local changes without pushing or deploying."
     )

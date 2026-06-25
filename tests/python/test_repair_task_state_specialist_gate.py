@@ -346,6 +346,14 @@ def test_required_capability_inference_ignores_negative_remote_constraints():
     assert capabilities == []
 
 
+def test_required_capability_inference_ignores_high_risk_gate_references():
+    capabilities = repair_state.required_capabilities_for_task(
+        "Improve the quality-loop checker and preserve hard gates for high-risk actions such as push, merge, deploy, destructive operations, and auto-completion."
+    )
+
+    assert capabilities == []
+
+
 def test_required_capability_inference_preserves_commit_without_push_or_deploy():
     capabilities = repair_state.required_capabilities_for_task(
         "Commit local changes without pushing or deploying."

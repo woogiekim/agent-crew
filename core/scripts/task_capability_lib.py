@@ -25,6 +25,18 @@ KOREAN_NEGATED_CAPABILITY_ACTION_RE = re.compile(
     r"\s*(?:하지\s*마|하지\s*말고|하지\s*않고|하지\s*않으며|않고|없이|금지)",
     re.IGNORECASE,
 )
+CAPABILITY_GOVERNANCE_CONTEXT_RE = re.compile(
+    r"\b(?:preserv(?:e|es|ing)|keep(?:s|ing)?|maintain(?:s|ing)?|"
+    r"document(?:s|ing)?|test(?:s|ing)?|validat(?:e|es|ing)|"
+    r"verif(?:y|ies|ying)|enforc(?:e|es|ing)|cover(?:s|ing)?|"
+    r"improv(?:e|es|ing)|implement(?:s|ing)?|add(?:s|ing)?|"
+    r"updat(?:e|es|ing)|apply|applies|applying)\b"
+    r"[^.;\n]*\b(?:gate|gates|guard|guards|policy|policies|check|checker|"
+    r"validation|detector|rule|rules|handling)\b"
+    r"[^.;\n]*\b(?:commit|push|merge|deploy|release|rollback|destructive)\b"
+    r"[^.;\n]*",
+    re.IGNORECASE,
+)
 
 
 def _normalize_task_text(task: str) -> str:
@@ -40,6 +52,7 @@ def strip_negative_capability_constraints(task: str) -> str:
 
     value = ENGLISH_NEGATED_CAPABILITY_CLAUSE_RE.sub(strip_english_action, value)
     value = KOREAN_NEGATED_CAPABILITY_ACTION_RE.sub(" ", value)
+    value = CAPABILITY_GOVERNANCE_CONTEXT_RE.sub(" ", value)
     return " ".join(value.split())
 
 

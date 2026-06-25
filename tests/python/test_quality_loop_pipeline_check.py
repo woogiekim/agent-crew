@@ -116,6 +116,14 @@ def write_finding_register(task_dir: Path, findings: list[dict]) -> None:
     )
 
 
+def set_task_description(task_dir: Path, task: str) -> None:
+    for name in ("register.json", "pipeline.json"):
+        path = task_dir / name
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["task"] = task
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def run_checker(task_dir: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(CHECKER), "--task-dir", str(task_dir), "--format", "json", *extra],
@@ -710,6 +718,120 @@ def test_quality_loop_checker_reports_complete_quality_coverage(tmp_path: Path):
     assert "QUALITY_COVERAGE: 100/100 threshold=80 status=pass" in text_result.stdout
 
 
+def test_quality_loop_checker_soft_passes_low_risk_artifact_gaps_with_high_coverage(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+    (task_dir / "context" / "tdd-red.md").unlink()
+    (task_dir / "context" / "tdd-refactor.md").unlink()
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["quality_gate_mode"] == "coverage"
+    assert payload["quality_coverage"]["passed_threshold"] is True
+    assert payload["quality_coverage"]["score"] >= payload["quality_coverage"]["threshold"]
+    assert payload["hard_failures"] == []
+    assert set(payload["soft_failures"]) == {
+        "missing_tdd_red_phase_evidence",
+        "missing_tdd_refactor_phase_evidence",
+    }
+    assert set(payload["failures"]) == set(payload["soft_failures"])
+
+
+def test_quality_loop_checker_keeps_high_risk_artifact_gaps_as_hard_failures(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+    set_task_description(task_dir, "Deploy the release and push the branch")
+    (task_dir / "context" / "tdd-red.md").unlink()
+    (task_dir / "context" / "tdd-refactor.md").unlink()
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["risk_level"] == "high"
+    assert payload["quality_gate_mode"] == "strict"
+    assert payload["quality_coverage"]["passed_threshold"] is True
+    assert set(payload["hard_failures"]) == {
+        "missing_tdd_red_phase_evidence",
+        "missing_tdd_refactor_phase_evidence",
+    }
+    assert payload["soft_failures"] == []
+
+
+def test_quality_loop_checker_does_not_treat_negative_remote_constraints_as_high_risk(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+    set_task_description(task_dir, "Implement cleanup. Do not push, merge, or deploy.")
+    (task_dir / "context" / "tdd-red.md").unlink()
+    (task_dir / "context" / "tdd-refactor.md").unlink()
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["risk_level"] == "standard"
+    assert payload["quality_gate_mode"] == "coverage"
+    assert payload["hard_failures"] == []
+    assert set(payload["soft_failures"]) == {
+        "missing_tdd_red_phase_evidence",
+        "missing_tdd_refactor_phase_evidence",
+    }
+
+
+def test_quality_loop_checker_does_not_treat_high_risk_gate_references_as_high_risk(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+    set_task_description(
+        task_dir,
+        "Improve the quality-loop checker and preserves hard gates for high-risk actions such as push, merge, deploy, destructive operations, and auto-completion.",
+    )
+    (task_dir / "context" / "tdd-red.md").unlink()
+    (task_dir / "context" / "tdd-refactor.md").unlink()
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["risk_level"] == "standard"
+    assert payload["quality_gate_mode"] == "coverage"
+    assert payload["hard_failures"] == []
+    assert set(payload["soft_failures"]) == {
+        "missing_tdd_red_phase_evidence",
+        "missing_tdd_refactor_phase_evidence",
+    }
+
+
 def test_quality_loop_checker_reports_partial_quality_coverage(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(
@@ -727,7 +849,8 @@ def test_quality_loop_checker_reports_partial_quality_coverage(tmp_path: Path):
     coverage = payload["quality_coverage"]
     assert 0 < coverage["score"] < coverage["max_score"]
     assert coverage["passed_threshold"] is False
-    assert "missing_pipeline_reviewer_approval" in coverage["hard_blockers"]
+    assert "missing_pipeline_reviewer_approval" in coverage["warnings"]
+    assert "missing_pipeline_reviewer_approval" in payload["soft_failures"]
     events_dimension = next(
         dimension for dimension in coverage["dimensions"] if dimension["name"] == "pipeline_events"
     )
@@ -746,7 +869,7 @@ def test_quality_loop_checker_reports_missing_pipeline_quality_coverage(tmp_path
     coverage = payload["quality_coverage"]
     assert coverage["score"] < coverage["threshold"]
     assert "missing_pipeline" in coverage["hard_blockers"]
-    assert "missing_progress_events" in coverage["hard_blockers"]
+    assert "missing_progress_events" in coverage["warnings"]
     shape_dimension = next(
         dimension for dimension in coverage["dimensions"] if dimension["name"] == "pipeline_shape"
     )

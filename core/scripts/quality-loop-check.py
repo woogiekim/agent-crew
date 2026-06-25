@@ -51,6 +51,13 @@ def main() -> int:
         sys.stdout.write("\n")
     else:
         print(("PASS" if result["passed"] else "FAIL") + ": pipeline quality loop")
+        if result.get("quality_gate_mode"):
+            print(
+                "QUALITY_GATE: "
+                f"mode={result.get('quality_gate_mode')} "
+                f"risk={result.get('risk_level')} "
+                f"strict={str(bool(result.get('strict_gate_required'))).lower()}"
+            )
         coverage = result.get("quality_coverage", {})
         if coverage:
             status = "pass" if coverage.get("passed_threshold") else "fail"
