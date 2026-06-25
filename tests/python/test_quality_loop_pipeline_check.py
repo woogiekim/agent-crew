@@ -124,6 +124,14 @@ def run_checker(task_dir: Path, *extra: str) -> subprocess.CompletedProcess[str]
     )
 
 
+def run_text_checker(task_dir: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(CHECKER), "--task-dir", str(task_dir), "--format", "text", *extra],
+        text=True,
+        capture_output=True,
+    )
+
+
 def test_quality_loop_checker_blocks_reviewer_rejection_without_rework(tmp_path: Path):
     task_dir = tmp_path / "task"
     write_task(
@@ -671,6 +679,79 @@ def test_quality_loop_checker_accepts_rework_and_reapproval(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["rejection_followups"][0]["ordered"] is True
     assert payload["reviewer_approval_count"] == 1
+
+
+def test_quality_loop_checker_reports_complete_quality_coverage(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    coverage = payload["quality_coverage"]
+    assert coverage["score"] == 100
+    assert coverage["max_score"] == 100
+    assert coverage["passed_threshold"] is True
+    assert coverage["hard_blockers"] == []
+    assert coverage["warnings"] == []
+    assert all(dimension["passed"] for dimension in coverage["dimensions"])
+
+    text_result = run_text_checker(task_dir)
+
+    assert text_result.returncode == 0, text_result.stdout + text_result.stderr
+    assert "QUALITY_COVERAGE: 100/100 threshold=80 status=pass" in text_result.stdout
+
+
+def test_quality_loop_checker_reports_partial_quality_coverage(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+        ],
+    )
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    coverage = payload["quality_coverage"]
+    assert 0 < coverage["score"] < coverage["max_score"]
+    assert coverage["passed_threshold"] is False
+    assert "missing_pipeline_reviewer_approval" in coverage["hard_blockers"]
+    events_dimension = next(
+        dimension for dimension in coverage["dimensions"] if dimension["name"] == "pipeline_events"
+    )
+    assert events_dimension["earned"] < events_dimension["points"]
+    assert any(check["name"] == "reviewer_approval" and not check["passed"] for check in events_dimension["checks"])
+
+
+def test_quality_loop_checker_reports_missing_pipeline_quality_coverage(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(task_dir, [], pipeline={})
+
+    result = run_checker(task_dir)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    coverage = payload["quality_coverage"]
+    assert coverage["score"] < coverage["threshold"]
+    assert "missing_pipeline" in coverage["hard_blockers"]
+    assert "missing_progress_events" in coverage["hard_blockers"]
+    shape_dimension = next(
+        dimension for dimension in coverage["dimensions"] if dimension["name"] == "pipeline_shape"
+    )
+    assert shape_dimension["earned"] == 0
+    assert shape_dimension["passed"] is False
 
 
 def test_quality_loop_checker_blocks_approval_without_quality_metrics_file(tmp_path: Path):

@@ -298,6 +298,30 @@ See `core/commands/setup.md` § Skill Template Seeding and
 `core/commands/update.md` § Skill Template Reconcile for the
 install/update integration points.
 
+### Exception: dead-code-elimination ships as a system-wide framework default
+
+`dead-code-elimination` is the single, named exception to the
+user-opt-in-only capability-skill rule. It ships at the dispatcher
+discovery-dir location `core/agents/skills/dead-code-elimination.md` and
+is auto-loaded framework-wide for `backend` and `frontend` whenever the
+task body matches its `detection` regex
+(`cleanup|refactor|dead.code|unused`).
+
+Rationale: cleanup and refactor work is the framework's
+quality-improvement default. The skill is a low-risk pre-deletion safety
+checklist, applies to every refactor/cleanup task, and is keyed off the
+implementer's task body rather than a vendor adapter — so the
+user-opt-in barrier does not buy safety here. Auto-loading lets
+backend/frontend recognize and act on dead-code signals across every
+installation without requiring per-user opt-in.
+
+This exception is **narrow and named**: it applies to
+`dead-code-elimination` only. The general user-opt-in-only rule
+(Channel B template seeding above) remains in force for every other
+capability skill — production-proven vendor knowledge continues to live
+at `~/.agent-crew/user/skills/<agent>-<tool>.md` and is never
+auto-loaded from the source repo.
+
 ---
 
 ## Open/Closed extension protocol

@@ -51,6 +51,18 @@ def main() -> int:
         sys.stdout.write("\n")
     else:
         print(("PASS" if result["passed"] else "FAIL") + ": pipeline quality loop")
+        coverage = result.get("quality_coverage", {})
+        if coverage:
+            status = "pass" if coverage.get("passed_threshold") else "fail"
+            print(
+                "QUALITY_COVERAGE: "
+                f"{coverage.get('score')}/{coverage.get('max_score')} "
+                f"threshold={coverage.get('threshold')} status={status}"
+            )
+            if coverage.get("hard_blockers"):
+                print("HARD_BLOCKERS: " + ", ".join(coverage["hard_blockers"]))
+            if coverage.get("warnings"):
+                print("WARNINGS: " + ", ".join(coverage["warnings"]))
         for failure in result["failures"]:
             print(f"- {failure}")
     return 0 if result["passed"] else 1
