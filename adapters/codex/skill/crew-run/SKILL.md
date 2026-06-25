@@ -17,7 +17,7 @@ crew:run
 2. Treat any user text after `$crew-run` as the task description.
 3. Preserve explicitly invoked Codex skill context as task input for
    requirements collection, supervisor handoffs, and generated prompts.
-   Do not auto-load non-agent-crew or third-party Codex/plugin skills from
+   Do not auto-load non-agent-crew or third-party host/plugin skills from
    trigger-description matches during agent-crew execution.
 4. Follow the command definition exactly, including mandatory requirements collection.
 5. Delegate execution to supervisor as defined by the command.
@@ -43,11 +43,12 @@ skill path(s) in `{TASK_DIR}/context/skill-load.md` or
 `{TASK_DIR}/context/skill-load.json`. Agent-crew skills are the framework
 system/user skills under `~/.agent-crew/system/skills/`,
 `~/.agent-crew/user/skills/`, `~/.agent-crew/skills/`,
-`~/.agent-crew/system/agents/skills/`, or the Codex agent-crew mirrors under
-`~/.codex/skills/agent-crew/` and `~/.codex/agent-crew/skills/`. Every selected
+`~/.agent-crew/system/agents/skills/`, or the active host's agent-crew mirrors
+under paths such as `~/.claude/agent-crew/skills/`,
+`~/.codex/skills/agent-crew/`, and `~/.codex/agent-crew/skills/`. Every selected
 skill name must have matching load evidence (`selected_skill:
 frontend-typescript-react` requires `frontend-typescript-react.md`,
-`selected_skill: tdd` requires `tdd.md`). Do not load unrelated Codex/plugin
+`selected_skill: tdd` requires `tdd.md`). Do not load unrelated host/plugin
 skills, including plugin cache skills, by description match. If a
 non-agent-crew skill is genuinely needed, ask for explicit user approval first
 and record it in `{TASK_DIR}/context/external-skill-approval.md` or `.json`.

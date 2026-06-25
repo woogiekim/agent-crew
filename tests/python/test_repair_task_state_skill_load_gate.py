@@ -267,6 +267,63 @@ def test_agent_crew_codex_wrapper_skill_does_not_require_external_approval(tmp_p
     assert repair["skill_load_gate"].get("unapproved_external_skill_paths", []) == []
 
 
+def test_agent_crew_claude_mirror_skill_does_not_require_external_approval(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Implement a backend workflow",
+        selected_skill="tdd",
+    )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- /Users/wook/.claude/agent-crew/skills/tdd.md\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-use-bypass-reason",
+        "isolate agent-crew Claude mirror allow-list",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_load_gate"].get("external_skill_paths", []) == []
+    assert repair["skill_load_gate"].get("unapproved_external_skill_paths", []) == []
+
+
+def test_external_claude_plugin_skill_requires_explicit_approval(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260604-000000-0"
+    task_dir = _write_task(
+        state_dir,
+        task_id,
+        task="Implement a backend workflow",
+        selected_skill="test-driven-development",
+    )
+    (task_dir / "context" / "skill-load.md").write_text(
+        "SKILL_LOAD: passed\n"
+        "Loaded before implementation:\n"
+        "- /Users/wook/.claude/agents/skills/test-driven-development.md\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-use-bypass-reason",
+        "isolate external Claude skill policy",
+    )
+
+    assert result.returncode != 0
+    assert "BLOCKER: unapproved_external_skill_load" in result.stderr
+    assert "host/plugin skills" in result.stderr
+
+
 def test_external_codex_plugin_skill_passes_with_explicit_approval(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"

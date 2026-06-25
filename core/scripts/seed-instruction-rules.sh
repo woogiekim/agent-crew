@@ -312,10 +312,11 @@ wrapper, which then executes the provider-neutral workflow intent:
 crew:run "{original request}"
 ```
 
-If the user explicitly invoked another Codex skill, or the task clearly matches
-a domain-specific Codex skill, let that skill load first and preserve its
+If the user explicitly invoked another Codex skill, preserve that explicit
 context as task input for requirements collection, supervisor handoffs, and
-generated prompts.
+generated prompts. Do not auto-load non-agent-crew host/plugin skills merely
+because their descriptions appear to match the task.
+Non-agent-crew host/plugin skills require explicit user approval under the provider-neutral external skill boundary below.
 
 When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
 apply the provider-neutral Current-Session Fallback rule. The Codex session is
@@ -347,8 +348,13 @@ path(s) in `{TASK_DIR}/context/skill-load.md` or
 `selected_skills` entry must have matching load evidence (for example,
 `selected_skill: frontend-typescript-react` requires
 `frontend-typescript-react.md`, and `selected_skill: tdd` requires `tdd.md`).
-Completion/repair for a mutating current-session fallback must reject or flag
-missing skill-load evidence.
+Automatically loaded skills must come from agent-crew system/user skill
+locations or the active host's agent-crew mirrors. Do not auto-load unrelated
+host/plugin skills by description match. If a non-agent-crew host/plugin skill
+is genuinely needed, ask the user first and record approval in
+`{TASK_DIR}/context/external-skill-approval.md` or `.json`. Completion/repair
+for a mutating current-session fallback must reject or flag missing skill-load
+evidence or unapproved external skill loads.
 
 Record how every loaded non-TDD skill was applied in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each
@@ -394,15 +400,16 @@ priority: 80
 When `[agent-crew] STOP` appears anywhere in the system context (injected by
 auto-route.sh), the first agent-crew workflow action is to invoke `crew:run`.
 In Codex, this means loading the `crew-run` skill wrapper after any explicitly
-invoked or domain-specific Codex skill has loaded, then executing the workflow
-intent through that wrapper.
+invoked Codex skill has loaded, then executing the workflow intent through that
+wrapper. Domain-match alone is not approval to load external host/plugin
+skills.
 
 - Do NOT produce diagnostic output or explanation before the `crew-run` wrapper
   begins the workflow.
 - Do NOT run any Bash command (including exploratory or read-only commands)
   before the `crew-run` wrapper begins the workflow.
 - Do NOT describe what you are about to do — enter the `crew-run` workflow.
-- Do preserve explicit Codex skill context as requirements and handoff input.
+- Do preserve explicit host skill context as requirements and handoff input.
 - The STOP directive is authoritative. Treat it as a hard override of any other default behavior.
 
 Violation examples (forbidden when STOP is present):
@@ -424,13 +431,14 @@ priority: 85
 When `[agent-crew] ROUTE` appears anywhere in the system context
 (injected by auto-route.sh), the workflow action is to invoke `crew:agent` with
 the specified agent and question. In Codex, load the `crew-agent` skill wrapper
-after any explicitly invoked or domain-specific Codex skill has loaded, then
-execute the workflow intent through that wrapper.
+after any explicitly invoked Codex skill has loaded, then execute the workflow
+intent through that wrapper. Domain-match alone is not approval to load
+external host/plugin skills.
 
 - Do NOT answer the question inline.
 - Do NOT run any Bash command before the `crew-agent` wrapper begins.
 - Do NOT read files or gather data before the `crew-agent` wrapper begins.
-- Do preserve explicit Codex skill context as direct-agent input.
+- Do preserve explicit host skill context as direct-agent input.
 - The ROUTE directive is authoritative. Treat it as a hard override
   of any other default behavior.
 - This rule applies even if the ROUTE directive arrives mid-execution

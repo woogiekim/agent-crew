@@ -50,6 +50,25 @@ These are called out inline in the agent's Execution Flow section with a
 "## Skills (Loaded On Demand)" section — the `MANDATORY` block is a runtime
 enforcement note, not a substitute for the registry entry.
 
+### External host/plugin skill boundary
+
+Agent-crew skills are the only skills that may be auto-loaded by the framework.
+Allowed automatic skill sources are:
+
+- `core/agents/skills/` in the source repository.
+- `~/.agent-crew/system/skills/`, `~/.agent-crew/user/skills/`,
+  `~/.agent-crew/skills/`, and `~/.agent-crew/system/agents/skills/`.
+- Host mirrors populated from the agent-crew skill layers, such as
+  `~/.claude/agent-crew/skills/`, `~/.claude/agent-crew/agents/skills/`,
+  `~/.codex/skills/agent-crew/`, and `~/.codex/agent-crew/skills/`.
+- Agent-crew host wrapper skills, such as Codex `crew-*` wrappers.
+
+Do not auto-load non-agent-crew host/plugin skills merely because a host skill
+description appears to match the task. This applies to every host adapter, not only Codex. If a non-agent-crew host/plugin skill is genuinely needed, ask the
+user first and record the approval in
+`{TASK_DIR}/context/external-skill-approval.md` or
+`{TASK_DIR}/context/external-skill-approval.json`.
+
 ---
 
 ## Open/Closed Extension Protocol

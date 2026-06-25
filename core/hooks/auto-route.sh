@@ -349,7 +349,7 @@ def emit_question_route(target_agent: str, route_reason: str):
         f"  crew:agent \"{target_agent}\" \"{{user's question}}\"\n\n"
         f"In Codex: let explicitly invoked Codex skill context pass through, "
         f"then Invoke Skill(\"crew-agent\"). Do not auto-load non-agent-crew "
-        f"or third-party Codex/plugin skills by description match; preserve only "
+        f"or third-party host/plugin skills by description match; preserve only "
         f"explicitly invoked Codex skill context.\n\n"
         f"INLINE_ANSWER: FORBIDDEN\n"
         f"NO_PRELUDE: do not explain, summarize, inspect files, run Bash, or answer before crew-agent starts.\n"
@@ -382,7 +382,7 @@ FIRST_ACTION_ONLY:
 In Codex: let explicitly invoked Codex skill context pass through, then load
 Skill("crew-run"), preserve explicit skill context in requirements collection,
 then execute the workflow intent. Do not auto-load non-agent-crew or third-party
-Codex/plugin skills by description match. Preserve explicitly invoked skill
+host/plugin skills by description match. Preserve explicitly invoked skill
 context in requirements collection, supervisor handoffs, and generated prompts.
 
 INLINE_IMPLEMENTATION_OR_ANSWER: FORBIDDEN

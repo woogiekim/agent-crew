@@ -949,9 +949,12 @@ def is_agent_crew_owned_skill_path(value: str) -> bool:
         or "/core/agents/skills/" in normalized
         or normalized.startswith("core/agents/skills/")
         or normalized.startswith("core/rules/")
+        or "/.claude/agent-crew/skills/" in normalized
+        or "/.claude/agent-crew/agents/skills/" in normalized
         or "/.codex/skills/agent-crew/" in normalized
         or "/.codex/skills/crew-" in normalized
         or "/.codex/agent-crew/skills/" in normalized
+        or "/adapters/claude/skill/" in normalized
         or "/adapters/codex/skill/crew-" in normalized
         or "/adapters/codex/skill/agent-crew/" in normalized
     )
@@ -1481,7 +1484,7 @@ def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: 
             "STATUS: blocked\n"
             "BLOCKER: unapproved_external_skill_load\n"
             "DETAIL: current-session fallback may not auto-load non-agent-crew "
-            "Codex/plugin skills without explicit user approval. "
+            "host/plugin skills without explicit user approval. "
             "UNAPPROVED: "
             + ", ".join(status["unapproved_external_skill_paths"])
             + ".\n"

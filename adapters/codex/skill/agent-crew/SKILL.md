@@ -35,7 +35,7 @@ If the user explicitly invoked another Codex skill, preserve the skill name and
 any context it establishes when routing into `crew-run` or `crew-agent`; this
 context must remain visible to requirements collection, supervisor handoffs,
 and generated prompts. Do not auto-load a non-agent-crew or third-party
-Codex/plugin skill merely because its description appears to match the request.
+host/plugin skill merely because its description appears to match the request.
 When an agent-crew run would benefit from such a skill, ask for explicit user
 approval first and record the approval in the task context.
 
@@ -167,7 +167,7 @@ Preserve the original user wording as the task input, subject to the command
 definition's required normalization and requirements-collection steps. If a
 Codex skill was explicitly invoked before routing, preserve that skill context
 as task metadata and include it in requirements and handoff inputs. Do not treat
-domain-selected third-party/plugin skills as implicitly approved.
+domain-selected third-party host/plugin skills as implicitly approved.
 
 For a natural-language read-only question, explanation, diagnostic, status, or
 history request, load the `crew-agent` skill wrapper and behave as if the user

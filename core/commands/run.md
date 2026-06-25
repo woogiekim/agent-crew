@@ -1404,7 +1404,7 @@ invoked Codex skill loaded, preserve that context as task metadata. Do not strip
 explicit `$skill` mentions or app-provided context from `TASK`; additionally,
 when the wrapper provides a `CODEX_SKILL_CONTEXT` string, write it before
 requirements collection. Domain-match alone is not approval to auto-load a
-non-agent-crew or third-party Codex/plugin skill:
+non-agent-crew or third-party host/plugin skill:
 
 ```bash
 if [ -n "${CODEX_SKILL_CONTEXT:-}" ]; then
@@ -2609,8 +2609,9 @@ use this sequence:
      Automatically loaded skills must come from agent-crew system/user skill
      locations (`~/.agent-crew/system/skills/`, `~/.agent-crew/user/skills/`,
      `~/.agent-crew/skills/`, `~/.agent-crew/system/agents/skills/`) or from the
-     Codex agent-crew mirrors (`~/.codex/skills/agent-crew/`,
-     `~/.codex/agent-crew/skills/`). Do not auto-load unrelated Codex/plugin
+     active host's agent-crew mirrors (`~/.claude/agent-crew/skills/`,
+     `~/.claude/agent-crew/agents/skills/`, `~/.codex/skills/agent-crew/`,
+     `~/.codex/agent-crew/skills/`). Do not auto-load unrelated host/plugin
      skills such as plugin cache skills from trigger-description matches. If a
      non-agent-crew skill is needed, ask the user first and record the explicit
      approval in `context/external-skill-approval.md` or `.json`.

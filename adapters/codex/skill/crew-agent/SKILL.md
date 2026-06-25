@@ -15,8 +15,9 @@ crew:agent
 
 1. Load `~/.agent-crew/commands/agent.md`.
 2. Treat any user text after `$crew-agent` as the agent invocation arguments.
-3. Preserve any explicitly invoked or domain-specific Codex skill context as
-   direct-agent input.
+3. Preserve explicitly invoked Codex skill context as direct-agent input. Do
+   not treat domain-selected third-party host/plugin skills as implicitly
+   approved.
 4. Follow the command definition exactly.
 
 Use this skill only for read-only investigation, explanation, lookup, and
