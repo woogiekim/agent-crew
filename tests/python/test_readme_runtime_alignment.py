@@ -80,6 +80,15 @@ def test_codex_guide_mirror_is_not_native_skill_directory():
     assert "native Codex skills live under `~/.codex/skills/`" in combined
 
 
+def test_update_command_contract_parses_reconcile_flag_in_any_position():
+    text = (REPO_ROOT / "core" / "commands" / "update.md").read_text(encoding="utf-8")
+    snippet = text[text.index("**`crew update --reconcile-skills`") :]
+
+    assert 'for arg in "$@"; do' in snippet
+    assert 'if [ "${arg}" = "--reconcile-skills" ]; then' in snippet
+    assert 'if [ "${1:-}" = "--reconcile-skills" ]; then' not in snippet
+
+
 def test_readme_documents_agent_crew_skill_dispatch_layers():
     text = readme_text()
 

@@ -185,6 +185,54 @@ def test_repair_does_not_require_quality_loop_for_operational_git_update_closeou
     assert repair["required_capability_gate"]["advisory"] is True
 
 
+def test_quality_gate_classifier_excludes_non_code_artifact_tasks():
+    assert repair_state.looks_quality_gated_task("Implement a new update gate") is True
+    assert repair_state.looks_quality_gated_task("Update API implementation") is True
+    assert repair_state.looks_quality_gated_task("Update backend service") is True
+    assert repair_state.looks_quality_gated_task("Update runtime code") is True
+    assert repair_state.looks_quality_gated_task("Fix runtime bug") is True
+    assert repair_state.looks_quality_gated_task("Fix backend service and commit changes") is True
+    assert repair_state.looks_quality_gated_task("Update backend service and push") is True
+    assert repair_state.looks_quality_gated_task("Fix API behavior and push changes") is True
+    assert repair_state.looks_quality_gated_task("Fix documentation generator source code") is True
+    assert repair_state.looks_quality_gated_task("Update documentation generator implementation") is True
+    assert repair_state.looks_quality_gated_task("Fix README parser source code") is True
+    assert repair_state.looks_quality_gated_task("Update report exporter source code") is True
+    assert repair_state.looks_quality_gated_task("Fix changelog renderer code") is True
+    assert repair_state.looks_quality_gated_task("Fix documentation generator") is True
+    assert repair_state.looks_quality_gated_task("Create docs generator") is True
+    assert repair_state.looks_quality_gated_task("Update report exporter") is True
+    assert repair_state.looks_quality_gated_task("Fix README parser") is True
+    assert repair_state.looks_quality_gated_task("Fix changelog renderer") is True
+    assert repair_state.looks_quality_gated_task("Write README documentation") is False
+    assert repair_state.looks_quality_gated_task("Edit docs only") is False
+    assert repair_state.looks_quality_gated_task("Create release notes") is False
+    assert repair_state.looks_quality_gated_task("Write CLI usage documentation") is False
+    assert repair_state.looks_quality_gated_task("Edit runtime guide") is False
+    assert repair_state.looks_quality_gated_task("Create backend architecture report") is False
+    assert repair_state.looks_quality_gated_task("Write implementation guide") is False
+    assert repair_state.looks_quality_gated_task("Create implementation report") is False
+    assert repair_state.looks_quality_gated_task("Write documentation generator guide") is False
+    assert repair_state.looks_quality_gated_task("Write source code documentation") is False
+    assert repair_state.looks_quality_gated_task("Update source code docs") is False
+    assert repair_state.looks_quality_gated_task("Update runtime assets source code") is True
+    assert repair_state.looks_quality_gated_task("Update installed runtime assets") is False
+
+
+def test_repair_does_not_require_quality_loop_for_documentation_only_task(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(tmp_path, "Write README documentation")
+    register_path = task_dir / "register.json"
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+    register["host_bridge_status"] = "current_session_required"
+    register_path.write_text(json.dumps(register), encoding="utf-8")
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["required"] is False
+
+
 def test_repair_blocks_evidence_only_without_pipeline_quality_loop(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     (task_dir / "context" / "tdd_log.md").write_text(

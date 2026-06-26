@@ -26,11 +26,74 @@ MUTATING_TASK_RE = re.compile(
 )
 QUALITY_GATED_TASK_RE = re.compile(
     r"\b("
-    r"implement|create|add|fix|remove|move|change|migrate|"
+    r"implement|create|add|update|fix|remove|move|change|migrate|"
     r"refactor|replace|extend|integrate|test|write|edit|improve"
     r")\b|"
     r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
     r"리팩터|테스트|작성|편집",
+    re.IGNORECASE,
+)
+NON_PRODUCTION_ARTIFACT_RE = re.compile(
+    r"\b("
+    r"readme|docs?|documentation|guide|quick[-_ ]?start|release\s+notes?|"
+    r"changelog|markdown|md|commentary|summary|report"
+    r")\b|문서|릴리즈\s*노트|변경\s*로그|요약|보고서",
+    re.IGNORECASE,
+)
+ARTIFACT_CODE_OWNER_RE = re.compile(
+    r"\b(?:"
+    r"readme|docs?|documentation|changelog|report"
+    r")\s+(?:generator|parser|renderer|exporter|builder|processor|tool|service|module|pipeline)\b|"
+    r"\b(?:generator|parser|renderer|exporter|builder|processor|tool|service|module|pipeline)"
+    r"\s+(?:for\s+)?(?:readme|docs?|documentation|changelog|report)\b|"
+    r"(?:문서|보고서|변경\s*로그).*(?:생성기|파서|렌더러|익스포터|도구|서비스|모듈)",
+    re.IGNORECASE,
+)
+ARTIFACT_CODE_OWNER_OUTPUT_RE = re.compile(
+    r"\b(?:write|edit|create|update|fix)\b.*"
+    r"(?:generator|parser|renderer|exporter|builder|processor|tool|service|module|pipeline).*"
+    r"\b(?:readme|docs?|documentation|guide|changelog|report)\b|"
+    r"(?:생성기|파서|렌더러|익스포터|도구|서비스|모듈).*(?:문서|가이드|보고서)",
+    re.IGNORECASE,
+)
+OPERATIONAL_UPDATE_RE = re.compile(
+    r"\b("
+    r"merge|push|commit|install|refresh|sync|update\s+(?:global|local|installed|runtime|agent-crew)\b|"
+    r"(?:global|local|installed|runtime|agent-crew)\s+(?:assets?|install|update)"
+    r")\b|머지|푸시|커밋|설치|동기화|글로벌\s*업데이트|설치본\s*업데이트",
+    re.IGNORECASE,
+)
+OPERATIONAL_ASSET_UPDATE_RE = re.compile(
+    r"\b("
+    r"update\s+(?:(?:installed|runtime|global|local|agent-crew)\s+){1,3}assets?|"
+    r"(?:(?:installed|runtime|global|local|agent-crew)\s+){1,3}assets?\s+update"
+    r")\b|설치본\s*런타임\s*에셋|런타임\s*에셋\s*업데이트",
+    re.IGNORECASE,
+)
+ASSET_SOURCE_CODE_RE = re.compile(
+    r"\bassets?\s+(?:source\s+)?code\b|\bsource\s+code\s+assets?\b|에셋.*(?:소스|코드)",
+    re.IGNORECASE,
+)
+EXPLICIT_CODE_CHANGE_RE = re.compile(
+    r"\b("
+    r"code|source|implementation|production[-_ ]?code|runtime\s+code"
+    r")\b|코드|소스|구현|프로덕션\s*코드|운영\s*코드|런타임\s*코드",
+    re.IGNORECASE,
+)
+IMPLEMENTATION_INTENT_RE = re.compile(
+    r"\b("
+    r"implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|test|improve"
+    r")\b|구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"리팩터|테스트|고쳐|해결",
+    re.IGNORECASE,
+)
+DOMAIN_CHANGE_RE = re.compile(
+    r"\b("
+    r"api|backend|frontend|database|schema|service|component|function|"
+    r"class|module|library|script|cli|hook|adapter|pipeline|gate|bug|logic|behavior|runtime"
+    r")\b|백엔드|프론트엔드|데이터베이스|스키마|서비스|컴포넌트|함수|"
+    r"클래스|모듈|스크립트|훅|어댑터|파이프라인|게이트|버그|로직|동작|런타임",
     re.IGNORECASE,
 )
 
@@ -163,7 +226,29 @@ def looks_mutating_task(task: str) -> bool:
 
 
 def looks_quality_gated_task(task: str) -> bool:
-    return bool(QUALITY_GATED_TASK_RE.search(task or ""))
+    text = task or ""
+    if not QUALITY_GATED_TASK_RE.search(text):
+        return False
+    if ARTIFACT_CODE_OWNER_OUTPUT_RE.search(text):
+        return False
+    if ARTIFACT_CODE_OWNER_RE.search(text):
+        return True
+    if (
+        NON_PRODUCTION_ARTIFACT_RE.search(text)
+        and not ASSET_SOURCE_CODE_RE.search(text)
+        and not ARTIFACT_CODE_OWNER_RE.search(text)
+    ):
+        return False
+    if EXPLICIT_CODE_CHANGE_RE.search(text):
+        return True
+    if OPERATIONAL_ASSET_UPDATE_RE.search(text):
+        return False
+    if OPERATIONAL_UPDATE_RE.search(text) and not (
+        IMPLEMENTATION_INTENT_RE.search(text) and DOMAIN_CHANGE_RE.search(text)
+    ):
+        return False
+
+    return not NON_PRODUCTION_ARTIFACT_RE.search(text)
 
 
 def looks_commit_mutation_task(task: str) -> bool:

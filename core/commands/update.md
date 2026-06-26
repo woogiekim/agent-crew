@@ -238,7 +238,14 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    construction.
 
    ```bash
-   if [ "${1:-}" = "--reconcile-skills" ]; then
+   reconcile_skills=0
+   for arg in "$@"; do
+     if [ "${arg}" = "--reconcile-skills" ]; then
+       reconcile_skills=1
+     fi
+   done
+
+   if [ "${reconcile_skills}" = "1" ]; then
      mkdir -p "${STATE_DIR}/reconcile"
      AGENT_CREW_RECONCILE_TAG="crew:update" \
        bash "${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh" \
