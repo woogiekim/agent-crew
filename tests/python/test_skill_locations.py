@@ -18,10 +18,9 @@ reversal of finding [1] and finding [8] (shared
   executable, and each of the 13 dispatch-enabled agent `.md` files
   MUST invoke it (per the PRD's "Contract: shared script" section,
   finding [8]).
-* Each of the 13 dispatch-enabled agent `.md` files MUST also carry
-  the rule-mandated post-dispatch citation form referencing
-  `context/skill-use.json` (per the PRD's "Contract: post-dispatch
-  citation" section, finding [4]).
+* Each of the 13 dispatch-enabled agent `.md` files MUST treat the
+  dispatch report as framework-computed decision context, not as a
+  reason to synthesize proof artifacts such as `context/skill-use.json`.
 """
 
 from __future__ import annotations
@@ -132,23 +131,26 @@ def test_success_case_dispatch_agents_invoke_shared_helper() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Finding [4] — unified post-dispatch citation form
+# Finding [4] — computed decision context, not proof artifacts
 # ---------------------------------------------------------------------------
 
 
-def test_success_case_dispatch_agents_cite_skill_use_json() -> None:
-    """success-case: each of the 13 dispatch-enabled agents must carry
-    the rule-mandated post-dispatch citation form referencing
-    `context/skill-use.json` (per `core/rules/agent-tool-dispatch.md`
-    state 3) — see finding [4]. Drift across the agent .md files was
-    the original defect."""
+def test_success_case_dispatch_agents_use_decision_context_not_skill_use_proof() -> None:
+    """success-case: each of the 13 dispatch-enabled agents must treat
+    capability dispatch as computed decision context, not a synthetic proof
+    artifact contract."""
     missing: list[str] = []
     for agent in DISPATCH_ENABLED_AGENTS:
         agent_file = REPO_ROOT / "core" / "agents" / f"{agent}.md"
         text = agent_file.read_text(encoding="utf-8")
-        if "context/skill-use.json" not in text:
+        if "decision_context" not in text:
             missing.append(
-                f"{agent_file} must cite `context/skill-use.json` in its "
-                "post-dispatch instruction block (finding [4])"
+                f"{agent_file} must mention `decision_context` in its "
+                "post-dispatch instruction block"
+            )
+        if "already appended" in text or "citation entry per matched skill" in text:
+            missing.append(
+                f"{agent_file} still describes dispatch as a skill-use proof "
+                "artifact"
             )
     assert not missing, "\n".join(missing)

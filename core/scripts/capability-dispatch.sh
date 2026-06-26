@@ -15,10 +15,9 @@
 #      `--emit-fallback <reason>` mode when available; literal fallback
 #      only when the dispatcher itself is missing) plus the matching
 #      `[crew] DEGRADED | capability-dispatch=<reason> agent=<name>` line.
-#   4. On match success or zero-match, append a `{skill_path, loaded_by}`
-#      citation entry per matched skill to
-#      `${TASK_DIR}/context/skill-use.json` per the rule-mandated form
-#      in `core/rules/agent-tool-dispatch.md` state 3.
+#   4. On match success or zero-match, preserve only the framework-computed
+#      resolver state in `${TASK_DIR}/context/capability-skills-<agent>.json`.
+#      Do not synthesize `skill-use.json` proof artifacts from dispatch alone.
 #
 # Required env:
 #   TASK_DIR       — task directory; must exist
@@ -45,7 +44,6 @@ AGENT_NAME="$1"
 mkdir -p "${TASK_DIR}/context" 2>/dev/null || true
 
 DISPATCH_REPORT="${TASK_DIR}/context/capability-skills-${AGENT_NAME}.json"
-SKILL_USE_FILE="${TASK_DIR}/context/skill-use.json"
 DISPATCH_LOG="${TASK_DIR}/context/capability-dispatch-${AGENT_NAME}.log"
 
 # Locate the dispatcher: prefer the installed system path, then a source
@@ -75,74 +73,19 @@ emit_fallback_json() {
   # we have no other way to compute the policy string. We deliberately do
   # NOT hand-type `generic-<agent>-skills` here as a value carried per
   # agent; the literal is constructed at runtime from the agent name.
-  printf '{"agent":"%s","matched":[],"fallback":true,"fallback_policy":"generic-%s-skills","reason":"%s"}\n' \
-    "${AGENT_NAME}" "${AGENT_NAME}" "${reason}"
-}
-
-# Append `{skill_path, loaded_by}` citation entries to
-# `${TASK_DIR}/context/skill-use.json` for each matched skill in the
-# dispatch report. Per `core/rules/agent-tool-dispatch.md` state 3.
-cite_matched_skills() {
-  local report="$1"
-  [ -f "${report}" ] || return 0
-  python3 - "${report}" "${SKILL_USE_FILE}" "${AGENT_NAME}" <<'PY' 2>/dev/null || true
-import json
-import os
-import sys
-from pathlib import Path
-
-report_path = Path(sys.argv[1])
-skill_use_path = Path(sys.argv[2])
-agent_name = sys.argv[3]
-
-try:
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    sys.exit(0)
-
-matched = report.get("matched") or []
-if not isinstance(matched, list) or not matched:
-    sys.exit(0)
-
-existing = []
-if skill_use_path.is_file():
-    try:
-        loaded = json.loads(skill_use_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        loaded = []
-    if isinstance(loaded, list):
-        existing = loaded
-    elif isinstance(loaded, dict) and isinstance(loaded.get("entries"), list):
-        existing = loaded["entries"]
-
-seen = {
-    (entry.get("skill_path"), entry.get("loaded_by"))
-    for entry in existing
-    if isinstance(entry, dict)
-}
-
-added = False
-for item in matched:
-    if not isinstance(item, dict):
-        continue
-    skill_path = item.get("path") or ""
-    if not skill_path:
-        continue
-    key = (skill_path, agent_name)
-    if key in seen:
-        continue
-    existing.append({"skill_path": skill_path, "loaded_by": agent_name})
-    seen.add(key)
-    added = True
-
-if not added and skill_use_path.is_file():
-    sys.exit(0)
-
-skill_use_path.parent.mkdir(parents=True, exist_ok=True)
-tmp = skill_use_path.with_suffix(skill_use_path.suffix + ".tmp")
-tmp.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-os.replace(tmp, skill_use_path)
-PY
+  printf '%s%s%s%s%s%s%s%s%s%s%s%s\n' \
+    '{"agent":"'"${AGENT_NAME}"'","matched":[],' \
+    '"duplicate_resolved":[],"unindexed_user_skills":[],' \
+    '"fallback":true,"fallback_policy":"generic-'"${AGENT_NAME}"'-skills",' \
+    '"reason":"'"${reason}"'","decision_context":{' \
+    '"source":"framework_computed","artifact_required":false,' \
+    '"coverage":{"skill_discovery":0,"skill_resolution":0},' \
+    '"known_gaps":[{"id":"capability_dispatch:'"${reason}"'",' \
+    '"type":"capability_dispatch_degraded","severity":"medium",' \
+    '"agent":"'"${AGENT_NAME}"'","reason":"'"${reason}"'",' \
+    '"impact":"capability skills were not resolved; agent should continue with declared base skills",' \
+    '"recommended_action":"inspect dispatcher availability only if this affects task quality",' \
+    '"deferrable":true}]}}'
 }
 
 _DISPATCH_TMP="${DISPATCH_REPORT}.tmp"
@@ -154,7 +97,7 @@ if [ -f "${DISPATCH}" ]; then
       --task "${TASK:-}" \
       --format json > "${_DISPATCH_TMP}" 2>"${DISPATCH_LOG}"; then
     if mv "${_DISPATCH_TMP}" "${DISPATCH_REPORT}" 2>/dev/null; then
-      cite_matched_skills "${DISPATCH_REPORT}"
+      :
     else
       rm -f "${_DISPATCH_TMP}"
       emit_fallback_json "mv_failed" > "${DISPATCH_REPORT}"

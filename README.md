@@ -99,6 +99,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
 - **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; explicitly invoked host skill context is preserved, but non-agent-crew or third-party host/plugin skills must not be auto-loaded by description match; the AI must enter the `crew-run` workflow with no preamble, no file reads, no Bash commands, and no clarifying questions
+- **Agent-first skill dispatch** — implementation agents discover capability skills through agent-crew's canonical `system/skills` + `user/skills` layers. Skill frontmatter (`loaded_by`, `axis`, `detection`) selects applicable skills; same-name user skills override system defaults; duplicate resolution and unindexed user-skill gaps are reported as framework-computed `decision_context`, not as required proof artifacts.
 - **All-response agent routing** — substantive user-facing answers route through agent-crew first: implementation/mutation/git work enters `crew:run`, while questions, explanations, diagnostics, status, and history lookups enter `crew:agent`
 - **Route directive guard** — when a host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` detects Agent responses that received a STOP/ROUTE route lock but answered inline instead of entering `crew:run` / `crew:agent`
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
@@ -602,23 +603,35 @@ The standard `crew:run` path no longer performs a separate planner spawn after a
 
 ## Specialized Skills
 
-Each agent loads a dedicated skill file on demand using the `Read` tool. Skills are never loaded at agent startup — only when the specific technique is needed during execution.
+Agents load skill files on demand. Static base skills are read only when the
+specific technique is needed; capability skills are discovered through
+`core/scripts/review-profile-dispatch.py --agent <name>` and selected by
+frontmatter metadata.
 
-| Skill file | Loaded by |
+| Canonical layer | Purpose |
 |---|---|
-| `core/agents/skills/requirement-gathering.md` | requirements, analyst |
-| `core/agents/skills/pipeline-planning.md` | planner |
-| `core/agents/skills/code-review.md` | reviewer |
-| `core/agents/skills/conflict-resolution.md` | resolver |
-| `core/agents/skills/tdd.md` | backend |
-| `core/agents/skills/oop-principles.md` | backend |
-| `core/agents/skills/api-design.md` | backend |
-| `core/agents/skills/ui-component-design.md` | frontend |
-| `core/agents/skills/ux-design.md` | designer |
-| `core/agents/skills/deployment-ops.md` | devops |
+| `core/agents/skills/` | Source-controlled system skill definitions |
+| `~/.agent-crew/system/skills/` | Installed system defaults, refreshed by setup/update |
+| `~/.agent-crew/user/skills/` | User extensions and same-name overrides, never overwritten |
+| `~/.agent-crew/skills/` | Unified discovery view, rebuilt from system + user with user-wins precedence |
+| `~/.claude/agent-crew/skills/` | Claude agent-crew mirror |
+| `~/.codex/agent-crew/skills/` | Codex agent-crew guide mirror; native Codex skills remain under `~/.codex/skills/` |
 
-Skills live under `core/agents/skills/` in the repository and are installed to
-`~/.agent-crew/agents/skills/` by the installer.
+Capability skill files use metadata that connects them to agents:
+
+```yaml
+loaded_by: backend,frontend,reviewer
+axis: code-cleanup
+detection: cleanup|refactor|dead.code|unused
+```
+
+The dispatcher returns a capability report at
+`{TASK_DIR}/context/capability-skills-<agent>.json` with matched paths,
+same-name duplicate resolution, task-relevant unindexed user-skill gaps, and a
+framework-computed `decision_context`. This report tells the agent what to load;
+it does not create `skill-use.json` proof artifacts by itself. Real outcomes,
+tests, diffs, reviews, and tool events remain the evidence that a skill was
+applied.
 
 ## Parallel-First Execution
 
@@ -939,7 +952,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew:status` | Snapshot of the most recent task's pipeline state |
 | `crew:cost` | Show the session cost summary |
 | `crew:telemetry` | Pipeline timing, retry, and token aggregates across recent runs |
-| `crew:agent-maker` | Design and register a custom agent |
+| `crew:agent-maker` | Design and register a custom agent or agent-crew skill |
 | `crew:update` | Sync `~/.agent-crew/` with the source checkout |
 
 ### crew:status

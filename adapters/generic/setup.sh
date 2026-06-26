@@ -20,7 +20,9 @@ copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.agent-crew/hooks"
 
 # Merge system agents + user agents into the project discovery path.
 # System agents are always included. User agents are layered on top with
-# conflict detection (system wins on name collision).
+# conflict detection: a same-name system agent remains authoritative. Skill
+# layers below use a different policy: user skills override same-name system
+# skill defaults.
 merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/system/agents" \
   "${AGENT_CREW_HOME}/user/agents" \

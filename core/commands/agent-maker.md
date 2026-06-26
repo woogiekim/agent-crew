@@ -88,6 +88,15 @@ model: inherit
 ## Skill Guide Template
 
 ```markdown
+---
+name: <skill-name>
+description: >
+  <One-line summary of what this skill provides to the agents that load it.>
+loaded_by: <comma-separated agent names, e.g. backend,frontend,reviewer>
+axis: <capability-axis, e.g. code-cleanup, kotlin-spring, review-policy>
+detection: <task/project/file matching expression; use keywords or OR-clauses>
+---
+
 # Skill: <skill-name>
 
 ## Purpose
@@ -118,6 +127,11 @@ model: inherit
 - [ ] <verification item 2>
 ```
 
+`loaded_by`, `axis`, and `detection` are the connection points that let
+agent-crew's metadata dispatcher select the skill. A skill without these fields
+can still be read manually, but it will appear only as a non-blocking
+`unindexed_user_skills` gap in the framework-computed `decision_context`.
+
 ## Workflow Command Template
 
 ````markdown
@@ -136,6 +150,36 @@ model: inherit
 STATUS: <completed|blocked|cancelled>
 ARTIFACTS: <paths>
 ```
+````
+
+## Optional Agent Capability-Skill Dispatch Block
+
+When creating an agent that should consume user/system skills, include a
+capability dispatch section in the agent definition. This connects the agent to
+skills whose frontmatter declares `loaded_by: <agent-name>` without hardcoding
+concrete skill filenames in the agent prompt.
+
+````markdown
+## Capability Skill Dispatch
+
+Before the first execution step, run the shared dispatcher:
+
+```bash
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+bash "${AGENT_CREW_HOME}/system/scripts/capability-dispatch.sh" "<agent-name>"
+```
+
+After the helper runs, read
+`${TASK_DIR}/context/capability-skills-<agent-name>.json`:
+
+- `.fallback == true` → continue with the agent's declared base skills only.
+- `.matched[] == []` → continue normally; zero matches is expected when no
+  relevant user skill is installed.
+- `.matched[]` non-empty → read each `.matched[].path` before execution.
+  The report includes duplicate resolution, unindexed user-skill gaps, and
+  `decision_context`. Dispatch alone must not synthesize `skill-use.json` proof
+  artifacts; real task outcomes, tests, diffs, reviews, or tool events are the
+  evidence of application.
 ````
 
 ## Hook Template
@@ -171,23 +215,27 @@ The helper detects installed adapters by checking sentinel paths:
 The script is idempotent and silent when an adapter is not installed. It must
 be called once per agent after the file is written — not once per host.
 
-## Finalization — Deploy Skill to Discovery
+## Finalization — Deploy Skill to Agent-Crew Mirrors
 
 After writing a skill guide to `~/.agent-crew/user/skills/<name>.md`, run the deploy
-helper so the skill is visible to agents that load skills from the merged discovery path:
+helper so the skill is merged into the agent-crew discovery view and mirrored to
+installed host adapter agent-crew paths:
 
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 bash "${AGENT_CREW_HOME}/setup/deploy-user-skill.sh" "<name>.md"
 ```
 
-The helper copies the skill file into each installed host adapter's skills path and
-into the agent-crew mirror path where agents can discover it at task time.
+The helper refreshes `~/.agent-crew/skills/` from the canonical
+`system/skills` + `user/skills` layers with user-wins precedence, then copies
+the selected skill into each installed host adapter's **agent-crew** skill
+mirror. Do not place agent-crew user skills in a host's native third-party skill
+catalog.
 
 | Adapter | Sentinel path | Deploy action |
 |---|---|---|
 | Claude Code | `~/.claude/agents/` exists | Copies skill to `~/.claude/agent-crew/skills/` |
-| Codex | `~/.codex/agents/` exists | Copies skill to `~/.codex/skills/` |
+| Codex | `~/.codex/agents/` exists | Copies skill to `~/.codex/agent-crew/skills/` |
 | Generic (project) | N/A — project root unknown at creation time | Run `crew:update` to pick up the new skill |
 
 The script is idempotent. `crew:update` also runs this merge automatically on every
@@ -202,11 +250,14 @@ update cycle, so new skills are discovered without a manual step after the first
 - [ ] Uses `model: inherit` when a model field is required
 - [ ] Describes host-specific copies as compatibility only
 - [ ] Includes verification steps
+- [ ] Skill frontmatter includes `loaded_by`, `axis`, and `detection`
+- [ ] New skill names the agent(s) that should load it via `loaded_by`
+- [ ] New agent definitions that consume skills include the capability-skill dispatch block
 - [ ] Runs `deploy-user-agent.sh` to propagate agents to all installed host adapters
 - [ ] Runs `deploy-user-skill.sh` to propagate skill guides to all installed host adapters
 - [ ] Skill file follows `## Purpose` / `## When to Apply` / code examples / `## Checklist` format
 - [ ] Official references cited for every major principle (Author, Title, Year)
-- [ ] Skill is discoverable by agents after deploy
+- [ ] Skill is discoverable by agents after deploy through the computed capability report
 
 ## Completion Report
 

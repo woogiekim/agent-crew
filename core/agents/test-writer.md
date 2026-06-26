@@ -66,11 +66,9 @@ discover any user-owned skills that declare `loaded_by: test-writer` in their fr
 ```bash
 # Shared capability-dispatch helper (finding [8]). The helper
 # internally invokes `review-profile-dispatch.py --agent test-writer`
-# and writes the report to
-# `${TASK_DIR}/context/capability-skills-test-writer.json`. It also
-# appends `{skill_path, loaded_by}` citation entries to
-# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
-# state 3, so the agent does not write that file by hand.
+# and writes the framework-computed decision context to
+# `${TASK_DIR}/context/capability-skills-test-writer.json`. Dispatch alone must not synthesize
+# `skill-use.json` proof artifacts.
 CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
 [ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
 bash "${CAPABILITY_DISPATCH}" test-writer
@@ -78,7 +76,7 @@ bash "${CAPABILITY_DISPATCH}" test-writer
 
 After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-test-writer.json`:
 - `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=test-writer` and continue normally (NORMAL state).
-- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The report already contains matched paths, duplicate resolution, unindexed user-skill gaps, and `decision_context`; the agent MUST NOT synthesize separate skill-use proof artifacts from dispatch alone.
 - DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
 ## Inputs

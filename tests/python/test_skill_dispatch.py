@@ -338,6 +338,151 @@ def test_discover_skills_for_agent_excludes_non_matching_agent(tmp_path: Path) -
     assert matches == []
 
 
+def test_cli_resolves_duplicate_layers_without_returning_merged_mirror(
+    tmp_path: Path,
+) -> None:
+    system_dir = tmp_path / "system" / "skills"
+    user_dir = tmp_path / "user" / "skills"
+    merged_dir = tmp_path / "skills"
+    system_dir.mkdir(parents=True)
+    user_dir.mkdir(parents=True)
+    merged_dir.mkdir()
+    _write_skill(
+        system_dir / "shared-policy.md",
+        loaded_by="backend",
+        detection="cleanup|refactor",
+    )
+    _write_skill(
+        user_dir / "shared-policy.md",
+        loaded_by="backend",
+        detection="cleanup|refactor",
+    )
+    _write_skill(
+        merged_dir / "shared-policy.md",
+        loaded_by="backend",
+        detection="cleanup|refactor",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(system_dir),
+        "--skills-dir", str(user_dir),
+        "--skills-dir", str(merged_dir),
+        "--project-root", str(tmp_path),
+        "--task", "Cleanup pass.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["shared-policy"]
+    assert payload["matched"][0]["path"] == str(user_dir / "shared-policy.md")
+    assert payload["matched"][0]["layer"] == "user"
+    assert payload["decision_context"]["artifact_required"] is False
+    assert len(payload["duplicate_resolved"]) == 2
+    assert {item["shadowed_layer"] for item in payload["duplicate_resolved"]} == {
+        "system",
+        "merged",
+    }
+
+
+def test_cli_reports_unindexed_user_skill_as_computed_state(tmp_path: Path) -> None:
+    user_dir = tmp_path / "user" / "skills"
+    user_dir.mkdir(parents=True)
+    (user_dir / "legacy-skill.md").write_text(
+        "# Skill: legacy-skill\n\nLegacy user skill without metadata.\n",
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(user_dir),
+        "--project-root", str(tmp_path),
+        "--task", "Cleanup pass.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+    assert payload["decision_context"]["artifact_required"] is False
+    assert payload["unindexed_user_skills"] == [
+        {
+            "name": "legacy-skill",
+            "path": str(user_dir / "legacy-skill.md"),
+            "layer": "user",
+            "missing_fields": ["loaded_by", "axis", "detection"],
+            "reason": "missing dispatch metadata",
+        }
+    ]
+    assert payload["decision_context"]["known_gaps"][0]["type"] == "unindexed_user_skill"
+
+
+def test_cli_ignores_reserved_and_foreign_user_skill_noise(tmp_path: Path) -> None:
+    user_dir = tmp_path / "user" / "skills"
+    user_dir.mkdir(parents=True)
+    (user_dir / "README.md").write_text(
+        "# User skills\n\nDirectory documentation, not a dispatch skill.\n",
+        encoding="utf-8",
+    )
+    (user_dir / "cc-tasks.md").write_text(
+        "# cc-tasks\n\nUse this skill when a user explicitly writes `$cc-tasks`.\n",
+        encoding="utf-8",
+    )
+    (user_dir / "issuer-github.md").write_text(
+        "# issuer-github\n\nLoaded by the issuer dispatcher for GitHub issues.\n",
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(user_dir),
+        "--project-root", str(tmp_path),
+        "--task", "Cleanup pass.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+    assert payload["unindexed_user_skills"] == []
+    assert payload["decision_context"]["known_gaps"] == []
+
+
+def test_cli_reports_contextual_partial_metadata_user_skill_gap(tmp_path: Path) -> None:
+    user_dir = tmp_path / "user" / "skills"
+    user_dir.mkdir(parents=True)
+    (user_dir / "contents-grafana-alerting.md").write_text(
+        """---
+name: contents-grafana-alerting
+description: Use when an agent works on repository-owned Grafana alerting scripts.
+---
+
+# Skill: contents-grafana-alerting
+""",
+        encoding="utf-8",
+    )
+
+    unrelated = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(user_dir),
+        "--project-root", str(tmp_path),
+        "--task", "Cleanup pass.",
+        "--format", "json",
+    )
+    relevant = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(user_dir),
+        "--project-root", str(tmp_path),
+        "--task", "Update Grafana alerting scripts.",
+        "--format", "json",
+    )
+
+    assert unrelated["unindexed_user_skills"] == []
+    assert [item["name"] for item in relevant["unindexed_user_skills"]] == [
+        "contents-grafana-alerting"
+    ]
+    assert relevant["unindexed_user_skills"][0]["missing_fields"] == [
+        "loaded_by",
+        "axis",
+        "detection",
+    ]
+
+
 def test_reviewer_discovery_backward_compatible(tmp_path: Path) -> None:
     """The legacy `discover_review_profiles` helper still works."""
     module = _load_module(DISPATCH_SCRIPT, "review_profile_dispatch_module_compat")

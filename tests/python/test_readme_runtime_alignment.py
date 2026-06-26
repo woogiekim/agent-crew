@@ -73,6 +73,20 @@ def test_codex_guide_mirror_is_not_native_skill_directory():
     assert "native Codex skills live under `~/.codex/skills/`" in combined
 
 
+def test_readme_documents_agent_crew_skill_dispatch_layers():
+    text = readme_text()
+
+    assert "Agent-first skill dispatch" in text
+    assert "`~/.agent-crew/system/skills/`" in text
+    assert "`~/.agent-crew/user/skills/`" in text
+    assert "`~/.agent-crew/skills/`" in text
+    assert "`~/.codex/agent-crew/skills/`" in text
+    assert "native Codex skills remain under `~/.codex/skills/`" in text
+    assert "`decision_context`" in text
+    assert "does not create `skill-use.json` proof artifacts" in text
+    assert "`~/.agent-crew/agents/skills/`" not in text
+
+
 def test_readme_defines_prompt_internal_control_layer():
     text = readme_text()
     compact = " ".join(text.split())

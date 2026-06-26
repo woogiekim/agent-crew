@@ -91,3 +91,91 @@ def test_no_residual_base_skills_only_in_audited_agents() -> None:
         assert "base-skills-only" not in policy
     helper_text = CAPABILITY_DISPATCH.read_text(encoding="utf-8")
     assert "base-skills-only" not in helper_text
+
+
+def test_capability_dispatch_does_not_write_skill_use_proof_artifact(tmp_path: pathlib.Path) -> None:
+    """Capability dispatch returns framework-computed state only.
+
+    It must not recreate the previous proof-artifact contract by writing
+    `context/skill-use.json` merely because a skill matched. The selected paths
+    belong in the dispatcher report and its decision context; actual application
+    evidence, when needed, must come from real task outcomes rather than a
+    synthetic "I loaded this skill" file.
+    """
+    task_dir = tmp_path / "task"
+    user_skills = tmp_path / "home" / "user" / "skills"
+    task_dir.mkdir()
+    user_skills.mkdir(parents=True)
+    (user_skills / "backend-cleanup.md").write_text(
+        """---
+name: backend-cleanup
+description: Backend cleanup fixture.
+loaded_by: backend
+axis: cleanup
+detection: cleanup
+---
+
+# backend-cleanup
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(CAPABILITY_DISPATCH), "backend"],
+        cwd=REPO_ROOT,
+        env={
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": str(tmp_path / "home"),
+            "AGENT_CREW_HOME": str(tmp_path / "home"),
+            "TASK_DIR": str(task_dir),
+            "PROJECT_ROOT": str(REPO_ROOT),
+            "TASK": "cleanup backend service",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = task_dir / "context" / "capability-skills-backend.json"
+    assert report.is_file()
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert [item["name"] for item in payload["matched"]] == ["backend-cleanup"]
+    assert payload["decision_context"]["artifact_required"] is False
+    assert not (task_dir / "context" / "skill-use.json").exists()
+
+
+def test_script_missing_literal_fallback_preserves_decision_context(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Even the last-resort script_missing branch must keep the canonical shape."""
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    project_root = tmp_path / "not-agent-crew"
+    project_root.mkdir()
+
+    result = subprocess.run(
+        ["bash", str(CAPABILITY_DISPATCH), "backend"],
+        cwd=tmp_path,
+        env={
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": str(tmp_path / "home"),
+            "AGENT_CREW_HOME": str(tmp_path / "home"),
+            "TASK_DIR": str(task_dir),
+            "PROJECT_ROOT": str(project_root),
+            "TASK": "cleanup backend service",
+        },
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = task_dir / "context" / "capability-skills-backend.json"
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert payload["fallback"] is True
+    assert payload["reason"] == "script_missing"
+    assert payload["duplicate_resolved"] == []
+    assert payload["unindexed_user_skills"] == []
+    assert payload["decision_context"]["artifact_required"] is False
+    assert payload["decision_context"]["known_gaps"][0]["type"] == (
+        "capability_dispatch_degraded"
+    )

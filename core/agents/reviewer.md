@@ -141,11 +141,9 @@ Reference invocation:
 ```bash
 # Shared capability-dispatch helper (finding [8]). The helper
 # internally invokes `review-profile-dispatch.py --agent reviewer`
-# and writes the report to
-# `${TASK_DIR}/context/capability-skills-reviewer.json`. It also
-# appends `{skill_path, loaded_by}` citation entries to
-# `${TASK_DIR}/context/skill-use.json` per `core/rules/agent-tool-dispatch.md`
-# state 3, so the agent does not write that file by hand.
+# and writes the framework-computed decision context to
+# `${TASK_DIR}/context/capability-skills-reviewer.json`. Dispatch alone must not synthesize
+# `skill-use.json` proof artifacts.
 CAPABILITY_DISPATCH="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/capability-dispatch.sh"
 [ -f "${CAPABILITY_DISPATCH}" ] || CAPABILITY_DISPATCH="${PROJECT_ROOT}/core/scripts/capability-dispatch.sh"
 bash "${CAPABILITY_DISPATCH}" reviewer
@@ -153,12 +151,12 @@ bash "${CAPABILITY_DISPATCH}" reviewer
 
 After the helper runs, read the report at `${TASK_DIR}/context/capability-skills-reviewer.json`:
 - `.matched[] == []` → emit `[crew] CAPABILITY_SKILLS: none agent=reviewer` and continue normally (NORMAL state).
-- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The helper already appended a `{skill_path, loaded_by}` citation entry per matched skill to `${TASK_DIR}/context/skill-use.json` (per `core/rules/agent-tool-dispatch.md` state 3); the agent MUST NOT duplicate that write.
+- `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The report already contains matched paths, duplicate resolution, unindexed user-skill gaps, and `decision_context`; the agent MUST NOT synthesize separate skill-use proof artifacts from dispatch alone.
 - DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
 For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-reviewer-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none agent=reviewer` line; both refer to the same "empty match, continue with generic review skills" state.
 
-Reviewer-specific note: in addition to the shared `${TASK_DIR}/context/skill-use.json` citation that the helper writes, the reviewer also records the matched profile paths in `${TASK_DIR}/context/review.md` for the review report.
+Reviewer-specific note: the reviewer may record matched profile paths in `${TASK_DIR}/context/review.md` when they are part of the review findings, but dispatch alone is not proof of skill application.
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.

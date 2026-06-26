@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Discover skills loaded by an agent from user-owned metadata.
+"""Discover skills loaded by an agent from agent-crew skill metadata.
 
 Generalized from reviewer-only (#137) to any opted-in agent (#186).
 The `--agent` flag selects which agent's `loaded_by` declaration to
 match. Defaults to `reviewer` for backward compatibility with existing
-callers.
+callers. By default, discovery scans canonical agent-crew skill layers:
+system defaults plus user extensions/overrides. Host mirrors are loading
+surfaces, not policy sources.
 
 Inputs:
   --agent NAME         Requesting agent name (default: reviewer).
@@ -22,15 +24,13 @@ Exit codes:
   2 - malformed arguments
 
 Examples:
-  # Reviewer (backward-compatible default)
+  # Reviewer (backward-compatible default) using default system/user layers
   python3 review-profile-dispatch.py \
-    --skills-dir ~/.agent-crew/user/skills \
     --project-root "$PROJECT_ROOT" \
     --task "$TASK"
 
-  # Backend / frontend dispatch
+  # Backend / frontend dispatch using default system/user layers
   python3 review-profile-dispatch.py --agent backend \
-    --skills-dir ~/.agent-crew/user/skills \
     --project-root "$PROJECT_ROOT" \
     --task "$TASK"
 """
@@ -55,11 +55,16 @@ PROFILE_TYPES = {
 
 STOP_WORDS = {
     "and",
+    "agent",
+    "agents",
     "behavior",
     "changes",
     "code",
     "for",
     "like",
+    "load",
+    "loaded",
+    "loads",
     "policy",
     "profile",
     "repository",
@@ -69,12 +74,48 @@ STOP_WORDS = {
     "reviewer",
     "reviews",
     "sensitive",
+    "skill",
+    "skills",
     "task",
     "the",
     "touch",
     "touches",
+    "use",
     "user",
+    "when",
     "with",
+    "work",
+    "works",
+}
+
+REQUIRED_DISPATCH_FIELDS = ("loaded_by", "axis", "detection")
+LAYER_PRIORITY = {
+    "user": 0,
+    "system": 1,
+    "merged": 2,
+    "host_mirror": 3,
+    "unknown": 4,
+}
+RESERVED_USER_SKILL_DOCS = {
+    "changelog",
+    "license",
+    "readme",
+    "skill-template",
+}
+AGENT_NAME_PREFIXES = {
+    "analyst",
+    "backend",
+    "designer",
+    "devops",
+    "documenter",
+    "frontend",
+    "issuer",
+    "planner",
+    "qa-owner",
+    "requirements",
+    "resolver",
+    "reviewer",
+    "test-writer",
 }
 
 
@@ -143,6 +184,10 @@ def metadata_value(metadata: dict[str, str], *keys: str) -> str:
         if metadata.get(normalized):
             return metadata[normalized]
     return ""
+
+
+def metadata_has_key(metadata: dict[str, str], *keys: str) -> bool:
+    return any(key.replace("-", "_") in metadata for key in keys)
 
 
 def loaded_by(metadata: dict[str, str], agent_name: str) -> tuple[bool, list[str]]:
@@ -270,7 +315,7 @@ def detection_matches(detection: str, context_text: str, context_tokens: set[str
 def default_skill_dirs() -> list[Path]:
     home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew"))
 
-    return [home / "user" / "skills", home / "skills"]
+    return [home / "system" / "skills", home / "user" / "skills"]
 
 
 def build_context(project_root: Path, task: str, changed_files: Iterable[str]) -> tuple[str, set[str]]:
@@ -293,6 +338,156 @@ def iter_skill_files(skills_dirs: Iterable[Path]) -> Iterable[Path]:
             yield path
 
 
+def classify_skill_layer(path: Path) -> str:
+    parts = path.expanduser().parts
+    text = str(path.expanduser())
+    normalized = text.replace("\\", "/")
+
+    if "/user/skills/" in normalized or (
+        len(parts) >= 3 and parts[-3:-1] == ("user", "skills")
+    ):
+        return "user"
+    if (
+        "/system/skills/" in normalized
+        or "/system/agents/skills/" in normalized
+        or "/core/agents/skills/" in normalized
+        or (len(parts) >= 3 and parts[-3:-1] == ("system", "skills"))
+    ):
+        return "system"
+    if (
+        "/.claude/agent-crew/skills/" in normalized
+        or "/.claude/agent-crew/agents/skills/" in normalized
+        or "/.codex/skills/agent-crew/" in normalized
+        or "/.codex/agent-crew/skills/" in normalized
+    ):
+        return "host_mirror"
+    if "/.agent-crew/skills/" in normalized or (
+        len(parts) >= 2 and parts[-2] == "skills"
+    ):
+        return "merged"
+    return "unknown"
+
+
+def missing_dispatch_fields(metadata: dict[str, str]) -> list[str]:
+    missing: list[str] = []
+    if "loaded_by" in REQUIRED_DISPATCH_FIELDS and not metadata_value(
+        metadata, "loaded_by", "loaded-by"
+    ):
+        missing.append("loaded_by")
+    if "axis" in REQUIRED_DISPATCH_FIELDS and not metadata_value(metadata, "axis"):
+        missing.append("axis")
+    # An explicit empty detection key is valid and means "global for this agent".
+    if "detection" in REQUIRED_DISPATCH_FIELDS and not metadata_has_key(
+        metadata, "detection"
+    ):
+        missing.append("detection")
+    return missing
+
+
+def build_unindexed_skill(path: Path, metadata: dict[str, str], layer: str) -> dict:
+    return {
+        "name": metadata_value(metadata, "name") or path.stem,
+        "path": str(path),
+        "layer": layer,
+        "missing_fields": missing_dispatch_fields(metadata),
+        "reason": "missing dispatch metadata",
+    }
+
+
+def agent_prefix_for_stem(stem: str) -> str:
+    lowered = stem.lower()
+    for prefix in sorted(AGENT_NAME_PREFIXES, key=len, reverse=True):
+        if lowered == prefix or lowered.startswith(f"{prefix}-"):
+            return prefix
+    return ""
+
+
+def looks_like_explicit_invocation_skill(text: str) -> bool:
+    """Detect host/user command skills that should not become agent gaps."""
+    lowered = text.lower()
+    if "$" not in lowered:
+        return False
+
+    return any(
+        marker in lowered
+        for marker in (
+            "explicitly writes",
+            "explicitly invokes",
+            "user invokes",
+            "command shapes",
+            "slash command",
+        )
+    )
+
+
+def descriptor_matches_context(
+    descriptor: str,
+    context_text: str,
+    context_tokens: set[str],
+) -> bool:
+    tokens = significant_tokens(descriptor)
+    if not tokens:
+        return True
+
+    return any(token in context_tokens or token in context_text for token in tokens)
+
+
+def unindexed_user_skill_applies_to_agent(
+    path: Path,
+    metadata: dict[str, str],
+    text: str,
+    *,
+    agent_name: str,
+    context_text: str,
+    context_tokens: set[str],
+) -> bool:
+    """Return whether an incomplete user skill should be surfaced as a gap.
+
+    The gap list is framework-computed decision context, not a required
+    evidence artifact. Keep it task-scoped: directory docs, explicit command
+    skills, and another agent's adapter should not dilute the current agent's
+    coverage score.
+    """
+    stem = path.stem.lower()
+    if stem in RESERVED_USER_SKILL_DOCS:
+        return False
+
+    agent_lower = agent_name.lower()
+    loaded = [
+        entry.lower()
+        for entry in split_list(metadata_value(metadata, "loaded_by", "loaded-by"))
+    ]
+    if loaded and agent_lower not in loaded:
+        return False
+
+    prefix = agent_prefix_for_stem(stem)
+    if prefix and prefix != agent_lower:
+        return False
+
+    if not metadata and not prefix and looks_like_explicit_invocation_skill(text):
+        return False
+
+    if metadata_has_key(metadata, "detection"):
+        return detection_matches(
+            metadata_value(metadata, "detection"),
+            context_text,
+            context_tokens,
+        )
+
+    if metadata:
+        descriptor = " ".join(
+            [
+                path.stem,
+                metadata_value(metadata, "name"),
+                metadata_value(metadata, "description"),
+                metadata_value(metadata, "axis"),
+            ]
+        )
+        return descriptor_matches_context(descriptor, context_text, context_tokens)
+
+    return True
+
+
 def _matched_by_for(agent_name: str, detection: str) -> str:
     """Return the canonical `matched_by` label for a skill match.
 
@@ -311,20 +506,35 @@ def _matched_by_for(agent_name: str, detection: str) -> str:
     return f"global-{agent_name.lower()}-skill"
 
 
-def discover_skills_for_agent(
+def resolve_skills_for_agent(
     skills_dirs: Iterable[Path],
     *,
     agent_name: str,
     project_root: Path,
     task: str,
     changed_files: Iterable[str],
-) -> list[dict]:
+) -> dict:
     context_text, context_tokens = build_context(project_root, task, changed_files)
-    matches: list[dict] = []
+    candidates: list[dict] = []
+    unindexed_user_skills: list[dict] = []
 
     for path in iter_skill_files(skills_dirs):
         text = path.read_text(encoding="utf-8", errors="replace")
         metadata = parse_frontmatter(text)
+        layer = classify_skill_layer(path)
+        missing_fields = missing_dispatch_fields(metadata)
+        if layer == "user" and missing_fields:
+            if unindexed_user_skill_applies_to_agent(
+                path,
+                metadata,
+                text,
+                agent_name=agent_name,
+                context_text=context_text,
+                context_tokens=context_tokens,
+            ):
+                unindexed_user_skills.append(build_unindexed_skill(path, metadata, layer))
+            continue
+
         # Finding [11]: compute the parsed `loaded_by` list once at the
         # top of the loop body, then thread the qualification check
         # through it. Previously `is_loaded_by()` re-parsed the
@@ -340,10 +550,11 @@ def discover_skills_for_agent(
         if not detection_matches(detection, context_text, context_tokens):
             continue
 
-        matches.append(
+        candidates.append(
             {
                 "name": metadata_value(metadata, "name") or path.stem,
                 "path": str(path),
+                "layer": layer,
                 "axis": metadata_value(metadata, "axis"),
                 "loaded_by": loaded_list,
                 "detection": detection,
@@ -351,7 +562,91 @@ def discover_skills_for_agent(
             }
         )
 
-    return sorted(matches, key=lambda item: (item["name"], item["path"]))
+    matched: list[dict] = []
+    duplicate_resolved: list[dict] = []
+    by_name: dict[str, list[dict]] = {}
+    for candidate in candidates:
+        by_name.setdefault(candidate["name"], []).append(candidate)
+
+    for name, group in sorted(by_name.items()):
+        ordered = sorted(
+            group,
+            key=lambda item: (
+                LAYER_PRIORITY.get(item["layer"], LAYER_PRIORITY["unknown"]),
+                item["path"],
+            ),
+        )
+        selected = ordered[0]
+        matched.append(selected)
+        for shadowed in ordered[1:]:
+            duplicate_resolved.append(
+                {
+                    "name": name,
+                    "selected_path": selected["path"],
+                    "selected_layer": selected["layer"],
+                    "shadowed_path": shadowed["path"],
+                    "shadowed_layer": shadowed["layer"],
+                    "reason": "same skill name resolved by layer precedence",
+                }
+            )
+
+    matched.sort(key=lambda item: (item["name"], item["path"]))
+    duplicate_resolved.sort(key=lambda item: (item["name"], item["shadowed_path"]))
+    unindexed_user_skills.sort(key=lambda item: (item["name"], item["path"]))
+
+    indexed_count = len(candidates)
+    total_discovered = indexed_count + len(unindexed_user_skills)
+    discovery_coverage = (
+        100 if total_discovered == 0 else round(indexed_count * 100 / total_discovered)
+    )
+    known_gaps = [
+        {
+            "id": f"unindexed_user_skill:{item['name']}",
+            "type": "unindexed_user_skill",
+            "severity": "medium",
+            "agent": agent_name,
+            "skill": item["name"],
+            "layer": item["layer"],
+            "path": item["path"],
+            "reason": item["reason"],
+            "impact": "skill may not be selected automatically",
+            "recommended_action": "add loaded_by/axis/detection metadata or leave it as manual guidance",
+            "deferrable": True,
+        }
+        for item in unindexed_user_skills
+    ]
+
+    return {
+        "matched": matched,
+        "duplicate_resolved": duplicate_resolved,
+        "unindexed_user_skills": unindexed_user_skills,
+        "decision_context": {
+            "source": "framework_computed",
+            "artifact_required": False,
+            "coverage": {
+                "skill_discovery": discovery_coverage,
+                "skill_resolution": 100,
+            },
+            "known_gaps": known_gaps,
+        },
+    }
+
+
+def discover_skills_for_agent(
+    skills_dirs: Iterable[Path],
+    *,
+    agent_name: str,
+    project_root: Path,
+    task: str,
+    changed_files: Iterable[str],
+) -> list[dict]:
+    return resolve_skills_for_agent(
+        skills_dirs,
+        agent_name=agent_name,
+        project_root=project_root,
+        task=task,
+        changed_files=changed_files,
+    )["matched"]
 
 
 # Backward-compatible alias for pre-#186 callers.
@@ -394,15 +689,37 @@ def build_fallback_payload(agent_name: str, reason: str) -> dict:
     return {
         "agent": agent_name,
         "matched": [],
+        "duplicate_resolved": [],
+        "unindexed_user_skills": [],
         "fallback": True,
         "fallback_policy": fallback_policy_for(agent_name),
         "reason": reason,
+        "decision_context": {
+            "source": "framework_computed",
+            "artifact_required": False,
+            "coverage": {
+                "skill_discovery": 0,
+                "skill_resolution": 0,
+            },
+            "known_gaps": [
+                {
+                    "id": f"capability_dispatch:{reason}",
+                    "type": "capability_dispatch_degraded",
+                    "severity": "medium",
+                    "agent": agent_name,
+                    "reason": reason,
+                    "impact": "capability skills were not resolved; agent should continue with declared base skills",
+                    "recommended_action": "inspect dispatcher availability only if this affects task quality",
+                    "deferrable": True,
+                }
+            ],
+        },
     }
 
 
 def build_payload(args: argparse.Namespace) -> dict:
     skills_dirs = [Path(path).expanduser() for path in args.skills_dir] or default_skill_dirs()
-    matches = discover_skills_for_agent(
+    resolved = resolve_skills_for_agent(
         skills_dirs,
         agent_name=args.agent,
         project_root=Path(args.project_root).expanduser(),
@@ -412,7 +729,9 @@ def build_payload(args: argparse.Namespace) -> dict:
 
     return {
         "agent": args.agent,
-        "matched": matches,
+        "matched": resolved["matched"],
+        "duplicate_resolved": resolved["duplicate_resolved"],
+        "unindexed_user_skills": resolved["unindexed_user_skills"],
         # Per the 3-state dispatch result spec (see
         # core/rules/agent-tool-dispatch.md § "Metadata-driven skill dispatch"),
         # zero-match is the NORMAL state when no user-owned capability skills are
@@ -422,6 +741,7 @@ def build_payload(args: argparse.Namespace) -> dict:
         # agents' dispatch blocks, not by this happy-path entry point.
         "fallback": False,
         "fallback_policy": fallback_policy_for(args.agent),
+        "decision_context": resolved["decision_context"],
     }
 
 

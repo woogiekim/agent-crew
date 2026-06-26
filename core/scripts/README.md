@@ -193,7 +193,7 @@ invocation in SKILL.md; generic adds guidance).
   require TDD Red/Green/Refactor evidence, reviewer evidence, and
   pipeline-level quality-loop events. Mutating current-session repairs also
   require skill-load evidence proving which agent skills were loaded and
-  skill-use evidence proving how loaded non-TDD skills were applied.
+  task evidence showing how loaded non-TDD skills were applied.
   Operational skill-understanding evidence is also required for loaded non-TDD
   skills: pre-use `context/skill-plan.{json,md}` rule interpretation and
   matching `rule_evidence` in `context/skill-use.json` with artifact, diff,
@@ -217,12 +217,13 @@ invocation in SKILL.md; generic adds guidance).
   `action=retry`; `REVIEW: APPROVED` returns `action=approve` only when the
   required `QUALITY_METRICS:` artifact pointer is present and, when a task dir
   is provided, resolves to an existing file.
-- `review-profile-dispatch.py` — read-only reviewer review-profile discovery.
-  It scans user-owned skill metadata for `loaded_by: reviewer` plus a
-  review-policy/profile contract, returns matched profile skill paths as JSON,
-  and emits a generic review fallback when no profile applies. This keeps the
-  reviewer DIP-safe because reviewer.md depends on metadata, not concrete
-  user skill filenames.
+- `review-profile-dispatch.py` — read-only capability-skill discovery for any
+  opted-in agent. It scans the canonical agent-crew system/user skill layers,
+  selects skills whose frontmatter declares `loaded_by: <agent>` plus `axis`
+  and `detection`, resolves same-name duplicates with user-layer precedence,
+  and emits framework-computed `decision_context` with non-blocking known gaps.
+  This keeps agents DIP-safe because agent prompts depend on metadata, not
+  concrete user skill filenames or host-native skill catalogs.
 - `cleanup-host-bridge-blockers.py` — dry-run/apply cleanup for stale
   `host_bridge_not_invoked` tasks that were already handled through manual
   fallback, keeping current telemetry from being dominated by old blockers.

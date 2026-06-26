@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy-user-skill.sh — propagate a newly created user skill guide to all
-# installed host adapter discovery paths.
+# installed agent-crew skill mirror paths.
 #
 # Usage:
 #   bash deploy-user-skill.sh <skill-filename>
@@ -8,11 +8,11 @@
 #
 # Called automatically by crew:agent-maker after writing a new skill to
 # ~/.agent-crew/user/skills/<name>.md. Enumerates all installed host adapters
-# and copies the skill into each one's discovery path.
+# and copies the skill into each one's agent-crew mirror path.
 #
 # Adapters detected by sentinel path:
 #   claude  — ~/.claude/agents/ directory exists → deploys to ~/.claude/agent-crew/skills/
-#   codex   — ~/.codex/agents/  directory exists → deploys to ~/.codex/skills/
+#   codex   — ~/.codex/agents/  directory exists → deploys to ~/.codex/agent-crew/skills/
 #
 # The generic adapter installs into <project>/.agent-crew/skills/, but the
 # project root is not known at agent-maker time. It will pick up the new
@@ -46,27 +46,36 @@ fi
 # Load shared helpers
 . "${AGENT_CREW_HOME}/setup/common.sh"
 
+SYSTEM_SKILLS="${AGENT_CREW_HOME}/system/skills"
+UNIFIED_SKILLS="${AGENT_CREW_HOME}/skills"
+
+# Refresh the provider-neutral discovery view first. This preserves the
+# system/user layer contract and ensures user skills override same-name system
+# defaults before any host mirror receives the file.
+merge_skills_to_discovery "${SYSTEM_SKILLS}" "${USER_SKILLS}" "${UNIFIED_SKILLS}"
+UNIFIED_SKILL_PATH="${UNIFIED_SKILLS}/${SKILL_BASENAME}"
+
 DEPLOYED=0
 
 # ── Claude adapter ────────────────────────────────────────────────────────────
-# Discovery path: ~/.claude/agent-crew/skills/
+# Agent-crew mirror path: ~/.claude/agent-crew/skills/
 CLAUDE_AGENTS="${HOME}/.claude/agents"
 if [ -d "${CLAUDE_AGENTS}" ]; then
   CLAUDE_CREW_SKILLS="${HOME}/.claude/agent-crew/skills"
   mkdir -p "${CLAUDE_CREW_SKILLS}"
   printf '[deploy-user-skill] Deploying to Claude: %s\n' "${CLAUDE_CREW_SKILLS}"
-  cp "${SKILL_PATH}" "${CLAUDE_CREW_SKILLS}/${SKILL_BASENAME}"
+  cp "${UNIFIED_SKILL_PATH}" "${CLAUDE_CREW_SKILLS}/${SKILL_BASENAME}"
   DEPLOYED=$((DEPLOYED + 1))
 fi
 
 # ── Codex adapter ─────────────────────────────────────────────────────────────
-# Discovery path: ~/.codex/skills/
+# Agent-crew mirror path: ~/.codex/agent-crew/skills/
 CODEX_AGENTS="${HOME}/.codex/agents"
 if [ -d "${CODEX_AGENTS}" ]; then
-  CODEX_SKILLS="${HOME}/.codex/skills"
-  mkdir -p "${CODEX_SKILLS}"
-  printf '[deploy-user-skill] Deploying to Codex: %s\n' "${CODEX_SKILLS}"
-  cp "${SKILL_PATH}" "${CODEX_SKILLS}/${SKILL_BASENAME}"
+  CODEX_CREW_SKILLS="${HOME}/.codex/agent-crew/skills"
+  mkdir -p "${CODEX_CREW_SKILLS}"
+  printf '[deploy-user-skill] Deploying to Codex: %s\n' "${CODEX_CREW_SKILLS}"
+  cp "${UNIFIED_SKILL_PATH}" "${CODEX_CREW_SKILLS}/${SKILL_BASENAME}"
   DEPLOYED=$((DEPLOYED + 1))
 fi
 
@@ -78,7 +87,7 @@ if [ -d "${PWD}/.agent-crew" ]; then
   GENERIC_SKILLS="${PWD}/.agent-crew/skills"
   mkdir -p "${GENERIC_SKILLS}"
   printf '[deploy-user-skill] Deploying to generic project: %s\n' "${GENERIC_SKILLS}"
-  cp "${SKILL_PATH}" "${GENERIC_SKILLS}/${SKILL_BASENAME}"
+  cp "${UNIFIED_SKILL_PATH}" "${GENERIC_SKILLS}/${SKILL_BASENAME}"
   DEPLOYED=$((DEPLOYED + 1))
 fi
 

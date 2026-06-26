@@ -12,7 +12,7 @@ on-demand skill loading. The two rules are complementary:
 |---|---|---|
 | Declared skill loading (`agent-skill-loading.md`) | Agent file lists skills in a `## Skills (Loaded On Demand)` section, by path. | `backend` declares `core/agents/skills/effective-kotlin.md`, `core/agents/skills/tdd.md`. |
 | Convention-based dispatch (this rule) | Agent detects an axis at runtime, then loads `<agent>-<tool>.md` from `~/.agent-crew/user/skills/`. | `issuer` detects the git remote, resolves to `issuer-github` / `issuer-plane` / etc. |
-| Metadata-driven profile dispatch (this rule) | Agent scans user-owned skill frontmatter for an abstract contract and loads matching files by returned path, not by filename convention. | `reviewer` loads applicable `review-policy` / `review-profile` skills whose metadata says `loaded_by: reviewer`. |
+| Metadata-driven profile dispatch (this rule) | Agent scans agent-crew system/user skill frontmatter for an abstract contract and loads matching files by returned path, not by filename convention. | `reviewer` loads applicable `review-policy` / `review-profile` skills whose metadata says `loaded_by: reviewer`; implementation agents load capability skills whose metadata names them. |
 
 An agent MAY use both conventions simultaneously. For example, a future
 `backend` dispatcher MAY declare `tdd.md` + `effective-kotlin.md` via the
@@ -67,12 +67,14 @@ mechanism is host-specific:
 | Host | Mechanism |
 |---|---|
 | Claude Code | `Skill` tool (preferred) when the capability is available, or `Read` of the file path |
-| Codex | Skill auto-discovery from `~/.codex/skills/` (the adapter's mirror of `~/.agent-crew/user/skills/`) |
+| Codex | Read from the agent-crew guide mirror at `~/.codex/agent-crew/skills/` or the canonical `~/.agent-crew/user/skills/`; do not copy agent-crew user skills into native `~/.codex/skills/` |
 | Generic adapter | `Read` of the file path |
 
 The framework's `crew:setup` / `crew:update` flows seed and mirror user
-skills into each host's discovery path automatically — see § Channel B
-template seeding below. Agents themselves do not perform mirror copies.
+skills into each host's agent-crew mirror path automatically — see § Channel B
+template seeding below. Agents themselves do not perform mirror copies, and
+host-native third-party skill catalogs remain outside the automatic
+agent-crew skill boundary.
 
 ### Step 4 — Branch on load result
 
@@ -138,11 +140,14 @@ or local convention. Therefore, capability/policy skill discovery MUST
 NOT depend on a `<agent>-<tool>.md` filename and the requesting agent
 MUST NOT mention concrete project/user skill filenames in its prose.
 
-Agents use `core/scripts/review-profile-dispatch.py --agent <name>` to scan
-`~/.agent-crew/user/skills/` and the unified `~/.agent-crew/skills/`
-discovery path. The default `--agent reviewer` preserves the original
-review-profile contract (#137); `--agent backend` and `--agent frontend`
-opt in to the same primitive for capability-skill discovery (#186).
+Agents use `core/scripts/review-profile-dispatch.py --agent <name>` to scan the
+canonical framework skill layers, not host-native skill surfaces. By default
+the dispatcher scans `~/.agent-crew/system/skills/` and
+`~/.agent-crew/user/skills/`. The unified `~/.agent-crew/skills/` path and
+host-specific directories are mirrors for loading/discovery convenience, not
+independent canonical sources. The default `--agent reviewer` preserves the
+original review-profile contract (#137); `--agent backend` and `--agent
+frontend` opt in to the same primitive for capability-skill discovery (#186).
 
 A skill qualifies for an agent when its YAML frontmatter satisfies:
 
@@ -159,10 +164,10 @@ reviewer` plus a review-oriented `axis`/`description`/`detection`
 contract is accepted when `profile_type` is absent. New reviewer skills
 SHOULD include `profile_type` explicitly.
 
-For `backend` / `frontend` (#186), the qualifying contract is simpler:
-`loaded_by` containing the agent name plus an `axis` and `detection`
-expression is sufficient. The reviewer-specific `profile_type` /
-"review" keyword check does NOT apply.
+For non-reviewer agents, the qualifying contract is simpler: `loaded_by`
+containing the agent name plus an `axis` and `detection` expression is
+sufficient. The reviewer-specific `profile_type` / "review" keyword check does
+NOT apply.
 
 The dispatcher returns a JSON payload:
 
@@ -173,12 +178,24 @@ The dispatcher returns a JSON payload:
     {
       "name": "user-owned-skill-name",
       "path": "/absolute/path/to/skill.md",
+      "layer": "user",
       "axis": "review-axis",
       "loaded_by": ["reviewer"],
       "detection": "project/task/file matching expression",
       "matched_by": "detection"
     }
   ],
+  "duplicate_resolved": [],
+  "unindexed_user_skills": [],
+  "decision_context": {
+    "source": "framework_computed",
+    "artifact_required": false,
+    "coverage": {
+      "skill_discovery": 100,
+      "skill_resolution": 100
+    },
+    "known_gaps": []
+  },
   "fallback": false,
   "fallback_policy": "generic-reviewer-skills"
 }
@@ -192,17 +209,29 @@ The dispatcher returns a JSON payload:
    - `[crew] DEGRADED | capability-dispatch=mv_failed agent=<name>` (the dispatcher succeeded but the atomic `mv` of the JSON report into the canonical path failed, e.g. due to a read-only TASK_DIR or a cross-device move).
    In every case, write a fallback JSON report with `"fallback": true`; continue with the agent's declared base skills only.
 2. **Script succeeded, no matches** (`.matched[] == []`) → emit `[crew] CAPABILITY_SKILLS: none agent=<name>` and continue normally. This is the **expected** state when no user-owned capability skills are installed for this agent — it is NOT a degraded condition.
-3. **Script succeeded, matches found** → read each `.matched[].path`; load the matched skills before the first execution step; cite loaded skill paths in `${TASK_DIR}/context/skill-use.json` (append a `{skill_path: ..., loaded_by: ...}` entry per matched skill, creating the file if absent). Agents that already write a more specific skill-use artifact (e.g. `context/review.md` for reviewer) record paths there instead.
+3. **Script succeeded, matches found** → read each `.matched[].path`; load the matched skills before the first execution step. The dispatch report is framework-computed decision context; dispatch alone MUST NOT synthesize `skill-use.json` or any other proof artifact. Real task outcomes, tests, diffs, reviews, or tool events are the only evidence of skill application.
 
 For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-reviewer-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none` line; both refer to the same "empty match, continue with generic review skills" state. (Finding [13]: the fallback policy literal is now the uniform `generic-reviewer-skills` form; the legacy `generic-review-skills` singular was retired.) New agents SHOULD emit only the canonical `CAPABILITY_SKILLS: none agent=<name>` token. Missing profiles never produce `STATUS: BLOCKED` regardless of agent.
 
 This is a DIP boundary:
 
-- Reviewer owns the abstract loading contract and fallback behavior.
+- The requesting agent owns the abstract loading contract and fallback behavior.
 - User profile skills own domain-specific heuristics and detection wording.
 - `crew:setup` / `crew:update` continue preserving user-owned skills because
   runtime profiles live under `~/.agent-crew/user/skills/` and are merged into
   `~/.agent-crew/skills/` with user-wins semantics.
+
+Layer precedence for same-name skills is:
+
+1. user layer — extension or explicit override;
+2. system layer — framework default;
+3. merged/host mirrors — loading surfaces only, never policy sources.
+
+When multiple paths expose the same skill name, the dispatcher returns one
+selected match and records the shadowed paths under `duplicate_resolved`.
+Task-relevant user-layer skills missing dispatch metadata are reported in
+`unindexed_user_skills` and surfaced through `decision_context.known_gaps`; they
+do not create a required gap-report artifact.
 
 ---
 
@@ -347,7 +376,7 @@ auto-loaded from the source repo.
 - Any agent file that already follows the 5-step protocol.
 - `core/setup/deploy-user-skill.sh` (it is naming-convention-agnostic — flat copy).
 - The unified `~/.agent-crew/skills/` discovery view (templates are
-  excluded by directory; user skills are merged with system-wins-on-name
+  excluded by directory; user skills are merged with user-wins-on-same-name
   via `merge_skills_to_discovery`).
 
 This is the Open/Closed guarantee for the dispatch pattern.
