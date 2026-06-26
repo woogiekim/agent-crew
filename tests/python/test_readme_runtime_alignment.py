@@ -91,7 +91,9 @@ def test_readme_documents_agent_crew_skill_dispatch_layers():
     assert "native Codex skills remain under `~/.codex/skills/`" in text
     assert "`decision_context`" in text
     assert "does not create `skill-use.json` proof artifacts" in text
-    assert "advisory gaps rather than\ncompletion blockers" in text
+    assert "specialist dispatch, skill-load, capability handler" in text
+    assert "advisory coverage gaps rather than\ncompletion blockers" in text
+    assert "Unapproved external host/plugin skill loads remain a hard\npolicy blocker" in text
     assert "`~/.agent-crew/agents/skills/`" not in text
 
 

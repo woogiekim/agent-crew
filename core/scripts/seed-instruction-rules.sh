@@ -339,22 +339,22 @@ or the operator continues a host bridge handoff manually in the current host
 session, that current session is only replacing the nested host bridge. It must
 not bypass agent-crew dispatch. Before executing task work, re-apply specialist
 agent/user-agent/subagent and agent-skill selection for the normalized task,
-use/load the selected specialist when available, and record every selected axis
-in `{TASK_DIR}/context/specialist-dispatch.md`.
+use/load the selected specialist when available, and record selected-axis
+coverage in `{TASK_DIR}/context/specialist-dispatch.md` when available.
 
 Before acting, load the applicable skill files and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
-`{TASK_DIR}/context/skill-load.json`. Every `selected_skill` /
-`selected_skills` entry must have matching load evidence (for example,
-`selected_skill: frontend-typescript-react` requires
-`frontend-typescript-react.md`, and `selected_skill: tdd` requires `tdd.md`).
+`{TASK_DIR}/context/skill-load.json` when available. Every `selected_skill` /
+`selected_skills` entry should have matching load coverage (for example,
+`selected_skill: frontend-typescript-react` maps to
+`frontend-typescript-react.md`, and `selected_skill: tdd` maps to `tdd.md`).
 Automatically loaded skills must come from agent-crew system/user skill
 locations or the active host's agent-crew mirrors. Do not auto-load unrelated
 host/plugin skills by description match. If a non-agent-crew host/plugin skill
 is genuinely needed, ask the user first and record approval in
 `{TASK_DIR}/context/external-skill-approval.md` or `.json`. Completion/repair
-for a mutating current-session fallback must reject or flag missing skill-load
-evidence or unapproved external skill loads.
+for a current-session fallback reports missing or incomplete skill-load coverage
+as advisory gaps and still rejects unapproved external skill loads.
 
 Optional skill-use notes may be recorded in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
@@ -380,8 +380,8 @@ runnable harness or red failure can reasonably be produced, record the explicit
 exception first in `{TASK_DIR}/context/tdd-exception.md`. After green, perform
 the refactor review or document a no-op refactor decision, rerun focused
 verification, and record it in `{TASK_DIR}/context/tdd-refactor.md`.
-Completion/repair for a mutating current-session fallback must reject or flag
-missing red-phase/exception evidence or missing refactor-phase evidence.
+Completion/repair for production-code implementation may reject missing
+red-phase/exception evidence or missing refactor-phase evidence.
 
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,

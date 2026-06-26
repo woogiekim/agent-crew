@@ -899,10 +899,10 @@ Commit flow:
    user intent to `git-committer`.
 3. Display the proposed message and apply it only through the orchestrator-owned
    structured approval/mutation path used by `crew:commit`.
-4. Record final audit fields in task context: selected commit agent, candidate
-   message source, final commit subject, convention match result, and completed
-   capability handler results. The completion record is provider-agnostic; for
-   example:
+4. Record final audit fields in task context when available: selected commit
+   agent, candidate message source, final commit subject, convention match
+   result, and completed capability handler results. The completion record is
+   provider-agnostic coverage, not the sole proof of execution; for example:
 
    ```json
    {
@@ -924,15 +924,16 @@ Commit flow:
    ```
 
    Store that payload at `{TASK_DIR}/context/handler-results.json` or one JSON
-   file per capability under `{TASK_DIR}/context/capabilities/`.
+   file per capability under `{TASK_DIR}/context/capabilities/` when the handler
+   produces it.
 
 If no task context exists yet, create one before continuing. If no commit
 message capability provider is installed, fall through to the regular
 supervisor workflow instead of inventing an ad hoc commit message.
-Completion/repair for a current-session fallback must reject a commit-intent
-task when required commit mutation capability handler completion evidence is
-missing while such a provider is available. Selected handler fields are audit
-metadata; they are not proof that the selected handler ran to completion.
+Completion/repair for a current-session fallback reports missing commit
+capability selection or completion as advisory coverage gaps instead of forcing
+separate proof-artifact files. Selected handler fields are audit metadata; they
+are not proof that the selected handler ran to completion.
 
 Then **STOP — end the turn** after the commit agent workflow completes or the
 request is explicitly cancelled.
@@ -2598,14 +2599,14 @@ use this sequence:
      axis, use it or load its instructions before acting. Do not substitute
      ad hoc local execution just because the nested host bridge was refused or
      unavailable.
-   - Record the selection in `context/specialist-dispatch.md` with at least:
-     `selected_agent`, `selection_reason`, and `execution_mode`; include any
-     applicable `selected_user_agent`, `selected_subagents`, and
-     `selected_skill` / `selected_skills` entries. `crew repair --status completed`
-     for a mutating current-session fallback may require this evidence and preserve
-     every selected axis.
+   - Record the selection in `context/specialist-dispatch.md` when available
+     with at least: `selected_agent`, `selection_reason`, and `execution_mode`;
+     include any applicable `selected_user_agent`, `selected_subagents`, and
+     `selected_skill` / `selected_skills` entries. `crew repair --status
+     completed` reports missing or incomplete dispatch coverage as advisory gaps.
    - Load the applicable skill files before acting and record the exact loaded
-     skill path(s) in `context/skill-load.md` or `context/skill-load.json`.
+     skill path(s) in `context/skill-load.md` or `context/skill-load.json` when
+     available.
      Automatically loaded skills must come from agent-crew system/user skill
      locations (`~/.agent-crew/system/skills/`, `~/.agent-crew/user/skills/`,
      `~/.agent-crew/skills/`, `~/.agent-crew/system/agents/skills/`) or from the
@@ -2615,12 +2616,12 @@ use this sequence:
      skills such as plugin cache skills from trigger-description matches. If a
      non-agent-crew skill is needed, ask the user first and record the explicit
      approval in `context/external-skill-approval.md` or `.json`.
-     Every selected skill name must have matching load evidence
-     (`selected_skill: frontend-typescript-react` requires
-     `frontend-typescript-react.md`, `selected_skill: tdd` requires `tdd.md`).
-     `crew repair --status completed` for a mutating current-session fallback
-     may reject completion when this skill-load evidence is missing or when an
-     external skill was loaded without approval.
+     Every selected skill name should have matching load coverage
+     (`selected_skill: frontend-typescript-react` maps to
+     `frontend-typescript-react.md`, `selected_skill: tdd` maps to `tdd.md`).
+     `crew repair --status completed` reports missing or incomplete skill-load
+     coverage as advisory gaps. It still rejects unapproved external host/plugin
+     skill loads.
    - Optional skill-use notes may be recorded in `context/skill-use.json` or
      `context/skill-use.md`, but they are diagnostic coverage, not required
      proof artifacts. TDD remains covered by red/green/refactor evidence. For
@@ -2643,9 +2644,9 @@ use this sequence:
    - After green, perform the refactor review or document a no-op refactor
      decision, rerun the focused verification, and record the result in
      `context/tdd-refactor.md`.
-   - `crew repair --status completed` for a mutating fallback may reject the
-     completion when red-phase/exception evidence or refactor-phase evidence is
-     missing, even if green tests and reviewer evidence exist.
+   - `crew repair --status completed` for production-code implementation may
+     reject completion when red-phase/exception evidence or refactor-phase
+     evidence is missing, even if green tests and reviewer evidence exist.
 4. For auto-completion:
    - Pass `--host-bridge-command "<command>"` on `crew run`, or
    - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.

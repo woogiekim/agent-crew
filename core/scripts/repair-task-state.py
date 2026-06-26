@@ -24,6 +24,15 @@ MUTATING_TASK_RE = re.compile(
     r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
     re.IGNORECASE,
 )
+QUALITY_GATED_TASK_RE = re.compile(
+    r"\b("
+    r"implement|create|add|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|test|write|edit|improve"
+    r")\b|"
+    r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"리팩터|테스트|작성|편집",
+    re.IGNORECASE,
+)
 
 TDD_RE = re.compile(r"\b(TDD|RED|GREEN|test evidence|tests? passed|pytest|JUnit|MockK)\b", re.IGNORECASE)
 RED_PHASE_RE = re.compile(
@@ -151,6 +160,10 @@ def backup_result(task_dir: Path) -> None:
 
 def looks_mutating_task(task: str) -> bool:
     return bool(MUTATING_TASK_RE.search(task or ""))
+
+
+def looks_quality_gated_task(task: str) -> bool:
+    return bool(QUALITY_GATED_TASK_RE.search(task or ""))
 
 
 def looks_commit_mutation_task(task: str) -> bool:
@@ -299,6 +312,11 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
         "passed": bool(matched_paths) and not incomplete_paths,
         "matched_paths": sorted(set(matched_paths)),
         "incomplete_paths": {path: sorted(set(fields)) for path, fields in incomplete_paths.items()},
+        "missing_fields": [] if matched_paths or incomplete_paths else [
+            "selected_agent",
+            "selection_reason",
+            "execution_mode",
+        ],
         "selected_agents": sorted(set(selected_agents)),
         "selected_user_agents": sorted(set(selected_user_agents)),
         "selected_subagents": sorted(set(selected_subagents)),
@@ -308,6 +326,8 @@ def specialist_dispatch_status(task_dir: Path, paths: list[str]) -> dict:
             for capability, handlers in sorted(selected_handlers.items())
         },
         "inspected_paths": sorted(set(inspected_paths)),
+        "advisory": False,
+        "reason": "",
         "bypassed": False,
         "bypass_reason": "",
     }
@@ -644,6 +664,8 @@ def enforce_required_capability_gate(
         "selected_handlers": capability_specialist_gate.get("selected_handlers", {}),
         "completed_handlers": completion_gate.get("completed_handlers", {}),
         "completion_evidence_paths": completion_gate.get("matched_paths", []),
+        "advisory": False,
+        "reason": "",
         "bypassed": False,
         "bypass_reason": "",
     }
@@ -655,30 +677,12 @@ def enforce_required_capability_gate(
         status["bypass_reason"] = args.specialist_bypass_reason
         return status
 
-    if missing_completion:
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: missing_required_capability_completion_evidence\n"
-            "DETAIL: completed repair for a current-session fallback with downstream "
-            "mutation capabilities requires completed handler evidence for every selected "
-            "required capability.\n"
-            "MISSING: " + ", ".join(missing_completion) + "\n"
-            "NEXT: record handler_results in context/handler-results.json, "
-            "context/capability-results.json, or context/capabilities/<capability>.json "
-            "with state=completed and the selected handler id, or record an explicit "
-            "--specialist-bypass-reason."
-        )
-
-    raise SystemExit(
-        "STATUS: blocked\n"
-        "BLOCKER: missing_required_capability_evidence\n"
-        "DETAIL: completed repair for a current-session fallback with downstream "
-        "mutation capabilities requires selected handler evidence for every required capability.\n"
-        "MISSING: " + ", ".join(missing_selection) + "\n"
-        "NEXT: record selected_handlers in context/specialist-dispatch.json or "
-        "context/specialist-dispatch.md before repairing completion, or record an explicit "
-        "--specialist-bypass-reason."
+    status["advisory"] = True
+    status["reason"] = (
+        "required capability coverage is incomplete; repair records this gap "
+        "without requiring separate handler proof artifacts"
     )
+    return status
 
 
 def enforce_commit_specialist_gate(
@@ -708,6 +712,8 @@ def enforce_commit_specialist_gate(
         "required_capabilities": required_capabilities,
         "completed_handlers": {},
         "completion_evidence_paths": [],
+        "advisory": False,
+        "reason": "",
         "bypassed": False,
         "bypass_reason": "",
     }
@@ -742,29 +748,12 @@ def enforce_commit_specialist_gate(
         status["bypass_reason"] = args.specialist_bypass_reason
         return status
 
-    if missing_completion:
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: missing_required_capability_completion_evidence\n"
-            "DETAIL: completed repair for a commit/amend current-session fallback "
-            "requires completed handler evidence for every selected commit mutation capability.\n"
-            "MISSING: " + ", ".join(missing_completion) + "\n"
-            "NEXT: record handler_results in context/handler-results.json, "
-            "context/capability-results.json, or context/capabilities/<capability>.json "
-            "with state=completed and the selected handler id before repair, or record "
-            "an explicit --specialist-bypass-reason."
-        )
-
-    raise SystemExit(
-        "STATUS: blocked\n"
-        "BLOCKER: missing_required_capability_evidence\n"
-        "DETAIL: completed repair for a commit/amend current-session fallback "
-        "requires selected handler evidence for every commit mutation capability.\n"
-        "MISSING: " + ", ".join(missing_selection) + "\n"
-        "NEXT: record selected_handlers in context/specialist-dispatch.json or "
-        "context/specialist-dispatch.md before running git commit or git commit --amend, "
-        "or record an explicit --specialist-bypass-reason."
+    status["advisory"] = True
+    status["reason"] = (
+        "commit capability coverage is incomplete; repair records this gap "
+        "without requiring separate handler proof artifacts"
     )
+    return status
 
 
 def split_specialist_values(value: str) -> list[str]:
@@ -1081,6 +1070,8 @@ def skill_load_status(
             and not missing_required_skills
             and not external_status["unapproved_external_skill_paths"]
         ),
+        "advisory": False,
+        "reason": "",
         "matched_paths": sorted(set(matched_paths)),
         "loaded_skill_paths": sorted(set(loaded_skill_paths)),
         "loaded_skill_names": sorted(loaded_skill_names),
@@ -1434,29 +1425,12 @@ def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, r
         status["bypass_reason"] = args.specialist_bypass_reason
         return status
 
-    if status.get("incomplete_paths"):
-        details = [
-            f"{path}: {', '.join(fields)}"
-            for path, fields in sorted(status["incomplete_paths"].items())
-        ]
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: incomplete_specialist_dispatch_evidence\n"
-            "DETAIL: specialist dispatch evidence must identify the selected agent/user-agent/subagent axis, "
-            "selection reason, and execution mode before manual execution.\n"
-            "INCOMPLETE: " + "; ".join(details) + "\n"
-            "NEXT: complete context/specialist-dispatch.md or record an explicit --specialist-bypass-reason."
-        )
-
-    raise SystemExit(
-        "STATUS: blocked\n"
-        "BLOCKER: missing_specialist_dispatch_evidence\n"
-        "DETAIL: completed repair for a mutating current-session fallback requires "
-        "evidence that the task re-applied specialist agent and agent-skill selection "
-        "before manual execution.\n"
-        "NEXT: add --specialist-evidence pointing to context/specialist-dispatch.md "
-        "or record an explicit --specialist-bypass-reason."
+    status["advisory"] = True
+    status["reason"] = (
+        "specialist dispatch coverage is incomplete; repair records this gap "
+        "without requiring a separate proof artifact"
     )
+    return status
 
 
 def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
@@ -1494,26 +1468,12 @@ def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: 
             "in context/external-skill-approval.md or context/external-skill-approval.json."
         )
 
-    if status["matched_paths"] and status["missing_required_skills"]:
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: missing_required_skill_load_evidence\n"
-            "DETAIL: completed repair for a mutating current-session fallback requires "
-            "skill-load evidence for the selected mandatory skill(s): "
-            + ", ".join(status["missing_required_skills"])
-            + ".\n"
-            "NEXT: record context/skill-load.md with the loaded skill path(s), "
-            "or record an explicit --skill-load-bypass-reason."
-        )
-
-    raise SystemExit(
-        "STATUS: blocked\n"
-        "BLOCKER: missing_skill_load_evidence\n"
-        "DETAIL: completed repair for a mutating current-session fallback requires "
-        "evidence that applicable agent skills were actually loaded before manual execution.\n"
-        "NEXT: record context/skill-load.md or context/skill-load.json with loaded skill paths, "
-        "or record an explicit --skill-load-bypass-reason."
+    status["advisory"] = True
+    status["reason"] = (
+        "skill-load coverage is incomplete; repair records this gap without "
+        "requiring a separate proof artifact"
     )
+    return status
 
 
 def enforce_skill_use_gate(
@@ -1637,7 +1597,7 @@ def enforce_skill_understanding_gate(
 
 def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
     task = register.get("task", "")
-    required = args.status == "completed" and looks_mutating_task(task)
+    required = args.status == "completed" and looks_quality_gated_task(task)
     if not required:
         return {"required": False, "passed": True, "bypassed": False}
 
@@ -1815,8 +1775,18 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         elif specialist_gate.get("bypassed"):
             lines.append("SPECIALIST_DISPATCH: bypassed")
             lines.append(f"SPECIALIST_BYPASS_REASON: {specialist_gate.get('bypass_reason')}")
+        elif specialist_gate.get("advisory"):
+            lines.append("SPECIALIST_DISPATCH: advisory")
+            if specialist_gate.get("reason"):
+                lines.append(f"SPECIALIST_ADVISORY_REASON: {specialist_gate.get('reason')}")
         for path in specialist_gate.get("matched_paths", []):
             lines.append(f"SPECIALIST_EVIDENCE: {path}")
+        missing_fields = specialist_gate.get("missing_fields", [])
+        if missing_fields:
+            lines.append("MISSING_SPECIALIST_DISPATCH: " + ", ".join(missing_fields))
+        incomplete_paths = specialist_gate.get("incomplete_paths", {})
+        for path, fields in sorted(incomplete_paths.items()):
+            lines.append(f"INCOMPLETE_SPECIALIST_DISPATCH: {path}: {', '.join(fields)}")
         for agent in specialist_gate.get("selected_agents", []):
             lines.append(f"SPECIALIST_AGENT: {agent}")
         for agent in specialist_gate.get("selected_user_agents", []):
@@ -1831,8 +1801,18 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         elif required_capability_gate.get("bypassed"):
             lines.append("REQUIRED_CAPABILITIES: bypassed")
             lines.append(f"REQUIRED_CAPABILITY_BYPASS_REASON: {required_capability_gate.get('bypass_reason')}")
+        elif required_capability_gate.get("advisory"):
+            lines.append("REQUIRED_CAPABILITIES: advisory")
+            if required_capability_gate.get("reason"):
+                lines.append(f"REQUIRED_CAPABILITY_ADVISORY_REASON: {required_capability_gate.get('reason')}")
         for capability in required_capability_gate.get("required_capabilities", []):
             lines.append(f"REQUIRED_CAPABILITY: {capability}")
+        missing_capabilities = required_capability_gate.get("missing_capabilities", [])
+        if missing_capabilities:
+            lines.append("MISSING_REQUIRED_CAPABILITY: " + ", ".join(missing_capabilities))
+        missing_completion = required_capability_gate.get("missing_completion_capabilities", [])
+        if missing_completion:
+            lines.append("MISSING_REQUIRED_CAPABILITY_COMPLETION: " + ", ".join(missing_completion))
         for capability, handlers in required_capability_gate.get("selected_handlers", {}).items():
             for handler in handlers:
                 lines.append(f"SELECTED_HANDLER: {capability}={handler}")
@@ -1847,6 +1827,16 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         elif commit_specialist_gate.get("bypassed"):
             lines.append("COMMIT_SPECIALIST: bypassed")
             lines.append(f"COMMIT_SPECIALIST_BYPASS_REASON: {commit_specialist_gate.get('bypass_reason')}")
+        elif commit_specialist_gate.get("advisory"):
+            lines.append("COMMIT_SPECIALIST: advisory")
+            if commit_specialist_gate.get("reason"):
+                lines.append(f"COMMIT_SPECIALIST_ADVISORY_REASON: {commit_specialist_gate.get('reason')}")
+        missing_capabilities = commit_specialist_gate.get("missing_capabilities", [])
+        if missing_capabilities:
+            lines.append("MISSING_COMMIT_SPECIALIST_CAPABILITY: " + ", ".join(missing_capabilities))
+        missing_completion = commit_specialist_gate.get("missing_completion_capabilities", [])
+        if missing_completion:
+            lines.append("MISSING_COMMIT_SPECIALIST_COMPLETION: " + ", ".join(missing_completion))
         for agent in commit_specialist_gate.get("selected_user_agents", []):
             lines.append(f"COMMIT_SPECIALIST_USER_AGENT: {agent}")
         for path in commit_specialist_gate.get("available_paths", []):
@@ -1860,6 +1850,10 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         elif skill_load_gate.get("bypassed"):
             lines.append("SKILL_LOAD: bypassed")
             lines.append(f"SKILL_LOAD_BYPASS_REASON: {skill_load_gate.get('bypass_reason')}")
+        elif skill_load_gate.get("advisory"):
+            lines.append("SKILL_LOAD: advisory")
+            if skill_load_gate.get("reason"):
+                lines.append(f"SKILL_LOAD_ADVISORY_REASON: {skill_load_gate.get('reason')}")
         for path in skill_load_gate.get("matched_paths", []):
             lines.append(f"SKILL_LOAD_EVIDENCE: {path}")
         for skill in skill_load_gate.get("required_skills", []):

@@ -107,19 +107,28 @@ def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedP
     )
 
 
-def test_repair_blocks_mutating_current_session_without_specialist_evidence(tmp_path: Path):
+def test_repair_reports_missing_specialist_dispatch_as_advisory_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
-    _write_task(state_dir, task_id)
+    task_dir = _write_task(state_dir, task_id)
 
-    result = _repair(state_dir, task_id)
+    result = _repair(
+        state_dir,
+        task_id,
+        "--skill-load-bypass-reason",
+        "isolate specialist dispatch advisory coverage",
+    )
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_specialist_dispatch_evidence" in result.stderr
-    assert "specialist agent and agent-skill selection" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["specialist_dispatch_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_fields"] == ["selected_agent", "selection_reason", "execution_mode"]
+    assert "SPECIALIST_DISPATCH: advisory" in (task_dir / "result.md").read_text(encoding="utf-8")
 
 
-def test_repair_blocks_incomplete_specialist_dispatch_evidence(tmp_path: Path):
+def test_repair_reports_incomplete_specialist_dispatch_as_advisory_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -135,11 +144,14 @@ def test_repair_blocks_incomplete_specialist_dispatch_evidence(tmp_path: Path):
         "isolate specialist dispatch shape",
     )
 
-    assert result.returncode != 0
-    assert "BLOCKER: incomplete_specialist_dispatch_evidence" in result.stderr
-    assert "selected_agent" in result.stderr
-    assert "selection_reason" in result.stderr
-    assert "execution_mode" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["specialist_dispatch_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["incomplete_paths"] == {
+        "context/specialist-dispatch.md": ["execution_mode", "selected_agent", "selection_reason"]
+    }
 
 
 def test_repair_accepts_specialist_dispatch_evidence(tmp_path: Path):
@@ -302,7 +314,7 @@ def test_repair_accepts_json_specialist_dispatch_axes(tmp_path: Path):
     assert gate["selected_subagents"] == ["reviewer", "test-writer"]
 
 
-def test_commit_current_session_repair_blocks_without_git_committer_user_agent(tmp_path: Path):
+def test_commit_current_session_repair_reports_missing_git_handler_as_advisory_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     project_root = tmp_path / "project"
     _install_git_committer(project_root)
@@ -333,9 +345,13 @@ def test_commit_current_session_repair_blocks_without_git_committer_user_agent(t
         "isolate commit capability dispatch gate",
     )
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_required_capability_evidence" in result.stderr
-    assert "vcs.commit.message.compose" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["required_capability_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert "vcs.commit.message.compose" in gate["missing_capabilities"]
+    assert "vcs.history.local_mutation" in gate["missing_capabilities"]
 
 
 def test_required_capability_inference_ignores_negative_remote_constraints():
@@ -411,7 +427,7 @@ def test_commit_current_session_repair_translates_legacy_user_agent_to_capabilit
     assert gate["completed_handlers"]["vcs.history.local_mutation"] == ["git-committer"]
 
 
-def test_required_capability_gate_blocks_selected_handlers_without_completion(tmp_path: Path):
+def test_required_capability_gate_reports_selected_handlers_without_completion_as_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     project_root = tmp_path / "project"
     _install_git_committer(project_root)
@@ -458,13 +474,18 @@ def test_required_capability_gate_blocks_selected_handlers_without_completion(tm
     )
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_required_capability_completion_evidence" in result.stderr
-    assert "vcs.commit.message.compose" in result.stderr
-    assert "vcs.history.local_mutation" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["required_capability_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_completion_capabilities"] == [
+        "vcs.commit.message.compose",
+        "vcs.history.local_mutation",
+    ]
 
 
-def test_required_capability_gate_rejects_non_completed_handler_results(tmp_path: Path):
+def test_required_capability_gate_reports_non_completed_handler_results_as_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     project_root = tmp_path / "project"
     _install_git_committer(project_root)
@@ -522,9 +543,12 @@ def test_required_capability_gate_rejects_non_completed_handler_results(tmp_path
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_required_capability_completion_evidence" in result.stderr
-    assert "vcs.commit.message.compose" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["required_capability_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_completion_capabilities"] == ["vcs.commit.message.compose"]
 
 
 def test_required_capability_gate_accepts_completed_abstract_handler_names(tmp_path: Path):
@@ -595,7 +619,7 @@ def test_required_capability_policy_has_no_concrete_git_committer_branch():
     assert "selected_user_agents" not in policy_body
 
 
-def test_normalization_current_session_repair_blocks_unsatisfied_required_capabilities(tmp_path: Path):
+def test_normalization_current_session_repair_reports_unsatisfied_required_capabilities_as_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     project_root = tmp_path / "project"
     _install_git_committer(project_root)
@@ -633,9 +657,12 @@ def test_normalization_current_session_repair_blocks_unsatisfied_required_capabi
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_required_capability_evidence" in result.stderr
-    assert "vcs.commit.message.compose" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["required_capability_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert "vcs.commit.message.compose" in gate["missing_capabilities"]
 
 
 def test_normalization_current_session_repair_accepts_selected_capability_handlers(tmp_path: Path):

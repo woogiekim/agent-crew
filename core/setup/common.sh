@@ -592,6 +592,7 @@ merge_skills_to_discovery() {
 
     if [ ${#overrides[@]} -gt 0 ]; then
       printf '\n[agent-crew] INFO: User skills overriding system skills (user wins):\n'
+      printf '  user/skills files are not overwritten by system updates; edit the user file or run crew update --reconcile-skills to compare.\n'
       for o in "${overrides[@]}"; do
         printf '  override: %s (user/skills/ takes precedence over system/skills/)\n' "${o}"
       done

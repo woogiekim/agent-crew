@@ -35,30 +35,31 @@ subagent(s), and agent skill(s) for the normalized task. This is a general
 dispatch requirement for all task axes. It is not limited to commits, deploys,
 or any single operation.
 
-Record the selection in `{TASK_DIR}/context/specialist-dispatch.md` before
-manual execution. Include `selected_agent`, `selection_reason`, and
-`execution_mode`; include any applicable `selected_user_agent`,
-`selected_subagents`, and `selected_skill` / `selected_skills` entries. If no
-specialist exists, state why and proceed through the regular supervisor/planner
-path rather than inventing an ad hoc shortcut.
+Record the selection in `{TASK_DIR}/context/specialist-dispatch.md` when
+available before manual execution. Include `selected_agent`, `selection_reason`,
+and `execution_mode`; include any applicable `selected_user_agent`,
+`selected_subagents`, and `selected_skill` / `selected_skills` entries. Missing
+or incomplete dispatch coverage is reported as an advisory gap during repair.
+If no specialist exists, state why and proceed through the regular
+supervisor/planner path rather than inventing an ad hoc shortcut.
 
 Load only applicable agent-crew skills before acting and record the exact loaded
 skill path(s) in `{TASK_DIR}/context/skill-load.md` or
-`{TASK_DIR}/context/skill-load.json`. Agent-crew skills are the framework
+`{TASK_DIR}/context/skill-load.json` when available. Agent-crew skills are the framework
 system/user skills under `~/.agent-crew/system/skills/`,
 `~/.agent-crew/user/skills/`, `~/.agent-crew/skills/`,
 `~/.agent-crew/system/agents/skills/`, or the active host's agent-crew mirrors
 under paths such as `~/.claude/agent-crew/skills/`,
 `~/.codex/skills/agent-crew/`, and `~/.codex/agent-crew/skills/`. Every selected
-skill name must have matching load evidence (`selected_skill:
-frontend-typescript-react` requires `frontend-typescript-react.md`,
-`selected_skill: tdd` requires `tdd.md`). Do not load unrelated host/plugin
+skill name should have matching load coverage (`selected_skill:
+frontend-typescript-react` maps to `frontend-typescript-react.md`,
+`selected_skill: tdd` maps to `tdd.md`). Do not load unrelated host/plugin
 skills, including plugin cache skills, by description match. If a
 non-agent-crew skill is genuinely needed, ask for explicit user approval first
 and record it in `{TASK_DIR}/context/external-skill-approval.md` or `.json`.
-Repairing a mutating current-session fallback as completed may reject the
-handoff when skill-load evidence is missing or when an external skill lacks
-approval.
+Repair reports missing or incomplete skill-load coverage as advisory gaps. It
+still rejects an external host/plugin skill load when explicit user approval is
+missing.
 
 Optional skill-use notes may be recorded in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
@@ -82,8 +83,8 @@ added or updated, run, and recorded as expected failing red-phase evidence in
 reasonably be produced, record the explicit exception first in
 `{TASK_DIR}/context/tdd-exception.md`. After green, perform the refactor review
 or document a no-op refactor decision, rerun focused verification, and record it
-in `{TASK_DIR}/context/tdd-refactor.md`. Repairing a mutating current-session
-fallback as completed may reject the handoff when red-phase/exception evidence
-or refactor-phase evidence is missing.
+in `{TASK_DIR}/context/tdd-refactor.md`. Repairing production-code
+implementation as completed may reject the handoff when red-phase/exception
+evidence or refactor-phase evidence is missing.
 
 Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate supervisor logic in this skill.

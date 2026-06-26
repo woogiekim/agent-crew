@@ -56,14 +56,12 @@ done, record the outcome:
 crew repair TASK_ID --status completed --note "Completed in host session"
 ```
 
-For read-only validation tasks, attach the report and state why implementation
-quality-loop evidence is not applicable:
+For read-only validation tasks, record the outcome directly. `--evidence` is
+only an optional extra reference when a report already exists:
 
 ```bash
 crew repair TASK_ID \
   --status completed \
-  --evidence dist/report.json \
-  --quality-bypass-reason "Read-only validation; no production files edited." \
   --note "Validation completed."
 ```
 

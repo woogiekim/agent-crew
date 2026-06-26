@@ -167,6 +167,24 @@ def test_repair_blocks_mutating_task_without_quality_loop_evidence(tmp_path: Pat
     assert "BLOCKER: missing_quality_loop_evidence" in result.stderr
 
 
+def test_repair_does_not_require_quality_loop_for_operational_git_update_closeout(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(
+        tmp_path,
+        "Merge local changes, push origin/main, and update global agent-crew assets.",
+    )
+    register_path = task_dir / "register.json"
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+    register["host_bridge_status"] = "current_session_required"
+    register_path.write_text(json.dumps(register), encoding="utf-8")
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["required"] is False
+    assert repair["required_capability_gate"]["advisory"] is True
+
+
 def test_repair_blocks_evidence_only_without_pipeline_quality_loop(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     (task_dir / "context" / "tdd_log.md").write_text(

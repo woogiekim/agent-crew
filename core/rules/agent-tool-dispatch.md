@@ -313,8 +313,9 @@ copied into the unified `~/.agent-crew/skills/` discovery path; it is a
 seed source, not a runtime artifact.
 
 `crew:update` also runs a passive reconcile check: if a user-layer skill
-differs from its template, a single advisory line is printed
-(`[crew:update] templates/<name> diverged from user skill (N lines); run 'crew:update --reconcile-skills' to compare`).
+differs from the refreshed system skill or supplied template, a single advisory
+line is printed
+(`[crew:update] user skill <name> diverged from system/template (N lines); run 'crew update --reconcile-skills' to compare`).
 The optional `--reconcile-skills` flag writes a unified diff to
 `~/.agent-crew/state/<project>/reconcile/<name>.diff` and stops there.
 The user reads the diff out-of-band and decides whether to hand-merge.

@@ -189,14 +189,13 @@ invocation in SKILL.md; generic adds guidance).
   successor-memory feedback, and compact memory-quality metrics.
 - `repair-task-state.py` — explicit operational repair for manual handoff
   fallback completion; rewrites the task's terminal state and archives the
-  pre-repair `result.md`. Completed repairs for mutating implementation tasks
-  require TDD Red/Green/Refactor evidence, reviewer evidence, and
-  pipeline-level quality-loop events. Mutating current-session repairs also
-  require skill-load evidence proving which agent-crew skills were loaded and
-  blocking unapproved external host/plugin skills. `skill-use` and
-  `skill-plan` files are optional diagnostic coverage: when absent or
-  incomplete, repair records advisory gaps while relying on task outcomes,
-  tests, diffs, reviews, and tool events as the evidence of skill application.
+  pre-repair `result.md`. Completed repairs for production-code implementation
+  tasks require the TDD Red/Green/Refactor plus reviewer quality loop unless an
+  explicit quality bypass is provided. Specialist dispatch, skill-load,
+  capability handler, `skill-use`, and `skill-plan` files are diagnostic
+  coverage sources: when absent or incomplete, repair records advisory gaps
+  while relying on task outcomes, tests, diffs, reviews, and tool events.
+  Unapproved external host/plugin skill loads still block completion.
 - `pipeline-quality-plan-check.py` — validates `pipeline.json` immediately after
   analyst/planner emission. Mutating implementation stages must be encoded as
   TDD-capable stages and followed by a reviewer stage; every TDD stage must

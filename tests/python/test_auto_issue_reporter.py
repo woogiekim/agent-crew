@@ -138,6 +138,14 @@ def test_signal_detection_ignores_command_level_reporting_disable():
     assert signal is None
 
 
+def test_deprecated_skill_evidence_blockers_are_not_expected_workflow_gates():
+    # given
+    deprecated_blocker = "STATUS: blocked\nBLOCKER: missing_skill_use_evidence"
+
+    # when / then
+    assert reporter.is_expected_workflow_gate_blocker(deprecated_blocker) is False
+
+
 def test_signal_detection_ignores_read_only_agent_crew_path_output_without_status():
     # given
     payload = {

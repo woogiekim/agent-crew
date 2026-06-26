@@ -632,8 +632,16 @@ framework-computed `decision_context`. This report tells the agent what to load;
 it does not create `skill-use.json` proof artifacts by itself. Real outcomes,
 tests, diffs, reviews, and tool events remain the evidence that a skill was
 applied. During current-session fallback repair, missing or incomplete
-`skill-use` / `skill-plan` notes are recorded as advisory gaps rather than
-completion blockers.
+specialist dispatch, skill-load, capability handler, `skill-use`, and
+`skill-plan` notes are recorded as advisory coverage gaps rather than
+completion blockers. Unapproved external host/plugin skill loads remain a hard
+policy blocker.
+
+`crew update` refreshes system skills, then rebuilds the unified discovery view
+with user-wins precedence. A same-name file under `~/.agent-crew/user/skills/`
+is preserved and will continue to override the refreshed system copy. Use
+`crew update --reconcile-skills` to write comparison diffs under the project
+state directory before hand-merging a user override.
 
 ## Parallel-First Execution
 

@@ -215,14 +215,18 @@ echo "system-skill" > "${TMP}/sys-skills/x.md"
 echo "user-skill"   > "${TMP}/user-skills/x.md"
 
 it "merge_skills_to_discovery exits 0"
-merge_skills_to_discovery \
-  "${TMP}/sys-skills" "${TMP}/user-skills" "${TMP}/dest" >/dev/null 2>&1
+output=$(merge_skills_to_discovery \
+  "${TMP}/sys-skills" "${TMP}/user-skills" "${TMP}/dest" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
 it "merge_skills_to_discovery: user version wins (overwrite)"
 actual=$(cat "${TMP}/dest/x.md")
 assert_eq "user-skill" "${actual}"
+
+it "merge_skills_to_discovery explains user overrides are preserved"
+assert_contains "${output}" "not overwritten by system updates"
+assert_contains "${output}" "crew update --reconcile-skills"
 
 # --------------------------------------------------------------------------- #
 # register_local_git_excludes — append + idempotent                           #

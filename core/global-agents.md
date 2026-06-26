@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-06-06T13:47:48Z from 15 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-06-26T04:48:11Z from 16 mnemos rules (host=repo) -->
 
 # agent-crew - Global Rules
 
@@ -115,6 +115,27 @@ rendering or return values, error handling, and reporting as context changes.
 Do not reformat unrelated code solely to add spacing; apply this rule to code
 the agent writes or directly touches.
 
+## Imported Command Scope Rule
+
+Imported command/skill origin is not the work target. For example, an imported cowave command such as `$feat` provides workflow and methodology only; it does not prove that cowave is the repository, module, system, or API to modify.
+
+Before choosing any implementation, analysis, review, git, issue, or external-mutation target, resolve scope from explicit evidence:
+
+1. Ticket/issue title and body
+2. Explicit repo, module, endpoint, API contract, or source-of-truth contract
+3. Current working root
+4. Notes such as "already complete", "no change", or "integration only"
+5. The system whose contract must be followed for integration
+
+Use this priority when signals conflict:
+
+1. Explicit ticket/request scope
+2. API contract or other source-of-truth contract
+3. Current working root
+4. Imported command/skill origin
+
+Therefore, never infer upstream or source-project implementation work solely from the imported command/skill origin. If the ticket says a related system is already complete, needs no change, or only needs integration, keep that system closed unless newer explicit evidence reopens it. If scope remains ambiguous after checking the evidence above, stop before editing or mutating external state and ask for clarification.
+
 ## Codex Routing Fallback
 
 Codex lifecycle hooks can require trust review and may inject only advisory
@@ -147,22 +168,22 @@ or the operator continues a host bridge handoff manually in the current host
 session, that current session is only replacing the nested host bridge. It must
 not bypass agent-crew dispatch. Before executing task work, re-apply specialist
 agent/user-agent/subagent and agent-skill selection for the normalized task,
-use/load the selected specialist when available, and record every selected axis
-in `{TASK_DIR}/context/specialist-dispatch.md`.
+use/load the selected specialist when available, and record selected-axis
+coverage in `{TASK_DIR}/context/specialist-dispatch.md` when available.
 
 Before acting, load the applicable skill files and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
-`{TASK_DIR}/context/skill-load.json`. Every `selected_skill` /
-`selected_skills` entry must have matching load evidence (for example,
-`selected_skill: frontend-typescript-react` requires
-`frontend-typescript-react.md`, and `selected_skill: tdd` requires `tdd.md`).
+`{TASK_DIR}/context/skill-load.json` when available. Every `selected_skill` /
+`selected_skills` entry should have matching load coverage (for example,
+`selected_skill: frontend-typescript-react` maps to
+`frontend-typescript-react.md`, and `selected_skill: tdd` maps to `tdd.md`).
 Automatically loaded skills must come from agent-crew system/user skill
 locations or the active host's agent-crew mirrors. Do not auto-load unrelated
 host/plugin skills by description match. If a non-agent-crew host/plugin skill
 is genuinely needed, ask the user first and record approval in
 `{TASK_DIR}/context/external-skill-approval.md` or `.json`. Completion/repair
-for a mutating current-session fallback must reject or flag missing skill-load
-evidence or unapproved external skill loads.
+for a current-session fallback reports missing or incomplete skill-load coverage
+as advisory gaps and still rejects unapproved external skill loads.
 
 Optional skill-use notes may be recorded in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
@@ -188,8 +209,8 @@ runnable harness or red failure can reasonably be produced, record the explicit
 exception first in `{TASK_DIR}/context/tdd-exception.md`. After green, perform
 the refactor review or document a no-op refactor decision, rerun focused
 verification, and record it in `{TASK_DIR}/context/tdd-refactor.md`.
-Completion/repair for a mutating current-session fallback must reject or flag
-missing red-phase/exception evidence or missing refactor-phase evidence.
+Completion/repair for production-code implementation may reject missing
+red-phase/exception evidence or missing refactor-phase evidence.
 
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
@@ -199,10 +220,10 @@ resolver, or approval behavior in Codex-specific hooks or skills.
 
 When `[agent-crew] STOP` appears anywhere in the system context (injected by
 auto-route.sh), the first agent-crew workflow action is to invoke `crew:run`.
-In Codex, this means loading the `crew-run` skill wrapper after preserving any
-explicitly invoked Codex skill context, then executing the workflow intent
-through that wrapper. Domain-match alone is not approval to load external
-host/plugin skills.
+In Codex, this means loading the `crew-run` skill wrapper after any explicitly
+invoked Codex skill has loaded, then executing the workflow intent through that
+wrapper. Domain-match alone is not approval to load external host/plugin
+skills.
 
 - Do NOT produce diagnostic output or explanation before the `crew-run` wrapper
   begins the workflow.
@@ -223,8 +244,8 @@ Violation examples (forbidden when STOP is present):
 When `[agent-crew] ROUTE` appears anywhere in the system context
 (injected by auto-route.sh), the workflow action is to invoke `crew:agent` with
 the specified agent and question. In Codex, load the `crew-agent` skill wrapper
-after preserving any explicitly invoked Codex skill context, then execute the
-workflow intent through that wrapper. Domain-match alone is not approval to load
+after any explicitly invoked Codex skill has loaded, then execute the workflow
+intent through that wrapper. Domain-match alone is not approval to load
 external host/plugin skills.
 
 - Do NOT answer the question inline.

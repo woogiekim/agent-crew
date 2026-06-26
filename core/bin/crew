@@ -61,7 +61,7 @@ Commands:
                                     Persist structured question choices
   resume [--print|--dry-run] TASK_ID
                                     Request or print deterministic resume state
-  update [--local [SOURCE_ROOT]] [--all-projects]
+  update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]
                                     Refresh installed assets
   run "task"                       Write state and host handoff for a task
   report auto|publish|cleanup [args]
@@ -1076,7 +1076,19 @@ PYEOF
 cmd_update() {
   local use_local=0
   local all_projects=0
+  local reconcile_skills=0
   local source=""
+  run_skill_reconcile() {
+    local reconcile_script="${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh"
+    require_file "${reconcile_script}" "skill reconcile script"
+
+    local reconcile_dir="${STATE_DIR}/reconcile"
+    mkdir -p "${reconcile_dir}"
+    bash "${reconcile_script}" \
+      --write-diffs "${reconcile_dir}" \
+      "${AGENT_CREW_HOME}/system/skills" \
+      "${AGENT_CREW_HOME}/user/skills"
+  }
   run_mnemos_update_check() {
     local diagnostics="${ASSET_ROOT}/scripts/crew-diagnostics.py"
     if [ -f "${diagnostics}" ]; then
@@ -1103,7 +1115,7 @@ print(f"update_check: mnemos={status} {detail}".rstrip())
     case "$1" in
       -h|--help)
       cat <<'EOF'
-usage: crew update [--local [SOURCE_ROOT]] [--all-projects]
+usage: crew update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]
 
 Default update mode clones origin/main into a fresh temporary checkout and
 refreshes the install from that source. Use --local to deterministically refresh
@@ -1112,6 +1124,9 @@ from an existing local checkout.
 By default, project-local adapter files are refreshed only for the current
 project. Use --all-projects to refresh registered project-local adapter files
 after the global install has been updated.
+
+Use --reconcile-skills to write advisory diffs for user skill overrides after
+the standard refresh. It never overwrites ~/.agent-crew/user/skills.
 EOF
       return 0
       ;;
@@ -1130,6 +1145,11 @@ EOF
         shift
         continue
         ;;
+      --reconcile-skills)
+        reconcile_skills=1
+        shift
+        continue
+        ;;
       *)
         die "unknown update argument: $1"
         ;;
@@ -1142,6 +1162,9 @@ EOF
       bash "${sync_script}" "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
       if [ "${all_projects}" = "1" ]; then
         update_registered_projects "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+      fi
+      if [ "${reconcile_skills}" = "1" ]; then
+        run_skill_reconcile
       fi
       run_mnemos_update_check
       return 0
@@ -1160,6 +1183,9 @@ EOF
   bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"
   if [ "${all_projects}" = "1" ]; then
     update_registered_projects "${work_dir}" "${PROJECT_ROOT}"
+  fi
+  if [ "${reconcile_skills}" = "1" ]; then
+    run_skill_reconcile
   fi
   printf 'update_phase: remote_sync=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
   run_mnemos_update_check
@@ -1209,14 +1235,14 @@ current host session. This updates local task state so telemetry stops reporting
 stale host_bridge_not_invoked blockers after the fallback has completed.
 Use --status cancelled when a handoff was intentionally superseded or aborted by
 the user before implementation began.
-For mutating implementation tasks, completed repairs require full TDD-cycle
-evidence (Red, Green, Refactor), reviewer evidence, and skill-load evidence.
-Skill-use and skill-understanding notes are optional diagnostic coverage.
-Missing or incomplete notes are recorded as advisory gaps rather than completion
-blockers when task outcomes, tests, diffs, reviews, or tool events are sufficient.
-For read-only validation or documentation-only handoffs, attach the generated
-report with --evidence and explain why the quality loop is not applicable with
---quality-bypass-reason.
+For production-code implementation tasks, completed repairs still require the
+TDD/reviewer quality loop unless an explicit quality bypass reason is provided.
+Specialist dispatch, skill-load, capability handler, skill-use, and
+skill-understanding files are diagnostic coverage sources. Missing or incomplete
+coverage is recorded as advisory gaps rather than completion blockers when task
+outcomes, tests, diffs, reviews, or tool events are sufficient. Unapproved
+external host/plugin skill loads remain blocked. --evidence may attach optional
+extra references, but repair scans standard task context files automatically.
 EOF
     return 0
   fi

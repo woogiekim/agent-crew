@@ -35,7 +35,7 @@ assert_exit 0 "${rc}"
 
 it "crew help mentions setup/status/telemetry/trace/cost/doctor/config/debug/readiness/question/resume/update/report/issue-ingest/cancel"
 assert_contains "${out}" "setup [PROJECT_ROOT]"
-assert_contains "${out}" "update [--local [SOURCE_ROOT]] [--all-projects]"
+assert_contains "${out}" "update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]"
 assert_contains "${out}" "telemetry [args]"
 assert_contains "${out}" "trace [args]"
 assert_contains "${out}" "cost [args]"
@@ -49,7 +49,15 @@ assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
 assert_contains "${out}" "cancel [--note TEXT] TASK_ID"
 
+it "crew update help documents skill reconcile"
+out=$(bash "${CREW}" update --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "--reconcile-skills"
+assert_contains "${out}" "write advisory diffs for user skill overrides"
+
 it "crew help states prompt-workflow control plane"
+out=$(bash "${CREW}" --help 2>&1)
 assert_contains "${out}" "local control plane for AI-host prompt workflows"
 
 TMP_HOME=$(make_tmp)

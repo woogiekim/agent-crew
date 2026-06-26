@@ -253,8 +253,8 @@ naïve template systems break the user-layer policy. The rule is:
 - On every update, compare the installed user-layer skill against the
   corresponding template byte-for-byte. If they differ, surface a single
   advisory line per agent:
-  `[crew:update] templates/<name> diverged from user skill (N lines); run 'crew:update --reconcile-skills' to compare`.
-- `crew:update --reconcile-skills` is an opt-in flow: it writes a unified
+  `[crew:update] user skill <name> diverged from system/template (N lines); run 'crew update --reconcile-skills' to compare`.
+- `crew update --reconcile-skills` is an opt-in flow: it writes a unified
   diff to `~/.agent-crew/state/{PROJECT}/reconcile/<name>.diff` and stops.
   The user reads the diff out-of-band and decides whether (and how) to
   hand-merge. No automatic write to the user layer ever happens.

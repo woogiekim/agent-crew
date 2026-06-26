@@ -34,7 +34,7 @@ Unlike `crew:setup`, this command:
 | none | — | `crew:update` always refreshes from the remote source repository. |
 | `--local [SOURCE_ROOT]` | — | Refresh from an existing local checkout instead of a fresh remote clone. |
 | `--all-projects` | off | After the global install and current project refresh, re-run project-local adapter setup for every registered project root. |
-| `--reconcile-skills` | off | After the standard refresh, write unified diffs for any Channel B adapter skill that has diverged from its template to `${STATE_DIR}/reconcile/<name>.diff`. NEVER mutates `~/.agent-crew/user/skills/`. The user reads each diff out-of-band and decides whether to hand-merge. See `core/rules/agent-tool-dispatch.md` § Channel B template seeding. |
+| `--reconcile-skills` | off | After the standard refresh, write unified diffs for user skill overrides that diverge from the refreshed system skill to `${STATE_DIR}/reconcile/<name>.diff`. NEVER mutates `~/.agent-crew/user/skills/`. The user reads each diff out-of-band and decides whether to hand-merge. |
 
 ## State Paths
 
@@ -219,15 +219,15 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
       templates. If any diverge, a single advisory line per skill is
       printed; the user-skills layer is never mutated. To produce
       actual diffs the user can review out-of-band, the operator
-      runs the opt-in `crew:update --reconcile-skills` flag (see
-      below).
+      runs the opt-in `crew update --reconcile-skills` native CLI flag
+      (workflow notation: `crew:update --reconcile-skills`; see below).
 
       ```bash
       AGENT_CREW_RECONCILE_TAG="crew:update" \
         bash "${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh"
       ```
 
-   **`crew:update --reconcile-skills` (opt-in)**
+   **`crew update --reconcile-skills` (opt-in)**
 
    When invoked with `--reconcile-skills`, run the reconcile helper in
    `--write-diffs` mode. The helper writes a unified diff per diverged
@@ -242,7 +242,9 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
      mkdir -p "${STATE_DIR}/reconcile"
      AGENT_CREW_RECONCILE_TAG="crew:update" \
        bash "${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh" \
-         --write-diffs "${STATE_DIR}/reconcile"
+         --write-diffs "${STATE_DIR}/reconcile" \
+         "${AGENT_CREW_HOME}/system/skills" \
+         "${AGENT_CREW_HOME}/user/skills"
    fi
    ```
 
@@ -535,8 +537,8 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   but only copies to `~/.agent-crew/user/skills/<name>.md` when the
   user-layer file does not already exist. A user-edited adapter skill is
   NEVER overwritten — even when the upstream template changes. The
-  `crew:update --reconcile-skills` flag surfaces divergence as diff
-  files; it never mutates the user layer.
+  `crew update --reconcile-skills` flag surfaces divergence for user skill
+  overrides as diff files; it never mutates the user layer.
 - Every local/remote update writes a preservation manifest under
   `${STATE_DIR}/update-preservation/`. The manifest
   records before/after counts and hashes for user agents, user skills, and
@@ -1240,7 +1242,7 @@ agent already proves. New framework primitives:
   install/update) and `core/setup/reconcile-skill-templates.sh`
   (advisory + opt-in `--write-diffs` mode). NEITHER helper ever
   overwrites a user-edited file at `~/.agent-crew/user/skills/`.
-- New `crew:update --reconcile-skills` flag — opt-in diff-to-state-dir
+- New `crew update --reconcile-skills` flag — opt-in diff-to-state-dir
   flow when a user wants to see how their installed adapter skill has
   diverged from the upstream template.
 

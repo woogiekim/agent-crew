@@ -89,19 +89,23 @@ def _write_skill_plan(task_dir: Path) -> None:
     )
 
 
-def test_mutating_current_session_repair_blocks_without_skill_load_evidence(tmp_path: Path):
+def test_mutating_current_session_repair_reports_missing_skill_load_as_advisory_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
-    _write_task(state_dir, task_id)
+    task_dir = _write_task(state_dir, task_id)
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_skill_load_evidence" in result.stderr
-    assert "context/skill-load.md" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["skill_load_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_required_skills"] == ["tdd.md"]
+    assert "SKILL_LOAD: advisory" in (task_dir / "result.md").read_text(encoding="utf-8")
 
 
-def test_tdd_specialist_requires_loaded_tdd_skill_path(tmp_path: Path):
+def test_tdd_specialist_reports_missing_loaded_tdd_skill_path_as_advisory_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -114,12 +118,15 @@ def test_tdd_specialist_requires_loaded_tdd_skill_path(tmp_path: Path):
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_required_skill_load_evidence" in result.stderr
-    assert "tdd.md" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["skill_load_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_required_skills"] == ["tdd.md"]
 
 
-def test_non_tdd_selected_skill_requires_matching_loaded_skill_path(tmp_path: Path):
+def test_non_tdd_selected_skill_reports_missing_matching_loaded_skill_path_as_advisory_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(
@@ -137,9 +144,12 @@ def test_non_tdd_selected_skill_requires_matching_loaded_skill_path(tmp_path: Pa
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_required_skill_load_evidence" in result.stderr
-    assert "frontend-typescript-react.md" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["skill_load_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_required_skills"] == ["frontend-typescript-react.md"]
 
 
 def test_json_skill_load_satisfies_non_tdd_selected_skill(tmp_path: Path):
@@ -414,7 +424,7 @@ def test_repair_accepts_skill_load_evidence_for_tdd_specialist(tmp_path: Path):
     assert "REQUIRED_SKILL: tdd.md" in result_text
 
 
-def test_general_evidence_does_not_satisfy_skill_load_gate(tmp_path: Path):
+def test_general_evidence_does_not_satisfy_skill_load_coverage(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(
@@ -430,8 +440,12 @@ def test_general_evidence_does_not_satisfy_skill_load_gate(tmp_path: Path):
 
     result = _repair(state_dir, task_id, "--evidence", "context/review.md")
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_skill_load_evidence" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    gate = repair["skill_load_gate"]
+    assert gate["passed"] is False
+    assert gate["advisory"] is True
+    assert gate["missing_required_skills"] == ["backend-python.md"]
 
 
 def test_skill_load_bypass_is_explicitly_recorded(tmp_path: Path):

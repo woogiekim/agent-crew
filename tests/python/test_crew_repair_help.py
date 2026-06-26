@@ -20,6 +20,8 @@ def test_crew_repair_help_describes_skill_notes_as_advisory() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     compact = " ".join(result.stdout.split())
-    assert "Skill-use and skill-understanding notes are optional diagnostic coverage" in compact
+    assert "Specialist dispatch, skill-load, capability handler, skill-use, and skill-understanding files are diagnostic coverage sources" in compact
     assert "advisory gaps rather than completion blockers" in compact
+    assert "--evidence may attach optional extra references" in compact
     assert "skill-use plus skill-understanding evidence for loaded non-TDD skills" not in compact
+    assert "skill-load evidence proving which agent-crew skills were loaded" not in compact

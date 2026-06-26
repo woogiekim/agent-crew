@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# reconcile-skill-templates.sh — opt-in diff helper for adapter skill templates.
+# reconcile-skill-templates.sh — opt-in diff helper for preserved user skills.
 #
 # Purpose:
-#   The framework ships canonical seed templates under
-#   `core/agents/skills/templates/`. After install/update, the user's
-#   `~/.agent-crew/user/skills/<name>.md` may diverge from the template
-#   (the user customized it, or the template was bumped upstream).
+#   The framework ships canonical system skills under `system/skills/` and may
+#   also ship seed templates under `core/agents/skills/templates/`. After
+#   install/update, the user's `~/.agent-crew/user/skills/<name>.md` may diverge
+#   from the system copy or template because the user customized it, or because
+#   the upstream skill was changed.
 #
 #   Per the user-layer-only policy (commit `1f89c02`), `crew:update`
 #   NEVER overwrites a user-edited file. Instead, this script writes a
@@ -15,14 +16,15 @@
 #   This script has two modes:
 #
 #   MODE A — "check" (default).
-#     For each installed template, compare against the user-layer file.
+#     For each installed system skill or supplied template, compare against the
+#     user-layer file.
 #     If they differ, print a single advisory line to stdout:
-#       [crew:update] templates/<name> diverged from user skill (N lines);
-#                     run 'crew:update --reconcile-skills' to compare
+#       [crew:update] user skill <name> diverged from system/template (N lines);
+#                     run 'crew update --reconcile-skills' to compare
 #     Exit code is 0 in all cases; non-divergence is silent.
 #
 #   MODE B — "--write-diffs <output-dir>".
-#     Write a unified diff for each diverged template to
+#     Write a unified diff for each diverged system skill/template to
 #     `<output-dir>/<name>.diff`. The user reads the diff out-of-band
 #     and decides whether to hand-merge. NO automatic write to the user
 #     layer happens. Print a single summary line per diff written.
@@ -33,7 +35,7 @@
 # Usage:
 #   reconcile-skill-templates.sh \
 #     [--write-diffs <output-dir>] \
-#     [<source-templates-dir>] \
+#     [<source-skills-or-templates-dir>] \
 #     [<user-skills-dir>]
 #
 #   With no flag: check mode, print advisories.
@@ -89,7 +91,9 @@ USER_SKILLS_DIR="${2:-}"
 
 # Resolve defaults when arguments are omitted.
 if [ -z "${SOURCE_TEMPLATES_DIR}" ]; then
-  if [ -d "${AGENT_CREW_HOME}/system/agents/skills/templates" ]; then
+  if [ -d "${AGENT_CREW_HOME}/system/skills" ]; then
+    SOURCE_TEMPLATES_DIR="${AGENT_CREW_HOME}/system/skills"
+  elif [ -d "${AGENT_CREW_HOME}/system/agents/skills/templates" ]; then
     SOURCE_TEMPLATES_DIR="${AGENT_CREW_HOME}/system/agents/skills/templates"
   elif [ -d "${AGENT_CREW_HOME}/agents/skills/templates" ]; then
     SOURCE_TEMPLATES_DIR="${AGENT_CREW_HOME}/agents/skills/templates"
@@ -163,7 +167,7 @@ while IFS= read -r -d '' tpl; do
     printf '[%s] reconcile diff written: %s\n' "${TAG}" "${diff_path}"
     diffs_written=$((diffs_written + 1))
   else
-    printf '[%s] templates/%s diverged from user skill (%d lines); run '\''crew:update --reconcile-skills'\'' to compare\n' \
+    printf '[%s] user skill %s diverged from system/template (%d lines); run '\''crew update --reconcile-skills'\'' to compare\n' \
       "${TAG}" "${base}" "${diff_lines}"
   fi
 done < <(find "${SOURCE_TEMPLATES_DIR}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
