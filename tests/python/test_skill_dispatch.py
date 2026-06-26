@@ -384,7 +384,41 @@ def test_cli_resolves_duplicate_layers_without_returning_merged_mirror(
     }
 
 
-def test_cli_reports_unindexed_user_skill_as_computed_state(tmp_path: Path) -> None:
+def test_cli_reports_contextual_unindexed_user_skill_as_computed_state(tmp_path: Path) -> None:
+    user_dir = tmp_path / "user" / "skills"
+    user_dir.mkdir(parents=True)
+    (user_dir / "legacy-skill.md").write_text(
+        "# Skill: legacy-skill\n\nLegacy user skill without metadata.\n",
+        encoding="utf-8",
+    )
+    (user_dir / "ui.md").write_text(
+        "# Skill: ui\n\nShort metadata-free skill name.\n",
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(user_dir),
+        "--project-root", str(tmp_path),
+        "--task", "Use legacy skill during cleanup pass.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+    assert payload["decision_context"]["artifact_required"] is False
+    assert payload["unindexed_user_skills"] == [
+        {
+            "name": "legacy-skill",
+            "path": str(user_dir / "legacy-skill.md"),
+            "layer": "user",
+            "missing_fields": ["loaded_by", "axis", "detection"],
+            "reason": "missing dispatch metadata",
+        }
+    ]
+    assert payload["decision_context"]["known_gaps"][0]["type"] == "unindexed_user_skill"
+
+
+def test_cli_ignores_unrelated_metadata_free_user_skill_gap(tmp_path: Path) -> None:
     user_dir = tmp_path / "user" / "skills"
     user_dir.mkdir(parents=True)
     (user_dir / "legacy-skill.md").write_text(
@@ -401,17 +435,8 @@ def test_cli_reports_unindexed_user_skill_as_computed_state(tmp_path: Path) -> N
     )
 
     assert payload["matched"] == []
-    assert payload["decision_context"]["artifact_required"] is False
-    assert payload["unindexed_user_skills"] == [
-        {
-            "name": "legacy-skill",
-            "path": str(user_dir / "legacy-skill.md"),
-            "layer": "user",
-            "missing_fields": ["loaded_by", "axis", "detection"],
-            "reason": "missing dispatch metadata",
-        }
-    ]
-    assert payload["decision_context"]["known_gaps"][0]["type"] == "unindexed_user_skill"
+    assert payload["unindexed_user_skills"] == []
+    assert payload["decision_context"]["known_gaps"] == []
 
 
 def test_cli_ignores_reserved_and_foreign_user_skill_noise(tmp_path: Path) -> None:

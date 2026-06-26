@@ -50,10 +50,14 @@ def test_readme_documents_native_cli_boundary():
 
 
 def test_docs_distinguish_workflow_notation_from_native_cli_forms():
+    global_agents = (REPO_ROOT / "core" / "global-agents.md").read_text(encoding="utf-8")
+    seed_rules = (REPO_ROOT / "core" / "scripts" / "seed-instruction-rules.sh").read_text(
+        encoding="utf-8"
+    )
     docs = [
         README.read_text(encoding="utf-8"),
         (REPO_ROOT / "adapters" / "codex" / "invocation.md").read_text(encoding="utf-8"),
-        (REPO_ROOT / "core" / "global-agents.md").read_text(encoding="utf-8"),
+        global_agents,
     ]
     combined = "\n".join(docs)
     compact = " ".join(combined.split())
@@ -61,6 +65,9 @@ def test_docs_distinguish_workflow_notation_from_native_cli_forms():
     assert "native shell CLI uses space-separated commands such as `crew run` and `crew agent`" in compact
     assert "Slash-style commands are host-specific aliases" in combined
     assert "this adapter does not create adapter-owned slash aliases" in compact
+    for wrapper in ("$crew-setup", "$crew-cost", "$crew-agent-maker"):
+        assert f"| `{wrapper}` |" in global_agents
+        assert f"| `{wrapper}` |" in seed_rules
 
 
 def test_codex_guide_mirror_is_not_native_skill_directory():
@@ -84,6 +91,7 @@ def test_readme_documents_agent_crew_skill_dispatch_layers():
     assert "native Codex skills remain under `~/.codex/skills/`" in text
     assert "`decision_context`" in text
     assert "does not create `skill-use.json` proof artifacts" in text
+    assert "advisory gaps rather than\ncompletion blockers" in text
     assert "`~/.agent-crew/agents/skills/`" not in text
 
 

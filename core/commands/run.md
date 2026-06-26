@@ -2621,20 +2621,19 @@ use this sequence:
      `crew repair --status completed` for a mutating current-session fallback
      may reject completion when this skill-load evidence is missing or when an
      external skill was loaded without approval.
-   - Record how every loaded non-TDD skill was applied in `context/skill-use.json`
-     or `context/skill-use.md`. Each entry must include `skill_path`,
-     `applied_rules`, `evidence_refs`, `output_files`, and `verification`.
-     TDD remains covered by red/green/refactor evidence; other loaded skills
-     require concrete use evidence, not only load evidence.
-   - Before applying each loaded non-TDD skill, record operational understanding
-     in `context/skill-plan.json` or `context/skill-plan.md`: `skill_path` plus
-     rule-level `rule_id` or `invariant`, `task_interpretation`, and
-     `planned_application`. After applying the rule, add matching
-     `rule_evidence` to `context/skill-use.json` with `artifact_refs`,
-     `diff_refs`, `verification`, `adversarial_checks`, and
-     `reviewer_status: approved`. `crew repair --status completed` may reject
-     a mutating current-session fallback when a loaded non-TDD skill is used
-     without this understanding evidence.
+   - Optional skill-use notes may be recorded in `context/skill-use.json` or
+     `context/skill-use.md`, but they are diagnostic coverage, not required
+     proof artifacts. TDD remains covered by red/green/refactor evidence. For
+     other loaded skills, real task outcomes, tests, diffs, reviews, and tool
+     events are the evidence that the skill was applied. `crew repair --status
+     completed` should report missing or incomplete skill-use notes as advisory
+     gaps instead of rejecting completion.
+   - Optional operational understanding notes may be recorded in
+     `context/skill-plan.json` or `context/skill-plan.md` and linked from
+     `rule_evidence` in `context/skill-use.json`, but these notes are diagnostic
+     coverage only. `crew repair --status completed` should surface missing
+     skill-plan or rule-evidence notes as advisory gaps when actual task
+     outcomes, tests, diffs, reviews, or tool events are sufficient.
    - For implementation or other production-code mutations with a testable
      surface, follow the full Red → Green → Refactor cycle. Identify the focused
      test target, add or update it, run it, and record the expected failing

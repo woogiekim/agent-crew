@@ -192,13 +192,11 @@ invocation in SKILL.md; generic adds guidance).
   pre-repair `result.md`. Completed repairs for mutating implementation tasks
   require TDD Red/Green/Refactor evidence, reviewer evidence, and
   pipeline-level quality-loop events. Mutating current-session repairs also
-  require skill-load evidence proving which agent skills were loaded and
-  task evidence showing how loaded non-TDD skills were applied.
-  Operational skill-understanding evidence is also required for loaded non-TDD
-  skills: pre-use `context/skill-plan.{json,md}` rule interpretation and
-  matching `rule_evidence` in `context/skill-use.json` with artifact, diff,
-  verification, adversarial-check, and reviewer-approval fields. Each gate can
-  be bypassed only with an explicit bypass reason.
+  require skill-load evidence proving which agent-crew skills were loaded and
+  blocking unapproved external host/plugin skills. `skill-use` and
+  `skill-plan` files are optional diagnostic coverage: when absent or
+  incomplete, repair records advisory gaps while relying on task outcomes,
+  tests, diffs, reviews, and tool events as the evidence of skill application.
 - `pipeline-quality-plan-check.py` — validates `pipeline.json` immediately after
   analyst/planner emission. Mutating implementation stages must be encoded as
   TDD-capable stages and followed by a reviewer stage; every TDD stage must

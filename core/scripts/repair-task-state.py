@@ -1195,6 +1195,8 @@ def skill_use_status(task_dir: Path, paths: list[str], required_skills: list[str
     return {
         "required": True,
         "passed": bool(required_skills) and not missing_skills and not incomplete,
+        "advisory": False,
+        "reason": "",
         "matched_paths": sorted(set(matched_paths)),
         "required_skills": sorted(set(required_skills)),
         "complete_skills": sorted(complete_skills),
@@ -1532,7 +1534,13 @@ def enforce_skill_use_gate(
         and required_skills
     )
     if not required:
-        return {"required": False, "passed": True, "bypassed": False, "required_skills": required_skills}
+        return {
+            "required": False,
+            "passed": True,
+            "advisory": False,
+            "bypassed": False,
+            "required_skills": required_skills,
+        }
 
     status = skill_use_status(task_dir, list(args.skill_use_evidence), required_skills)
     if status["passed"]:
@@ -1540,33 +1548,16 @@ def enforce_skill_use_gate(
 
     if args.skill_use_bypass_reason:
         status["bypassed"] = True
+        status["advisory"] = False
         status["bypass_reason"] = args.skill_use_bypass_reason
         return status
 
-    if status["incomplete_skills"]:
-        details = [
-            f"{skill}: {', '.join(fields)}"
-            for skill, fields in sorted(status["incomplete_skills"].items())
-        ]
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: incomplete_skill_use_evidence\n"
-            "DETAIL: skill-use evidence must include concrete applied_rules, evidence_refs, "
-            "output_files, and verification for each loaded non-TDD skill.\n"
-            "INCOMPLETE: " + "; ".join(details) + "\n"
-            "NEXT: complete context/skill-use.json or record an explicit --skill-use-bypass-reason."
-        )
-
-    raise SystemExit(
-        "STATUS: blocked\n"
-        "BLOCKER: missing_skill_use_evidence\n"
-        "DETAIL: completed repair for a mutating current-session fallback requires "
-        "evidence showing how each loaded non-TDD skill was applied, not only loaded.\n"
-        "MISSING_SKILLS: " + ", ".join(status["missing_skills"] or required_skills) + "\n"
-        "NEXT: record context/skill-use.json or context/skill-use.md with skill_path, "
-        "applied_rules, evidence_refs, output_files, and verification, or record an "
-        "explicit --skill-use-bypass-reason."
+    status["advisory"] = True
+    status["reason"] = (
+        "skill-use proof artifacts are optional; real task outcomes, tests, diffs, "
+        "reviews, and tool events own completion evidence"
     )
+    return status
 
 
 def enforce_skill_understanding_gate(
@@ -1587,7 +1578,13 @@ def enforce_skill_understanding_gate(
         and required_skills
     )
     if not required:
-        return {"required": False, "passed": True, "bypassed": False, "required_skills": required_skills}
+        return {
+            "required": False,
+            "passed": True,
+            "advisory": False,
+            "bypassed": False,
+            "required_skills": required_skills,
+        }
 
     plan = skill_plan_status(task_dir, list(args.skill_understanding_evidence), required_skills)
     understanding = skill_understanding_evidence_status(
@@ -1605,6 +1602,8 @@ def enforce_skill_understanding_gate(
             and not understanding["incomplete_skills"]
             and set(understanding["complete_skills"]) >= set(required_skills)
         ),
+        "advisory": False,
+        "reason": "",
         "required_skills": required_skills,
         "matched_paths": sorted(set(plan["matched_paths"] + understanding["matched_paths"])),
         "complete_skills": understanding["complete_skills"],
@@ -1624,37 +1623,16 @@ def enforce_skill_understanding_gate(
 
     if args.skill_understanding_bypass_reason:
         status["bypassed"] = True
+        status["advisory"] = False
         status["bypass_reason"] = args.skill_understanding_bypass_reason
         return status
 
-    if plan["missing_skills"] and not plan["matched_paths"]:
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: missing_skill_understanding_evidence\n"
-            "DETAIL: completed repair requires pre-use skill-plan evidence before "
-            "a loaded non-TDD skill can be treated as understood.\n"
-            "MISSING_SKILLS: " + ", ".join(plan["missing_skills"]) + "\n"
-            "NEXT: record context/skill-plan.json or context/skill-plan.md with skill_path, "
-            "rule_id or invariant, task_interpretation, and planned_application, or record "
-            "an explicit --skill-understanding-bypass-reason."
-        )
-
-    details = [
-        f"{skill}: {', '.join(fields)}"
-        for skill, fields in sorted(status["incomplete_skills"].items())
-    ]
-    if status["missing_skills"]:
-        details.append("missing: " + ", ".join(status["missing_skills"]))
-    raise SystemExit(
-        "STATUS: blocked\n"
-        "BLOCKER: incomplete_skill_understanding_evidence\n"
-        "DETAIL: skill understanding requires both pre-use plan evidence and rule-level "
-        "post-use evidence with artifact_refs, diff_refs, verification, adversarial_checks, "
-        "and reviewer_status=approved.\n"
-        "INCOMPLETE: " + "; ".join(details or required_skills) + "\n"
-        "NEXT: complete context/skill-plan.json and rule_evidence in context/skill-use.json, "
-        "or record an explicit --skill-understanding-bypass-reason."
+    status["advisory"] = True
+    status["reason"] = (
+        "skill-understanding proof artifacts are optional; applied behavior is "
+        "judged from task outcomes, tests, diffs, reviews, and tool events"
     )
+    return status
 
 
 def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
@@ -1895,6 +1873,10 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         elif skill_use_gate.get("bypassed"):
             lines.append("SKILL_USE: bypassed")
             lines.append(f"SKILL_USE_BYPASS_REASON: {skill_use_gate.get('bypass_reason')}")
+        elif skill_use_gate.get("advisory"):
+            lines.append("SKILL_USE: advisory")
+            if skill_use_gate.get("reason"):
+                lines.append(f"SKILL_USE_ADVISORY_REASON: {skill_use_gate.get('reason')}")
         for path in skill_use_gate.get("matched_paths", []):
             lines.append(f"SKILL_USE_EVIDENCE: {path}")
         for skill in skill_use_gate.get("complete_skills", []):
@@ -1902,6 +1884,9 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         missing_skills = skill_use_gate.get("missing_skills", [])
         if missing_skills:
             lines.append("MISSING_SKILL_USE: " + ", ".join(missing_skills))
+        incomplete_skills = skill_use_gate.get("incomplete_skills", {})
+        for skill, fields in sorted(incomplete_skills.items()):
+            lines.append(f"INCOMPLETE_SKILL_USE: {skill}: {', '.join(fields)}")
     if skill_understanding_gate and skill_understanding_gate.get("required"):
         if skill_understanding_gate.get("passed"):
             lines.append("SKILL_UNDERSTANDING: passed")
@@ -1911,6 +1896,13 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                 f"SKILL_UNDERSTANDING_BYPASS_REASON: "
                 f"{skill_understanding_gate.get('bypass_reason')}"
             )
+        elif skill_understanding_gate.get("advisory"):
+            lines.append("SKILL_UNDERSTANDING: advisory")
+            if skill_understanding_gate.get("reason"):
+                lines.append(
+                    f"SKILL_UNDERSTANDING_ADVISORY_REASON: "
+                    f"{skill_understanding_gate.get('reason')}"
+                )
         for path in skill_understanding_gate.get("matched_paths", []):
             lines.append(f"SKILL_UNDERSTANDING_EVIDENCE: {path}")
         for skill in skill_understanding_gate.get("complete_skills", []):

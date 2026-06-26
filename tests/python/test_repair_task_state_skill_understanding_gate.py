@@ -1,4 +1,4 @@
-"""Tests for operational skill-understanding evidence on manual fallback repair."""
+"""Tests for advisory skill-understanding coverage on manual fallback repair."""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedP
     )
 
 
-def test_understanding_blocks_without_pre_use_skill_plan(tmp_path: Path):
+def test_understanding_reports_missing_pre_use_skill_plan_as_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -155,12 +155,17 @@ def test_understanding_blocks_without_pre_use_skill_plan(tmp_path: Path):
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_skill_understanding_evidence" in result.stderr
-    assert "context/skill-plan.json" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_understanding_gate"]["advisory"] is True
+    assert repair["skill_understanding_gate"]["passed"] is False
+    assert repair["skill_understanding_gate"]["missing_skills"] == ["code-quality.md"]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "SKILL_UNDERSTANDING: advisory" in result_text
+    assert "MISSING_SKILL_UNDERSTANDING: code-quality.md" in result_text
 
 
-def test_understanding_blocks_without_rule_level_use_evidence(tmp_path: Path):
+def test_understanding_reports_missing_rule_level_use_evidence_as_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -168,9 +173,15 @@ def test_understanding_blocks_without_rule_level_use_evidence(tmp_path: Path):
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: incomplete_skill_understanding_evidence" in result.stderr
-    assert "rule_evidence" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_understanding_gate"]["advisory"] is True
+    assert repair["skill_understanding_gate"]["incomplete_skills"]["code-quality.md"] == [
+        "rule_evidence",
+    ]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "SKILL_UNDERSTANDING: advisory" in result_text
+    assert "INCOMPLETE_SKILL_UNDERSTANDING: code-quality.md: rule_evidence" in result_text
 
 
 def test_understanding_accepts_plan_and_adversarial_rule_evidence(tmp_path: Path):
@@ -185,6 +196,7 @@ def test_understanding_accepts_plan_and_adversarial_rule_evidence(tmp_path: Path
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["skill_understanding_gate"]["passed"] is True
+    assert repair["skill_understanding_gate"]["advisory"] is False
     assert repair["skill_understanding_gate"]["complete_skills"] == ["code-quality.md"]
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "SKILL_UNDERSTANDING: passed" in result_text

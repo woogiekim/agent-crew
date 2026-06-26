@@ -1210,10 +1210,10 @@ stale host_bridge_not_invoked blockers after the fallback has completed.
 Use --status cancelled when a handoff was intentionally superseded or aborted by
 the user before implementation began.
 For mutating implementation tasks, completed repairs require full TDD-cycle
-evidence (Red, Green, Refactor), reviewer evidence, skill-load evidence, and
-skill-use plus skill-understanding evidence for loaded non-TDD skills unless an
-explicit bypass reason is recorded. Skill-understanding evidence includes a
-pre-use skill plan and rule-level post-use evidence with reviewer approval.
+evidence (Red, Green, Refactor), reviewer evidence, and skill-load evidence.
+Skill-use and skill-understanding notes are optional diagnostic coverage.
+Missing or incomplete notes are recorded as advisory gaps rather than completion
+blockers when task outcomes, tests, diffs, reviews, or tool events are sufficient.
 For read-only validation or documentation-only handoffs, attach the generated
 report with --evidence and explain why the quality loop is not applicable with
 --quality-bypass-reason.

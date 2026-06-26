@@ -1,6 +1,6 @@
 ---
 name: agent-crew
-description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
+description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, $crew-run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
 ---
 
 # Agent Crew Command Bootstrap
@@ -25,9 +25,23 @@ explicit command invocation, not ordinary natural language:
 - `crew:status`
 - `crew:cost`
 - `crew:agent-maker`
+- `$crew-run`
+- `$crew-run "..."`
+- `$crew-agent ...`
+- `$crew-status`
+- `$crew-update`
+- `$crew-smm`
+- `$crew-setup`
+- `$crew-cost`
+- `$crew-agent-maker ...`
 
 Do not reinterpret these commands as requests to inspect the repository, run
 Gradle, run npm, run CI, lint, test, or perform a host-default validation pass.
+When a message begins with a `$crew-*` wrapper, the text after the wrapper is
+the command argument. For example, `$crew-run 코드리뷰` means "run the
+`코드리뷰` task through crew:run". It is not a request to review the `crew-run`
+skill itself. Treat it as a skill/wrapper/file review only when the prompt
+explicitly targets the skill, wrapper, file, or `SKILL.md` as the object.
 
 ## Natural-Language Routing
 
@@ -106,6 +120,14 @@ Load and follow the matching command definition:
 | `crew:status` | `~/.agent-crew/commands/status.md` |
 | `crew:cost` | `~/.agent-crew/commands/cost.md` |
 | `crew:agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
+| `$crew-run` | `~/.agent-crew/commands/run.md` |
+| `$crew-agent` | `~/.agent-crew/commands/agent.md` |
+| `$crew-status` | `~/.agent-crew/commands/status.md` |
+| `$crew-update` | `~/.agent-crew/commands/update.md` |
+| `$crew-smm` | `~/.agent-crew/commands/smm.md` |
+| `$crew-setup` | `~/.agent-crew/commands/setup.md` |
+| `$crew-cost` | `~/.agent-crew/commands/cost.md` |
+| `$crew-agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
 
 If the command definition file is missing, tell the user to install agent-crew
 globally first.

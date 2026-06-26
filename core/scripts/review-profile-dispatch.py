@@ -432,6 +432,15 @@ def descriptor_matches_context(
     return any(token in context_tokens or token in context_text for token in tokens)
 
 
+def first_markdown_heading(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            return stripped.lstrip("#").strip()
+
+    return ""
+
+
 def unindexed_user_skill_applies_to_agent(
     path: Path,
     metadata: dict[str, str],
@@ -485,7 +494,15 @@ def unindexed_user_skill_applies_to_agent(
         )
         return descriptor_matches_context(descriptor, context_text, context_tokens)
 
-    return True
+    descriptor = " ".join([path.stem, first_markdown_heading(text)])
+    descriptor_tokens = significant_tokens(descriptor)
+    if not descriptor_tokens:
+        return False
+
+    return any(
+        token in context_tokens or token in context_text
+        for token in descriptor_tokens
+    )
 
 
 def _matched_by_for(agent_name: str, detection: str) -> str:

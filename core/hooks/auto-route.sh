@@ -93,12 +93,18 @@ if prompt.startswith("/"):
 if not prompt.strip():
     sys.exit(0)
 
-COMMAND_PAT = r"^\s*((?:crew|ac):(setup|run|crew|task|status|cost|agent-maker|agent|sync-instructions|telemetry|update))(?:\s+(.*))?$"
+COMMAND_PAT = (
+    r"^\s*(?:(?P<colon>(?:crew|ac):(?P<colon_intent>"
+    r"setup|run|crew|task|status|cost|agent-maker|agent|smm|sync-instructions|telemetry|update"
+    r"))|\$(?P<wrapper>crew-(?P<wrapper_intent>"
+    r"setup|run|status|cost|agent-maker|agent|smm|update"
+    r")))(?:\s+(?P<args>.*))?$"
+)
 command_match = re.match(COMMAND_PAT, prompt, re.IGNORECASE | re.DOTALL)
 if command_match:
-    command = command_match.group(1).lower()
-    intent = command_match.group(2).lower()
-    args = (command_match.group(3) or "").strip()
+    command = (command_match.group("colon") or f"${command_match.group('wrapper')}").lower()
+    intent = (command_match.group("colon_intent") or command_match.group("wrapper_intent")).lower()
+    args = (command_match.group("args") or "").strip()
 
     command_file_by_intent = {
         "setup": "setup.md",
@@ -109,6 +115,7 @@ if command_match:
         "cost": "cost.md",
         "agent-maker": "agent-maker.md",
         "agent": "agent.md",
+        "smm": "smm.md",
         "sync-instructions": "sync-instructions.md",
         "telemetry": "telemetry.md",
         "update": "update.md",
@@ -138,6 +145,14 @@ if command_match:
         intent_rules = """- Follow the referenced command definition step-by-step.
 - Do NOT substitute a host-default action or generic project inspection."""
 
+    wrapper_note = ""
+    if command.startswith("$crew-"):
+        wrapper_note = f"""
+Codex wrapper invocation:
+  Load Skill("{command[1:]}") before executing the mapped workflow intent.
+  Treat text after {command} as command arguments, not as a request to review the wrapper itself.
+"""
+
     directive = f"""[agent-crew] COMMAND — explicit {command} invocation detected.
 
 The user is invoking the agent-crew workflow command. Do NOT reinterpret this as
@@ -146,6 +161,7 @@ any host-default task.
 
 Immediate action:
   Execute the workflow defined in ~/.agent-crew/commands/{command_file}.
+{wrapper_note}
 
 {args_note}
 

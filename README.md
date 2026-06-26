@@ -631,7 +631,9 @@ same-name duplicate resolution, task-relevant unindexed user-skill gaps, and a
 framework-computed `decision_context`. This report tells the agent what to load;
 it does not create `skill-use.json` proof artifacts by itself. Real outcomes,
 tests, diffs, reviews, and tool events remain the evidence that a skill was
-applied.
+applied. During current-session fallback repair, missing or incomplete
+`skill-use` / `skill-plan` notes are recorded as advisory gaps rather than
+completion blockers.
 
 ## Parallel-First Execution
 
@@ -841,6 +843,12 @@ through agent-crew before an answer is produced:
 - short workflow continuations such as `go`, `continue`, `네`, or
   `진행해주세요` route back into the appropriate crew workflow instead of being
   answered inline
+
+Codex `$crew-*` wrapper commands are treated as explicit workflow invocations
+when they appear at the beginning of the prompt. For example, `$crew-run 코드리뷰`
+means run the `코드리뷰` task through `crew:run`; it is not a request to review
+the `crew-run` skill. To review the wrapper itself, explicitly target the skill,
+wrapper, file, or `SKILL.md` in the prompt, such as `` `$crew-run` skill review ``.
 
 Machine-control replies used by structured-choice fallbacks, such as a bare
 option number, are the only prompt-level bypass.

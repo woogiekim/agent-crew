@@ -1,4 +1,4 @@
-"""Tests for skill-use evidence on manual Codex fallback repair."""
+"""Tests for advisory skill-use coverage on manual Codex fallback repair."""
 
 from __future__ import annotations
 
@@ -103,19 +103,24 @@ def _write_skill_plan(task_dir: Path) -> None:
     )
 
 
-def test_mutating_current_session_repair_blocks_without_skill_use_evidence(tmp_path: Path):
+def test_mutating_current_session_repair_reports_missing_skill_use_as_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
-    _write_task(state_dir, task_id)
+    task_dir = _write_task(state_dir, task_id)
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_skill_use_evidence" in result.stderr
-    assert "context/skill-use.json" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_use_gate"]["advisory"] is True
+    assert repair["skill_use_gate"]["passed"] is False
+    assert repair["skill_use_gate"]["missing_skills"] == ["code-quality.md"]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "SKILL_USE: advisory" in result_text
+    assert "MISSING_SKILL_USE: code-quality.md" in result_text
 
 
-def test_non_tdd_skill_use_requires_concrete_application_fields(tmp_path: Path):
+def test_non_tdd_skill_use_incomplete_fields_are_advisory(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -136,13 +141,20 @@ def test_non_tdd_skill_use_requires_concrete_application_fields(tmp_path: Path):
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: incomplete_skill_use_evidence" in result.stderr
-    assert "code-quality.md" in result.stderr
-    assert "verification" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_use_gate"]["advisory"] is True
+    assert repair["skill_use_gate"]["incomplete_skills"]["code-quality.md"] == [
+        "evidence_refs",
+        "output_files",
+        "verification",
+    ]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "SKILL_USE: advisory" in result_text
+    assert "INCOMPLETE_SKILL_USE: code-quality.md: evidence_refs, output_files, verification" in result_text
 
 
-def test_skill_use_requires_every_loaded_non_tdd_skill(tmp_path: Path):
+def test_skill_use_reports_every_loaded_non_tdd_skill_gap(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -174,9 +186,15 @@ def test_skill_use_requires_every_loaded_non_tdd_skill(tmp_path: Path):
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_skill_use_evidence" in result.stderr
-    assert "code-review.md" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["skill_use_gate"]["advisory"] is True
+    assert repair["skill_use_gate"]["missing_skills"] == ["code-review.md"]
+    assert repair["skill_use_gate"]["complete_skills"] == ["code-quality.md"]
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "SKILL_USE: advisory" in result_text
+    assert "MISSING_SKILL_USE: code-review.md" in result_text
+    assert "USED_SKILL: code-quality.md" in result_text
 
 
 def test_repair_accepts_skill_use_evidence_for_loaded_non_tdd_skill(tmp_path: Path):
@@ -227,6 +245,7 @@ def test_repair_accepts_skill_use_evidence_for_loaded_non_tdd_skill(tmp_path: Pa
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["skill_use_gate"]["passed"] is True
+    assert repair["skill_use_gate"]["advisory"] is False
     assert repair["skill_use_gate"]["required_skills"] == ["code-quality.md"]
     assert repair["skill_use_gate"]["matched_paths"] == ["context/skill-use.json"]
     assert repair["skill_understanding_gate"]["passed"] is True

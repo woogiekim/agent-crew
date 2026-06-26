@@ -15,6 +15,10 @@ crew:run
 
 1. Load `~/.agent-crew/commands/run.md`.
 2. Treat any user text after `$crew-run` as the task description.
+   A leading `$crew-run 코드리뷰` means "run the `코드리뷰` task"; it does
+   not mean "review the `$crew-run` skill". Only treat the wrapper itself as
+   the review target when the prompt explicitly says the skill, wrapper, file,
+   or `SKILL.md` is the object.
 3. Preserve explicitly invoked Codex skill context as task input for
    requirements collection, supervisor handoffs, and generated prompts.
    Do not auto-load non-agent-crew or third-party host/plugin skills from
@@ -56,22 +60,20 @@ Repairing a mutating current-session fallback as completed may reject the
 handoff when skill-load evidence is missing or when an external skill lacks
 approval.
 
-Record how every loaded non-TDD skill was applied in
-`{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each
-entry must include `skill_path`, `applied_rules`, `evidence_refs`,
-`output_files`, and `verification`. TDD remains covered by red/green/refactor
-evidence; other loaded skills require concrete use evidence, not only load
-evidence.
+Optional skill-use notes may be recorded in
+`{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
+they are diagnostic coverage, not required proof artifacts. TDD remains covered
+by red/green/refactor evidence. For other loaded skills, real task outcomes,
+tests, diffs, reviews, and tool events are the evidence that the skill was
+applied; repair should report missing or incomplete skill-use notes as advisory
+gaps instead of rejecting completion.
 
-Before applying each loaded non-TDD skill, record operational understanding in
-`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md`:
-`skill_path` plus rule-level `rule_id` or `invariant`,
-`task_interpretation`, and `planned_application`. After applying the rule, add
-matching `rule_evidence` to `{TASK_DIR}/context/skill-use.json` with
-`artifact_refs`, `diff_refs`, `verification`, `adversarial_checks`, and
-`reviewer_status: approved`. Repairing a mutating current-session fallback as
-completed may reject the handoff when a loaded non-TDD skill is used without
-this understanding evidence.
+Optional operational understanding notes may be recorded in
+`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
+linked from `rule_evidence` in `context/skill-use.json`, but these notes are
+diagnostic coverage only. Repair should surface missing skill-plan or
+rule-evidence notes as advisory gaps when actual task outcomes, tests, diffs,
+reviews, or tool events are sufficient.
 
 For implementation or other production-code mutations with a testable surface,
 do not patch production code until the focused test target is identified,

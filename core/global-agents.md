@@ -164,21 +164,21 @@ is genuinely needed, ask the user first and record approval in
 for a mutating current-session fallback must reject or flag missing skill-load
 evidence or unapproved external skill loads.
 
-Record how every loaded non-TDD skill was applied in
-`{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`. Each
-entry must include `skill_path`, `applied_rules`, `evidence_refs`,
-`output_files`, and `verification`. TDD remains covered by red/green/refactor
-evidence; other loaded skills require concrete use evidence, not only load
-evidence.
+Optional skill-use notes may be recorded in
+`{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
+they are diagnostic coverage, not required proof artifacts. TDD remains covered
+by red/green/refactor evidence. For other loaded skills, real task outcomes,
+tests, diffs, reviews, and tool events are the evidence that the skill was
+applied; missing or incomplete skill-use notes must be reported as advisory
+gaps, not completion blockers.
 
-Before applying each loaded non-TDD skill, record operational understanding in
-`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md`:
-`skill_path` plus rule-level `rule_id` or `invariant`,
-`task_interpretation`, and `planned_application`. After applying the rule, add
-matching `rule_evidence` to `{TASK_DIR}/context/skill-use.json` with
-`artifact_refs`, `diff_refs`, `verification`, `adversarial_checks`, and
-`reviewer_status: approved`. Completion/repair for a mutating current-session
-fallback must reject or flag missing skill-understanding evidence.
+Optional operational understanding notes may be recorded in
+`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
+linked from `rule_evidence` in `context/skill-use.json`, but these notes are
+diagnostic coverage only. Completion/repair for a mutating current-session
+fallback must not require separate skill-plan or rule-evidence artifacts when
+the actual task outcomes, tests, diffs, reviews, or tool events are sufficient;
+missing notes should be surfaced as advisory gaps.
 
 For implementation or production-code mutation work, the same fallback must not
 bypass the full TDD Red → Green → Refactor cycle. Before production-code
@@ -254,6 +254,12 @@ CLI control plane.
 When the user's message begins with a workflow command such as `crew:run`,
 `crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
 treat it as an explicit command invocation, not as ordinary natural language.
+Codex wrapper forms at the beginning of the message, such as `$crew-run`,
+`$crew-agent`, `$crew-status`, `$crew-update`, `$crew-smm`, `$crew-setup`,
+`$crew-cost`, and `$crew-agent-maker`, are the same kind of explicit command
+invocation. The text after a leading `$crew-run` is the task description; only
+treat `$crew-run` as the review target when the prompt explicitly names the
+skill, wrapper, file, or `SKILL.md` as the object.
 
 For `crew:run` specifically:
 
@@ -280,6 +286,14 @@ For `crew:setup` specifically:
 | `crew:cost` | Show the session cost summary |
 | `crew:agent-maker` | Design and register a custom agent |
 | `crew:sync-instructions` | Re-assemble host AI md files from mnemos rules |
+| `$crew-run` | Codex wrapper for `crew:run` |
+| `$crew-agent` | Codex wrapper for `crew:agent` |
+| `$crew-status` | Codex wrapper for `crew:status` |
+| `$crew-update` | Codex wrapper for `crew:update` |
+| `$crew-smm` | Codex wrapper for `crew:smm` |
+| `$crew-setup` | Codex wrapper for `crew:setup` |
+| `$crew-cost` | Codex wrapper for `crew:cost` |
+| `$crew-agent-maker` | Codex wrapper for `crew:agent-maker` |
 
 Use `crew:<intent>` as the default invocation style.
 
