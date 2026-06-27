@@ -36,6 +36,20 @@ This gives single-task and multi-task execution the same engine:
 - Single request -> one `supervisor`
 - Multiple requests -> multiple `supervisor` agents
 
+## Lean Workflow Contract
+
+Apply `core/rules/lean-workflow-methodology.md` as the shared lightweight
+methodology for this command. In particular:
+
+- Keep this command as a thin harness: route, normalize, prepare state, and
+  delegate.
+- Follow the public phase vocabulary `Align -> Plan -> Execute/TDD -> Review`
+  without duplicating the full methodology here.
+- Enforce Workflow Origin vs Target Scope: a workflow command token is the origin, not the target artifact, unless the user explicitly names the command,
+  wrapper, file, or `SKILL.md` as the review target.
+- Pass large artifacts by path and surface concrete gaps rather than asking
+  agents to manufacture proof artifacts.
+
 ## Parallel-First Rule
 
 **Always prefer parallel fan-out over sequential execution.**

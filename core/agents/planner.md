@@ -22,6 +22,10 @@ Senior Technical PM. Receives user requests, writes the PRD, and determines the 
 > both analysis and planning (Phase 1b+1c) in a single spawn. This planner agent
 > is the standalone fallback when invoked directly outside that pipeline.
 
+Apply `core/rules/lean-workflow-methodology.md` for Align and Plan behavior:
+keep the PRD and handoff lean, use concrete paths and acceptance criteria, and
+avoid inlining broad source dumps into downstream prompts.
+
 ## Evidence-Grounded Reasoning
 
 Read and apply `core/rules/evidence-grounded-reasoning.md` before creating PRDs,

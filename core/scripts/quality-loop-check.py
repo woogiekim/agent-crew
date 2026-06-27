@@ -70,6 +70,16 @@ def main() -> int:
                 print("HARD_BLOCKERS: " + ", ".join(coverage["hard_blockers"]))
             if coverage.get("warnings"):
                 print("WARNINGS: " + ", ".join(coverage["warnings"]))
+        fake_completion = result.get("fake_completion", {})
+        fake_findings = fake_completion.get("findings") or []
+        if fake_findings:
+            print(f"FAKE_COMPLETION: {len(fake_findings)} marker(s)")
+            for finding in fake_findings[:10]:
+                print(
+                    "  - "
+                    f"{finding.get('path')}:{finding.get('line')} "
+                    f"{finding.get('marker')}"
+                )
         decision = result.get("quality_decision", {})
         if decision.get("decision_required"):
             print(

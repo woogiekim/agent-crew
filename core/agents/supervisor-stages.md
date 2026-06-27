@@ -13,6 +13,11 @@
 
 ---
 
+Use `core/rules/lean-workflow-methodology.md` as the stage-loop operating
+method: keep the supervisor as a thin harness, pass stage artifacts by path,
+and rely on deterministic checks for fake completion, review-loop scope, and
+quality coverage instead of asking agents for extra proof-only artifacts.
+
 #### Plan-Critical Review (pre-stage gate)
 
 Run this gate immediately before the Phase 2 stage loop begins (after
@@ -209,9 +214,30 @@ After the stage agent returns and its result is recorded:
 log_progress "STAGE_DONE" "{agent_name} — {APPROVED|NEEDS_CHANGES|N/A}"
 
 # Phase F4: append modified files to register (deduplicated).
-MODFILES=$(cd "${PROJECT_ROOT}" && git status --short 2>/dev/null \
-            | awk '{print $2}' \
-            | python3 -c "import sys, json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))")
+MODFILES=$(
+  cd "${PROJECT_ROOT}" && git status --porcelain=v1 -z 2>/dev/null \
+    | python3 -c '
+import json
+import sys
+
+entries = sys.stdin.buffer.read().split(b"\0")
+paths = []
+i = 0
+while i < len(entries):
+    entry = entries[i]
+    i += 1
+    if not entry or len(entry) < 4:
+        continue
+    status = entry[:2].decode("ascii", "replace")
+    path = entry[3:].decode("utf-8", "surrogateescape")
+    paths.append(path)
+    if "R" in status or "C" in status:
+        # porcelain -z emits destination path then original path; skip original.
+        i += 1
+
+print(json.dumps(paths))
+'
+)
 register_update modified_files --json "${MODFILES}"
 
 # Phase F4: reviewer-stage verification status bump.

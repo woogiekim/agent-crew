@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -472,6 +473,19 @@ def event_file_paths(events: list[dict]) -> list[str]:
     return paths
 
 
+def implementer_event_file_paths(events: list[dict]) -> list[str]:
+    paths: list[str] = []
+    for row in events:
+        agent = str(row.get("agent") or "").strip().lower()
+        if agent in NON_IMPLEMENTER_AGENTS:
+            continue
+
+        files = row.get("files") or []
+        if isinstance(files, list):
+            paths.extend(str(item) for item in files)
+    return paths
+
+
 def result_changed_paths(result_text: str) -> list[str]:
     paths: list[str] = []
     for line in result_text.splitlines():
@@ -482,6 +496,96 @@ def result_changed_paths(result_text: str) -> list[str]:
         if value:
             paths.append(value)
     return paths
+
+
+def register_modified_paths(register: dict) -> list[str]:
+    paths = register.get("modified_files")
+    if not isinstance(paths, list):
+        return []
+    return [str(item) for item in paths if isinstance(item, str) and item.strip()]
+
+
+def register_project_root(register: dict) -> Path | None:
+    value = register.get("project_root")
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    path = Path(value).expanduser()
+    return path if path.is_dir() else None
+
+
+def load_fake_completion_scanner():
+    script_path = Path(__file__).with_name("fake-completion-scan.py")
+    if not script_path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("fake_completion_scan", script_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def resolve_existing_scan_path(
+    raw_path: str,
+    task_dir: Path,
+    *,
+    project_root: Path | None = None,
+) -> Path | None:
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path if path.is_file() else None
+
+    roots = [
+        root
+        for root in (project_root, Path.cwd(), task_dir, task_dir / "context")
+        if root
+    ]
+    for root in roots:
+        candidate = root / path
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def fake_completion_status(
+    task_dir: Path,
+    register: dict,
+    events: list[dict],
+    result_text: str,
+) -> dict:
+    raw_paths = (
+        register_modified_paths(register)
+        + implementer_event_file_paths(events)
+        + result_changed_paths(result_text)
+    )
+    project_root = register_project_root(register)
+    resolved_paths = []
+    seen = set()
+    for raw_path in raw_paths:
+        resolved = resolve_existing_scan_path(str(raw_path), task_dir, project_root=project_root)
+        if resolved is None:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        resolved_paths.append(resolved)
+
+    scanner = load_fake_completion_scanner()
+    if scanner is None:
+        return {
+            "status": "skipped",
+            "reason": "scanner_missing",
+            "scanned": [],
+            "findings": [],
+        }
+
+    report = scanner.scan_paths(resolved_paths)
+    report["required"] = bool(resolved_paths)
+    return report
 
 
 def has_test_file_evidence(events: list[dict], result_text: str) -> bool:
@@ -1238,6 +1342,7 @@ def quality_coverage_status(
     delegation_fidelity: dict,
     human_acceptance: dict,
     evaluation_metrics: dict,
+    fake_completion: dict,
 ) -> dict:
     threshold = 80
     max_score = 100
@@ -1337,6 +1442,7 @@ def quality_coverage_status(
                 ),
                 ("human_acceptance", (not human_acceptance["required"]) or human_acceptance["present"]),
                 ("evaluation_metrics", (not evaluation_metrics["required"]) or (evaluation_metrics["present"] and not evaluation_metrics["errors"])),
+                ("fake_completion_scan", not fake_completion.get("findings")),
             ],
         ),
     ]
@@ -1484,6 +1590,7 @@ def check_quality_loop(
     delegation_fidelity = delegation_fidelity_status(task_dir)
     human_acceptance = human_acceptance_matrix_status(task_dir)
     evaluation_metrics = evaluation_metrics_status(task_dir)
+    fake_completion = fake_completion_status(task_dir, register, events, result_text)
     delegation_required = bool(pipeline.get("requires_delegation_fidelity"))
     human_acceptance_required = bool(pipeline.get("requires_human_acceptance"))
     evaluation_required = bool(pipeline.get("eval_command"))
@@ -1554,6 +1661,8 @@ def check_quality_loop(
             failures.append("missing_evaluation_metrics")
         if evaluation_required and evaluation_metrics["errors"]:
             failures.extend(evaluation_metrics["errors"])
+        if fake_completion.get("findings"):
+            failures.append("fake_completion_markers_present")
         if events and not valid_approval_events:
             failures.append("missing_pipeline_reviewer_approval")
         if require_rework_cycle and not rejection_indexes:
@@ -1584,6 +1693,7 @@ def check_quality_loop(
         delegation_fidelity=delegation_fidelity,
         human_acceptance=human_acceptance,
         evaluation_metrics=evaluation_metrics,
+        fake_completion=fake_completion,
     )
     quality_decision = quality_coverage_decision(
         quality_coverage,
@@ -1612,6 +1722,7 @@ def check_quality_loop(
         "task": task,
         "quality_coverage": quality_coverage,
         "quality_decision": quality_decision,
+        "fake_completion": fake_completion,
         "pipeline_shape": shape,
         "event_count": len(events),
         "rejection_indexes": rejection_indexes,

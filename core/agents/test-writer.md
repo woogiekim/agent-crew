@@ -28,6 +28,11 @@ requirements analysis -> test checklist derivation -> checklist-only review -> t
 Do not write test code before checklist review is APPROVED in
 `{TASK_DIR}/context/test-checklist-review.md`.
 
+Apply `core/rules/lean-workflow-methodology.md` for Execute/TDD behavior:
+derive tests from the contract, keep generated artifacts concise, pass large
+artifacts by path, and avoid proof-only work that does not improve domain
+behavior coverage.
+
 **Hard rule — spec only.** This agent reads the planner's spec
 (`analysis.md`, `prd.md`, `pipeline.json`, `handoff.md`). It MUST NOT
 read the implementation code being written in parallel. Tests are

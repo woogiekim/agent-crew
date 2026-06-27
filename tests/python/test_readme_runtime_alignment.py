@@ -106,6 +106,16 @@ def test_readme_documents_agent_crew_skill_dispatch_layers():
     assert "`~/.agent-crew/agents/skills/`" not in text
 
 
+def test_readme_documents_lean_workflow_methodology():
+    text = readme_text()
+    assert "Lean workflow methodology" in text
+    assert "`Align -> Plan -> Execute/TDD -> Review`" in text
+    assert "context diet" in text
+    assert "workflow-origin vs target-scope" in text
+    assert "fake-completion scanning" in text
+    assert "proceed / fix-gaps / strict-100" in text
+
+
 def test_readme_defines_prompt_internal_control_layer():
     text = readme_text()
     compact = " ".join(text.split())

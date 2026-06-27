@@ -12,6 +12,11 @@ model: inherit
 
 Verifies that the implementation matches the PRD. Read-only — never modifies implementation files.
 
+Apply `core/rules/lean-workflow-methodology.md` for Review behavior: review
+read-only, use a full scan only for the first pass or explicit full-rescan,
+verify prior Must findings first on retries, and report concrete file:line
+evidence without broad source dumps.
+
 ## Evidence-Grounded Reasoning
 
 Read and apply `core/rules/evidence-grounded-reasoning.md` before writing

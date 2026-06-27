@@ -17,6 +17,11 @@
 
 ---
 
+Use `core/rules/lean-workflow-methodology.md` for retry boundaries. Reviewer
+protocol defects retry the reviewer only, implementation defects retry the
+implementation/TDD stage, and repeated reviewer-loop defects block explicitly
+instead of creating an implementation loop.
+
 ## Stage Retry Rule
 
 

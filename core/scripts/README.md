@@ -215,6 +215,11 @@ invocation in SKILL.md; generic adds guidance).
   is at or above the configured threshold but below 100%, the user can proceed,
   fix the listed gaps, or request strict 100% without creating a separate Gap
   Report artifact.
+- `fake-completion-scan.py` — closed-list scanner for changed-file fake
+  completion markers such as TODO/FIXME placeholders, disabled/focused tests,
+  Kotlin `TODO()`, and explicit not-implemented stubs. `quality-loop-check.py`
+  uses it as deterministic input; it does not require agents to create a
+  separate absence-proof artifact.
 - `reviewer-loop-decision.py` — classifies reviewer output for the supervisor
   retry loop. Both `STATUS: REJECTED` and `REVIEW: NEEDS_CHANGES` return
   `action=retry`; `REVIEW: APPROVED` returns `action=approve` only when the

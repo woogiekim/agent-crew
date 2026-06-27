@@ -94,6 +94,21 @@ EOF
 cat > "${TASK_DIR}/context/quality-metrics.json" <<'EOF'
 {"schema_version":1,"hallucination_detected":false,"rollback_performed":false,"human_intervention_required":false,"factuality_review":"passed","evidence_paths":["context/review.md"]}
 EOF
+cat > "${TASK_DIR}/context/test-checklist.md" <<'EOF'
+| TC-ID | Category | Given | When | Then | Priority | Level | Reason |
+|---|---|---|---|---|---|---|---|
+| TC-001 | Normal | quality-loop artifacts exist | repair runs | task passes | P1 | MUST | completion gate |
+EOF
+cat > "${TASK_DIR}/context/test-checklist-review.md" <<'EOF'
+REVIEW: APPROVED
+CHECKLIST_REVIEW_RESULT: approved
+- Missing MUST: none
+EOF
+cat > "${TASK_DIR}/context/test-case-mapping.md" <<'EOF'
+| TC-ID | Test | Covered |
+|---|---|---|
+| TC-001 | tests/integration/test_quality_loop_gate.bash | YES |
+EOF
 
 it "mutating repair is still blocked when only evidence files exist"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" repair --status completed --note "evidence only" "${TASK_ID}" 2>&1)

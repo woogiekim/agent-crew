@@ -95,6 +95,24 @@ context.mkdir(parents=True, exist_ok=True)
     "factuality_review": "passed",
     "evidence_paths": ["context/review.md"],
 }) + "\n", encoding="utf-8")
+(context / "test-checklist.md").write_text(
+    "| TC-ID | Category | Given | When | Then | Priority | Level | Reason |\n"
+    "|---|---|---|---|---|---|---|---|\n"
+    "| TC-001 | Normal | quality-loop artifacts exist | hosted run completes | task passes | P1 | MUST | completion gate |\n",
+    encoding="utf-8",
+)
+(context / "test-checklist-review.md").write_text(
+    "REVIEW: APPROVED\n"
+    "CHECKLIST_REVIEW_RESULT: approved\n"
+    "- Missing MUST: none\n",
+    encoding="utf-8",
+)
+(context / "test-case-mapping.md").write_text(
+    "| TC-ID | Test | Covered |\n"
+    "|---|---|---|\n"
+    "| TC-001 | tests/integration/test_runtime_quality_loop_enforcement.bash | YES |\n",
+    encoding="utf-8",
+)
 
 (task_dir / "pipeline.json").write_text(json.dumps({
     "schema_version": 1,

@@ -26,6 +26,14 @@ crew:run
 4. Follow the command definition exactly, including mandatory requirements collection.
 5. Delegate execution to supervisor as defined by the command.
 
+## Workflow Origin vs Target Scope
+
+`$crew-run`, `crew:run`, and this wrapper are workflow origins by default. They
+become review targets only when the prompt explicitly says the skill, wrapper,
+file, command definition, or `SKILL.md` is the object being reviewed.
+Only treat the wrapper itself as the review target when that explicit target
+wording is present.
+
 ## Current-Session Fallback
 
 When `crew:run` returns `HOST_BRIDGE: current_session_required`, continue from

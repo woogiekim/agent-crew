@@ -55,6 +55,8 @@ ALLOWED_NEW_MUST_CLASSIFICATIONS = {
     "severity_escalation",
     "unclear_requirement",
 }
+REVIEWER_RETRY_BUDGET_LIMIT = 2
+IMPLEMENTER_RETRY_BUDGET_LIMIT = 3
 
 
 RE_REVIEW_MODE_DIRECTIVE = (
@@ -121,6 +123,22 @@ DIRECTIVES = {
         "concrete repository/test/context references."
     ),
 }
+
+
+def with_budget(payload: dict, retry_target: str) -> dict:
+    if retry_target == "reviewer":
+        payload.update({
+            "retry_budget": "reviewer",
+            "retry_budget_limit": REVIEWER_RETRY_BUDGET_LIMIT,
+            "implementation_retry_budget_consumed": False,
+        })
+    elif retry_target == "implementer":
+        payload.update({
+            "retry_budget": "validation",
+            "retry_budget_limit": IMPLEMENTER_RETRY_BUDGET_LIMIT,
+            "implementation_retry_budget_consumed": True,
+        })
+    return payload
 
 
 def read_response(path: str | None) -> tuple[str, str | None]:
@@ -304,14 +322,14 @@ def classify(text: str, task_dir: str | None = None, explicit_review_mode: str |
     if STATUS_REJECTED_RE.search(text):
         reason_match = REASON_RE.search(text)
         reason = reason_match.group(1) if reason_match else "reviewer_rejected"
-        return {
+        return with_budget({
             "action": "retry",
             "trigger": "STATUS: REJECTED",
             "reason": reason,
             "directive": DIRECTIVES.get(reason, DIRECTIVES["review_needs_changes"]),
             "retry_target": "implementer",
             "review_mode": active_review_mode,
-        }
+        }, "implementer")
 
     if REVIEW_NEEDS_CHANGES_RE.search(text):
         contract = review_contract_status(text, active_review_mode, task_dir)
@@ -321,7 +339,7 @@ def classify(text: str, task_dir: str | None = None, explicit_review_mode: str |
         issues = int(issues_match.group(1)) if issues_match else None
         report = report_path(text)
         if not contract["valid"]:
-            return {
+            return with_budget({
                 "action": "retry",
                 "trigger": "REVIEW: NEEDS_CHANGES",
                 "reason": "review_contract_invalid",
@@ -334,12 +352,12 @@ def classify(text: str, task_dir: str | None = None, explicit_review_mode: str |
                 "review_contract_violations": contract["violations"],
                 "new_must_lines": contract["new_must_lines"],
                 "new_must_classification": contract["new_must_classification"],
-            }
+            }, "reviewer")
         directive = DIRECTIVES.get(reason, DIRECTIVES["review_needs_changes"]).replace(
             "${TASK_DIR}/context/review.md",
             report,
         )
-        return {
+        return with_budget({
             "action": "retry",
             "trigger": "REVIEW: NEEDS_CHANGES",
             "reason": reason,
@@ -352,22 +370,22 @@ def classify(text: str, task_dir: str | None = None, explicit_review_mode: str |
             "review_contract_violations": [],
             "new_must_lines": contract["new_must_lines"],
             "new_must_classification": contract["new_must_classification"],
-        }
+        }, "implementer")
 
     if REVIEW_APPROVED_RE.search(text):
         metrics_path = quality_metrics_path(text)
         if not metrics_path:
-            return {
+            return with_budget({
                 "action": "retry",
                 "trigger": "REVIEW: APPROVED",
                 "reason": "quality_metrics_missing",
                 "directive": DIRECTIVES["quality_metrics_missing"],
                 "retry_target": "reviewer",
                 "review_mode": active_review_mode,
-            }
+            }, "reviewer")
         resolved = resolve_quality_metrics_path(metrics_path, task_dir)
         if resolved is not None and not resolved.is_file():
-            return {
+            return with_budget({
                 "action": "retry",
                 "trigger": "REVIEW: APPROVED",
                 "reason": "quality_metrics_file_missing",
@@ -375,7 +393,7 @@ def classify(text: str, task_dir: str | None = None, explicit_review_mode: str |
                 "quality_metrics": metrics_path,
                 "retry_target": "reviewer",
                 "review_mode": active_review_mode,
-            }
+            }, "reviewer")
         return {
             "action": "approve",
             "trigger": "REVIEW: APPROVED",

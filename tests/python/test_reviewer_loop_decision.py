@@ -444,3 +444,19 @@ def test_reviewer_docs_define_re_review_modes_and_new_must_policy():
 
     assert "Weakly evidenced" in skill_doc
     assert "NEW_MUST_CLASSIFICATION" in reviewer_doc
+
+
+def test_reviewer_classifier_exposes_reviewer_retry_budget_for_contract_invalid():
+    payload = decision.classify(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "### New Findings In This Review\n"
+        "- [IMPORTANT] New unevidenced Must without required classification\n",
+        explicit_review_mode="verify-prior-must-only",
+    )
+
+    assert payload["retry_target"] == "reviewer"
+    assert payload["reason"] == "review_contract_invalid"
+    assert payload["retry_budget"] == "reviewer"
+    assert payload["retry_budget_limit"] == 2
+    assert payload["implementation_retry_budget_consumed"] is False

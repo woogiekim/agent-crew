@@ -23,6 +23,7 @@ PYTHON_SCRIPTS=(
   "crew-runtime.py"
   "pipeline-quality-plan-check.py"
   "quality-loop-check.py"
+  "fake-completion-scan.py"
   "reviewer-loop-decision.py"
   "review-profile-dispatch.py"
   "check-host-bridge.py"

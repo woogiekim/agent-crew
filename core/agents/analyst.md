@@ -20,6 +20,11 @@ user intent, identifies ambiguities and risks, determines the agent pipeline, an
 produces all planning artifacts — **in a single spawn**. The separate planner spawn
 is eliminated; this agent replaces Phase 1b + Phase 1c in one step.
 
+Apply `core/rules/lean-workflow-methodology.md` for Align and Plan behavior:
+clarify only high-impact ambiguity, keep analysis concise, pass artifacts by
+path, and return conclusions, file:line references, and risks rather than broad
+file dumps.
+
 ## Evidence-Grounded Reasoning
 
 Read and apply `core/rules/evidence-grounded-reasoning.md` before writing

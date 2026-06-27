@@ -18,6 +18,9 @@ def test_crew_run_wrapper_forbids_unapproved_third_party_skill_autoload():
     assert "Do not load unrelated host/plugin" in text
     assert "external-skill-approval.md" in text
     assert "domain-specific Codex skill context" not in text
+    assert "Workflow Origin vs Target Scope" in text
+    assert "A leading `$crew-run 코드리뷰` means" in text
+    assert "Only treat the wrapper itself as the review target" in text
 
 
 def test_agent_crew_bootstrap_preserves_only_explicit_skill_context():
@@ -35,6 +38,8 @@ def test_run_command_current_session_limits_automatic_skill_sources():
     assert "Do not auto-load unrelated host/plugin" in text
     assert "~/.claude/agent-crew/skills/" in text
     assert "context/external-skill-approval.md" in text
+    assert "Workflow Origin vs Target Scope" in text
+    assert "workflow command token is the origin, not the target artifact" in text
 
 
 def test_provider_neutral_global_rules_define_external_skill_boundary():

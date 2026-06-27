@@ -85,7 +85,7 @@ JSON Schema: `${AGENT_CREW_HOME}/schemas/register.schema.json`.
 | `approval_status` | enum `not_required \| pending \| approved \| cancelled` | yes | bumped by Phase 1d and Phase 2.5 gates |
 | `verification_status` | enum `not_started \| running \| passed \| failed \| skipped` | yes | bumped by reviewer stage entry/exit |
 | `requirements_path` ... `start_head_path` | string | optional | path pointers populated from supervisor-bootstrap variables; the files themselves may not exist yet |
-| `modified_files` | array of strings | optional (default `[]`) | cumulative list of files modified by stage agents, deduplicated; populated from `git status --short` diff against `start-head.txt` |
+| `modified_files` | array of strings | optional (default `[]`) | cumulative list of files modified by stage agents, deduplicated; populated from NUL-safe `git status --porcelain=v1 -z` output |
 | `blocked_by` | array of strings | optional (default `[]`) | populated only when `current_phase == blocked`; multi-entry when multiple sub-causes apply |
 
 ### `current_phase` enum
@@ -143,7 +143,7 @@ Write sites:
 | Reviewer STAGE entry | `verification_status` | `running` |
 | Reviewer STAGE_DONE (APPROVED) | `verification_status` | `passed` |
 | Reviewer STAGE_DONE (NEEDS_CHANGES + budget exhausted) | `verification_status` | `failed` |
-| Each STAGE_DONE | `modified_files` | union with `git status --short` diff |
+| Each STAGE_DONE | `modified_files` | union with NUL-safe `git status --porcelain=v1 -z` output |
 | Phase 2.5 entry | `current_phase` | `phase_2_5` |
 | Phase 2.5 devops-gate prompt | `approval_status` | `pending` |
 | Phase 2.5 devops-gate approve | `approval_status` | `approved` |

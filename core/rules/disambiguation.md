@@ -44,6 +44,7 @@ arises. Concrete trigger conditions:
 | Multiple resume candidates | planned `crew:replay` command | (a) replay stage N, (b) replay stage M, (c) cancel |
 | Duplicate task detection | `core/commands/run.md` Step 1.6 (dedup against live session, post-Step-1.5 injection detection) | (a) show in-flight status, (b) start as a new task anyway, (c) cancel |
 | Concurrent session detected | `core/commands/run.md` Step 1.5 | (a) join the live session, (b) start a new session, (c) cancel |
+| Workflow origin vs target scope ambiguity | `core/commands/run.md`, host wrapper skills, and review commands following `core/rules/lean-workflow-methodology.md` | (a) treat command token as workflow origin, (b) treat command/wrapper/SKILL.md as review target, (c) cancel and rephrase |
 
 Any future trigger MUST be added to this table when introduced.
 

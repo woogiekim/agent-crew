@@ -1010,7 +1010,7 @@ assert_file_exists "${AGENT_REQUEST_DIR}/result.md"
 assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
 assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-completion.json"
 assert_eq "${AGENT_REQUEST_ID}" "$(cat "${AGENT_BRIDGE_LOG}")"
-assert_contains "$(cat "${AGENT_REQUEST_DIR}/result.md")" "## Bridge Output"
+assert_contains "$(cat "${AGENT_REQUEST_DIR}/result.md")" "## Host Bridge Output"
 
 REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
 assert_contains "${REQUEST_JSON}" '"status": "auto_completed"'
