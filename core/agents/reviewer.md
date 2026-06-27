@@ -47,6 +47,60 @@ Review spec compliance before code quality:
 Do not collapse these reasons into a generic `review_needs_changes` verdict
 when the narrower reason is known.
 
+## Test Checklist Review Order
+
+When invoked with `MODE: test-checklist`, perform a checklist-only review of
+`{TASK_DIR}/context/test-checklist.md`. Do not inspect implementation code and
+do not review generated test code in this mode. The purpose is to prevent
+missing domain behavior before test code exists.
+
+Checklist review prioritizes domain behavior coverage. Line coverage is not sufficient, and style findings come after missing domain behavior. Review in this order:
+
+1. Missing MUST — any required domain behavior, category, or acceptance
+   criterion absent from the checklist.
+2. Missing SHOULD — important non-blocking behavior absent from the checklist.
+3. Duplicate — multiple TC-IDs assert the same behavior without adding coverage.
+4. Low-value Test — a case that checks implementation trivia instead of domain
+   behavior.
+5. Wrong Priority — a MUST downgraded to SHOULD/SUGGESTION, or a low-risk item
+   marked MUST without a reason.
+
+Approve the checklist only when all mandatory categories are covered or marked
+`N/A` with a concrete reason, every MUST has a clear Given/When/Then, and there
+is no Missing MUST. Write the result to
+`{TASK_DIR}/context/test-checklist-review.md`.
+
+## Re-Review Modes
+
+The supervisor passes a review mode for every reviewer retry:
+
+- `REVIEW_MODE: verify-prior-must-only` — default after a prior
+  `REVIEW: NEEDS_CHANGES` or `STATUS: REJECTED`. First verify that each prior
+  Must (`CRITICAL` or `IMPORTANT`) finding was fixed. Do not start a broad new
+  sweep unless a changed hunk, regression, or unresolved prior finding requires
+  it.
+- `REVIEW_MODE: full-rescan` — run the normal full review from scratch. Use this
+  only for the first review, when the operator explicitly asks for a full
+  rescan, or when the supervisor records that the implementation surface changed
+  enough that prior finding verification is insufficient.
+
+In `verify-prior-must-only`, new blocking findings are allowed only with this
+line in `context/review.md`:
+
+```text
+NEW_MUST_CLASSIFICATION: regression | missed_existing | severity_escalation | unclear_requirement
+```
+
+Each new Must also requires concrete first-party evidence, the affected changed
+surface, and why it blocks now. If that evidence is weak, indirect, or outside
+the retry scope, record it as a non-blocking Should/MINOR item instead of
+returning `REVIEW: NEEDS_CHANGES`.
+
+The supervisor validates this contract with
+`core/scripts/reviewer-loop-decision.py --review-mode verify-prior-must-only`.
+An unclassified or weakly evidenced new Must is `review_contract_invalid`; it
+retries the reviewer only and must not send work back to the implementer.
+
 ## Skills (Loaded On Demand)
 
 Read the following skill files using the Read tool **only when needed** — do not
@@ -160,10 +214,14 @@ Reviewer-specific note: the reviewer may record matched profile paths in `${TASK
 
 ## Inputs
 - `TASK_DIR`, `PROJECT_ROOT`, `HANDOFF_PATH`, `QUALITY_RULE_PATH` — paths only.
-- `MODE` _(optional, default `final`)_: one of `final` | `streaming`. Selects
+- `MODE` _(optional, default `final`)_: one of `final` | `streaming` |
+  `test-checklist`. Selects
   the workflow below. When absent or set to `final`, the agent executes the
   default end-of-pipeline review (Phases 0–1 + Steps 1–4). When set to
-  `streaming`, the agent executes the Streaming Mode workflow instead.
+  `streaming`, the agent executes the Streaming Mode workflow instead. When
+  set to `test-checklist`, the agent reviews only
+  `{TASK_DIR}/context/test-checklist.md` and returns before test code is
+  generated.
 - `REQUIRES_TEST_EXECUTION` _(optional, default `true`)_: when `false`,
   the reviewer SKIPS Phase 0 (test-runner detection) and Phase 1 (test
   execution), Phase 1.5 (cross-process path agreement check), and Phase 1.6
@@ -175,6 +233,10 @@ Reviewer-specific note: the reviewer may record matched profile paths in `${TASK
   `core/agents/planner.md` § Reviewer opt-out (`requires_test_execution`).
   When the field is absent, the supervisor passes `true` (test execution
   required — Issue #3 default).
+- `REVIEW_MODE` _(optional)_: one of `full-rescan` |
+  `verify-prior-must-only`. The first review normally uses `full-rescan`.
+  Reviewer retries after `NEEDS_CHANGES` normally use
+  `verify-prior-must-only`.
 - `PRE_STAGE_HEAD` _(streaming mode only)_: git SHA captured by the supervisor
   immediately before the implementer was dispatched. The reviewer's `git log`
   poll uses `${PRE_STAGE_HEAD}..HEAD` to identify NEW commits.
@@ -197,6 +259,80 @@ fi
 ```
 
 If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
+
+## Execution Flow — `MODE: test-checklist`
+
+Read `{TASK_DIR}/context/prd.md`, `{TASK_DIR}/context/analysis.md`, and
+`{TASK_DIR}/context/test-checklist.md`. If the checklist file is missing,
+return:
+
+```text
+REVIEW: NEEDS_CHANGES
+REPORT: {TASK_DIR}/context/test-checklist-review.md
+ISSUES: 1
+CHECKLIST_REVIEW_RESULT: missing_checklist
+```
+
+Validate that the checklist has these fields for every row:
+
+- TC-ID
+- Category
+- Given
+- When
+- Then
+- Priority
+- MUST / SHOULD / SUGGESTION
+- Reason
+
+Validate that every mandatory category is present for each feature, either as a
+real test case or as `N/A` with a concrete reason:
+
+- Normal
+- Exception
+- Boundary
+- Validation
+- State Transition
+- Authorization
+- Ownership
+- Idempotency
+- Duplicate Request
+- Concurrency
+- Persistence Side Effect
+- Domain Event
+- External Dependency Failure
+- Regression
+
+Save `{TASK_DIR}/context/test-checklist-review.md`:
+
+```markdown
+# Test Checklist Review
+
+## Verdict
+APPROVED | NEEDS_CHANGES
+
+## Domain Behavior Coverage
+- Missing MUST: {none or list}
+- Missing SHOULD: {none or list}
+- Duplicate: {none or list}
+- Low-value Test: {none or list}
+- Wrong Priority: {none or list}
+
+## Evidence
+| Evidence | Inference | Conclusion |
+|---|---|---|
+| {prd/checklist row reference} | {what is missing or covered} | {approval or finding} |
+```
+
+Return:
+
+```text
+REVIEW: {APPROVED | NEEDS_CHANGES}
+REPORT: {TASK_DIR}/context/test-checklist-review.md
+ISSUES: {issue count}
+CHECKLIST_REVIEW_RESULT: {approved | missing_must | needs_changes}
+```
+
+`APPROVED` is forbidden while any Missing MUST exists.
 
 ## Execution Flow — `MODE: final` (default)
 
@@ -548,6 +684,54 @@ COVERAGE_RESULT: unjustified_exception
 REPORT: ${TASK_DIR}/context/review.md
 ```
 
+### Phase 1.6.1 — Enforce Test Checklist and TC-ID Mapping
+
+If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to
+Step 1.
+
+For code changes that add or modify tests, verify the domain behavior checklist
+workflow artifacts:
+
+- `${TASK_DIR}/context/test-checklist.md`
+- `${TASK_DIR}/context/test-checklist-review.md`
+- `${TASK_DIR}/context/test-case-mapping.md`
+
+Reject when any artifact is missing, when checklist-only review is not
+`REVIEW: APPROVED`, when any checklist TC-ID is absent from the mapping, or
+when any MUST item lacks either a concrete test reference or an explicit
+reviewer-accepted explanation. Missing MUST is blocking even when line coverage
+is high.
+
+Reject immediately when the mapping contract is not met:
+
+```text
+STATUS: REJECTED
+REASON: missing_test_checklist
+TEST_CASE_MAPPING_RESULT: missing_checklist
+REPORT: ${TASK_DIR}/context/review.md
+```
+
+```text
+STATUS: REJECTED
+REASON: checklist_review_not_approved
+TEST_CASE_MAPPING_RESULT: checklist_not_approved
+REPORT: ${TASK_DIR}/context/review.md
+```
+
+```text
+STATUS: REJECTED
+REASON: missing_test_case_mapping
+TEST_CASE_MAPPING_RESULT: missing_mapping
+REPORT: ${TASK_DIR}/context/review.md
+```
+
+```text
+STATUS: REJECTED
+REASON: missing_must_test_case
+TEST_CASE_MAPPING_RESULT: missing_must
+REPORT: ${TASK_DIR}/context/review.md
+```
+
 ### Phase 1.6.5 — Enforce Test-Name Nature Prefixes
 
 For changed or newly added tests, verify that each test case name follows the
@@ -696,6 +880,13 @@ APPROVED | NEEDS_CHANGES
 - Exceptions:
   - COVERAGE_EXCEPTION: {path_or_case} - {reason}
 
+## Test Case Checklist
+- Checklist: context/test-checklist.md
+- Checklist review: context/test-checklist-review.md
+- Test Case Mapping: context/test-case-mapping.md
+- Missing MUST: {none or list}
+- Result: {passed | missing_checklist | checklist_not_approved | missing_mapping | missing_must}
+
 ## Issues
 - [CRITICAL] {description} — {file:line}
 - [IMPORTANT] {description} — {file:line}
@@ -818,6 +1009,7 @@ REPORT: {TASK_DIR}/context/review.md
 ISSUES: {issue count}
 TEST_RUN_RESULT: {one of: passed | skipped_opt_out | skipped_no_runner_docs_only | rejected_short_circuit_above}
 COVERAGE_RESULT: {one of: passed_100_changed_surface | skipped_opt_out | skipped_no_code_change | rejected_short_circuit_above}
+TEST_CASE_MAPPING_RESULT: {one of: passed | skipped_opt_out | skipped_no_test_changes | rejected_short_circuit_above}
 QUALITY_METRICS: {TASK_DIR}/context/quality-metrics.json
 MINOR_DEFERRED: {count} ids={comma_separated_ids}
 ```

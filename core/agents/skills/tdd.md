@@ -11,6 +11,58 @@ REFACTOR → Remove duplication; improve design without breaking tests
 **Invariant**: never write production code without a failing test first.
 **Invariant**: never refactor while a test is red.
 
+## Domain Behavior Checklist Gate
+
+Before writing test code, derive the domain behavior checklist from the
+requirements. The goal is domain behavior coverage, not more tests and not
+line coverage. Line coverage is not sufficient to prove that important domain
+behaviors were tested.
+
+Required sequence:
+
+```text
+requirements analysis -> test checklist derivation -> checklist-only review -> test code generation -> TC-ID mapping verification
+```
+
+The checklist must include these fields:
+
+- TC-ID (`TC-001`, `TC-002`, ...)
+- Category
+- Given
+- When
+- Then
+- Priority
+- MUST / SHOULD / SUGGESTION
+- Reason
+
+Mandatory categories to inspect for every feature:
+
+- Normal
+- Exception
+- Boundary
+- Validation
+- State Transition
+- Authorization
+- Ownership
+- Idempotency
+- Duplicate Request
+- Concurrency
+- Persistence Side Effect
+- Domain Event
+- External Dependency Failure
+- Regression
+
+If a category does not apply, record `N/A` with the reason. Silent omission is
+invalid because it hides missing domain behavior coverage.
+
+After checklist-only review is approved, every generated or updated test must
+include the related TC-ID in its display name, test name, subtest label,
+docstring, or nearest framework-supported equivalent. After writing tests,
+produce a Test Case Mapping that maps every TC-ID to either a concrete test
+reference with `Covered = YES` or a reviewer-accepted explanation for why that
+case cannot be implemented. Every MUST item must be implemented or explicitly
+explained.
+
 ```kotlin
 // RED — test that does not compile yet
 @Test

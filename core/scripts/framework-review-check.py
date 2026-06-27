@@ -384,6 +384,46 @@ def evaluate_repo(root: Path) -> dict:
         ),
         control(
             "quality",
+            "test_case_checklist_workflow_contract",
+            "high",
+            has_all(
+                test_writer,
+                [
+                    "requirements analysis -> test checklist derivation -> checklist-only review -> test code generation -> TC-ID mapping verification",
+                    "context/test-checklist.md",
+                    "context/test-checklist-review.md",
+                    "context/test-case-mapping.md",
+                    "Do not write test code before checklist review is APPROVED",
+                    "TC-ID",
+                ],
+            )
+            and has_all(
+                reviewer,
+                [
+                    "checklist-only review",
+                    "Missing MUST",
+                    "Low-value Test",
+                    "Wrong Priority",
+                    "Line coverage is not sufficient",
+                    "TEST_CASE_MAPPING_RESULT",
+                ],
+            )
+            and has_all(
+                quality_loop_rule,
+                [
+                    "Test Case Checklist Workflow",
+                    "Reviewer APPROVED",
+                    "all MUST checklist items are implemented or explicitly explained",
+                    "Missing MUST",
+                ],
+            )
+            and "test_test_case_checklist_workflow.py" in "\n".join(
+                path.name for path in (root / "tests/python").glob("test_*.py")
+            ),
+            "Test authoring must derive and review a TC-ID checklist before generating tests, then map every case to implementation coverage.",
+        ),
+        control(
+            "quality",
             "structured_report_gate",
             "medium",
             has_all(answer_quality, ["allowed_blockers", "memory_evidence_trace_path", "require_memory_evidence_trace_when_context_available"]),

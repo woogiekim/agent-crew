@@ -43,14 +43,21 @@ def load_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     return payload, None
 
 
-def reviewer_decision(repo_root: Path, response: str) -> tuple[dict[str, Any] | None, str | None]:
+def reviewer_decision(
+    repo_root: Path,
+    response: str,
+    review_mode: str | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    command = [
+        sys.executable,
+        str(repo_root / "core" / "scripts" / "reviewer-loop-decision.py"),
+        "--format",
+        "json",
+    ]
+    if review_mode:
+        command.extend(["--review-mode", review_mode])
     proc = subprocess.run(
-        [
-            sys.executable,
-            str(repo_root / "core" / "scripts" / "reviewer-loop-decision.py"),
-            "--format",
-            "json",
-        ],
+        command,
         input=response,
         text=True,
         capture_output=True,
@@ -77,6 +84,7 @@ def status_line(response: str) -> str:
 def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path) -> dict[str, Any]:
     max_crash_retries = int(budgets.get("max_crash_retries", 5))
     max_validation_retries = int(budgets.get("max_validation_retries", 3))
+    max_reviewer_contract_retries = int(budgets.get("max_reviewer_contract_retries", 2))
     max_token_resumes = int(budgets.get("max_token_truncation_resumes", 1))
 
     observed: dict[str, Any] = {
@@ -86,6 +94,7 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
         "crash_failures": 0,
         "token_resumes": 0,
         "validation_retries": 0,
+        "reviewer_contract_retries": 0,
         "retry_reasons": [],
         "directives": [],
     }
@@ -111,7 +120,12 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
         response = str(raw_event.get("response") or "")
 
         if kind == "reviewer_result":
-            decision, error = reviewer_decision(repo_root, response)
+            review_mode = raw_event.get("review_mode")
+            decision, error = reviewer_decision(
+                repo_root,
+                response,
+                str(review_mode) if review_mode else None,
+            )
             if error:
                 failures.append(error)
                 observed["final_status"] = "blocked"
@@ -124,7 +138,17 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
                 break
             if action == "retry":
                 reason = str(decision.get("reason") or "reviewer_retry")
-                observed["validation_retries"] += 1
+                if decision.get("retry_target") == "reviewer" and reason == "review_contract_invalid":
+                    observed["reviewer_contract_retries"] += 1
+                    if observed["reviewer_contract_retries"] > max_reviewer_contract_retries:
+                        observed["retry_reasons"].append(reason)
+                        if decision.get("directive"):
+                            observed["directives"].append(decision["directive"])
+                        observed["final_status"] = "blocked"
+                        observed["blocked_by"] = ["review_contract_loop_exhausted"]
+                        break
+                else:
+                    observed["validation_retries"] += 1
                 observed["retry_reasons"].append(reason)
                 if decision.get("directive"):
                     observed["directives"].append(decision["directive"])
@@ -179,9 +203,10 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
         "crash_failures",
         "token_resumes",
         "validation_retries",
+        "reviewer_contract_retries",
         "retry_reasons",
     ):
-        if expected.get(key) != observed.get(key):
+        if key in expected and expected.get(key) != observed.get(key):
             failures.append(f"{key}:{observed.get(key)!r}!=expected:{expected.get(key)!r}")
 
     return {

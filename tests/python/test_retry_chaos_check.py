@@ -38,7 +38,101 @@ def test_retry_chaos_check_passes_current_fixture():
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
-    assert payload["summary"] == {"cases": 6, "passed": 6, "failed": 0}
+    assert payload["summary"] == {"cases": 8, "passed": 8, "failed": 0}
+    contract_case = next(
+        case for case in payload["cases"]
+        if case["id"] == "reviewer_contract_invalid_retries_reviewer_only"
+    )
+    assert contract_case["observed"]["validation_retries"] == 0
+    assert contract_case["observed"]["reviewer_contract_retries"] == 1
+    exhausted_case = next(
+        case for case in payload["cases"]
+        if case["id"] == "reviewer_contract_loop_exhaustion_blocks"
+    )
+    assert exhausted_case["observed"]["blocked_by"] == ["review_contract_loop_exhausted"]
+
+
+def test_retry_chaos_blocks_repeated_reviewer_contract_retries(tmp_path: Path):
+    fixture = {
+        "schema_version": 1,
+        "budgets": {
+            "max_crash_retries": 5,
+            "max_validation_retries": 3,
+            "max_reviewer_contract_retries": 2,
+            "max_token_truncation_resumes": 1,
+        },
+        "cases": [
+            {
+                "id": "reviewer-contract-loop",
+                "events": [
+                    {
+                        "kind": "reviewer_result",
+                        "review_mode": "verify-prior-must-only",
+                        "response": (
+                            "REVIEW_MODE: verify-prior-must-only\n"
+                            "REVIEW: NEEDS_CHANGES\n"
+                            "ISSUES: 1\n"
+                            "New findings in this review:\n"
+                            "- [IMPORTANT] Missing thing in src/Wallet.kt:42\n"
+                        ),
+                    },
+                    {
+                        "kind": "reviewer_result",
+                        "review_mode": "verify-prior-must-only",
+                        "response": (
+                            "REVIEW_MODE: verify-prior-must-only\n"
+                            "REVIEW: NEEDS_CHANGES\n"
+                            "ISSUES: 1\n"
+                            "New findings in this review:\n"
+                            "- [IMPORTANT] Missing thing in src/Wallet.kt:42\n"
+                        ),
+                    },
+                    {
+                        "kind": "reviewer_result",
+                        "review_mode": "verify-prior-must-only",
+                        "response": (
+                            "REVIEW_MODE: verify-prior-must-only\n"
+                            "REVIEW: NEEDS_CHANGES\n"
+                            "ISSUES: 1\n"
+                            "New findings in this review:\n"
+                            "- [IMPORTANT] Missing thing in src/Wallet.kt:42\n"
+                        ),
+                    },
+                ],
+                "expected": {
+                    "final_status": "blocked",
+                    "blocked_by": ["review_contract_loop_exhausted"],
+                    "invocations": 3,
+                    "validation_retries": 0,
+                    "reviewer_contract_retries": 3,
+                    "retry_reasons": [
+                        "review_contract_invalid",
+                        "review_contract_invalid",
+                        "review_contract_invalid",
+                    ],
+                },
+            }
+        ],
+    }
+    fixture_path = tmp_path / "retry-chaos.json"
+    fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--fixture",
+            str(fixture_path),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["cases"][0]["observed"]["blocked_by"] == ["review_contract_loop_exhausted"]
 
 
 def test_retry_chaos_check_detects_retry_budget_regression(tmp_path: Path):
@@ -117,7 +211,7 @@ def test_retry_chaos_simulation_covers_event_errors_and_terminal_statuses(monkey
     monkeypatch.setattr(
         retry_chaos,
         "reviewer_decision",
-        lambda _root, _response: (None, "reviewer_decision_failed:9:boom"),
+        lambda _root, _response, _review_mode=None: (None, "reviewer_decision_failed:9:boom"),
     )
     failed_review = retry_chaos.simulate_case(
         {"id": "review-fail", "events": [{"kind": "reviewer_result", "response": "bad"}]},
@@ -130,7 +224,10 @@ def test_retry_chaos_simulation_covers_event_errors_and_terminal_statuses(monkey
     monkeypatch.setattr(
         retry_chaos,
         "reviewer_decision",
-        lambda _root, _response: ({"action": "retry", "reason": "tests_failed", "directive": "fix"}, None),
+        lambda _root, _response, _review_mode=None: (
+            {"action": "retry", "reason": "tests_failed", "directive": "fix"},
+            None,
+        ),
     )
     retry_then_complete = retry_chaos.simulate_case(
         {
@@ -158,7 +255,7 @@ def test_retry_chaos_simulation_covers_event_errors_and_terminal_statuses(monkey
     monkeypatch.setattr(
         retry_chaos,
         "reviewer_decision",
-        lambda _root, _response: ({"action": "observe"}, None),
+        lambda _root, _response, _review_mode=None: ({"action": "observe"}, None),
     )
     plan_ready = retry_chaos.simulate_case(
         {
@@ -236,7 +333,7 @@ def test_retry_chaos_reviewer_retry_and_unknown_actions_continue(monkeypatch):
     monkeypatch.setattr(
         retry_chaos,
         "reviewer_decision",
-        lambda _root, _response: next(retry_decisions),
+        lambda _root, _response, _review_mode=None: next(retry_decisions),
     )
     retry_result = retry_chaos.simulate_case(
         {
@@ -267,7 +364,7 @@ def test_retry_chaos_reviewer_retry_and_unknown_actions_continue(monkeypatch):
     monkeypatch.setattr(
         retry_chaos,
         "reviewer_decision",
-        lambda _root, _response: next(observe_decisions),
+        lambda _root, _response, _review_mode=None: next(observe_decisions),
     )
     observe_result = retry_chaos.simulate_case(
         {

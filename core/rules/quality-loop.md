@@ -130,6 +130,34 @@ Reviewer rejection signals:
 | `STATUS: REJECTED REASON: missing_coverage_evidence` | Code changed but neither coverage report nor `context/test-coverage.md` proves full changed-surface coverage. | Re-loop with directive to add coverage evidence and tests. |
 | `STATUS: REJECTED REASON: coverage_exception_unjustified` | A coverage exception is claimed without a narrow, auditable reason. | Re-loop with directive to test the case or document a valid exception. |
 
+## Test Case Checklist Workflow
+
+For code work that creates or changes tests, the test process must prove domain
+behavior coverage before test code is written:
+
+```text
+requirements analysis -> test checklist derivation -> checklist-only review -> test code generation -> TC-ID mapping verification
+```
+
+Required task artifacts:
+
+- `context/test-checklist.md` — the TC-ID checklist with Category,
+  Given, When, Then, Priority, MUST / SHOULD / SUGGESTION, and Reason.
+- `context/test-checklist-review.md` — the reviewer checklist-only verdict.
+- `context/test-case-mapping.md` — every checklist TC-ID mapped to a test,
+  `N/A` category decision, or explicit reviewer-accepted exception.
+
+Completion requires:
+
+- Checklist exists.
+- Reviewer APPROVED the checklist-only review.
+- all MUST checklist items are implemented or explicitly explained.
+- TC-ID Mapping exists and covers every checklist row.
+- Missing MUST is `none`.
+
+Line coverage is not sufficient. A task can have high line coverage and still
+fail this workflow when a domain behavior category was silently omitted.
+
 ## Confirmed Finding Register
 
 When any agent records a confirmed defect, review finding, QA defect,

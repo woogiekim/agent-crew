@@ -25,6 +25,27 @@ def _load_module(path: Path, name: str):
 quality_loop = _load_module(QUALITY_LIB, "quality_loop_lib")
 
 
+def write_test_checklist_artifacts(task_dir: Path) -> None:
+    (task_dir / "context" / "test-checklist.md").write_text(
+        "| TC-ID | Category | Given | When | Then | Priority | Level | Reason |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| TC-001 | Normal | quality-loop artifacts exist | check runs | task passes | P1 | MUST | completion gate |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-checklist-review.md").write_text(
+        "REVIEW: APPROVED\n"
+        "CHECKLIST_REVIEW_RESULT: approved\n"
+        "- Missing MUST: none\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "| TC-ID | Test | Covered |\n"
+        "|---|---|---|\n"
+        "| TC-001 | tests/python/test_quality_loop_pipeline_check.py | YES |\n",
+        encoding="utf-8",
+    )
+
+
 def write_task(task_dir: Path, rows: list[dict], pipeline: dict | None = None) -> None:
     task_dir.mkdir(parents=True)
     (task_dir / "context").mkdir()
@@ -88,6 +109,7 @@ def write_task(task_dir: Path, rows: list[dict], pipeline: dict | None = None) -
         }),
         encoding="utf-8",
     )
+    write_test_checklist_artifacts(task_dir)
     with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row) + "\n")
@@ -745,6 +767,18 @@ def test_quality_loop_checker_soft_passes_low_risk_artifact_gaps_with_high_cover
         "missing_tdd_refactor_phase_evidence",
     }
     assert set(payload["failures"]) == set(payload["soft_failures"])
+    decision = payload["quality_decision"]
+    assert decision["decision_required"] is True
+    assert decision["options"] == ["proceed", "fix-gaps", "strict-100"]
+    assert decision["recommended"] == "proceed"
+    assert "tdd_evidence.red_or_exception" in decision["gaps"]
+    assert "tdd_evidence.refactor_review" in decision["gaps"]
+
+    text_result = run_text_checker(task_dir)
+
+    assert text_result.returncode == 0, text_result.stdout + text_result.stderr
+    assert "QUALITY_DECISION: required options=proceed,fix-gaps,strict-100 recommended=proceed" in text_result.stdout
+    assert "QUALITY_GAPS: " in text_result.stdout
 
 
 def test_quality_loop_checker_keeps_high_risk_artifact_gaps_as_hard_failures(tmp_path: Path):

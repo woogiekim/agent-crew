@@ -1689,16 +1689,43 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     evidence_paths = list(args.evidence) + list(args.quality_evidence)
     status = quality_evidence_status(task_dir, evidence_paths)
     pipeline_status = check_quality_loop(task_dir, target_status=args.status)
-    red_phase_passed = bool(status["red_phase_evidence_paths"] or status["tdd_exception_paths"])
-    green_phase_passed = bool(status["tdd_evidence_paths"] and pipeline_status["passed"])
-    refactor_phase_passed = bool(status["refactor_phase_evidence_paths"])
+    pipeline_soft_failures = set(pipeline_status.get("soft_failures", []))
+    pipeline_hard_failures = set(pipeline_status.get("hard_failures", []))
+    pipeline_tdd_passed = bool(pipeline_status.get("passed") and pipeline_status.get("tdd_event_count"))
+    pipeline_review_passed = bool(pipeline_status.get("passed") and pipeline_status.get("reviewer_approval_count"))
+    red_phase_explicit = bool(status["red_phase_evidence_paths"] or status["tdd_exception_paths"])
+    red_phase_advisory = bool(
+        not red_phase_explicit
+        and pipeline_status.get("passed")
+        and "missing_tdd_red_phase_evidence" in pipeline_soft_failures
+        and "missing_tdd_red_phase_evidence" not in pipeline_hard_failures
+    )
+    refactor_phase_explicit = bool(status["refactor_phase_evidence_paths"])
+    refactor_phase_advisory = bool(
+        not refactor_phase_explicit
+        and pipeline_status.get("passed")
+        and "missing_tdd_refactor_phase_evidence" in pipeline_soft_failures
+        and "missing_tdd_refactor_phase_evidence" not in pipeline_hard_failures
+    )
+    red_phase_passed = red_phase_explicit or red_phase_advisory
+    green_phase_passed = bool((status["tdd_evidence_paths"] or pipeline_tdd_passed) and pipeline_status["passed"])
+    refactor_phase_passed = refactor_phase_explicit or refactor_phase_advisory
+    tdd_and_review_passed = bool(status["passed"] or (pipeline_tdd_passed and pipeline_review_passed))
     status["pipeline_gate"] = pipeline_status
     status["pipeline_passed"] = pipeline_status["passed"]
+    status["tdd_outcome_source"] = "evidence" if status["tdd_evidence_paths"] else ("pipeline" if pipeline_tdd_passed else "")
+    status["review_outcome_source"] = (
+        "evidence"
+        if status["review_evidence_paths"]
+        else ("pipeline" if pipeline_review_passed else "")
+    )
+    status["red_phase_advisory"] = red_phase_advisory
+    status["refactor_phase_advisory"] = refactor_phase_advisory
     status["red_phase_passed"] = red_phase_passed
     status["green_phase_passed"] = green_phase_passed
     status["refactor_phase_passed"] = refactor_phase_passed
     status["passed"] = bool(
-        status["passed"]
+        tdd_and_review_passed
         and pipeline_status["passed"]
         and red_phase_passed
         and green_phase_passed
@@ -1837,9 +1864,13 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append("PIPELINE_QUALITY_FAILURES: " + ", ".join(pipeline_failures))
         for path in quality_gate.get("tdd_evidence_paths", []):
             lines.append(f"TDD_EVIDENCE: {path}")
+        if quality_gate.get("tdd_outcome_source"):
+            lines.append(f"TDD_OUTCOME: {quality_gate.get('tdd_outcome_source')}")
         if quality_gate.get("green_phase_passed"):
             lines.append("TDD_GREEN_PHASE: passed")
-        if quality_gate.get("red_phase_passed"):
+        if quality_gate.get("red_phase_advisory"):
+            lines.append("TDD_RED_PHASE: advisory")
+        elif quality_gate.get("red_phase_passed"):
             if quality_gate.get("tdd_exception_paths"):
                 lines.append("TDD_RED_PHASE: exception")
             else:
@@ -1848,12 +1879,16 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append(f"TDD_RED_EVIDENCE: {path}")
         for path in quality_gate.get("tdd_exception_paths", []):
             lines.append(f"TDD_EXCEPTION: {path}")
-        if quality_gate.get("refactor_phase_passed"):
+        if quality_gate.get("refactor_phase_advisory"):
+            lines.append("TDD_REFACTOR_PHASE: advisory")
+        elif quality_gate.get("refactor_phase_passed"):
             lines.append("TDD_REFACTOR_PHASE: passed")
         for path in quality_gate.get("refactor_phase_evidence_paths", []):
             lines.append(f"TDD_REFACTOR_EVIDENCE: {path}")
         for path in quality_gate.get("review_evidence_paths", []):
             lines.append(f"REVIEW_EVIDENCE: {path}")
+        if quality_gate.get("review_outcome_source"):
+            lines.append(f"REVIEW_OUTCOME: {quality_gate.get('review_outcome_source')}")
     if specialist_gate and specialist_gate.get("required"):
         if specialist_gate.get("passed"):
             lines.append("SPECIALIST_DISPATCH: passed")

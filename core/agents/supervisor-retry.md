@@ -248,12 +248,37 @@ Both reviewer rejection forms are mandatory loop triggers:
 | `REVIEW: NEEDS_CHANGES` | Static or streaming review found correctness, coverage, architecture, security, or quality issues classified as `CRITICAL` or `IMPORTANT`. | `review_needs_changes` |
 | `REVIEW: APPROVED` without `QUALITY_METRICS:` | Reviewer omitted the required evaluator-labeled quality artifact pointer. | `quality_metrics_missing` |
 | `REVIEW: APPROVED` with missing quality metrics file | Reviewer returned a `QUALITY_METRICS:` path that does not exist. | `quality_metrics_file_missing` |
+| `REVIEW: NEEDS_CHANGES` in `verify-prior-must-only` with an unclassified or weakly evidenced new Must | Reviewer violated the re-review contract. | `review_contract_invalid` |
 
 Loop-back fires only on `CRITICAL` or `IMPORTANT` findings. `MINOR`
 findings never trigger `REVIEW: NEEDS_CHANGES` — they are auto-promoted
 to `deferred-minor` by the reviewer's Step 4.5 flow and carried forward
 in `handoff.md` instead. See the § MINOR auto-promotion subsection below
 for the supervisor's handoff-append responsibility.
+
+Reviewer re-runs are scoped by review mode:
+
+- `REVIEW_MODE: verify-prior-must-only` is the default after
+  `REVIEW: NEEDS_CHANGES` or `STATUS: REJECTED`. The reviewer first verifies
+  prior Must findings and the remediation surface.
+- `REVIEW_MODE: full-rescan` is used only for the first review, explicit
+  operator request, or supervisor-recorded scope expansion.
+
+When appending a retry directive to `handoff.md`, include the selected
+`REVIEW_MODE`. In `verify-prior-must-only`, a newly raised Must must include
+`NEW_MUST_CLASSIFICATION: regression | missed_existing | severity_escalation |
+unclear_requirement` plus concrete first-party evidence. Weak or speculative
+new findings remain Should/MINOR and must not consume another Must loop.
+
+Run `core/scripts/reviewer-loop-decision.py --review-mode
+verify-prior-must-only` for reviewer retry classification when a re-review is
+being evaluated. If the classifier returns `reason=review_contract_invalid` and
+`retry_target=reviewer`, re-run the reviewer with the same review mode; do not
+return to the implementer and do not decrement the implementation retry budget.
+Reviewer-contract retries have a separate hard budget of **2 bounces** per
+reviewer stage. Exhaustion blocks with `review_contract_loop_exhausted`, not
+`quality_loop_exhausted`, so a malformed reviewer cannot create an implementer
+retry loop.
 
 #### MINOR auto-promotion
 
@@ -306,6 +331,7 @@ or re-loop:
 REVIEW_DECISION=$(python3 "${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
   --response "${TASK_DIR}/context/reviewer-response.txt" \
   --task-dir "${TASK_DIR}" \
+  --review-mode "${REVIEW_MODE:-full-rescan}" \
   --format json)
 REVIEW_ACTION=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin)['action'])")
 REVIEW_REASON=$(printf '%s' "${REVIEW_DECISION}" | python3 -c "import sys,json; print(json.load(sys.stdin)['reason'])")
@@ -322,10 +348,38 @@ reviewer stage spawn — runs at the same point in the dispatch flow as
 the existing crash-retry path):
 
 ```python
+# Initialize once before entering the reviewer retry wrapper for this stage:
+reviewer_contract_retries = 0
+
 # Inside the stage loop, after the reviewer agent returns:
 decision = reviewer_loop_decision(reviewer_response)
 if decision.action == "retry":
     reason = decision.reason
+    if decision.retry_target == "reviewer":
+        reviewer_contract_retries += 1
+        log_progress(
+            "RETRY",
+            f"reviewer_contract attempt {reviewer_contract_retries} — reason={reason}",
+        )
+
+        if reviewer_contract_retries > 2:
+            log_progress("BLOCKED", "review_contract_loop_exhausted")
+            register_update current_phase blocked
+            register_update blocked_by --json '["review_contract_loop_exhausted"]'
+            write_blocker_to_result_md(
+                blocker="review_contract_loop_exhausted",
+                detail=f"Reviewer violated the re-review contract "
+                       f"{reviewer_contract_retries} consecutive times "
+                       f"(reason={reason}).",
+            )
+            return
+
+        append_directive_to_handoff(decision.directive)
+        pipeline.stage_agent_status.pop(str(reviewer_stage_index), None)
+        save_pipeline_json()
+
+        continue  # re-run reviewer
+
     quality_retries += 1                          # shares the validation budget (3)
     log_progress("RETRY", f"attempt {quality_retries} — reviewer_rejected reason={reason}")
 
@@ -375,12 +429,14 @@ The Stage Retry Rule's two pre-existing budgets remain unchanged:
 | `crash = 5`      | Stage agent crashes (no STATUS line, host-detected `error`). | Hard stop, crash details to result.md. |
 | `clarification = 2` | Implementer-driven plan-clarify bounce (`STATUS: needs_clarification`). Each bounce routes the request to the analyst, then re-spawns the same stage agent. | Hard stop, `BLOCKER: clarification_loop_exhausted`. |
 
-`quality_retries` is initialized to 0 at the top of the reviewer stage
-iteration, alongside `crash_attempts`. The two counters are independent
+`quality_retries` and `reviewer_contract_retries` are initialized to 0 once
+before entering the reviewer retry wrapper for that stage, alongside
+`crash_attempts`. The counters are independent
 — a reviewer rejection consumes a validation retry; a reviewer crash
-consumes a crash retry; they cannot cross-deplete each other. `REVIEW:
-NEEDS_CHANGES` is no longer advisory-only; it is a hard quality-loop
-retry signal.
+consumes a crash retry; a reviewer contract violation consumes only the
+reviewer-contract retry budget. They cannot cross-deplete each other.
+`REVIEW: NEEDS_CHANGES` is no longer advisory-only; it is a hard quality-loop
+retry signal unless the classifier identifies a reviewer-only contract retry.
 
 ### QA Verify Loop-Back Rule
 

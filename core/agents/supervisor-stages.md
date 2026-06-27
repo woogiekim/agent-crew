@@ -127,6 +127,11 @@ After each stage returns, check its `STATUS` field:
 
 Do **not** silently skip a BLOCKED stage or proceed as if it completed.
 
+Exception: the TDD checklist preflight does not use `STATUS: BLOCKED` for its
+normal review handoff. It returns `CHECKLIST_REVIEW_REQUIRED: true` with
+`STATUS: completed`; treat that as a non-terminal checklist handoff into the
+checklist-only reviewer step. Do not apply the generic `STATUS: BLOCKED` terminal rule to that normal handoff.
+
 
 #### Stage Retry Rule — reference
 
@@ -568,22 +573,36 @@ Dispatch routing:
   consumed: `completed_stages` advances by **2** instead of 1. See §
   Streaming Review Dispatch below for the spawn protocol.
 
-#### Dispatch — both agents in one host message
+#### Dispatch — checklist preflight, then both agents in one host message
 
 When `STAGE_TDD_PARALLEL == 1`:
 
-1. Compose **two** agent prompts (test-writer + each implementer in
-   `STAGE_AGENTS`) using the standard Agent prompt format above. The
-   test-writer prompt carries `STAGE_INDEX` and `IMPLEMENTER_AGENT`
-   inputs so its commit message can reference both.
+1. Compose a `test-writer` prompt with `MODE=checklist`. This preflight reads
+   only the spec and writes `${TASK_DIR}/context/test-checklist.md`; it must
+   not write test code. The expected normal return is
+   `CHECKLIST_REVIEW_REQUIRED: true` with `STATUS: completed`; this is a
+   non-terminal checklist handoff, not a pipeline blocker.
 
-2. Emit the start event **before** dispatch:
+2. Run `reviewer` with `MODE=test-checklist`. The reviewer performs the
+   checklist-only review and writes
+   `${TASK_DIR}/context/test-checklist-review.md`. If the verdict is not
+   `REVIEW: APPROVED`, re-loop to the checklist preflight. Do not dispatch the
+   implementer and do not write tests while a Missing MUST remains.
+
+3. Compose **two** agent prompts (test-writer with `MODE=tests` + each
+   implementer in `STAGE_AGENTS`) using the standard Agent prompt format above.
+   The test-writer prompt carries `STAGE_INDEX` and `IMPLEMENTER_AGENT` inputs
+   so its commit message can reference both, and it must verify that
+   `${TASK_DIR}/context/test-checklist-review.md` is approved before writing
+   tests.
+
+4. Emit the start event **before** dispatch:
 
    ```bash
    log_progress "STAGE_TDD_PARALLEL_STARTED" "stage=${i} agents=test-writer,${STAGE_AGENTS// /,}"
    ```
 
-3. Issue both Agent tool calls in a **single response** (the host's
+5. Issue both Agent tool calls in a **single response** (the host's
    parallel-spawn semantics — the same convention the existing
    Parallel Agents path uses). The supervisor's response message
    contains one Agent call per parallel partner; the host dispatches
@@ -619,17 +638,19 @@ EOF
    fi
    ```
 
-4. The test-writer prompt MUST instruct the agent to read the spec
+6. The test-writer prompt MUST instruct the agent to read the spec
    only (it MUST NOT read the implementer's source). The
    `core/agents/test-writer.md` definition encodes this rule — the
    supervisor's only obligation is to pass `TASK_DIR`, `PROJECT_ROOT`,
    `HANDOFF_PATH`, `QUALITY_RULE_PATH`, `STAGE_INDEX`, and
    `IMPLEMENTER_AGENT` so the agent has the inputs it needs.
-   The test-writer owns `{TASK_DIR}/context/test-coverage.md`, which
-   maps the PRD contract to 100% changed-surface coverage evidence for
+   The test-writer owns `{TASK_DIR}/context/test-checklist.md`,
+   `{TASK_DIR}/context/test-case-mapping.md`, and
+   `{TASK_DIR}/context/test-coverage.md`, which map the PRD contract to
+   domain behavior coverage and 100% changed-surface coverage evidence for
    the reviewer.
 
-5. Wait for **both** agent calls to return. Per-agent status writes
+7. Wait for **both** agent calls to return. Per-agent status writes
    into `pipeline.json.stage_agent_status["${i}"]` use the same
    atomic intermediate-write block documented in § Parallel Agents above
    (tempfile + os.replace — never bare json.dump(open(path, "w"))):

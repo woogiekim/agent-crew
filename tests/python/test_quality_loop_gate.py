@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REPAIR = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
 QUALITY_CHECK = REPO_ROOT / "core" / "scripts" / "quality-loop-check.py"
 SCRIPTS_DIR = REPO_ROOT / "core" / "scripts"
+QUALITY_LIB = SCRIPTS_DIR / "quality_loop_lib.py"
 
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
@@ -27,6 +28,7 @@ def _load_module(path: Path, name: str):
 
 
 repair_state = _load_module(REPAIR, "repair_task_state")
+quality_loop = _load_module(QUALITY_LIB, "quality_loop_lib_under_test")
 
 
 def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
@@ -51,6 +53,29 @@ def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
     (task_dir / "result.md").write_text("STATUS: blocked\n", encoding="utf-8")
     (task_dir / "progress.log").write_text("started\n", encoding="utf-8")
     return state_dir, task_id, task_dir
+
+
+def write_test_checklist_artifacts(task_dir: Path) -> None:
+    (task_dir / "context" / "test-checklist.md").write_text(
+        "# Test Checklist\n\n"
+        "| TC-ID | Category | Given | When | Then | Priority | MUST / SHOULD / SUGGESTION | Reason |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| TC-001 | Normal | a configured update gate | the gate runs | it accepts valid completion | P1 | MUST | Required behavior |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-checklist-review.md").write_text(
+        "REVIEW: APPROVED\n"
+        "CHECKLIST_REVIEW_RESULT: approved\n"
+        "- Missing MUST: none\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "# Test Case Mapping\n\n"
+        "| TC-ID | Test | Covered | Notes |\n"
+        "|---|---|---|---|\n"
+        "| TC-001 | tests/test_update_gate.py::test_update_gate_accepts_valid_completion | YES | Covers the normal case |\n",
+        encoding="utf-8",
+    )
 
 
 def write_quality_loop_trace(task_dir: Path, *, include_test_file: bool = True) -> None:
@@ -123,6 +148,7 @@ def write_quality_loop_trace(task_dir: Path, *, include_test_file: bool = True) 
         }),
         encoding="utf-8",
     )
+    write_test_checklist_artifacts(task_dir)
 
 
 def run_repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedProcess[str]:
@@ -311,6 +337,29 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
     assert "REVIEW_EVIDENCE: context/review.md" in result_text
 
 
+def test_repair_accepts_pipeline_quality_outcomes_without_proof_files(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["passed"] is True
+    assert repair["quality_gate"]["tdd_outcome_source"] == "pipeline"
+    assert repair["quality_gate"]["review_outcome_source"] == "pipeline"
+    assert repair["quality_gate"]["red_phase_advisory"] is True
+    assert repair["quality_gate"]["refactor_phase_advisory"] is True
+    assert repair["quality_gate"]["tdd_evidence_paths"] == []
+    assert repair["quality_gate"]["review_evidence_paths"] == []
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "QUALITY_LOOP: passed" in result_text
+    assert "TDD_OUTCOME: pipeline" in result_text
+    assert "REVIEW_OUTCOME: pipeline" in result_text
+    assert "TDD_RED_PHASE: advisory" in result_text
+    assert "TDD_REFACTOR_PHASE: advisory" in result_text
+
+
 def test_repair_blocks_open_finding_register_entry(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     write_quality_loop_trace(task_dir)
@@ -466,6 +515,83 @@ def test_quality_loop_check_requires_test_file_for_tdd_stage(tmp_path: Path):
 
     assert result.returncode == 1
     assert "- missing_tdd_test_file" in result.stdout
+
+
+def test_quality_loop_check_requires_test_checklist_artifacts_for_tdd_stage(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "context" / "test-checklist.md").unlink()
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "- missing_test_checklist" in result.stdout
+
+
+def test_quality_loop_check_requires_test_case_mapping_coverage(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "# Test Case Mapping\n\n| TC-ID | Test | Covered | Notes |\n|---|---|---|---|\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "- missing_test_case_mapping_coverage" in result.stdout
+
+
+def test_quality_loop_check_rejects_must_mapping_without_test_or_exception(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "# Test Case Mapping\n\n"
+        "| TC-ID | Test | Covered | Notes |\n"
+        "|---|---|---|---|\n"
+        "| TC-001 | N/A | NO | not implemented yet |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "- missing_must_test_case_mapping" in result.stdout
+
+
+def test_quality_loop_check_rejects_must_mapping_with_empty_test_reference(tmp_path: Path):
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "# Test Case Mapping\n\n"
+        "| TC-ID | Test | Covered | Notes |\n"
+        "|---|---|---|---|\n"
+        "| TC-001 |  | YES | missing test reference |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    result = run_quality_loop_check(task_dir)
+
+    assert result.returncode == 1
+    assert "- missing_must_test_case_mapping" in result.stdout
+
+
+def test_checklist_only_reviewer_rejection_is_not_final_rework_rejection():
+    checklist_row = {
+        "agent": "reviewer",
+        "detail": "MODE=test-checklist REVIEW: NEEDS_CHANGES CHECKLIST_REVIEW_RESULT: rejected",
+    }
+    final_row = {
+        "agent": "reviewer",
+        "detail": "REVIEW: NEEDS_CHANGES REPORT: context/review.md",
+    }
+
+    assert quality_loop.event_is_reviewer_rejected(checklist_row) is False
+    assert quality_loop.event_is_reviewer_rejected(final_row) is True
 
 
 def test_quality_loop_check_requires_tdd_red_and_refactor_artifacts(tmp_path: Path):

@@ -142,6 +142,84 @@ def test_host_bridge_start_failure_and_timeout_paths(monkeypatch, tmp_path: Path
     assert timed_out["failure_class"] == "host_bridge_timeout"
 
 
+def test_host_bridge_wait_progress_surfaces_child_output(monkeypatch, tmp_path: Path, capsys):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    script = tmp_path / "bridge.py"
+    script.write_text(
+        "\n".join([
+            "import time",
+            "print('child-progress: reviewer started', flush=True)",
+            "time.sleep(0.08)",
+            "print('child-progress: reviewer finished', flush=True)",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS", "0.01")
+    monkeypatch.setenv("AGENT_CREW_BRIDGE_TIMEOUT_SECONDS", "1")
+
+    record = runtime.invoke_host_bridge(
+        f"{sys.executable} {script}",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    stderr = capsys.readouterr().err
+    progress_log = (task_dir / "progress.log").read_text(encoding="utf-8")
+    output_tail = task_dir / "context" / "host-bridge-output-tail.txt"
+    assert record["returncode"] == 0
+    assert record["output_observed"] is True
+    assert record["output_tail_path"] == "context/host-bridge-output-tail.txt"
+    assert output_tail.is_file()
+    assert "child-progress: reviewer finished" in output_tail.read_text(encoding="utf-8")
+    assert "child-progress: reviewer started" in stderr
+    assert "HOST_BRIDGE_OUTPUT" in progress_log
+
+
+def test_host_bridge_child_output_preview_stays_single_line():
+    preview = runtime.host_bridge_child_output_preview("alpha\n" + ("x" * 250), "", limit=80)
+
+    assert "\n" not in preview
+    assert "stdout: ...[truncated] " in preview
+
+
+def test_mark_auto_completed_preserves_bridge_output_in_result(tmp_path: Path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "result.md").write_text(
+        "# Existing Quality Result\n\n"
+        "STATUS: completed\n"
+        "EVIDENCE: context/review.md\n",
+        encoding="utf-8",
+    )
+    register = _register(task_dir.name)
+    pipeline = {"stages": ["backend", "reviewer"], "completed_stages": 2}
+    bridge_record = {
+        "returncode": 0,
+        "stdout": "REVIEW: APPROVED\nREPORT: context/review.md\nQUALITY_METRICS: context/quality-metrics.json\n",
+        "stderr": "",
+        "timed_out": False,
+        "failure_class": "",
+        "status": "completed",
+    }
+
+    runtime.mark_auto_completed(
+        task_dir,
+        register,
+        pipeline,
+        bridge_record,
+        "completed by bridge",
+        preserve_quality_state=True,
+    )
+
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "HOST_BRIDGE: auto_completed" in result_text
+    assert "## Host Bridge Output" in result_text
+    assert "REVIEW: APPROVED" in result_text
+    assert "QUALITY_METRICS: context/quality-metrics.json" in result_text
+
+
 def test_terminate_host_bridge_falls_back_to_process_methods(monkeypatch):
     class Proc:
         pid = 123

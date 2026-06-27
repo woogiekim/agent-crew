@@ -4,6 +4,7 @@
   "budgets": {
     "max_crash_retries": 5,
     "max_validation_retries": 3,
+    "max_reviewer_contract_retries": 2,
     "max_token_truncation_resumes": 1
   },
   "cases": [
@@ -130,6 +131,35 @@
       }
     },
     {
+      "id": "reviewer_contract_invalid_retries_reviewer_only",
+      "description": "An unclassified new Must during verify-prior-must-only is a reviewer contract retry, not an implementation validation retry.",
+      "events": [
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "review_mode": "verify-prior-must-only",
+          "response": "REVIEW_MODE: verify-prior-must-only\nREVIEW: NEEDS_CHANGES\nREPORT: context/review.md\nISSUES: 1\nNew findings in this review:\n- [IMPORTANT] Missing balance validation in src/main/kotlin/Wallet.kt:42"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "REVIEW: APPROVED\nISSUES: 0\nQUALITY_METRICS: context/quality-metrics.json"
+        }
+      ],
+      "expected": {
+        "final_status": "completed",
+        "blocked_by": [],
+        "invocations": 2,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 0,
+        "reviewer_contract_retries": 1,
+        "retry_reasons": [
+          "review_contract_invalid"
+        ]
+      }
+    },
+    {
       "id": "quality_loop_exhaustion_blocks",
       "description": "Four consecutive reviewer retries exceed the validation budget and block as quality_loop_exhausted.",
       "events": [
@@ -168,6 +198,46 @@
           "tests_failed",
           "tests_failed",
           "tests_failed"
+        ]
+      }
+    },
+    {
+      "id": "reviewer_contract_loop_exhaustion_blocks",
+      "description": "Repeated reviewer contract violations exhaust the reviewer-only retry budget without consuming validation retries.",
+      "events": [
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "review_mode": "verify-prior-must-only",
+          "response": "REVIEW_MODE: verify-prior-must-only\nREVIEW: NEEDS_CHANGES\nREPORT: context/review.md\nISSUES: 1\nNew findings in this review:\n- [IMPORTANT] Missing ownership validation in src/main/kotlin/Wallet.kt:42"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "review_mode": "verify-prior-must-only",
+          "response": "REVIEW_MODE: verify-prior-must-only\nREVIEW: NEEDS_CHANGES\nREPORT: context/review.md\nISSUES: 1\nNew findings in this review:\n- [IMPORTANT] Missing ownership validation in src/main/kotlin/Wallet.kt:42"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "review_mode": "verify-prior-must-only",
+          "response": "REVIEW_MODE: verify-prior-must-only\nREVIEW: NEEDS_CHANGES\nREPORT: context/review.md\nISSUES: 1\nNew findings in this review:\n- [IMPORTANT] Missing ownership validation in src/main/kotlin/Wallet.kt:42"
+        }
+      ],
+      "expected": {
+        "final_status": "blocked",
+        "blocked_by": [
+          "review_contract_loop_exhausted"
+        ],
+        "invocations": 3,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 0,
+        "reviewer_contract_retries": 3,
+        "retry_reasons": [
+          "review_contract_invalid",
+          "review_contract_invalid",
+          "review_contract_invalid"
         ]
       }
     },

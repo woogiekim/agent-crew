@@ -106,6 +106,15 @@ TDD_EVENT_RE = re.compile(
     r"STAGE_TDD_PARALLEL_DONE)\b",
     re.I,
 )
+TC_ID_RE = re.compile(r"\bTC-\d{3,}\b", re.I)
+MARKDOWN_TABLE_DELIMITER_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
+NO_TEST_REFERENCE_VALUES = {"", "-", "n/a", "na", "none", "not applicable", "todo", "tbd", "unknown"}
+COVERED_YES_VALUES = {"yes", "y", "true", "covered", "implemented", "pass", "passed"}
+EXCEPTION_ACCEPTED_RE = re.compile(
+    r"\b(accepted|approved|reviewer[- ]?accepted|exception|cannot|can't|not applicable because|n/a because|na because)\b",
+    re.I,
+)
+NON_TEST_REFERENCE_RE = re.compile(r"\b(todo|tbd|unknown|not implemented|no test|missing test)\b", re.I)
 REVIEW_APPROVED_RE = re.compile(
     r"\b(REVIEW:\s*APPROVED|APPROVED|REVIEW_APPROVED|final_verdict=ok)\b",
     re.I,
@@ -283,6 +292,175 @@ def has_tdd_red_or_exception(task_dir: Path) -> bool:
 
 def has_tdd_refactor_evidence(task_dir: Path) -> bool:
     return bool(tdd_refactor_phase_evidence_paths(task_dir))
+
+
+def markdown_table_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def is_markdown_table_delimiter(cells: list[str]) -> bool:
+    return bool(cells) and all(MARKDOWN_TABLE_DELIMITER_RE.match(cell) for cell in cells)
+
+
+def normalize_table_header(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+    if normalized in {"tc_id", "tc"}:
+        return "tc_id"
+    if "must" in normalized and "should" in normalized:
+        return "level"
+    if normalized in {"level", "priority_level", "requirement_level"}:
+        return "level"
+    return normalized
+
+
+def markdown_table_rows(text: str) -> list[dict[str, str]]:
+    lines = text.splitlines()
+    rows: list[dict[str, str]] = []
+    index = 0
+    while index + 1 < len(lines):
+        header_line = lines[index]
+        delimiter_line = lines[index + 1]
+        if "|" not in header_line or "|" not in delimiter_line:
+            index += 1
+            continue
+
+        headers = markdown_table_cells(header_line)
+        delimiter = markdown_table_cells(delimiter_line)
+        if not is_markdown_table_delimiter(delimiter):
+            index += 1
+            continue
+
+        normalized_headers = [normalize_table_header(header) for header in headers]
+        index += 2
+        while index < len(lines) and "|" in lines[index]:
+            cells = markdown_table_cells(lines[index])
+            if is_markdown_table_delimiter(cells):
+                index += 1
+                continue
+            row: dict[str, str] = {}
+            for cell_index, header in enumerate(normalized_headers):
+                row[header] = cells[cell_index] if cell_index < len(cells) else ""
+            rows.append(row)
+            index += 1
+        continue
+
+    return rows
+
+
+def row_tc_id(row: dict[str, str]) -> str:
+    direct = row.get("tc_id", "")
+    match = TC_ID_RE.search(direct)
+    if match:
+        return match.group(0).upper()
+
+    for value in row.values():
+        match = TC_ID_RE.search(value)
+        if match:
+            return match.group(0).upper()
+    return ""
+
+
+def is_must_checklist_row(row: dict[str, str]) -> bool:
+    return bool(re.search(r"\bMUST\b", row.get("level", ""), re.I))
+
+
+def is_covered_yes(value: str) -> bool:
+    return value.strip().lower() in COVERED_YES_VALUES
+
+
+def is_no_test_reference(value: str) -> bool:
+    normalized = re.sub(r"\s+", " ", value.strip().lower())
+    return normalized in NO_TEST_REFERENCE_VALUES or bool(NON_TEST_REFERENCE_RE.search(normalized))
+
+
+def has_reviewer_accepted_exception(row: dict[str, str]) -> bool:
+    text = " ".join(row.get(key, "") for key in ("notes", "reason", "exception", "explanation"))
+    return bool(EXCEPTION_ACCEPTED_RE.search(text))
+
+
+def has_valid_must_mapping(row: dict[str, str]) -> bool:
+    covered = is_covered_yes(row.get("covered", ""))
+    if not covered:
+        return False
+
+    test_ref = row.get("test", "")
+    if not is_no_test_reference(test_ref):
+        return True
+
+    return has_reviewer_accepted_exception(row)
+
+
+def test_checklist_status(task_dir: Path) -> dict:
+    checklist_path = task_dir / "context" / "test-checklist.md"
+    review_path = task_dir / "context" / "test-checklist-review.md"
+    mapping_path = task_dir / "context" / "test-case-mapping.md"
+    checklist_text = load_text(checklist_path) if checklist_path.is_file() else ""
+    review_text = load_text(review_path) if review_path.is_file() else ""
+    mapping_text = load_text(mapping_path) if mapping_path.is_file() else ""
+    checklist_ids = sorted({item.upper() for item in TC_ID_RE.findall(checklist_text)})
+    mapping_ids = sorted({item.upper() for item in TC_ID_RE.findall(mapping_text)})
+    checklist_rows = markdown_table_rows(checklist_text)
+    mapping_rows = markdown_table_rows(mapping_text)
+    must_ids = sorted({
+        tc_id
+        for row in checklist_rows
+        if is_must_checklist_row(row)
+        for tc_id in [row_tc_id(row)]
+        if tc_id
+    })
+    mapping_rows_by_id: dict[str, list[dict[str, str]]] = {}
+    for row in mapping_rows:
+        tc_id = row_tc_id(row)
+        if tc_id:
+            mapping_rows_by_id.setdefault(tc_id, []).append(row)
+    invalid_must_mapping_ids = [
+        tc_id for tc_id in must_ids
+        if not any(has_valid_must_mapping(row) for row in mapping_rows_by_id.get(tc_id, []))
+    ]
+    missing_must_match = re.search(
+        r"^\s*[-*]?\s*Missing\s+MUST\s*:\s*(.+)$",
+        review_text,
+        re.I | re.M,
+    )
+    missing_must_value = missing_must_match.group(1).strip().lower() if missing_must_match else ""
+    missing_must_none = missing_must_value in {"none", "no", "n/a", "na", "0", "[]"}
+    approved = bool(REVIEW_APPROVED_RE.search(review_text)) and (
+        bool(re.search(r"^\s*CHECKLIST_REVIEW_RESULT\s*:\s*approved\b", review_text, re.I | re.M))
+        or "checklist_review_result" not in review_text.lower()
+    )
+    mapping_covers = bool(checklist_ids) and set(checklist_ids).issubset(set(mapping_ids))
+
+    errors: list[str] = []
+    if not checklist_path.is_file():
+        errors.append("missing_test_checklist")
+    if not review_path.is_file():
+        errors.append("missing_test_checklist_review")
+    if review_path.is_file() and not approved:
+        errors.append("test_checklist_not_approved")
+    if not mapping_path.is_file():
+        errors.append("missing_test_case_mapping")
+    if review_path.is_file() and not missing_must_none:
+        errors.append("missing_test_checklist_must_resolution")
+    if checklist_path.is_file() and mapping_path.is_file() and not mapping_covers:
+        errors.append("missing_test_case_mapping_coverage")
+    if checklist_path.is_file() and mapping_path.is_file() and invalid_must_mapping_ids:
+        errors.append("missing_must_test_case_mapping")
+
+    return {
+        "required": False,
+        "valid": not errors,
+        "errors": errors,
+        "checklist_present": checklist_path.is_file(),
+        "review_present": review_path.is_file(),
+        "mapping_present": mapping_path.is_file(),
+        "review_approved": approved,
+        "missing_must_none": missing_must_none,
+        "mapping_covers_checklist": mapping_covers,
+        "checklist_ids": checklist_ids,
+        "mapping_ids": mapping_ids,
+        "must_checklist_ids": must_ids,
+        "invalid_must_mapping_ids": invalid_must_mapping_ids,
+    }
 
 
 def event_file_paths(events: list[dict]) -> list[str]:
@@ -835,6 +1013,8 @@ def event_is_reviewer_approved(row: dict, task_dir: Path | None = None) -> bool:
 def event_is_reviewer_rejected(row: dict) -> bool:
     agent = str(row.get("agent", ""))
     text = event_text(row)
+    if "MODE=test-checklist" in text or "CHECKLIST_REVIEW_RESULT" in text:
+        return False
     return (
         agent == "reviewer" and bool(REVIEW_REJECTED_RE.search(text))
     ) or "reviewer_rejected" in text
@@ -1053,6 +1233,7 @@ def quality_coverage_status(
     task_dir: Path,
     valid_approval_events: list[dict],
     approval_metric_errors: list[str],
+    test_checklist: dict,
     finding_register: dict,
     delegation_fidelity: dict,
     human_acceptance: dict,
@@ -1094,6 +1275,7 @@ def quality_coverage_status(
         ]
 
     tdd_required = bool(shape["has_tdd_stage"])
+    checklist_required = bool(test_checklist.get("required"))
     has_valid_review = bool(valid_approval_events)
     invalid_metric_errors = [
         error for error in approval_metric_errors
@@ -1123,6 +1305,7 @@ def quality_coverage_status(
                 ("test_file_or_exception", (not tdd_required) or has_test_file_evidence(events, result_text) or has_tdd_exception(task_dir)),
                 ("red_or_exception", (not tdd_required) or has_tdd_red_or_exception(task_dir)),
                 ("refactor_review", (not tdd_required) or has_tdd_refactor_evidence(task_dir)),
+                ("test_checklist_workflow", (not checklist_required) or bool(test_checklist.get("valid"))),
             ],
         ),
         quality_coverage_dimension(
@@ -1171,6 +1354,93 @@ def quality_coverage_status(
     }
 
 
+def quality_coverage_gaps(coverage: dict) -> list[str]:
+    gaps: list[str] = []
+    for dimension in coverage.get("dimensions", []):
+        dimension_name = str(dimension.get("name") or "unknown")
+        for check in dimension.get("checks", []):
+            if not check.get("passed"):
+                gaps.append(f"{dimension_name}.{check.get('name')}")
+    for warning in coverage.get("warnings", []):
+        label = f"warning.{warning}"
+        if label not in gaps:
+            gaps.append(label)
+    for blocker in coverage.get("hard_blockers", []):
+        label = f"hard_blocker.{blocker}"
+        if label not in gaps:
+            gaps.append(label)
+    return sorted(gaps)
+
+
+def quality_coverage_decision(coverage: dict, *, strict_gate_required: bool) -> dict:
+    required = bool(coverage.get("required"))
+    score = int(coverage.get("score") or 0)
+    max_score = int(coverage.get("max_score") or 100)
+    threshold = int(coverage.get("threshold") or 80)
+    passed_threshold = bool(coverage.get("passed_threshold"))
+    hard_blockers = list(coverage.get("hard_blockers") or [])
+    gaps = quality_coverage_gaps(coverage)
+
+    if not required:
+        return {
+            "required": False,
+            "decision_required": False,
+            "score": score,
+            "max_score": max_score,
+            "threshold": threshold,
+            "options": [],
+            "recommended": "",
+            "gaps": gaps,
+        }
+
+    if strict_gate_required or hard_blockers:
+        return {
+            "required": True,
+            "decision_required": False,
+            "score": score,
+            "max_score": max_score,
+            "threshold": threshold,
+            "options": ["fix-gaps", "strict-100"],
+            "recommended": "fix-gaps",
+            "gaps": gaps,
+        }
+
+    if passed_threshold and score < max_score and gaps:
+        return {
+            "required": True,
+            "decision_required": True,
+            "score": score,
+            "max_score": max_score,
+            "threshold": threshold,
+            "options": ["proceed", "fix-gaps", "strict-100"],
+            "recommended": "proceed",
+            "gaps": gaps,
+        }
+
+    if passed_threshold:
+        return {
+            "required": True,
+            "decision_required": False,
+            "score": score,
+            "max_score": max_score,
+            "threshold": threshold,
+            "options": ["proceed"],
+            "recommended": "proceed",
+            "gaps": gaps,
+        }
+
+    return {
+        "required": True,
+        "decision_required": False,
+        "score": score,
+        "max_score": max_score,
+        "threshold": threshold,
+        "options": ["fix-gaps", "strict-100"],
+        "recommended": "fix-gaps",
+        "gaps": gaps,
+    }
+
+
 def check_quality_loop(
     task_dir: Path,
     *,
@@ -1209,6 +1479,7 @@ def check_quality_loop(
         for row in approved_events
         for error in event_quality_metrics_errors(row, task_dir)
     ]
+    test_checklist = test_checklist_status(task_dir)
     finding_register = finding_register_status(task_dir)
     delegation_fidelity = delegation_fidelity_status(task_dir)
     human_acceptance = human_acceptance_matrix_status(task_dir)
@@ -1219,6 +1490,8 @@ def check_quality_loop(
     delegation_fidelity["required"] = delegation_required
     human_acceptance["required"] = human_acceptance_required
     evaluation_metrics["required"] = evaluation_required
+    test_checklist_required = bool(shape["has_tdd_stage"] and not has_tdd_exception(task_dir))
+    test_checklist["required"] = test_checklist_required
 
     failures: list[str] = []
     if required:
@@ -1252,6 +1525,8 @@ def check_quality_loop(
             failures.append("missing_tdd_red_phase_evidence")
         if shape["has_tdd_stage"] and not has_tdd_refactor_evidence(task_dir):
             failures.append("missing_tdd_refactor_phase_evidence")
+        if test_checklist_required:
+            failures.extend(test_checklist["errors"])
         if events and approved_events and not valid_approval_events:
             failures.append("missing_reviewer_quality_metrics_artifact")
         if any(error.startswith("invalid_") or error in {
@@ -1304,10 +1579,15 @@ def check_quality_loop(
         task_dir=task_dir,
         valid_approval_events=valid_approval_events,
         approval_metric_errors=approval_metric_errors,
+        test_checklist=test_checklist,
         finding_register=finding_register,
         delegation_fidelity=delegation_fidelity,
         human_acceptance=human_acceptance,
         evaluation_metrics=evaluation_metrics,
+    )
+    quality_decision = quality_coverage_decision(
+        quality_coverage,
+        strict_gate_required=strict_gate_required,
     )
     if not required:
         quality_gate_mode = "bypassed" if bypassed else "not_required"
@@ -1331,6 +1611,7 @@ def check_quality_loop(
         "soft_failures": soft_failures,
         "task": task,
         "quality_coverage": quality_coverage,
+        "quality_decision": quality_decision,
         "pipeline_shape": shape,
         "event_count": len(events),
         "rejection_indexes": rejection_indexes,
@@ -1340,6 +1621,7 @@ def check_quality_loop(
         "reviewer_approval_count": len(valid_approval_events),
         "reviewer_approved_without_quality_metrics_count": len(approved_events) - len(valid_approval_events),
         "reviewer_quality_metrics_errors": sorted(set(approval_metric_errors)),
+        "test_checklist": test_checklist,
         "finding_register": finding_register,
         "delegation_fidelity": delegation_fidelity,
         "human_acceptance": human_acceptance,

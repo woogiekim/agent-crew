@@ -2624,11 +2624,11 @@ use this sequence:
      skill loads.
    - Optional skill-use notes may be recorded in `context/skill-use.json` or
      `context/skill-use.md`, but they are diagnostic coverage, not required
-     proof artifacts. TDD remains covered by red/green/refactor evidence. For
-     other loaded skills, real task outcomes, tests, diffs, reviews, and tool
-     events are the evidence that the skill was applied. `crew repair --status
-     completed` should report missing or incomplete skill-use notes as advisory
-     gaps instead of rejecting completion.
+     proof artifacts. TDD and other loaded skills are covered first by real
+     task outcomes, tests, diffs, reviews, pipeline/progress state, reviewer
+     quality metrics, and tool events. `crew repair --status completed` should
+     report missing or incomplete notes as advisory gaps instead of rejecting
+     standard-risk completion.
    - Optional operational understanding notes may be recorded in
      `context/skill-plan.json` or `context/skill-plan.md` and linked from
      `rule_evidence` in `context/skill-use.json`, but these notes are diagnostic
@@ -2637,16 +2637,14 @@ use this sequence:
      outcomes, tests, diffs, reviews, or tool events are sufficient.
    - For implementation or other production-code mutations with a testable
      surface, follow the full Red → Green → Refactor cycle. Identify the focused
-     test target, add or update it, run it, and record the expected failing
-     result in `context/tdd-red.md` before changing production code. If no
-     runnable harness or red failure is possible, record the explicit reason
-     first in `context/tdd-exception.md`.
+     test target, add or update it, and run it before changing production code.
+     If no runnable harness or red failure is possible, make the explicit reason
+     available before implementation.
    - After green, perform the refactor review or document a no-op refactor
-     decision, rerun the focused verification, and record the result in
-     `context/tdd-refactor.md`.
+     decision, then rerun the focused verification.
    - `crew repair --status completed` for production-code implementation may
-     reject completion when red-phase/exception evidence or refactor-phase
-     evidence is missing, even if green tests and reviewer evidence exist.
+     reject missing runtime quality-loop outcomes or high-risk hard blockers,
+     but standard-risk missing phase-note artifacts are advisory coverage gaps.
 4. For auto-completion:
    - Pass `--host-bridge-command "<command>"` on `crew run`, or
    - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.

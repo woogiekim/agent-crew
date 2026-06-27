@@ -268,7 +268,86 @@ def append_tool_event(
     )
 
 
-def render_completed_result(task: str, task_id: str, completion_path: str, note: str) -> str:
+def _text_from_output(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
+
+
+def tail_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return "...[truncated]\n" + text[-limit:]
+
+
+def tail_text_single_line(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return "...[truncated] " + text[-limit:]
+
+
+def bridge_output_excerpt(bridge_record: dict, *, limit: int = 2000) -> str:
+    sections = []
+    for stream_name in ("stdout", "stderr"):
+        output = redact(_text_from_output(bridge_record.get(stream_name))).strip()
+        if not output:
+            continue
+        sections.extend([
+            f"### {stream_name}",
+            "",
+            "```text",
+            tail_text(output, limit).replace("```", "` ` `"),
+            "```",
+        ])
+    return "\n".join(sections).strip()
+
+
+def render_bridge_output_section(bridge_record: dict) -> str:
+    excerpt = bridge_output_excerpt(bridge_record)
+    if not excerpt:
+        excerpt = "No bridge stdout or stderr was captured."
+    return "\n## Host Bridge Output\n\n" + excerpt.rstrip() + "\n"
+
+
+def host_bridge_child_output_preview(stdout: object, stderr: object, *, limit: int = 180) -> str:
+    parts = []
+    for stream_name, output_value in (("stdout", stdout), ("stderr", stderr)):
+        output = redact(_text_from_output(output_value)).strip()
+        if not output:
+            continue
+        single_line = re.sub(r"\s+", " ", output)
+        parts.append(f"{stream_name}: {tail_text_single_line(single_line, limit)}")
+    return " | ".join(parts)
+
+
+def write_host_bridge_output_tail(
+    task_dir: Path,
+    stdout: object,
+    stderr: object,
+    *,
+    limit: int = 4000,
+) -> str:
+    sections = []
+    for stream_name, output_value in (("stdout", stdout), ("stderr", stderr)):
+        output = redact(_text_from_output(output_value)).strip()
+        if output:
+            sections.append(f"## {stream_name}\n\n{tail_text(output, limit)}")
+    if not sections:
+        return ""
+
+    path = task_dir / "context" / "host-bridge-output-tail.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n\n".join(sections).rstrip() + "\n", encoding="utf-8")
+    return "context/host-bridge-output-tail.txt"
+
+
+def render_completed_result(
+    task: str,
+    task_id: str,
+    completion_path: str,
+    note: str,
+    bridge_record: dict | None = None,
+) -> str:
     lines = [
         f"# {task}",
         "",
@@ -280,7 +359,10 @@ def render_completed_result(task: str, task_id: str, completion_path: str, note:
     ]
     if note:
         lines.append(f"NOTE: {note}")
-    return "\n".join(lines).rstrip() + "\n"
+    result = "\n".join(lines).rstrip() + "\n"
+    if bridge_record is not None:
+        result += render_bridge_output_section(bridge_record)
+    return result
 
 
 def render_quality_loop_blocked_result(
@@ -416,11 +498,15 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
     existing_result = load_text(task_dir / "result.md")
     if preserve_quality_state and re.search(r"^STATUS\s*:\s*completed\b", existing_result, re.I | re.M):
         marker = "HOST_BRIDGE: auto_completed"
-        addition = (
-            "\n" + marker + "\n"
-            "EVIDENCE: context/host-bridge-completion.json\n"
-        )
+        addition = ""
         if marker not in existing_result:
+            addition += (
+                "\n" + marker + "\n"
+                "EVIDENCE: context/host-bridge-completion.json\n"
+            )
+        if "## Host Bridge Output" not in existing_result:
+            addition += render_bridge_output_section(bridge_record)
+        if addition:
             (task_dir / "result.md").write_text(existing_result.rstrip() + addition, encoding="utf-8")
     else:
         (task_dir / "result.md").write_text(
@@ -429,6 +515,7 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
                 register.get("task_id", task_dir.name),
                 "context/host-bridge-completion.json",
                 note,
+                bridge_record,
             ),
             encoding="utf-8",
         )
@@ -486,6 +573,7 @@ def invoke_host_bridge(
         "AGENT_CREW_HANDOFF_PATH": str(task_dir / "handoff.md"),
         "AGENT_CREW_RESULT_PATH": str(task_dir / "result.md"),
         "AGENT_CREW_PROJECT_ROOT": str(project_root),
+        "AGENT_CREW_BRIDGE_OUTPUT_TAIL_PATH": str(task_dir / "context" / "host-bridge-output-tail.txt"),
     })
     if extra_env:
         env.update(extra_env)
@@ -523,6 +611,7 @@ def invoke_host_bridge(
         "status": "running",
         "direct_agent": direct_agent,
         "output_observed": False,
+        "output_tail_path": "context/host-bridge-output-tail.txt",
         "stall_class": "",
     }
     write_json(invocation_path, running_record)
@@ -573,6 +662,7 @@ def invoke_host_bridge(
             "failure_class": "host_bridge_start_failed",
             "status": "failed",
         }
+        write_host_bridge_output_tail(task_dir, "", stderr)
         write_json(invocation_path, bridge_record)
         append_progress_log(task_dir, "HOST_BRIDGE_FINISHED", "host_bridge_start_failed")
         append_progress(
@@ -605,6 +695,7 @@ def invoke_host_bridge(
         return bridge_record
 
     deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
+    last_child_output_preview = ""
     while True:
         wait_for = interval if interval > 0 else None
         if deadline is not None:
@@ -619,7 +710,31 @@ def invoke_host_bridge(
             stdout, stderr = proc.communicate(timeout=wait_for)
             returncode = proc.returncode
             break
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
+            child_output_preview = host_bridge_child_output_preview(
+                getattr(exc, "output", ""),
+                getattr(exc, "stderr", ""),
+            )
+            if child_output_preview and child_output_preview != last_child_output_preview:
+                last_child_output_preview = child_output_preview
+                append_progress_log(task_dir, "HOST_BRIDGE_OUTPUT", child_output_preview)
+                append_progress(
+                    task_dir,
+                    {
+                        "ts": utc_now_z(),
+                        "trace_id": trace_id_for(register, task_dir),
+                        "task_id": register["task_id"],
+                        "session_id": register.get("session_id", ""),
+                        "event": "HOST_BRIDGE_OUTPUT",
+                        "stage": 0,
+                        "agent": "",
+                        "attempt": 0,
+                        "status": "running",
+                        "detail": child_output_preview,
+                        "files": ["context/host-bridge-invocation.json"],
+                    },
+                )
+
             if deadline is not None and time.monotonic() >= deadline:
                 timed_out = True
                 stdout, stderr = terminate_host_bridge(proc)
@@ -632,6 +747,7 @@ def invoke_host_bridge(
     stdout = stdout or ""
     stderr = stderr or ""
     output_observed = bool(stdout.strip() or stderr.strip())
+    output_tail_path = write_host_bridge_output_tail(task_dir, stdout, stderr)
     stall_class = "no_output_startup_stall" if timed_out and not output_observed else ""
     current_session_required = host_bridge_current_session_required_output(
         stdout,
@@ -654,6 +770,7 @@ def invoke_host_bridge(
             else ("completed" if returncode == 0 else "failed")
         ),
         "output_observed": output_observed,
+        "output_tail_path": output_tail_path or running_record["output_tail_path"],
         "stall_class": stall_class,
     }
     write_json(invocation_path, bridge_record)
@@ -1710,7 +1827,6 @@ def command_agent(args: argparse.Namespace) -> int:
             write_json(bridge_completion_path, bridge_record)
             result_path = request_dir / "result.md"
             if not result_path.exists():
-                bridge_stdout = str(bridge_record.get("stdout", "")).strip()
                 result_path.write_text(
                     "# Direct Agent Result\n\n"
                     f"REQUEST_ID: {request_id}\n"
@@ -1718,8 +1834,7 @@ def command_agent(args: argparse.Namespace) -> int:
                     "STATUS: completed\n"
                     f"COMPLETED_AT: {now}\n"
                     "FILES: none\n\n"
-                    "## Bridge Output\n\n"
-                    f"{bridge_stdout or 'No bridge stdout was captured.'}\n",
+                    + render_bridge_output_section(bridge_record).lstrip(),
                     encoding="utf-8",
                 )
             request.update(

@@ -92,6 +92,27 @@ def _load_module(path: Path, name: str):
 quality_loop_lib = _load_module(QUALITY_LIB_PATH, "quality_loop_lib")
 
 
+def _write_test_checklist_artifacts(task_dir: Path) -> None:
+    (task_dir / "context" / "test-checklist.md").write_text(
+        "| TC-ID | Category | Given | When | Then | Priority | Level | Reason |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| TC-001 | Regression | deferred minor finding exists | quality gate runs | finding passes | P1 | MUST | severity triage |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-checklist-review.md").write_text(
+        "REVIEW: APPROVED\n"
+        "CHECKLIST_REVIEW_RESULT: approved\n"
+        "- Missing MUST: none\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "| TC-ID | Test | Covered |\n"
+        "|---|---|---|\n"
+        "| TC-001 | tests/python/test_severity_triage_review.py | YES |\n",
+        encoding="utf-8",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Section 1: Python set membership for FINDING_TERMINAL_STATUSES / OWNER set
 # ---------------------------------------------------------------------------
@@ -245,6 +266,7 @@ def _write_minimal_task(tmp_path: Path) -> Path:
         "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json after refactor.\n",
         encoding="utf-8",
     )
+    _write_test_checklist_artifacts(task_dir)
     return task_dir
 
 

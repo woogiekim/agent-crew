@@ -11,6 +11,27 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
 
 
+def _write_test_checklist_artifacts(task_dir: Path) -> None:
+    (task_dir / "context" / "test-checklist.md").write_text(
+        "| TC-ID | Category | Given | When | Then | Priority | Level | Reason |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| TC-001 | Regression | repair fallback has TDD evidence | repair runs | quality gate passes | P1 | MUST | fallback closeout |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-checklist-review.md").write_text(
+        "REVIEW: APPROVED\n"
+        "CHECKLIST_REVIEW_RESULT: approved\n"
+        "- Missing MUST: none\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "| TC-ID | Test | Covered |\n"
+        "|---|---|---|\n"
+        "| TC-001 | tests/python/test_repair_task_state_tdd_red_gate.py | YES |\n",
+        encoding="utf-8",
+    )
+
+
 def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
     task_dir = state_dir / "tasks" / task_id
     task_dir.mkdir(parents=True)
@@ -174,6 +195,7 @@ def _write_task(state_dir: Path, task_id: str = "20260604-000000-0") -> Path:
         + "\n",
         encoding="utf-8",
     )
+    _write_test_checklist_artifacts(task_dir)
     (task_dir / "result.md").write_text("STATUS: handoff_ready\n", encoding="utf-8")
     return task_dir
 
@@ -195,16 +217,21 @@ def _repair(state_dir: Path, task_id: str, *extra: str) -> subprocess.CompletedP
     )
 
 
-def test_mutating_repair_blocks_without_red_phase_evidence(tmp_path: Path):
+def test_mutating_repair_records_advisory_without_red_phase_evidence(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
-    _write_task(state_dir, task_id)
+    task_dir = _write_task(state_dir, task_id)
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_tdd_red_phase_evidence" in result.stderr
-    assert "context/tdd-red.md" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["red_phase_advisory"] is True
+    assert repair["quality_gate"]["refactor_phase_advisory"] is True
+    assert repair["quality_gate"]["red_phase_evidence_paths"] == []
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "TDD_RED_PHASE: advisory" in result_text
+    assert "TDD_REFACTOR_PHASE: advisory" in result_text
 
 
 def test_mutating_repair_accepts_red_and_refactor_phase_evidence(tmp_path: Path):
@@ -237,7 +264,7 @@ def test_mutating_repair_accepts_red_and_refactor_phase_evidence(tmp_path: Path)
     assert "TDD_REFACTOR_EVIDENCE: context/tdd-refactor.md" in result_text
 
 
-def test_mutating_repair_blocks_with_red_but_without_refactor_phase_evidence(tmp_path: Path):
+def test_mutating_repair_records_advisory_with_red_but_without_refactor_phase_evidence(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -248,9 +275,13 @@ def test_mutating_repair_blocks_with_red_but_without_refactor_phase_evidence(tmp
 
     result = _repair(state_dir, task_id)
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_tdd_refactor_phase_evidence" in result.stderr
-    assert "context/tdd-refactor.md" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["red_phase_passed"] is True
+    assert repair["quality_gate"]["red_phase_advisory"] is False
+    assert repair["quality_gate"]["refactor_phase_passed"] is True
+    assert repair["quality_gate"]["refactor_phase_advisory"] is True
+    assert repair["quality_gate"]["refactor_phase_evidence_paths"] == []
 
 
 def test_mutating_repair_ignores_refactor_mentions_inside_red_artifact(tmp_path: Path):
@@ -265,8 +296,11 @@ def test_mutating_repair_ignores_refactor_mentions_inside_red_artifact(tmp_path:
 
     result = _repair(state_dir, task_id, "--quality-evidence", "context/tdd-red.md")
 
-    assert result.returncode != 0
-    assert "BLOCKER: missing_tdd_refactor_phase_evidence" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
+    assert repair["quality_gate"]["red_phase_evidence_paths"] == ["context/tdd-red.md"]
+    assert repair["quality_gate"]["refactor_phase_evidence_paths"] == []
+    assert repair["quality_gate"]["refactor_phase_advisory"] is True
 
 
 def test_mutating_repair_accepts_explicit_tdd_exception(tmp_path: Path):
@@ -299,6 +333,11 @@ def test_quality_bypass_records_missing_red_phase(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
+    for name in ("register.json", "pipeline.json"):
+        path = task_dir / name
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["task"] = "Implement production mapping fix and deploy the release"
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 
     result = _repair(
         state_dir,

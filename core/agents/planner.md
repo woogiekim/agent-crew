@@ -326,7 +326,14 @@ Coverage responsibility: the planner owns creating a pipeline where
 100% changed-surface test coverage is achievable and enforceable. For every code
 implementation stage, the PRD must identify the executable surface and
 acceptance criteria that test-writer will map in
-`{TASK_DIR}/context/test-coverage.md`; the reviewer then enforces that matrix.
+`{TASK_DIR}/context/test-checklist.md`,
+`{TASK_DIR}/context/test-case-mapping.md`, and
+`{TASK_DIR}/context/test-coverage.md`; the reviewer then enforces those
+matrices. The PRD must give enough domain behavior detail for the mandatory
+Normal, Exception, Boundary, Validation, State Transition, Authorization,
+Ownership, Idempotency, Duplicate Request, Concurrency, Persistence Side
+Effect, Domain Event, External Dependency Failure, and Regression categories
+to be marked covered or `N/A` with reasons.
 Do not emit a code implementation stage whose contract is too vague to prove
 100% changed executable coverage.
 

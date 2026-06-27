@@ -191,11 +191,13 @@ invocation in SKILL.md; generic adds guidance).
   fallback completion; rewrites the task's terminal state and archives the
   pre-repair `result.md`. Completed repairs for production-code implementation
   tasks require the TDD Red/Green/Refactor plus reviewer quality loop unless an
-  explicit quality bypass is provided. Specialist dispatch, skill-load,
-  capability handler, `skill-use`, and `skill-plan` files are diagnostic
-  coverage sources: when absent or incomplete, repair records advisory gaps
-  while relying on task outcomes, tests, diffs, reviews, and tool events.
-  Unapproved external host/plugin skill loads still block completion.
+  explicit quality bypass is provided, but repair accepts that loop from
+  provider-neutral runtime outcomes: `pipeline.json`, `progress.buffer.jsonl`,
+  reviewer quality metrics, tests, diffs, reviews, and tool events. Separate
+  proof files such as skill-use/skill-plan notes or TDD phase notes are
+  diagnostic coverage sources; when absent or incomplete, repair records
+  advisory gaps instead of forcing make-work artifacts. Unapproved external
+  host/plugin skill loads still block completion.
 - `pipeline-quality-plan-check.py` — validates `pipeline.json` immediately after
   analyst/planner emission. Mutating implementation stages must be encoded as
   TDD-capable stages and followed by a reviewer stage; every TDD stage must
@@ -208,12 +210,21 @@ invocation in SKILL.md; generic adds guidance).
   after any reviewer rejection. Rework evidence must be a later attempt on the
   rejected reviewer's immediately preceding implementation stage, followed by a
   later reviewer re-approval. The native `crew run` runtime uses this check
-  before allowing mutating fake-host or host-bridge auto-completion.
+  before allowing mutating fake-host or host-bridge auto-completion. For
+  standard-risk work it also emits an inline `quality_decision`: when coverage
+  is at or above the configured threshold but below 100%, the user can proceed,
+  fix the listed gaps, or request strict 100% without creating a separate Gap
+  Report artifact.
 - `reviewer-loop-decision.py` — classifies reviewer output for the supervisor
   retry loop. Both `STATUS: REJECTED` and `REVIEW: NEEDS_CHANGES` return
   `action=retry`; `REVIEW: APPROVED` returns `action=approve` only when the
   required `QUALITY_METRICS:` artifact pointer is present and, when a task dir
-  is provided, resolves to an existing file.
+  is provided, resolves to an existing file. Retry directives select
+  `REVIEW_MODE: verify-prior-must-only` by default. In that mode,
+  machine validation rejects newly raised Must findings that lack
+  `NEW_MUST_CLASSIFICATION` and first-party evidence; the retry target is the
+  reviewer, not the implementer, so reviewer contract mistakes do not consume
+  implementation retry budget.
 - `review-profile-dispatch.py` — read-only capability-skill discovery for any
   opted-in agent. It scans the canonical agent-crew system/user skill layers,
   selects skills whose frontmatter declares `loaded_by: <agent>` plus `axis`

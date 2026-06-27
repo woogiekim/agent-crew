@@ -563,7 +563,7 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **designer** | UI/UX spec design |
 | **frontend** | UI implementation and verification |
 | **backend** | Kotlin + Spring Boot, DDD design + TDD implementation |
-| **test-writer** | TDD parallel partner — owns `context/test-coverage.md` and writes tests for 100% changed-surface coverage |
+| **test-writer** | TDD partner — owns `context/test-checklist.md`, checklist review handoff, `context/test-case-mapping.md`, and `context/test-coverage.md` for domain behavior coverage |
 | **devops** | CI/CD pipelines, infrastructure, containers, IaC; writes PLAN block and waits for approval before executing destructive actions |
 | **reviewer** | Final stage — verifies implementation completeness, runs tests, and enforces 100% changed-surface coverage against the PRD (read-only) |
 | **resolver** | Automatic merge conflict resolution after parallel runs |
@@ -636,6 +636,21 @@ specialist dispatch, skill-load, capability handler, `skill-use`, and
 `skill-plan` notes are recorded as advisory coverage gaps rather than
 completion blockers. Unapproved external host/plugin skill loads remain a hard
 policy blocker.
+
+Quality-loop completion follows the same rule. The framework still requires TDD
+and reviewer approval for production-code changes, but completion is judged
+from provider-neutral runtime state (`pipeline.json`, `progress.buffer.jsonl`,
+reviewer quality metrics, tests, diffs, reviews, and tool events) rather than
+from newly manufactured proof files. When standard-risk coverage reaches the
+threshold but remains below 100%, `quality-loop-check.py` reports the concrete
+gaps inline and offers `proceed`, `fix-gaps`, or `strict-100` choices; it does
+not require a separate Gap Report artifact.
+
+Reviewer re-reviews are also bounded. After a prior Must finding,
+`verify-prior-must-only` is the default mode. A newly raised Must in that mode
+must declare `NEW_MUST_CLASSIFICATION` plus first-party evidence; otherwise the
+machine classifier returns `review_contract_invalid` and retries the reviewer
+only, avoiding an implementation loop caused by reviewer slop.
 
 `crew update` refreshes system skills, then rebuilds the unified discovery view
 with user-wins precedence. A same-name file under `~/.agent-crew/user/skills/`

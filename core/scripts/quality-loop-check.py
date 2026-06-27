@@ -70,6 +70,16 @@ def main() -> int:
                 print("HARD_BLOCKERS: " + ", ".join(coverage["hard_blockers"]))
             if coverage.get("warnings"):
                 print("WARNINGS: " + ", ".join(coverage["warnings"]))
+        decision = result.get("quality_decision", {})
+        if decision.get("decision_required"):
+            print(
+                "QUALITY_DECISION: "
+                f"required options={','.join(decision.get('options', []))} "
+                f"recommended={decision.get('recommended')}"
+            )
+            gaps = decision.get("gaps") or []
+            if gaps:
+                print("QUALITY_GAPS: " + ", ".join(gaps))
         for failure in result["failures"]:
             print(f"- {failure}")
     return 0 if result["passed"] else 1

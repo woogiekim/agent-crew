@@ -7,9 +7,10 @@ description: >
   authoring and implementation share the same critical-path budget.
   SKIP when: no stage in the pipeline carries `tdd_parallel: true`, or the
   task is non-code work with no implementation stage.
-  Output: test files under the project's test directory (per project
-  convention), context/test-coverage.md, one or more commits, and a
-  STATUS: completed line.
+  Output: context/test-checklist.md, context/test-checklist-review.md,
+  test files under the project's test directory (per project convention),
+  context/test-case-mapping.md, context/test-coverage.md, one or more commits,
+  and a STATUS: completed line.
 reasoning_tier: deep
 model: inherit
 allowed-tools: Read, Write, Edit, Bash
@@ -21,6 +22,11 @@ Writes unit / integration tests for an upcoming implementation, derived
 purely from the planner's spec. Runs in parallel with the implementation
 agent — this is the entire point of the role, so the supervisor's TDD
 parallel critical-path budget is half of the sequential equivalent.
+
+**Domain behavior gate.** Tests must follow this order:
+requirements analysis -> test checklist derivation -> checklist-only review -> test code generation -> TC-ID mapping verification.
+Do not write test code before checklist review is APPROVED in
+`{TASK_DIR}/context/test-checklist-review.md`.
 
 **Hard rule — spec only.** This agent reads the planner's spec
 (`analysis.md`, `prd.md`, `pipeline.json`, `handoff.md`). It MUST NOT
@@ -88,6 +94,9 @@ After the helper runs, read the report at `${TASK_DIR}/context/capability-skills
 - `STAGE_INDEX` _(optional)_ — 1-based stage index, used only in the commit message subject
 - `IMPLEMENTER_AGENT` _(optional)_ — name of the parallel implementation
   agent (e.g. `backend`); used only in the commit message body
+- `MODE` _(optional, default `tests`)_ — `checklist` writes only
+  `{TASK_DIR}/context/test-checklist.md` and stops for checklist-only review;
+  `tests` requires an APPROVED checklist review before writing test files.
 
 ## Language-Agnostic Quality Rules
 
@@ -165,7 +174,7 @@ fi
 
 If `TEST_DIR` does not yet exist on disk, create it (`mkdir -p "${TEST_DIR}"`).
 
-### Step 3 — Derive the test surface from the spec
+### Step 3 — Derive the domain-behavior test checklist from the spec
 
 From the spec, enumerate:
 
@@ -179,10 +188,91 @@ From the spec, enumerate:
   public method, branch, and documented failure mode that must be
   covered before the reviewer can approve.
 
-Build a per-entry-point test plan as an inline list. Do not write it to
-a file — the next step writes the tests directly.
+Write `{TASK_DIR}/context/test-checklist.md` before writing any test code.
+This checklist is the domain behavior coverage contract, not a line coverage
+proxy. It must include one row per test case or `N/A` category decision with
+these fields:
+
+- TC-ID (`TC-001`, `TC-002`, ...)
+- Category
+- Given
+- When
+- Then
+- Priority
+- MUST / SHOULD / SUGGESTION
+- Reason
+
+Mandatory categories to inspect for every feature:
+
+- Normal
+- Exception
+- Boundary
+- Validation
+- State Transition
+- Authorization
+- Ownership
+- Idempotency
+- Duplicate Request
+- Concurrency
+- Persistence Side Effect
+- Domain Event
+- External Dependency Failure
+- Regression
+
+If a category does not apply, add a row with `N/A` and a concrete reason.
+Never silently omit a category.
+
+Minimum shape:
+
+```markdown
+# Test Checklist
+
+Coverage principle: domain behavior coverage, not line coverage.
+
+| TC-ID | Category | Given | When | Then | Priority | MUST / SHOULD / SUGGESTION | Reason |
+|---|---|---|---|---|---|---|---|
+| TC-001 | Normal | ... | ... | ... | P1 | MUST | ... |
+| TC-002 | Concurrency | N/A | N/A | N/A | P3 | SUGGESTION | Not applicable because ... |
+```
+
+If `MODE=checklist`, stop here and return:
+
+```text
+CHECKLIST: {TASK_DIR}/context/test-checklist.md
+CHECKLIST_REVIEW_REQUIRED: true
+STATUS: completed
+```
+
+This is a non-terminal checklist handoff. The supervisor must run the reviewer
+in checklist-only review mode before re-invoking test-writer in `MODE=tests`.
+
+### Step 3.5 — Require checklist-only reviewer approval
+
+Before writing test files in `MODE=tests`, read
+`{TASK_DIR}/context/test-checklist-review.md`.
+
+Proceed only when it contains:
+
+```text
+REVIEW: APPROVED
+CHECKLIST_REVIEW_RESULT: approved
+```
+
+If the file is missing or not approved, do not write test code. Return:
+
+```text
+CHECKLIST: {TASK_DIR}/context/test-checklist.md
+REVIEW: {TASK_DIR}/context/test-checklist-review.md
+CHECKLIST_REVIEW_REQUIRED: true
+BLOCKER: checklist_review_required
+STATUS: BLOCKED
+```
 
 ### Step 4 — Write the test files
+
+After checklist-only review approval, write test files for every checklist
+item whose Priority is `MUST` or `SHOULD`, unless a narrow implementation
+exception is written in the checklist and accepted by the reviewer.
 
 For each entry point, write a test file (or extend an existing one) at
 `${TEST_DIR}/`. Use the host project's existing test naming convention
@@ -190,6 +280,8 @@ if one is detectable from `${TEST_DIR}` contents; otherwise default to
 `test_<entry_point>.{ext}`.
 
 Each test must:
+- Include the checklist `TC-ID` in the display name, test name, subtest label,
+  docstring, or nearest framework-supported equivalent.
 - Reference the spec section it derives from (one-line comment at the
   top: `# Spec: prd.md § "<section>" — acceptance criterion #<n>`).
 - Name the test case with the language-agnostic nature prefix contract from
@@ -230,7 +322,24 @@ Test-name rule: every changed test must carry the nature prefix in its test
 name, display name, nested/subtest label, or documented equivalent. Missing
 prefixes are reviewer-blocking as `missing_test_nature_prefix`.
 
-### Step 5 — Coverage matrix, quality loop, and commit
+### Step 5 — Test case mapping, coverage matrix, quality loop, and commit
+
+Write `{TASK_DIR}/context/test-case-mapping.md` immediately after writing or
+updating tests. Every checklist row must appear exactly once in the mapping.
+
+Minimum shape:
+
+```markdown
+# Test Case Mapping
+
+| TC-ID | Test | Covered | Notes |
+|---|---|---|---|
+| TC-001 | tests/...::create_user_success | YES | ... |
+| TC-002 | N/A | YES | Category not applicable; accepted in checklist review |
+```
+
+MUST checklist items require `Covered = YES` with a real test reference, or a
+specific reason the item cannot be implemented. Silent omission is invalid.
 
 Write `{TASK_DIR}/context/test-coverage.md` before returning. This file is the
 test-writer's coverage evidence and the reviewer's enforcement input.
@@ -263,11 +372,16 @@ test-writer's quality criterion is:
 1. Every documented entry point in Step 3 has at least one test.
 2. Every documented failure mode in the PRD risks table has at least
    one test.
-3. Every PRD acceptance criterion, public method, branch, and edge case in the
+3. `context/test-checklist.md` exists and every mandatory category is either
+   covered or marked `N/A` with a concrete reason.
+4. `context/test-checklist-review.md` contains `REVIEW: APPROVED`.
+5. Every MUST checklist item is implemented or explicitly explained.
+6. Every checklist row appears in `context/test-case-mapping.md`.
+7. Every PRD acceptance criterion, public method, branch, and edge case in the
    changed executable surface is represented in `context/test-coverage.md`.
-4. The coverage matrix states `Coverage target: 100% changed-surface coverage`
+8. The coverage matrix states `Coverage target: 100% changed-surface coverage`
    and has no unjustified exception.
-5. The test file parses (lint/AST check at minimum — actual run is the
+9. The test file parses (lint/AST check at minimum — actual run is the
    implementer's responsibility post-merge).
 
 If the spec is insufficient to write meaningful tests (no acceptance
@@ -334,6 +448,9 @@ Success form:
 TEST_FILES:
   - {test file 1}
   - {test file 2}
+CHECKLIST: {TASK_DIR}/context/test-checklist.md
+CHECKLIST_REVIEW: {TASK_DIR}/context/test-checklist-review.md
+TEST_CASE_MAPPING: {TASK_DIR}/context/test-case-mapping.md
 COVERAGE: 100% changed-surface coverage; evidence={TASK_DIR}/context/test-coverage.md
 VERIFIED: tests=<RESULT> cmd=<CMD> exit=<CODE>
 STATUS: completed

@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "reviewer-loop-decision.py"
+SUPERVISOR_RETRY = REPO_ROOT / "core" / "agents" / "supervisor-retry.md"
 
 
 def _load_module(path: Path, name: str):
@@ -23,9 +24,13 @@ def _load_module(path: Path, name: str):
 decision = _load_module(SCRIPT, "reviewer_loop_decision")
 
 
-def run_decision(text: str) -> subprocess.CompletedProcess[str]:
+def read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def run_decision(text: str, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["python3", str(SCRIPT), "--format", "json"],
+        ["python3", str(SCRIPT), "--format", "json", *extra],
         input=text,
         text=True,
         capture_output=True,
@@ -69,6 +74,8 @@ def test_review_needs_changes_triggers_retry():
     assert payload["reason"] == "review_needs_changes"
     assert payload["issues"] == 2
     assert "re-run reviewer" in payload["directive"]
+    assert "REVIEW_MODE: verify-prior-must-only" in payload["directive"]
+    assert "NEW_MUST_CLASSIFICATION" in payload["directive"]
 
 
 def test_review_needs_changes_preserves_spec_incomplete_reason():
@@ -97,6 +104,190 @@ def test_review_needs_changes_preserves_code_quality_reason():
     payload = json.loads(result.stdout)
     assert payload["reason"] == "code_quality"
     assert "code-quality" in payload["directive"]
+
+
+def test_supervisor_retry_classifier_invocation_passes_review_mode():
+    text = read(SUPERVISOR_RETRY)
+
+    assert "reviewer-loop-decision.py" in text
+    assert "--review-mode" in text
+    assert '"${REVIEW_MODE:-full-rescan}"' in text
+
+
+def test_supervisor_retry_handles_reviewer_contract_retry_without_implementer_loopback():
+    text = read(SUPERVISOR_RETRY)
+
+    assert 'decision.retry_target == "reviewer"' in text
+    assert "reviewer_contract_retries += 1" in text
+    assert "review_contract_loop_exhausted" in text
+    assert "continue  # re-run reviewer" in text
+
+
+def test_verify_prior_must_mode_rejects_unclassified_new_must_as_reviewer_retry():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "New findings in this review:\n"
+        "- [IMPORTANT] Missing balance validation in src/main/kotlin/Wallet.kt:42\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "review_contract_invalid"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["review_mode"] == "verify-prior-must-only"
+    assert "new_must_classification_missing" in payload["review_contract_violations"]
+    assert "do not return to implementer" in payload["directive"]
+
+
+def test_verify_prior_must_mode_rejects_generic_must_section_without_classification():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "\n"
+        "### Must Fix\n"
+        "- [IMPORTANT] Missing balance validation in src/main/kotlin/Wallet.kt:42\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review_contract_invalid"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["review_contract_valid"] is False
+    assert "new_must_classification_missing" in payload["review_contract_violations"]
+    assert payload["new_must_lines"] == [
+        "- [IMPORTANT] Missing balance validation in src/main/kotlin/Wallet.kt:42"
+    ]
+
+
+def test_verify_prior_must_mode_allows_prior_must_verification_without_new_classification():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "\n"
+        "## Existing unresolved findings\n"
+        "- [IMPORTANT] Prior Must still failing in src/main/kotlin/Wallet.kt:42\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review_needs_changes"
+    assert payload["retry_target"] == "implementer"
+    assert payload["review_contract_valid"] is True
+    assert payload["new_must_lines"] == []
+
+
+def test_verify_prior_must_mode_accepts_classified_new_must_with_first_party_evidence():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "New findings in this review:\n"
+        "- [IMPORTANT] Missing reviewer evidence validation in core/scripts/reviewer-loop-decision.py:226\n"
+        "NEW_MUST_CLASSIFICATION: missed_existing\n"
+        "NEW_MUST_EVIDENCE: core/scripts/reviewer-loop-decision.py:226 and tests/python/test_reviewer_loop_decision.py:193\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review_needs_changes"
+    assert payload["retry_target"] == "implementer"
+    assert payload["review_contract_valid"] is True
+    assert payload["new_must_classification"] == "missed_existing"
+
+
+def test_verify_prior_must_mode_ignores_missing_must_none_summary():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "## Test Case Checklist\n"
+        "- Checklist: context/test-checklist.md\n"
+        "- Missing MUST: none\n"
+        "- Result: passed\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review_needs_changes"
+    assert payload["retry_target"] == "implementer"
+    assert payload["review_contract_valid"] is True
+    assert payload["new_must_lines"] == []
+
+
+def test_verify_prior_must_mode_rejects_nonexistent_first_party_evidence_path():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "New findings in this review:\n"
+        "- [IMPORTANT] Missing balance validation in src/main/kotlin/Wallet.kt:42\n"
+        "NEW_MUST_CLASSIFICATION: missed_existing\n"
+        "NEW_MUST_EVIDENCE: src/main/kotlin/Wallet.kt:42 and tests/WalletTest.kt:18\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review_contract_invalid"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["review_contract_valid"] is False
+    assert "new_must_first_party_evidence_missing" in payload["review_contract_violations"]
+
+
+def test_invalid_review_mode_falls_back_to_verify_prior_contract():
+    result = run_decision(
+        "REVIEW_MODE: typo-mode\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "ISSUES: 1\n"
+        "New findings in this review:\n"
+        "- [IMPORTANT] Missing reviewer evidence validation in core/scripts/reviewer-loop-decision.py:226\n",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["review_mode"] == "verify-prior-must-only"
+    assert payload["reason"] == "review_contract_invalid"
+
+
+def test_verify_prior_must_mode_does_not_reject_new_minor_items():
+    result = run_decision(
+        "REVIEW_MODE: verify-prior-must-only\n"
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n"
+        "New findings in this review:\n"
+        "- [MINOR] Rename a helper for clarity in src/main/kotlin/Wallet.kt:42\n",
+        "--review-mode",
+        "verify-prior-must-only",
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "review_needs_changes"
+    assert payload["retry_target"] == "implementer"
+    assert payload["review_contract_valid"] is True
 
 
 def test_review_approved_does_not_retry():
@@ -236,3 +427,20 @@ def test_supervisor_docs_treat_needs_changes_as_loop_trigger():
     assert "action=retry" in retry_doc
     assert "REVIEW: NEEDS_CHANGES` | Static or streaming review" in quality_doc
     assert "`REVIEW: NEEDS_CHANGES` is a loop-triggering rejection" in reviewer_doc
+
+
+def test_reviewer_docs_define_re_review_modes_and_new_must_policy():
+    reviewer_doc = (REPO_ROOT / "core" / "agents" / "reviewer.md").read_text(encoding="utf-8")
+    skill_doc = (REPO_ROOT / "core" / "agents" / "skills" / "code-review.md").read_text(encoding="utf-8")
+    retry_doc = (REPO_ROOT / "core" / "agents" / "supervisor-retry.md").read_text(encoding="utf-8")
+
+    for text in (reviewer_doc, skill_doc, retry_doc):
+        assert "verify-prior-must-only" in text
+        assert "full-rescan" in text
+        assert "regression" in text
+        assert "missed_existing" in text
+        assert "severity_escalation" in text
+        assert "unclear_requirement" in text
+
+    assert "Weakly evidenced" in skill_doc
+    assert "NEW_MUST_CLASSIFICATION" in reviewer_doc

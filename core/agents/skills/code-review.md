@@ -39,6 +39,37 @@ Run review in this order:
 This ordering keeps implementation loop-backs focused: complete missing
 behavior before polishing code that may still need structural changes.
 
+## Re-Review Scope and New Must Policy
+
+Reviewer retries are scoped differently from the first review:
+
+- `verify-prior-must-only`: verify that prior Must findings (`CRITICAL` or
+  `IMPORTANT`) were actually fixed, using the prior `context/review.md`,
+  `context/finding-register.json`, changed hunks, tests, and verification
+  output. Do not convert the retry into a broad new sweep by default.
+- `full-rescan`: perform the normal full review from scratch. Use this only on
+  the first review or when the operator/supervisor explicitly requests it.
+
+If a re-review in `verify-prior-must-only` discovers a new Must, classify it in
+the finding body with exactly one of:
+
+- `regression`: the Must was introduced by the attempted fix.
+- `missed_existing`: the Must existed in Round 1 but the reviewer missed it.
+- `severity_escalation`: a prior Should/MINOR is now proven blocking by new
+  evidence.
+- `unclear_requirement`: the requirement is ambiguous enough that continuing
+  would risk an incorrect implementation.
+
+Weakly evidenced new findings must remain non-blocking Should/MINOR items.
+Evidence must point to first-party files, changed hunks, task artifacts, or
+tool output; speculation, style preference, or missing proof of execution is
+not enough to create a new Must.
+
+This is a machine-checked contract. In `verify-prior-must-only`, the supervisor
+classifies reviewer output through `reviewer-loop-decision.py`; an unclassified
+or weakly evidenced new Must becomes `review_contract_invalid` and retries the
+reviewer, not the implementer.
+
 ---
 
 ## Git Diff Analysis
@@ -129,6 +160,16 @@ grep -c "if\|for\|while\|when\|catch\|\?\." {file}
 
 ## Test Coverage Sanity Check
 
+- Domain behavior coverage comes before code style. Line coverage is not
+  sufficient to approve tests.
+- For test-writing tasks, inspect `context/test-checklist.md` and
+  `context/test-case-mapping.md` before judging the test code itself.
+- Confirm checklist-only review is APPROVED in
+  `context/test-checklist-review.md`.
+- First look for Missing MUST, Missing SHOULD, Duplicate, Low-value Test, and
+  Wrong Priority. Style feedback comes after missing domain behavior.
+- Every MUST checklist item must have a TC-ID mapped to a concrete test or an
+  explicit reviewer-accepted explanation.
 - At least one test per new endpoint or public method
 - Primary test target variables default to `sut` unless the repository has an
   explicit conflicting convention recorded in the TDD log

@@ -727,6 +727,24 @@ def test_report_quality_gate_accepts_tdd_and_reviewer_for_completed_implementati
         }),
         encoding="utf-8",
     )
+    (task_dir / "context" / "test-checklist.md").write_text(
+        "| TC-ID | Category | Given | When | Then | Priority | Level | Reason |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| TC-001 | Regression | completed implementation has quality artifacts | report check runs | report passes | P1 | MUST | report gate |\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-checklist-review.md").write_text(
+        "REVIEW: APPROVED\n"
+        "CHECKLIST_REVIEW_RESULT: approved\n"
+        "- Missing MUST: none\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "test-case-mapping.md").write_text(
+        "| TC-ID | Test | Covered |\n"
+        "|---|---|---|\n"
+        "| TC-001 | tests/python/test_memory_reporting_safeguards.py | YES |\n",
+        encoding="utf-8",
+    )
     evidence = task_dir / "progress.log"
     evidence.write_text("ok\n", encoding="utf-8")
     report = task_dir / "result.md"

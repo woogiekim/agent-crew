@@ -63,11 +63,11 @@ missing.
 
 Optional skill-use notes may be recorded in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
-they are diagnostic coverage, not required proof artifacts. TDD remains covered
-by red/green/refactor evidence. For other loaded skills, real task outcomes,
-tests, diffs, reviews, and tool events are the evidence that the skill was
-applied; repair should report missing or incomplete skill-use notes as advisory
-gaps instead of rejecting completion.
+they are diagnostic coverage, not required proof artifacts. TDD and other
+loaded skills are covered first by real task outcomes, tests, diffs, reviews,
+pipeline/progress state, reviewer quality metrics, and tool events; repair
+should report missing or incomplete notes as advisory gaps instead of rejecting
+standard-risk completion.
 
 Optional operational understanding notes may be recorded in
 `{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
@@ -77,14 +77,13 @@ rule-evidence notes as advisory gaps when actual task outcomes, tests, diffs,
 reviews, or tool events are sufficient.
 
 For implementation or other production-code mutations with a testable surface,
-do not patch production code until the focused test target is identified,
-added or updated, run, and recorded as expected failing red-phase evidence in
-`{TASK_DIR}/context/tdd-red.md`. If a runnable harness or red failure cannot
-reasonably be produced, record the explicit exception first in
-`{TASK_DIR}/context/tdd-exception.md`. After green, perform the refactor review
-or document a no-op refactor decision, rerun focused verification, and record it
-in `{TASK_DIR}/context/tdd-refactor.md`. Repairing production-code
-implementation as completed may reject the handoff when red-phase/exception
-evidence or refactor-phase evidence is missing.
+do not patch production code until the focused test target is identified, added
+or updated, and run. If a runnable harness or red failure cannot reasonably be
+produced, make the explicit exception available before implementation. After
+green, perform the refactor review or document a no-op refactor decision and
+rerun focused verification. Repairing production-code implementation as
+completed may reject missing runtime quality-loop outcomes or high-risk hard
+blockers, but standard-risk missing phase-note artifacts are advisory coverage
+gaps.
 
 Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate supervisor logic in this skill.
