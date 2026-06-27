@@ -84,6 +84,9 @@ def status_line(response: str) -> str:
 def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path) -> dict[str, Any]:
     max_crash_retries = int(budgets.get("max_crash_retries", 5))
     max_validation_retries = int(budgets.get("max_validation_retries", 3))
+    max_reviewer_retries = int(
+        budgets.get("max_reviewer_retries", budgets.get("max_reviewer_contract_retries", 2))
+    )
     max_reviewer_contract_retries = int(budgets.get("max_reviewer_contract_retries", 2))
     max_token_resumes = int(budgets.get("max_token_truncation_resumes", 1))
 
@@ -94,6 +97,7 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
         "crash_failures": 0,
         "token_resumes": 0,
         "validation_retries": 0,
+        "reviewer_retries": 0,
         "reviewer_contract_retries": 0,
         "retry_reasons": [],
         "directives": [],
@@ -138,20 +142,30 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
                 break
             if action == "retry":
                 reason = str(decision.get("reason") or "reviewer_retry")
-                if decision.get("retry_target") == "reviewer" and reason == "review_contract_invalid":
-                    observed["reviewer_contract_retries"] += 1
-                    if observed["reviewer_contract_retries"] > max_reviewer_contract_retries:
-                        observed["retry_reasons"].append(reason)
-                        if decision.get("directive"):
-                            observed["directives"].append(decision["directive"])
-                        observed["final_status"] = "blocked"
-                        observed["blocked_by"] = ["review_contract_loop_exhausted"]
-                        break
-                else:
-                    observed["validation_retries"] += 1
                 observed["retry_reasons"].append(reason)
                 if decision.get("directive"):
                     observed["directives"].append(decision["directive"])
+
+                if decision.get("retry_target") == "reviewer":
+                    observed["reviewer_retries"] += 1
+                    if reason == "review_contract_invalid":
+                        observed["reviewer_contract_retries"] += 1
+
+                    if (
+                        observed["reviewer_retries"] > max_reviewer_retries
+                        or observed["reviewer_contract_retries"] > max_reviewer_contract_retries
+                    ):
+                        observed["final_status"] = "blocked"
+                        observed["blocked_by"] = [
+                            "review_contract_loop_exhausted"
+                            if reason == "review_contract_invalid"
+                            else "reviewer_loop_exhausted"
+                        ]
+                        break
+
+                    continue
+
+                observed["validation_retries"] += 1
                 if observed["validation_retries"] > max_validation_retries:
                     observed["final_status"] = "blocked"
                     observed["blocked_by"] = ["quality_loop_exhausted"]
@@ -203,6 +217,7 @@ def simulate_case(case: dict[str, Any], budgets: dict[str, Any], repo_root: Path
         "crash_failures",
         "token_resumes",
         "validation_retries",
+        "reviewer_retries",
         "reviewer_contract_retries",
         "retry_reasons",
     ):

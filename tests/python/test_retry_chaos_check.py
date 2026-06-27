@@ -38,18 +38,26 @@ def test_retry_chaos_check_passes_current_fixture():
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
-    assert payload["summary"] == {"cases": 8, "passed": 8, "failed": 0}
+    assert payload["summary"] == {"cases": 9, "passed": 9, "failed": 0}
     contract_case = next(
         case for case in payload["cases"]
         if case["id"] == "reviewer_contract_invalid_retries_reviewer_only"
     )
     assert contract_case["observed"]["validation_retries"] == 0
+    assert contract_case["observed"]["reviewer_retries"] == 1
     assert contract_case["observed"]["reviewer_contract_retries"] == 1
     exhausted_case = next(
         case for case in payload["cases"]
         if case["id"] == "reviewer_contract_loop_exhaustion_blocks"
     )
     assert exhausted_case["observed"]["blocked_by"] == ["review_contract_loop_exhausted"]
+    reviewer_output_case = next(
+        case for case in payload["cases"]
+        if case["id"] == "reviewer_output_retry_retries_reviewer_only"
+    )
+    assert reviewer_output_case["observed"]["validation_retries"] == 0
+    assert reviewer_output_case["observed"]["reviewer_retries"] == 3
+    assert reviewer_output_case["observed"]["reviewer_contract_retries"] == 0
 
 
 def test_retry_chaos_blocks_repeated_reviewer_contract_retries(tmp_path: Path):
@@ -58,6 +66,7 @@ def test_retry_chaos_blocks_repeated_reviewer_contract_retries(tmp_path: Path):
         "budgets": {
             "max_crash_retries": 5,
             "max_validation_retries": 3,
+            "max_reviewer_retries": 2,
             "max_reviewer_contract_retries": 2,
             "max_token_truncation_resumes": 1,
         },
@@ -104,6 +113,7 @@ def test_retry_chaos_blocks_repeated_reviewer_contract_retries(tmp_path: Path):
                     "blocked_by": ["review_contract_loop_exhausted"],
                     "invocations": 3,
                     "validation_retries": 0,
+                    "reviewer_retries": 3,
                     "reviewer_contract_retries": 3,
                     "retry_reasons": [
                         "review_contract_invalid",
@@ -133,6 +143,74 @@ def test_retry_chaos_blocks_repeated_reviewer_contract_retries(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["cases"][0]["observed"]["blocked_by"] == ["review_contract_loop_exhausted"]
+
+
+def test_retry_chaos_uses_reviewer_budget_for_all_reviewer_target_retries(tmp_path: Path):
+    fixture = {
+        "schema_version": 1,
+        "budgets": {
+            "max_crash_retries": 5,
+            "max_validation_retries": 3,
+            "max_reviewer_retries": 2,
+            "max_reviewer_contract_retries": 2,
+            "max_token_truncation_resumes": 1,
+        },
+        "cases": [
+            {
+                "id": "quality-metrics-missing-reviewer-loop",
+                "events": [
+                    {
+                        "kind": "reviewer_result",
+                        "response": "REVIEW: APPROVED\nISSUES: 0\n",
+                    },
+                    {
+                        "kind": "reviewer_result",
+                        "response": "REVIEW: APPROVED\nISSUES: 0\n",
+                    },
+                    {
+                        "kind": "reviewer_result",
+                        "response": "REVIEW: APPROVED\nISSUES: 0\n",
+                    },
+                ],
+                "expected": {
+                    "final_status": "blocked",
+                    "blocked_by": ["reviewer_loop_exhausted"],
+                    "invocations": 3,
+                    "validation_retries": 0,
+                    "reviewer_retries": 3,
+                    "reviewer_contract_retries": 0,
+                    "retry_reasons": [
+                        "quality_metrics_missing",
+                        "quality_metrics_missing",
+                        "quality_metrics_missing",
+                    ],
+                },
+            }
+        ],
+    }
+    fixture_path = tmp_path / "retry-chaos.json"
+    fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--fixture",
+            str(fixture_path),
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    observed = payload["cases"][0]["observed"]
+    assert observed["blocked_by"] == ["reviewer_loop_exhausted"]
+    assert observed["validation_retries"] == 0
+    assert observed["reviewer_retries"] == 3
+    assert observed["reviewer_contract_retries"] == 0
 
 
 def test_retry_chaos_check_detects_retry_budget_regression(tmp_path: Path):

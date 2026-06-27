@@ -4,6 +4,7 @@
   "budgets": {
     "max_crash_retries": 5,
     "max_validation_retries": 3,
+    "max_reviewer_retries": 2,
     "max_reviewer_contract_retries": 2,
     "max_token_truncation_resumes": 1
   },
@@ -153,9 +154,48 @@
         "crash_failures": 0,
         "token_resumes": 0,
         "validation_retries": 0,
+        "reviewer_retries": 1,
         "reviewer_contract_retries": 1,
         "retry_reasons": [
           "review_contract_invalid"
+        ]
+      }
+    },
+    {
+      "id": "reviewer_output_retry_retries_reviewer_only",
+      "description": "Reviewer-target output defects such as missing quality metrics retry the reviewer without consuming validation retries.",
+      "events": [
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "REVIEW: APPROVED\nISSUES: 0"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "REVIEW: APPROVED\nISSUES: 0"
+        },
+        {
+          "kind": "reviewer_result",
+          "agent": "reviewer",
+          "response": "REVIEW: APPROVED\nISSUES: 0"
+        }
+      ],
+      "expected": {
+        "final_status": "blocked",
+        "blocked_by": [
+          "reviewer_loop_exhausted"
+        ],
+        "invocations": 3,
+        "crash_failures": 0,
+        "token_resumes": 0,
+        "validation_retries": 0,
+        "reviewer_retries": 3,
+        "reviewer_contract_retries": 0,
+        "retry_reasons": [
+          "quality_metrics_missing",
+          "quality_metrics_missing",
+          "quality_metrics_missing"
         ]
       }
     },
@@ -233,6 +273,7 @@
         "crash_failures": 0,
         "token_resumes": 0,
         "validation_retries": 0,
+        "reviewer_retries": 3,
         "reviewer_contract_retries": 3,
         "retry_reasons": [
           "review_contract_invalid",
