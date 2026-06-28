@@ -38,9 +38,89 @@ Translate scope/target/constraints answers into a structured Product Requirement
 ## Scope
 In: {explicitly included}
 Out: {explicitly excluded}
+
+## Will Do
+- {smallest concrete implementation tasks}
+
+## Will NOT Do
+- No new dependency unless explicitly justified
+- No schema/API/infrastructure changes unless required by the request
+- No speculative abstraction, cache, queue, or domain expansion
+
+## Diff Budget
+- Category: {XS|S|M|L|XL}
+- Rationale: {why this is the smallest sufficient category}
 ```
 
 ---
+
+## Minimal-Change Planning Gate
+
+Before writing `pipeline.json`, run the Need Analyzer and Capability Search
+from `core/rules/lean-workflow-methodology.md`.
+
+Need Analyzer questions:
+- Can this be solved without writing code?
+- Can existing project code solve this?
+- Can framework functionality solve this?
+- Can the standard library solve this?
+- Can configuration solve this?
+- Can infrastructure solve this?
+- Can an existing API solve this?
+- Can the feature be removed instead?
+
+Capability Search order:
+1. Existing project code
+2. Existing utilities
+3. Language features
+4. Standard library
+5. Framework features
+6. Third-party libraries already installed
+7. Platform capabilities
+8. Infrastructure configuration
+
+If any Need Analyzer answer is `yes`, do not emit an implementation stage.
+Recommend that non-code/reuse/configuration/deletion route first.
+
+For mutating implementation work, write this machine-readable summary into
+`pipeline.json`:
+
+```json
+{
+  "decision_context": {
+    "need_analysis": {
+      "can_solve_without_code": "no",
+      "existing_project_code": "no",
+      "framework_functionality": "no",
+      "standard_library": "no",
+      "configuration": "no",
+      "infrastructure": "no",
+      "existing_api": "no",
+      "delete_instead": "no"
+    },
+    "capability_search": [
+      "existing_project_code",
+      "existing_utilities",
+      "language_features",
+      "standard_library",
+      "framework_features",
+      "installed_libraries",
+      "platform_capabilities",
+      "infrastructure_configuration"
+    ],
+    "diff_budget": {
+      "category": "XS",
+      "rationale": "Smallest sufficient change."
+    },
+    "will_do": ["..."],
+    "will_not_do": ["No new dependency.", "No schema change."],
+    "selected_solution": "...",
+    "new_code_allowed_reason": "..."
+  }
+}
+```
+
+For `L` or `XL`, add `smaller_alternatives_rejected` with concrete reasons.
 
 ## Stage Dependency Analysis — Critical Path
 

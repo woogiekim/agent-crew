@@ -202,6 +202,44 @@ Based on the collected information, save the following to `{TASK_DIR}/context/pr
 - Non-functional requirements, including KISS, YAGNI, and DRY from
   `core/rules/code-quality.md` for implementation work
 - Implementation scope and excluded items
+- `Will Do`: concrete implementation tasks in the smallest sufficient scope
+- `Will NOT Do`: explicit non-goals such as no schema/API/dependency/cache/queue
+  changes unless required
+- `Diff Budget`: `XS|S|M|L|XL` plus rationale
+
+### Step 2.5: Minimal-change decision
+
+Apply `core/rules/lean-workflow-methodology.md` § Minimal-Change Decision
+Doctrine before pipeline selection.
+
+Answer the Need Analyzer questions:
+
+- Can this be solved without writing code?
+- Can existing project code solve this?
+- Can framework functionality solve this?
+- Can the standard library solve this?
+- Can configuration solve this?
+- Can infrastructure solve this?
+- Can an existing API solve this?
+- Can the feature be removed instead?
+
+Run Capability Search in this exact order:
+
+1. Existing project code
+2. Existing utilities
+3. Language features
+4. Standard library
+5. Framework features
+6. Third-party libraries already installed
+7. Platform capabilities
+8. Infrastructure configuration
+
+If any Need Analyzer answer is `yes`, do not emit an implementation stage.
+Recommend that route first and keep the pipeline non-implementation.
+
+Estimate the smallest viable diff budget before coding: `XS` (0-20), `S`
+(20-50), `M` (50-150), `L` (150-300), or `XL` (300+). For `L` or `XL`, record
+why smaller alternatives were rejected.
 
 ---
 
@@ -298,6 +336,36 @@ to reduce total wall-clock time:
     { "agents": ["frontend"], "tdd_parallel": true },
     ["reviewer"]
   ],
+  "decision_context": {
+    "need_analysis": {
+      "can_solve_without_code": "yes|no",
+      "existing_project_code": "yes|no",
+      "framework_functionality": "yes|no",
+      "standard_library": "yes|no",
+      "configuration": "yes|no",
+      "infrastructure": "yes|no",
+      "existing_api": "yes|no",
+      "delete_instead": "yes|no"
+    },
+    "capability_search": [
+      "existing_project_code",
+      "existing_utilities",
+      "language_features",
+      "standard_library",
+      "framework_features",
+      "installed_libraries",
+      "platform_capabilities",
+      "infrastructure_configuration"
+    ],
+    "diff_budget": {
+      "category": "XS|S|M|L|XL",
+      "rationale": "{why this is the smallest sufficient change}"
+    },
+    "will_do": ["{concrete implementation task}"],
+    "will_not_do": ["{explicit non-goal}"],
+    "selected_solution": "{recommended solution path}",
+    "new_code_allowed_reason": "{only when implementation stages remain}"
+  },
   "needs_creation": [
     {
       "name": "example-specialist",

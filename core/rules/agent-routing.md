@@ -126,6 +126,12 @@ The split (per issue #127):
   Full supervisor pipeline with the existing requirements collection,
   plan approval, stage execution, and reviewer gates.
 
+Both directive paths carry a compiled prompt context. The hook must not ask the
+user to rewrite vague but executable input; it compiles natural language into
+intent, normalized task, enriched project context, constraints, risk, success
+criteria, and role-specific downstream prompts. Validation is advisory unless
+the request is unsafe, impossible, or outside project scope.
+
 The row format is `| "prompt" | ROUTE | reason |` or `| "prompt" | STOP | reason |`.
 Every row is exercised by the docs/hook consistency test, so adding a new
 example automatically pins the hook's behavior for that input.
@@ -140,6 +146,8 @@ example automatically pins the hook's behavior for that input.
 | `"어떻게 동작하나요?"` | ROUTE | Korean question (read-only) |
 | `"status"` | ROUTE | Trivial intent — read-only project status |
 | `"Review the routing classifier for gaps; do not edit files."` | ROUTE | Read-only review with explicit "do not edit" marker |
+| `"로그인이 안돼"` | STOP | Symptom-style bug report — compile to bug-fix workflow |
+| `"버그 고쳐줘"` | STOP | Korean bug-fix request — compile to bug-fix workflow |
 | `"fix the bug in auto-route"` | STOP | Mutating verb (fix) — implementation |
 | `"add a new test for routing"` | STOP | Mutating verb (add) — implementation |
 | `"update README.md to mention X"` | STOP | Mutating verb (update) + file extension |
@@ -179,24 +187,31 @@ Phases of `core/hooks/auto-route.sh` (in order):
 1. **Fast path** — short trivial intents (`status`, `push`, `merge`, `git push`, …)
    are classified up front. `status` and `git status` go to ROUTE (read-only);
    everything else goes to STOP.
-2. **Question detection** — prompts shaped as questions (`QUESTION_PAT` matches
+2. **Bug symptom detection** — symptom-style failure reports such as
+   `"로그인이 안돼"` route to STOP → crew:run with Bug Fix intent before the
+   generic read-only complaint path can treat them as diagnostics only.
+3. **Question detection** — prompts shaped as questions (`QUESTION_PAT` matches
    AND no mutating action verb) route to ROUTE → analyst or historian per the
    Auto-Routing Rules table above.
-3. **Read-only review detection** — `READONLY_REVIEW_PAT` + `QUESTION_PAT`
+4. **Read-only review detection** — `READONLY_REVIEW_PAT` + `QUESTION_PAT`
    without `ACTION_PAT` (or with explicit "do not edit") routes to ROUTE → analyst.
-4. **Domain detection** — `ACTION_PAT` + (backend / frontend / fullstack /
+5. **Domain detection** — `ACTION_PAT` + (backend / frontend / fullstack /
    design) routes to STOP → crew:run with a suggested pipeline.
-5. **Extended detection** — `ACTION_PAT` paired with a file extension,
+6. **Extended detection** — `ACTION_PAT` paired with a file extension,
    agent-crew keyword, workflow verb, memory verb, or artifact verb routes
    to STOP → crew:run.
-6. **Mutating-verb fallback (issue #127)** — `ACTION_PAT` matched but no
+7. **Mutating-verb fallback (issue #127)** — `ACTION_PAT` matched but no
    prior layer fired AND no read-only signal is present → STOP → crew:run.
    This guard prevents bare mutating verbs (`fix`, `add`, `commit`, `rename`,
    `refactor`, `remove`, `change`, Korean `수정`) from leaking into the
    read-only ROUTE path.
-7. **General read-only fallback** — no `ACTION_PAT` match, no specific
+8. **General read-only fallback** — no `ACTION_PAT` match, no specific
    domain match → ROUTE → analyst ("general user request"). This keeps
    crew:agent as the default for non-action conversational prompts.
+
+Every STOP or ROUTE directive appends a `PROMPT_COMPILER` block. Downstream
+agents should consume that compiled context instead of asking the user to
+rewrite the original prompt into a professional engineering task shape.
 
 The fallback ordering preserves both acceptance criteria of issue #127:
 read-only Q&A stays on crew:agent (#1, #2) while mutating requests always

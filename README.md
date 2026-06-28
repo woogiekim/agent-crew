@@ -92,6 +92,8 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 
 - **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run; the same helper now reports interaction intensity, ambiguity score, and a default 20% ambiguity threshold for deep/strict workflows
 - **Lean workflow methodology** — command files stay thin while shared rules define `Align -> Plan -> Execute/TDD -> Review`, context diet, workflow-origin vs target-scope handling, bounded reviewer loops, and fake-completion scanning. Standard-risk quality gates report concrete gaps and allow proceed / fix-gaps / strict-100 decisions when coverage is above threshold; high-risk gates remain strict.
+- **Minimal-change decision gate** — analyst/planner output records Need Analyzer answers, ordered Capability Search, `Will Do`, `Will NOT Do`, and a diff budget in existing artifacts. The planning-time gate rejects implementation pipelines when reuse, configuration, deletion, existing APIs, or platform capabilities can satisfy the request first.
+- **Prompt Compiler hook** — `auto-route.sh` treats natural user input as source material, not as something to reject. STOP/ROUTE directives now include a `PROMPT_COMPILER` block with intent, normalized task, project context, architecture rules, risk assessment, success criteria, deliverables, soft-validation policy, and role-specific prompts for downstream agents.
 - **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
 - **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
 - **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
@@ -509,12 +511,12 @@ The merged analyst+planner step automatically selects which agents to run based 
 
 | Request type | stages |
 |---|---|
-| Backend API / domain logic | `[["backend"], ["reviewer"]]` |
-| Full-stack including UI | `[["designer", "backend"], ["frontend"], ["reviewer"]]` |
-| UI only | `[["designer"], ["frontend"], ["reviewer"]]` |
+| Backend API / domain logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| UI only | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC | `[["devops"], ["reviewer"]]` |
-| Backend + deployment | `[["backend"], ["devops"], ["reviewer"]]` |
-| Full-stack + deployment | `[["designer", "backend"], ["frontend"], ["devops"], ["reviewer"]]` |
+| Backend + deployment | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Full-stack + deployment | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Design / analysis only | `[]` |
 | Custom agent role matched | custom agent in appropriate stage + `["reviewer"]` last |
 
@@ -867,6 +869,14 @@ through agent-crew before an answer is produced:
 - short workflow continuations such as `go`, `continue`, `네`, or
   `진행해주세요` route back into the appropriate crew workflow instead of being
   answered inline
+
+The same hook also acts as a Prompt Compiler. It appends a `PROMPT_COMPILER`
+block to every STOP/ROUTE directive so vague but executable user input is
+normalized and enriched before agents run. The compiled context includes
+intent, goal, `NORMALIZED_TASK`, project rule injection, missing-information
+recovery, risk assessment, deliverables, success criteria, and role-specific
+prompt slices. The hook should ask the user to rewrite only when a request is
+unsafe, impossible, or outside project scope.
 
 Codex `$crew-*` wrapper commands are treated as explicit workflow invocations
 when they appear at the beginning of the prompt. For example, `$crew-run 코드리뷰`

@@ -10,6 +10,30 @@ Enables the reviewer agent to systematically verify that an implementation match
 
 ---
 
+## Delete-First Review Order
+
+Before correctness/style review, check whether the implementation should be
+smaller:
+
+1. What can be deleted?
+2. What is duplicated?
+3. What already exists in the project?
+4. What is over-engineered?
+5. Which abstraction is unnecessary?
+6. Which dependency is unnecessary?
+7. Which code can become configuration or platform behavior?
+
+Blocking findings include unnecessary abstractions, generic frameworks,
+premature optimization, duplicated configuration, overly flexible APIs,
+speculative extensibility, additional layers without measurable value,
+unnecessary interfaces, deep inheritance, and god objects.
+
+Every new class must justify single responsibility, net complexity reduction,
+inability to reuse/extend existing code, and easier future maintenance. Every
+new dependency must justify why existing project code, the standard library,
+framework, browser, database, Kubernetes, or platform capabilities are
+insufficient.
+
 ## PRD Coverage Matrix
 
 For each item in the PRD's Core Features list, verify whether it is present in the implementation:

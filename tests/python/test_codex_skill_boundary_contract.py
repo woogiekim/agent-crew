@@ -31,6 +31,16 @@ def test_agent_crew_bootstrap_preserves_only_explicit_skill_context():
     assert "domain-specific Codex skill context" not in text
 
 
+def test_codex_fallback_preserves_prompt_compiler_contract():
+    text = read("adapters/codex/skill/agent-crew/SKILL.md")
+
+    assert "prompt compiler, not a rejection gate" in text
+    assert "infer intent" in text
+    assert "normalize the task" in text
+    assert "role-specific prompt context" in text
+    assert "Reject only unsafe, impossible, or out-of-scope requests." in text
+
+
 def test_run_command_current_session_limits_automatic_skill_sources():
     text = read("core/commands/run.md")
 

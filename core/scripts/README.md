@@ -119,6 +119,12 @@ invocation in SKILL.md; generic adds guidance).
   default bridge is installed because `crew run` records `handoff_ready`
   through the internal fallback. `crew doctor` includes this probe in host
   diagnostics.
+- `prune-codex-global-hooks.py` — removes legacy global Codex agent-crew hook
+  registrations from `~/.codex/hooks.json` once a project-local
+  `.codex/hooks.json` exists. It preserves user hooks and only removes commands
+  pointing at managed `{AGENT_CREW_HOME}/hooks/*.sh` scripts, preventing
+  duplicate `UserPromptSubmit` STOP/ROUTE injection when Codex loads both
+  scopes.
 - `interactive-question-state.py` — stores provider-neutral structured question
   choices under task or project state so native host UI selections, such as
   Codex Plan mode `request_user_input`, are auditable and not re-asked on
@@ -210,7 +216,10 @@ invocation in SKILL.md; generic adds guidance).
   TDD-capable stages and followed by a reviewer stage; every TDD stage must
   contain exactly one code implementer and be followed immediately by a solo
   reviewer stage, so multi-agent or batched code stages must be split and each
-  implementer gets its own TDD + review loop.
+  implementer gets its own TDD + review loop. The same gate validates
+  `decision_context` for mutating implementation work: Need Analyzer answers,
+  ordered Capability Search, diff budget, Will Do / Will NOT Do, and the reason
+  new code is allowed.
 - `quality-loop-check.py` — validates that completed mutating implementation
   tasks have a TDD-capable implementation stage, a later reviewer stage,
   implementer/TDD completion events, reviewer approval, and rework/re-review

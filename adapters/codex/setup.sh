@@ -141,6 +141,21 @@ if not dest.exists() or dest.read_text(encoding="utf-8") != content:
 PYEOF
 }
 
+prune_codex_global_hooks_json() {
+  local pruner="${AGENT_CREW_HOME}/scripts/prune-codex-global-hooks.py"
+  if [ ! -f "${pruner}" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -f "${SOURCE_ROOT}/core/scripts/prune-codex-global-hooks.py" ]; then
+    pruner="${SOURCE_ROOT}/core/scripts/prune-codex-global-hooks.py"
+  fi
+
+  [ -f "${pruner}" ] || return 0
+
+  python3 "${pruner}" \
+    --global-hooks "${CODEX_HOME}/hooks.json" \
+    --project-hooks "${PROJECT_ROOT}/.codex/hooks.json" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --format text || true
+}
+
 merge_codex_config_toml() {
   local src="$1"
   local dest="$2"
@@ -530,6 +545,7 @@ fi
 chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
 copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md"
 write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
+prune_codex_global_hooks_json
 install_codex_skills
 install_system_agents_codex
 install_user_agents_codex

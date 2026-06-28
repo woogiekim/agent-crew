@@ -32,6 +32,7 @@ PYTHON_SCRIPTS=(
   "readiness-metrics.py"
   "readiness-gate.py"
   "readiness-workload-validate.py"
+  "prune-codex-global-hooks.py"
 )
 
 # Shell scripts in core/scripts/ — exclude smoke-test-state which is itself

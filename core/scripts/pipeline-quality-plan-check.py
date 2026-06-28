@@ -121,6 +121,31 @@ _COMPILED_PRD_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     for pattern, slug in PRD_PLACEHOLDER_PATTERNS
 ]
 
+NEED_ANALYSIS_KEYS = [
+    "can_solve_without_code",
+    "existing_project_code",
+    "framework_functionality",
+    "standard_library",
+    "configuration",
+    "infrastructure",
+    "existing_api",
+    "delete_instead",
+]
+
+CAPABILITY_SEARCH_ORDER = [
+    "existing_project_code",
+    "existing_utilities",
+    "language_features",
+    "standard_library",
+    "framework_features",
+    "installed_libraries",
+    "platform_capabilities",
+    "infrastructure_configuration",
+]
+
+DIFF_BUDGET_CATEGORIES = {"XS", "S", "M", "L", "XL"}
+NEED_ANALYSIS_ANSWERS = {"yes", "no"}
+
 _BLOCKQUOTE_RE = re.compile(r"^\s*>")
 _FENCE_RE = re.compile(r"^\s*```")
 _AC_ID_RE = re.compile(r"\bAC-\d+\b", re.IGNORECASE)
@@ -227,6 +252,105 @@ def stage_acceptance_criteria_ids(stages: list) -> list[str]:
     return ids
 
 
+def _nonempty_list(value: object) -> bool:
+    return isinstance(value, list) and any(str(item).strip() for item in value)
+
+
+def validate_minimal_change_decision_context(
+    pipeline: dict,
+    required: bool,
+    shape: dict,
+) -> dict:
+    """Validate Ponytail-inspired minimal-change planning context.
+
+    This intentionally uses the existing open-ended ``pipeline.json`` surface:
+    no new state file, no new schema version, and no dependency beyond the
+    Python standard library.
+    """
+
+    failures: list[str] = []
+    context = pipeline.get("decision_context")
+    if not required:
+        return {
+            "required": False,
+            "present": isinstance(context, dict),
+            "failures": failures,
+        }
+
+    if not isinstance(context, dict):
+        failures.append("missing_minimal_change_decision_context")
+        return {
+            "required": True,
+            "present": False,
+            "failures": failures,
+        }
+
+    need_analysis = context.get("need_analysis")
+    missing_need_keys: list[str] = []
+    invalid_need_keys: list[str] = []
+    yes_answers: list[str] = []
+    if not isinstance(need_analysis, dict):
+        failures.append("missing_need_analysis")
+    else:
+        for key in NEED_ANALYSIS_KEYS:
+            answer = str(need_analysis.get(key, "")).strip().lower()
+            if answer == "":
+                missing_need_keys.append(key)
+            elif answer not in NEED_ANALYSIS_ANSWERS:
+                invalid_need_keys.append(key)
+            elif answer == "yes":
+                yes_answers.append(key)
+        if missing_need_keys:
+            failures.append("incomplete_need_analysis")
+        if invalid_need_keys:
+            failures.append("invalid_need_analysis_answer")
+
+    capability_search = context.get("capability_search")
+    if isinstance(capability_search, list):
+        search_order = [str(item).strip() for item in capability_search]
+    else:
+        search_order = []
+
+    if search_order != CAPABILITY_SEARCH_ORDER:
+        failures.append("capability_search_order_incomplete")
+
+    diff_budget = context.get("diff_budget")
+    diff_category = ""
+    if isinstance(diff_budget, dict):
+        diff_category = str(diff_budget.get("category", "")).strip().upper()
+    if diff_category not in DIFF_BUDGET_CATEGORIES:
+        failures.append("invalid_diff_budget")
+    if diff_category in {"L", "XL"} and not _nonempty_list(
+        context.get("smaller_alternatives_rejected")
+    ):
+        failures.append("large_diff_budget_missing_rejected_alternatives")
+
+    if not _nonempty_list(context.get("will_do")):
+        failures.append("missing_will_do")
+    if not _nonempty_list(context.get("will_not_do")):
+        failures.append("missing_will_not_do")
+    if not str(context.get("selected_solution", "")).strip():
+        failures.append("missing_selected_solution")
+    if (
+        shape.get("has_implementation_stage")
+        and not yes_answers
+        and not str(context.get("new_code_allowed_reason", "")).strip()
+    ):
+        failures.append("missing_new_code_allowed_reason")
+    if shape.get("has_implementation_stage") and yes_answers:
+        failures.append("need_analysis_yes_requires_no_implementation")
+
+    return {
+        "required": True,
+        "present": True,
+        "failures": sorted(set(failures)),
+        "yes_answers": yes_answers,
+        "missing_need_keys": missing_need_keys,
+        "invalid_need_keys": sorted(invalid_need_keys),
+        "diff_budget": diff_category,
+    }
+
+
 def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> dict:
     task_text = task if task is not None else str(pipeline.get("task", ""))
     stages = pipeline.get("stages") or []
@@ -234,10 +358,21 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
     code_task = looks_code_implementation_task(task_text)
     required = looks_mutating_task(task_text) and (code_task or shape["has_implementation_stage"])
 
+    minimal_change = validate_minimal_change_decision_context(
+        pipeline,
+        required,
+        shape,
+    )
+    no_code_route = bool(
+        minimal_change.get("yes_answers")
+        and not shape["has_implementation_stage"]
+        and not minimal_change["failures"]
+    )
+
     failures: list[str] = []
     implementation_stage_results: list[dict] = []
 
-    if required:
+    if required and not no_code_route:
         if not shape["has_implementation_stage"]:
             failures.append("missing_pipeline_implementation_stage")
 
@@ -271,6 +406,8 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
         if not shape["has_reviewer_after_each_qa_verify"]:
             failures.append("missing_pipeline_reviewer_after_qa_verify")
 
+    failures.extend(minimal_change["failures"])
+
     return {
         "passed": not failures,
         "required": required,
@@ -279,6 +416,7 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
         "task": task_text,
         "pipeline_shape": shape,
         "implementation_stages": implementation_stage_results,
+        "minimal_change_decision": minimal_change,
     }
 
 

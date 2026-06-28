@@ -52,6 +52,20 @@ Review spec compliance before code quality:
 Do not collapse these reasons into a generic `review_needs_changes` verdict
 when the narrower reason is known.
 
+## Delete-First Review Lens
+
+Before the static correctness/style pass, apply the Delete-First Review Order
+from `~/.agent-crew/system/agents/skills/code-review.md`. Start by looking for
+code, classes, dependencies, abstractions, or configuration that should not have
+been added at all. If the same outcome can be achieved through existing project
+code, standard/framework/platform capability, configuration, deletion, or
+composition, report a blocking `code_quality` finding instead of polishing the
+unnecessary implementation.
+
+Do not require proof-only artifacts for this lens. Use the diff, PRD,
+`pipeline.json.decision_context`, existing code paths, dependency manifests,
+and test results as evidence.
+
 ## Test Checklist Review Order
 
 When invoked with `MODE: test-checklist`, perform a checklist-only review of
@@ -811,6 +825,18 @@ git -C "${PROJECT_ROOT}" diff HEAD~5..HEAD --stat 2>/dev/null || true
 - Any gaps, regressions, or deviations?
 
 ### Step 2.5: Context-Break Line Break Review
+
+First apply the Delete-First Review Lens:
+
+- What can be deleted?
+- What is duplicated?
+- What already exists?
+- What is over-engineered?
+- Which abstraction, class, interface, or dependency is unnecessary?
+- Which code can become configuration or platform behavior?
+
+Only after this lens passes should the reviewer continue with the detailed
+quality checks below.
 
 Inspect changed code for missing blank lines between adjacent statements whose
 implementation context changes. This check applies to all programming

@@ -42,6 +42,40 @@ def _passing_pipeline() -> dict:
             "reviewer",
         ],
         "completed_stages": 0,
+        "decision_context": _minimal_decision_context(),
+    }
+
+
+def _minimal_decision_context() -> dict:
+    return {
+        "need_analysis": {
+            "can_solve_without_code": "no",
+            "existing_project_code": "no",
+            "framework_functionality": "no",
+            "standard_library": "no",
+            "configuration": "no",
+            "infrastructure": "no",
+            "existing_api": "no",
+            "delete_instead": "no",
+        },
+        "capability_search": [
+            "existing_project_code",
+            "existing_utilities",
+            "language_features",
+            "standard_library",
+            "framework_features",
+            "installed_libraries",
+            "platform_capabilities",
+            "infrastructure_configuration",
+        ],
+        "diff_budget": {
+            "category": "S",
+            "rationale": "Smallest implementation path after reuse/configuration search.",
+        },
+        "will_do": ["Implement the narrow behavior requested."],
+        "will_not_do": ["No new dependency.", "No schema change."],
+        "selected_solution": "Small implementation change after existing capabilities were insufficient.",
+        "new_code_allowed_reason": "No existing project, platform, configuration, or standard-library capability satisfies the requirement.",
     }
 
 
@@ -159,6 +193,7 @@ def test_plan_checker_accepts_split_tdd_implementation_stages(tmp_path: Path):
                 "reviewer",
             ],
             "completed_stages": 0,
+            "decision_context": _minimal_decision_context(),
         },
     )
 
@@ -306,6 +341,7 @@ def test_plan_checker_accepts_qa_verify_between_implementation_and_reviewer(tmp_
                 "reviewer",
             ],
             "completed_stages": 0,
+            "decision_context": _minimal_decision_context(),
         },
     )
 
@@ -381,6 +417,7 @@ def test_plan_checker_accepts_feature_deploy_after_code_review(tmp_path: Path):
                 "reviewer",
             ],
             "completed_stages": 0,
+            "decision_context": _minimal_decision_context(),
         },
     )
 
@@ -443,6 +480,116 @@ def test_plan_checker_ignores_design_only_pipeline(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["required"] is False
+
+
+def test_plan_checker_blocks_missing_minimal_change_decision_context(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a backend feature",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "missing_minimal_change_decision_context" in payload["failures"]
+
+
+def test_plan_checker_blocks_implementation_when_need_analysis_found_no_code_solution(tmp_path: Path):
+    decision_context = _minimal_decision_context()
+    decision_context["need_analysis"]["configuration"] = "yes"
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a backend feature",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 0,
+            "decision_context": decision_context,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "need_analysis_yes_requires_no_implementation" in payload["failures"]
+
+
+def test_plan_checker_accepts_no_code_route_without_implementation_stage(tmp_path: Path):
+    decision_context = _minimal_decision_context()
+    decision_context["need_analysis"]["can_solve_without_code"] = "yes"
+    decision_context["need_analysis"]["configuration"] = "yes"
+    decision_context.pop("new_code_allowed_reason")
+    decision_context["diff_budget"] = {
+        "category": "XS",
+        "rationale": "Configuration-only route.",
+    }
+    decision_context["will_do"] = ["Recommend the existing configuration route."]
+    decision_context["will_not_do"] = ["No implementation stage."]
+    decision_context["selected_solution"] = "Use configuration instead of new code."
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a backend feature by configuration only",
+            "stages": [],
+            "completed_stages": 0,
+            "decision_context": decision_context,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["required"] is True
+    assert payload["minimal_change_decision"]["yes_answers"] == [
+        "can_solve_without_code",
+        "configuration",
+    ]
+
+
+def test_plan_checker_blocks_invalid_need_analysis_answer(tmp_path: Path):
+    decision_context = _minimal_decision_context()
+    decision_context["need_analysis"]["can_solve_without_code"] = "maybe"
+    decision_context["need_analysis"]["existing_project_code"] = "unknown"
+    decision_context["need_analysis"]["configuration"] = "n/a"
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Implement a backend feature",
+            "stages": [
+                {"agents": ["backend"], "tdd_parallel": True},
+                "reviewer",
+            ],
+            "completed_stages": 0,
+            "decision_context": decision_context,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_need_analysis_answer" in payload["failures"]
+    assert payload["minimal_change_decision"]["invalid_need_keys"] == [
+        "can_solve_without_code",
+        "configuration",
+        "existing_project_code",
+    ]
 
 
 # ---------------------------------------------------------------------------

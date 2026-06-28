@@ -40,6 +40,9 @@ assert_not_contains "${codex_setup}" '${HOME}/.codex/agent-crew/skills' "dry-run
 it "Codex setup registers automatic issue reporter hooks"
 assert_contains "${codex_setup}" "auto-issue-report.sh" "Codex hooks must route agent-crew bug reports"
 
+it "Codex setup prunes managed global hook duplicates"
+assert_contains "${codex_setup}" "prune-codex-global-hooks.py" "Codex setup must remove legacy global agent-crew hook duplicates"
+
 it "Claude setup registers automatic issue reporter hooks"
 claude_setup=$(cat "${REPO_ROOT}/adapters/claude/setup.sh")
 assert_contains "${claude_setup}" "auto-issue-report.sh" "Claude hooks must route agent-crew bug reports"

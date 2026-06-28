@@ -183,6 +183,43 @@ class TestMutatingRoutesToCrewRun:
         assert "INLINE_IMPLEMENTATION_OR_ANSWER: FORBIDDEN" in ctx
 
 
+class TestPromptCompilerContext:
+    """The hook compiles natural language into structured execution context."""
+
+    def test_symptom_statement_compiles_to_bug_fix_stop_route(self):
+        out = _run_hook("로그인이 안돼")
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] STOP" in ctx
+        assert "PROMPT_COMPILER:" in ctx
+        assert "Intent: Bug Fix" in ctx
+        assert "NORMALIZED_TASK: Investigate and resolve the reported login failure." in ctx
+        assert "Soft validation: normalize and proceed unless unsafe, impossible, or outside project scope." in ctx
+        assert "Developer prompt:" in ctx
+        assert "Tester prompt:" in ctx
+
+    @pytest.mark.parametrize("prompt", ["버그 고쳐줘", "고쳐줘"])
+    def test_general_korean_fix_request_compiles_to_bug_fix_stop_route(self, prompt):
+        out = _run_hook(prompt)
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] STOP" in ctx
+        assert "PROMPT_COMPILER:" in ctx
+        assert "Intent: Bug Fix" in ctx
+        assert "ROUTE_LOCK: crew-run" in ctx
+
+    def test_read_only_route_also_receives_compiled_prompt_context(self):
+        out = _run_hook("explain how the supervisor works")
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] ROUTE" in ctx
+        assert "PROMPT_COMPILER:" in ctx
+        assert "Intent: Investigation" in ctx
+        assert "NORMALIZED_TASK: Explain how the supervisor works." in ctx
+        assert "Analyst prompt:" in ctx
+        assert "Risk assessment:" in ctx
+
+
 # ---------------------------------------------------------------------------
 # Edge cases — mutating verbs paired with explicit read-only signals must
 # still route to crew:agent (read-only takes precedence over verb-only

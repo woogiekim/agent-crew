@@ -29,6 +29,33 @@ Canonical shape:
   "stages":           [{"agents": ["backend"], "tdd_parallel": true}, ["reviewer"]],
   "completed_stages": 0,
   "needs_creation":   [],
+  "decision_context": {
+    "need_analysis": {
+      "can_solve_without_code": "no",
+      "existing_project_code": "no",
+      "framework_functionality": "no",
+      "standard_library": "no",
+      "configuration": "no",
+      "infrastructure": "no",
+      "existing_api": "no",
+      "delete_instead": "no"
+    },
+    "capability_search": [
+      "existing_project_code",
+      "existing_utilities",
+      "language_features",
+      "standard_library",
+      "framework_features",
+      "installed_libraries",
+      "platform_capabilities",
+      "infrastructure_configuration"
+    ],
+    "diff_budget": {"category": "S", "rationale": "Smallest sufficient change."},
+    "will_do": ["Add the requested endpoint."],
+    "will_not_do": ["No schema change.", "No new dependency."],
+    "selected_solution": "Small implementation after reuse/configuration search.",
+    "new_code_allowed_reason": "No existing capability satisfies the request."
+  },
   "stage_agent_status": {
     "1": {"test-writer": "completed", "backend": "completed"}
   },
@@ -41,6 +68,28 @@ Canonical shape:
   "eval_command": ""
 }
 ```
+
+### Minimal-change decision context
+
+`decision_context` records the analyst/planner's minimal-change decision for
+mutating implementation work. It is optional for legacy state and non-mutating
+pipelines, but newly planned implementation pipelines must include it.
+
+The field is intentionally stored inside `pipeline.json` instead of a separate
+proof artifact. It lets the planning-time gate verify that the pipeline tried
+reuse, configuration, deletion, platform capabilities, and smaller diffs before
+new code.
+
+Planning-time validation:
+
+- `need_analysis` must answer every question.
+- `capability_search` must preserve the documented search order.
+- `diff_budget.category` must be `XS`, `S`, `M`, `L`, or `XL`.
+- `will_do`, `will_not_do`, and `selected_solution` must be non-empty.
+- Implementation stages require `new_code_allowed_reason`.
+- If any Need Analyzer answer is `yes`, implementation stages are invalid; the
+  planner must recommend that non-code/reuse/configuration/deletion route first.
+- `L` and `XL` budgets require `smaller_alternatives_rejected`.
 
 ### TDD parallel stage form
 

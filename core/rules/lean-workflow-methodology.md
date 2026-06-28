@@ -45,6 +45,39 @@ Align -> Plan -> Execute/TDD -> Review
 The phase labels are operator-facing simplifications. They do not replace the
 existing `pipeline.json`, progress events, quality-loop, or reviewer contracts.
 
+## Minimal-Change Decision Doctrine
+
+Before planning implementation, prefer the smallest sufficient solution in this
+order:
+
+1. Reuse existing project code or utilities.
+2. Use language, standard-library, framework, runtime, browser, database,
+   Kubernetes, or other platform capabilities.
+3. Change configuration instead of writing code.
+4. Delete or simplify behavior instead of adding behavior.
+5. Compose existing pieces instead of introducing a new abstraction.
+6. Write new code only after the paths above are insufficient.
+
+Analyst/planner output for mutating implementation work must record this
+decision in existing artifacts, not in a new proof-only file:
+
+- `analysis.md`: Need Analyzer answers, capability search result, simplest
+  viable solution, and rejected complexity.
+- `prd.md`: `Will Do`, `Will NOT Do`, and a diff budget (`XS`, `S`, `M`, `L`,
+  or `XL`).
+- `pipeline.json.decision_context`: machine-readable minimal-change summary
+  consumed by `pipeline-quality-plan-check.py`.
+
+If any Need Analyzer answer says the request can be solved without new code,
+the implementation pipeline must stop and recommend that route first. Do not
+emit an implementation stage for work that configuration, deletion, existing
+APIs, existing utilities, or platform capabilities already satisfy.
+
+For planned large changes (`L` or `XL`), explicitly list why smaller
+alternatives were rejected. New classes and new dependencies require a short
+justification; if the justification is weak, remove the class/dependency from
+the plan.
+
 ## Context Diet
 
 Minimize token load before adding more process.

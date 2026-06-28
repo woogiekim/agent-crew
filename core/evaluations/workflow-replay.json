@@ -18,7 +18,42 @@
           "reviewer"
         ],
         "completed_stages": 0,
-        "needs_creation": []
+        "needs_creation": [],
+        "decision_context": {
+          "need_analysis": {
+            "can_solve_without_code": "no",
+            "existing_project_code": "no",
+            "framework_functionality": "no",
+            "standard_library": "no",
+            "configuration": "no",
+            "infrastructure": "no",
+            "existing_api": "no",
+            "delete_instead": "no"
+          },
+          "capability_search": [
+            "existing_project_code",
+            "existing_utilities",
+            "language_features",
+            "standard_library",
+            "framework_features",
+            "installed_libraries",
+            "platform_capabilities",
+            "infrastructure_configuration"
+          ],
+          "diff_budget": {
+            "category": "S",
+            "rationale": "Smallest sufficient implementation fixture."
+          },
+          "will_do": [
+            "Implement the replayed backend behavior."
+          ],
+          "will_not_do": [
+            "No new dependency.",
+            "No schema change."
+          ],
+          "selected_solution": "Small implementation after reuse/configuration search.",
+          "new_code_allowed_reason": "No existing capability satisfies the replayed implementation task."
+        }
       },
       "state_transitions": [
         "phase_0",
@@ -136,7 +171,8 @@
             "tool": "pipeline-quality-plan-check.py",
             "returncode": 1,
             "failures": [
-              "implementation_stage_without_tdd_parallel"
+              "implementation_stage_without_tdd_parallel",
+              "missing_minimal_change_decision_context"
             ]
           },
           {
@@ -396,7 +432,42 @@
           "reviewer"
         ],
         "completed_stages": 1,
-        "needs_creation": []
+        "needs_creation": [],
+        "decision_context": {
+          "need_analysis": {
+            "can_solve_without_code": "no",
+            "existing_project_code": "no",
+            "framework_functionality": "no",
+            "standard_library": "no",
+            "configuration": "no",
+            "infrastructure": "no",
+            "existing_api": "no",
+            "delete_instead": "no"
+          },
+          "capability_search": [
+            "existing_project_code",
+            "existing_utilities",
+            "language_features",
+            "standard_library",
+            "framework_features",
+            "installed_libraries",
+            "platform_capabilities",
+            "infrastructure_configuration"
+          ],
+          "diff_budget": {
+            "category": "S",
+            "rationale": "Smallest sufficient implementation fixture."
+          },
+          "will_do": [
+            "Implement the replayed backend behavior."
+          ],
+          "will_not_do": [
+            "No new dependency.",
+            "No schema change."
+          ],
+          "selected_solution": "Small implementation after reuse/configuration search.",
+          "new_code_allowed_reason": "No existing capability satisfies the replayed implementation task."
+        }
       },
       "state_transitions": [
         "phase_0",
@@ -524,7 +595,42 @@
           "reviewer"
         ],
         "completed_stages": 1,
-        "needs_creation": []
+        "needs_creation": [],
+        "decision_context": {
+          "need_analysis": {
+            "can_solve_without_code": "no",
+            "existing_project_code": "no",
+            "framework_functionality": "no",
+            "standard_library": "no",
+            "configuration": "no",
+            "infrastructure": "no",
+            "existing_api": "no",
+            "delete_instead": "no"
+          },
+          "capability_search": [
+            "existing_project_code",
+            "existing_utilities",
+            "language_features",
+            "standard_library",
+            "framework_features",
+            "installed_libraries",
+            "platform_capabilities",
+            "infrastructure_configuration"
+          ],
+          "diff_budget": {
+            "category": "S",
+            "rationale": "Smallest sufficient implementation fixture."
+          },
+          "will_do": [
+            "Implement the replayed backend behavior."
+          ],
+          "will_not_do": [
+            "No new dependency.",
+            "No schema change."
+          ],
+          "selected_solution": "Small implementation after reuse/configuration search.",
+          "new_code_allowed_reason": "No existing capability satisfies the replayed implementation task."
+        }
       },
       "state_transitions": [
         "phase_0",

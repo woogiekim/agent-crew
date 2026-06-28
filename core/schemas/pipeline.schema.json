@@ -119,6 +119,11 @@
         }
       }
     },
+    "decision_context": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional for legacy/non-mutating state. Required by the planning-time quality gate for newly planned mutating implementation work. Records Need Analyzer answers, ordered Capability Search, diff budget, Will Do, Will NOT Do, selected solution, and the reason new code is allowed."
+    },
     "stage_agent_status": {
       "type": "object",
       "description": "Per-stage per-agent terminal status. Outer key is the 1-based stage index as a string; inner keys are agent names; inner values are completed | crashed | blocked. Written by supervisor-stages Phase 2 after each agent in a parallel stage reaches a terminal state.",

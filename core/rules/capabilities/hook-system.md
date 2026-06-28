@@ -2,14 +2,24 @@
 
 ## Purpose
 
-The host exposes a lifecycle-hook surface (`PreToolUse`, `PostToolUse`,
-`SessionStart`, etc.) into which core wires validators that enforce
-invariants at execution time, rather than relying on model-side
-guidance alone. This is the difference between "the model is told not
-to do X" and "the host blocks X."
+The host exposes a lifecycle-hook surface (`UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `SessionStart`, etc.) into which core wires prompt compilers,
+observers, and only-when-needed validators. The primary prompt-facing hook
+responsibility is to improve user prompts before downstream agents see them:
+normalize, enrich, infer, structure, and optimize. Blocking behavior is a
+backstop for unsafe, impossible, out-of-scope, or invariant-breaking actions,
+not the default user experience.
 
 Consumers:
 
+- **Prompt Compiler routing context** (implemented). The `UserPromptSubmit`
+  `auto-route` hook classifies arbitrary user input, emits the STOP/ROUTE
+  workflow lock, and appends a `PROMPT_COMPILER` block with intent,
+  `NORMALIZED_TASK`, context enrichment, project rules, missing-information
+  recovery, risk assessment, success criteria, deliverables, soft-validation
+  policy, and role-specific prompts for planner/developer/tester/reviewer or
+  analyst/historian. Hook wrapper: `core/hooks/auto-route.sh`. Contract:
+  `core/rules/agent-routing.md`.
 - **Forbid plain-text approval** (Phase G6 — implemented). A
   `PostToolUse[Agent]` validator inspects the agent's response for
   forbidden patterns like "Shall I merge and push?" /
@@ -87,6 +97,10 @@ wraps the script so the contract still holds.
 Hook scripts MUST be idempotent and side-effect-minimal: they read repo
 state, read `approval.md`, inspect tool input, etc. They MUST NOT
 mutate pipeline state (`pipeline.json`, `progress.log`, etc.).
+
+Prompt-facing hooks prefer soft validation. They should transform executable
+but vague input into compiled context and proceed. They should reject only when
+the request cannot be made executable safely or within project scope.
 
 ## Absence Behavior (flag=false)
 

@@ -59,6 +59,14 @@ merge, roll back, or otherwise perform development work, route the request
 through the `crew-run` skill wrapper, which executes the `crew:run` workflow
 intent.
 
+Treat natural-language routing as a prompt compiler, not a rejection gate. If
+the auto-route hook is unavailable or only advisory, compile the user request
+before handoff: infer intent, normalize the task, preserve raw input as
+provenance, inject project rules and minimal-change constraints, assess risk,
+recover missing information from repository conventions before asking, and pass
+role-specific prompt context through requirements collection and supervisor
+handoffs. Reject only unsafe, impossible, or out-of-scope requests.
+
 `crew:agent` is read-only in Codex. Use it only for explanation, lookup,
 investigation, or normalization tasks that do not mutate files, docs, issues,
 commits, or any other repo/state artifact. If the request would change
@@ -186,10 +194,11 @@ crew:run "{original request}"
 
 Then execute the full `crew:run` workflow from `~/.agent-crew/commands/run.md`.
 Preserve the original user wording as the task input, subject to the command
-definition's required normalization and requirements-collection steps. If a
-Codex skill was explicitly invoked before routing, preserve that skill context
-as task metadata and include it in requirements and handoff inputs. Do not treat
-domain-selected third-party host/plugin skills as implicitly approved.
+definition's required normalization, prompt compiler context, and
+requirements-collection steps. If a Codex skill was explicitly invoked before
+routing, preserve that skill context as task metadata and include it in
+requirements and handoff inputs. Do not treat domain-selected third-party
+host/plugin skills as implicitly approved.
 
 For a natural-language read-only question, explanation, diagnostic, status, or
 history request, load the `crew-agent` skill wrapper and behave as if the user

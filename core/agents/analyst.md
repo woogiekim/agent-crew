@@ -229,6 +229,39 @@ If `NEEDS_CLARIFICATION`: emit a structured user-choice intent (see
 to resolve each blocker (max 1 round, max 2 questions). Update
 `requirements.md` with the resolved values, then re-evaluate readiness.
 
+### Step 4.5 — Minimal-change decision
+
+Apply `core/rules/lean-workflow-methodology.md` § Minimal-Change Decision
+Doctrine before planning implementation stages.
+
+Answer the Need Analyzer questions and run Capability Search in this exact order:
+
+1. Existing project code
+2. Existing utilities
+3. Language features
+4. Standard library
+5. Framework features
+6. Third-party libraries already installed
+7. Platform capabilities
+8. Infrastructure configuration
+
+If existing code, configuration, deletion, infrastructure, an existing API, or a
+platform capability can satisfy the request, do not emit an implementation
+stage. Record the recommended non-code/reuse/configuration route in
+`analysis.md` and make the pipeline docs-only/config-only/review-only as
+appropriate.
+
+Estimate a diff budget before implementation planning:
+
+- `XS`: 0-20 lines
+- `S`: 20-50 lines
+- `M`: 50-150 lines
+- `L`: 150-300 lines
+- `XL`: 300+ lines
+
+Always choose the smallest category that can satisfy the requirements. For `L`
+or `XL`, record `smaller_alternatives_rejected` with concrete reasons.
+
 ### Step 5 — Write analysis.md
 
 ```bash
@@ -242,6 +275,25 @@ cat > "${TASK_DIR}/context/analysis.md" << 'EOF'
 | Item | Severity | Resolution |
 |---|---|---|
 | {description} | {low|medium|high} | {assumption or action} |
+
+## Minimal-Change Decision
+| Check | Answer | Evidence / Rationale |
+|---|---|---|
+| Can this be solved without writing code? | {yes|no} | {evidence} |
+| Existing project code | {yes|no} | {evidence} |
+| Framework functionality | {yes|no} | {evidence} |
+| Standard library | {yes|no} | {evidence} |
+| Configuration | {yes|no} | {evidence} |
+| Infrastructure | {yes|no} | {evidence} |
+| Existing API | {yes|no} | {evidence} |
+| Delete instead | {yes|no} | {evidence} |
+
+## Capability Search
+{ordered search result and selected solution}
+
+## Diff Budget
+- Category: {XS|S|M|L|XL}
+- Rationale: {why smaller categories are insufficient}
 
 ## Evidence-Grounded Reasoning
 | Evidence | Inference | Conclusion |
@@ -323,7 +375,37 @@ Write `{TASK_DIR}/pipeline.json`:
   "task": "{TASK}",
   "stages": {determined stages array},
   "needs_creation": [],
-  "completed_stages": 0
+  "completed_stages": 0,
+  "decision_context": {
+    "need_analysis": {
+      "can_solve_without_code": "yes|no",
+      "existing_project_code": "yes|no",
+      "framework_functionality": "yes|no",
+      "standard_library": "yes|no",
+      "configuration": "yes|no",
+      "infrastructure": "yes|no",
+      "existing_api": "yes|no",
+      "delete_instead": "yes|no"
+    },
+    "capability_search": [
+      "existing_project_code",
+      "existing_utilities",
+      "language_features",
+      "standard_library",
+      "framework_features",
+      "installed_libraries",
+      "platform_capabilities",
+      "infrastructure_configuration"
+    ],
+    "diff_budget": {
+      "category": "XS|S|M|L|XL",
+      "rationale": "{why this is the smallest sufficient change}"
+    },
+    "will_do": ["{concrete implementation task}"],
+    "will_not_do": ["{explicit non-goal}"],
+    "selected_solution": "{recommended solution path}",
+    "new_code_allowed_reason": "{only when implementation stages remain}"
+  }
 }
 ```
 
@@ -331,6 +413,11 @@ Set `needs_creation` to a non-empty array only when a task requires domain-speci
 expertise that no builtin agent (planner, designer, frontend, backend, devops,
 resolver, reviewer, qa-owner) can provide without significant prompting
 workarounds.
+
+If any `need_analysis` value is `yes`, implementation stages are forbidden.
+Use an empty/non-implementation pipeline and recommend the existing/configuration
+route first. The planning-time quality gate rejects implementation stages when
+`decision_context.need_analysis` contains a `yes` answer.
 
 #### Mandatory TDD implementation stage
 
@@ -483,6 +570,10 @@ Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
   YAGNI, and DRY from `core/rules/code-quality.md` must guide implementation
   and review when code changes are planned
 - Implementation scope and exclusions
+- `Will Do`: concrete tasks in the smallest sufficient scope
+- `Will NOT Do`: explicit non-goals such as no schema/API/dependency/cache/queue
+  changes unless required
+- `Diff Budget`: `XS|S|M|L|XL` plus rationale
 
 ### Step 7.5 — PRD self-review (writing-plans gate)
 

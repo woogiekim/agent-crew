@@ -336,6 +336,18 @@ READONLY_COMPLAINT_PAT = (
     r"안\s*쓰|안쓰|안\s*되|안되|못\s*하|못하|"
     r"자꾸|계속\s*(?:문제|실패|무시|빠지)"
 )
+BUG_SYMPTOM_PAT = (
+    r"\b(?:login|auth|sign[- ]?in|authentication).{0,80}"
+    r"(?:fail|fails|failed|broken|not\s+work|doesn['’]?t\s+work|error)|"
+    r"(?:fail|fails|failed|broken|not\s+work|doesn['’]?t\s+work|error).{0,80}"
+    r"\b(?:login|auth|sign[- ]?in|authentication)\b|"
+    r"로그인.{0,40}(?:안\s*돼|안돼|안\s*되|안되|실패|오류|에러)|"
+    r"(?:안\s*돼|안돼|안\s*되|안되|실패|오류|에러).{0,40}로그인"
+)
+KOREAN_FIX_REQUEST_PAT = (
+    r"^\s*(?:버그\s*)?고쳐\s*(?:줘|주세요)?\s*[.!?。]*\s*$|"
+    r"^\s*고치\s*(?:자|기|세요)\s*[.!?。]*\s*$"
+)
 REVIEW_MUTATION_PAT = (
     r"fix\s+it|apply\s+the\s+fix|make\s+the\s+change|implement|"
     r"수정해|수정해줘|수정\s*(?:→|->|후|하고|및|,)|고쳐줘|반영해|반영해줘|구현해|"
@@ -356,6 +368,117 @@ def match(pattern):
     return bool(re.search(pattern, prompt, re.IGNORECASE))
 
 
+def _compact_text(text: str, limit: int = 240) -> str:
+    compact = " ".join(str(text).split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _read_only_marker() -> bool:
+    return bool(re.search(
+        r"do\s+not\s+edit|read[- ]only|no\s+files?\s+edited|"
+        r"수정하지\s*마|읽기\s*전용",
+        prompt,
+        re.IGNORECASE,
+    ))
+
+
+def _sentence(text: str) -> str:
+    value = _compact_text(text, 180).strip()
+    if not value:
+        return "Handle the user request."
+    if re.search(r"[.!?]$", value):
+        return value
+    return value + "."
+
+
+def _normalized_task(intent: str, route_kind: str, detected_type: str = "") -> str:
+    if intent == "Bug Fix" and re.search(r"로그인|login|auth|sign[- ]?in", prompt, re.IGNORECASE):
+        return "Investigate and resolve the reported login failure."
+    if intent == "Bug Fix":
+        return "Investigate and resolve the reported failure."
+    if route_kind == "ROUTE" and re.search(r"\bsupervisor\b", prompt, re.IGNORECASE):
+        return "Explain how the supervisor works."
+    if route_kind == "ROUTE":
+        return "Investigate and answer the user's question."
+    if detected_type:
+        return f"Complete the {detected_type} request while preserving project constraints."
+    return _sentence(prompt)
+
+
+def _intent_label(route_kind: str, target_agent: str = "", detected_type: str = "") -> str:
+    if (
+        match(BUG_SYMPTOM_PAT)
+        or match(KOREAN_FIX_REQUEST_PAT)
+        or re.search(r"\bbug\b|버그", prompt, re.IGNORECASE)
+    ):
+        return "Bug Fix"
+    if "refactor" in detected_type or re.search(r"\brefactor\b|리팩터", prompt, re.IGNORECASE):
+        return "Refactoring"
+    if "review" in detected_type or (match(READONLY_REVIEW_PAT) and route_kind == "ROUTE"):
+        return "Code Review"
+    if route_kind == "ROUTE" or target_agent in {"analyst", "historian"}:
+        return "Investigation"
+    if "documentation" in detected_type or re.search(r"\bdocs?|README|문서", prompt, re.IGNORECASE):
+        return "Documentation"
+    return "Feature Development"
+
+
+def _risk_label(route_kind: str, detected_type: str = "") -> str:
+    if route_kind == "ROUTE":
+        return "low"
+    if re.search(r"\b(?:push|merge|deploy|rollback|delete|remove)\b|푸시|머지|배포|롤백|삭제|제거", prompt, re.IGNORECASE):
+        return "high"
+    if "issue" in detected_type:
+        return "medium"
+    return "standard"
+
+
+def _agent_specific_prompts(route_kind: str, target_agent: str, intent: str, normalized: str) -> str:
+    if route_kind == "ROUTE":
+        return (
+            "Agent-specific prompts:\n"
+            f"- Analyst prompt: {normalized} Keep the pass read-only, cite concrete files or state when used, and separate facts from inference.\n"
+            "- Historian prompt: If the question is about session/git/project state, answer from real state files or git output only.\n"
+            "- Reviewer prompt: If this becomes a review, apply delete-first checks before correctness comments."
+        )
+
+    return (
+        "Agent-specific prompts:\n"
+        "- Planner prompt: Use the compiled goal, constraints, risks, scope, and minimal-change decision before choosing stages.\n"
+        "- Developer prompt: Follow the implementation plan, existing architecture, coding standards, diff budget, and existing-code-first rule.\n"
+        "- Tester prompt: Derive behavior coverage, edge cases, regression expectations, and TC mapping before test implementation.\n"
+        "- Reviewer prompt: Apply architecture constraints, delete-first policy, no unnecessary dependency/class checks, and correctness review."
+    )
+
+
+def compile_prompt_context(route_kind: str, *, target_agent: str = "", detected_type: str = "", route_reason: str = "") -> str:
+    intent = _intent_label(route_kind, target_agent, detected_type)
+    normalized = _normalized_task(intent, route_kind, detected_type)
+    risk = _risk_label(route_kind, detected_type)
+    scope = "read-only analysis" if route_kind == "ROUTE" else "mutating implementation workflow"
+    complexity = "low" if route_kind == "ROUTE" else ("medium" if risk == "standard" else risk)
+    diff_budget = "N/A for read-only" if route_kind == "ROUTE" else "Start with XS/S; justify M+ before coding."
+
+    return (
+        "PROMPT_COMPILER:\n"
+        f"- Intent: {intent}\n"
+        f"- Goal: {normalized}\n"
+        f"- NORMALIZED_TASK: {normalized}\n"
+        f"- Background: {_compact_text(prompt)}\n"
+        f"- Scope: {scope}\n"
+        "- Context enrichment: use repository architecture, existing conventions, testing policy, review policy, glossary, and project rules before asking the user.\n"
+        "- Architecture rules: existing code first; platform/configuration before implementation; minimal diff; no duplicate logic; preserve boundaries and backward compatibility.\n"
+        "- Missing information recovery: infer from repository, surrounding files, existing architecture, and implementation patterns before asking a clarification question.\n"
+        f"- Risk assessment: risk={risk}; complexity={complexity}; diff_budget={diff_budget}; breaking_changes=avoid; dependencies=avoid new; db_api_migration=none unless proven required; performance_concurrency_security=review explicitly; testing=required for implementation.\n"
+        "- Success criteria: deterministic downstream prompt, minimal clarification, smallest sufficient change, tests remain passing, stable agent execution.\n"
+        "- Deliverables: root cause or plan, implementation when routed to crew-run, focused tests, review result, validation summary.\n"
+        "- Soft validation: normalize and proceed unless unsafe, impossible, or outside project scope.\n"
+        f"{_agent_specific_prompts(route_kind, target_agent, intent, normalized)}"
+    )
+
+
 def emit_question_route(target_agent: str, route_reason: str):
     question_directive = (
         f"[agent-crew] ROUTE — question detected, routing to {target_agent} ({route_reason}).\n\n"
@@ -370,6 +493,11 @@ def emit_question_route(target_agent: str, route_reason: str):
         f"INLINE_ANSWER: FORBIDDEN\n"
         f"NO_PRELUDE: do not explain, summarize, inspect files, run Bash, or answer before crew-agent starts.\n"
         f"COMPLIANCE: route-directive-guard checks Agent responses for this lock."
+    )
+    question_directive += "\n\n" + compile_prompt_context(
+        "ROUTE",
+        target_agent=target_agent,
+        route_reason=route_reason,
     )
     if not HOST_BRIDGE_READY:
         question_directive += (
@@ -412,6 +540,10 @@ CODEX SKILL WORKFLOW:
    into the workflow so Step 5 requirements and supervisor prompts retain it.
 
 Enter the crew-run workflow now."""
+    directive += "\n\n" + compile_prompt_context(
+        "STOP",
+        detected_type=detected_type,
+    )
     if not HOST_BRIDGE_READY:
         directive += (
             "\n\nHost bridge is unavailable ("
@@ -443,6 +575,18 @@ if re.search(FOLLOWUP_CONTINUATION_PAT, prompt, re.IGNORECASE):
     emit_stop_route(
         "follow-up continuation",
         '  crew:run "continue the prior agent-crew task or request"',
+    )
+
+if match(BUG_SYMPTOM_PAT) and not match(QUESTION_PAT) and not _read_only_marker():
+    emit_stop_route(
+        "bug fix",
+        '  crew:run "Investigate and resolve the reported failure"',
+    )
+
+if match(KOREAN_FIX_REQUEST_PAT) and not match(QUESTION_PAT) and not _read_only_marker():
+    emit_stop_route(
+        "bug fix",
+        '  crew:run "Investigate and resolve the reported failure"',
     )
 
 if match(READONLY_COMPLAINT_PAT) and not match(REVIEW_MUTATION_PAT):
