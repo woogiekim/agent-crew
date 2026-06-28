@@ -74,41 +74,49 @@ if [ ! -x "${MNEMOS_BIN}" ]; then
   fi
 fi
 
-TMP_DIR="$(mktemp -d)"
-cleanup() {
-  rm -rf "${TMP_DIR}"
-}
-trap cleanup EXIT
+python3 - "${TIMEOUT_SECONDS}" "${MNEMOS_BIN}" "$@" <<'PY'
+import subprocess
+import sys
+import tempfile
 
-OUT_FILE="${TMP_DIR}/stdout"
-ERR_FILE="${TMP_DIR}/stderr"
-RC_FILE="${TMP_DIR}/rc"
+timeout = int(sys.argv[1])
+command = sys.argv[2:]
 
-"${MNEMOS_BIN}" "$@" >"${OUT_FILE}" 2>"${ERR_FILE}" &
-PID=$!
-START_EPOCH="$(date +%s)"
+with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+    proc = subprocess.Popen(
+        command,
+        stdout=stdout_file,
+        stderr=stderr_file,
+    )
 
-while kill -0 "${PID}" 2>/dev/null; do
-  NOW_EPOCH="$(date +%s)"
-  ELAPSED=$((NOW_EPOCH - START_EPOCH))
-  if [ "${ELAPSED}" -ge "${TIMEOUT_SECONDS}" ]; then
-    kill "${PID}" 2>/dev/null || true
-    sleep 1
-    kill -9 "${PID}" 2>/dev/null || true
-    wait "${PID}" 2>/dev/null || true
-    cat "${OUT_FILE}" 2>/dev/null || true
-    cat "${ERR_FILE}" >&2 2>/dev/null || true
-    printf 'mnemos-bounded: timed out after %ss: %s %s\n' \
-      "${TIMEOUT_SECONDS}" "${MNEMOS_BIN}" "$*" >&2
-    exit 124
-  fi
-  sleep "${POLL_INTERVAL_SECONDS}"
-done
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
 
-wait "${PID}"
-RC=$?
-printf '%s\n' "${RC}" >"${RC_FILE}"
+        try:
+            proc.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
-cat "${OUT_FILE}" 2>/dev/null || true
-cat "${ERR_FILE}" >&2 2>/dev/null || true
-exit "${RC}"
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        sys.stdout.buffer.write(stdout_file.read())
+        sys.stderr.buffer.write(stderr_file.read())
+        sys.stderr.write(
+            f"mnemos-bounded: timed out after {timeout}s: {' '.join(command)}\n"
+        )
+        raise SystemExit(124)
+
+    stdout_file.seek(0)
+    stderr_file.seek(0)
+    sys.stdout.buffer.write(stdout_file.read())
+    sys.stderr.buffer.write(stderr_file.read())
+    raise SystemExit(rc)
+PY

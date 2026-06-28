@@ -64,6 +64,8 @@ pytest tests/python/test_cost_aggregate.py::TestCostAggregate::test_check_breake
 python3 core/scripts/phase-1-validation.py --plan-only
 python3 core/scripts/phase-2-validation.py --plan-only
 python3 core/scripts/phase-2-validation.py --level unit --format text
+python3 core/scripts/phase-2-validation.py --level smoke --output /tmp/phase-2-smoke.json --rerun-failed-once --format text
+python3 core/scripts/phase-2-validation.py --level beta --output /tmp/phase-2-beta.json --format text
 ```
 
 ### Coverage policy

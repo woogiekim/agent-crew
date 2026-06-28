@@ -57,9 +57,10 @@ Per-task columns:
                      `pipeline.json.completed_stages`; emitted from
                      `STAGE` event count in `progress.buffer.jsonl`)
 - `RETRY`          — `RETRY` event count
-- `TOKENS`         — `input_tokens + output_tokens` summed across
-                     `${STATE_DIR}/cost/${TASK_ID}.jsonl` (when
-                     `cost_tracking=true`; `—` otherwise)
+- `TOKENS`         — token totals summed across
+                     `${STATE_DIR}/cost/${TASK_ID}.jsonl`; a row's
+                     `total_tokens` is used when present, otherwise
+                     `input_tokens + output_tokens` is used
 - `TASK`           — original task description (truncated to 60 chars)
 
 Aggregate footer:
@@ -78,7 +79,7 @@ The script reads three independent data sources per task:
 |---|---|---|
 | `register.json` (Phase F4+) | Every task | Status, current phase, blockers |
 | `progress.buffer.jsonl` (Phase F5+) | Every task | Duration, stage/retry counts |
-| `${STATE_DIR}/cost/${TASK_ID}.jsonl` (Phase 3.3+, `cost_tracking=true`) | Claude host with the capability flag | Token totals |
+| `${STATE_DIR}/cost/${TASK_ID}.jsonl` (Phase 3.3+ and host-bridge token ingestion) | Full cost-tracking adapters, plus bridge runs whose CLI output exposes token usage | Token totals |
 
 Any missing source renders as `—` in the column; the script never
 errors on absence. Pre-F4/F5 task directories show partial data

@@ -120,6 +120,16 @@ def test_direct_readers_skip_bad_lines_and_legacy_logs(tmp_path: Path):
         encoding="utf-8",
     )
     assert telemetry.read_cost_file(state_dir, task_id)["tokens_total"] == 1500
+    cost_file.write_text(
+        json.dumps({"input_tokens": 0, "output_tokens": 0, "total_tokens": 28904})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert telemetry.read_cost_file(state_dir, task_id) == {
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "tokens_total": 28904,
+    }
 
     (task_dir / "tool-events.jsonl").write_text("\n{bad json\n{}\n", encoding="utf-8")
     assert telemetry.read_tool_events(task_dir) == [{}]

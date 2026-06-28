@@ -72,6 +72,7 @@ documents the planned surface so adapter authors can prepare.
 | `classify-trivial-intent.sh` | 0 | Decide whether an input matches one of the 7 trivial operations (merge, push, deploy, tag, rollback, status, commit_only) | `core/commands/run.md` |
 | `check-task-injection.py` | 14 | Mid-injection duplicate disambiguation prompt (Step 1.6 already does dup detection via inline Python; this script would extend with merge/queue/cancel options) | `core/rules/capabilities/hook-system.md` |
 | `cost-aggregate.py` | E3.3 | Aggregate per-call token data into a per-task / crew-wide summary | `core/commands/cost.md`, `core/rules/capabilities/cost-tracking.md` |
+| `host-bridge-token-usage.py` | E3.3+ | Normalize Claude JSON or Codex CLI token usage emitted by host bridges into `${STATE_DIR}/cost/${TASK_ID}.jsonl` | `adapters/claude/bin/claude-host-bridge`, `adapters/codex/bin/codex-host-bridge` |
 | ~~`handoff-page-out.py`~~ | superseded by Phase 3.5 | Auto-summarize `handoff.md` when it exceeds a threshold (opt-in) — **now implemented via the documenter agent in `MODE=page-out`, not a standalone script**. See `core/agents/documenter.md` § Page-Out Mode and `core/agents/supervisor-stages.md` § Post-stage handoff page-out. | `core/rules/quality-loop.md` § Page-Out As Hygiene Operation |
 
 Each script's introduction PR also adds a corresponding entry in the
@@ -95,6 +96,10 @@ invocation in SKILL.md; generic adds guidance).
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
 - `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
   telemetry, memory search, retrieval evaluation, and update dry-run budgets.
+  It supports sampled latency checks with warmup exclusion, explicit
+  median/p95/max aggregation, and an isolated `AGENT_CREW_HOME` mode for
+  status/telemetry measurements that should not depend on the operator's live
+  task state.
 - `memory-gc.py` — dry-run-first memory lifecycle GC. It reads the mnemos FTS
   index, classifies duplicate/stale/low-value candidates, scores trust, archives
   selected metadata, and writes an agent-crew eviction list used by fast memory
@@ -149,10 +154,12 @@ invocation in SKILL.md; generic adds guidance).
   `{TASK_DIR}/context/quality-metrics.json` when present.
 - `phase-2-validation.py` — runs or plans the second validation pass across
   unit, smoke, integration, alpha, and beta levels, then emits structured
-  findings, gaps, and recommended follow-up actions for performance, quality,
+  findings, gaps, recommended follow-up actions, per-command log artifacts,
+  output hashes, and compact failure markers for performance, quality,
   usability/progress confidence, reusability/memory, reliability,
   observability, regression safety, cost efficiency, compatibility,
-  security/privacy, and maintainability.
+  security/privacy, and maintainability. `--rerun-failed-once` records flaky
+  first-attempt failures and lets the gate pass when the rerun succeeds.
 - `retry-chaos-check.py` — replays deterministic retry-chaos fixtures without
   an LLM. It simulates token-limit resumes, host tool crashes, reviewer
   loop-back, quality-loop exhaustion, and host blocked/cancelled outcomes

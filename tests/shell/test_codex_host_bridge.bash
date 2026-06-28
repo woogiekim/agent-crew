@@ -11,12 +11,13 @@ BRIDGE="${REPO_ROOT}/adapters/codex/bin/codex-host-bridge"
 TMP_ROOT=$(make_tmp)
 TASK_DIR="${TMP_ROOT}/task"
 PROJECT_ROOT="${TMP_ROOT}/project"
+STATE_DIR="${TMP_ROOT}/state"
 FAKE_CODEX="${TMP_ROOT}/codex"
 ARGV_PATH="${TMP_ROOT}/argv.txt"
 STDIN_PATH="${TMP_ROOT}/stdin.txt"
 ENV_PATH="${TMP_ROOT}/env.txt"
 
-mkdir -p "${TASK_DIR}" "${PROJECT_ROOT}"
+mkdir -p "${TASK_DIR}" "${PROJECT_ROOT}" "${STATE_DIR}/tasks"
 printf 'handoff\n' > "${TMP_ROOT}/handoff.md"
 
 cat > "${FAKE_CODEX}" <<'EOF'
@@ -27,6 +28,7 @@ printf '%s\n' "$@" > "${FAKE_CODEX_ARGV_PATH}"
   printf 'AUTO_ROUTE_DISABLED:%s\n' "${AGENT_CREW_AUTO_ROUTE_DISABLED:-}"
 } > "${FAKE_CODEX_ENV_PATH}"
 cat > "${FAKE_CODEX_STDIN_PATH}"
+printf 'tokens used\n28,904\n'
 exit 0
 EOF
 chmod +x "${FAKE_CODEX}"
@@ -40,6 +42,7 @@ out=$(
   FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
   AGENT_CREW_TASK_ID="task-1" \
   AGENT_CREW_TASK_DIR="${TASK_DIR}" \
+  AGENT_CREW_STATE_DIR="${STATE_DIR}" \
   AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
   AGENT_CREW_RESULT_PATH="${TMP_ROOT}/result.md" \
   AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
@@ -63,6 +66,12 @@ assert_not_contains "${argv}" $'exec\n-a'
 assert_contains "$(cat "${ENV_PATH}")" "ACTIVE:1"
 assert_contains "$(cat "${ENV_PATH}")" "AUTO_ROUTE_DISABLED:1"
 
+it "codex host bridge records measured token usage from CLI output"
+assert_contains "${out}" "tokens used"
+cost_payload="$(cat "${STATE_DIR}/cost/task-1.jsonl")"
+assert_contains "${cost_payload}" '"provider":"codex"'
+assert_contains "${cost_payload}" '"total_tokens":28904'
+
 it "codex host bridge still writes and pipes the resume prompt"
 stdin_payload=$(cat "${STDIN_PATH}")
 assert_contains "${stdin_payload}" "Resume this existing agent-crew crew:run handoff in Codex."
@@ -77,6 +86,7 @@ out=$(
   FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
   AGENT_CREW_TASK_ID="agent-task-1" \
   AGENT_CREW_TASK_DIR="${TASK_DIR}" \
+  AGENT_CREW_STATE_DIR="${STATE_DIR}" \
   AGENT_CREW_HANDOFF_PATH="${TMP_ROOT}/handoff.md" \
   AGENT_CREW_RESULT_PATH="${TMP_ROOT}/result.md" \
   AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \

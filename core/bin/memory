@@ -375,12 +375,12 @@ run_mnemos() {
   if [ -n "${BOUNDED}" ]; then
     if [ -n "${backend_value}" ]; then
       env "${backend_value}" \
-        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-8}" \
         MNEMOS_BIN="${MNEMOS_BIN}" \
         bash "${BOUNDED}" "$@"
     else
       env \
-        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-8}" \
         MNEMOS_BIN="${MNEMOS_BIN}" \
         bash "${BOUNDED}" "$@"
     fi
@@ -406,12 +406,12 @@ if [ "${1:-}" != "capture" ]; then
   if [ -n "${BOUNDED}" ]; then
     if [ -n "${DEFAULT_BACKEND_ENV}" ]; then
       exec env "${DEFAULT_BACKEND_ENV}" \
-        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+        AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-8}" \
         MNEMOS_BIN="${MNEMOS_BIN}" \
         bash "${BOUNDED}" "$@"
     fi
     exec env \
-      AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-4}" \
+      AGENT_CREW_MNEMOS_TIMEOUT_SECONDS="${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-8}" \
       MNEMOS_BIN="${MNEMOS_BIN}" \
       bash "${BOUNDED}" "$@"
   fi

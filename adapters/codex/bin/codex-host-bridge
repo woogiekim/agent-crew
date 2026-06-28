@@ -67,6 +67,46 @@ mkdir -p "${CONTEXT_DIR}"
 
 PROMPT_PATH="${CONTEXT_DIR}/codex-host-bridge-prompt.md"
 LAST_MESSAGE_PATH="${CONTEXT_DIR}/codex-host-bridge-last-message.md"
+STDOUT_LOG="${CONTEXT_DIR}/codex-host-bridge-stdout.log"
+STDERR_LOG="${CONTEXT_DIR}/codex-host-bridge-stderr.log"
+OUTPUT_LOG="${CONTEXT_DIR}/codex-host-bridge-output.log"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+resolve_token_usage_script() {
+  local root
+  local home_root="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+  if [ -n "${AGENT_CREW_TOKEN_USAGE_SCRIPT:-}" ] && [ -f "${AGENT_CREW_TOKEN_USAGE_SCRIPT}" ]; then
+    printf '%s\n' "${AGENT_CREW_TOKEN_USAGE_SCRIPT}"
+    return 0
+  fi
+  for root in \
+    "${home_root}/system/scripts" \
+    "${home_root}/scripts" \
+    "${SCRIPT_DIR}/../../../core/scripts" \
+    "${SCRIPT_DIR}/../../../system/scripts"; do
+    if [ -f "${root}/host-bridge-token-usage.py" ]; then
+      printf '%s\n' "${root}/host-bridge-token-usage.py"
+      return 0
+    fi
+  done
+  return 1
+}
+
+record_token_usage() {
+  local usage_script
+  usage_script="$(resolve_token_usage_script 2>/dev/null || true)"
+  [ -n "${usage_script}" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 "${usage_script}" \
+    --task-id "${TASK_ID}" \
+    --task-dir "${TASK_DIR}" \
+    --provider codex \
+    --agent "${AGENT_CREW_AGENT_NAME:-host-bridge}" \
+    --model "${AGENT_CREW_CODEX_MODEL:-unknown}" \
+    --tier "${AGENT_CREW_CODEX_TIER:-unknown}" \
+    --source "${OUTPUT_LOG}" \
+    --format codex-text >/dev/null 2>&1 || true
+}
 
 if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
   cat > "${PROMPT_PATH}" <<EOF
@@ -125,6 +165,16 @@ else
 fi
 CODEX_ARGS+=(-o "${LAST_MESSAGE_PATH}" -)
 
+set +e
 AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
 AGENT_CREW_AUTO_ROUTE_DISABLED=1 \
-  "${CODEX_BIN}" "${CODEX_ARGS[@]}" < "${PROMPT_PATH}"
+  "${CODEX_BIN}" "${CODEX_ARGS[@]}" < "${PROMPT_PATH}" \
+    > "${STDOUT_LOG}" 2> "${STDERR_LOG}"
+CODEX_RC=$?
+set -e
+
+cat "${STDERR_LOG}" >&2
+cat "${STDOUT_LOG}"
+cat "${STDOUT_LOG}" "${STDERR_LOG}" > "${OUTPUT_LOG}" 2>/dev/null || true
+record_token_usage
+exit "${CODEX_RC}"

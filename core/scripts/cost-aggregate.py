@@ -31,7 +31,8 @@ Exit codes:
 
 Schema tolerated (each line under ${STATE_DIR}/cost/${TASK_ID}.jsonl):
   ts, task_id, session_id, agent, stage, model, tier,
-  input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens.
+  input_tokens, output_tokens, total_tokens,
+  cache_creation_tokens, cache_read_tokens.
   Unknown fields are preserved-but-ignored. Malformed lines are skipped
   with a stderr warning.
 
@@ -104,9 +105,12 @@ def normalize_line(raw):
         "tier":       d.get("tier") or "unknown",
         "in":         int(d.get("input_tokens")          or 0),
         "out":        int(d.get("output_tokens")         or 0),
+        "total":      int(d.get("total_tokens")          or 0),
         "cache_w":    int(d.get("cache_creation_tokens") or 0),
         "cache_r":    int(d.get("cache_read_tokens")     or 0),
     }
+    if out["total"] <= 0:
+        out["total"] = out["in"] + out["out"]
     if out["tier"] == "unknown":
         out["tier"] = MODEL_TIER_FALLBACK.get(out["model"], "balanced")
     return out
@@ -202,14 +206,15 @@ def summarize_rows(rows):
     total_out = sum(r["out"]    for r in rows)
     total_cw = sum(r["cache_w"] for r in rows)
     total_cr = sum(r["cache_r"] for r in rows)
-    grand = total_in + total_out  # cache tokens excluded from the budget by convention
-    by_agent = defaultdict(lambda: {"in": 0, "out": 0, "calls": 0})
-    by_tier  = defaultdict(lambda: {"in": 0, "out": 0, "calls": 0})
-    by_model = defaultdict(lambda: {"in": 0, "out": 0, "calls": 0})
+    grand = sum(r["total"] for r in rows)  # cache tokens excluded from the budget by convention
+    by_agent = defaultdict(lambda: {"in": 0, "out": 0, "total": 0, "calls": 0})
+    by_tier  = defaultdict(lambda: {"in": 0, "out": 0, "total": 0, "calls": 0})
+    by_model = defaultdict(lambda: {"in": 0, "out": 0, "total": 0, "calls": 0})
     for r in rows:
         for bucket, key in ((by_agent, r["agent"]), (by_tier, r["tier"]), (by_model, r["model"])):
             bucket[key]["in"] += r["in"]
             bucket[key]["out"] += r["out"]
+            bucket[key]["total"] += r["total"]
             bucket[key]["calls"] += 1
     # task-level budget = max of tier budgets that appear in this task
     tiers_used = list(by_tier.keys()) or ["balanced"]
@@ -342,6 +347,7 @@ def mode_default(state_dir):
         tasks[task_id] = summarize_task(state_dir, task_id)
     grand_in  = sum(t["input_tokens"]  for t in tasks.values())
     grand_out = sum(t["output_tokens"] for t in tasks.values())
+    grand_total = sum(t["total_tokens"] for t in tasks.values())
     measured = any(t["telemetry_source"] == "measured" for t in tasks.values())
     proxy_metrics = aggregate_proxy_metrics(state_dir)
     proxy = proxy_metrics["total_proxy_events"] > 0
@@ -350,7 +356,7 @@ def mode_default(state_dir):
         "task_count": len(tasks),
         "input_tokens": grand_in,
         "output_tokens": grand_out,
-        "total_tokens": grand_in + grand_out,
+        "total_tokens": grand_total,
         "telemetry_source": "measured" if measured else "proxy" if proxy else "unavailable",
         "proxy_metrics": proxy_metrics,
         "unavailable_reason": "" if measured or proxy else "no measured token records or task proxy telemetry were found",
@@ -383,6 +389,7 @@ def format_table(result):
             lines.append("  by agent:")
             for agent, d in sorted(t["by_agent"].items()):
                 lines.append(f"    {agent:<14} calls={d['calls']:>2}"
+                             f"  tokens={d['total']:>8,}"
                              f"  in={d['in']:>8,}  out={d['out']:>8,}")
     elif mode in ("session", "recent", "summary"):
         if mode == "summary":

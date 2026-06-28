@@ -44,7 +44,8 @@ Metrics computed:
     - stages_completed : from register.json or pipeline.json
     - retries          : count of RETRY events
     - blockers         : list of BLOCKED detail strings
-    - tokens_total     : sum of input + output (cache excluded)
+    - tokens_total     : sum of total_tokens when present, otherwise
+                         input + output (cache excluded)
     - status           : completed | blocked | running
     - current_phase    : from register.json
   - Aggregate:
@@ -235,7 +236,7 @@ def read_cost_file(state_dir, task_id):
     p = state_dir / "cost" / f"{task_id}.jsonl"
     if not p.is_file():
         return None
-    total_in = total_out = 0
+    total_in = total_out = total_tokens = 0
     for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
@@ -244,10 +245,14 @@ def read_cost_file(state_dir, task_id):
             d = json.loads(line)
         except json.JSONDecodeError:
             continue
-        total_in += int(d.get("input_tokens") or 0)
-        total_out += int(d.get("output_tokens") or 0)
+        input_tokens = int(d.get("input_tokens") or 0)
+        output_tokens = int(d.get("output_tokens") or 0)
+        measured_total = int(d.get("total_tokens") or 0)
+        total_in += input_tokens
+        total_out += output_tokens
+        total_tokens += measured_total if measured_total > 0 else input_tokens + output_tokens
     return {"tokens_in": total_in, "tokens_out": total_out,
-            "tokens_total": total_in + total_out}
+            "tokens_total": total_tokens}
 
 
 def read_tool_events(task_dir):

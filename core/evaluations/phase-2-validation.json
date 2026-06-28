@@ -183,6 +183,7 @@
           "command": [
             "{python}",
             "core/scripts/e2e-slo-check.py",
+            "--isolated-agent-crew-home",
             "--skip-retrieval-eval",
             "--skip-update-dry-run",
             "--format",
@@ -214,6 +215,31 @@
             "reusability_memory",
             "performance",
             "quality"
+          ],
+          "optional": true
+        },
+        {
+          "id": "update_dry_run_slo",
+          "label": "Update dry-run SLO check",
+          "command": [
+            "{python}",
+            "core/scripts/e2e-slo-check.py",
+            "--skip-memory-search",
+            "--skip-retrieval-eval",
+            "--samples",
+            "1",
+            "--warmup-samples",
+            "0",
+            "--format",
+            "json"
+          ],
+          "allowed_returncodes": [
+            0
+          ],
+          "criteria": [
+            "performance",
+            "observability",
+            "cost_efficiency"
           ],
           "optional": true
         }

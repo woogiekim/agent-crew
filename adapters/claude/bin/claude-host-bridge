@@ -44,6 +44,43 @@ mkdir -p "${CONTEXT_DIR}"
 
 PROMPT_PATH="${CONTEXT_DIR}/claude-host-bridge-prompt.md"
 LAST_MESSAGE_PATH="${CONTEXT_DIR}/claude-host-bridge-last-message.json"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+resolve_token_usage_script() {
+  local root
+  local home_root="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+  if [ -n "${AGENT_CREW_TOKEN_USAGE_SCRIPT:-}" ] && [ -f "${AGENT_CREW_TOKEN_USAGE_SCRIPT}" ]; then
+    printf '%s\n' "${AGENT_CREW_TOKEN_USAGE_SCRIPT}"
+    return 0
+  fi
+  for root in \
+    "${home_root}/system/scripts" \
+    "${home_root}/scripts" \
+    "${SCRIPT_DIR}/../../../core/scripts" \
+    "${SCRIPT_DIR}/../../../system/scripts"; do
+    if [ -f "${root}/host-bridge-token-usage.py" ]; then
+      printf '%s\n' "${root}/host-bridge-token-usage.py"
+      return 0
+    fi
+  done
+  return 1
+}
+
+record_token_usage() {
+  local usage_script
+  usage_script="$(resolve_token_usage_script 2>/dev/null || true)"
+  [ -n "${usage_script}" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 "${usage_script}" \
+    --task-id "${TASK_ID}" \
+    --task-dir "${TASK_DIR}" \
+    --provider claude \
+    --agent "${AGENT_CREW_AGENT_NAME:-host-bridge}" \
+    --model "${MODEL:-unknown}" \
+    --tier "${AGENT_CREW_CLAUDE_TIER:-unknown}" \
+    --source "${LAST_MESSAGE_PATH}" \
+    --format claude-json >/dev/null 2>&1 || true
+}
 
 if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
   cat > "${PROMPT_PATH}" <<EOF
@@ -114,6 +151,10 @@ EFFORT="${AGENT_CREW_CLAUDE_EFFORT:-low}"
 TOOLS="${AGENT_CREW_CLAUDE_TOOLS:-Bash}"
 ALLOWED_TOOLS="${AGENT_CREW_CLAUDE_ALLOWED_TOOLS:-Bash}"
 MAX_BUDGET="${AGENT_CREW_CLAUDE_MAX_BUDGET_USD:-}"
+BRIDGE_MODE="${AGENT_CREW_CLAUDE_BRIDGE_MODE:-standard}"
+if [ "${AGENT_CREW_CLAUDE_BARE:-0}" = "1" ]; then
+  BRIDGE_MODE="bare"
+fi
 
 CLAUDE_ARGS=(
   --print
@@ -121,7 +162,6 @@ CLAUDE_ARGS=(
   --model "${MODEL}"
   --effort "${EFFORT}"
   --no-session-persistence
-  --setting-sources user
   --disable-slash-commands
   --strict-mcp-config
   --mcp-config '{"mcpServers":{}}'
@@ -132,6 +172,18 @@ CLAUDE_ARGS=(
   --add-dir "${PROJECT_ROOT}"
   --add-dir "${TASK_DIR}"
 )
+
+case "${BRIDGE_MODE}" in
+  bare)
+    CLAUDE_ARGS=(--bare "${CLAUDE_ARGS[@]}")
+    ;;
+  standard|minimal)
+    CLAUDE_ARGS+=(--setting-sources user)
+    ;;
+  *)
+    fail "invalid AGENT_CREW_CLAUDE_BRIDGE_MODE: ${BRIDGE_MODE}"
+    ;;
+esac
 
 if [ -n "${MAX_BUDGET}" ]; then
   CLAUDE_ARGS+=(--max-budget-usd "${MAX_BUDGET}")
@@ -145,11 +197,20 @@ trap cleanup EXIT
 
 printf 'claude-host-bridge: invoking Claude for task %s\n' "${TASK_ID}" >&2
 
+set +e
 AGENT_CREW_HOST_BRIDGE_ACTIVE=1 \
 AGENT_CREW_AUTO_ROUTE_DISABLED=1 \
   bash -c 'cd "$1" && shift && exec "$@"' \
     bash "${BRIDGE_CWD}" "${CLAUDE_BIN}" "${CLAUDE_ARGS[@]}" "$(cat "${PROMPT_PATH}")" \
     > "${LAST_MESSAGE_PATH}"
+CLAUDE_RC=$?
+set -e
+
+record_token_usage
+
+if [ "${CLAUDE_RC}" -ne 0 ]; then
+  exit "${CLAUDE_RC}"
+fi
 
 if ! grep -q '[^[:space:]]' "${LAST_MESSAGE_PATH}" 2>/dev/null; then
   printf 'AGENT_CREW_BRIDGE_STATUS: current_session_required\n' >&2

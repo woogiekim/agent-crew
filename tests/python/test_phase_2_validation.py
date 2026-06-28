@@ -149,6 +149,82 @@ def test_phase_2_validation_required_failure_fails_run_with_follow_up(tmp_path: 
     assert any(action["criterion_id"] == "quality" for action in payload["recommended_follow_up_actions"])
 
 
+def test_phase_2_validation_failure_artifacts_preserve_markers_before_tail(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    output = tmp_path / "report.json"
+    write_framework(framework)
+    data = json.loads(framework.read_text(encoding="utf-8"))
+    data["levels"][0]["commands"][0]["command"] = [
+        "{python}",
+        "-c",
+        (
+            "import sys; "
+            "print('--- test_flaky_shell.bash ---'); "
+            "print('NOT ok exact failure marker'); "
+            "print('x' * 5000); "
+            "print('failed:'); "
+            "print('  - exact failed-list entry: expected exit=7 actual=0'); "
+            "raise SystemExit(3)"
+        ),
+    ]
+    framework.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    result = run_runner("--framework", str(framework), "--output", str(output))
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    command = next(item for item in payload["commands"] if item["id"] == "pass_cmd")
+    assert Path(command["stdout_path"]).is_file()
+    assert Path(command["stderr_path"]).is_file()
+    assert command["stdout_sha256"]
+    assert any("NOT ok exact failure marker" in marker["text"] for marker in command["failure_markers"])
+    assert any("exact failed-list entry" in marker["text"] for marker in command["failure_markers"])
+    assert any(marker.get("section") == "test_flaky_shell.bash" for marker in command["failure_markers"])
+
+
+def test_phase_2_validation_rerun_failed_once_marks_flake_and_passes_gate(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    output = tmp_path / "report.json"
+    marker = tmp_path / "already_failed"
+    flaky = tmp_path / "flaky.py"
+    flaky.write_text(
+        (
+            "from pathlib import Path\n"
+            "import sys\n"
+            f"marker = Path({str(marker)!r})\n"
+            "if not marker.exists():\n"
+            "    marker.write_text('failed once', encoding='utf-8')\n"
+            "    print('FAIL first attempt')\n"
+            "    raise SystemExit(7)\n"
+            "print('PASS rerun')\n"
+        ),
+        encoding="utf-8",
+    )
+    write_framework(framework)
+    data = json.loads(framework.read_text(encoding="utf-8"))
+    data["levels"][0]["commands"][0]["command"] = ["{python}", str(flaky)]
+    framework.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    result = run_runner(
+        "--framework",
+        str(framework),
+        "--output",
+        str(output),
+        "--rerun-failed-once",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    command = next(item for item in payload["commands"] if item["id"] == "pass_cmd")
+    assert command["passed"] is True
+    assert command["flaky"] is True
+    assert command["initial_returncode"] == 7
+    assert command["rerun_returncode"] == 0
+    assert command["initial_failure_markers"]
+    assert Path(command["rerun_stdout_path"]).is_file()
+
+
 def test_phase_2_validation_unmeasured_required_dimension_is_reported(tmp_path: Path):
     framework = tmp_path / "framework.json"
     write_framework(framework)

@@ -79,6 +79,40 @@ class TestCostAggregate:
         assert payload["task"]["routing_audit"][0]["tier"] == "balanced"
         assert payload["task"]["task_complexity_estimate"]["level"] == "unavailable"
 
+    def test_total_only_records_count_toward_task_total(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Total-only bridge records count without fabricating in/out breakdown."""
+        task_id = "20260101-120000-0"
+        _write_cost_jsonl(
+            state_dir / "cost" / f"{task_id}.jsonl",
+            [
+                _record(
+                    task_id,
+                    model="gpt-5.5",
+                    tier="balanced",
+                    input_tokens=0,
+                    output_tokens=0,
+                    total_tokens=28904,
+                    usage_granularity="total_only",
+                )
+            ],
+        )
+
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["task"]["input_tokens"] == 0
+        assert payload["task"]["output_tokens"] == 0
+        assert payload["task"]["total_tokens"] == 28904
+        assert payload["task"]["by_agent"]["backend"]["total"] == 28904
+
     def test_per_tier_breakdown(
         self, script_runner, env_with_home, state_dir
     ):

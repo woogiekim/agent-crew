@@ -49,6 +49,24 @@ export AGENT_CREW_CLAUDE_TOOLS="Bash"
 export AGENT_CREW_CLAUDE_ALLOWED_TOOLS="Bash"
 ```
 
+The bridge writes Claude's JSON result to
+`${TASK_DIR}/context/claude-host-bridge-last-message.json`. When that payload
+contains `modelUsage` or `usage`, the bridge normalizes it through
+`core/scripts/host-bridge-token-usage.py` and appends measured records to
+`${STATE_DIR}/cost/${TASK_ID}.jsonl` for `crew cost` and `crew telemetry`.
+
+For lower host-side overhead, opt into Claude Code's bare mode:
+
+```bash
+export AGENT_CREW_CLAUDE_BRIDGE_MODE="bare"
+# or:
+export AGENT_CREW_CLAUDE_BARE=1
+```
+
+Bare mode skips Claude Code hooks, LSP, plugin sync, auto-memory, background
+prefetches, keychain reads, and `CLAUDE.md` auto-discovery. It is not the default
+because auth is limited to `ANTHROPIC_API_KEY` or an explicit API key helper.
+
 ## Capability mappings
 
 `core/` markdown never names a Claude-Code-specific tool directly (Invariant 3 of

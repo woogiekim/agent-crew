@@ -293,6 +293,114 @@ def test_e2e_slo_helpers_cover_invalid_json_and_budget_failures(tmp_path: Path):
     assert check["failures"] == ["returncode", "latency"]
 
 
+def test_e2e_slo_sampling_uses_warmup_and_reports_aggregate(tmp_path: Path):
+    calls = tmp_path / "calls"
+    crew = tmp_path / "crew"
+    crew.write_text(
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            f"calls_file={str(calls)!r}\n"
+            "calls=0\n"
+            "[ -f \"${calls_file}\" ] && calls=$(cat \"${calls_file}\")\n"
+            "calls=$((calls + 1))\n"
+            "printf '%s\\n' \"${calls}\" > \"${calls_file}\"\n"
+            "if [ \"${calls}\" = 1 ]; then\n"
+            "  python3 - <<'PY'\n"
+            "import time\n"
+            "time.sleep(0.05)\n"
+            "PY\n"
+            "fi\n"
+            "exit 0\n"
+        ),
+        encoding="utf-8",
+    )
+    crew.chmod(crew.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(E2E_SLO),
+            "--project-root",
+            str(tmp_path),
+            "--crew-bin",
+            str(crew),
+            "--samples",
+            "3",
+            "--warmup-samples",
+            "1",
+            "--aggregation",
+            "median",
+            "--skip-memory-search",
+            "--skip-retrieval-eval",
+            "--skip-update-dry-run",
+            "--status-budget-ms",
+            "1000",
+            "--telemetry-budget-ms",
+            "1000",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    status = next(check for check in payload["checks"] if check["name"] == "crew_status_json")
+    assert status["sample_count"] == 3
+    assert status["warmup_samples"] == 1
+    assert status["aggregation"] == "median"
+    assert len(status["samples_ms"]) == 3
+    assert status["elapsed_ms"] == status["aggregate_elapsed_ms"]
+    assert status["returncodes"] == [0, 0, 0]
+
+
+def test_e2e_slo_can_measure_status_with_isolated_agent_crew_home(tmp_path: Path):
+    crew = tmp_path / "crew"
+    crew.write_text(
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "[ -n \"${AGENT_CREW_HOME:-}\" ]\n"
+            "[ -d \"${AGENT_CREW_HOME}/state\" ]\n"
+            "case \"${1:-}\" in\n"
+            "  status|telemetry) exit 0 ;;\n"
+            "esac\n"
+            "exit 3\n"
+        ),
+        encoding="utf-8",
+    )
+    crew.chmod(crew.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(E2E_SLO),
+            "--project-root",
+            str(tmp_path),
+            "--crew-bin",
+            str(crew),
+            "--isolated-agent-crew-home",
+            "--skip-memory-search",
+            "--skip-retrieval-eval",
+            "--skip-update-dry-run",
+            "--status-budget-ms",
+            "1000",
+            "--telemetry-budget-ms",
+            "1000",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["isolated_agent_crew_home"] is True
+
+
 def test_e2e_slo_runs_memory_search_and_retrieval_eval(tmp_path: Path):
     crew = tmp_path / "crew"
     crew.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -434,6 +542,23 @@ def test_e2e_slo_runs_update_dry_run_and_remote_benchmark_failure(tmp_path: Path
     assert "update_dry_run" in names
     update = next(check for check in payload["checks"] if check["name"] == "update_benchmark")
     assert "update_benchmark" in update["failures"]
+
+
+def test_phase_2_beta_splits_light_slo_from_update_dry_run_slo():
+    framework = json.loads((REPO_ROOT / "core" / "evaluations" / "phase-2-validation.json").read_text(encoding="utf-8"))
+    beta_commands = {
+        command["id"]: command
+        for level in framework["levels"]
+        if level["id"] == "beta"
+        for command in level["commands"]
+    }
+
+    assert "e2e_slo_light" in beta_commands
+    assert "update_dry_run_slo" in beta_commands
+    assert "--skip-update-dry-run" in beta_commands["e2e_slo_light"]["command"]
+    assert beta_commands["update_dry_run_slo"].get("optional") is True
+    assert "--skip-memory-search" in beta_commands["update_dry_run_slo"]["command"]
+    assert "--skip-retrieval-eval" in beta_commands["update_dry_run_slo"]["command"]
 
 
 def test_e2e_slo_text_output_lists_checks(tmp_path: Path):

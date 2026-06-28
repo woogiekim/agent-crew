@@ -111,7 +111,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Project-clean state** — all state stored under collision-safe `~/.agent-crew/state/{PROJECT_STATE_KEY}/`, never in your project directory
 - **Global install** — one install works across all your projects
 - **Provider-neutral capability framework** — every host-specific surface (task tools, background agents, monitor stream, hooks, structured questions, cost tracking) is gated by a flag in `capabilities.json` written by the active adapter (`claude`, `codex`, `generic`); core code never assumes unavailable host features. See `core/rules/host-capabilities.md`.
-- **Cost circuit breaker** — when the `cost_tracking` capability is advertised, the supervisor checks per-task token usage before every stage spawn and halts with `BLOCKER: cost_budget_exceeded` at 100% of the per-tier budget. Configure via `AGENT_CREW_BUDGET_DEEP|BALANCED|LIGHT`.
+- **Cost circuit breaker** — when the `cost_tracking` capability is advertised, the supervisor checks per-task token usage before every stage spawn and halts with `BLOCKER: cost_budget_exceeded` at 100% of the per-tier budget. Host bridges also append measured token records when their CLI output exposes usage. Configure via `AGENT_CREW_BUDGET_DEEP|BALANCED|LIGHT`.
 - **Opt-in stage timeout** — set `AGENT_CREW_STAGE_TIMEOUT_SECONDS=1800` to halt any stage that exceeds a wall-clock budget (mirrors the cost-breaker pattern; off by default).
 - **Structured state files with schema validation** — `register.json` (per-task pointer state), `pipeline.json` (execution graph), `session.json` (multi-task registry), and `progress.buffer.jsonl` (one JSON event per line) all validate against JSON schemas under `core/schemas/` at supervisor Phase 0.
 - **Pipeline telemetry** — `crew:telemetry` aggregates wall-clock duration, stage/retry counts, tool-event counts, token totals, and blocker histograms across recent runs (read-only; works on every adapter).
@@ -470,7 +470,7 @@ If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned 
 ├── project-context/           ← durable project-level markdown context (preserved by default)
 ├── session.json               ← multi-task session registry; runs > 1 day stale-filtered
 ├── cost/
-│   └── {TASK_ID}.jsonl        ← per-call token usage (Phase 3.3, cost_tracking only)
+│   └── {TASK_ID}.jsonl        ← measured hook/host-bridge token usage
 └── tasks/
     ├── active                 ← marker file; present while a task is running
     └── {TASK_ID}/

@@ -163,6 +163,14 @@ STOP / ROUTE / `crew:run` / `crew:agent` semantics. If `codex` is unavailable or
 the command fails, the core runtime leaves the existing resumable handoff state
 intact for `crew resume` or manual repair.
 
+The bridge captures Codex stdout/stderr under `${TASK_DIR}/context/` and mirrors
+the output back to the parent process. When the CLI transcript includes a
+`tokens used` summary, the bridge normalizes that total through
+`core/scripts/host-bridge-token-usage.py` and appends a measured record to
+`${STATE_DIR}/cost/${TASK_ID}.jsonl`. This improves `crew cost` and
+`crew telemetry` visibility, but the adapter still does not advertise a full
+`cost_tracking=true` surface for supervisor circuit-breaker enforcement.
+
 Use `AGENT_CREW_CODEX_BIN=/path/to/codex` when the `codex` executable is not on
 `PATH`.
 

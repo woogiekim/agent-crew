@@ -59,6 +59,7 @@ assert_not_contains "${OUTPUT}" "missing --no-classify"
 it "memory capture defaults agent-crew support writes to local mnemos backend"
 assert_not_contains "${OUTPUT}" "missing default support backend"
 
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "capture" ]; then
@@ -75,6 +76,7 @@ rc=$?
 assert_exit 0 "${rc}" "explicit backend preserved"
 assert_contains "${OUTPUT}" "backend=obsidian"
 
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "read" ]; then
@@ -97,6 +99,21 @@ rc=$?
 assert_exit 0 "${rc}" "read explicit backend"
 assert_contains "${OUTPUT}" "read-backend=obsidian"
 
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+printf 'timeout=%s\n' "${AGENT_CREW_MNEMOS_TIMEOUT_SECONDS:-}"
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory wrapper default bounded timeout matches mnemos-bounded default"
+OUTPUT=$(MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" read 0716384d-091f-4279-838f-73d54785767a 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "default bounded timeout"
+assert_contains "${OUTPUT}" "timeout=8"
+
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "capture" ]; then
@@ -116,6 +133,7 @@ rc=$?
 assert_exit 0 "${rc}" "index lock is support-path failure"
 assert_contains "${OUTPUT}" "capture could not confirm a local id"
 
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "capture" ]; then
@@ -131,6 +149,7 @@ MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" capture --bad >/dev/null 2>&1
 rc=$?
 assert_exit 7 "${rc}" "non-sync capture failure"
 
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 sleep 5
@@ -145,6 +164,7 @@ rc=$?
 assert_exit 124 "${rc}" "search timeout"
 assert_contains "${OUTPUT}" "mnemos-bounded: timed out after 1s"
 
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
@@ -166,7 +186,7 @@ chmod +x "${TMP}/mnemos"
 
 NO_FTS_HOME=$(make_tmp)
 it "memory search uses stable mnemos fast JSON API without direct FTS DB access"
-OUTPUT=$(HOME="${NO_FTS_HOME}" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "stable provider" --limit 5 2>&1)
+OUTPUT=$(HOME="${NO_FTS_HOME}" MNEMOS_REPO_ROOT="${NO_FTS_HOME}/.mnemos" MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "stable provider" --limit 5 2>&1)
 rc=$?
 assert_exit 0 "${rc}" "stable fast search"
 assert_contains "${OUTPUT}" "stable-memory-1"
@@ -251,6 +271,7 @@ conn.execute(
 )
 conn.commit()
 PY
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 echo "slow backend invoked"
@@ -343,6 +364,7 @@ assert_contains "${OUTPUT}" "duplicate-memory-canonical"
 assert_not_contains "${OUTPUT}" "duplicate-memory-copy"
 
 it "memory search reports unsupported score support for non-FTS backend"
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 printf 'mnemos %s\n' "$*"
@@ -354,6 +376,7 @@ rc=$?
 assert_exit 0 "${rc}" "unsupported score reporting"
 assert_contains "${OUTPUT}" "score_support=unsupported"
 
+TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'
 #!/usr/bin/env bash
 sleep 5

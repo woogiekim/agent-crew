@@ -25,6 +25,13 @@ assert_exit 0 "${rc}" "fast command"
 it "mnemos-bounded forwards command arguments"
 assert_contains "${OUT}" "mnemos-fast search agent-crew" "argument forwarding"
 
+it "mnemos-bounded does not timeout a completed command while polling"
+OUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS=2 MNEMOS_BIN="${TMP}/mnemos-fast" \
+  bash "${SCRIPT}" search quick 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "completed command should not be treated as timed out"
+assert_contains "${OUT}" "mnemos-fast search quick"
+
 cat > "${TMP}/mnemos-slow" <<'SH'
 #!/usr/bin/env bash
 sleep 5

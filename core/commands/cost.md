@@ -41,8 +41,10 @@ if [ "${HAS_COST}" != "1" ]; then
   echo "Capabilities file: ${CAPABILITIES_PATH}"
   echo
   echo "On Claude: cost-tracking is enabled when crew:setup runs against the"
-  echo "claude adapter. On Codex or generic: exact token usage is not surfaced"
-  echo "by the host. The aggregator may still report labeled proxy metrics from"
+  echo "claude adapter. On Codex or generic: the adapter may still append measured"
+  echo "host-bridge records when the CLI output exposes token usage, but the"
+  echo "adapter does not advertise a full cost-tracking surface for circuit-breaker"
+  echo "enforcement. The aggregator may also report labeled proxy metrics from"
   echo "local progress, tool, or delegation telemetry; if none exist it prints"
   echo "an explicit unavailable reason instead of implying zero measured usage."
 fi
@@ -91,10 +93,11 @@ task's pipeline.
 ## Absence behavior
 
 When the active adapter advertises `cost_tracking=false` (Codex,
-generic), exact host token telemetry is unavailable. The aggregator labels
-measured token data separately from proxy metrics. If neither measured token
-records nor proxy telemetry are available, output includes an explicit
-unavailable reason instead of implying zero usage.
+generic), the supervisor does not enable the token circuit breaker. The
+aggregator can still report measured host-bridge records when present, and
+labels those separately from proxy metrics. If neither measured token records
+nor proxy telemetry are available, output includes an explicit unavailable
+reason instead of implying zero usage.
 
 ## Related
 

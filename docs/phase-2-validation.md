@@ -67,11 +67,26 @@ memory store, is recorded as provisional when it fails. Required command
 failures make the overall run fail and appear in both `gaps` and
 `recommended_follow_up_actions`.
 
+Beta SLO checks use sampled latency measurements. The default fixture runs
+three samples, drops one warmup sample, and evaluates the median. The light beta
+SLO command measures `crew status`, `crew telemetry`, and memory search while
+skipping update dry-run. Update dry-run is a separate optional beta command so
+its heavier runtime is visible without obscuring the lightweight operator
+latency checks.
+
 ## Evidence Policy
 
-Each command record includes command, return code, elapsed milliseconds, and
-trimmed stdout/stderr tails. Keep the JSON report under the task context when
-running inside a supervisor workflow.
+Each command record includes command, return code, elapsed milliseconds,
+trimmed stdout/stderr tails, output hashes, and failure markers. When
+`--output` is used, the runner writes full per-command stdout/stderr logs to a
+sibling artifact directory such as `/tmp/phase-2-validation-artifacts/`. Use
+`--artifact-dir` to choose an explicit artifact location. Use
+`--rerun-failed-once` records both attempts: a command that fails then passes on
+rerun is marked `flaky=true`, keeps the initial failure markers for diagnosis,
+and allows the phase-two gate to pass.
+
+Keep the JSON report and artifact directory under the task context when running
+inside a supervisor workflow.
 
 Canonical downstream task text must be normalized before it is written into
 pipeline state. The phase-two validation report should refer to the normalized

@@ -31,6 +31,7 @@ Each line has the shape:
   "tier":                  "balanced",
   "input_tokens":          12345,
   "output_tokens":         6789,
+  "total_tokens":          19134,
   "cache_creation_tokens": 0,
   "cache_read_tokens":     0
 }
@@ -40,10 +41,12 @@ Each line has the shape:
 `input_tokens`, `output_tokens`.
 
 **Optional** (default `0` / `null` / `"unknown"`): `stage`, `tier`,
-`cache_creation_tokens`, `cache_read_tokens`. When `tier` is `"unknown"`
-the aggregator falls back to a model→tier map; the canonical map lives
-in `adapters/claude/setup.sh`'s `TIER_TO_MODEL` and is mirrored in
-`core/scripts/cost-aggregate.py`'s `MODEL_TIER_FALLBACK`.
+`total_tokens`, `cache_creation_tokens`, `cache_read_tokens`. When `tier` is
+`"unknown"` the aggregator falls back to a model→tier map; the canonical map
+lives in `adapters/claude/setup.sh`'s `TIER_TO_MODEL` and is mirrored in
+`core/scripts/cost-aggregate.py`'s `MODEL_TIER_FALLBACK`. Hosts that expose only
+a total token count may set `input_tokens=0`, `output_tokens=0`,
+`total_tokens={measured_total}`, and `usage_granularity="total_only"`.
 
 The adapter MAY also populate the host's task-metadata surface (e.g.
 `getTask().metadata.usage`); this is not required and not consumed by
@@ -84,8 +87,8 @@ supervisor's retry loop is identical to its pre-3.3 form.
 
 | Adapter | cost_tracking | How it is implemented |
 |---|---|---|
-| claude  | **true** | `core/hooks/cost-tracker.sh` PostToolUse hook writes per-call JSONL under `${STATE_DIR}/cost/${TASK_ID}.jsonl`. Hook registered by `adapters/claude/setup.sh` and `install.sh`. |
-| codex   | false | No token-usage exposure in the current Codex tool surface. The flag stays false; `crew:cost` prints the fallback note. |
+| claude  | **true** | `core/hooks/cost-tracker.sh` PostToolUse hook writes per-call JSONL under `${STATE_DIR}/cost/${TASK_ID}.jsonl`; `adapters/claude/bin/claude-host-bridge` also records bridge JSON usage through `core/scripts/host-bridge-token-usage.py`. |
+| codex   | false | No full token-usage surface is advertised for circuit-breaker enforcement. `adapters/codex/bin/codex-host-bridge` opportunistically records total tokens from CLI output through `core/scripts/host-bridge-token-usage.py` when the bridge runs and the output includes a token summary. |
 | generic | false | No token-usage source. |
 
 ## Related Files
@@ -97,6 +100,10 @@ Producer:
 - `install.sh` (same registration on fresh install)
 - `core/hooks/cost-tracker.sh` (writes per-call JSONL; capability-gated
   by the `cost_tracking` flag the adapter advertises)
+- `core/scripts/host-bridge-token-usage.py` (normalizes Claude JSON and Codex
+  text bridge usage into the same JSONL cost contract)
+- `adapters/claude/bin/claude-host-bridge` and
+  `adapters/codex/bin/codex-host-bridge` (opportunistic bridge usage producers)
 
 Consumer:
 
