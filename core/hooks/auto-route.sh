@@ -94,7 +94,7 @@ if not prompt.strip():
     sys.exit(0)
 
 COMMAND_PAT = (
-    r"^\s*(?:(?P<colon>(?:crew|ac):(?P<colon_intent>"
+    r"^\s*(?:[-*]\s*)?(?:(?P<colon>(?:crew|ac):(?P<colon_intent>"
     r"setup|run|crew|task|status|cost|agent-maker|agent|smm|sync-instructions|telemetry|update"
     r"))|\$(?P<wrapper>crew-(?P<wrapper_intent>"
     r"setup|run|status|cost|agent-maker|agent|smm|update"
@@ -254,8 +254,9 @@ PROJECT_KEYWORD_PAT = (
 )
 WORKFLOW_ACTION_PAT = (
     r"deploy|deployment|CI|test suite|run tests|merge|rollback|retry|"
+    r"parallel\s+(?:execution|run)|run\s+in\s+parallel|"
     r"배포해?|테스트\s*돌려|리뷰어?\s*붙여|"
-    r"병렬로\s*실행|머지해?|롤백|다시\s*시도|요구사항\s*정리"
+    r"병렬로\s*실행|병렬\s*실행|머지해?|롤백|다시\s*시도|요구사항\s*정리"
 )
 # Artifact-mutation pattern — catches natural-language requests to modify,
 # save, publish, refine, or update repo/worktree/state artifacts (markdown,
@@ -362,10 +363,25 @@ FOLLOWUP_EXECUTION_PAT = (
     r"테스트\s*(?:→|->|후|하고|및|,)|커밋|푸시|push|업데이트까지|"
     r"수정\s*(?:→|->|후|하고|및|,)"
 )
+WORKFLOW_COMMAND_TOKEN_PAT = (
+    r"^\s*(?:[-*]\s*)?(?:crew:run|crew:task|ac:run|ac:task|\$crew-run)\b|"
+    r"^\s*(?:[-*]\s*)?(?:\$review|/review)\b"
+)
+CREW_RUN_COMMAND_TOKEN_PAT = (
+    r"^\s*(?:[-*]\s*)?(?:crew:run|crew:task|ac:run|ac:task|\$crew-run)\b"
+)
+WORKFLOW_EXECUTION_MODIFIER_PAT = (
+    r"parallel\s+(?:execution|run)|run\s+in\s+parallel|"
+    r"병렬로\s*실행|병렬\s*실행"
+)
 
 
 def match(pattern):
     return bool(re.search(pattern, prompt, re.IGNORECASE))
+
+
+def match_multiline(pattern):
+    return bool(re.search(pattern, prompt, re.IGNORECASE | re.MULTILINE))
 
 
 def _compact_text(text: str, limit: int = 240) -> str:
@@ -575,6 +591,25 @@ if re.search(FOLLOWUP_CONTINUATION_PAT, prompt, re.IGNORECASE):
     emit_stop_route(
         "follow-up continuation",
         '  crew:run "continue the prior agent-crew task or request"',
+    )
+
+if (
+    match_multiline(WORKFLOW_COMMAND_TOKEN_PAT)
+    and match(WORKFLOW_EXECUTION_MODIFIER_PAT)
+    and not _read_only_marker()
+):
+    emit_stop_route(
+        "explicit workflow execution",
+        '  crew:run "your request"',
+    )
+
+if (
+    match_multiline(CREW_RUN_COMMAND_TOKEN_PAT)
+    and not _read_only_marker()
+):
+    emit_stop_route(
+        "explicit crew-run workflow invocation",
+        '  crew:run "your request"',
     )
 
 if match(BUG_SYMPTOM_PAT) and not match(QUESTION_PAT) and not _read_only_marker():
