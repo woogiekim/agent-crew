@@ -285,8 +285,10 @@ if one is detectable from `${TEST_DIR}` contents; otherwise default to
 `test_<entry_point>.{ext}`.
 
 Each test must:
-- Include the checklist `TC-ID` in the display name, test name, subtest label,
-  docstring, or nearest framework-supported equivalent.
+- Use a descriptive human-facing name that communicates behavior. TC-ID is an
+  internal checklist/mapping identifier and is not required in test names,
+  display names, subtest labels, or docstrings. Do not insert opaque numeric
+  TC-ID tokens solely for traceability.
 - Reference the spec section it derives from (one-line comment at the
   top: `# Spec: prd.md § "<section>" — acceptance criterion #<n>`).
 - Name the test case with the language-agnostic nature prefix contract from

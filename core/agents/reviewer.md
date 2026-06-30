@@ -763,6 +763,11 @@ identifier-style names, the equivalent prefix may appear in the identifier,
 display-name annotation, docstring, comment immediately adjacent to the test,
 subtest name, or table-case label.
 
+Do not reject a changed test only for absence of `TC-001`, `TC-002`, or another
+opaque checklist identifier in the human-facing name. TC-ID traceability belongs
+in `context/test-case-mapping.md`; reviewer findings should target missing
+nature prefixes, unclear behavior names, or low-signal assertions.
+
 Reject immediately when changed tests omit the nature prefix and no narrow
 project-convention exception is recorded in `{TASK_DIR}/context/tdd_log.md` or
 `{TASK_DIR}/context/tdd-exception.md`:

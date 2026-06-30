@@ -56,12 +56,13 @@ If a category does not apply, record `N/A` with the reason. Silent omission is
 invalid because it hides missing domain behavior coverage.
 
 After checklist-only review is approved, every generated or updated test must
-include the related TC-ID in its display name, test name, subtest label,
-docstring, or nearest framework-supported equivalent. After writing tests,
-produce a Test Case Mapping that maps every TC-ID to either a concrete test
-reference with `Covered = YES` or a reviewer-accepted explanation for why that
-case cannot be implemented. Every MUST item must be implemented or explicitly
-explained.
+use descriptive names that communicate behavior through the test naming
+contract below. TC-ID is an internal checklist/mapping identifier and is not
+required in test names, display names, subtest labels, or docstrings. After
+writing tests, produce `context/test-case-mapping.md` so every TC-ID maps to
+either a concrete test reference with `Covered = YES` or a reviewer-accepted
+explanation for why that case cannot be implemented. Every MUST item must be
+implemented or explicitly explained.
 
 ```kotlin
 // RED — test that does not compile yet

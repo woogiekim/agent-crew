@@ -67,3 +67,24 @@ def test_reviewer_flags_tests_missing_nature_prefix() -> None:
 
     assert "missing_test_nature_prefix" in reviewer
     assert "`<nature-prefix>[(<qualifier>)] - <behavior>`" in reviewer
+
+
+def test_tc_ids_are_mapping_traceability_not_required_test_name_tokens() -> None:
+    tdd = read("core/agents/skills/tdd.md")
+    test_writer = read("core/agents/test-writer.md")
+    reviewer = read("core/agents/reviewer.md")
+
+    for text in (tdd, test_writer):
+        normalized = " ".join(text.split())
+
+        assert "TC-ID" in text
+        assert "context/test-case-mapping.md" in text
+        assert "TC-ID is an internal checklist/mapping identifier" in normalized
+        assert "not required in test names" in normalized
+
+    combined_test_guidance = "\n".join((tdd, test_writer))
+
+    assert "include the related TC-ID in its display name" not in combined_test_guidance
+    assert "Include the checklist `TC-ID` in the display name" not in combined_test_guidance
+    assert "TC-ID in its display name" not in combined_test_guidance
+    assert "absence of `TC-001`" in reviewer
