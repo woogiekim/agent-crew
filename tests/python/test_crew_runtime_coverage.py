@@ -365,18 +365,44 @@ def test_language_normalization_and_issue_helpers(monkeypatch, tmp_path: Path):
 
 
 def test_agent_mutating_guard_honors_read_only_overrides():
+    """success-case(regression) - TC-004/TC-005 classify read-only and mutating prompts."""
     assert runtime.looks_mutating(
         "Evaluate routing behavior and identify gaps only; do not edit files."
     ) is False
     assert runtime.looks_mutating(
         "검토만 해주세요. 수정하지 말고 부족한 점만 알려주세요."
     ) is False
+    assert runtime.looks_mutating(
+        "개선 우선순위 항목들을 더 면밀하게 분석 검토하고 구현 계획을 수립해."
+    ) is False
+    assert runtime.looks_mutating(
+        "구현 계획만 수립해. 수정하지 마세요."
+    ) is False
+    assert runtime.looks_mutating(
+        "Read-only review. Output sections: Must Fix, Should Fix."
+    ) is False
+    assert runtime.looks_mutating(
+        "$review 코드리뷰. Must Fix / Should Fix 형식으로 보고."
+    ) is False
+    assert runtime.looks_mutating("어떤 commit 있어?") is False
+    assert runtime.looks_mutating("what is the latest commit?") is False
 
     assert runtime.looks_mutating("Review and update README.md with the findings.") is True
     assert runtime.looks_mutating("검토 후 README를 수정해주세요.") is True
     assert runtime.looks_mutating("기존 동작을 변경하지 않으면서 새 기능을 만들어주세요.") is True
     assert runtime.looks_mutating("기존 동작을 변경하지 않고 리포트를 작성해주세요.") is True
     assert runtime.looks_mutating("설정을 건드리지 말고 새 파일을 생성해주세요.") is True
+    assert runtime.looks_mutating("구현 계획을 수립하고 코드에 반영해.") is True
+    assert runtime.looks_mutating("구현 계획대로 진행해") is True
+    assert runtime.looks_mutating("구현 계획을 실행해") is True
+    assert runtime.looks_mutating("구현 계획을 그대로 진행해") is True
+    assert runtime.looks_mutating("구현 계획에 따라 진행해") is True
+    assert runtime.looks_mutating("개선 계획대로 진행해") is True
+    assert runtime.looks_mutating("개선 계획을 실행해") is True
+    assert runtime.looks_mutating("teach me while refactoring this function") is True
+    assert runtime.looks_mutating("teach me while removing this file") is True
+    assert runtime.looks_mutating("teach me while changing this hook") is True
+    assert runtime.looks_mutating("teach me while testing this feature") is True
 
 
 def test_command_run_current_session_normalization_and_reported_block(monkeypatch, tmp_path: Path, capsys):
@@ -436,6 +462,7 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path / "runtime-root"
     _write_registry(root)
     (root / "project").mkdir()
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
 
     assert runtime.command_agent(_agent_args(root)) == 0
     assert "usage: crew-runtime.py agent" in capsys.readouterr().out
@@ -455,6 +482,11 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
 
     assert runtime.command_agent(_agent_args(root, "unsafe", "read only")) == 2
     assert "cannot be invoked directly" in capsys.readouterr().err
+
+    assert runtime.command_agent(
+        _agent_args(root, "analyst", "$review 코드리뷰. Must Fix / Should Fix 형식으로 보고.")
+    ) == 0
+    assert "STATUS: handoff_ready" in capsys.readouterr().out
 
 
 def test_command_issue_ingest_error_and_output(monkeypatch, tmp_path: Path, capsys):

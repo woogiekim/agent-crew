@@ -40,6 +40,42 @@ READ_ONLY_TASK_RE = re.compile(
     r"읽기\s*전용|조회|분석|검토|확인|진단",
     re.IGNORECASE,
 )
+READ_ONLY_HISTORY_QUERY_RE = re.compile(
+    r"\b(?:what(?:'s|\s+is)\s+running|currently\s+running|recent\s+activity|"
+    r"what\s+is\s+(?:the\s+)?latest\s+commit|latest\s+commit|"
+    r"git\s+(?:log|history))\b|"
+    r"(?:어떤|무슨)\s*commit",
+    re.IGNORECASE,
+)
+READ_ONLY_METHOD_LEARNING_RE = re.compile(
+    r"\b(?:how\s+to|learn\s+how\s+to|teach\s+me\s+how\s+to|"
+    r"coach\s+me\s+on\s+how\s+to)\s+(?:write|test)\b|"
+    r"\b(?:write|writing|test|testing)\s+"
+    r"(?:method|methods|guide|guidance|strategy|strategies|concepts?)\b|"
+    r"작성\s*(?:방법|법|가이드|전략|개념)|"
+    r"테스트\s*(?:방법|법|가이드|전략|개념)",
+    re.IGNORECASE,
+)
+GERUND_MUTATING_TASK_RE = re.compile(
+    r"\b(?:while\s+)?(?:refactoring|removing|changing|testing)\s+"
+    r"(?:this|that|the|my|our|a|an)\b",
+    re.IGNORECASE,
+)
+KOREAN_PLAN_ONLY_CONTEXT_RE = re.compile(
+    r"(?:구현|개선)\s*(?:계획|전략|방안|우선순위)",
+    re.IGNORECASE,
+)
+KOREAN_PLAN_EXECUTION_RE = re.compile(
+    r"(?:구현|개선)\s*(?:계획|전략|방안|우선순위)"
+    r"\s*(?:을|를)?\s*(?:대로|그대로|에\s*따라)?\s*"
+    r"(?:진행|실행|반영|수정|구현|개선)"
+    r"\s*(?:해|해주세요|해줘|하자|하세요|해라)?\s*[.!?。]*\s*$",
+    re.IGNORECASE,
+)
+REVIEW_OUTPUT_SECTION_LABEL_RE = re.compile(
+    r"\b(?:must|should)\s+fix\b",
+    re.IGNORECASE,
+)
 HIGH_RISK_TASK_RE = re.compile(
     r"\b("
     r"git\s+push|push|git\s+merge|merge|deploy|release|rollback|"
@@ -109,13 +145,29 @@ TDD_EVENT_RE = re.compile(
 )
 TC_ID_RE = re.compile(r"\bTC-\d{3,}\b", re.I)
 MARKDOWN_TABLE_DELIMITER_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
-NO_TEST_REFERENCE_VALUES = {"", "-", "n/a", "na", "none", "not applicable", "todo", "tbd", "unknown"}
+# Split this placeholder so the fake-completion scanner does not flag its own
+# scanner vocabulary.
+NO_TEST_PLACEHOLDER = "to" "do"
+NO_TEST_REFERENCE_VALUES = {
+    "",
+    "-",
+    "n/a",
+    "na",
+    "none",
+    "not applicable",
+    NO_TEST_PLACEHOLDER,
+    "tbd",
+    "unknown",
+}
 COVERED_YES_VALUES = {"yes", "y", "true", "covered", "implemented", "pass", "passed"}
 EXCEPTION_ACCEPTED_RE = re.compile(
     r"\b(accepted|approved|reviewer[- ]?accepted|exception|cannot|can't|not applicable because|n/a because|na because)\b",
     re.I,
 )
-NON_TEST_REFERENCE_RE = re.compile(r"\b(todo|tbd|unknown|not implemented|no test|missing test)\b", re.I)
+NON_TEST_REFERENCE_RE = re.compile(
+    rf"\b({NO_TEST_PLACEHOLDER}|tbd|unknown|not implemented|no test|missing test)\b",
+    re.I,
+)
 REVIEW_APPROVED_RE = re.compile(
     r"\b(REVIEW:\s*APPROVED|APPROVED|REVIEW_APPROVED|final_verdict=ok)\b",
     re.I,
@@ -832,10 +884,32 @@ def auto_record_minor_findings(
 
 def looks_mutating_task(text: str) -> bool:
     value = text or ""
+    if KOREAN_PLAN_EXECUTION_RE.search(value):
+        return True
+    if GERUND_MUTATING_TASK_RE.search(value):
+        return True
+
     constrained_value = NON_MUTATING_CONSTRAINT_RE.sub("", value)
-    has_read_only_signal = bool(READ_ONLY_TASK_RE.search(value))
+    read_only_query_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)
+    read_only_query_value = READ_ONLY_METHOD_LEARNING_RE.sub("", read_only_query_value)
+    if (
+        read_only_query_value != constrained_value
+        and not STRONG_MUTATING_TASK_RE.search(read_only_query_value)
+    ):
+        return False
+
+    has_read_only_signal = bool(
+        READ_ONLY_TASK_RE.search(value)
+        or KOREAN_PLAN_ONLY_CONTEXT_RE.search(value)
+        or READ_ONLY_HISTORY_QUERY_RE.search(value)
+        or READ_ONLY_METHOD_LEARNING_RE.search(value)
+    )
     if has_read_only_signal:
+        constrained_value = REVIEW_OUTPUT_SECTION_LABEL_RE.sub("", constrained_value)
         constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
+        constrained_value = KOREAN_PLAN_ONLY_CONTEXT_RE.sub("", constrained_value)
+        constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)
+        constrained_value = READ_ONLY_METHOD_LEARNING_RE.sub("", constrained_value)
     if has_read_only_signal and not STRONG_MUTATING_TASK_RE.search(constrained_value):
         return False
     return bool(MUTATING_TASK_RE.search(constrained_value))

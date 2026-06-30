@@ -206,10 +206,11 @@ DESIGN_PAT = (
 ACTION_PAT = (
     r"build|implement|create|add|develop|rename|refactor|update|fix|remove|"
     r"delete|move|change|migrate|modify|replace|extend|integrate|"
+    r"\btest\b|"
     r"만들어|구현해|개발해|"
     r"추가해|수정해|작성해|"
     r"생성해|만들고|구현하고|"
-    r"보완|개선|추가|제거|변경|수정|업데이트|"
+    r"보완|개선|추가|제거|변경|수정|작성|업데이트|"
     r"반영|정리|배포|테스트|리뷰|머지|롤백|시도"
 )
 QUESTION_PAT = (
@@ -333,6 +334,40 @@ READONLY_REVIEW_PAT = (
     r"리뷰|검토|평가|비교|솔직|쓸만|쓸\s*만|"
     r"괜찮|문제점|개선점|부족|체크|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
 )
+MENTOR_ROUTE_PAT = (
+    r"\b(?:mentor\s+me|be\s+my\s+mentor|mentoring|coach|coaching|teach|"
+    r"learn|tutorial|study\s+plan|growth)\b|"
+    r"멘토링|멘토\s*역할(?:로)?|멘토처럼|코칭|코치|가르쳐|학습|개념"
+)
+MENTOR_MUTATION_PAT = (
+    r"\b(?:implement|create|add|update|fix|write|save|edit|publish|commit|"
+    r"deploy|merge|rollback|refactor(?:ing)?|remov(?:e|ing)|"
+    r"chang(?:e|ing))\b|"
+    r"\b(?:test|testing)\s+(?:this|that|the|my|our|a|an)\b|"
+    r"구현해|개발해|추가해|수정해|작성해|생성해|만들어|반영해|저장해|발행해|"
+    r"고쳐|바꿔|넣어|업데이트해|작성|수정|변경|삭제|"
+    r"테스트\s*(?:해|해줘|해주세요|돌려|수행|작성|추가)|배포|머지|커밋"
+)
+MENTOR_METHOD_LEARNING_PAT = (
+    r"\b(?:how\s+to|learn\s+how\s+to|teach\s+me\s+how\s+to)\s+(?:write|test)\b|"
+    r"\b(?:write|writing|test|testing)\s+(?:method|methods|guide|guidance|strategy|strategies|concepts?)\b|"
+    r"작성\s*(?:방법|법|가이드|전략|개념)|"
+    r"테스트\s*(?:방법|법|가이드|전략|개념)"
+)
+MENTOR_METHOD_CONCRETE_MUTATION_PAT = (
+    r"\b(?:implement|create|add|update|fix|save|edit|publish|commit|"
+    r"deploy|merge|rollback|refactor(?:ing)?|remov(?:e|ing)|chang(?:e|ing))\b|"
+    r"\bwrite\s+(?:a|an|the|this|that|my|our)\b|"
+    r"구현해|개발해|추가해|수정해|작성해|생성해|만들어|반영해|저장해|발행해|"
+    r"고쳐|바꿔|넣어|업데이트해|수정|변경|삭제|"
+    r"테스트\s*(?:해|해줘|해주세요|돌려|수행|추가)|배포|머지|커밋"
+)
+KOREAN_PLAN_EXECUTION_PAT = (
+    r"(?:구현|개선)\s*(?:계획|전략|방안|우선순위)"
+    r"\s*(?:을|를)?\s*(?:대로|그대로|에\s*따라)?\s*"
+    r"(?:진행|실행|반영|수정|구현|개선)"
+    r"\s*(?:해|해주세요|해줘|하자|하세요|해라)?\s*[.!?。]*\s*$"
+)
 READONLY_COMPLAINT_PAT = (
     r"안\s*쓰|안쓰|안\s*되|안되|못\s*하|못하|"
     r"자꾸|계속\s*(?:문제|실패|무시|빠지)"
@@ -400,6 +435,28 @@ def _read_only_marker() -> bool:
     ))
 
 
+def _mentor_route_marker() -> bool:
+    return bool(re.search(MENTOR_ROUTE_PAT, prompt, re.IGNORECASE))
+
+
+def _mentor_method_learning_marker() -> bool:
+    return (
+        bool(re.search(MENTOR_METHOD_LEARNING_PAT, prompt, re.IGNORECASE))
+        and not bool(re.search(MENTOR_METHOD_CONCRETE_MUTATION_PAT, prompt, re.IGNORECASE))
+    )
+
+
+def _historian_route_marker() -> bool:
+    return bool(re.search(
+        r"어떤\s*에이전트|방금|what just|what did|what ran|what agent|"
+        r"this session|this branch|session history|spawned|이번\s*세션|"
+        r"recent activity|currently running|어떤\s*commit|무슨\s*commit|"
+        r"what('s|s)?\s+running|git log|git history|progress\.log",
+        prompt,
+        re.IGNORECASE,
+    ))
+
+
 def _sentence(text: str) -> str:
     value = _compact_text(text, 180).strip()
     if not value:
@@ -453,8 +510,15 @@ def _risk_label(route_kind: str, detected_type: str = "") -> str:
 
 def _agent_specific_prompts(route_kind: str, target_agent: str, intent: str, normalized: str) -> str:
     if route_kind == "ROUTE":
+        mentor_prompt = (
+            f"- Mentor prompt: {normalized} Keep the pass read-only, teach the "
+            "reasoning criteria, and do not re-review or mutate artifacts.\n"
+            if target_agent == "mentor"
+            else ""
+        )
         return (
             "Agent-specific prompts:\n"
+            f"{mentor_prompt}"
             f"- Analyst prompt: {normalized} Keep the pass read-only, cite concrete files or state when used, and separate facts from inference.\n"
             "- Historian prompt: If the question is about session/git/project state, answer from real state files or git output only.\n"
             "- Reviewer prompt: If this becomes a review, apply delete-first checks before correctness comments."
@@ -626,6 +690,31 @@ if match(KOREAN_FIX_REQUEST_PAT) and not match(QUESTION_PAT) and not _read_only_
 
 if match(READONLY_COMPLAINT_PAT) and not match(REVIEW_MUTATION_PAT):
     emit_question_route("analyst", "behavior complaint/diagnostic request")
+
+
+if match(KOREAN_PLAN_EXECUTION_PAT):
+    emit_stop_route("project implementation", '  crew:run "your request"')
+
+
+if _historian_route_marker() and match(QUESTION_PAT):
+    emit_question_route("historian", "session/git/project-state Q")
+
+
+if (
+    _mentor_route_marker()
+    and match(MENTOR_MUTATION_PAT)
+    and not _read_only_marker()
+    and not _mentor_method_learning_marker()
+):
+    emit_stop_route("project implementation", '  crew:run "your request"')
+
+
+if (
+    _mentor_route_marker()
+    and not match(REVIEW_MUTATION_PAT)
+    and (not match(MENTOR_MUTATION_PAT) or _read_only_marker() or _mentor_method_learning_marker())
+):
+    emit_question_route("mentor", "explicit mentoring/coaching Q")
 
 
 if (

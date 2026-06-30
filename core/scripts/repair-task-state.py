@@ -10,20 +10,10 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from quality_loop_lib import check_quality_loop
+from quality_loop_lib import check_quality_loop, looks_mutating_task as shared_looks_mutating_task
 from task_capability_lib import required_capabilities_for_task
 
 
-MUTATING_TASK_RE = re.compile(
-    r"\b("
-    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
-    r"refactor|replace|extend|integrate|test|deploy|merge|rollback|write|"
-    r"save|edit|publish|commit|resolve|close"
-    r")\b|"
-    r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
-    r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
-    re.IGNORECASE,
-)
 QUALITY_GATED_TASK_RE = re.compile(
     r"\b("
     r"implement|create|add|update|fix|remove|move|change|migrate|"
@@ -222,11 +212,13 @@ def backup_result(task_dir: Path) -> None:
 
 
 def looks_mutating_task(task: str) -> bool:
-    return bool(MUTATING_TASK_RE.search(task or ""))
+    return shared_looks_mutating_task(task or "")
 
 
 def looks_quality_gated_task(task: str) -> bool:
     text = task or ""
+    if not looks_mutating_task(text):
+        return False
     if not QUALITY_GATED_TASK_RE.search(text):
         return False
     if ARTIFACT_CODE_OWNER_OUTPUT_RE.search(text):

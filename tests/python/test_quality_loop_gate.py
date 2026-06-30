@@ -245,6 +245,23 @@ def test_quality_gate_classifier_excludes_non_code_artifact_tasks():
     assert repair_state.looks_quality_gated_task("Update installed runtime assets") is False
 
 
+def test_repair_classifier_shares_read_only_overrides_with_quality_loop():
+    """success-case(regression) - TC-006 keeps repair read-only classifiers in sync."""
+    read_only_tasks = (
+        "Read-only review. Output sections: Must Fix, Should Fix.",
+        "$review 코드리뷰. Must Fix / Should Fix 형식으로 보고.",
+        "개선 우선순위 항목들을 더 면밀하게 분석 검토하고 구현 계획을 수립해.",
+        "구현 계획만 수립해. 수정하지 마세요.",
+        "어떤 commit 있어?",
+        "what is the latest commit?",
+    )
+
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
+
+
 def test_repair_does_not_require_quality_loop_for_documentation_only_task(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Write README documentation")
     register_path = task_dir / "register.json"

@@ -253,6 +253,222 @@ class TestReadOnlyReviewEvaluationRouting:
         ctx = output["hookSpecificOutput"]["additionalContext"]
         assert "[agent-crew] STOP" in ctx
 
+    def test_explicit_mentor_review_coaching_routes_to_mentor(self):
+        """success-case(regression) - TC-002 routes explicit Mentor coaching to mentor."""
+        payload = {"prompt": "리뷰 결과를 멘토처럼 설명해줘"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] ROUTE" in ctx
+        assert "TARGET_AGENT: mentor" in ctx
+        assert "routing to mentor" in ctx
+        assert "[agent-crew] STOP" not in ctx
+
+    def test_plain_review_evaluation_still_routes_to_analyst(self):
+        """success-case(regression) - TC-007 keeps plain review evaluation with analyst."""
+        payload = {
+            "prompt": "라우팅 분기를 검토하고 부족한 점만 알려주세요. 수정하지 마세요."
+        }
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] ROUTE" in ctx
+        assert "TARGET_AGENT: analyst" in ctx
+        assert "[agent-crew] STOP" not in ctx
+
+    def test_mentor_keyword_with_artifact_mutation_still_routes_to_stop(self):
+        """failure-case(regression) - TC-007 keeps artifact creation out of mentor."""
+        payload = {"prompt": "학습 자료 작성해줘"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] STOP" in ctx
+        assert "TARGET_AGENT: mentor" not in ctx
+
+    def test_tc001_action_test_substrings_do_not_route_to_stop(self):
+        """success-case(regression) - TC-001 ignores `test` inside non-action words."""
+        for prompt in (
+            "latest status",
+            "contest status",
+            "protest handling",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+            # then
+            assert "[agent-crew] STOP" not in ctx
+
+    def test_tc002_korean_mentor_prompt_forms_route_to_mentor(self):
+        """success-case(regression) - TC-002 supports declared Korean Mentor triggers."""
+        for prompt in (
+            "멘토링 해줘",
+            "멘토 역할로 설명해줘",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            # then
+            assert "[agent-crew] ROUTE" in ctx
+            assert "TARGET_AGENT: mentor" in ctx
+            assert "[agent-crew] STOP" not in ctx
+
+    def test_tc003_how_to_test_coaching_routes_to_mentor(self):
+        """success-case(regression) - TC-003 keeps how-to-test coaching read-only."""
+        for prompt in (
+            "coach me on how to test this feature",
+            "teach me how to test this feature",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            # then
+            assert "[agent-crew] ROUTE" in ctx
+            assert "TARGET_AGENT: mentor" in ctx
+            assert "[agent-crew] STOP" not in ctx
+
+    def test_tc001_mentor_testing_concept_read_only_routes_to_mentor(self):
+        """success-case(regression) - TC-001 keeps testing concept coaching read-only."""
+        for prompt in (
+            "teach me testing strategy; do not edit files",
+            "teach me test-driven development concepts",
+            "테스트 개념을 가르쳐줘. 수정하지 마.",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            # then
+            assert "[agent-crew] ROUTE" in ctx
+            assert "TARGET_AGENT: mentor" in ctx
+            assert "[agent-crew] STOP" not in ctx
+
+    def test_tc006_mentor_test_writing_method_routes_to_mentor(self):
+        """success-case(regression) - test-writing method learning is read-only."""
+        for prompt in (
+            "teach me how to write unit tests",
+            "learn how to write tests",
+            "테스트 작성 방법을 가르쳐줘",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            # then
+            assert "[agent-crew] ROUTE" in ctx
+            assert "TARGET_AGENT: mentor" in ctx
+            assert "[agent-crew] STOP" not in ctx
+
+    def test_tc006_concrete_test_artifact_writing_still_routes_to_stop(self):
+        """success-case(regression) - concrete test artifact creation remains mutating."""
+        for prompt in (
+            "write a unit test for this hook",
+            "테스트 파일 작성해줘",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            # then
+            assert "[agent-crew] STOP" in ctx
+            assert "ROUTE_LOCK: crew-run" in ctx
+            assert "TARGET_AGENT: mentor" not in ctx
+
+    def test_tc001_session_learning_question_routes_to_historian_before_mentor(self):
+        """success-case(regression) - TC-001 keeps session learning with historian."""
+        payload = {"prompt": "what did we learn this session?"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] ROUTE" in ctx
+        assert "TARGET_AGENT: historian" in ctx
+        assert "TARGET_AGENT: mentor" not in ctx
+        assert "[agent-crew] STOP" not in ctx
+
+    def test_tc007_session_keyword_with_mutating_verb_still_routes_to_stop(self):
+        """failure-case(regression) - TC-007 blocks session artifact mutation."""
+        payload = {"prompt": "update this session summary"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] STOP" in ctx
+        assert "TARGET_AGENT: historian" not in ctx
+
+    def test_tc002_mentor_target_analysis_routes_to_analyst(self):
+        """success-case(regression) - TC-002 keeps Mentor target analysis with analyst."""
+        payload = {"prompt": "Mentor Agent 동작 검증"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] ROUTE" in ctx
+        assert "TARGET_AGENT: analyst" in ctx
+        assert "TARGET_AGENT: mentor" not in ctx
+        assert "[agent-crew] STOP" not in ctx
+
+    def test_tc003_mentor_keyword_with_mutation_verbs_routes_to_stop(self):
+        """failure-case(regression) - TC-003 blocks Mentor phrasing with mutation verbs."""
+        for prompt in (
+            "teach me while refactoring this function",
+            "teach me while removing this file",
+            "teach me while changing this hook",
+            "teach me while testing this feature",
+        ):
+            output = _run_hook({"prompt": prompt}, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            assert "[agent-crew] STOP" in ctx
+            assert "TARGET_AGENT: mentor" not in ctx
+
+    def test_tc004_mentor_keyword_with_bare_korean_artifact_mutation_routes_to_stop(self):
+        """failure-case(regression) - TC-004 blocks bare Korean artifact mutation."""
+        payload = {"prompt": "학습 자료 작성"}
+        output = _run_hook(payload, bridge_configured=True)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+
+        assert "[agent-crew] STOP" in ctx
+        assert "TARGET_AGENT: mentor" not in ctx
+
+    def test_tc003_korean_implementation_plan_execution_routes_to_stop(self):
+        """success-case(regression) - TC-003 routes Korean plan execution to crew-run."""
+        for prompt in (
+            "구현 계획을 실행해",
+            "구현 계획대로 진행해",
+            "구현 계획을 그대로 진행해",
+            "구현 계획에 따라 진행해",
+            "개선 계획을 실행해",
+        ):
+            # given
+            payload = {"prompt": prompt}
+
+            # when
+            output = _run_hook(payload, bridge_configured=True)
+            ctx = output["hookSpecificOutput"]["additionalContext"]
+
+            # then
+            assert "[agent-crew] STOP" in ctx
+            assert "ROUTE_LOCK: crew-run" in ctx
+            assert "TARGET_AGENT: analyst" not in ctx
+
     def test_reviewer_stage_request_still_routes_to_stop(self):
         payload = {"prompt": "리뷰어 붙여서 테스트 돌려주세요"}
         output = _run_hook(payload, bridge_configured=True)

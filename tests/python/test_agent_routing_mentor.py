@@ -11,6 +11,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 ROUTING_PATH = REPO_ROOT / "core" / "rules" / "agent-routing.md"
 RUNTIME_PATH = REPO_ROOT / "core" / "scripts" / "crew-runtime.py"
+MENTOR_PATH = REPO_ROOT / "core" / "agents" / "mentor.md"
 SCRIPTS_DIR = REPO_ROOT / "core" / "scripts"
 
 if str(SCRIPTS_DIR) not in sys.path:
@@ -90,6 +91,131 @@ def test_runtime_auto_route_prefers_mentor_over_legacy_alias() -> None:
 
     assert agent_name == "mentor"
     assert "mentor" in reason
+
+
+def test_runtime_auto_route_prefers_explicit_mentor_review_coaching() -> None:
+    """success-case(regression) - TC-002 routes explicit Mentor coaching to mentor."""
+    agents = {
+        "analyst": {"safe": "yes"},
+        "mentor": {"safe": "yes"},
+        "learning-mentor": {"safe": "yes"},
+    }
+
+    for task in (
+        "리뷰 결과를 멘토처럼 설명해줘",
+        "리뷰 대응 코칭해줘",
+        "coach me on this review feedback",
+    ):
+        agent_name, reason = crew_runtime.auto_route_agent(task, agents)
+
+        assert agent_name == "mentor"
+        assert "mentor" in reason
+
+
+def test_tc001_runtime_auto_route_preserves_historian_before_mentor() -> None:
+    """success-case(regression) - TC-001 preserves historian priority."""
+    agents = {
+        "historian": {"safe": "yes"},
+        "mentor": {"safe": "yes"},
+        "learning-mentor": {"safe": "yes"},
+    }
+
+    for task in (
+        "what did we learn this session?",
+        "what agent just ran for mentor?",
+        "방금 멘토 에이전트가 동작한거야?",
+    ):
+        agent_name, reason = crew_runtime.auto_route_agent(task, agents)
+
+        assert agent_name == "historian"
+        assert "historian" in reason
+
+
+def test_runtime_auto_route_keeps_broad_review_evaluation_with_analyst() -> None:
+    """success-case(regression) - TC-007 keeps broad review analysis with analyst."""
+    agents = {
+        "analyst": {"safe": "yes"},
+        "mentor": {"safe": "yes"},
+        "learning-mentor": {"safe": "yes"},
+    }
+
+    for task in (
+        "검토해줘",
+        "평가해줘",
+        "explain this reviewer feedback",
+    ):
+        agent_name, reason = crew_runtime.auto_route_agent(task, agents)
+
+        assert agent_name == "analyst"
+        assert "analyst" in reason
+
+
+def test_tc002_runtime_auto_route_keeps_mentor_target_analysis_with_analyst() -> None:
+    """success-case(regression) - TC-002 keeps Mentor target analysis with analyst."""
+    agents = {
+        "analyst": {"safe": "yes"},
+        "mentor": {"safe": "yes"},
+        "learning-mentor": {"safe": "yes"},
+    }
+
+    for task in (
+        "Mentor Agent 동작 검증",
+        "Analyze whether the Mentor agent works as designed",
+        "멘토 에이전트 라우팅 문제를 검토해줘",
+    ):
+        agent_name, reason = crew_runtime.auto_route_agent(task, agents)
+
+        assert agent_name == "analyst"
+        assert "analyst" in reason
+
+
+def test_mentor_prompt_declares_review_explanation_context_contract() -> None:
+    text = MENTOR_PATH.read_text(encoding="utf-8")
+
+    assert "Review Explanation Coaching Mode" in text
+    assert "TASK_DIR" in text
+    assert "MENTOR_CONTEXT_PATH" in text
+    assert "context/review.md" in text
+    assert "Do not re-review" in text
+
+
+def test_tc004_runtime_mutating_mentor_gerunds_are_not_auto_routed_to_mentor() -> None:
+    """failure-case(regression) - TC-004 blocks Mentor routing for mutating gerunds."""
+    agents = {
+        "mentor": {"safe": "yes"},
+        "learning-mentor": {"safe": "yes"},
+    }
+
+    for task in (
+        "teach me while refactoring this function",
+        "teach me while removing this file",
+        "teach me while changing this hook",
+        "teach me while testing this feature",
+    ):
+        agent_name, reason = crew_runtime.auto_route_agent(task, agents)
+
+        assert crew_runtime.looks_mutating(task) is True
+        assert agent_name is None
+        assert "mutating" in reason
+
+
+def test_tc005_runtime_historians_read_only_running_and_commit_noun_queries() -> None:
+    """success-case(regression) - TC-005 routes running/commit noun queries to historian."""
+    agents = {
+        "historian": {"safe": "yes"},
+        "analyst": {"safe": "yes"},
+    }
+
+    for task in (
+        "what's running",
+        "어떤 commit 있어?",
+        "what is the latest commit?",
+    ):
+        agent_name, reason = crew_runtime.auto_route_agent(task, agents)
+
+        assert crew_runtime.looks_mutating(task) is False
+        assert agent_name == "historian"
+        assert "historian" in reason
 
 
 def test_runtime_resolves_installed_codex_bridge_default(tmp_path: Path) -> None:
