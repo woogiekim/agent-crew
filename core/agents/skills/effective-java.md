@@ -161,7 +161,75 @@ public Optional<Order> findById(OrderId id) {
 }
 ```
 
-### Rule 9: Use checked exceptions only for recoverable conditions
+### Rule 9: Minimize mutability and prefer safely shareable values
+> Source: Bloch, Item 17 "Minimize mutability"
+
+Immutable objects are simpler, thread-safe, and can be shared freely. Make
+classes immutable when practical: keep fields `private final`, avoid mutators,
+validate constructor inputs, and never expose mutable internals.
+
+When a value is intentionally read-only or shared, prefer a canonical immutable
+instance over allocating a fresh mutable object.
+
+```java
+// BAD — a mutable object represents a read-only absence value
+Map<Long, String> names = new HashMap<Long, String>();
+
+// GOOD — canonical immutable empty value communicates read-only intent
+Map<Long, String> names = Collections.emptyMap();
+```
+
+### Rule 10: Make defensive copies at trust boundaries
+> Source: Bloch, Item 50 "Make defensive copies when needed"
+
+Copy mutable inputs and outputs when an object must protect its invariants.
+Do not store caller-owned mutable collections directly, and do not return
+internal mutable state.
+
+```java
+public final class Schedule {
+    private final List<Instant> runs;
+
+    public Schedule(List<Instant> runs) {
+        this.runs = List.copyOf(runs);
+    }
+
+    public List<Instant> runs() {
+        return runs;
+    }
+}
+```
+
+### Rule 11: Return empty collections or arrays, not nulls
+> Source: Bloch, Item 54 "Return empty collections or arrays, not nulls"
+
+Never return `null` for collection or array results. Return the appropriate
+empty value so callers can iterate without defensive null checks.
+
+Use canonical immutable empty values when the fallback is read-only:
+
+- `Collections.emptyMap()`
+- `Collections.emptyList()`
+- `Collections.emptySet()`
+- Java 9+ `List.of()`, `Map.of()`, `Set.of()`
+
+Reviewer checklist: when a read-only fallback collection is represented by a
+fresh mutable allocation such as `new HashMap<Long, String>()`, prefer
+`Collections.emptyMap()` or the matching canonical immutable empty value unless
+the caller is expected to mutate the returned collection.
+
+```java
+// BAD — forces null checks
+return null;
+
+// BAD — mutable allocation for a read-only fallback collection
+return new HashMap<Long, String>();
+
+// GOOD — safe to iterate and share
+return Collections.emptyMap();
+```
+
+### Rule 12: Use checked exceptions only for recoverable conditions
 > Source: Bloch, Item 70 "Use checked exceptions for recoverable conditions and runtime exceptions for programming errors"
 
 - Checked exceptions: conditions the caller can reasonably recover from (e.g., `IOException`)
@@ -179,7 +247,7 @@ public void placeOrder(Order order) {
 }
 ```
 
-### Rule 10: Favour composition over inheritance
+### Rule 13: Favour composition over inheritance
 > Source: Bloch, Item 18 "Favour composition over inheritance"; Martin, Ch. 10
 
 Inheritance breaks encapsulation. Extend only when the relationship is a genuine
@@ -208,6 +276,10 @@ class InstrumentedSet<E> implements Set<E> {
 - Raw types (`List` instead of `List<Order>`)
 - Returning `null` from public API methods — use `Optional<T>` or throw
 - Mutable public fields — encapsulate with accessors
+- Fresh mutable empty fallback collections (`new HashMap<>()`,
+  `new ArrayList<>()`) when a canonical immutable empty value communicates the
+  read-only contract
+- Exposing caller-owned or internal mutable collections without defensive copies
 - `instanceof` chains — use polymorphism or pattern matching (Java 16+)
 - `synchronized` at method level when finer-grained locking suffices
 - String concatenation in loops — use `StringBuilder`

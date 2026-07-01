@@ -647,7 +647,11 @@ loop validator against the task state. This is the completion-time backstop for
 missing pipeline state, missing TDD evidence, missing reviewer approval, and
 TDD stages that produced no test file and no explicit `context/tdd-exception.md`.
 It also blocks invalid or unresolved `context/finding-register.json` entries
-so QA/MR/reviewer/repair findings cannot disappear from completion output.
+so QA/MR/reviewer/repair findings cannot disappear from completion output. The
+validator also runs the skill content-depth audit automatically and writes
+`context/skill-content-audit.json`; a missing or failing audit blocks completed
+mutating workflows because skill loading evidence is not enough if the loaded
+skill content is too shallow.
 
 ```bash
 QUALITY_LOOP_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/quality-loop-check.py" \

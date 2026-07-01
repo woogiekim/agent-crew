@@ -366,4 +366,62 @@ it "planner PRDs include KISS/YAGNI/DRY maintainability guidance"
 assert_contains "${PLANNER_CONTENT}" "KISS, YAGNI, and DRY"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Test 10: skill content-depth audit catches known Effective Java review gaps
+# ─────────────────────────────────────────────────────────────────────────────
+EFFECTIVE_JAVA_CONTENT="$(cat "${REPO_ROOT}/core/agents/skills/effective-java.md" 2>/dev/null || true)"
+SKILL_AUDIT_DOC_CONTENT="$(cat "${REPO_ROOT}/docs/skill-content-depth-audit.md" 2>/dev/null || true)"
+SKILL_AUDIT_JSON="$(python3 "${REPO_ROOT}/core/scripts/skill-content-audit.py" --format json 2>/dev/null || true)"
+
+it "skill-content-audit.py exists"
+assert_file_exists "${REPO_ROOT}/core/scripts/skill-content-audit.py"
+
+it "skill content-depth audit document exists"
+assert_file_exists "${REPO_ROOT}/docs/skill-content-depth-audit.md"
+
+it "skill audit document includes the inventory table"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "## Inventory"
+
+it "skill audit document includes shallow content findings"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "## Shallow Content Findings"
+
+it "skill audit document includes every effective-* follow-up section"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "## Effective Skill Follow-Ups"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-go.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-java.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-kotlin.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-python.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-rust.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-scala.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-swift.md"
+assert_contains "${SKILL_AUDIT_DOC_CONTENT}" "effective-typescript.md"
+
+it "skill audit JSON reports effective-java content contract passing"
+assert_contains "${SKILL_AUDIT_JSON}" '"effective-java.md"'
+assert_contains "${SKILL_AUDIT_JSON}" '"passed": true'
+assert_contains "${SKILL_AUDIT_JSON}" '"missing": []'
+
+it "effective-java.md covers Effective Java Item 17"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Item 17"
+
+it "effective-java.md covers Effective Java Item 50"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Item 50"
+
+it "effective-java.md covers Effective Java Item 54"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Item 54"
+
+it "effective-java.md names canonical immutable empty collections"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Collections.emptyMap()"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Collections.emptyList()"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Collections.emptySet()"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "List.of()"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Map.of()"
+assert_contains "${EFFECTIVE_JAVA_CONTENT}" "Set.of()"
+
+it "reviewer.md requires applied language skill evidence"
+assert_contains "${REVIEWER_CONTENT}" "language_skill_application_evidence"
+assert_contains "${REVIEWER_CONTENT}" "not merely loaded"
+assert_contains "${REVIEWER_CONTENT}" "skill-content-audit.py"
+assert_contains "${REVIEWER_CONTENT}" "context/skill-content-audit.json"
+
+# ─────────────────────────────────────────────────────────────────────────────
 end_report

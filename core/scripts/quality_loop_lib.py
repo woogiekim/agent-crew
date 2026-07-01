@@ -6,6 +6,8 @@ import datetime as _dt
 import importlib.util
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -1198,6 +1200,86 @@ def event_is_reviewer_rejected(row: dict) -> bool:
     ) or "reviewer_rejected" in text
 
 
+def skill_content_audit_script() -> Path:
+    return Path(__file__).resolve().with_name("skill-content-audit.py")
+
+
+def skill_content_audit_status(task_dir: Path) -> dict:
+    artifact_path = task_dir / "context" / "skill-content-audit.json"
+    relative_artifact = "context/skill-content-audit.json"
+    script = skill_content_audit_script()
+    status = {
+        "required": False,
+        "passed": False,
+        "artifact": relative_artifact,
+        "script": str(script),
+        "errors": [],
+        "inventory_count": 0,
+        "effective_followup_count": 0,
+        "shallow_finding_count": 0,
+    }
+    if not script.is_file():
+        status["errors"].append("missing_skill_content_audit_script")
+        return status
+
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--format",
+            "json",
+            "--output",
+            str(artifact_path),
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        status["errors"].append("skill_content_audit_failed")
+        if completed.stderr.strip():
+            (task_dir / "context" / "skill-content-audit.stderr.txt").write_text(
+                completed.stderr.strip() + "\n",
+                encoding="utf-8",
+            )
+
+    try:
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        status["errors"].append("missing_skill_content_audit_artifact")
+        return status
+    except json.JSONDecodeError:
+        status["errors"].append("invalid_skill_content_audit_artifact")
+        return status
+    except Exception:
+        status["errors"].append("unreadable_skill_content_audit_artifact")
+        return status
+
+    inventory = payload.get("inventory") if isinstance(payload, dict) else None
+    followups = payload.get("effective_followups") if isinstance(payload, dict) else None
+    shallow = payload.get("shallow_findings") if isinstance(payload, dict) else None
+    contracts = payload.get("content_contracts") if isinstance(payload, dict) else None
+    status["inventory_count"] = len(inventory) if isinstance(inventory, list) else 0
+    status["effective_followup_count"] = len(followups) if isinstance(followups, list) else 0
+    status["shallow_finding_count"] = len(shallow) if isinstance(shallow, list) else 0
+    contract_failures = [
+        name
+        for name, contract in (contracts or {}).items()
+        if isinstance(contract, dict) and not contract.get("passed")
+    ]
+    if contract_failures:
+        status["errors"].append("skill_content_audit_contract_failed")
+        status["contract_failures"] = sorted(contract_failures)
+    if not isinstance(inventory, list) or not inventory:
+        status["errors"].append("missing_skill_content_audit_inventory")
+    if not isinstance(followups, list):
+        status["errors"].append("missing_skill_content_audit_effective_followups")
+
+    status["errors"] = sorted(set(status["errors"]))
+    status["passed"] = not status["errors"]
+    return status
+
+
 def event_stage(row: dict) -> int | None:
     try:
         return int(row.get("stage"))
@@ -1417,6 +1499,7 @@ def quality_coverage_status(
     human_acceptance: dict,
     evaluation_metrics: dict,
     fake_completion: dict,
+    skill_content_audit: dict,
 ) -> dict:
     threshold = 80
     max_score = 100
@@ -1507,7 +1590,7 @@ def quality_coverage_status(
         ),
         quality_coverage_dimension(
             "optional_gates",
-            10,
+            5,
             [
                 (
                     "delegation_fidelity",
@@ -1517,6 +1600,24 @@ def quality_coverage_status(
                 ("human_acceptance", (not human_acceptance["required"]) or human_acceptance["present"]),
                 ("evaluation_metrics", (not evaluation_metrics["required"]) or (evaluation_metrics["present"] and not evaluation_metrics["errors"])),
                 ("fake_completion_scan", not fake_completion.get("findings")),
+            ],
+        ),
+        quality_coverage_dimension(
+            "skill_content_audit",
+            5,
+            [
+                ("audit_executed", bool(skill_content_audit.get("artifact")) and not any(
+                    error in skill_content_audit.get("errors", [])
+                    for error in {
+                        "missing_skill_content_audit_script",
+                        "missing_skill_content_audit_artifact",
+                        "invalid_skill_content_audit_artifact",
+                        "unreadable_skill_content_audit_artifact",
+                    }
+                )),
+                ("audit_passed", bool(skill_content_audit.get("passed"))),
+                ("inventory_present", int(skill_content_audit.get("inventory_count") or 0) > 0),
+                ("effective_followups_present", int(skill_content_audit.get("effective_followup_count") or 0) > 0),
             ],
         ),
     ]
@@ -1665,12 +1766,23 @@ def check_quality_loop(
     human_acceptance = human_acceptance_matrix_status(task_dir)
     evaluation_metrics = evaluation_metrics_status(task_dir)
     fake_completion = fake_completion_status(task_dir, register, events, result_text)
+    skill_audit = skill_content_audit_status(task_dir) if required else {
+        "required": False,
+        "passed": True,
+        "artifact": "context/skill-content-audit.json",
+        "script": str(skill_content_audit_script()),
+        "errors": [],
+        "inventory_count": 0,
+        "effective_followup_count": 0,
+        "shallow_finding_count": 0,
+    }
     delegation_required = bool(pipeline.get("requires_delegation_fidelity"))
     human_acceptance_required = bool(pipeline.get("requires_human_acceptance"))
     evaluation_required = bool(pipeline.get("eval_command"))
     delegation_fidelity["required"] = delegation_required
     human_acceptance["required"] = human_acceptance_required
     evaluation_metrics["required"] = evaluation_required
+    skill_audit["required"] = required
     test_checklist_required = bool(shape["has_tdd_stage"] and not has_tdd_exception(task_dir))
     test_checklist["required"] = test_checklist_required
 
@@ -1737,6 +1849,8 @@ def check_quality_loop(
             failures.extend(evaluation_metrics["errors"])
         if fake_completion.get("findings"):
             failures.append("fake_completion_markers_present")
+        if not skill_audit["passed"]:
+            failures.extend(skill_audit["errors"] or ["skill_content_audit_failed"])
         if events and not valid_approval_events:
             failures.append("missing_pipeline_reviewer_approval")
         if require_rework_cycle and not rejection_indexes:
@@ -1768,6 +1882,7 @@ def check_quality_loop(
         human_acceptance=human_acceptance,
         evaluation_metrics=evaluation_metrics,
         fake_completion=fake_completion,
+        skill_content_audit=skill_audit,
     )
     quality_decision = quality_coverage_decision(
         quality_coverage,
@@ -1811,4 +1926,5 @@ def check_quality_loop(
         "delegation_fidelity": delegation_fidelity,
         "human_acceptance": human_acceptance,
         "evaluation_metrics": evaluation_metrics,
+        "skill_content_audit": skill_audit,
     }

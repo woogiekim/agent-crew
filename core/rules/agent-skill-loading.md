@@ -92,6 +92,51 @@ This is the Open/Closed guarantee: skill creation is additive only.
 
 ## Audit / Verification
 
+### Content-Depth Audit
+
+File existence and section shape are necessary but not sufficient. A skill that
+loads successfully can still be too shallow to drive the implementation or
+review judgment the agent needs to make.
+
+Use the content-depth audit when changing `core/agents/skills/*.md` or when a
+review miss suggests a loaded skill did not contain enough concrete guidance:
+
+```bash
+python3 core/scripts/skill-content-audit.py --format json
+python3 core/scripts/skill-content-audit.py --format markdown
+```
+
+Completed mutating workflows run the same audit automatically through the
+quality-loop completion gate and persist the JSON result at
+`{TASK_DIR}/context/skill-content-audit.json`. Reviewer approval should also
+include that artifact when evaluating whether loaded language skills were
+actually usable for concrete review decisions.
+
+The audit records:
+
+- inventory for every source skill file;
+- consuming agents and mandatory/on-demand status from the matrix and agent
+  declarations;
+- declared sources, rule counts, and checklist markers;
+- targeted content contracts for known high-value review misses;
+- follow-up categories for every `effective-*` skill.
+
+Depth rubric:
+
+| Question | Required evidence |
+|---|---|
+| Does the skill cover the canonical source's high-impact items? | Named item, rule, or source section. |
+| Does it include concrete review triggers? | A reviewer can match a changed hunk to a specific rule. |
+| Does it include positive and negative patterns? | Both examples or explicit anti-pattern bullets. |
+| Does it map to implementation, test-writer, and reviewer behavior? | The rule states when to apply and how to verify. |
+| Does it include examples matching real review decisions? | Example code or artifact shape similar to observed misses. |
+
+Known content contracts should live in `core/scripts/skill-content-audit.py` so
+they fail in CI instead of relying on manual review memory. For example,
+`effective-java.md` must keep Effective Java Item 17, Item 50, Item 54, and
+canonical immutable empty collection guidance because these rules are concrete
+review triggers for read-only fallback collection refactors.
+
 To list every skill declared across all implementation agents, run:
 
 ```bash

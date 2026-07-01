@@ -726,6 +726,14 @@ def test_quality_loop_checker_reports_complete_quality_coverage(tmp_path: Path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
+    audit_artifact = task_dir / "context" / "skill-content-audit.json"
+    assert audit_artifact.is_file()
+    assert payload["skill_content_audit"]["passed"] is True
+    assert payload["skill_content_audit"]["artifact"] == "context/skill-content-audit.json"
+
+    audit_payload = json.loads(audit_artifact.read_text(encoding="utf-8"))
+    assert audit_payload["content_contracts"]["effective-java.md"]["passed"] is True
+
     coverage = payload["quality_coverage"]
     assert coverage["score"] == 100
     assert coverage["max_score"] == 100
@@ -738,6 +746,35 @@ def test_quality_loop_checker_reports_complete_quality_coverage(tmp_path: Path):
 
     assert text_result.returncode == 0, text_result.stdout + text_result.stderr
     assert "QUALITY_COVERAGE: 100/100 threshold=80 status=pass" in text_result.stdout
+
+
+def test_quality_loop_checker_blocks_when_skill_content_audit_fails(monkeypatch, tmp_path: Path):
+    task_dir = tmp_path / "task"
+    write_task(
+        task_dir,
+        [
+            row("STAGE_DONE", "test-writer", "TDD RED GREEN REFACTOR, 3 tests passed", stage=1),
+            row("STAGE_DONE", "backend", "backend - N/A", stage=1),
+            row("STAGE_DONE", "reviewer", "REVIEW: APPROVED QUALITY_METRICS: context/quality-metrics.json", stage=2),
+        ],
+    )
+
+    def fake_script() -> Path:
+        return tmp_path / "missing-skill-content-audit.py"
+
+    monkeypatch.setattr(quality_loop, "skill_content_audit_script", fake_script)
+
+    payload = quality_loop.check_quality_loop(task_dir)
+
+    assert payload["passed"] is False
+    assert "missing_skill_content_audit_script" in payload["failures"]
+    assert "missing_skill_content_audit_script" in payload["hard_failures"]
+    assert payload["skill_content_audit"]["passed"] is False
+    audit_dimension = next(
+        dimension for dimension in payload["quality_coverage"]["dimensions"]
+        if dimension["name"] == "skill_content_audit"
+    )
+    assert audit_dimension["passed"] is False
 
 
 def test_quality_loop_checker_soft_passes_low_risk_artifact_gaps_with_high_coverage(tmp_path: Path):

@@ -111,10 +111,32 @@ copy_flat_assets() {
 }
 
 copy_tree_assets() {
-  local src="$1" dest="$2"
+  local src="$1" dest="$2" tmp
   [ -d "${src}" ] || return 0
-  mkdir -p "${dest}"
-  cp -rf "${src}/." "${dest}/"
+  mkdir -p "$(dirname "${dest}")"
+  tmp="$(mktemp -d "${dest}.tmp.XXXXXX")"
+  cp -rf "${src}/." "${tmp}/"
+  rm -rf "${dest}"
+  mv "${tmp}" "${dest}"
+}
+
+tree_assets_drifted() {
+  local src="$1" dest="$2" rel
+  [ -d "${src}" ] || return 1
+  [ -d "${dest}" ] || return 0
+  while IFS= read -r -d '' rel; do
+    rel="${rel#./}"
+    if [ ! -f "${dest}/${rel}" ] || ! cmp -s "${src}/${rel}" "${dest}/${rel}"; then
+      return 0
+    fi
+  done < <(cd "${src}" && find . -type f -print0)
+  while IFS= read -r -d '' rel; do
+    rel="${rel#./}"
+    if [ ! -f "${src}/${rel}" ]; then
+      return 0
+    fi
+  done < <(cd "${dest}" && find . -type f -print0)
+  return 1
 }
 
 absolute_file_path() {
@@ -172,6 +194,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/pipeline-quality-plan-check.py:${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
     "core/scripts/quality-loop-check.py:${AGENT_CREW_HOME}/scripts/quality-loop-check.py" \
     "core/scripts/quality_loop_lib.py:${AGENT_CREW_HOME}/scripts/quality_loop_lib.py" \
+    "core/scripts/skill-content-audit.py:${AGENT_CREW_HOME}/scripts/skill-content-audit.py" \
     "core/scripts/reviewer-loop-decision.py:${AGENT_CREW_HOME}/scripts/reviewer-loop-decision.py" \
     "core/scripts/cleanup-host-bridge-blockers.py:${AGENT_CREW_HOME}/scripts/cleanup-host-bridge-blockers.py" \
     "core/scripts/cleanup-task-state.py:${AGENT_CREW_HOME}/scripts/cleanup-task-state.py" \
@@ -211,6 +234,12 @@ sync_source_runtime_assets_if_drifted() {
       break
     fi
   done
+  if tree_assets_drifted "${source}/core/agents" "${AGENT_CREW_HOME}/system/agents"; then
+    drift=1
+  fi
+  if tree_assets_drifted "${source}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"; then
+    drift=1
+  fi
   [ "${drift}" = "1" ] || return 0
 
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
@@ -225,6 +254,8 @@ sync_source_runtime_assets_if_drifted() {
   copy_tree_assets "${source}/core/evaluations" "${AGENT_CREW_HOME}/evaluations"
   copy_tree_assets "${source}/core/policies" "${AGENT_CREW_HOME}/system/policies"
   copy_tree_assets "${source}/core/policies" "${AGENT_CREW_HOME}/policies"
+  copy_tree_assets "${source}/core/agents" "${AGENT_CREW_HOME}/system/agents"
+  copy_tree_assets "${source}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
   copy_flat_assets "${source}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
   sync_managed_path_crew_cli "${source}/core/bin/crew"
   copy_flat_assets "${source}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"

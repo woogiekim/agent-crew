@@ -150,6 +150,18 @@ load them at agent startup:
 
 > **Load the language-specific skill matching the detected project language before reviewing code.**
 > Use the same detection heuristic as the implementer agents (build files → language → skill file).
+> Record `language_skill_application_evidence` in `context/review.md` before
+> approval. The evidence must name each loaded language skill, cite the changed
+> file or diff hunk where a concrete rule was applied, and state the review
+> conclusion. A language skill listed in `skill-load.md` but not tied to a
+> concrete review decision is not merely loaded enough for approval.
+> Before emitting `REVIEW: APPROVED`, run the skill content-depth audit and save
+> JSON evidence to `context/skill-content-audit.json`:
+> `python3 "${AGENT_CREW_HOME}/scripts/skill-content-audit.py" --format json --output "${TASK_DIR}/context/skill-content-audit.json"`.
+> If the script is only available in the active source checkout, use
+> `python3 "${PROJECT_ROOT}/core/scripts/skill-content-audit.py" --format json --output "${TASK_DIR}/context/skill-content-audit.json"`.
+> A failed audit is a `NEEDS_CHANGES` blocker because approval would otherwise
+> rest on skill content that may be too shallow to support the review judgment.
 
 > **MANDATORY: Before approving any code change, read `~/.agent-crew/system/rules/code-quality.md`.**
 > Apply its baseline to every changed source, script, template, and
