@@ -307,6 +307,7 @@ python3 - "${GC_HOME}/.mnemos/.agent/state/fts.db" <<'PY'
 import json
 import sqlite3
 import sys
+from datetime import datetime, timedelta, timezone
 
 conn = sqlite3.connect(sys.argv[1])
 conn.execute(
@@ -315,21 +316,25 @@ conn.execute(
     USING fts5(item_id UNINDEXED, content, metadata)
     """
 )
+now = datetime.now(timezone.utc)
+recent = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+old = (now - timedelta(days=400)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 rows = [
     (
         "duplicate-memory-canonical",
         "valuable duplicate content for memory gc retention",
-        {"layer": "session", "created_at": "2026-01-01T00:00:00Z"},
+        {"layer": "session", "created_at": recent},
     ),
     (
         "duplicate-memory-copy",
         "valuable duplicate content for memory gc retention",
-        {"layer": "ephemeral", "created_at": "2025-01-01T00:00:00Z"},
+        {"layer": "ephemeral", "created_at": old},
     ),
     (
         "stale-probe-memory",
         "probe",
-        {"layer": "ephemeral", "created_at": "2024-01-01T00:00:00Z"},
+        {"layer": "ephemeral", "created_at": old},
     ),
 ]
 for item_id, content, metadata in rows:

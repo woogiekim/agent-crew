@@ -142,6 +142,126 @@ def test_host_bridge_start_failure_and_timeout_paths(monkeypatch, tmp_path: Path
     assert timed_out["failure_class"] == "host_bridge_timeout"
 
 
+def test_host_bridge_executes_parsed_argv_without_shell(monkeypatch, tmp_path: Path):
+    """success-case(security) - host bridge runtime executes parsed argv without shell."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    captured = {}
+
+    class FakeProcess:
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return "bridge ok\n", ""
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return FakeProcess()
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS", "0")
+    monkeypatch.setenv("AGENT_CREW_BRIDGE_TIMEOUT_SECONDS", "1")
+
+    # when
+    record = runtime.invoke_host_bridge(
+        "bridge-command --mode 'two words'",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    # then
+    assert record["returncode"] == 0
+    assert captured["args"] == ["bridge-command", "--mode", "two words"]
+    assert captured["kwargs"]["shell"] is False
+
+
+def test_host_bridge_expands_user_path_for_executable_head(monkeypatch, tmp_path: Path):
+    """success-case(compatibility) - runtime matches checker tilde expansion for executable head."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    captured = {}
+
+    class FakeProcess:
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return "bridge ok\n", ""
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return FakeProcess()
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS", "0")
+    monkeypatch.setenv("AGENT_CREW_BRIDGE_TIMEOUT_SECONDS", "1")
+
+    # when
+    record = runtime.invoke_host_bridge(
+        "~/bridge --mode safe",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    # then
+    assert record["returncode"] == 0
+    assert captured["args"] == [str(home / "bridge"), "--mode", "safe"]
+    assert captured["kwargs"]["shell"] is False
+
+
+def test_host_bridge_does_not_execute_shell_metacharacters(tmp_path: Path):
+    """success-case(security) - metacharacters are argv, not shell syntax."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    sentinel = tmp_path / "sentinel"
+
+    # when
+    record = runtime.invoke_host_bridge(
+        f"{sys.executable} -c 'print(\"bridge ok\")' ; touch {sentinel}",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    # then
+    assert record["returncode"] == 0
+    assert not sentinel.exists()
+
+
+def test_host_bridge_rejects_unparseable_command_before_shell(monkeypatch, tmp_path: Path):
+    """failure-case(validation) - rejects unparseable host bridge command before shell execution."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+
+    def fail_popen(*_args, **_kwargs):
+        raise AssertionError("Popen must not be called for unparseable command")
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", fail_popen)
+
+    # when
+    record = runtime.invoke_host_bridge(
+        "'unterminated",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    # then
+    assert record["returncode"] == 127
+    assert record["failure_class"] == "host_bridge_start_failed"
+    assert "No closing quotation" in record["stderr"]
+
+
 def test_host_bridge_wait_progress_surfaces_child_output(monkeypatch, tmp_path: Path, capsys):
     task_dir = tmp_path / "task"
     task_dir.mkdir()

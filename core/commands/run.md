@@ -2662,6 +2662,8 @@ use this sequence:
 4. For auto-completion:
    - Pass `--host-bridge-command "<command>"` on `crew run`, or
    - Set `AGENT_CREW_HOST_BRIDGE_COMMAND` in the process environment.
+   - The command is parsed into argv and executed without an implicit shell; use
+     `bash -c '...'` when shell features are required.
    `.zshrc` is not required; it is only one optional place to persist env.
 5. Re-check task state:
    - `crew status --json --task-id <TASK_ID>`

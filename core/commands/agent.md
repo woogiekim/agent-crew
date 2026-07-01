@@ -66,7 +66,9 @@ crew:agent --host-bridge-command "your-host-bridge-command" analyst "question"
 ```
 
 When a bridge command is configured, the runtime invokes it immediately after
-creating the handoff. A zero exit status marks the request as:
+creating the handoff. The command is parsed into argv and executed without an
+implicit shell; use `bash -c '...'` when shell features are required. A zero
+exit status marks the request as:
 `HOST_BRIDGE: auto_completed`.
 
 In **auto-routing mode**:

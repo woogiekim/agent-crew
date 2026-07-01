@@ -112,8 +112,10 @@ invocation in SKILL.md; generic adds guidance).
   largest-agent, and hook-timeout budgets so Claude slowness is diagnosable
   from host diagnostics instead of anecdotal observation.
 - `check-host-bridge.py` — validates an optional external
-  `AGENT_CREW_HOST_BRIDGE_COMMAND` for shell-token parseability and executable
-  discoverability/permissions. When the environment variable is absent, it can
+  `AGENT_CREW_HOST_BRIDGE_COMMAND` for argv parseability and executable
+  discoverability/permissions. Runtime bridge execution uses the parsed argv
+  without an implicit shell; shell-specific commands should use `bash -c`.
+  When the environment variable is absent, it can
   discover the installed Codex or Claude adapter bridge from the active project
   capabilities. Missing external bridge configuration is a soft notice when no
   default bridge is installed because `crew run` records `handoff_ready`

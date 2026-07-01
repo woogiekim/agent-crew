@@ -41,7 +41,12 @@ from project_state import resolve_project_state
 SCENARIOS = [
     {
         "id": "workflow_host_bridge_auto_completion",
-        "args": ["run", "--host-bridge-command", "printf '%s\\n' readiness-workload-completed", "Read-only readiness workload workflow validation."],
+        "args": [
+            "run",
+            "--host-bridge-command",
+            "bash -c 'printf \"%s\\n\" readiness-workload-completed'",
+            "Read-only readiness workload workflow validation.",
+        ],
         "expected": ["STATUS: completed", "HOST_BRIDGE: auto_completed"],
     },
     {

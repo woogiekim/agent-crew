@@ -1202,7 +1202,9 @@ host bridge is configured, the run ends as STATUS: handoff_ready after writing
 resumable state. Tests may use --fake-host-result completed to exercise the E2E
 state path. Hosts may still set AGENT_CREW_HOST_BRIDGE_COMMAND, or pass
 --host-bridge-command, to invoke an adapter bridge after handoff creation; a
-zero exit status marks the run auto-completed with host bridge evidence.
+zero exit status marks the run auto-completed with host bridge evidence. The
+command is parsed into argv and executed without an implicit shell; use
+bash -c '...' when shell features are required.
 
 Common path: run this from the host AI session, follow the printed NEXT line,
 then use crew status to monitor or crew repair only if the host handoff had to
@@ -1345,7 +1347,9 @@ usage: crew agent [--host-bridge-command CMD] [agent-name] [question]
 Validates the direct-agent request and writes deterministic host handoff state.
 The host prompt runtime still performs the actual read-only analysis.
 Hosts may set AGENT_CREW_HOST_BRIDGE_COMMAND, or pass --host-bridge-command,
-to execute a configured adapter bridge command after handoff creation.
+to execute a configured adapter bridge command after handoff creation. The
+command is parsed into argv without an implicit shell; use bash -c '...' when
+shell features are required.
 If the bridge returns zero, command output is marked auto-completed.
 EOF
     return 0

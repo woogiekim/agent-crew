@@ -77,6 +77,14 @@ export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/claude/bin/c
 crew run "your task" --host-bridge-command "your-host-bridge-command"
 ```
 
+The command string is parsed into argv and executed without an implicit shell.
+If you need shell features such as redirects, variable expansion, or compound
+commands, make the shell explicit, for example:
+
+```bash
+crew run "your task" --host-bridge-command "bash -c 'printf \"%s\n\" done'"
+```
+
 Then re-check:
 
 ```bash
@@ -108,7 +116,7 @@ Use this after backing up any out-of-band task evidence you need from
 
 Use this to verify:
 
-- is host bridge command valid in the current shell/runtime,
+- is host bridge command valid for argv-based runtime execution,
 - whether host adapter actually received handoff context,
 - whether runner is blocked before tool invocation.
 

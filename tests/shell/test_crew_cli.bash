@@ -301,7 +301,7 @@ TOOL_PROJECT=$(make_tmp)
 mkdir -p "${TOOL_PROJECT}"
 
 it "host bridge command failures create redacted tool-events and trace can include tools"
-out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" bash "${CREW}" run --host-bridge-command "printf token=secret123 >&2; exit 7" "read-only host bridge" 2>&1)
+out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" bash "${CREW}" run --host-bridge-command "bash -c 'printf token=secret123 >&2; exit 7'" "read-only host bridge" 2>&1)
 rc=$?
 assert_exit 3 "${rc}"
 TOOL_TASK_ID=$(printf '%s\n' "${out}" | awk '/^TASK_ID:/ {print $2; exit}')
@@ -318,7 +318,7 @@ assert_contains "${out}" "Tools:"
 assert_contains "${out}" "host_bridge_command"
 
 it "host bridge wait surfaces latest progress while command is running"
-out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS=0.1 bash "${CREW}" run --host-bridge-command "sleep 0.25; exit 7" "read-only wait monitor" 2>&1)
+out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" AGENT_CREW_BRIDGE_MONITOR_INTERVAL_SECONDS=0.1 bash "${CREW}" run --host-bridge-command "bash -c 'sleep 0.25; exit 7'" "read-only wait monitor" 2>&1)
 rc=$?
 assert_exit 3 "${rc}"
 assert_contains "${out}" "[crew] START"
@@ -345,6 +345,19 @@ assert_contains "${timeout_tools}" '"failure_class": "host_bridge_timeout"'
 assert_contains "$(cat "${TIMEOUT_TASK_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_TIMEOUT"
 out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" bash "${CREW}" trace --task-id "${TIMEOUT_TASK_ID}" --include-tools 2>&1)
 assert_contains "${out}" "host_bridge_timeout"
+
+it "host bridge parse failure records explicit start failure"
+out=$(AGENT_CREW_HOME="${TOOL_HOME}" PROJECT_ROOT="${TOOL_PROJECT}" bash "${CREW}" run --host-bridge-command "'unterminated" "read-only bridge parse failure" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "host bridge failed to start"
+assert_contains "${out}" "host_bridge_start_failed"
+PARSE_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+parse_register=$(cat "${PARSE_TASK_DIR}/register.json")
+parse_invocation=$(cat "${PARSE_TASK_DIR}/context/host-bridge-invocation.json")
+assert_contains "${parse_register}" '"host_bridge_failure_reason": "host_bridge_start_failed"'
+assert_contains "${parse_register}" '"host_bridge_failure_detail": "No closing quotation"'
+assert_contains "${parse_invocation}" '"failure_class": "host_bridge_start_failed"'
 
 it "crew debug exits 0 with empty task directory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" debug --recent 1 2>&1)
@@ -828,7 +841,7 @@ out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}"
 assert_contains "${out}" "\"manual_fallback_cancelled\""
 
 it "crew cleanup-host-bridge dry-run finds stale host bridge task"
-out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --host-bridge-command "exit 7" "cleanup stale host bridge task" 2>&1)
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run --host-bridge-command "bash -c 'exit 7'" "cleanup stale host bridge task" 2>&1)
 rc=$?
 assert_exit 3 "${rc}"
 CLEANUP_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
@@ -863,7 +876,7 @@ out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
   AGENT_CREW_BRIDGE_LOG="${BRIDGE_LOG}" \
-  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "$AGENT_CREW_TASK_ID" > "$AGENT_CREW_BRIDGE_LOG"' \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"\$AGENT_CREW_TASK_ID\" > \"\$AGENT_CREW_BRIDGE_LOG\"'" \
     bash "${CREW}" run "auto bridge task" 2>&1
 )
 rc=$?
@@ -887,7 +900,7 @@ it "crew run treats nested Codex refusal as current-session handoff"
 out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
-  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "AGENT_CREW_BRIDGE_STATUS: current_session_required" "codex-host-bridge: refusing nested Codex exec from an active Codex session" >&2; exit 2' \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"AGENT_CREW_BRIDGE_STATUS: current_session_required\" \"codex-host-bridge: refusing nested Codex exec from an active Codex session\" >&2; exit 2'" \
     bash "${CREW}" run "current session run handoff" 2>&1
 )
 rc=$?
@@ -996,7 +1009,7 @@ out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
   AGENT_CREW_BRIDGE_LOG="${AGENT_BRIDGE_LOG}" \
-  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "$AGENT_CREW_AGENT_REQUEST_ID" > "$AGENT_CREW_BRIDGE_LOG"' \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"\$AGENT_CREW_AGENT_REQUEST_ID\" > \"\$AGENT_CREW_BRIDGE_LOG\"'" \
     bash "${CREW}" agent analyst "direct bridge agent" 2>&1
 )
 rc=$?
@@ -1020,7 +1033,7 @@ it "crew agent treats nested Codex refusal as current-session handoff"
 out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
-  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "AGENT_CREW_BRIDGE_STATUS: current_session_required" "codex-host-bridge: refusing nested Codex exec from an active Codex session" >&2; exit 2' \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"AGENT_CREW_BRIDGE_STATUS: current_session_required\" \"codex-host-bridge: refusing nested Codex exec from an active Codex session\" >&2; exit 2'" \
     bash "${CREW}" agent analyst "current session handoff" 2>&1
 )
 rc=$?
@@ -1044,7 +1057,7 @@ it "crew agent treats zero-exit blocked bridge output as failed"
 out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
-  AGENT_CREW_HOST_BRIDGE_COMMAND='printf "%s\n" "STATUS: blocked" "BLOCKER: downstream blocked"' \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"STATUS: blocked\" \"BLOCKER: downstream blocked\"'" \
     bash "${CREW}" agent analyst "direct bridge blocked output" 2>&1
 )
 rc=$?
@@ -1090,7 +1103,7 @@ it "crew agent host bridge command failure keeps request resumable"
 out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
-  AGENT_CREW_HOST_BRIDGE_COMMAND='exit 42' \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'exit 42'" \
     bash "${CREW}" agent analyst "failing bridge agent" 2>&1
 )
 rc=$?
@@ -1103,6 +1116,25 @@ REQUEST_JSON=$(cat "${AGENT_REQUEST_DIR}/request.json")
 assert_contains "${REQUEST_JSON}" '"status": "handoff_ready"'
 assert_contains "${REQUEST_JSON}" '"host_bridge_status": "failed"'
 assert_file_exists "${AGENT_REQUEST_DIR}/context/host-bridge-invocation.json"
+
+it "crew agent host bridge parse failure reports explicit start failure"
+out=$(
+  AGENT_CREW_HOME="${TMP_HOME}" \
+  PROJECT_ROOT="${TMP_PROJECT}" \
+  AGENT_CREW_HOST_BRIDGE_COMMAND="'unterminated" \
+    bash "${CREW}" agent analyst "parse failure bridge agent" 2>&1
+)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "host bridge failed to start"
+assert_contains "${out}" "host_bridge_start_failed"
+PARSE_AGENT_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+PARSE_REQUEST_JSON=$(cat "${PARSE_AGENT_REQUEST_DIR}/request.json")
+PARSE_INVOCATION_JSON=$(cat "${PARSE_AGENT_REQUEST_DIR}/context/host-bridge-invocation.json")
+assert_contains "${PARSE_REQUEST_JSON}" '"host_bridge_status": "failed"'
+assert_contains "${PARSE_REQUEST_JSON}" '"host_bridge_failure_reason": "host_bridge_start_failed"'
+assert_contains "${PARSE_REQUEST_JSON}" '"host_bridge_failure_detail": "No closing quotation"'
+assert_contains "${PARSE_INVOCATION_JSON}" '"failure_class": "host_bridge_start_failed"'
 
 it "crew agent host bridge timeout keeps request resumable"
 out=$(
