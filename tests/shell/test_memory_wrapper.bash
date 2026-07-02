@@ -396,4 +396,14 @@ rc=$?
 assert_exit 0 "${rc}" "capture timeout"
 assert_contains "${OUTPUT}" "[memory] warning: capture timed out"
 
+TMP=$(make_tmp)
+it "memory convention capture uses the local convention cache without mnemos"
+OUTPUT=$(MNEMOS_BIN="${TMP}/missing-mnemos" bash "${MEMORY}" convention capture --owner alice --cache-dir "${TMP}/cache" --content "Prefer pathlib for new Python paths." 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "convention capture"
+assert_contains "${OUTPUT}" '"id"'
+
+it "memory convention capture writes owner-scoped cache"
+assert_file_exists "${TMP}/cache/alice.json"
+
 end_report

@@ -291,6 +291,11 @@ fi
 
 If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
 
+If `USER_CONVENTIONS_PATH` is present in the stage prompt, read it before
+reviewing changed code. Apply relevant local user coding conventions as a review
+lens and report concrete violations against changed lines. Do not require proof-only artifacts for user conventions; diff evidence, tests, and review findings are sufficient. When no convention applies, note that briefly only if
+it affects the verdict.
+
 ## Execution Flow — `MODE: test-checklist`
 
 Read `{TASK_DIR}/context/prd.md`, `{TASK_DIR}/context/analysis.md`, and

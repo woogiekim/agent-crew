@@ -130,6 +130,8 @@ fi
 
 If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior test patterns and conventions before writing tests.
 
+If `USER_CONVENTIONS_PATH` is present in the stage prompt, read USER_CONVENTIONS_PATH before writing test plans or tests. Apply relevant local user coding conventions to test style, naming, and fixture shape. Do not create a separate convention-use proof file; test changes and review outcomes are the evidence.
+
 ## Workflow
 
 ### Step 1 — Read the spec (paths only, no implementation code)

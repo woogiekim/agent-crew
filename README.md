@@ -649,6 +649,13 @@ threshold but remains below 100%, `quality-loop-check.py` reports the concrete
 gaps inline and offers `proceed`, `fix-gaps`, or `strict-100` choices; it does
 not require a separate Gap Report artifact.
 
+User coding conventions follow the same evidence model. The framework provides
+`memory convention` and task snapshots, but actual convention content is local
+per installed user under `~/.agent-crew/cache/user-conventions` unless
+overridden. Supervisors pass only `USER_CONVENTIONS_PATH` to agents; agents
+apply the relevant conventions during real work, and reviewer validates concrete
+changed-line violations without requiring convention-use proof files.
+
 Reviewer re-reviews are also bounded. After a prior Must finding,
 `verify-prior-must-only` is the default mode. A newly raised Must in that mode
 must declare `NEW_MUST_CLASSIFICATION` plus first-party evidence; otherwise the
@@ -832,6 +839,7 @@ Several optimizations reduce latency and context overhead across the pipeline:
 - **Skip-if-exists guard in Phase 1.5** — before spawning an agent creation sub-agent, Phase 1.5 checks whether the agent file already exists on disk and skips creation if it does.
 - **Stable mnemos recall fast path** — `~/.agent-crew/bin/memory search` first uses mnemos's advertised `search --fast --json` capability, then falls back through documented compatibility paths. The stable provider contract is documented in `docs/memory-provider-contract.md`; the legacy direct FTS fallback is deprecated and guarded by compatibility tests.
 - **Local support-memory capture/read contract** — agent-crew support captures default to mnemos's local `default` backend unless `MNEMOS_BACKEND` is explicitly set, and support reads use the same default backend. This keeps end-of-stage memory writes fast and immediately readable by hooks while preserving an opt-in path for users who want every support capture synced through their configured mnemos backend.
+- **Task-scoped user convention snapshots** — `memory convention snapshot` reads the installed user's local convention cache once per task and writes `{TASK_DIR}/context/user-conventions.snapshot.json`. Later stages reuse the frozen owner/project snapshot and receive only a stage-filtered digest path, avoiding repeated convention searches or prompt-inlined convention text.
 - **Sub-second mnemos process polling** — the bounded mnemos wrapper polls at 0.1s by default instead of adding a full one-second floor to every fast memory command.
 
 ## Rules and Hooks

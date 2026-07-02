@@ -14,6 +14,29 @@ The provider surface is:
 | `memory search` | yes | Returns best-effort text results. Uses stable fast JSON search when the backend advertises it. |
 | `memory read` | yes | Reads one memory item by id. Defaults to the local support backend unless `MNEMOS_BACKEND` is set. |
 | `memory gc` | yes | Runs agent-crew's local memory garbage-collection helper. |
+| `memory convention` | yes | Manages local per-installed-user coding convention cache and task snapshots without requiring mnemos. |
+
+## Local User Convention Surface
+
+`memory convention` is part of the provider boundary because agents need a
+stable entry point, but it is not a remote repository data source. The command
+stores actual convention content in the installed user's local cache under
+`${AGENT_CREW_CONVENTION_CACHE_DIR:-${AGENT_CREW_HOME}/cache/user-conventions}`.
+Different users can have different conventions for the same project checkout.
+
+Supported subcommands:
+
+| Subcommand | Behavior |
+|---|---|
+| `capture` | Adds a local convention for the owner. |
+| `update <id>` | Updates an existing local convention and bumps the cache version. |
+| `retire <id>` | Marks a convention retired so future snapshots exclude it. |
+| `snapshot` | Writes or reuses `{TASK_DIR}/context/user-conventions.snapshot.json` and emits a stage digest path. |
+| `show-cache` | Prints the owner's local cache JSON. |
+
+Task snapshots are frozen by default. If the local cache changes during an
+active task, the active task sees the update only after an explicit
+`memory convention snapshot --refresh`; new tasks use the latest cache.
 
 ## Search Output
 

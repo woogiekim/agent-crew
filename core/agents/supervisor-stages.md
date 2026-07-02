@@ -320,6 +320,47 @@ When `MEM_CONTEXT` is non-empty, also append `MEMORY_CONTEXT_PATH:` to the
 agent prompt (see the prompt format below) so the agent knows a pre-populated
 memory file is available.
 
+#### Task-scoped user convention snapshot (Issue #191)
+
+User coding conventions are local per installed user. The repository owns the
+cache/snapshot mechanism, not the user's actual convention content.
+
+Before composing the agent prompt, create or reuse a task-scoped frozen
+snapshot. The first stage reads the local per-user cache and writes
+`{TASK_DIR}/context/user-conventions.snapshot.json`; later stages reuse that
+snapshot so convention lookup does not repeat deep memory searches. A convention
+change applies to new tasks automatically. For an active task, rebuild only when
+the operator explicitly requests a refresh.
+
+The frozen snapshot stores the active owner/project convention set. The
+stage-specific digest is filtered from that snapshot for each `STAGE_AGENT`, so
+an early backend stage must not permanently exclude a later frontend-only
+convention.
+
+```bash
+CONVENTION_CONTEXT_PATH=""
+if command -v "${MEMORY}" >/dev/null 2>&1; then
+  CONVENTION_OUTPUT=$("${MEMORY}" convention snapshot \
+    --task-dir "${TASK_DIR}" \
+    --task "${TASK}" \
+    --stage "${STAGE_AGENT}" \
+    --project-root "${PROJECT_ROOT}" 2>/dev/null || true)
+  CONVENTION_CONTEXT_PATH=$(printf '%s' "${CONVENTION_OUTPUT}" | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    payload = {}
+print(payload.get("context_path") or "")
+')
+fi
+```
+
+When `CONVENTION_CONTEXT_PATH` is non-empty, append
+`USER_CONVENTIONS_PATH:` to the agent prompt. Agents read that file and apply
+the relevant local user conventions during real work; they must not create
+separate proof-only convention-use files.
+
 #### Agent prompt format (never inline file contents)
 
 ```text
@@ -329,11 +370,14 @@ HANDOFF_PATH: {TASK_DIR}/handoff.md
 QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
 {CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md  ← include only when file exists}
 {MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  ← include only when MEM_CONTEXT non-empty}
+{USER_CONVENTIONS_PATH: {CONVENTION_CONTEXT_PATH}  ← include only when CONVENTION_CONTEXT_PATH non-empty}
 
 Read the handoff content directly from HANDOFF_PATH.
 Read the PRD directly from {TASK_DIR}/context/prd.md.
 If CODEX_SKILL_CONTEXT_PATH is present, preserve and apply that context while
 performing the assigned work.
+If USER_CONVENTIONS_PATH is present, read it and apply relevant local user
+coding conventions without manufacturing proof-only artifacts.
 Read and apply the quality loop rule from QUALITY_RULE_PATH before reporting completion.
 Perform the assigned work.
 All file operations must be performed relative to {PROJECT_ROOT}.

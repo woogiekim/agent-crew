@@ -292,6 +292,8 @@ fi
 
 If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
 
+If `USER_CONVENTIONS_PATH` is present in the stage prompt, read USER_CONVENTIONS_PATH before writing tests or production code. Apply relevant local user coding conventions to the code you touch. Do not create a separate convention-use proof file; real diffs, tests, reviews, and tool events are the evidence.
+
 ## Execution Flow
 
 ### Phase 1: Requirement Analysis

@@ -340,6 +340,25 @@ if [ "${1:-}" = "gc" ]; then
   exec python3 "${AGENT_CREW_HOME}/scripts/memory-gc.py" "$@"
 fi
 
+if [ "${1:-}" = "convention" ]; then
+  shift
+  CONVENTION_SCRIPT=""
+  for candidate in \
+    "${AGENT_CREW_HOME}/scripts/user-conventions.py" \
+    "${AGENT_CREW_HOME}/system/scripts/user-conventions.py" \
+    "${SCRIPT_DIR}/../scripts/user-conventions.py"; do
+    if [ -f "${candidate}" ]; then
+      CONVENTION_SCRIPT="${candidate}"
+      break
+    fi
+  done
+  if [ -z "${CONVENTION_SCRIPT}" ]; then
+    echo "[memory] user convention helper missing" >&2
+    exit 2
+  fi
+  exec python3 "${CONVENTION_SCRIPT}" "$@"
+fi
+
 if [ "${1:-}" = "search" ]; then
   if stable_fast_search "$@"; then
     exit 0
