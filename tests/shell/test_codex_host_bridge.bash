@@ -77,6 +77,38 @@ stdin_payload=$(cat "${STDIN_PATH}")
 assert_contains "${stdin_payload}" "Resume this existing agent-crew crew:run handoff in Codex."
 assert_contains "${stdin_payload}" "AGENT_CREW_TASK_ID: task-1"
 
+it "codex host bridge narrows crew-run normalization prompts"
+NORMALIZATION_TASK_DIR="${TMP_ROOT}/normalization-task"
+NORMALIZATION_HANDOFF="${TMP_ROOT}/normalization-handoff.md"
+mkdir -p "${NORMALIZATION_TASK_DIR}"
+cat > "${NORMALIZATION_HANDOFF}" <<'EOF'
+# Input Normalization Handoff
+
+NORMALIZATION_GATE: required
+RAW_TASK: 진행해주세요
+OUTPUT_CONTRACT: Return JSON with source_language and normalized_task.
+EOF
+out=$(
+  AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
+  AGENT_CREW_CODEX_ALLOW_NESTED=1 \
+  FAKE_CODEX_ARGV_PATH="${ARGV_PATH}" \
+  FAKE_CODEX_STDIN_PATH="${STDIN_PATH}" \
+  FAKE_CODEX_ENV_PATH="${ENV_PATH}" \
+  AGENT_CREW_TASK_ID="normalization-task-1" \
+  AGENT_CREW_TASK_DIR="${NORMALIZATION_TASK_DIR}" \
+  AGENT_CREW_STATE_DIR="${STATE_DIR}" \
+  AGENT_CREW_HANDOFF_PATH="${NORMALIZATION_HANDOFF}" \
+  AGENT_CREW_RESULT_PATH="${TMP_ROOT}/normalization-result.md" \
+  AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
+  bash "${BRIDGE}" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+stdin_payload=$(cat "${STDIN_PATH}")
+assert_contains "${stdin_payload}" "Complete only the input-normalizer contract"
+assert_contains "${stdin_payload}" "Do not continue to supervisor"
+assert_not_contains "${stdin_payload}" "installed agent-crew supervisor workflow"
+
 it "codex direct-agent bridge forbids normalizer subagent spawn"
 out=$(
   AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \

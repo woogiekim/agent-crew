@@ -297,6 +297,114 @@ def test_host_bridge_wait_progress_surfaces_child_output(monkeypatch, tmp_path: 
     assert "HOST_BRIDGE_OUTPUT" in progress_log
 
 
+def test_success_case_regression_records_host_bridge_selection_source(tmp_path: Path):
+    """success-case(regression) - records why the host bridge command was selected."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    bridge = tmp_path / "codex-host-bridge"
+    bridge.write_text("#!/usr/bin/env bash\nprintf 'done\\n'\n", encoding="utf-8")
+    bridge.chmod(0o755)
+    resolution = {
+        "command": str(bridge),
+        "source": "capabilities.host",
+        "host": "codex",
+        "capabilities_path": str(tmp_path / "capabilities.json"),
+    }
+
+    # when
+    record = runtime.invoke_host_bridge(
+        str(bridge),
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+        bridge_resolution=resolution,
+    )
+
+    # then
+    invocation = json.loads((task_dir / "context" / "host-bridge-invocation.json").read_text(encoding="utf-8"))
+    assert record["bridge_selection_source"] == "capabilities.host"
+    assert record["bridge_selection_host"] == "codex"
+    assert invocation["bridge_selection_source"] == "capabilities.host"
+    assert invocation["bridge_selection_capabilities_path"] == str(tmp_path / "capabilities.json")
+
+
+def test_failure_case_regression_blocks_claude_default_bridge_in_active_codex_session(monkeypatch, tmp_path: Path):
+    """failure-case(regression) - active Codex sessions refuse accidental Claude default bridges."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    marker = tmp_path / "claude-started"
+    bridge = tmp_path / "claude-host-bridge"
+    bridge.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n", encoding="utf-8")
+    bridge.chmod(0o755)
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+    monkeypatch.delenv("AGENT_CREW_ALLOW_CROSS_HOST_BRIDGE", raising=False)
+    resolution = {
+        "command": str(bridge),
+        "source": "capabilities.host",
+        "host": "claude",
+        "capabilities_path": str(tmp_path / "capabilities.json"),
+    }
+
+    # when
+    record = runtime.invoke_host_bridge(
+        str(bridge),
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+        bridge_resolution=resolution,
+    )
+
+    # then
+    assert record["status"] == "current_session_required"
+    assert record["failure_class"] == "current_session_required"
+    assert "refusing claude-host-bridge from an active Codex session" in record["stderr"]
+    assert not marker.exists()
+
+
+def test_failure_case_regression_command_run_blocks_claude_default_bridge_in_codex(monkeypatch, tmp_path: Path, capsys):
+    """failure-case(regression) - crew run refuses a stale Claude default bridge in Codex."""
+    # given
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    state_info = runtime.resolve_project_state(
+        home=home,
+        project_root=project,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    state_dir = Path(state_info["state_dir"])
+    (state_dir / "capabilities.json").write_text(json.dumps({"host": "claude"}), encoding="utf-8")
+    marker = tmp_path / "claude-started"
+    bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
+    bridge.parent.mkdir(parents=True)
+    bridge.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n", encoding="utf-8")
+    bridge.chmod(0o755)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+
+    # when
+    args = argparse.Namespace(
+        task="read docs",
+        project_root=str(project),
+        fake_host_result=None,
+        host_bridge_command=None,
+    )
+    assert runtime.command_run(args) == 0
+
+    # then
+    out = capsys.readouterr().out
+    task_dirs = sorted((state_dir / "tasks").iterdir())
+    invocation = json.loads((task_dirs[-1] / "context" / "host-bridge-invocation.json").read_text(encoding="utf-8"))
+    assert "HOST_BRIDGE: current_session_required" in out
+    assert invocation["bridge_selection_source"] == "capabilities.host"
+    assert invocation["bridge_selection_host"] == "claude"
+    assert invocation["status"] == "current_session_required"
+    assert not marker.exists()
+
+
 def test_host_bridge_child_output_preview_stays_single_line():
     preview = runtime.host_bridge_child_output_preview("alpha\n" + ("x" * 250), "", limit=80)
 

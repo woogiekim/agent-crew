@@ -122,6 +122,38 @@ assert_contains "${prompt}" "context/specialist-dispatch.md"
 assert_contains "${prompt}" "context/tdd-red.md"
 assert_contains "${prompt}" "context/tdd-refactor.md"
 
+it "claude host bridge narrows crew-run normalization prompts"
+NORMALIZATION_TASK_DIR="${TMP_ROOT}/normalization-task"
+NORMALIZATION_HANDOFF="${TMP_ROOT}/normalization-handoff.md"
+mkdir -p "${NORMALIZATION_TASK_DIR}"
+cat > "${NORMALIZATION_HANDOFF}" <<'EOF'
+# Input Normalization Handoff
+
+NORMALIZATION_GATE: required
+RAW_TASK: 진행해주세요
+OUTPUT_CONTRACT: Return JSON with source_language and normalized_task.
+EOF
+out=$(
+  AGENT_CREW_CLAUDE_BIN="${FAKE_CLAUDE}" \
+  FAKE_CLAUDE_ARGV_PATH="${ARGV_PATH}" \
+  FAKE_CLAUDE_CWD_PATH="${CWD_PATH}" \
+  FAKE_CLAUDE_ACTIVE_PATH="${ACTIVE_PATH}" \
+  FAKE_CLAUDE_AUTO_ROUTE_DISABLED_PATH="${AUTO_ROUTE_DISABLED_PATH}" \
+  AGENT_CREW_TASK_ID="normalization-task-1" \
+  AGENT_CREW_TASK_DIR="${NORMALIZATION_TASK_DIR}" \
+  AGENT_CREW_STATE_DIR="${STATE_DIR}" \
+  AGENT_CREW_HANDOFF_PATH="${NORMALIZATION_HANDOFF}" \
+  AGENT_CREW_RESULT_PATH="${TMP_ROOT}/normalization-result.md" \
+  AGENT_CREW_PROJECT_ROOT="${PROJECT_ROOT}" \
+  bash "${BRIDGE}" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+prompt="$(cat "${NORMALIZATION_TASK_DIR}/context/claude-host-bridge-prompt.md")"
+assert_contains "${prompt}" "Complete only the input-normalizer contract"
+assert_contains "${prompt}" "Do not continue to supervisor"
+assert_not_contains "${prompt}" "Current-Session Fallback"
+
 it "claude direct-agent bridge forbids normalizer subagent spawn"
 out=$(
   AGENT_CREW_CLAUDE_BIN="${FAKE_CLAUDE}" \

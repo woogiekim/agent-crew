@@ -46,6 +46,10 @@ PROMPT_PATH="${CONTEXT_DIR}/claude-host-bridge-prompt.md"
 LAST_MESSAGE_PATH="${CONTEXT_DIR}/claude-host-bridge-last-message.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+handoff_has_normalization_gate() {
+  grep -Eq '^[[:space:]]*NORMALIZATION_GATE:[[:space:]]*required[[:space:]]*$' "${HANDOFF_PATH}" 2>/dev/null
+}
+
 resolve_token_usage_script() {
   local root
   local home_root="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -82,6 +86,8 @@ record_token_usage() {
     --format claude-json >/dev/null 2>&1 || true
 }
 
+APPEND_CURRENT_SESSION_FALLBACK=1
+
 if [ -n "${AGENT_CREW_AGENT_REQUEST_ID:-}" ]; then
   cat > "${PROMPT_PATH}" <<EOF
 Resume this existing agent-crew direct-agent handoff in Claude Code.
@@ -95,6 +101,23 @@ Do not run crew repair for normal bridge completion. If the handoff completes su
 AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
 AGENT_CREW_AGENT_REQUEST_ID: ${AGENT_CREW_AGENT_REQUEST_ID}
 AGENT_CREW_REQUEST_DIR: ${AGENT_CREW_REQUEST_DIR:-${TASK_DIR}}
+AGENT_CREW_TASK_ID: ${TASK_ID}
+AGENT_CREW_TASK_DIR: ${TASK_DIR}
+AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
+AGENT_CREW_RESULT_PATH: ${RESULT_PATH}
+AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
+EOF
+elif handoff_has_normalization_gate; then
+  APPEND_CURRENT_SESSION_FALLBACK=0
+  cat > "${PROMPT_PATH}" <<EOF
+Resume this existing agent-crew crew:run input-normalization handoff in Claude Code.
+
+Complete only the input-normalizer contract described in the handoff. Do not continue to supervisor, do not invoke crew:run, and do not perform implementation, git, push, setup, or global update work.
+
+Read AGENT_CREW_HANDOFF_PATH, return the requested normalization JSON/metadata, update only the existing task state files needed for the normalization gate when possible, and exit. If the task must continue beyond normalization, leave that for the parent runtime or current session after this bridge exits.
+
+Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
+
 AGENT_CREW_TASK_ID: ${TASK_ID}
 AGENT_CREW_TASK_DIR: ${TASK_DIR}
 AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
@@ -117,7 +140,8 @@ AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
 EOF
 fi
 
-cat >> "${PROMPT_PATH}" <<'EOF'
+if [ "${APPEND_CURRENT_SESSION_FALLBACK}" = "1" ]; then
+  cat >> "${PROMPT_PATH}" <<'EOF'
 
 ## Current-Session Fallback
 
@@ -144,6 +168,7 @@ Use the provider-neutral command definitions under ~/.agent-crew/commands/.
 Do not embed supervisor, planner, backend, frontend, resolver, or approval
 behavior in this bridge prompt.
 EOF
+fi
 
 SYSTEM_PROMPT="${AGENT_CREW_CLAUDE_BRIDGE_SYSTEM_PROMPT:-You are a minimal agent-crew host bridge executor. Follow only the provided handoff prompt. Do not invoke crew workflows unless the handoff explicitly requires it. Do not create a new task. Complete the existing handoff and exit.}"
 MODEL="${AGENT_CREW_CLAUDE_MODEL:-claude-haiku-4-5}"

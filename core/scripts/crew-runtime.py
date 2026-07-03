@@ -590,6 +590,43 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
     )
 
 
+def active_codex_session() -> bool:
+    return any(
+        os.environ.get(name, "").strip()
+        for name in ("CODEX", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_MANAGED_BY_NPM")
+    )
+
+
+def infer_host_bridge_resolution(command: str) -> dict:
+    command_argv, command_parse_error = host_bridge_command_argv(command)
+    command_display = command_argv[0] if command_argv else ""
+    host = ""
+    bridge_name = Path(command_display).name if command_display else ""
+    if bridge_name == "codex-host-bridge":
+        host = "codex"
+    elif bridge_name == "claude-host-bridge":
+        host = "claude"
+
+    return {
+        "command": command,
+        "source": "direct_invoke",
+        "host": host,
+        "capabilities_path": "",
+        "command_parse_error": command_parse_error,
+    }
+
+
+def should_block_cross_host_bridge(command_argv: list[str], bridge_resolution: dict) -> bool:
+    if not active_codex_session():
+        return False
+    if env_flag("AGENT_CREW_ALLOW_CROSS_HOST_BRIDGE") or env_flag("AGENT_CREW_ALLOW_CLAUDE_BRIDGE_IN_CODEX"):
+        return False
+
+    command_name = Path(command_argv[0]).name if command_argv else ""
+    selected_host = str(bridge_resolution.get("host") or "").strip().lower()
+    return selected_host == "claude" or command_name == "claude-host-bridge"
+
+
 def invoke_host_bridge(
     command: str,
     *,
@@ -597,6 +634,7 @@ def invoke_host_bridge(
     register: dict,
     project_root: Path,
     extra_env: dict | None = None,
+    bridge_resolution: dict | None = None,
 ) -> dict:
     env = os.environ.copy()
     env.update({
@@ -625,6 +663,7 @@ def invoke_host_bridge(
     except ValueError:
         timeout_seconds = float(timeout_default)
 
+    bridge_resolution = bridge_resolution or infer_host_bridge_resolution(command)
     command_argv, command_parse_error = host_bridge_command_argv(command)
     command_display = command_argv[0] if command_argv else ""
     invocation_path = task_dir / "context" / "host-bridge-invocation.json"
@@ -634,6 +673,9 @@ def invoke_host_bridge(
         "command": command,
         "command_argv": command_argv,
         "command_display": command_display,
+        "bridge_selection_source": str(bridge_resolution.get("source") or ""),
+        "bridge_selection_host": str(bridge_resolution.get("host") or ""),
+        "bridge_selection_capabilities_path": str(bridge_resolution.get("capabilities_path") or ""),
         "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "finished_at": "",
         "returncode": None,
@@ -720,6 +762,54 @@ def invoke_host_bridge(
         return record_host_bridge_start_failed(command_parse_error)
     if not command_argv:
         return record_host_bridge_start_failed("host bridge command is empty")
+    if should_block_cross_host_bridge(command_argv, bridge_resolution):
+        stderr = (
+            "AGENT_CREW_BRIDGE_STATUS: current_session_required\n"
+            "crew-runtime: refusing claude-host-bridge from an active Codex session; "
+            "continue the handoff in the current Codex session or set "
+            "AGENT_CREW_ALLOW_CROSS_HOST_BRIDGE=1 to override\n"
+        )
+        finished = datetime.now(timezone.utc)
+        bridge_record = {
+            **running_record,
+            "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "returncode": 2,
+            "stderr": stderr,
+            "failure_class": "current_session_required",
+            "status": "current_session_required",
+            "output_observed": True,
+        }
+        write_host_bridge_output_tail(task_dir, "", stderr)
+        write_json(invocation_path, bridge_record)
+        append_progress_log(task_dir, "HOST_BRIDGE_FINISHED", "current_session_required")
+        append_progress(
+            task_dir,
+            {
+                "ts": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "trace_id": trace_id_for(register, task_dir),
+                "task_id": register["task_id"],
+                "session_id": register.get("session_id", ""),
+                "event": "HOST_BRIDGE_FINISHED",
+                "stage": 0,
+                "agent": "",
+                "attempt": 0,
+                "status": "handoff_ready",
+                "detail": "current_session_required",
+                "files": ["context/host-bridge-invocation.json"],
+            },
+        )
+        append_tool_event(
+            task_dir,
+            trace_id=trace_id_for(register, task_dir),
+            tool_name="host_bridge_command",
+            action_summary=command,
+            started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ended_at=finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            status="completed",
+            exit_code=2,
+            failure_class="current_session_required",
+        )
+        return bridge_record
 
     timed_out = False
     try:
@@ -919,45 +1009,91 @@ def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def default_host_bridge_command(agent_crew_home: Path, project_root: Path) -> str:
+def default_host_bridge_resolution(agent_crew_home: Path, project_root: Path) -> dict:
     if env_flag("AGENT_CREW_HOST_BRIDGE_ACTIVE"):
-        return ""
+        return {
+            "command": "",
+            "source": "disabled.AGENT_CREW_HOST_BRIDGE_ACTIVE",
+            "host": "",
+            "capabilities_path": "",
+        }
     if env_flag("AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT") or env_flag("AGENT_CREW_DISABLE_DEFAULT_HOST_BRIDGE"):
-        return ""
+        return {
+            "command": "",
+            "source": "disabled.AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT",
+            "host": "",
+            "capabilities_path": "",
+        }
 
     state_info = resolve_project_state(
         home=agent_crew_home,
         project_root=project_root,
         prefer_existing_legacy=True,
     )
-    capabilities = load_json(Path(state_info["state_dir"]) / "capabilities.json", {})
-    host = str(
-        os.environ.get("AGENT_CREW_HOST")
-        or capabilities.get("host")
-        or capabilities.get("adapter")
-        or ""
-    ).strip().lower()
+    capabilities_path = Path(state_info["state_dir"]) / "capabilities.json"
+    capabilities = load_json(capabilities_path, {})
+    env_host = os.environ.get("AGENT_CREW_HOST", "").strip().lower()
+    capabilities_host = str(capabilities.get("host") or "").strip().lower()
+    capabilities_adapter = str(capabilities.get("adapter") or "").strip().lower()
+    if env_host:
+        host = env_host
+        source = "env.AGENT_CREW_HOST"
+    elif capabilities_host:
+        host = capabilities_host
+        source = "capabilities.host"
+    elif capabilities_adapter:
+        host = capabilities_adapter
+        source = "capabilities.adapter"
+    else:
+        host = ""
+        source = "none"
+
     bridge_name_by_host = {
         "codex": "codex-host-bridge",
         "claude": "claude-host-bridge",
     }
     bridge_name = bridge_name_by_host.get(host)
     if not bridge_name:
-        return ""
+        return {
+            "command": "",
+            "source": source,
+            "host": host,
+            "capabilities_path": str(capabilities_path),
+        }
 
     candidate = agent_crew_home / "adapters" / host / "bin" / bridge_name
     if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate)
-    return ""
+        command = str(candidate)
+    else:
+        command = ""
+
+    return {
+        "command": command,
+        "source": source,
+        "host": host,
+        "capabilities_path": str(capabilities_path),
+    }
+
+
+def default_host_bridge_command(agent_crew_home: Path, project_root: Path) -> str:
+    return str(default_host_bridge_resolution(agent_crew_home, project_root).get("command") or "")
+
+
+def resolve_host_bridge(explicit_command: str | None, agent_crew_home: Path, project_root: Path) -> dict:
+    if explicit_command:
+        resolution = infer_host_bridge_resolution(explicit_command)
+        resolution["source"] = "explicit_argument"
+        return resolution
+    env_command = os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "").strip()
+    if env_command:
+        resolution = infer_host_bridge_resolution(env_command)
+        resolution["source"] = "env.AGENT_CREW_HOST_BRIDGE_COMMAND"
+        return resolution
+    return default_host_bridge_resolution(agent_crew_home, project_root)
 
 
 def resolve_host_bridge_command(explicit_command: str | None, agent_crew_home: Path, project_root: Path) -> str:
-    if explicit_command:
-        return explicit_command
-    env_command = os.environ.get("AGENT_CREW_HOST_BRIDGE_COMMAND", "").strip()
-    if env_command:
-        return env_command
-    return default_host_bridge_command(agent_crew_home, project_root)
+    return str(resolve_host_bridge(explicit_command, agent_crew_home, project_root).get("command") or "")
 
 
 def asset_root(explicit: str | None = None) -> Path:
@@ -1379,7 +1515,8 @@ def command_run(args: argparse.Namespace) -> int:
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
-    bridge_command = resolve_host_bridge_command(args.host_bridge_command, agent_crew_home, project_root)
+    bridge_resolution = resolve_host_bridge(args.host_bridge_command, agent_crew_home, project_root)
+    bridge_command = str(bridge_resolution.get("command") or "")
     if fake_completed_requested and not fake_quality_blocked:
         result_status = "completed"
     elif bridge_command or fake_quality_blocked:
@@ -1576,6 +1713,7 @@ def command_run(args: argparse.Namespace) -> int:
             task_dir=task_dir,
             register=register,
             project_root=project_root,
+            bridge_resolution=bridge_resolution,
         )
         write_json(task_dir / "context" / "host-bridge-invocation.json", bridge_record)
         if host_bridge_current_session_required(bridge_record):
@@ -1844,7 +1982,8 @@ def command_agent(args: argparse.Namespace) -> int:
         request_id = f"agent-{now.strftime('%Y%m%d-%H%M%S')}-{index}"
 
     request_dir = requests_dir / request_id
-    bridge_command = resolve_host_bridge_command(args.host_bridge_command, agent_crew_home, project_root)
+    bridge_resolution = resolve_host_bridge(args.host_bridge_command, agent_crew_home, project_root)
+    bridge_command = str(bridge_resolution.get("command") or "")
     request = {
         "schema_version": 1,
         "request_id": request_id,
@@ -1935,6 +2074,7 @@ def command_agent(args: argparse.Namespace) -> int:
             task_dir=request_dir,
             register={"task_id": request_id},
             project_root=project_root,
+            bridge_resolution=bridge_resolution,
             extra_env={
                 "AGENT_CREW_AGENT_NAME": agent_name,
                 "AGENT_CREW_AGENT_REQUEST_ID": request_id,
