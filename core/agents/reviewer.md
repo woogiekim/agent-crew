@@ -774,8 +774,9 @@ For changed or newly added tests, verify that each test case name follows the
 language-agnostic contract from `tdd.md`:
 `<nature-prefix>[(<qualifier>)] - <behavior>`.
 
-Accept `success-case` and `failure-case`, plus project-localized equivalents
-such as `성공케이스` and `실패케이스`. If the test framework requires
+Accept `success-case`, `boundary-case`, and `failure-case`, plus
+project-localized equivalents such as `성공케이스`, `경계케이스`, and
+`실패케이스`. If the test framework requires
 identifier-style names, the equivalent prefix may appear in the identifier,
 display-name annotation, docstring, comment immediately adjacent to the test,
 subtest name, or table-case label.

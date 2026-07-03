@@ -56,6 +56,61 @@ Apply this rule before returning or writing:
 - supervisor judgments about stage completion, blocked states, retries, and
   final task status.
 
+## Evidence-First Verification Protocol
+
+Bug reports, incident analysis, and root-cause reports must use this stricter
+reporting structure whenever they explain a defect, production symptom,
+integration failure, or suspected regression.
+
+### Step 1: Hypothesis
+
+State the suspected cause as a hypothesis, not as a conclusion. A useful
+hypothesis names the component, condition, and expected failure mode.
+
+### Step 2: Evidence Collection
+
+Collect first-party evidence before reporting the cause:
+
+- code evidence from the actual method, class, adapter, rule, or config;
+- test evidence that reproduces, falsifies, or narrows the hypothesis;
+- git evidence when the timing or origin of a behavior matters;
+- log, error, trace, or HTTP evidence when runtime behavior is the claim;
+- integration or end-to-end evidence when a boundary between systems is the
+  suspected fault.
+
+If the report cannot collect required evidence, keep the item in Needed
+Evidence and do not promote it into Proven Facts or Conclusion.
+
+### Step 3: Classify Evidence
+
+Use these report sections:
+
+```text
+## Proven Facts
+- {fact supported by file, test, log, trace, git, or tool-output evidence}
+
+## Unverified Hypotheses
+- {hypothesis that remains plausible but lacks enough evidence}
+
+## Falsified Hypotheses
+- {hypothesis contradicted by current evidence, when applicable}
+
+## Needed Evidence
+- {specific command, file, log, test, trace, HAR, or runtime check still needed}
+
+## Conclusion
+- {narrow conclusion supported only by Proven Facts}
+```
+
+Do not put an unverified hypothesis in Conclusion. A conclusion may say
+"Unknown" or "not yet proven" when the evidence is incomplete.
+
+### Step 4: Report
+
+Report proven facts first, then unverified or falsified hypotheses, then needed
+evidence, then the narrow conclusion. The conclusion must not recommend code or
+configuration changes whose necessity is still only hypothetical.
+
 ## Citation Discipline
 
 - Cite `file:line` evidence for claims derived from repository content whenever

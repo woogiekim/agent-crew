@@ -253,15 +253,39 @@ companion object {
 
 Test name = `<nature-prefix>[(<qualifier>)] - <behavior>`
 
-The nature prefix declares the case type before the behavior. Project teams may
-localize the prefix words, but the structure is the contract:
+Korean canonical form: `{케이스타입}(qualifier) - {message}`
+
+The nature prefix declares the case type before the behavior. The optional
+qualifier declares the purpose or verification axis. Project teams may localize
+the prefix words, but the structure is the contract:
 
 - `success-case` / `성공케이스` — happy path or explicitly valid input.
+- `boundary-case` / `경계케이스` — boundary, null, empty, unknown, partial,
+  special-code, edge, or branch input that should still be handled as defined.
 - `failure-case` / `실패케이스` — error, exception, rejection, rollback, or
   validation path.
-- Optional qualifier in parentheses names the mechanism or condition, for
-  example `(boundary)`, `(validation)`, `(timeout)`, `(concurrency)`,
-  `(propagation-rollback)`, or `(ordering-effect)`.
+
+Simplified qualifier taxonomy:
+
+- `회귀` / `regression` — confirms existing behavior does not change.
+- `계약` / `contract` — verifies request values, DTOs, external API payloads,
+  or response shape.
+- `부수효과` / `side-effect` — verifies DB changes, external calls, emitted
+  events, or calls that must not happen.
+- `보안` / `security` — verifies authentication, authorization, ownership, or
+  visibility boundaries.
+- `멱등성` / `idempotency` — verifies repeated requests, retries, duplicate
+  clicks, or duplicate delivery handling.
+- `동시성` / `concurrency` — verifies consistency under simultaneous requests.
+- `제한` / `limit` — verifies large input, timeout, pagination, max size, or
+  resource limits.
+- `감사` / `audit` — verifies logs, audit records, events, or metrics.
+
+Do not force a boundary input into `success-case` just because the expected
+behavior is non-error handling. Use `boundary-case(contract)` or
+`경계케이스(계약)` when the scenario shape is boundary-like and the purpose is
+contract verification. TC-ID remains checklist/mapping metadata, not part of
+the human-facing test name.
 
 Use the canonical display string when the framework supports free-form test
 names. When the framework requires identifier names, encode the same structure
@@ -273,6 +297,7 @@ Positive examples across supported test families:
 ```kotlin
 // Kotest
 test("성공케이스 - 정상 upsert면 byline과 profile이 모두 커밋된다") { }
+test("경계케이스(계약) - contentType/status 가 null 이면 enum 필드도 null 이다") { }
 test("실패케이스(전파 롤백) - profile 저장 실패면 byline INSERT가 롤백된다") { }
 
 // JUnit5
@@ -283,12 +308,15 @@ fun rejectsBlankNickname() { }
 
 ```typescript
 // Jest / Vitest
-test("success-case(boundary) - accepts a 500-char URL at the limit", () => {})
+test("boundary-case(limit) - accepts a 500-char URL at the limit", () => {})
 test("failure-case(timeout) - shows retry affordance when lookup times out", () => {})
 ```
 
 ```python
 # pytest
+def test_boundary_case_contract_maps_out_of_range_enum_code_to_null_without_throwing():
+    """boundary-case(contract) - maps an out-of-range enum code to null without throwing."""
+
 def test_failure_case_validation_rejects_blank_nickname():
     """failure-case(validation) - rejects a blank nickname."""
 ```

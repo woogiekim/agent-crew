@@ -16,11 +16,38 @@ def test_tdd_skill_defines_language_agnostic_nature_prefix_contract() -> None:
     text = read("core/agents/skills/tdd.md")
 
     assert "Test name = `<nature-prefix>[(<qualifier>)] - <behavior>`" in text
+    assert "Korean canonical form: `{케이스타입}(qualifier) - {message}`" in text
     assert "structure is the contract" in text
     assert "success-case" in text
+    assert "boundary-case" in text
     assert "failure-case" in text
     assert "성공케이스" in text
+    assert "경계케이스" in text
     assert "실패케이스" in text
+
+
+def test_tdd_skill_documents_simplified_qualifier_taxonomy() -> None:
+    text = read("core/agents/skills/tdd.md")
+
+    assert "Simplified qualifier taxonomy" in text
+    for qualifier in (
+        "`회귀` / `regression`",
+        "`계약` / `contract`",
+        "`부수효과` / `side-effect`",
+        "`보안` / `security`",
+        "`멱등성` / `idempotency`",
+        "`동시성` / `concurrency`",
+        "`제한` / `limit`",
+        "`감사` / `audit`",
+    ):
+        assert qualifier in text
+
+
+def test_tdd_skill_uses_boundary_case_for_boundary_inputs() -> None:
+    text = read("core/agents/skills/tdd.md")
+
+    assert "경계케이스(계약) - contentType/status 가 null 이면 enum 필드도 null 이다" in text
+    assert "boundary-case(contract) - maps an out-of-range enum code to null without throwing" in text
 
 
 def test_tdd_skill_includes_examples_for_supported_test_families() -> None:
@@ -48,7 +75,9 @@ def test_test_writing_agents_require_nature_prefix_names() -> None:
         assert "nature prefix" in text
         assert "`<nature-prefix>[(<qualifier>)] - <behavior>`" in text
         assert "success-case" in text
+        assert "boundary-case" in text
         assert "failure-case" in text
+        assert "경계케이스" in text
 
 
 def test_shipped_adapter_templates_reference_test_name_contract() -> None:

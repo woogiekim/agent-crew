@@ -295,12 +295,14 @@ Each test must:
   top: `# Spec: prd.md § "<section>" — acceptance criterion #<n>`).
 - Name the test case with the language-agnostic nature prefix contract from
   `tdd.md`: `<nature-prefix>[(<qualifier>)] - <behavior>`. Use
-  `success-case` for happy paths and `failure-case` for error, rollback,
-  rejection, validation, timeout, boundary, or branch paths. Project-localized
-  equivalents such as `성공케이스` and `실패케이스` are valid when the project
-  naturally uses Korean. If the framework only accepts identifier-style test
-  names, encode the prefix in the identifier and keep the canonical string in a
-  docstring, comment, subtest name, or display-name annotation.
+  `success-case` for happy paths, `boundary-case` for null, empty, limit,
+  unknown, partial, edge, or branch inputs that should still be handled as
+  defined, and `failure-case` for error, rollback, rejection, validation, or
+  timeout paths. Project-localized equivalents such as `성공케이스`,
+  `경계케이스`, and `실패케이스` are valid when the project naturally uses
+  Korean. If the framework only accepts identifier-style test names, encode the
+  prefix in the identifier and keep the canonical string in a docstring,
+  comment, subtest name, or display-name annotation.
 - Exercise the documented contract — not the (yet-to-exist)
   implementation internals.
 - Name the primary test target variable `sut` by default when the test creates

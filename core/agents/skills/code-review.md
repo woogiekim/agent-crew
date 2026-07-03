@@ -34,6 +34,21 @@ new dependency must justify why existing project code, the standard library,
 framework, browser, database, Kubernetes, or platform capabilities are
 insufficient.
 
+## Evidence-first reporting
+
+For bug reports, incident analysis, root-cause claims, review verdicts, and
+quality-gate decisions, check that the report follows
+`core/rules/evidence-grounded-reasoning.md`.
+
+- [ ] Proven Facts are backed by concrete repository, test, log, trace, git, or
+      tool-output evidence.
+- [ ] Unverified Hypotheses are labeled as hypotheses and kept out of the final
+      conclusion.
+- [ ] Needed Evidence names the missing file, command, log, test, trace, HAR, or
+      runtime check instead of guessing.
+- [ ] Conclusion is narrower than the evidence and does not prescribe code
+      changes that are still only hypothetical.
+
 ## PRD Coverage Matrix
 
 For each item in the PRD's Core Features list, verify whether it is present in the implementation:

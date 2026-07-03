@@ -313,10 +313,12 @@ REFACTOR → Improve component design, extract sub-components → {runner} → c
 - Test naming convention is supplied by the resolved Channel B template. Worked example (`typescript-react`): `{ComponentName}.test.tsx` (or `.spec.tsx`) adjacent to the component file.
 - Test case names MUST follow the language-agnostic nature prefix contract from
   `tdd.md`: `<nature-prefix>[(<qualifier>)] - <behavior>`. Use
-  `success-case` for render/interaction happy paths and `failure-case` for
-  validation, unavailable-data, timeout, accessibility failure, boundary, or
-  branch paths. Project-localized equivalents such as `성공케이스` and
-  `실패케이스` are valid when the project naturally uses Korean.
+  `success-case` for render/interaction happy paths, `boundary-case` for null,
+  empty, limit, unavailable-data, edge, or branch inputs that should still be
+  handled as defined, and `failure-case` for validation, timeout,
+  authorization, or accessibility failure paths. Project-localized equivalents
+  such as `성공케이스`, `경계케이스`, and `실패케이스` are valid when the
+  project naturally uses Korean.
 - Test target naming convention: default the component, hook result, rendered
   wrapper, or other primary system under test variable to `sut` when a target
   variable is introduced. Keep props, fixtures, user events, and query results
