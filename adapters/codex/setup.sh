@@ -521,11 +521,9 @@ chmod +x "${AGENT_CREW_HOME}/adapters/codex/bin/"* 2>/dev/null || true
 chmod +x "${AGENT_CREW_HOME}/system/adapters/codex/bin/"* 2>/dev/null || true
 
 # Note: reasoning_tier is an agent-crew abstraction. Codex system agents map it
-# to the official `model_reasoning_effort` key (`xhigh`, `high`, `medium`,
-# `low`) while user agents may still provide explicit `model`,
-# `model_reasoning_effort`, and `sandbox_mode` keys in frontmatter. We do not
-# auto-map the abstract tier to a concrete model because model availability is
-# operator- and profile-specific. See core/rules/capabilities/reasoning-tier.md.
+# to official per-agent `model` and `model_reasoning_effort` keys while user
+# agents may still provide explicit `model`, `model_reasoning_effort`, and
+# `sandbox_mode` keys in frontmatter. See core/rules/capabilities/reasoning-tier.md.
 
 sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
 

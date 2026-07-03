@@ -27,7 +27,7 @@ Each line has the shape:
   "session_id":            "20260516-012345",
   "agent":                 "backend",
   "stage":                 2,
-  "model":                 "claude-sonnet-4-6",
+  "model":                 "claude-sonnet-5",
   "tier":                  "balanced",
   "input_tokens":          12345,
   "output_tokens":         6789,

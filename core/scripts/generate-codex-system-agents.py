@@ -22,6 +22,13 @@ REASONING_MAP = {
     "light": "low",
 }
 
+MODEL_MAP = {
+    "xhigh": "claude-fable-5",
+    "deep": "claude-opus-4-8",
+    "balanced": "claude-sonnet-5",
+    "light": "claude-haiku-4-5",
+}
+
 
 def parse_frontmatter(text: str) -> dict[str, str]:
     fm: dict[str, str] = {}
@@ -57,7 +64,9 @@ def render_toml(source_path: Path, source_ref: str | None = None) -> tuple[str, 
     toml_name = toml_name_for(name, fallback)
     description = (fm.get("description") or f"Agent-crew system agent: {name}").strip()
     description = re.sub(r"\s+", " ", description).lstrip("> ").strip()
-    effort = REASONING_MAP.get((fm.get("reasoning_tier") or "balanced").strip(), "medium")
+    tier = (fm.get("reasoning_tier") or "balanced").strip()
+    effort = REASONING_MAP.get(tier, REASONING_MAP["balanced"])
+    model = MODEL_MAP.get(tier, MODEL_MAP["balanced"])
     canonical_ref = source_ref or str(source_path)
 
     instructions = f"""# {name}
@@ -76,6 +85,7 @@ Before doing any work:
     desc_escaped = description.replace("\\", "\\\\").replace('"', '\\"')
     content = (
         f'description = "{desc_escaped}"\n'
+        f'model = "{model}"\n'
         f'model_reasoning_effort = "{effort}"\n'
         f'developer_instructions = """\n{toml_escape(instructions.rstrip())}\n"""\n'
         f'name = "{toml_name}"\n'

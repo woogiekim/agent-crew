@@ -136,11 +136,20 @@ assert_contains "${setup_config_out}" "max_depth = 1"
 it "Codex setup maps xhigh system agents to xhigh effort"
 assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model_reasoning_effort = "xhigh"'
 
+it "Codex setup maps xhigh system agents to Fable 5 model"
+assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model = "claude-fable-5"'
+
 it "Codex setup maps deep implementation agents to high effort"
 assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model_reasoning_effort = "high"'
 
+it "Codex setup maps deep implementation agents to Opus 4.8 model"
+assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model = "claude-opus-4-8"'
+
 it "Codex setup maps light utility agents to low effort"
 assert_contains "$(cat "${setup_repo}/.codex/agents/input-normalizer.toml")" 'model_reasoning_effort = "low"'
+
+it "Codex setup maps light utility agents to Haiku 4.5 model"
+assert_contains "$(cat "${setup_repo}/.codex/agents/input-normalizer.toml")" 'model = "claude-haiku-4-5"'
 
 it "Generated Codex TOML parses as valid TOML"
 python3 - "${toml}" <<'PYEOF'

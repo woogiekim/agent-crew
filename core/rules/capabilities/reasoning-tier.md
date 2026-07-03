@@ -95,8 +95,8 @@ host's default model if a host ever discovers them directly.
 
 | Adapter | Mapping | Notes |
 |---|---|---|
-| claude  | `xhigh → claude-opus-4-7`, `deep → claude-opus-4-7`, `balanced → claude-sonnet-4-6`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md`. Claude has no separate per-agent effort field, so `xhigh` and `deep` use the strongest configured model. |
-| codex   | `xhigh → model_reasoning_effort="xhigh"`, `deep → "high"`, `balanced → "medium"`, `light → "low"` | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter maps system-agent abstract tiers to reasoning effort, while preserving user-specified concrete model keys. |
+| claude  | `xhigh → claude-fable-5`, `deep → claude-opus-4-8`, `balanced → claude-sonnet-5`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md` with concrete model IDs. |
+| codex   | `xhigh → model="claude-fable-5", model_reasoning_effort="xhigh"`, `deep → model="claude-opus-4-8", effort="high"`, `balanced → model="claude-sonnet-5", effort="medium"`, `light → model="claude-haiku-4-5", effort="low"` | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter maps system-agent abstract tiers to concrete model IDs and reasoning effort, while preserving user-specified concrete model keys. |
 | generic | none — single-model environment | Leaves `model: inherit` (or absent equivalent) untouched. Tier declarations have no install-time effect. |
 
 ## Related Files
@@ -107,7 +107,8 @@ Producer (install-time):
   `~/.claude/agents/*.md`)
 - `adapters/codex/setup.sh` and
   `core/scripts/generate-codex-system-agents.py` — Codex (maps system-agent
-  tiers to `model_reasoning_effort`; preserves user-owned concrete model keys)
+  tiers to `model` and `model_reasoning_effort`; preserves user-owned concrete
+  model keys)
 - `adapters/generic/setup.sh` — no-op
 
 Consumer (none at runtime). The field is purely declarative for

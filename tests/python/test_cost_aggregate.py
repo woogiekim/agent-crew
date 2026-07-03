@@ -26,7 +26,7 @@ def _record(task_id: str, **kwargs) -> dict:
         "session_id": task_id.rsplit("-", 1)[0],
         "agent": "backend",
         "stage": 1,
-        "model": "claude-sonnet-4-6",
+        "model": "claude-sonnet-5",
         "tier": "balanced",
         "input_tokens": 1000,
         "output_tokens": 500,
@@ -155,7 +155,7 @@ class TestCostAggregate:
         task_id = "20260101-120000-0"
         _write_cost_jsonl(
             state_dir / "cost" / f"{task_id}.jsonl",
-            [_record(task_id, tier="unknown", model="claude-opus-4-7")],
+            [_record(task_id, tier="unknown", model="claude-fable-5")],
         )
         r = script_runner(
             "cost-aggregate.py",

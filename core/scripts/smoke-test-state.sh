@@ -249,7 +249,7 @@ echo "------------------------------------"
 
 # Add a cost JSONL so token totals are populated.
 cat > "${STATE_DIR}/cost/${TASK_ID}.jsonl" <<EOF
-{"ts":"2026-05-16T12:00:30Z","task_id":"${TASK_ID}","session_id":"20260516-120000","agent":"backend","stage":1,"model":"claude-sonnet-4-6","tier":"balanced","input_tokens":10000,"output_tokens":2000,"cache_creation_tokens":0,"cache_read_tokens":8000}
+{"ts":"2026-05-16T12:00:30Z","task_id":"${TASK_ID}","session_id":"20260516-120000","agent":"backend","stage":1,"model":"claude-sonnet-5","tier":"balanced","input_tokens":10000,"output_tokens":2000,"cache_creation_tokens":0,"cache_read_tokens":8000}
 EOF
 
 # Add a blocked second task so the summary's blocker histogram is exercised.

@@ -60,9 +60,13 @@ DEFAULT_BUDGETS = {
 # Fallback when a line records tier="unknown". Keep in sync with
 # adapters/claude/setup.sh's TIER_TO_MODEL.
 MODEL_TIER_FALLBACK = {
+    "claude-fable-5":    "xhigh",
+    "claude-opus-4-8":   "deep",
+    "claude-sonnet-5":   "balanced",
+    "claude-haiku-4-5":  "light",
+    # Legacy records from before the July 2026 model refresh.
     "claude-opus-4-7":   "xhigh",
     "claude-sonnet-4-6": "balanced",
-    "claude-haiku-4-5":  "light",
 }
 
 
