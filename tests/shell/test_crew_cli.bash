@@ -1053,6 +1053,33 @@ assert_contains "${CURRENT_SESSION_TOOL_EVENTS}" '"status": "completed"'
 assert_contains "$(cat "${CURRENT_SESSION_REQUEST_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_CURRENT_SESSION"
 assert_file_absent "${CURRENT_SESSION_REQUEST_DIR}/result.md"
 
+it "crew agent refreshes runtime assets before direct-agent execution"
+SYNC_HOME="$(make_tmp)"
+SYNC_PROJECT="$(make_tmp)"
+SYNC_CREW="${SYNC_HOME}/bin/crew"
+mkdir -p "${SYNC_HOME}/bin" "${SYNC_HOME}/commands" "${SYNC_HOME}/scripts" "${SYNC_PROJECT}"
+cp "${CREW}" "${SYNC_CREW}"
+chmod +x "${SYNC_CREW}"
+cp "${REPO_ROOT}/core/commands/agent.md" "${SYNC_HOME}/commands/agent.md"
+cp "${REPO_ROOT}/core/scripts/project-state.sh" "${SYNC_HOME}/scripts/project-state.sh"
+cat > "${SYNC_HOME}/scripts/crew-runtime.py" <<'PYEOF'
+#!/usr/bin/env python3
+print("STALE_RUNTIME")
+PYEOF
+chmod +x "${SYNC_HOME}/scripts/crew-runtime.py"
+out=$(
+  AGENT_CREW_HOME="${SYNC_HOME}" \
+  AGENT_CREW_SOURCE_DIR="${REPO_ROOT}" \
+  PROJECT_ROOT="${SYNC_PROJECT}" \
+    bash "${SYNC_CREW}" agent analyst "explain routing" 2>&1
+)
+rc=$?
+assert_exit 0 "${rc}"
+assert_not_contains "${out}" "STALE_RUNTIME"
+assert_contains "${out}" "AGENT_REQUEST_ID:"
+cmp -s "${REPO_ROOT}/core/scripts/crew-runtime.py" "${SYNC_HOME}/scripts/crew-runtime.py"
+assert_true "$?"
+
 it "crew agent treats zero-exit blocked bridge output as failed"
 out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
@@ -1192,6 +1219,15 @@ assert_not_contains "${request_json}" "방금"
 assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 방금 질문을 설명해주세요"
 assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "NORMALIZATION_MODE: inline_direct_bridge"
 assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "Do not spawn input-normalizer"
+
+it "crew agent treats Korean deep-dive planning as read-only normalization"
+out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "심층분석해서 구체적인 수정 방안 계획해" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_not_contains "${out}" "Use crew run for mutating work"
+KOREAN_PLAN_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/request.json")" '"normalization_status": "required"'
+assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 심층분석해서 구체적인 수정 방안 계획해"
 
 it "crew agent blocks Korean mutating direct requests before normalization"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "파일을 수정해주세요" 2>&1)

@@ -120,6 +120,29 @@ def test_missing_command_uses_installed_adapter_default(tmp_path: Path):
     assert result["status"] == "ready"
 
 
+def test_default_command_prefers_active_host_env_over_stale_capabilities(monkeypatch, tmp_path: Path):
+    checker = _load_checker()
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    codex_bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    claude_bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
+    caps = home / "state" / project.name / "capabilities.json"
+    codex_bridge.parent.mkdir(parents=True)
+    claude_bridge.parent.mkdir(parents=True)
+    caps.parent.mkdir(parents=True)
+    codex_bridge.write_text("#!/bin/sh\necho codex\n", encoding="utf-8")
+    claude_bridge.write_text("#!/bin/sh\necho claude\n", encoding="utf-8")
+    codex_bridge.chmod(0o755)
+    claude_bridge.chmod(0o755)
+    caps.write_text('{"host":"claude"}', encoding="utf-8")
+    monkeypatch.delenv("AGENT_CREW_HOST", raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+
+    default = checker.default_bridge_command(agent_crew_home=home, project_root=project)
+
+    assert default == str(codex_bridge)
+
+
 def test_default_bridge_can_be_disabled(monkeypatch, tmp_path: Path):
     checker = _load_checker()
     monkeypatch.setenv("AGENT_CREW_HOST_BRIDGE_DISABLE_DEFAULT", "1")

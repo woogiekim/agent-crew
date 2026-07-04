@@ -39,7 +39,7 @@ READ_ONLY_TASK_RE = re.compile(
     r"inspect|investigate|analyze|analyse|review|validate|validation|"
     r"check|audit|status|diagnostic|diagnostics"
     r")\b|"
-    r"읽기\s*전용|조회|분석|검토|확인|진단",
+    r"읽기\s*전용|조회|분석|검토|확인|진단|딥다이브|계획",
     re.IGNORECASE,
 )
 READ_ONLY_HISTORY_QUERY_RE = re.compile(
@@ -64,14 +64,18 @@ GERUND_MUTATING_TASK_RE = re.compile(
     re.IGNORECASE,
 )
 KOREAN_PLAN_ONLY_CONTEXT_RE = re.compile(
-    r"(?:구현|개선)\s*(?:계획|전략|방안|우선순위)",
+    r"(?:구현|개선|수정|보완|해결)\s*(?:계획|전략|방안|우선순위)",
     re.IGNORECASE,
 )
 KOREAN_PLAN_EXECUTION_RE = re.compile(
-    r"(?:구현|개선)\s*(?:계획|전략|방안|우선순위)"
+    r"(?:구현|개선|수정|보완|해결)\s*(?:계획|전략|방안|우선순위)"
     r"\s*(?:을|를)?\s*(?:대로|그대로|에\s*따라)?\s*"
     r"(?:진행|실행|반영|수정|구현|개선)"
     r"\s*(?:해|해주세요|해줘|하자|하세요|해라)?\s*[.!?。]*\s*$",
+    re.IGNORECASE,
+)
+KOREAN_READ_ONLY_BACKGROUND_RE = re.compile(
+    r"(?:구현|개선|수정|보완|해결)\s*작업\s*(?:이후|후|관련)",
     re.IGNORECASE,
 )
 REVIEW_OUTPUT_SECTION_LABEL_RE = re.compile(
@@ -909,6 +913,7 @@ def looks_mutating_task(text: str) -> bool:
     if has_read_only_signal:
         constrained_value = REVIEW_OUTPUT_SECTION_LABEL_RE.sub("", constrained_value)
         constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
+        constrained_value = KOREAN_READ_ONLY_BACKGROUND_RE.sub("", constrained_value)
         constrained_value = KOREAN_PLAN_ONLY_CONTEXT_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_METHOD_LEARNING_RE.sub("", constrained_value)

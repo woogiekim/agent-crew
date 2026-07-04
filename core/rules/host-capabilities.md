@@ -70,12 +70,14 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/capabilities.json
 
 | Field | Type | Notes |
 |---|---|---|
-| `host` | string | Adapter name that wrote the file. Informational; never used for gating. |
+| `host` | string | Adapter name that wrote the file. Informational for capability gating; host bridge discovery may use it only as a legacy fallback after explicit command/env and active host process markers. |
 | `<flag>` | bool | See the per-flag detail doc in the Capability Registry table. |
 | `<flag>_mode` | string | Optional adapter-specific conditional mode detail. Boolean flags remain authoritative. |
 
-Any missing flag defaults to `false`. The `host` field is informational
-only — invariant 1 forbids gating any code path on `host`.
+Any missing flag defaults to `false`. The `host` field is informational for
+capability gating — invariant 1 forbids gating capability-specific code paths on
+`host`. Host bridge discovery is the narrow exception: it may use `host` only as
+a legacy fallback after explicit command/env and active host process markers.
 
 ## Absence Contract (global)
 

@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-06-26T04:48:11Z from 14 mnemos rules (host=generic) -->
+<!-- Assembled: 2026-07-03T03:56:17Z from 14 mnemos rules (host=generic) -->
 
 # agent-crew - Global Rules
 
@@ -146,11 +146,12 @@ as advisory gaps and still rejects unapproved external skill loads.
 
 Optional skill-use notes may be recorded in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
-they are diagnostic coverage, not required proof artifacts. TDD remains covered
-by red/green/refactor evidence. For other loaded skills, real task outcomes,
-tests, diffs, reviews, and tool events are the evidence that the skill was
-applied; missing or incomplete skill-use notes must be reported as advisory
-gaps, not completion blockers.
+they are diagnostic coverage, not required proof artifacts. TDD and other
+loaded skills are covered first by real task outcomes, tests, diffs, reviews,
+pipeline/progress state, reviewer quality metrics, and tool events. Phase notes
+such as red/green/refactor files may improve auditability, but missing or
+incomplete notes must be reported as advisory gaps for standard-risk work, not
+completion blockers.
 
 Optional operational understanding notes may be recorded in
 `{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
@@ -162,14 +163,13 @@ missing notes should be surfaced as advisory gaps.
 
 For implementation or production-code mutation work, the same fallback must not
 bypass the full TDD Red → Green → Refactor cycle. Before production-code
-mutation, identify the focused test target, add or update the test, run it, and
-record the expected failing result in `{TASK_DIR}/context/tdd-red.md`. If no
-runnable harness or red failure can reasonably be produced, record the explicit
-exception first in `{TASK_DIR}/context/tdd-exception.md`. After green, perform
-the refactor review or document a no-op refactor decision, rerun focused
-verification, and record it in `{TASK_DIR}/context/tdd-refactor.md`.
-Completion/repair for production-code implementation may reject missing
-red-phase/exception evidence or missing refactor-phase evidence.
+mutation, identify the focused test target, add or update the test, and run it;
+if no runnable harness or red failure can reasonably be produced, make the
+exception explicit before implementation. After green, perform the refactor
+review or document a no-op refactor decision and rerun focused verification.
+Completion/repair for production-code implementation may reject missing runtime
+quality-loop outcomes or high-risk hard blockers, but standard-risk missing
+phase-note artifacts are coverage gaps rather than proof-file requirements.
 
 This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,

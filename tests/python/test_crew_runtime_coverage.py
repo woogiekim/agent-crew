@@ -364,7 +364,7 @@ def test_failure_case_regression_blocks_claude_default_bridge_in_active_codex_se
 
 
 def test_failure_case_regression_command_run_blocks_claude_default_bridge_in_codex(monkeypatch, tmp_path: Path, capsys):
-    """failure-case(regression) - crew run refuses a stale Claude default bridge in Codex."""
+    """failure-case(regression) - crew run does not trust stale Claude capabilities in Codex."""
     # given
     home = tmp_path / "home"
     project = tmp_path / "project"
@@ -377,11 +377,16 @@ def test_failure_case_regression_command_run_blocks_claude_default_bridge_in_cod
     )
     state_dir = Path(state_info["state_dir"])
     (state_dir / "capabilities.json").write_text(json.dumps({"host": "claude"}), encoding="utf-8")
-    marker = tmp_path / "claude-started"
-    bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
-    bridge.parent.mkdir(parents=True)
-    bridge.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n", encoding="utf-8")
-    bridge.chmod(0o755)
+    claude_marker = tmp_path / "claude-started"
+    codex_marker = tmp_path / "codex-started"
+    claude_bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
+    codex_bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    claude_bridge.parent.mkdir(parents=True)
+    codex_bridge.parent.mkdir(parents=True)
+    claude_bridge.write_text(f"#!/usr/bin/env bash\ntouch {claude_marker}\n", encoding="utf-8")
+    codex_bridge.write_text(f"#!/usr/bin/env bash\ntouch {codex_marker}\n", encoding="utf-8")
+    claude_bridge.chmod(0o755)
+    codex_bridge.chmod(0o755)
     monkeypatch.setenv("AGENT_CREW_HOME", str(home))
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
 
@@ -398,11 +403,66 @@ def test_failure_case_regression_command_run_blocks_claude_default_bridge_in_cod
     out = capsys.readouterr().out
     task_dirs = sorted((state_dir / "tasks").iterdir())
     invocation = json.loads((task_dirs[-1] / "context" / "host-bridge-invocation.json").read_text(encoding="utf-8"))
-    assert "HOST_BRIDGE: current_session_required" in out
-    assert invocation["bridge_selection_source"] == "capabilities.host"
-    assert invocation["bridge_selection_host"] == "claude"
-    assert invocation["status"] == "current_session_required"
-    assert not marker.exists()
+    assert "HOST_BRIDGE: auto_completed" in out
+    assert invocation["bridge_selection_source"] == "active_host_env"
+    assert invocation["bridge_selection_host"] == "codex"
+    assert invocation["status"] == "completed"
+    assert codex_marker.exists()
+    assert not claude_marker.exists()
+
+
+def test_default_bridge_prefers_active_codex_env_over_stale_capabilities(monkeypatch, tmp_path: Path):
+    """failure-case(regression) - active Codex env wins over stale Claude capabilities."""
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    state_info = runtime.resolve_project_state(home=home, project_root=project, ensure=True, migrate_legacy=True)
+    state_dir = Path(state_info["state_dir"])
+    (state_dir / "capabilities.json").write_text(json.dumps({"host": "claude"}), encoding="utf-8")
+    codex_bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    claude_bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
+    codex_bridge.parent.mkdir(parents=True)
+    claude_bridge.parent.mkdir(parents=True)
+    codex_bridge.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    claude_bridge.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    codex_bridge.chmod(0o755)
+    claude_bridge.chmod(0o755)
+    monkeypatch.delenv("AGENT_CREW_HOST", raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+
+    resolution = runtime.resolve_host_bridge(None, home, project)
+
+    assert resolution["command"] == str(codex_bridge)
+    assert resolution["source"] == "active_host_env"
+    assert resolution["host"] == "codex"
+
+
+def test_default_bridge_prefers_active_claude_env_over_stale_capabilities(monkeypatch, tmp_path: Path):
+    """failure-case(regression) - active Claude env wins over stale Codex capabilities."""
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    state_info = runtime.resolve_project_state(home=home, project_root=project, ensure=True, migrate_legacy=True)
+    state_dir = Path(state_info["state_dir"])
+    (state_dir / "capabilities.json").write_text(json.dumps({"host": "codex"}), encoding="utf-8")
+    codex_bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    claude_bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
+    codex_bridge.parent.mkdir(parents=True)
+    claude_bridge.parent.mkdir(parents=True)
+    codex_bridge.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    claude_bridge.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    codex_bridge.chmod(0o755)
+    claude_bridge.chmod(0o755)
+    monkeypatch.delenv("AGENT_CREW_HOST", raising=False)
+    for name in ("CODEX", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_MANAGED_BY_NPM"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "session-1")
+
+    resolution = runtime.resolve_host_bridge(None, home, project)
+
+    assert resolution["command"] == str(claude_bridge)
+    assert resolution["source"] == "active_host_env"
+    assert resolution["host"] == "claude"
 
 
 def test_host_bridge_child_output_preview_stays_single_line():
@@ -607,6 +667,12 @@ def test_agent_mutating_guard_honors_read_only_overrides():
         "구현 계획만 수립해. 수정하지 마세요."
     ) is False
     assert runtime.looks_mutating(
+        "컨텍스트 관련 개선 작업 이후 뭔가 느려진거같아서 관련해서 딥다이브 해"
+    ) is False
+    assert runtime.looks_mutating(
+        "심층분석해서 구체적인 수정 방안 계획해"
+    ) is False
+    assert runtime.looks_mutating(
         "Read-only review. Output sections: Must Fix, Should Fix."
     ) is False
     assert runtime.looks_mutating(
@@ -627,6 +693,8 @@ def test_agent_mutating_guard_honors_read_only_overrides():
     assert runtime.looks_mutating("구현 계획에 따라 진행해") is True
     assert runtime.looks_mutating("개선 계획대로 진행해") is True
     assert runtime.looks_mutating("개선 계획을 실행해") is True
+    assert runtime.looks_mutating("수정 방안대로 반영해") is True
+    assert runtime.looks_mutating("해결 전략에 따라 진행해") is True
     assert runtime.looks_mutating("teach me while refactoring this function") is True
     assert runtime.looks_mutating("teach me while removing this file") is True
     assert runtime.looks_mutating("teach me while changing this hook") is True

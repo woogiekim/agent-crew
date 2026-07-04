@@ -278,9 +278,11 @@ For Codex native CLI handoffs, the adapter installs a concrete bridge command:
 export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/codex/bin/codex-host-bridge"
 ```
 
-When the active project capabilities identify Codex or Claude and the installed
-adapter bridge exists, `crew run` / `crew agent` can discover that bridge even
-when the environment variable is unset. Setting the variable remains useful when
+When the environment variable is unset, `crew run` / `crew agent` first checks
+the active host process environment (Codex or Claude) and can discover the
+matching installed adapter bridge automatically. The legacy project
+`capabilities.json` host value is used only as a fallback for older installs
+that do not expose active host markers. Setting the variable remains useful when
 overriding the bridge command. The bridge receives the task, handoff, result,
 project, and direct-agent request environment and resumes the existing handoff
 in the host runtime. If no default or explicit bridge is available, agent-crew

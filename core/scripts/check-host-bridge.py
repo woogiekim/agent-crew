@@ -73,6 +73,28 @@ def _load_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _active_codex_session() -> bool:
+    return any(
+        os.environ.get(name, "").strip()
+        for name in ("CODEX", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_MANAGED_BY_NPM")
+    )
+
+
+def _active_claude_session() -> bool:
+    return any(
+        os.environ.get(name, "").strip()
+        for name in ("CLAUDECODE", "CLAUDE_SESSION_ID", "CLAUDE_MODEL")
+    )
+
+
+def _active_host_from_env() -> str:
+    if _active_codex_session():
+        return "codex"
+    if _active_claude_session():
+        return "claude"
+    return ""
+
+
 def default_bridge_command(
     *,
     agent_crew_home: Path | None = None,
@@ -86,6 +108,8 @@ def default_bridge_command(
     home = (agent_crew_home or Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew"))).expanduser()
     project = (project_root or Path(os.environ.get("PROJECT_ROOT", os.getcwd()))).resolve()
     detected_host = (host or os.environ.get("AGENT_CREW_HOST") or "").strip().lower()
+    if not detected_host:
+        detected_host = _active_host_from_env()
     if not detected_host:
         state_info = resolve_project_state(
             home=home,

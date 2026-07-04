@@ -232,3 +232,24 @@ def test_runtime_resolves_installed_codex_bridge_default(tmp_path: Path) -> None
     resolved = crew_runtime.resolve_host_bridge_command(None, home, project)
 
     assert resolved == str(bridge)
+
+
+def test_runtime_resolves_active_codex_bridge_before_capabilities_host(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    codex_bridge = home / "adapters" / "codex" / "bin" / "codex-host-bridge"
+    claude_bridge = home / "adapters" / "claude" / "bin" / "claude-host-bridge"
+    capabilities = home / "state" / project.name / "capabilities.json"
+    codex_bridge.parent.mkdir(parents=True)
+    claude_bridge.parent.mkdir(parents=True)
+    capabilities.parent.mkdir(parents=True)
+    codex_bridge.write_text("#!/bin/sh\necho codex\n", encoding="utf-8")
+    claude_bridge.write_text("#!/bin/sh\necho claude\n", encoding="utf-8")
+    codex_bridge.chmod(0o755)
+    claude_bridge.chmod(0o755)
+    capabilities.write_text(json.dumps({"host": "claude"}), encoding="utf-8")
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+
+    resolved = crew_runtime.resolve_host_bridge_command(None, home, project)
+
+    assert resolved == str(codex_bridge)

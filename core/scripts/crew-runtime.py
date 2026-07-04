@@ -597,6 +597,21 @@ def active_codex_session() -> bool:
     )
 
 
+def active_claude_session() -> bool:
+    return any(
+        os.environ.get(name, "").strip()
+        for name in ("CLAUDECODE", "CLAUDE_SESSION_ID", "CLAUDE_MODEL")
+    )
+
+
+def active_host_from_env() -> str:
+    if active_codex_session():
+        return "codex"
+    if active_claude_session():
+        return "claude"
+    return ""
+
+
 def infer_host_bridge_resolution(command: str) -> dict:
     command_argv, command_parse_error = host_bridge_command_argv(command)
     command_display = command_argv[0] if command_argv else ""
@@ -1033,11 +1048,15 @@ def default_host_bridge_resolution(agent_crew_home: Path, project_root: Path) ->
     capabilities_path = Path(state_info["state_dir"]) / "capabilities.json"
     capabilities = load_json(capabilities_path, {})
     env_host = os.environ.get("AGENT_CREW_HOST", "").strip().lower()
+    active_host = active_host_from_env()
     capabilities_host = str(capabilities.get("host") or "").strip().lower()
     capabilities_adapter = str(capabilities.get("adapter") or "").strip().lower()
     if env_host:
         host = env_host
         source = "env.AGENT_CREW_HOST"
+    elif active_host:
+        host = active_host
+        source = "active_host_env"
     elif capabilities_host:
         host = capabilities_host
         source = "capabilities.host"

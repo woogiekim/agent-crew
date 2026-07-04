@@ -1385,7 +1385,10 @@ If the bridge returns zero, command output is marked auto-completed.
 EOF
     return 0
   fi
+  print_update_stale_warning
+  sync_source_runtime_assets_if_drifted
   require_file "${ASSET_ROOT}/commands/agent.md" "agent command definition"
+  sync_source_hooks_if_drifted
   local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
   require_file "${runtime}" "native runtime helper"
   python3 "${runtime}" agent --project-root "${PROJECT_ROOT}" --asset-root "${ASSET_ROOT}" "$@"

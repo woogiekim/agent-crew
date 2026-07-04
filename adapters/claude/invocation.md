@@ -25,8 +25,9 @@ export AGENT_CREW_HOST_BRIDGE_COMMAND="${HOME}/.agent-crew/adapters/claude/bin/c
 ```
 
 The environment variable overrides bridge selection. When it is unset, the core
-runtime can discover the installed Claude bridge from the active project's
-`capabilities.json`.
+runtime can discover the installed Claude bridge from the active Claude process
+environment. The active project's `capabilities.json` host value is only a
+legacy fallback for older installs.
 
 The bridge runs Claude from an isolated temporary working directory and grants
 explicit access to the project root and task state directory with `--add-dir`.

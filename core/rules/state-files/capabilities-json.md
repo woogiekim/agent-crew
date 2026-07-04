@@ -52,7 +52,7 @@ require an exhaustive enumeration.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `schema_version` | integer (const 1) | optional | Pre-F4 adapters omit this; validator tolerates absence. |
-| `host` | string | yes | Adapter name. Informational only — invariant 1 in `host-capabilities.md` forbids gating on this value. |
+| `host` | string | yes | Adapter name. Informational for capability gating; host bridge discovery may use it only as a legacy fallback after explicit command/env and active host process markers. |
 | `task_tools` | boolean | optional (defaults false per absence contract) | Host task lifecycle tools. |
 | `agent_background` | boolean | optional | Background subagent fan-out. |
 | `monitor_tool` | boolean | optional | Streaming output surface. |
