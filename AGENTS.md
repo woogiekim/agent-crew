@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-07-03T03:56:17Z from 14 mnemos rules (host=generic) -->
+<!-- Assembled: 2026-07-03T08:38:38Z from 14 mnemos rules (host=generic) -->
 
 # agent-crew - Global Rules
 
