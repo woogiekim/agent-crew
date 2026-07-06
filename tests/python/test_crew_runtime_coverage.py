@@ -297,6 +297,37 @@ def test_host_bridge_wait_progress_surfaces_child_output(monkeypatch, tmp_path: 
     assert "HOST_BRIDGE_OUTPUT" in progress_log
 
 
+def test_host_bridge_preserves_normalized_task_before_stdout_tail_truncation(tmp_path: Path):
+    """failure-case(regression) - full bridge stdout is parsed before record stdout truncation."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    script = tmp_path / "bridge.py"
+    expected = "Implement the long normalization result"
+    script.write_text(
+        "\n".join([
+            "import json",
+            f"print(json.dumps({{'normalized_task': {expected!r}}}), flush=True)",
+            "print('x' * 5000, flush=True)",
+        ]),
+        encoding="utf-8",
+    )
+
+    # when
+    record = runtime.invoke_host_bridge(
+        f"{sys.executable} {script}",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    # then
+    assert record["returncode"] == 0
+    assert expected not in record["stdout"]
+    assert record["normalized_task"] == expected
+    assert runtime.normalized_task_from_bridge_record(record) == expected
+
+
 def test_success_case_regression_records_host_bridge_selection_source(tmp_path: Path):
     """success-case(regression) - records why the host bridge command was selected."""
     # given
@@ -361,6 +392,68 @@ def test_failure_case_regression_blocks_claude_default_bridge_in_active_codex_se
     assert record["failure_class"] == "current_session_required"
     assert "refusing claude-host-bridge from an active Codex session" in record["stderr"]
     assert not marker.exists()
+
+
+def test_failure_case_regression_blocks_wrapped_claude_bridge_in_active_codex_session(monkeypatch, tmp_path: Path):
+    """failure-case(regression) - wrapped shell commands cannot hide claude-host-bridge in Codex."""
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    marker = tmp_path / "claude-started"
+    bridge = tmp_path / "claude-host-bridge"
+    bridge.write_text(f"#!/usr/bin/env bash\ntouch {marker}\n", encoding="utf-8")
+    bridge.chmod(0o755)
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+    monkeypatch.delenv("AGENT_CREW_ALLOW_CROSS_HOST_BRIDGE", raising=False)
+
+    record = runtime.invoke_host_bridge(
+        f"bash -c '{bridge}'",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    assert record["status"] == "current_session_required"
+    assert record["failure_class"] == "current_session_required"
+    assert "refusing claude-host-bridge from an active Codex session" in record["stderr"]
+    assert not marker.exists()
+
+
+def test_failure_case_regression_blocks_mixed_claude_fallback_bridge_in_active_codex_session(monkeypatch, tmp_path: Path):
+    """failure-case(regression) - mixed bridge commands cannot fall back to Claude in Codex."""
+    # given
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    codex_marker = tmp_path / "codex-started"
+    claude_marker = tmp_path / "claude-started"
+    codex_bridge = bin_dir / "codex-host-bridge"
+    claude_bridge = bin_dir / "claude-host-bridge"
+    codex_bridge.write_text(
+        f"#!/usr/bin/env bash\ntouch {codex_marker}\nexit 1\n",
+        encoding="utf-8",
+    )
+    claude_bridge.write_text(f"#!/usr/bin/env bash\ntouch {claude_marker}\n", encoding="utf-8")
+    codex_bridge.chmod(0o755)
+    claude_bridge.chmod(0o755)
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-1")
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.delenv("AGENT_CREW_ALLOW_CROSS_HOST_BRIDGE", raising=False)
+
+    # when
+    record = runtime.invoke_host_bridge(
+        "bash -c 'codex-host-bridge || claude-host-bridge'",
+        task_dir=task_dir,
+        register=_register(task_dir.name),
+        project_root=tmp_path,
+    )
+
+    # then
+    assert record["status"] == "current_session_required"
+    assert record["failure_class"] == "current_session_required"
+    assert "refusing claude-host-bridge from an active Codex session" in record["stderr"]
+    assert not codex_marker.exists()
+    assert not claude_marker.exists()
 
 
 def test_failure_case_regression_command_run_blocks_claude_default_bridge_in_codex(monkeypatch, tmp_path: Path, capsys):
@@ -752,6 +845,307 @@ def test_command_run_current_session_normalization_and_reported_block(monkeypatc
     task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
     register = json.loads((task_dirs[-1] / "register.json").read_text(encoding="utf-8"))
     assert register["host_bridge_failure_reason"] == "bridge_reported_blocked"
+
+
+def test_command_run_normalization_bridge_success_does_not_auto_complete_task(monkeypatch, tmp_path: Path, capsys):
+    """failure-case(regression) - input-normalizer bridge success is not whole-task completion."""
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+
+    bridge_record = {
+        "schema_version": 1,
+        "task_id": "task",
+        "command": "bridge",
+        "command_argv": ["bridge"],
+        "command_display": "bridge",
+        "bridge_selection_source": "direct_invoke",
+        "bridge_selection_host": "codex",
+        "bridge_selection_capabilities_path": "",
+        "started_at": "2026-07-05T00:00:00Z",
+        "finished_at": "2026-07-05T00:00:01Z",
+        "returncode": 0,
+        "stdout": '{"normalized_task":"Implement the requested feature"}\n',
+        "stderr": "",
+        "timed_out": False,
+        "timeout_seconds": 1800,
+        "failure_class": "",
+        "status": "completed",
+        "direct_agent": False,
+        "output_observed": True,
+        "output_tail_path": "context/host-bridge-output-tail.txt",
+        "stall_class": "",
+    }
+    monkeypatch.setattr(runtime, "invoke_host_bridge", lambda *_args, **_kwargs: bridge_record)
+    args = argparse.Namespace(
+        task="기능을 추가해줘",
+        project_root=str(project),
+        fake_host_result=None,
+        host_bridge_command="bridge",
+    )
+
+    assert runtime.command_run(args) == 0
+
+    out = capsys.readouterr().out
+    state_info = runtime.resolve_project_state(
+        home=tmp_path / "home",
+        project_root=project,
+        prefer_existing_legacy=True,
+    )
+    task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
+    task_dir = task_dirs[-1]
+    register = json.loads((task_dir / "register.json").read_text(encoding="utf-8"))
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    normalization_pipeline_path = task_dir / "context" / "normalization-pipeline.json"
+
+    assert "STATUS: handoff_ready" in out
+    assert "HOST_BRIDGE: auto_completed" not in out
+    assert register["current_phase"] == "handoff_ready"
+    assert register["host_bridge_status"] == "internal_handoff_ready"
+    assert not (task_dir / "pipeline.json").exists()
+    assert register["normalization_pipeline_path"] == str(normalization_pipeline_path)
+    normalization_pipeline = json.loads(normalization_pipeline_path.read_text(encoding="utf-8"))
+    assert normalization_pipeline["stages"] == ["input-normalizer"]
+    assert normalization_pipeline["completed_stages"] == 1
+    preflight = subprocess.run(
+        ["python3", str(REPO_ROOT / "core" / "scripts" / "pipeline-capability-check.py"),
+         "--pipeline", str(normalization_pipeline_path), "--format", "json"],
+        text=True,
+        capture_output=True,
+    )
+    assert preflight.returncode == 0, preflight.stdout + preflight.stderr
+    assert "NORMALIZATION_GATE: completed" in result_text
+    assert "HOST_BRIDGE: auto_completed" not in result_text
+    audit_text = (task_dir / "context" / "normalized_task.md").read_text(encoding="utf-8")
+    assert "RAW_INPUT: 기능을 추가해줘" in audit_text
+    assert "NORMALIZED_TASK: Implement the requested feature" in audit_text
+
+
+def test_command_run_normalization_bridge_success_parses_wrapped_result(monkeypatch, tmp_path: Path, capsys):
+    """failure-case(regression) - wrapped host bridge result JSON still drives normalized handoff."""
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+
+    wrapped_result = {
+        "type": "result",
+        "result": '```json\n{"normalized_task":"Implement the wrapped feature"}\n```',
+    }
+    bridge_record = {
+        "schema_version": 1,
+        "task_id": "task",
+        "command": "bridge",
+        "command_argv": ["bridge"],
+        "command_display": "bridge",
+        "bridge_selection_source": "direct_invoke",
+        "bridge_selection_host": "claude",
+        "bridge_selection_capabilities_path": "",
+        "started_at": "2026-07-05T00:00:00Z",
+        "finished_at": "2026-07-05T00:00:01Z",
+        "returncode": 0,
+        "stdout": json.dumps(wrapped_result) + "\n",
+        "stderr": "",
+        "timed_out": False,
+        "timeout_seconds": 1800,
+        "failure_class": "",
+        "status": "completed",
+        "direct_agent": False,
+        "output_observed": True,
+        "output_tail_path": "context/host-bridge-output-tail.txt",
+        "stall_class": "",
+    }
+    monkeypatch.setattr(runtime, "invoke_host_bridge", lambda *_args, **_kwargs: bridge_record)
+    args = argparse.Namespace(
+        task="기능을 추가해줘",
+        project_root=str(project),
+        fake_host_result=None,
+        host_bridge_command="bridge",
+    )
+
+    assert runtime.command_run(args) == 0
+
+    out = capsys.readouterr().out
+    state_info = runtime.resolve_project_state(
+        home=tmp_path / "home",
+        project_root=project,
+        prefer_existing_legacy=True,
+    )
+    task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
+    task_dir = task_dirs[-1]
+    register = json.loads((task_dir / "register.json").read_text(encoding="utf-8"))
+    handoff_text = (task_dir / "handoff.md").read_text(encoding="utf-8")
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    audit_text = (task_dir / "context" / "normalized_task.md").read_text(encoding="utf-8")
+    normalization_pipeline = json.loads(
+        (task_dir / "context" / "normalization-pipeline.json").read_text(encoding="utf-8")
+    )
+
+    assert "STATUS: handoff_ready" in out
+    assert register["task"] == "Implement the wrapped feature"
+    assert not (task_dir / "pipeline.json").exists()
+    assert normalization_pipeline["task"] == "Implement the wrapped feature"
+    assert "supervisor" not in normalization_pipeline["stages"]
+    assert "TASK: Implement the wrapped feature" in handoff_text
+    assert "TASK: 기능을 추가해줘" not in handoff_text
+    assert "# Implement the wrapped feature" in result_text
+    assert "RAW_INPUT: 기능을 추가해줘" in audit_text
+    assert "NORMALIZED_TASK: Implement the wrapped feature" in audit_text
+
+
+def test_normalization_bridge_parser_rejects_invalid_normalized_task_values():
+    """failure-case(validation) - normalized_task must be an English string."""
+    # given
+    non_english_records = (
+        {"stdout": '{"normalized_task":"기능을 추가해줘"}\n'},
+        {"stdout": '{"normalized_task":"เพิ่มฟีเจอร์"}\n'},
+        {"stdout": '{"normalized_task":"Προσθήκη δυνατότητας"}\n'},
+        {"stdout": '{"normalized_task":"הוסף תכונה"}\n'},
+        {"stdout": '{"normalized_task":"सुविधा जोड़ें"}\n'},
+    )
+    non_string_record = {"stdout": '{"normalized_task":["Implement the feature"]}\n'}
+
+    # when / then
+    for record in non_english_records:
+        assert runtime.normalized_task_from_bridge_record(record) == ""
+    assert runtime.normalized_task_from_bridge_record(non_string_record) == ""
+
+
+def test_normalization_bridge_parser_accepts_english_with_unicode_punctuation():
+    """boundary-case(validation) - English normalized_task may contain Unicode punctuation."""
+    # given
+    record = {"stdout": '{"normalized_task":"Implement the requested feature — keep tests passing"}\n'}
+
+    # when / then
+    assert (
+        runtime.normalized_task_from_bridge_record(record)
+        == "Implement the requested feature — keep tests passing"
+    )
+
+
+def test_command_run_normalization_bridge_success_blocks_non_english_normalized_task(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    """failure-case(validation) - non-English normalized_task cannot complete the normalization gate."""
+    # given
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+
+    bridge_record = {
+        "schema_version": 1,
+        "task_id": "task",
+        "command": "bridge",
+        "command_argv": ["bridge"],
+        "command_display": "bridge",
+        "bridge_selection_source": "direct_invoke",
+        "bridge_selection_host": "claude",
+        "bridge_selection_capabilities_path": "",
+        "started_at": "2026-07-05T00:00:00Z",
+        "finished_at": "2026-07-05T00:00:01Z",
+        "returncode": 0,
+        "stdout": '{"type":"result","result":"{\\"normalized_task\\":\\"기능을 추가해줘\\"}"}\n',
+        "stderr": "",
+        "timed_out": False,
+        "timeout_seconds": 1800,
+        "failure_class": "",
+        "status": "completed",
+        "direct_agent": False,
+        "output_observed": True,
+        "output_tail_path": "context/host-bridge-output-tail.txt",
+        "stall_class": "",
+    }
+    monkeypatch.setattr(runtime, "invoke_host_bridge", lambda *_args, **_kwargs: bridge_record)
+    args = argparse.Namespace(
+        task="기능을 추가해줘",
+        project_root=str(project),
+        fake_host_result=None,
+        host_bridge_command="bridge",
+    )
+
+    # when
+    result = runtime.command_run(args)
+
+    # then
+    assert result == 3
+    out = capsys.readouterr().out
+    state_info = runtime.resolve_project_state(
+        home=tmp_path / "home",
+        project_root=project,
+        prefer_existing_legacy=True,
+    )
+    task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
+    task_dir = task_dirs[-1]
+    register = json.loads((task_dir / "register.json").read_text(encoding="utf-8"))
+    handoff_text = (task_dir / "handoff.md").read_text(encoding="utf-8")
+
+    assert "STATUS: blocked" in out
+    assert "BLOCKER: missing_normalized_task" in out
+    assert register["current_phase"] == "blocked"
+    assert register["blocked_by"] == ["missing_normalized_task"]
+    assert "NORMALIZATION_GATE: completed" not in handoff_text
+    assert "TASK: 기능을 추가해줘" not in handoff_text
+
+
+def test_command_run_normalization_bridge_success_blocks_missing_normalized_task(monkeypatch, tmp_path: Path, capsys):
+    """failure-case(regression) - successful normalization bridge output must include normalized_task."""
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+
+    bridge_record = {
+        "schema_version": 1,
+        "task_id": "task",
+        "command": "bridge",
+        "command_argv": ["bridge"],
+        "command_display": "bridge",
+        "bridge_selection_source": "direct_invoke",
+        "bridge_selection_host": "claude",
+        "bridge_selection_capabilities_path": "",
+        "started_at": "2026-07-05T00:00:00Z",
+        "finished_at": "2026-07-05T00:00:01Z",
+        "returncode": 0,
+        "stdout": '{"type":"result","result":"{}"}\n',
+        "stderr": "",
+        "timed_out": False,
+        "timeout_seconds": 1800,
+        "failure_class": "",
+        "status": "completed",
+        "direct_agent": False,
+        "output_observed": True,
+        "output_tail_path": "context/host-bridge-output-tail.txt",
+        "stall_class": "",
+    }
+    monkeypatch.setattr(runtime, "invoke_host_bridge", lambda *_args, **_kwargs: bridge_record)
+    args = argparse.Namespace(
+        task="기능을 추가해줘",
+        project_root=str(project),
+        fake_host_result=None,
+        host_bridge_command="bridge",
+    )
+
+    assert runtime.command_run(args) == 3
+
+    out = capsys.readouterr().out
+    state_info = runtime.resolve_project_state(
+        home=tmp_path / "home",
+        project_root=project,
+        prefer_existing_legacy=True,
+    )
+    task_dirs = sorted((Path(state_info["state_dir"]) / "tasks").iterdir())
+    task_dir = task_dirs[-1]
+    register = json.loads((task_dir / "register.json").read_text(encoding="utf-8"))
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+
+    assert "STATUS: blocked" in out
+    assert "BLOCKER: missing_normalized_task" in out
+    assert register["current_phase"] == "blocked"
+    assert register["blocked_by"] == ["missing_normalized_task"]
+    assert register["host_bridge_status"] == "failed"
+    assert "STATUS: blocked" in result_text
+    assert "BLOCKER: missing_normalized_task" in result_text
+    assert "TASK: 기능을 추가해줘" not in (task_dir / "handoff.md").read_text(encoding="utf-8")
 
 
 def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):

@@ -19,7 +19,7 @@ MUTATING_TASK_RE = re.compile(
     r")\b|"
     r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
     r"작성|생성|만들|"
-    r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
+    r"리팩터|배포|머지|롤백|반영|저장|발행|고쳐|해결",
     re.IGNORECASE,
 )
 STRONG_MUTATING_TASK_RE = re.compile(
@@ -39,7 +39,7 @@ READ_ONLY_TASK_RE = re.compile(
     r"inspect|investigate|analyze|analyse|review|validate|validation|"
     r"check|audit|status|diagnostic|diagnostics"
     r")\b|"
-    r"읽기\s*전용|조회|분석|검토|확인|진단|딥다이브|계획",
+    r"읽기\s*전용|조회|분석|검토|리뷰|확인|진단|딥다이브|계획",
     re.IGNORECASE,
 )
 READ_ONLY_HISTORY_QUERY_RE = re.compile(
@@ -63,6 +63,22 @@ GERUND_MUTATING_TASK_RE = re.compile(
     r"(?:this|that|the|my|our|a|an)\b",
     re.IGNORECASE,
 )
+KOREAN_TEST_EXECUTION_RE = re.compile(
+    r"테스트\s*"
+    r"(?:"
+    r"(?:도|만)?(?=\s*(?:[.!?。]|$))|"
+    r"(?:도|는|은|를|을|만)?\s*"
+    r"(?:하고|돌리고|실행하고|수행하고)(?!\s*싶)|"
+    r"(?:도|는|은|를|을|만)?\s*"
+    r"(?:"
+    r"돌리자|돌리세요|돌리십시오|돌려(?:줘|주세요|라|요)?|"
+    r"실행(?:해(?:줘|주세요|라|자|요)?|하자|하세요|해라)?|"
+    r"수행(?:해(?:줘|주세요|라|자|요)?|하자|하세요|해라)?|"
+    r"해(?:줘|주세요|라|자|요)?|하자|하세요|해라"
+    r")(?=\s*(?:[.!?。]|$))"
+    r")",
+    re.IGNORECASE,
+)
 KOREAN_PLAN_ONLY_CONTEXT_RE = re.compile(
     r"(?:구현|개선|수정|보완|해결)\s*(?:계획|전략|방안|우선순위)",
     re.IGNORECASE,
@@ -75,7 +91,9 @@ KOREAN_PLAN_EXECUTION_RE = re.compile(
     re.IGNORECASE,
 )
 KOREAN_READ_ONLY_BACKGROUND_RE = re.compile(
-    r"(?:구현|개선|수정|보완|해결)\s*작업\s*(?:이후|후|관련)",
+    r"(?:구현|개선|수정|보완|해결)\s*작업\s*(?:이후|후|관련)|"
+    r"(?:구현|개선|수정|보완|해결)\s*(?:한\s*거|한\s*것|했던\s*것|된\s*것|된\s*거|한거)"
+    r"[^.!?\n。]*(?:리뷰|검토|분석|확인)",
     re.IGNORECASE,
 )
 REVIEW_OUTPUT_SECTION_LABEL_RE = re.compile(
@@ -893,6 +911,8 @@ def looks_mutating_task(text: str) -> bool:
     if KOREAN_PLAN_EXECUTION_RE.search(value):
         return True
     if GERUND_MUTATING_TASK_RE.search(value):
+        return True
+    if KOREAN_TEST_EXECUTION_RE.search(value):
         return True
 
     constrained_value = NON_MUTATING_CONSTRAINT_RE.sub("", value)

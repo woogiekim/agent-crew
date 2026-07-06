@@ -250,6 +250,8 @@ def test_repair_classifier_shares_read_only_overrides_with_quality_loop():
     read_only_tasks = (
         "Read-only review. Output sections: Must Fix, Should Fix.",
         "$review 코드리뷰. Must Fix / Should Fix 형식으로 보고.",
+        "코드리뷰만 해줘, 수정하지 마.",
+        "최근 bridge 개선한거 리뷰해줘.",
         "개선 우선순위 항목들을 더 면밀하게 분석 검토하고 구현 계획을 수립해.",
         "구현 계획만 수립해. 수정하지 마세요.",
         "어떤 commit 있어?",
@@ -257,6 +259,123 @@ def test_repair_classifier_shares_read_only_overrides_with_quality_loop():
     )
 
     for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
+
+
+def test_repair_classifier_keeps_korean_review_and_test_follow_up_mutating():
+    """failure-case(regression) - Korean follow-up requests that run tests stay mutating."""
+    # given
+    task = "구현한거 리뷰하고 테스트해줘"
+
+    # when / then
+    assert quality_loop.looks_mutating_task(task) is True
+    assert repair_state.looks_mutating_task(task) is True
+    assert repair_state.looks_quality_gated_task(task) is True
+
+
+def test_repair_classifier_keeps_korean_test_before_review_follow_up_mutating():
+    """failure-case(regression) - Korean test-before-review follow-ups stay mutating."""
+    # given
+    task = "구현한거 테스트하고 리뷰해줘"
+
+    # when / then
+    assert quality_loop.looks_mutating_task(task) is True
+    assert repair_state.looks_mutating_task(task) is True
+    assert repair_state.looks_quality_gated_task(task) is True
+
+
+def test_repair_classifier_keeps_korean_particle_test_execution_mutating():
+    """failure-case(regression) - Korean test commands with particles stay mutating."""
+    # given
+    tasks = (
+        "테스트도 해줘",
+        "테스트를 돌려줘",
+        "구현한거 리뷰하고 테스트도 해줘",
+    )
+
+    # when / then
+    for task in tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+        assert repair_state.looks_quality_gated_task(task) is True
+
+
+def test_repair_classifier_keeps_korean_noun_form_test_execution_mutating():
+    """failure-case(regression) - terse Korean noun-form test commands stay mutating."""
+    # given
+    tasks = (
+        "테스트",
+        "테스트만",
+        "테스트 실행",
+        "테스트 수행",
+    )
+
+    # when / then
+    for task in tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+        assert repair_state.looks_quality_gated_task(task) is True
+
+
+def test_repair_classifier_keeps_korean_bare_imperative_test_execution_mutating():
+    """failure-case(regression) - Korean bare imperative test commands stay mutating."""
+    # given
+    tasks = (
+        "테스트해",
+        "테스트 해",
+        "테스트 돌려",
+    )
+
+    # when / then
+    for task in tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+        assert repair_state.looks_quality_gated_task(task) is True
+
+
+def test_repair_classifier_keeps_korean_test_artifact_reviews_read_only():
+    """failure-case(regression) - Korean test artifact reviews stay read-only."""
+    # given
+    tasks = (
+        "테스트 결과 확인해줘",
+        "테스트 로그 검토해줘",
+    )
+
+    # when / then
+    for task in tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
+
+
+def test_repair_classifier_keeps_korean_test_subject_questions_read_only():
+    """failure-case(regression) - Korean test subject questions stay read-only."""
+    # given
+    tasks = (
+        "테스트하고 싶은데 방법 알려줘",
+        "테스트해줘야 하는지 확인해줘",
+    )
+
+    # when / then
+    for task in tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
+
+
+def test_repair_classifier_keeps_korean_past_or_negated_test_reviews_read_only():
+    """failure-case(regression) - Korean past or negated test review requests stay read-only."""
+    # given
+    tasks = (
+        "테스트해본 결과 확인해줘",
+        "테스트해주지 말고 리뷰만 해줘",
+        "테스트 돌리지 말고 리뷰만 해줘",
+    )
+
+    # when / then
+    for task in tasks:
         assert quality_loop.looks_mutating_task(task) is False
         assert repair_state.looks_mutating_task(task) is False
         assert repair_state.looks_quality_gated_task(task) is False

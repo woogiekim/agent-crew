@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -75,6 +76,47 @@ def host_bridge_command_argv(command: str) -> tuple[list[str], str]:
         command_argv = [str(Path(command_argv[0]).expanduser()), *command_argv[1:]]
 
     return command_argv, ""
+
+
+def bridge_hosts_from_command(command: str, command_argv: list[str]) -> list[str]:
+    hosts: list[str] = []
+
+    def add_host(host: str) -> None:
+        if host and host not in hosts:
+            hosts.append(host)
+
+    def host_from_token(token: str) -> str:
+        name = Path(token).name
+        if name == "codex-host-bridge":
+            return "codex"
+        if name == "claude-host-bridge":
+            return "claude"
+        return ""
+
+    for token in command_argv:
+        host = host_from_token(token)
+        add_host(host)
+
+        try:
+            nested_tokens = shlex.split(token)
+        except ValueError:
+            nested_tokens = []
+        for nested in nested_tokens:
+            host = host_from_token(nested)
+            add_host(host)
+
+    for bridge_match in re.finditer(
+        r"(?<![\w.-])(codex-host-bridge|claude-host-bridge)(?![\w.-])",
+        command or "",
+    ):
+        add_host("codex" if bridge_match.group(1) == "codex-host-bridge" else "claude")
+
+    return hosts
+
+
+def bridge_host_from_command(command: str, command_argv: list[str]) -> str:
+    hosts = bridge_hosts_from_command(command, command_argv)
+    return hosts[0] if hosts else ""
 
 
 def host_bridge_failure_reason(bridge_record: dict) -> str:
@@ -590,6 +632,316 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
     )
 
 
+def json_candidate_texts(text: str) -> list[str]:
+    stripped = text.strip()
+    candidates: list[str] = []
+    if stripped:
+        candidates.append(stripped)
+
+    for match in re.finditer(r"```(?:json)?\s*(.*?)```", text, re.I | re.S):
+        fenced = match.group(1).strip()
+        if fenced:
+            candidates.append(fenced)
+
+    for line in text.splitlines():
+        line = line.strip()
+        if line and line not in candidates:
+            candidates.append(line)
+
+    return candidates
+
+
+def has_non_english_script(text: str) -> bool:
+    if any(
+        pattern.search(text)
+        for pattern in (
+            HANGUL_PATTERN,
+            JAPANESE_PATTERN,
+            HAN_PATTERN,
+            CYRILLIC_PATTERN,
+            ARABIC_PATTERN,
+            LATIN_EXTENDED_PATTERN,
+        )
+    ):
+        return True
+
+    return any(
+        not char.isascii() and unicodedata.category(char).startswith("L")
+        for char in text
+    )
+
+
+def valid_normalized_task_value(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    normalized_task = value.strip()
+    if not normalized_task:
+        return ""
+    if has_non_english_script(normalized_task):
+        return ""
+
+    return normalized_task
+
+
+def normalized_task_from_bridge_payload(payload: object) -> str:
+    if isinstance(payload, dict):
+        normalized_task = valid_normalized_task_value(payload.get("normalized_task"))
+        if normalized_task:
+            return normalized_task
+
+        for key in ("result", "content", "message", "output", "text", "stdout"):
+            if key not in payload:
+                continue
+            normalized_task = normalized_task_from_bridge_payload(payload[key])
+            if normalized_task:
+                return normalized_task
+
+    if isinstance(payload, list):
+        for item in payload:
+            normalized_task = normalized_task_from_bridge_payload(item)
+            if normalized_task:
+                return normalized_task
+
+    if isinstance(payload, str):
+        return normalized_task_from_bridge_text(payload)
+
+    return ""
+
+
+def normalized_task_from_bridge_text(text: str) -> str:
+    for candidate in json_candidate_texts(text):
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+        normalized_task = normalized_task_from_bridge_payload(payload)
+        if normalized_task:
+            return normalized_task
+
+    return ""
+
+
+def normalized_task_from_bridge_record(bridge_record: dict) -> str:
+    normalized_task = valid_normalized_task_value(bridge_record.get("normalized_task"))
+    if normalized_task:
+        return normalized_task
+
+    return normalized_task_from_bridge_text(str(bridge_record.get("stdout") or ""))
+
+
+def write_normalized_task_audit(
+    task_dir: Path,
+    *,
+    raw_task: str,
+    normalized_task: str,
+    normalized_at: str,
+    bridge_record: dict,
+) -> Path:
+    normalized_by = str(bridge_record.get("bridge_selection_host") or "").strip() or "other"
+    audit_path = task_dir / "context" / "normalized_task.md"
+    audit_path.write_text(
+        (
+            f"RAW_INPUT: {raw_task}\n"
+            f"SOURCE_LANGUAGE: {detect_source_language(raw_task)}\n"
+            f"NORMALIZED_TASK: {normalized_task}\n"
+            f"NORMALIZED_AT: {normalized_at}\n"
+            f"NORMALIZED_BY: {normalized_by}\n"
+            "PATH: crew-run\n"
+        ),
+        encoding="utf-8",
+    )
+    return audit_path
+
+
+def mark_normalization_bridge_blocked(
+    task_dir: Path,
+    register: dict,
+    pipeline: dict,
+    bridge_record: dict,
+    *,
+    raw_task: str,
+) -> None:
+    now = utc_now_z()
+    completion_path = task_dir / "context" / "host-bridge-normalization.json"
+    write_json(completion_path, bridge_record)
+
+    register.update({
+        "current_phase": "blocked",
+        "blocked_by": ["missing_normalized_task"],
+        "host_bridge_status": "failed",
+        "host_bridge_failure_reason": "missing_normalized_task",
+        "host_bridge_completion_path": str(completion_path),
+        "host_bridge_completed_at": now,
+    })
+    pipeline.update({
+        "stages": ["input-normalizer", "supervisor"],
+        "completed_stages": 0,
+        "stage_agent_status": {
+            "1": {"input-normalizer": "blocked"},
+        },
+    })
+
+    handoff = (
+        "# Input Normalization Blocked\n\n"
+        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
+        f"TASK: {register.get('task', task_dir.name)}\n"
+        "MODE: normalization-completed\n"
+        "STATUS: blocked\n"
+        "NORMALIZATION_GATE: blocked\n"
+        "BLOCKER: missing_normalized_task\n"
+        f"RAW_INPUT: {raw_task}\n"
+        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
+        "NEXT: Re-run input normalization and return a non-empty normalized_task before supervisor handoff.\n"
+    )
+    result = (
+        f"# {register.get('task', task_dir.name)}\n\n"
+        "STATUS: blocked\n"
+        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
+        f"BRANCH: {register.get('branch', '')}\n"
+        "NORMALIZATION_GATE: blocked\n"
+        "BLOCKER: missing_normalized_task\n"
+        "HOST_BRIDGE: failed\n"
+        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
+        "DETAIL: Host bridge exited successfully but did not return the required normalized_task value.\n"
+    )
+
+    write_json(task_dir / "register.json", register)
+    write_json(task_dir / "pipeline.json", pipeline)
+    (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
+    (task_dir / "result.md").write_text(result, encoding="utf-8")
+
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
+        handle.write(f"{now} | NORMALIZATION_BLOCKED | missing_normalized_task\n")
+        handle.write(f"{now} | STATUS | blocked\n")
+
+    append_progress(
+        task_dir,
+        {
+            "ts": now,
+            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
+            "task_id": task_dir.name,
+            "session_id": register.get("session_id", ""),
+            "event": "NORMALIZATION_BLOCKED",
+            "stage": 0,
+            "agent": "input-normalizer",
+            "attempt": 0,
+            "status": "failed",
+            "detail": "missing_normalized_task",
+            "files": ["context/host-bridge-normalization.json", "handoff.md", "result.md"],
+        },
+    )
+
+
+def mark_normalization_bridge_handoff(
+    task_dir: Path,
+    register: dict,
+    pipeline: dict,
+    bridge_record: dict,
+    *,
+    raw_task: str,
+    normalized_task: str,
+    project_root: Path,
+) -> str:
+    now = utc_now_z()
+    completion_path = task_dir / "context" / "host-bridge-normalization.json"
+    normalization_pipeline_path = task_dir / "context" / "normalization-pipeline.json"
+    write_json(completion_path, bridge_record)
+    audit_path = write_normalized_task_audit(
+        task_dir,
+        raw_task=raw_task,
+        normalized_task=normalized_task,
+        normalized_at=now,
+        bridge_record=bridge_record,
+    )
+
+    register.update({
+        "task": normalized_task,
+        "current_phase": "handoff_ready",
+        "blocked_by": [],
+        "host_bridge_status": "internal_handoff_ready",
+        "host_bridge_completion_path": str(completion_path),
+        "host_bridge_completed_at": now,
+        "normalization_pipeline_path": str(normalization_pipeline_path),
+    })
+    normalization_pipeline = dict(pipeline)
+    normalization_pipeline.update({
+        "task": normalized_task,
+        "stages": ["input-normalizer"],
+        "completed_stages": 1,
+        "stage_agent_status": {
+            "1": {"input-normalizer": "completed"},
+        },
+        "downstream_supervisor_pending": True,
+    })
+    write_json(normalization_pipeline_path, normalization_pipeline)
+
+    handoff = (
+        "# Supervisor Handoff\n\n"
+        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
+        f"TASK: {normalized_task}\n"
+        f"PROJECT_ROOT: {project_root}\n"
+        "MODE: normalization-completed\n"
+        "STATUS: handoff_ready\n"
+        "NORMALIZATION_GATE: completed\n"
+        f"RAW_INPUT: {raw_task}\n"
+        "HOST_BRIDGE: internal_handoff_ready\n"
+        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
+        f"EVIDENCE: {audit_path.relative_to(task_dir)}\n"
+        f"EVIDENCE: {normalization_pipeline_path.relative_to(task_dir)}\n"
+        f"REPAIR: crew repair {register.get('task_id', task_dir.name)} --status completed --note \"<summary>\"\n"
+    )
+    result = (
+        f"# {normalized_task}\n\n"
+        "STATUS: handoff_ready\n"
+        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
+        f"BRANCH: {register.get('branch', '')}\n"
+        "NORMALIZATION_GATE: completed\n"
+        "HOST_BRIDGE: internal_handoff_ready\n"
+        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
+        f"EVIDENCE: {audit_path.relative_to(task_dir)}\n"
+        f"EVIDENCE: {normalization_pipeline_path.relative_to(task_dir)}\n"
+        "NEXT: Continue downstream crew:run supervisor execution from handoff.md; "
+        "the bridge completed input normalization only.\n"
+    )
+
+    write_json(task_dir / "register.json", register)
+    pipeline_path = task_dir / "pipeline.json"
+    if pipeline_path.exists():
+        pipeline_path.unlink()
+    (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
+    (task_dir / "result.md").write_text(result, encoding="utf-8")
+
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
+        handle.write(f"{now} | NORMALIZATION_COMPLETED | host bridge completed input-normalizer only\n")
+        handle.write(f"{now} | STATUS | handoff_ready\n")
+
+    append_progress(
+        task_dir,
+        {
+            "ts": now,
+            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
+            "task_id": task_dir.name,
+            "session_id": register.get("session_id", ""),
+            "event": "NORMALIZATION_COMPLETED",
+            "stage": 0,
+            "agent": "input-normalizer",
+            "attempt": 0,
+            "status": "handoff_ready",
+            "detail": "host bridge completed input normalization only; downstream supervisor is still pending",
+            "files": [
+                "context/host-bridge-normalization.json",
+                "context/normalized_task.md",
+                "context/normalization-pipeline.json",
+                "handoff.md",
+                "result.md",
+            ],
+        },
+    )
+    return normalized_task
+
+
 def active_codex_session() -> bool:
     return any(
         os.environ.get(name, "").strip()
@@ -615,12 +967,7 @@ def active_host_from_env() -> str:
 def infer_host_bridge_resolution(command: str) -> dict:
     command_argv, command_parse_error = host_bridge_command_argv(command)
     command_display = command_argv[0] if command_argv else ""
-    host = ""
-    bridge_name = Path(command_display).name if command_display else ""
-    if bridge_name == "codex-host-bridge":
-        host = "codex"
-    elif bridge_name == "claude-host-bridge":
-        host = "claude"
+    host = bridge_host_from_command(command, command_argv)
 
     return {
         "command": command,
@@ -639,7 +986,10 @@ def should_block_cross_host_bridge(command_argv: list[str], bridge_resolution: d
 
     command_name = Path(command_argv[0]).name if command_argv else ""
     selected_host = str(bridge_resolution.get("host") or "").strip().lower()
-    return selected_host == "claude" or command_name == "claude-host-bridge"
+    detected_hosts = bridge_hosts_from_command(str(bridge_resolution.get("command") or ""), command_argv)
+    if not selected_host:
+        selected_host = detected_hosts[0] if detected_hosts else ""
+    return "claude" in detected_hosts or selected_host == "claude" or command_name == "claude-host-bridge"
 
 
 def invoke_host_bridge(
@@ -906,6 +1256,7 @@ def invoke_host_bridge(
         **running_record,
         "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "returncode": returncode,
+        "normalized_task": normalized_task_from_bridge_text(stdout),
         "stdout": stdout[-4000:],
         "stderr": stderr[-4000:],
         "timed_out": timed_out,
@@ -1817,6 +2168,38 @@ def command_run(args: argparse.Namespace) -> int:
         if bridge_record["returncode"] == 0 and not host_bridge_reported_blocked(bridge_record):
             latest_register = load_json(task_dir / "register.json", register)
             latest_pipeline = load_json(task_dir / "pipeline.json", pipeline)
+            if normalization_required:
+                normalized_task = normalized_task_from_bridge_record(bridge_record)
+                if not normalized_task:
+                    mark_normalization_bridge_blocked(
+                        task_dir,
+                        latest_register,
+                        latest_pipeline,
+                        bridge_record,
+                        raw_task=raw_task,
+                    )
+                    print(f"TASK_ID: {task_id}")
+                    print(f"TASK_DIR: {task_dir}")
+                    print("STATUS: blocked")
+                    print("BLOCKER: missing_normalized_task")
+                    print("HOST_BRIDGE: failed")
+                    return 3
+
+                mark_normalization_bridge_handoff(
+                    task_dir,
+                    latest_register,
+                    latest_pipeline,
+                    bridge_record,
+                    raw_task=raw_task,
+                    normalized_task=normalized_task,
+                    project_root=project_root,
+                )
+                print(f"TASK_ID: {task_id}")
+                print(f"TASK_DIR: {task_dir}")
+                print("STATUS: handoff_ready")
+                print("HOST_BRIDGE: internal_handoff_ready")
+                return 0
+
             if looks_mutating_task(str(latest_register.get("task", args.task))):
                 quality_result = check_quality_loop(task_dir, target_status="completed")
                 if not quality_result["passed"]:

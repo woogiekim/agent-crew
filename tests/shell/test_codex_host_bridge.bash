@@ -107,6 +107,7 @@ assert_exit 0 "${rc}"
 stdin_payload=$(cat "${STDIN_PATH}")
 assert_contains "${stdin_payload}" "Complete only the input-normalizer contract"
 assert_contains "${stdin_payload}" "Do not continue to supervisor"
+assert_not_contains "${stdin_payload}" "HOST_BRIDGE: auto_completed"
 assert_not_contains "${stdin_payload}" "installed agent-crew supervisor workflow"
 
 it "codex direct-agent bridge forbids normalizer subagent spawn"

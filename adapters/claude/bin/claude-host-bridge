@@ -116,7 +116,7 @@ Complete only the input-normalizer contract described in the handoff. Do not con
 
 Read AGENT_CREW_HANDOFF_PATH, return the requested normalization JSON/metadata, update only the existing task state files needed for the normalization gate when possible, and exit. If the task must continue beyond normalization, leave that for the parent runtime or current session after this bridge exits.
 
-Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
+Do not run crew repair for normal bridge completion. If the input-normalizer contract completes successfully, exit 0 and let the parent agent-crew runtime keep the downstream supervisor handoff pending. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
 
 AGENT_CREW_TASK_ID: ${TASK_ID}
 AGENT_CREW_TASK_DIR: ${TASK_DIR}

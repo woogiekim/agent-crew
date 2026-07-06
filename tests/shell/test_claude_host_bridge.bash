@@ -152,6 +152,7 @@ assert_exit 0 "${rc}"
 prompt="$(cat "${NORMALIZATION_TASK_DIR}/context/claude-host-bridge-prompt.md")"
 assert_contains "${prompt}" "Complete only the input-normalizer contract"
 assert_contains "${prompt}" "Do not continue to supervisor"
+assert_not_contains "${prompt}" "HOST_BRIDGE: auto_completed"
 assert_not_contains "${prompt}" "Current-Session Fallback"
 
 it "claude direct-agent bridge forbids normalizer subagent spawn"
