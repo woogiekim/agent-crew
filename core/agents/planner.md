@@ -34,10 +34,10 @@ Planning output must cite first-party evidence with `file:line`, task-artifact
 paths, or `tool-output` where applicable, and must show an explicit
 evidence-to-inference-to-conclusion flow.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when needed** — do not
-load them at agent startup:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - Pipeline planning and PRD authoring: `~/.agent-crew/system/agents/skills/pipeline-planning.md`
 
 ## Input Parameters

@@ -133,6 +133,15 @@ def test_analyst_skill_reads_have_supervisor_verified_evidence():
     assert "pipeline-planning.md" in bootstrap_text
 
 
+def test_analyst_skill_load_artifact_is_pipeline_mode_only():
+    analyst_text = ANALYST.read_text(encoding="utf-8")
+
+    assert '[ "${MODE:-}" = "supervisor" ]' in analyst_text
+    assert '[ -n "${TASK_DIR:-}" ]' in analyst_text
+    assert "MODE=direct" in analyst_text
+    assert "do not create task state" in analyst_text
+
+
 def test_reviewer_rejects_code_changes_without_test_files_or_tdd_exception():
     text = REVIEWER.read_text(encoding="utf-8")
 

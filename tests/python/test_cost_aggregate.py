@@ -167,6 +167,33 @@ class TestCostAggregate:
         payload = json.loads(r.stdout)
         assert payload["task"]["routing_audit"][0]["tier"] == "xhigh"
 
+    def test_unknown_tier_falls_back_for_codex_models(
+        self, script_runner, env_with_home, state_dir
+    ):
+        """Unknown-tier Codex records map to the generated model's tier."""
+        task_id = "20260101-120000-0"
+        _write_cost_jsonl(
+            state_dir / "cost" / f"{task_id}.jsonl",
+            [
+                _record(task_id, tier="unknown", model="gpt-5.5"),
+                _record(task_id, tier="unknown", model="gpt-5.4"),
+                _record(task_id, tier="unknown", model="gpt-5.4-mini"),
+            ],
+        )
+        r = script_runner(
+            "cost-aggregate.py",
+            "--state-dir", str(state_dir),
+            "--task-id", task_id,
+            env=env_with_home,
+        )
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert [row["tier"] for row in payload["task"]["routing_audit"]] == [
+            "xhigh",
+            "balanced",
+            "light",
+        ]
+
     def test_multiple_task_files_summary(
         self, script_runner, env_with_home, state_dir
     ):

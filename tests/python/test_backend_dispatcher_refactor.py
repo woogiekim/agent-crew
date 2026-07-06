@@ -4,7 +4,7 @@ Asserts that `core/agents/backend.md` opts into the Wave A generalized
 dispatcher primitive (`core/rules/agent-tool-dispatch.md`), declares the
 **degraded-fallback** flavor of the fallback-policy taxonomy (as the
 parallel exemplar to issuer's strict/BLOCKED flavor), and preserves its
-existing runtime contract (declared on-demand skills section, language-
+existing runtime contract (declared agent-associated skills section, language-
 agnostic identity).
 """
 from __future__ import annotations
@@ -139,13 +139,35 @@ def test_backend_md_contrasts_with_issuer_strict_flavor(backend_md_text: str) ->
 # --------------------------------------------------------------------------- #
 
 
-def test_backend_md_preserves_on_demand_skills_section(backend_md_text: str) -> None:
-    """The existing declared on-demand skills section must survive the refactor."""
-    assert "## Skills (Loaded On Demand)" in backend_md_text, (
-        "backend.md must retain its `## Skills (Loaded On Demand)` section "
+def test_backend_md_declares_upfront_agent_associated_skill_loading(backend_md_text: str) -> None:
+    """Backend must load every agent-associated skill before execution."""
+    assert "## Skills (Loaded Upfront)" in backend_md_text, (
+        "backend.md must retain its `## Skills (Loaded Upfront)` section "
         "(declared skill loading is complementary to the dispatcher per "
         "agent-tool-dispatch.md § 'An agent MAY use both conventions')."
     )
+    assert "load every skill listed in this section before execution" in backend_md_text
+    assert "do not select a subset" in backend_md_text
+    assert "do not load all skills upfront" not in backend_md_text
+
+
+def test_backend_md_ships_java_spring_axis_template(backend_md_text: str) -> None:
+    """Java Spring is now a shipped backend Channel B template, not degraded-only."""
+    assert "backend-java-spring" in backend_md_text
+    assert "java-spring" in backend_md_text
+    assert "mvn test" in backend_md_text
+
+
+def test_backend_md_does_not_default_plain_gradle_to_kotlin_spring(
+    backend_md_text: str,
+) -> None:
+    """Plain or empty Gradle manifests must remain ambiguous."""
+    normalized = " ".join(backend_md_text.split())
+
+    assert "default to\n`kotlin-spring`" not in backend_md_text
+    assert "plain Gradle" in backend_md_text
+    assert "plain Gradle or empty Gradle scaffold as `ambiguous-axis`" in normalized
+    assert "ambiguous-axis" in backend_md_text
 
 
 def test_backend_md_preserves_language_agnostic_identity(backend_md_text: str) -> None:

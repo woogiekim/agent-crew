@@ -2,30 +2,35 @@
 
 ## Purpose
 
-This document specifies **how implementation agents declare which skills they
-load and when they load them**. Following this convention makes skill coverage
+This document specifies **how implementation agents declare every skill they
+load before execution and how those skills are audited**. Following this convention makes skill coverage
 self-documenting, auditable, and Open/Closed — adding a new skill never
 requires editing this rule or any existing agent file.
 
 ---
 
-## Convention: "## Skills (Loaded On Demand)" Section
+## Convention: "## Skills (Loaded Upfront)" Section
+
+The section is the authoritative **agent-associated upfront loading**
+registry: once an agent is selected, it MUST load every skill listed in
+that agent's section before execution. The agent must not select a subset
+based on perceived task need.
 
 Every implementation agent that consumes skill files MUST include a section
 with the exact heading:
 
 ```markdown
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 ```
 
 The section lists each skill as a relative file path and a one-line purpose
 annotation. The format is:
 
 ```markdown
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when the specific
-technique is needed** during execution — do not load all skills upfront:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - {Purpose annotation}: `{relative path to skill file}`
 - {Purpose annotation}: `{relative path to skill file}`
 ```
@@ -42,13 +47,15 @@ Skill paths are relative to one of two roots:
 All existing skills (as of this writing) live in the project directory and
 are referenced as `core/agents/skills/{name}.md`.
 
-### Mandatory load triggers
+### Mandatory application triggers
 
 Some skills are mandatory (agent MUST read before proceeding with a phase).
 These are called out inline in the agent's Execution Flow section with a
 `> **MANDATORY: …**` block. The skill path must still appear in the
-"## Skills (Loaded On Demand)" section — the `MANDATORY` block is a runtime
-enforcement note, not a substitute for the registry entry.
+"## Skills (Loaded Upfront)" section — the `MANDATORY` block is a phase
+application note, not a substitute for the upfront registry entry. Skills
+marked `yes` in the matrix are also loaded upfront; `MANDATORY` means a phase
+cannot proceed until the named rule has been applied.
 
 ### External host/plugin skill boundary
 
@@ -76,7 +83,7 @@ user first and record the approval in
 **Adding a new skill requires only two steps:**
 
 1. Create `core/agents/skills/{new-skill}.md` following `SKILL-TEMPLATE.md`.
-2. Add a bullet line to the relevant agent's "## Skills (Loaded On Demand)"
+2. Add a bullet line to the relevant agent's "## Skills (Loaded Upfront)"
    section.
 
 **What does NOT need to change:**
@@ -115,7 +122,7 @@ actually usable for concrete review decisions.
 The audit records:
 
 - inventory for every source skill file;
-- consuming agents and mandatory/on-demand status from the matrix and agent
+- consuming agents and mandatory/upfront-load status from the matrix and agent
   declarations;
 - declared sources, rule counts, and checklist markers;
 - targeted content contracts for known high-value review misses;
@@ -211,7 +218,7 @@ Every skill file MUST follow the structure defined in
 | `domain-driven-design.md` | yes | — | — | yes |
 
 > This matrix is informational. The authoritative source of truth is the
-> "## Skills (Loaded On Demand)" section in each agent file. Update both when
+> "## Skills (Loaded Upfront)" section in each agent file. Update both when
 > adding a new skill.
 
 ---
@@ -219,7 +226,7 @@ Every skill file MUST follow the structure defined in
 ## Relation to `agent-tool-dispatch.md`
 
 This rule covers **declared** skill consumption: an agent file lists its
-required skills by path in a `## Skills (Loaded On Demand)` section.
+agent-associated skills by path in a `## Skills (Loaded Upfront)` section.
 Dispatcher agents that load adapter skills by **convention** (e.g.
 `issuer` loading `~/.agent-crew/user/skills/issuer-<tool>.md` based on
 the detected git remote) follow the complementary 5-step protocol in
@@ -230,10 +237,10 @@ questions:
 
 | Convention | Question answered |
 |---|---|
-| Declared skill loading (this file) | Which skills does this agent need *unconditionally*, and in what role (mandatory vs. on-demand)? |
+| Declared skill loading (this file) | Which skills are associated with this agent and therefore loaded upfront, and which phases require explicit application? |
 | Convention-based dispatch (`agent-tool-dispatch.md`) | Which adapter skill does this agent need *given runtime conditions* (git remote, framework manifest, etc.)? |
 
 An agent may use both simultaneously. For example, a future `backend`
 dispatcher MAY declare `tdd.md` + `effective-kotlin.md` via the
-on-demand section above while also dispatching to
+agent-associated section above while also dispatching to
 `backend-kotlin-spring` via convention.

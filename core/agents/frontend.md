@@ -67,7 +67,7 @@ in `~/.agent-crew/user/skills/`, this agent does **not** halt with
    [crew] DEGRADED | adapter=frontend-{lang}-{framework} | reason=skill_not_installed
    ```
 2. Continues using only the declared language-level / framework-agnostic
-   skills loaded via the `## Skills (Loaded On Demand)` section below
+   skills loaded via the `## Skills (Loaded Upfront)` section below
    (`tdd.md`, `ui-component-design.md`, `effective-typescript.md`,
    `effective-swift.md`, `clean-architecture.md`, `agile-xp.md`,
    `error-handling.md`).
@@ -141,18 +141,18 @@ This step covers Steps 2–5 of the 5-step dispatch protocol.
 3. **Branch on load result** per the declared fallback policy
    (degraded-fallback above):
    - **Skill loaded** → proceed to Phase 1 with the skill's stack
-     contract layered on top of the declared on-demand skills.
+     contract layered on top of the declared agent-associated skills.
    - **Skill NOT present** → emit:
      ```
      [crew] DEGRADED | adapter=frontend-{lang}-{framework} | reason=skill_not_installed
      ```
-     then continue with only the declared on-demand skills below.
+     then continue with the declared agent-associated skills below.
      Do NOT halt with `STATUS: BLOCKED`.
    - **Axis ambiguous** (Step 0 detected nothing) → emit:
      ```
      [crew] DEGRADED | adapter=frontend-unknown | reason=axis_not_detected
      ```
-     then continue with only the declared on-demand skills below.
+     then continue with the declared agent-associated skills below.
 
 4. **Dispatch.** From this point forward, the loaded skill (when
    present) supplies the stack-specific contract (test runner
@@ -179,14 +179,25 @@ checker, or `fallback-static` path from `code-intelligence-evidence.md`.
 Record `unsupported_capabilities` and lower confidence instead of guessing
 component imports, props, events, routes, or data shapes.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-These declared on-demand skills are **complementary** to the dispatcher
+These declared agent-associated skills are **complementary** to the dispatcher
 (per `core/rules/agent-tool-dispatch.md` line 16–18: "An agent MAY use
 both conventions simultaneously"). The dispatcher's loaded
 `frontend-<lang>-<framework>` template covers stack-specific concerns;
-the declared on-demand skills below cover language-agnostic concerns
+the declared skills below cover language-agnostic concerns
 that apply regardless of the resolved axis.
+
+Load every skill listed in this section before execution; do not select a
+subset based on perceived task need.
+
+- TDD cycle and test-first workflow: `~/.agent-crew/system/agents/skills/tdd.md`
+- UI component decomposition and prop design: `~/.agent-crew/system/agents/skills/ui-component-design.md`
+- TypeScript frontend guidance: `~/.agent-crew/system/agents/skills/effective-typescript.md`
+- Swift frontend guidance: `~/.agent-crew/system/agents/skills/effective-swift.md`
+- Clean architecture and UI/API boundaries: `~/.agent-crew/system/agents/skills/clean-architecture.md`
+- Agile and XP practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
+- Error handling contracts: `~/.agent-crew/system/agents/skills/error-handling.md`
 
 **Capability/domain skills load via metadata dispatch (#186).**
 Additional cross-cutting capability skills (e.g.
@@ -229,7 +240,7 @@ contract:
 - Type check: `npx tsc --noEmit`
 
 For other axes, the loaded `frontend-<lang>-<framework>` skill (or the
-declared on-demand `effective-typescript.md` / `effective-swift.md`)
+declared `effective-typescript.md` / `effective-swift.md`)
 supplies the equivalent stack contract. The dispatcher itself remains
 language-agnostic.
 

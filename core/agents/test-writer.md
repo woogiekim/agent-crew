@@ -44,10 +44,10 @@ worker, not an orchestrator. The supervisor is the only caller, and
 test-writer returns directly to the supervisor with `STATUS: completed`
 or `STATUS: BLOCKED`.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when the specific
-technique is needed** during execution — do not load all skills upfront:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - TDD cycle and FIRST principles: `~/.agent-crew/system/agents/skills/tdd.md`
 - Agile and XP practices (test-first discipline): `~/.agent-crew/system/agents/skills/agile-xp.md`
 - Kotlin test conventions: `~/.agent-crew/system/agents/skills/effective-kotlin.md`

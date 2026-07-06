@@ -17,7 +17,7 @@ name: {skill-name}
 description: {one-line summary of what this skill provides}
 loaded_by: {comma-separated agent names — e.g. backend,frontend,reviewer}
 axis: {capability axis — e.g. code-cleanup, error-handling, review-policy}
-detection: {task/project/file matching expression — keywords or OR-clauses}
+detection: {task/project/file matching expression — keywords, OR/AND clauses, and NOT negation}
 ---
 
 ## Source

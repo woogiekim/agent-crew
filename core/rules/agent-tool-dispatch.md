@@ -6,17 +6,17 @@ This rule formalizes the **dispatcher + adapter-skill** pattern that the
 `issuer` agent proves in production (commits `89d85a1`, `40631f6`, `1f89c02`).
 It is the convention-discovery counterpart to
 `core/rules/agent-skill-loading.md`, which covers explicitly-declared
-on-demand skill loading. The two rules are complementary:
+agent-associated upfront skill loading. The two rules are complementary:
 
 | Convention | Mechanism | Example |
 |---|---|---|
-| Declared skill loading (`agent-skill-loading.md`) | Agent file lists skills in a `## Skills (Loaded On Demand)` section, by path. | `backend` declares `core/agents/skills/effective-kotlin.md`, `core/agents/skills/tdd.md`. |
+| Declared skill loading (`agent-skill-loading.md`) | Agent file lists every base skill it loads upfront in a `## Skills (Loaded Upfront)` section, by path. | `backend` declares `core/agents/skills/effective-kotlin.md`, `core/agents/skills/tdd.md`. |
 | Convention-based dispatch (this rule) | Agent detects an axis at runtime, then loads `<agent>-<tool>.md` from `~/.agent-crew/user/skills/`. | `issuer` detects the git remote, resolves to `issuer-github` / `issuer-plane` / etc. |
 | Metadata-driven profile dispatch (this rule) | Agent scans agent-crew system/user skill frontmatter for an abstract contract and loads matching files by returned path, not by filename convention. | `reviewer` loads applicable `review-policy` / `review-profile` skills whose metadata says `loaded_by: reviewer`; implementation agents load capability skills whose metadata names them. |
 
 An agent MAY use both conventions simultaneously. For example, a future
 `backend` dispatcher MAY declare `tdd.md` + `effective-kotlin.md` via the
-on-demand section *and* dispatch to `backend-kotlin-spring` via convention.
+agent-associated section *and* dispatch to `backend-kotlin-spring` via convention.
 
 ---
 
@@ -156,6 +156,14 @@ loaded_by: reviewer            # or: backend,frontend,reviewer (CSV)
 profile_type: review-policy    # reviewer-only; optional for backend/frontend
 axis: {capability-axis}        # e.g. code-cleanup, review-policy
 detection: {project/task/file matching expression}
+```
+
+Detection expressions support `OR`/`|` alternatives, `AND` conjunctions, and
+`NOT` negation inside an `AND` clause. Manifest content only participates in
+matching when the clause explicitly names the manifest file, for example:
+
+```yaml
+detection: package.json AND react AND NOT next
 ```
 
 For the reviewer agent, `profile_type: review-profile` is also accepted.
@@ -424,7 +432,7 @@ load paths:
 
 Because capability skills are user-named and may evolve per project,
 they MUST NOT be hard-coded into the dispatcher's prose. The
-`## Skills (Loaded On Demand)` section of `backend.md` / `frontend.md`
+`## Skills (Loaded Upfront)` section of `backend.md` / `frontend.md`
 continues to list **base** language-agnostic skills explicitly (TDD,
 `oop-principles`, etc.); cross-cutting capability skills are picked up
 through metadata dispatch only.

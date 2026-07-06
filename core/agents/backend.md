@@ -12,10 +12,11 @@ model: inherit
 # Backend Developer (Dispatcher)
 
 Senior backend developer. Expert in DDD/TDD implementation across multiple
-language/framework stacks. The Kotlin + Spring Boot stack is the
-documented worked example (and the only Channel B template shipped today
-— see `core/agents/skills/templates/backend-kotlin-spring.md`); other
-stacks (Java/Spring, TypeScript/Nest, Python/FastAPI, Rust/Axum, Go) are
+language/framework stacks. The Kotlin + Spring Boot and Java + Spring Boot
+stacks are documented worked examples shipped as Channel B templates
+(see `core/agents/skills/templates/backend-kotlin-spring.md` and
+`core/agents/skills/templates/backend-java-spring.md`); other
+stacks (TypeScript/Nest, Python/FastAPI, Rust/Axum, Go) are
 adopted by adding a matching `backend-<lang>-<framework>` user-layer
 skill.
 
@@ -63,8 +64,8 @@ in `~/.agent-crew/user/skills/`, this agent does **not** halt with
    ```
    [crew] DEGRADED | adapter=backend-{lang}-{framework} | reason=skill_not_installed
    ```
-2. Continues using only the declared language-level / framework-agnostic
-   skills loaded via the `## Skills (Loaded On Demand)` section below
+2. Continues using the declared language-level / framework-agnostic
+   skills loaded upfront via the `## Skills (Loaded Upfront)` section below
    (`tdd.md`, `effective-{lang}.md`, `oop-principles.md`,
    `clean-architecture.md`, `domain-driven-design.md`, `api-design.md`,
    …).
@@ -95,12 +96,15 @@ policy explicitly".
 ### Step 0 — Detect language + framework axis
 
 Inspect manifest files in `PROJECT_ROOT` to determine the
-`<lang>-<framework>` axis. The first match wins (in this order):
+`<lang>-<framework>` axis. Most stacks use the first match in the order below.
+JVM Spring language adapters are additive: Java and Kotlin evidence may both be
+present in one Spring project, and both applicable adapter skills may load.
 
 | Manifest signal | Resolved axis |
 |---|---|
-| `build.gradle.kts` OR `build.gradle` (with `kotlin` / `org.springframework.boot` plugin) | `kotlin-spring` |
-| `pom.xml` (with `spring-boot-starter-parent` parent or `org.springframework.boot` BOM) | `java-spring` |
+| `build.gradle.kts` OR `build.gradle` with Kotlin evidence and `org.springframework.boot` | `kotlin-spring` |
+| `pom.xml` with `spring-boot-starter-parent`, `spring-boot-dependencies`, or `org.springframework.boot` | `java-spring` |
+| `build.gradle.kts` OR `build.gradle` with Java plugin evidence and `org.springframework.boot` | `java-spring` |
 | `package.json` containing `@nestjs/core` | `typescript-nest` |
 | `package.json` containing `express` or `fastify` | `typescript-{express|fastify}` |
 | `pyproject.toml` containing `fastapi` | `python-fastapi` |
@@ -117,45 +121,52 @@ If detection succeeds, print a single line:
 [backend] Resolved language/framework axis: {LANG}-{FRAMEWORK} (source: {manifest-path})
 ```
 
-When the manifest contains a Kotlin/Spring signal but no specific
-framework lock-in (e.g. an empty Gradle scaffold), default to
-`kotlin-spring` since that is the documented worked example with a
-shipped Channel B template.
+Spring Boot is framework evidence, not Kotlin language evidence. A Gradle
+manifest with Java plugin evidence and Spring Boot resolves `java-spring`, not
+`kotlin-spring`. A manifest with Java, Kotlin, and Spring Boot may resolve both
+`java-spring` and `kotlin-spring`; keep stack-specific guidance scoped by file
+language (`.java` versus `.kt`) and test framework (Mockito versus MockK).
+
+Plain Gradle manifests without Kotlin/Java plus Spring Boot evidence do not
+resolve a stack adapter by default. Treat a plain Gradle or empty Gradle
+scaffold as `ambiguous-axis` so the agent continues with declared
+agent-associated skills unless stronger project evidence resolves the axis.
 
 ### Step 0.5 — Resolve `<agent>-<lang>-<framework>` skill and load
 
 This step covers Steps 2–5 of the 5-step dispatch protocol.
 
-1. **Resolve skill name.** Concatenate `backend` with the detected axis
+1. **Resolve skill name(s).** Concatenate `backend` with each detected axis
    using a dash:
    ```
    backend-{LANG}-{FRAMEWORK}
    ```
    Worked example: detected `kotlin-spring` ⇒ skill name
-   `backend-kotlin-spring`.
+   `backend-kotlin-spring`. Mixed Java/Kotlin Spring projects may resolve both
+   `backend-java-spring` and `backend-kotlin-spring`.
 
 2. **Attempt load.** Read
    `~/.agent-crew/user/skills/backend-<lang>-<framework>.md` (Read tool
    or the host's Skill tool when available). The Channel B seed flow
    (`core/setup/seed-skill-templates.sh`) ensures this file exists for
    any axis the framework ships a template for, including
-   `backend-kotlin-spring` from Wave B onward.
+   `backend-kotlin-spring` and `backend-java-spring`.
 
 3. **Branch on load result** per the declared fallback policy
    (degraded-fallback above):
    - **Skill loaded** → proceed to Step 1 with the skill's stack
-     contract layered on top of the declared on-demand skills.
+     contract layered on top of the declared agent-associated skills.
    - **Skill NOT present** → emit:
      ```
      [crew] DEGRADED | adapter=backend-{lang}-{framework} | reason=skill_not_installed
      ```
-     then continue with only the declared on-demand skills below.
+     then continue with the declared agent-associated skills below.
      Do NOT halt with `STATUS: BLOCKED`.
    - **Axis ambiguous** (Step 0 detected nothing) → emit:
      ```
      [crew] DEGRADED | adapter=backend-unknown | reason=axis_not_detected
      ```
-     then continue with only the declared on-demand skills below.
+     then continue with the declared agent-associated skills below.
 
 4. **Dispatch.** From this point forward, the loaded skill (when
    present) supplies the stack-specific contract (test runner
@@ -180,13 +191,34 @@ tooling. If no language server or compiler-level provider is available, use
 `fallback-static`, record `unsupported_capabilities`, and lower confidence
 instead of guessing import paths, symbols, fields, or API shapes.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-These declared on-demand skills are **complementary** to the dispatcher
+Treat this as the backend agent's **agent-associated skill registry**:
+load every skill listed in this section before execution; do not select a subset based on perceived task need.
+
+- TDD cycle and test-first workflow: `~/.agent-crew/system/agents/skills/tdd.md`
+- OOP principles and Tell Don't Ask: `~/.agent-crew/system/agents/skills/oop-principles.md`
+- API design and error response contracts: `~/.agent-crew/system/agents/skills/api-design.md`
+- Domain modeling patterns: `~/.agent-crew/system/agents/skills/domain-modeling.md`
+- Database design and persistence boundaries: `~/.agent-crew/system/agents/skills/database-design.md`
+- Error handling contracts: `~/.agent-crew/system/agents/skills/error-handling.md`
+- Security hardening checklist: `~/.agent-crew/system/agents/skills/security-hardening.md`
+- Kotlin backend guidance: `~/.agent-crew/system/agents/skills/effective-kotlin.md`
+- Java backend guidance: `~/.agent-crew/system/agents/skills/effective-java.md`
+- Python backend guidance: `~/.agent-crew/system/agents/skills/effective-python.md`
+- Go backend guidance: `~/.agent-crew/system/agents/skills/effective-go.md`
+- Rust backend guidance: `~/.agent-crew/system/agents/skills/effective-rust.md`
+- Scala backend guidance: `~/.agent-crew/system/agents/skills/effective-scala.md`
+- Clean architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
+- Agile and XP practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
+- Domain-Driven Design review and modeling: `~/.agent-crew/system/agents/skills/domain-driven-design.md`
+- DGS DataLoader and resolver batching: `~/.agent-crew/system/agents/skills/dgs-dataloader.md`
+
+These declared agent-associated skills are **complementary** to the dispatcher
 (per `core/rules/agent-tool-dispatch.md` line 16–18: "An agent MAY use
 both conventions simultaneously"). The dispatcher's loaded
 `backend-<lang>-<framework>` template covers stack-specific concerns;
-the declared on-demand skills below cover language-agnostic concerns
+the declared skills below cover language-agnostic concerns
 that apply regardless of the resolved axis.
 
 **Capability/domain skills load via metadata dispatch (#186).**
@@ -219,7 +251,7 @@ After the helper runs, read the report at `${TASK_DIR}/context/capability-skills
 - `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The report already contains matched paths, duplicate resolution, unindexed user-skill gaps, and `decision_context`; the agent MUST NOT synthesize separate skill-use proof artifacts from dispatch alone.
 - DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
-## Tech Stack (worked example: kotlin-spring axis)
+## Tech Stack (worked examples)
 
 When the Step 0 axis resolves to `kotlin-spring`, the loaded Channel B
 template `backend-kotlin-spring.md` supplies the concrete stack
@@ -230,8 +262,16 @@ contract:
 - Test: JUnit 5 + MockK
 - Build: Gradle (`./gradlew test`)
 
+When the Step 0 axis resolves to `java-spring`, the loaded Channel B template
+`backend-java-spring.md` supplies the concrete stack contract:
+
+- Language: Java
+- Framework: Spring Boot
+- Test: JUnit 5 + Mockito
+- Build: Maven (`mvn test`) or Gradle (`./gradlew test`)
+
 For other axes, the loaded `backend-<lang>-<framework>` skill (or the
-declared on-demand `effective-<lang>.md`) supplies the equivalent
+declared `effective-<lang>.md`) supplies the equivalent
 stack contract. The dispatcher itself remains language-agnostic.
 
 ## Inputs

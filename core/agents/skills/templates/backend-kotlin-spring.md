@@ -2,14 +2,14 @@
 name: backend-kotlin-spring
 description: >
   Adapter skill for the `backend` dispatcher (Wave B exemplar). Loaded when
-  the dispatcher detects a Kotlin + Spring Boot manifest (`build.gradle.kts`,
-  `build.gradle`). Captures the Kotlin/Spring/JUnit 5/MockK/Gradle stack
+  the dispatcher detects Kotlin and Spring Boot evidence in a Gradle manifest
+  (`build.gradle.kts`, `build.gradle`). Captures the Kotlin/Spring/JUnit 5/MockK/Gradle stack
   contract that the framework's backend agent has historically embedded
   inline, now extracted into a Channel B seed template per
   `core/rules/agent-tool-dispatch.md`.
 loaded_by: backend
 axis: kotlin-spring
-detection: build.gradle.kts OR build.gradle (with kotlin / kotlin-spring plugin)
+detection: build.gradle.kts AND kotlin AND org.springframework.boot OR build.gradle AND kotlin AND org.springframework.boot
 ---
 
 # backend-kotlin-spring — Adapter Skill
@@ -28,6 +28,14 @@ edit).
 - **Framework**: Spring Boot
 - **Test**: JUnit 5 + MockK
 - **Build**: Gradle (`./gradlew test`)
+
+## Mixed Java/Kotlin Spring Projects
+
+Kotlin and Java may coexist in the same JVM Spring service. This skill applies
+to Kotlin source, Kotlin tests, and Kotlin-specific tooling only. If a project
+also exposes Java language evidence, the dispatcher may load
+`backend-java-spring` as a parallel language adapter; do not treat Spring Boot
+alone as Kotlin evidence.
 
 ## TDD Cycle (RED → GREEN → REFACTOR)
 
@@ -116,7 +124,7 @@ as code-style invariants. The most-cited constraints:
 
 These rules are language-agnostic in spirit; their framework-level
 authority lives in `~/.agent-crew/system/agents/skills/oop-principles.md`
-(which the backend dispatcher loads via the declared on-demand
+(which the backend dispatcher loads via the declared agent-associated
 mechanism). This template captures the Kotlin/Spring-flavored phrasing
 the agent uses when applying them.
 
@@ -172,8 +180,8 @@ to prevent DGS/Feign N+1 regressions.
 - `core/rules/agent-tool-dispatch.md` — the 5-step dispatch protocol,
   naming convention, and Channel B template seeding contract.
 - `~/.agent-crew/system/agents/skills/tdd.md` — the language-agnostic
-  TDD cycle (declared on-demand load).
+  TDD cycle (declared agent-associated upfront load).
 - `~/.agent-crew/system/agents/skills/effective-kotlin.md` — Kotlin
-  language best practices (declared on-demand load).
+  language best practices (declared agent-associated upfront load).
 - `~/.agent-crew/system/agents/skills/oop-principles.md` — Object
-  Calisthenics + Tell, Don't Ask rules (declared on-demand load).
+  Calisthenics + Tell, Don't Ask rules (declared agent-associated upfront load).

@@ -9,7 +9,7 @@ description: >
   per `core/rules/agent-tool-dispatch.md`.
 loaded_by: frontend
 axis: typescript-react
-detection: package.json containing `react` (and not `next`)
+detection: package.json AND react AND NOT next
 ---
 
 # frontend-typescript-react — Adapter Skill
@@ -182,8 +182,8 @@ TypeScript/React codebase, this typically means:
 - `core/rules/agent-tool-dispatch.md` — the 5-step dispatch protocol,
   naming convention, and Channel B template seeding contract.
 - `~/.agent-crew/system/agents/skills/tdd.md` — the language-agnostic
-  TDD cycle (declared on-demand load).
+  TDD cycle (declared agent-associated upfront load).
 - `~/.agent-crew/system/agents/skills/effective-typescript.md` —
-  TypeScript language best practices (declared on-demand load).
+  TypeScript language best practices (declared agent-associated upfront load).
 - `~/.agent-crew/system/agents/skills/ui-component-design.md` —
-  component decomposition + prop design (declared on-demand load).
+  component decomposition + prop design (declared agent-associated upfront load).

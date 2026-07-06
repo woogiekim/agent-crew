@@ -23,10 +23,10 @@ REASONING_MAP = {
 }
 
 MODEL_MAP = {
-    "xhigh": "claude-fable-5",
-    "deep": "claude-opus-4-8",
-    "balanced": "claude-sonnet-5",
-    "light": "claude-haiku-4-5",
+    "xhigh": "gpt-5.5",
+    "deep": "gpt-5.5",
+    "balanced": "gpt-5.4",
+    "light": "gpt-5.4-mini",
 }
 
 
