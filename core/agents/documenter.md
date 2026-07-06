@@ -163,10 +163,10 @@ on what happens when an adapter skill is missing — see
 `agent-tool-dispatch.md` § Step 4 "Each agent file MUST declare its
 policy explicitly".
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when needed** — do
-not load them at agent startup:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - Code review and PRD coverage cross-check: `~/.agent-crew/system/agents/skills/code-review.md`
   (used by responsibility 1 to compare PRD acceptance criteria against
   implementation diffs before drafting README sections)

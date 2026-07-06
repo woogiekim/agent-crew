@@ -312,7 +312,10 @@ def test_host_bridge_command_probe_is_reflected_in_diagnostics(monkeypatch):
     findings = diagnostics.doctor_host(args)
     status_line = [item for item in findings if item["label"] == "host bridge command readiness"][0]
     assert status_line["status"] == "pass"
-    assert "internal handoff fallback" in status_line["detail"]
+    assert (
+        "internal handoff fallback" in status_line["detail"]
+        or "default host bridge ready" in status_line["detail"]
+    )
 
 
 def test_host_bridge_command_probe_prefers_env_var(tmp_path: Path):

@@ -62,7 +62,8 @@ model: inherit
     _, content = module.render_toml(agent)
 
     # then
-    assert 'model = "claude-fable-5"' in content
+    assert 'model = "gpt-5.5"' in content
+    assert "claude-fable-5" not in content
     assert 'model_reasoning_effort = "xhigh"' in content
 
 
@@ -70,10 +71,10 @@ def test_render_toml_materializes_all_supported_tier_models(tmp_path: Path):
     # given
     module = load_generator_module()
     expected_models = {
-        "xhigh": "claude-fable-5",
-        "deep": "claude-opus-4-8",
-        "balanced": "claude-sonnet-5",
-        "light": "claude-haiku-4-5",
+        "xhigh": "gpt-5.5",
+        "deep": "gpt-5.5",
+        "balanced": "gpt-5.4",
+        "light": "gpt-5.4-mini",
     }
 
     for tier, expected_model in expected_models.items():

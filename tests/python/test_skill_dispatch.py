@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -33,6 +34,15 @@ DISPATCH_SCRIPT = REPO_ROOT / "core" / "scripts" / "review-profile-dispatch.py"
 # asserted (and the templates/ seed copy is explicitly absent) in
 # test_skill_locations.py.
 DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "dead-code-elimination.md"
+BACKEND_KOTLIN_TEMPLATE = (
+    REPO_ROOT / "core" / "agents" / "skills" / "templates" / "backend-kotlin-spring.md"
+)
+BACKEND_JAVA_TEMPLATE = (
+    REPO_ROOT / "core" / "agents" / "skills" / "templates" / "backend-java-spring.md"
+)
+FRONTEND_REACT_TEMPLATE = (
+    REPO_ROOT / "core" / "agents" / "skills" / "templates" / "frontend-typescript-react.md"
+)
 SKILL_TEMPLATE = REPO_ROOT / "core" / "agents" / "skills" / "SKILL-TEMPLATE.md"
 DISPATCH_RULE = REPO_ROOT / "core" / "rules" / "agent-tool-dispatch.md"
 
@@ -672,6 +682,776 @@ def test_cli_agent_with_no_match(tmp_path: Path) -> None:
     assert payload["matched"] == []
     assert payload["fallback"] is False
     assert payload["fallback_policy"] == "generic-backend-skills"
+
+
+def test_backend_stack_adapter_detection_does_not_match_incidental_build_task(
+    tmp_path: Path,
+) -> None:
+    """Stack adapter metadata must not match incidental task words.
+
+    A Java task that mentions a domain helper with a `build` prefix previously
+    caused `backend-kotlin-spring` to match through a broad detection clause.
+    Adapter loading is owned by backend Step 0/0.5 axis detection, so capability
+    dispatch must not pull stack adapters from incidental task text.
+    """
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "generic-service"
+    project_root.mkdir(parents=True)
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task",
+        "Java Spring controller request mapping should split the buildCatalog helper.",
+        "--format", "json",
+    )
+
+    names = [m["name"] for m in payload["matched"]]
+    assert "backend-kotlin-spring" not in names
+    assert "backend-java-spring" not in names
+
+
+def test_gradle_stack_adapter_detection_ignores_plain_java_project(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - plain Gradle Java is not Kotlin/Spring."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+
+    project_root = tmp_path / "work" / "plain-gradle-java"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Refactor the Java library.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+
+
+def test_legacy_gradle_kotlin_spring_detection_ignores_plain_java_project(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - copy-if-absent legacy skills stay safe."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "backend-kotlin-spring.md",
+        loaded_by="backend",
+        detection="build.gradle (with kotlin / kotlin-spring plugin)",
+        axis="kotlin-spring",
+    )
+
+    project_root = tmp_path / "work" / "plain-gradle-java"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'java'
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Refactor the Java library.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+
+
+def test_legacy_gradle_kotlin_spring_detection_ignores_plain_kotlin_dsl_java_project(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - old bare build.gradle.kts stays safe."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "backend-kotlin-spring.md",
+        loaded_by="backend",
+        detection="build.gradle.kts OR build.gradle (with kotlin / kotlin-spring plugin)",
+        axis="kotlin-spring",
+    )
+
+    project_root = tmp_path / "work" / "plain-kotlin-dsl-java"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle.kts").write_text(
+        """
+plugins {
+    java
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Refactor the Java library.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+
+
+def test_legacy_gradle_kotlin_spring_detection_matches_kotlin_spring_project(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - legacy seeded metadata still works."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "backend-kotlin-spring.md",
+        loaded_by="backend",
+        detection="build.gradle (with kotlin / kotlin-spring plugin)",
+        axis="kotlin-spring",
+    )
+
+    project_root = tmp_path / "work" / "kotlin-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.9.25'
+    id 'org.springframework.boot' version '3.3.0'
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the Kotlin service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-kotlin-spring"]
+
+
+def test_legacy_gradle_kotlin_spring_detection_matches_kotlin_spring_kts_project(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - legacy bare KTS shorthand still works."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "backend-kotlin-spring.md",
+        loaded_by="backend",
+        detection="build.gradle.kts OR build.gradle (with kotlin / kotlin-spring plugin)",
+        axis="kotlin-spring",
+    )
+
+    project_root = tmp_path / "work" / "kotlin-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle.kts").write_text(
+        """
+plugins {
+    kotlin("jvm") version "1.9.25"
+    id("org.springframework.boot") version "3.3.0"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the Kotlin service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-kotlin-spring"]
+
+
+def test_manifest_file_clause_requires_exact_fragment_path(tmp_path: Path) -> None:
+    """boundary-case(regression) - build.gradle does not match build.gradle.kts."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "groovy-gradle.md",
+        loaded_by="backend",
+        detection="build.gradle AND groovy",
+        axis="groovy-gradle",
+    )
+
+    # given
+    project_root = tmp_path / "work" / "kotlin-dsl-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle.kts").write_text(
+        "plugins { groovy }",
+        encoding="utf-8",
+    )
+
+    # when
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Inspect the Gradle build.",
+        "--format", "json",
+    )
+
+    # then
+    assert payload["matched"] == []
+
+
+def test_manifest_file_clause_matches_exact_fragment_path(tmp_path: Path) -> None:
+    """success-case(regression) - build.gradle still matches build.gradle."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "groovy-gradle.md",
+        loaded_by="backend",
+        detection="build.gradle AND groovy",
+        axis="groovy-gradle",
+    )
+
+    # given
+    project_root = tmp_path / "work" / "groovy-gradle-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        "plugins { id 'groovy' }",
+        encoding="utf-8",
+    )
+
+    # when
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Inspect the Gradle build.",
+        "--format", "json",
+    )
+
+    # then
+    assert [m["name"] for m in payload["matched"]] == ["groovy-gradle"]
+
+
+def test_manifest_file_clause_matches_changed_file_subpath(tmp_path: Path) -> None:
+    """success-case(regression) - changed-file paths still carry manifest signals."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "frontend-package-manifest.md",
+        loaded_by="frontend",
+        detection="package.json",
+        axis="package-manifest",
+    )
+
+    # given
+    project_root = tmp_path / "work" / "monorepo"
+    project_root.mkdir(parents=True)
+
+    # when
+    payload = _run_cli(
+        "--agent", "frontend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--changed-file", "apps/storefront/package.json",
+        "--task", "",
+        "--format", "json",
+    )
+
+    # then
+    assert [m["name"] for m in payload["matched"]] == [
+        "frontend-package-manifest"
+    ]
+
+
+def test_manifest_content_does_not_match_unbound_capability_keywords(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - manifest script names stay out of global text."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(DEAD_CODE_SKILL, skills_dir / "dead-code-elimination.md")
+
+    # given
+    project_root = tmp_path / "work" / "node-service"
+    project_root.mkdir(parents=True)
+    (project_root / "package.json").write_text(
+        json.dumps({"scripts": {"cleanup": "echo cleanup"}}),
+        encoding="utf-8",
+    )
+
+    # when
+    payload = _run_cli(
+        "--agent", "frontend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement a new button.",
+        "--format", "json",
+    )
+
+    # then
+    assert payload["matched"] == []
+
+
+def test_frontend_react_adapter_detection_rejects_next_manifest(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - Next manifests do not load React adapter."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(FRONTEND_REACT_TEMPLATE, skills_dir / "frontend-typescript-react.md")
+
+    # given
+    project_root = tmp_path / "work" / "next-app"
+    project_root.mkdir(parents=True)
+    (project_root / "package.json").write_text(
+        json.dumps({"dependencies": {"next": "latest", "react": "latest"}}),
+        encoding="utf-8",
+    )
+
+    # when
+    payload = _run_cli(
+        "--agent", "frontend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement a page.",
+        "--format", "json",
+    )
+
+    # then
+    assert payload["matched"] == []
+
+
+def test_frontend_react_adapter_detection_matches_react_manifest(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - React manifests still load React adapter."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(FRONTEND_REACT_TEMPLATE, skills_dir / "frontend-typescript-react.md")
+
+    # given
+    project_root = tmp_path / "work" / "plain-app"
+    project_root.mkdir(parents=True)
+    (project_root / "package.json").write_text(
+        json.dumps({"dependencies": {"react": "latest"}}),
+        encoding="utf-8",
+    )
+
+    # when
+    payload = _run_cli(
+        "--agent", "frontend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement a component.",
+        "--format", "json",
+    )
+
+    # then
+    assert [m["name"] for m in payload["matched"]] == [
+        "frontend-typescript-react"
+    ]
+
+
+def test_manifest_prose_clause_stays_bound_to_manifest_fragment(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - legacy prose clauses stay user-layer compatible."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "frontend-typescript-react.md",
+        loaded_by="frontend",
+        detection="package.json containing `react` (and not `next`)",
+        axis="typescript-react",
+    )
+
+    # given
+    project_root = tmp_path / "work" / "plain-app"
+    project_root.mkdir(parents=True)
+    (project_root / "package.json").write_text(
+        json.dumps({"dependencies": {"react": "latest"}}),
+        encoding="utf-8",
+    )
+
+    # when
+    payload = _run_cli(
+        "--agent", "frontend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement a component.",
+        "--format", "json",
+    )
+
+    # then
+    assert [m["name"] for m in payload["matched"]] == [
+        "frontend-typescript-react"
+    ]
+
+
+def test_gradle_stack_adapter_detection_ignores_task_text_kotlin_token(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - task text must not complete manifest match."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+
+    project_root = tmp_path / "work" / "plain-gradle-java"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'java'
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Remove Kotlin references from Java documentation.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+
+
+def test_backend_kotlin_spring_adapter_detection_matches_gradle_kotlin_spring(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - Kotlin/Spring Gradle still selects adapter."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+
+    project_root = tmp_path / "work" / "kotlin-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle.kts").write_text(
+        """
+plugins {
+    kotlin("jvm") version "1.9.25"
+    id("org.springframework.boot") version "3.3.0"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-kotlin-spring"]
+
+
+def test_backend_kotlin_spring_adapter_ignores_kotlin_gradle_java_toolchain(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - Kotlin JVM toolchain is not Java source evidence."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "kotlin-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle.kts").write_text(
+        """
+plugins {
+    kotlin("jvm") version "1.9.25"
+    id("org.springframework.boot") version "3.3.0"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the Kotlin service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-kotlin-spring"]
+
+
+def test_backend_java_spring_adapter_detection_matches_gradle_java_spring(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - Java/Spring Gradle selects Java adapter."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "java-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.0'
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the Java service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-java-spring"]
+
+
+def test_backend_java_spring_adapter_detection_matches_kotlin_dsl_java_spring(
+    tmp_path: Path,
+) -> None:
+    """success-case(regression) - Gradle Kotlin DSL Java plugin selects Java adapter."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "java-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle.kts").write_text(
+        """
+plugins {
+    java
+    id("org.springframework.boot") version "3.3.0"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the Java service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-java-spring"]
+
+
+def test_backend_spring_adapter_detection_matches_mixed_java_kotlin_spring(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - mixed JVM Spring loads both language skills."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_KOTLIN_TEMPLATE, skills_dir / "backend-kotlin-spring.md")
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "mixed-jvm-spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'java'
+    id 'org.jetbrains.kotlin.jvm' version '1.9.25'
+    id 'org.springframework.boot' version '3.3.0'
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the mixed JVM service endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == [
+        "backend-java-spring",
+        "backend-kotlin-spring",
+    ]
+
+
+def test_detection_lowercase_and_requires_all_terms(tmp_path: Path) -> None:
+    """boundary-case(regression) - lowercase AND behaves like uppercase AND."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "compound-skill.md",
+        loaded_by="backend",
+        detection="missing.marker and org.springframework.boot",
+    )
+
+    project_root = tmp_path / "work" / "spring-service"
+    project_root.mkdir(parents=True)
+    (project_root / "build.gradle").write_text(
+        """
+plugins {
+    id 'org.springframework.boot' version '3.3.0'
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement the service endpoint.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+
+
+@pytest.mark.parametrize(
+    "pom_xml",
+    [
+        """
+<project>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+  </parent>
+</project>
+""".strip(),
+        """
+<project>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
+""".strip(),
+    ],
+)
+def test_backend_java_spring_adapter_detection_matches_spring_boot_pom(
+    tmp_path: Path,
+    pom_xml: str,
+) -> None:
+    """success-case(regression) - matches a Spring Boot Maven manifest."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "java-service"
+    project_root.mkdir(parents=True)
+    (project_root / "pom.xml").write_text(pom_xml, encoding="utf-8")
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Implement a server endpoint.",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == ["backend-java-spring"]
+
+
+def test_backend_java_spring_adapter_detection_ignores_plain_maven_pom(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - plain Maven is not enough for Java Spring."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "maven-library"
+    project_root.mkdir(parents=True)
+    (project_root / "pom.xml").write_text(
+        """
+<project>
+  <groupId>example</groupId>
+  <artifactId>plain-library</artifactId>
+</project>
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Refactor the library.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
+
+
+def test_backend_java_spring_adapter_detection_ignores_task_text_spring_token(
+    tmp_path: Path,
+) -> None:
+    """boundary-case(regression) - task text must not complete POM match."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(BACKEND_JAVA_TEMPLATE, skills_dir / "backend-java-spring.md")
+
+    project_root = tmp_path / "work" / "maven-library"
+    project_root.mkdir(parents=True)
+    (project_root / "pom.xml").write_text(
+        """
+<project>
+  <groupId>example</groupId>
+  <artifactId>plain-library</artifactId>
+</project>
+""".strip(),
+        encoding="utf-8",
+    )
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "Remove org.springframework.boot references from docs.",
+        "--format", "json",
+    )
+
+    assert payload["matched"] == []
 
 
 def test_cli_text_format_for_backend(tmp_path: Path) -> None:

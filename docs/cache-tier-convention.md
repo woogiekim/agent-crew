@@ -120,8 +120,8 @@ When you create a new `core/agents/{name}.md` file:
 
 - [ ] YAML frontmatter on lines 1 to ~12 (provider-neutral identity).
 - [ ] Identity / role heading immediately after frontmatter.
-- [ ] Skills section (`## Skills (Loaded On Demand)`) above any
-      execution content, listing on-demand skill files only.
+- [ ] Skills section (`## Skills (Loaded Upfront)`) above any
+      execution content, listing agent-associated skill files that load upfront.
 - [ ] Hard rules and absolute prohibitions ("YOU MUST NOT", "Absolute
       Rules") near the top — segment 1 — not at the bottom of the file.
 - [ ] Inputs / parameter shape declared before the execution flow.

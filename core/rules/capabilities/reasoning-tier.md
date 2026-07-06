@@ -96,7 +96,7 @@ host's default model if a host ever discovers them directly.
 | Adapter | Mapping | Notes |
 |---|---|---|
 | claude  | `xhigh → claude-fable-5`, `deep → claude-opus-4-8`, `balanced → claude-sonnet-5`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md` with concrete model IDs. |
-| codex   | `xhigh → model="claude-fable-5", model_reasoning_effort="xhigh"`, `deep → model="claude-opus-4-8", effort="high"`, `balanced → model="claude-sonnet-5", effort="medium"`, `light → model="claude-haiku-4-5", effort="low"` | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter maps system-agent abstract tiers to concrete model IDs and reasoning effort, while preserving user-specified concrete model keys. |
+| codex   | `xhigh → model="gpt-5.5", model_reasoning_effort="xhigh"`, `deep → model="gpt-5.5", effort="high"`, `balanced → model="gpt-5.4", effort="medium"`, `light → model="gpt-5.4-mini", effort="low"` | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter maps system-agent abstract tiers to Codex-supported concrete model IDs and reasoning effort, while preserving user-specified concrete model keys. |
 | generic | none — single-model environment | Leaves `model: inherit` (or absent equivalent) untouched. Tier declarations have no install-time effect. |
 
 ## Related Files

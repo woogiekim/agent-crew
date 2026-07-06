@@ -21,10 +21,10 @@ interactions (per `core/rules/capabilities/interactive-question.md`), scope
 validation, and ambiguity detection. Returns a structured REQUIREMENTS block
 to the caller and writes `requirements.md` to the task state directory.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when needed** — do not
-load them at agent startup:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - Requirement gathering techniques: `~/.agent-crew/system/agents/skills/requirement-gathering.md`
 
 ## Input Parameters

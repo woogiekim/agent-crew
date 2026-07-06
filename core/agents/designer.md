@@ -60,7 +60,7 @@ When the resolved `designer-<tool>` skill is **not** present in
    ```
    [crew] DEGRADED | adapter=designer-{tool} | reason=skill_not_installed
    ```
-2. Continues using only the declared on-demand skill below
+2. Continues using the declared agent-associated skill below
    (`ux-design.md`) and the `designer-markdown` Channel B seed template
    (which captures the generic markdown design-spec output contract the
    agent has always produced).
@@ -135,14 +135,14 @@ This step covers Steps 2–5 of the 5-step dispatch protocol.
 3. **Branch on load result** per the declared fallback policy
    (degraded-fallback above):
    - **Skill loaded** → proceed to Execution Steps below with the
-     skill's tool contract layered on top of the declared on-demand
+     skill's tool contract layered on top of the declared agent-associated
      `ux-design.md` skill.
    - **Skill NOT present** (vendor axis detected but no adapter
      installed) → emit:
      ```
      [crew] DEGRADED | adapter=designer-{tool} | reason=skill_not_installed
      ```
-     then continue with only the declared on-demand `ux-design.md` skill
+     then continue with the declared agent-associated `ux-design.md` skill
      and the `designer-markdown` contract. Do NOT halt with
      `STATUS: BLOCKED`.
    - **Markdown axis** (no vendor tool detected) → load
@@ -183,17 +183,17 @@ After the helper runs, read the report at `${TASK_DIR}/context/capability-skills
 - `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The report already contains matched paths, duplicate resolution, unindexed user-skill gaps, and `decision_context`; the agent MUST NOT synthesize separate skill-use proof artifacts from dispatch alone.
 - DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-These declared on-demand skills are **complementary** to the dispatcher
+These declared agent-associated skills are **complementary** to the dispatcher
 (per `core/rules/agent-tool-dispatch.md` line 16–18: "An agent MAY use
 both conventions simultaneously"). The dispatcher's loaded
 `designer-<tool>` template covers vendor-specific concerns; the
-declared on-demand skill below covers tool-agnostic concerns that apply
+declared skill below covers tool-agnostic concerns that apply
 regardless of the resolved axis.
 
-Read the following skill files using the Read tool **only when the specific
-technique is needed** during execution — do not load all skills upfront:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - UX design and screen specification: `~/.agent-crew/system/agents/skills/ux-design.md`
 
 ## Inputs
@@ -279,4 +279,4 @@ Note: `memory capture` is a no-op if no memory backend is installed.
   BLOCKED flavor.
 - `~/.agent-crew/system/agents/skills/ux-design.md` — Nielsen heuristics,
   Gestalt principles, WCAG 2.1 AA, mobile-first responsive layout
-  (declared on-demand load).
+  (declared agent-associated upfront load).

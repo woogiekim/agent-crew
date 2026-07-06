@@ -34,12 +34,29 @@ first-party evidence with `file:line`, task-artifact paths, or `tool-output`
 where applicable, and must show an explicit
 evidence-to-inference-to-conclusion flow.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when needed** — do not
-load them at agent startup:
+Before Step 1, read every skill file listed below. These are the skills
+associated with this agent; do not select a subset and do not defer them to
+phase-specific loading:
 - Ambiguity detection and requirements review: `~/.agent-crew/system/agents/skills/requirement-gathering.md`
 - Pipeline planning and PRD authoring: `~/.agent-crew/system/agents/skills/pipeline-planning.md`
+
+Immediately after reading both skills, record the upfront load once when
+running inside the supervisor pipeline. If `MODE=direct` or `TASK_DIR` is
+absent, do not create task state; just use the loaded skills for the read-only
+answer.
+
+```bash
+if [ "${MODE:-}" = "supervisor" ] && [ -n "${TASK_DIR:-}" ]; then
+  mkdir -p "${TASK_DIR}/context"
+  {
+    printf '%s\n' "loaded_phase: upfront"
+    printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/requirement-gathering.md"
+    printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/pipeline-planning.md"
+  } >> "${TASK_DIR}/context/analyst-skill-load.md"
+fi
+```
 
 ## Inputs
 
@@ -191,16 +208,19 @@ Write a 2–4 sentence intent summary answering:
 
 ### Step 3 — Identify ambiguities and risks
 
-> **MANDATORY: Before performing the ambiguity check, read `~/.agent-crew/system/agents/skills/requirement-gathering.md`.**
-> This skill defines the ambiguity detection criteria, severity classification rules, and resolution strategies that govern this step.
+> **MANDATORY: Before performing the ambiguity check, confirm requirement-gathering.md is already recorded in `{TASK_DIR}/context/analyst-skill-load.md`.**
+> This upfront-loaded skill defines the ambiguity detection criteria, severity classification rules, and resolution strategies that govern this step.
 
-Immediately after reading the skill, record the read in
-`{TASK_DIR}/context/analyst-skill-load.md`:
+In supervisor pipeline mode, if the record is missing, read the skill
+immediately and append the missing load evidence before continuing. In
+`MODE=direct`, do not create task state.
 
 ```bash
-mkdir -p "${TASK_DIR}/context"
-printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/requirement-gathering.md" \
-  >> "${TASK_DIR}/context/analyst-skill-load.md"
+if [ "${MODE:-}" = "supervisor" ] && [ -n "${TASK_DIR:-}" ]; then
+  mkdir -p "${TASK_DIR}/context"
+  printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/requirement-gathering.md" \
+    >> "${TASK_DIR}/context/analyst-skill-load.md"
+fi
 ```
 
 For each item found, record description, severity (`low | medium | high`), and
@@ -313,16 +333,19 @@ If no ambiguities or risks are found, write the table with a single row:
 
 ### Step 6 — Determine pipeline and write pipeline.json
 
-> **MANDATORY: Before composing the pipeline, read `~/.agent-crew/system/agents/skills/pipeline-planning.md`.**
-> This skill defines stage composition rules, parallelism guidance, flag selection criteria (tdd_parallel, streaming_review, parallelizable_units), and the stage type catalogue used to build pipeline.json.
+> **MANDATORY: Before composing the pipeline, confirm pipeline-planning.md is already recorded in `{TASK_DIR}/context/analyst-skill-load.md`.**
+> This upfront-loaded skill defines stage composition rules, parallelism guidance, flag selection criteria (tdd_parallel, streaming_review, parallelizable_units), and the stage type catalogue used to build pipeline.json.
 
-Immediately after reading the skill, record the read in
-`{TASK_DIR}/context/analyst-skill-load.md`:
+In supervisor pipeline mode, if the record is missing, read the skill
+immediately and append the missing load evidence before continuing. In
+`MODE=direct`, do not create task state.
 
 ```bash
-mkdir -p "${TASK_DIR}/context"
-printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/pipeline-planning.md" \
-  >> "${TASK_DIR}/context/analyst-skill-load.md"
+if [ "${MODE:-}" = "supervisor" ] && [ -n "${TASK_DIR:-}" ]; then
+  mkdir -p "${TASK_DIR}/context"
+  printf '%s\n' "loaded_skill: ~/.agent-crew/system/agents/skills/pipeline-planning.md" \
+    >> "${TASK_DIR}/context/analyst-skill-load.md"
+fi
 ```
 
 Based on scope, complexity, and the intent summary from Step 2, determine the

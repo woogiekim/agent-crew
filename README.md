@@ -608,8 +608,8 @@ The standard `crew:run` path no longer performs a separate planner spawn after a
 
 ## Specialized Skills
 
-Agents load skill files on demand. Static base skills are read only when the
-specific technique is needed; capability skills are discovered through
+Agents load every base skill associated with the selected agent before
+execution. Capability skills are discovered through
 `core/scripts/review-profile-dispatch.py --agent <name>` and selected by
 frontmatter metadata.
 

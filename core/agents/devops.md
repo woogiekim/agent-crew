@@ -125,16 +125,17 @@ policy explicitly".
 | `backend` | degraded-fallback | Emit `[crew] DEGRADED` warning and continue with language-agnostic skills | Implementation degrades gracefully. |
 | `devops` (this agent) | strict / BLOCKED | Halt with `STATUS: BLOCKED` / `BLOCKER: missing_adapter` | Destructive infra mutation — same or larger blast radius than issuer. |
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-These declared on-demand skills are **complementary** to the dispatcher
+These declared agent-associated skills are **complementary** to the dispatcher
 (per `core/rules/agent-tool-dispatch.md` line 16–18: "An agent MAY use
 both conventions simultaneously"). The dispatcher's loaded
 `devops-<tool>` template covers vendor-specific concerns; the declared
-on-demand skills below cover language-agnostic / cross-vendor concerns
+skills below cover language-agnostic / cross-vendor concerns
 that apply regardless of the resolved axis.
 
-Read and reference the following files using the Read tool when necessary:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - Deployment operations and CI/CD workflow: `~/.agent-crew/system/agents/skills/deployment-ops.md`
 - Git branching, committing, and PR workflow: `~/.agent-crew/system/agents/skills/git-workflow.md`
 - Security hardening (auth, secrets, transport): `~/.agent-crew/system/agents/skills/security-hardening.md`
@@ -261,7 +262,7 @@ This step covers Steps 2–5 of the 5-step dispatch protocol.
 3. **Branch on load result** per the declared fallback policy
    (strict / BLOCKED above):
    - **Skill loaded** → proceed to Step 1 (Plan Summary) with the skill's
-     vendor contract layered on top of the declared on-demand skills.
+     vendor contract layered on top of the declared agent-associated skills.
    - **Skill NOT present** → return the following structured block and
      stop. Do NOT attempt to call any external CI / deploy API as a
      workaround:

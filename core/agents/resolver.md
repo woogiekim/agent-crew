@@ -32,10 +32,10 @@ Read the prompt's `MODE` field first:
   contract). The skill, input parameters, and execution steps below describe
   Merge mode.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when needed** — do not
-load them at agent startup:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - Conflict analysis and resolution strategies: `~/.agent-crew/system/agents/skills/conflict-resolution.md`
 
 ## Input Parameters (Merge mode)

@@ -57,13 +57,18 @@ DEFAULT_BUDGETS = {
     "light":    100_000,
 }
 
-# Fallback when a line records tier="unknown". Keep in sync with
-# adapters/claude/setup.sh's TIER_TO_MODEL.
+# Fallback when a line records tier="unknown". Keep in sync with host adapter
+# model maps. If multiple abstract tiers share one concrete model, use the
+# highest tier as the conservative model-only fallback; explicit row tiers
+# remain authoritative when the host can provide them.
 MODEL_TIER_FALLBACK = {
     "claude-fable-5":    "xhigh",
     "claude-opus-4-8":   "deep",
     "claude-sonnet-5":   "balanced",
     "claude-haiku-4-5":  "light",
+    "gpt-5.5":           "xhigh",
+    "gpt-5.4":           "balanced",
+    "gpt-5.4-mini":      "light",
     # Legacy records from before the July 2026 model refresh.
     "claude-opus-4-7":   "xhigh",
     "claude-sonnet-4-6": "balanced",

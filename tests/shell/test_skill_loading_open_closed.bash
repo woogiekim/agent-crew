@@ -4,7 +4,7 @@
 # Smoke test for the skill-loading Open/Closed property.
 #
 # Invariant: adding a new skill file to core/agents/skills/ and declaring it
-# in an agent's "## Skills (Loaded On Demand)" section must NOT require any
+# in an agent's "## Skills (Loaded Upfront)" section must NOT require any
 # change to:
 #   - core/rules/agent-skill-loading.md
 #   - any other existing skill file
@@ -27,6 +27,7 @@ source "${SCRIPT_DIR}/_lib.bash"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SKILLS_DIR="${REPO_ROOT}/core/agents/skills"
 AGENTS=(
+  "${REPO_ROOT}/core/agents/analyst.md"
   "${REPO_ROOT}/core/agents/backend.md"
   "${REPO_ROOT}/core/agents/frontend.md"
   "${REPO_ROOT}/core/agents/test-writer.md"
@@ -34,16 +35,56 @@ AGENTS=(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: extract skill paths declared in a "## Skills (Loaded On Demand)"
+# Helper: extract skill paths declared in a "## Skills (Loaded Upfront)"
 # section. Accepts a file path. Prints one path per line.
 # Paths are enclosed in backticks in the convention: `core/agents/skills/foo.md`
 # ─────────────────────────────────────────────────────────────────────────────
 extract_skill_paths() {
   local agent_file="$1"
-  # Match backtick-enclosed paths containing "skills/"
-  grep -o '`[^`]*skills/[^`]*`' "${agent_file}" 2>/dev/null \
-    | tr -d '`'
+  awk '
+    /^## Skills \(Loaded Upfront\)[[:space:]]*$/ {
+      in_section = 1
+      next
+    }
+    in_section && /^## / {
+      in_section = 0
+    }
+    in_section {
+      line = $0
+      while (match(line, /`[^`]*skills\/[^`]*`/)) {
+        print substr(line, RSTART + 1, RLENGTH - 2)
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+  ' "${agent_file}" 2>/dev/null
 }
+
+TMP_SECTION_DIR="$(make_tmp)"
+SECTION_AGENT="${TMP_SECTION_DIR}/section-agent.md"
+cat > "${SECTION_AGENT}" <<'AGENT'
+# Section Agent
+
+Outside section note: `core/agents/skills/outside-section.md`
+
+## Skills (Loaded Upfront)
+
+- Declared skill: `core/agents/skills/inside-section.md`
+
+## Later Section
+
+Later note: `core/agents/skills/later-section.md`
+AGENT
+
+SECTION_DISCOVERED="$(extract_skill_paths "${SECTION_AGENT}")"
+
+it "extract_skill_paths reads only the Skills (Loaded Upfront) section"
+assert_contains "${SECTION_DISCOVERED}" "inside-section.md"
+
+it "extract_skill_paths ignores skill references before the upfront section"
+assert_not_contains "${SECTION_DISCOVERED}" "outside-section.md"
+
+it "extract_skill_paths ignores skill references after the upfront section"
+assert_not_contains "${SECTION_DISCOVERED}" "later-section.md"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 1: SKILL-TEMPLATE.md exists and contains required sections
@@ -80,14 +121,41 @@ it "agent-skill-loading.md references Open/Closed Extension Protocol"
 assert_contains "${LOADING_RULE_CONTENT}" "Open/Closed Extension Protocol"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test 3: each implementation agent has a "## Skills (Loaded On Demand)" section
+# Test 3: each implementation agent has a "## Skills (Loaded Upfront)" section
 # ─────────────────────────────────────────────────────────────────────────────
 for agent_file in "${AGENTS[@]}"; do
   agent_name="$(basename "${agent_file}" .md)"
   AGENT_CONTENT="$(cat "${agent_file}" 2>/dev/null || true)"
-  it "${agent_name}.md has '## Skills (Loaded On Demand)' section"
-  assert_contains "${AGENT_CONTENT}" "## Skills (Loaded On Demand)"
+  it "${agent_name}.md has '## Skills (Loaded Upfront)' section"
+  assert_contains "${AGENT_CONTENT}" "## Skills (Loaded Upfront)"
 done
+
+BACKEND_UPFRONT_SKILLS="$(extract_skill_paths "${REPO_ROOT}/core/agents/backend.md")"
+FRONTEND_UPFRONT_SKILLS="$(extract_skill_paths "${REPO_ROOT}/core/agents/frontend.md")"
+
+it "backend.md upfront registry declares TDD skill"
+assert_contains "${BACKEND_UPFRONT_SKILLS}" "tdd.md"
+
+it "backend.md upfront registry declares Java skill"
+assert_contains "${BACKEND_UPFRONT_SKILLS}" "effective-java.md"
+
+it "backend.md upfront registry declares Clean Architecture skill"
+assert_contains "${BACKEND_UPFRONT_SKILLS}" "clean-architecture.md"
+
+it "frontend.md upfront registry declares TDD skill"
+assert_contains "${FRONTEND_UPFRONT_SKILLS}" "tdd.md"
+
+it "frontend.md upfront registry declares TypeScript skill"
+assert_contains "${FRONTEND_UPFRONT_SKILLS}" "effective-typescript.md"
+
+it "frontend.md upfront registry declares UI component skill"
+assert_contains "${FRONTEND_UPFRONT_SKILLS}" "ui-component-design.md"
+
+it "agent-skill-loading.md requires upfront loading of every associated skill"
+assert_contains "${LOADING_RULE_CONTENT}" "MUST load every skill listed"
+
+it "agent-skill-loading.md forbids subset selection of associated skills"
+assert_contains "${LOADING_RULE_CONTENT}" "must not select a subset"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 4: every skill path declared in agent files resolves to a real file
@@ -162,21 +230,21 @@ SKILL
 cat > "${FAKE_AGENT}" << 'AGENT'
 # Fake Agent
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool only when needed:
+Read every skill file listed below before execution:
 - Brainfuck best practices: `core/agents/skills/effective-brainfuck.md`
 AGENT
 
 it "Open/Closed: new skill declared in agent is discoverable via backtick grep convention"
-DISCOVERED="$(grep -o '`[^`]*skills/[^`]*`' "${FAKE_AGENT}" 2>/dev/null | tr -d '`' | head -1 || true)"
+DISCOVERED="$(extract_skill_paths "${FAKE_AGENT}" | head -1 || true)"
 assert_contains "${DISCOVERED}" "effective-brainfuck"
 
 it "Open/Closed: new skill file resolves to a real file (when placed in skills dir)"
 assert_file_exists "${FAKE_SKILL}"
 
 it "Open/Closed: no existing agent file was modified (backend.md still has Skills section)"
-assert_contains "$(cat "${REPO_ROOT}/core/agents/backend.md" 2>/dev/null || true)" "## Skills (Loaded On Demand)"
+assert_contains "$(cat "${REPO_ROOT}/core/agents/backend.md" 2>/dev/null || true)" "## Skills (Loaded Upfront)"
 
 it "Open/Closed: no existing skill file was modified (oop-principles.md still present)"
 assert_file_exists "${REPO_ROOT}/core/agents/skills/oop-principles.md"
@@ -361,6 +429,18 @@ it "analyst PRDs include KISS/YAGNI/DRY maintainability guidance"
 assert_contains "${ANALYST_CONTENT}" "KISS,"
 assert_contains "${ANALYST_CONTENT}" "YAGNI"
 assert_contains "${ANALYST_CONTENT}" "DRY"
+
+it "analyst.md requires analyst skills to load before Step 1"
+assert_contains "${ANALYST_CONTENT}" "Before Step 1, read every skill file listed below"
+
+it "analyst.md records upfront analyst skill-load evidence once"
+assert_contains "${ANALYST_CONTENT}" "loaded_phase: upfront"
+
+it "analyst.md treats requirement-gathering as already loaded during ambiguity checks"
+assert_contains "${ANALYST_CONTENT}" "confirm requirement-gathering.md is already recorded"
+
+it "analyst.md treats pipeline-planning as already loaded during pipeline composition"
+assert_contains "${ANALYST_CONTENT}" "confirm pipeline-planning.md is already recorded"
 
 it "planner PRDs include KISS/YAGNI/DRY maintainability guidance"
 assert_contains "${PLANNER_CONTENT}" "KISS, YAGNI, and DRY"

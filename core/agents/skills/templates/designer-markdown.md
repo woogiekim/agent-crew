@@ -225,7 +225,7 @@ and load.
   naming convention, and Channel B template seeding contract.
 - `~/.agent-crew/system/agents/skills/ux-design.md` — Nielsen heuristics,
   Gestalt principles, WCAG 2.1 AA, mobile-first responsive layout
-  (declared on-demand load on the dispatcher side; this template
+  (declared agent-associated upfront load on the dispatcher side; this template
   references its content but does not re-document it).
 - `core/agents/skills/templates/backend-kotlin-spring.md` — the parallel
   Wave-B exemplar shape this template mirrors structurally.

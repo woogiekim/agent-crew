@@ -43,7 +43,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 
 PROFILE_TYPES = {
@@ -117,6 +117,25 @@ AGENT_NAME_PREFIXES = {
     "reviewer",
     "test-writer",
 }
+PROJECT_CONTEXT_FILES = (
+    "pom.xml",
+    "build.gradle.kts",
+    "build.gradle",
+    "package.json",
+    "pyproject.toml",
+    "setup.py",
+    "Cargo.toml",
+    "go.mod",
+    "build.sbt",
+    "Package.swift",
+)
+PROJECT_CONTEXT_FILE_LIMIT = 50_000
+
+
+class ContextFragment(NamedTuple):
+    text: str
+    tokens: set[str]
+    project_context_file: str = ""
 
 
 def strip_scalar(value: str) -> str:
@@ -266,6 +285,14 @@ def normalize_text(text: str) -> str:
     return " ".join(re.findall(r"[A-Za-z0-9]+", text.lower()))
 
 
+PROJECT_CONTEXT_FILE_TOKENS = {normalize_text(path) for path in PROJECT_CONTEXT_FILES}
+PROJECT_CONTEXT_FILE_TOKENS_BY_LENGTH = sorted(
+    PROJECT_CONTEXT_FILE_TOKENS,
+    key=len,
+    reverse=True,
+)
+
+
 def token_set(text: str) -> set[str]:
     return set(normalize_text(text).split())
 
@@ -279,7 +306,210 @@ def significant_tokens(text: str) -> list[str]:
     )
 
 
-def clause_matches(clause: str, context_text: str, context_tokens: set[str]) -> bool:
+def context_fragment(text: str, *, project_context_file: str = "") -> ContextFragment:
+    normalized = normalize_text(text)
+    return ContextFragment(
+        text=normalized,
+        tokens=set(normalized.split()),
+        project_context_file=normalize_text(project_context_file),
+    )
+
+
+def project_context_file_for_path(path_text: str) -> str:
+    normalized = normalize_text(path_text)
+    for file_token in PROJECT_CONTEXT_FILE_TOKENS_BY_LENGTH:
+        if normalized == file_token or normalized.endswith(f" {file_token}"):
+            return file_token
+
+    return ""
+
+
+def project_context_file_clause_parts(clause: str) -> tuple[str, str]:
+    normalized = normalize_text(clause)
+    for file_token in PROJECT_CONTEXT_FILE_TOKENS_BY_LENGTH:
+        if normalized == file_token:
+            return file_token, ""
+        if normalized.startswith(f"{file_token} "):
+            remainder = normalized.removeprefix(file_token).strip()
+            for prefix in ("containing ", "contains ", "with "):
+                if remainder.startswith(prefix):
+                    remainder = remainder.removeprefix(prefix).strip()
+                    break
+
+            return file_token, remainder
+
+    return "", ""
+
+
+def project_context_file_family(file_token: str) -> str:
+    if file_token in {"build gradle", "build gradle kts"}:
+        return "gradle"
+
+    return file_token
+
+
+def expand_manifest_family_qualifiers(clauses: list[str]) -> list[str]:
+    """Apply old shorthand qualifiers across sibling manifest OR clauses."""
+    qualifiers_by_family: dict[str, set[str]] = {}
+    for clause in clauses:
+        file_token, remainder = project_context_file_clause_parts(clause)
+        if not file_token or not remainder:
+            continue
+        family = project_context_file_family(file_token)
+        qualifiers_by_family.setdefault(family, set()).add(remainder)
+
+    inherited_qualifier = {
+        family: next(iter(qualifiers))
+        for family, qualifiers in qualifiers_by_family.items()
+        if len(qualifiers) == 1
+    }
+
+    expanded: list[str] = []
+    for clause in clauses:
+        file_token, remainder = project_context_file_clause_parts(clause)
+        if file_token and not remainder:
+            qualifier = inherited_qualifier.get(project_context_file_family(file_token))
+            if qualifier:
+                expanded.append(f"{file_token} with {qualifier}")
+                continue
+
+        expanded.append(clause)
+
+    return expanded
+
+
+def is_project_context_file_clause(clause: str) -> bool:
+    file_token, _ = project_context_file_clause_parts(clause)
+    return bool(file_token)
+
+
+def negated_clause(clause: str) -> str:
+    normalized = normalize_text(clause)
+    if not normalized.startswith("not "):
+        return ""
+
+    return normalized.removeprefix("not ").strip()
+
+
+def strict_fragment_clause_matches(clause: str, fragment: ContextFragment) -> bool:
+    """Match manifest-file qualifiers without loose "any token" fallback."""
+    and_parts = [
+        part.strip()
+        for part in re.split(r"\s+AND\s+", clause, flags=re.IGNORECASE)
+        if part.strip()
+    ]
+    if len(and_parts) > 1:
+        return all(strict_fragment_clause_matches(part, fragment) for part in and_parts)
+
+    if negative_clause := negated_clause(clause):
+        return not strict_fragment_clause_matches(negative_clause, fragment)
+
+    normalized_clause = normalize_text(clause)
+    if normalized_clause and normalized_clause in fragment.text:
+        return True
+
+    tokens = significant_tokens(clause)
+    if not tokens:
+        return False
+
+    return all(token in fragment.tokens or token in fragment.text for token in tokens)
+
+
+def project_context_file_clause_matches(
+    normalized_clause: str,
+    *,
+    context_text: str,
+    context_fragments: list[ContextFragment] | None,
+    current_fragment: ContextFragment | None,
+) -> bool:
+    file_token, remainder = project_context_file_clause_parts(normalized_clause)
+
+    if current_fragment:
+        if not file_token:
+            if current_fragment.project_context_file:
+                return normalized_clause == current_fragment.project_context_file
+
+            return normalized_clause == current_fragment.text
+        if current_fragment.project_context_file != file_token:
+            return False
+        if not remainder:
+            return True
+
+        return strict_fragment_clause_matches(remainder, current_fragment)
+
+    if context_fragments:
+        return any(
+            project_context_file_clause_matches(
+                normalized_clause,
+                context_text=fragment.text,
+                context_fragments=None,
+                current_fragment=fragment,
+            )
+            for fragment in context_fragments
+        )
+
+    if file_token:
+        return normalized_clause == context_text
+
+    return normalized_clause == context_text
+
+
+def clause_matches(
+    clause: str,
+    context_text: str,
+    context_tokens: set[str],
+    context_fragments: list[ContextFragment] | None = None,
+    current_fragment: ContextFragment | None = None,
+) -> bool:
+    and_parts = [
+        part.strip()
+        for part in re.split(r"\s+AND\s+", clause, flags=re.IGNORECASE)
+        if part.strip()
+    ]
+    if len(and_parts) > 1:
+        if context_fragments and any(
+            is_project_context_file_clause(part) for part in and_parts
+        ):
+            return any(
+                all(
+                    clause_matches(
+                        part,
+                        fragment.text,
+                        fragment.tokens,
+                        current_fragment=fragment,
+                    )
+                    for part in and_parts
+                )
+                for fragment in context_fragments
+            )
+        return all(
+            clause_matches(part, context_text, context_tokens, context_fragments)
+            for part in and_parts
+        )
+
+    normalized_clause = normalize_text(clause)
+    if negative_clause := negated_clause(clause):
+        return not clause_matches(
+            negative_clause,
+            context_text,
+            context_tokens,
+            context_fragments,
+            current_fragment,
+        )
+
+    if normalized_clause and is_project_context_file_clause(clause):
+        return project_context_file_clause_matches(
+            normalized_clause,
+            context_text=context_text,
+            context_fragments=context_fragments,
+            current_fragment=current_fragment,
+        )
+
+    if normalized_clause and normalized_clause in context_text:
+        return True
+    if re.search(r"[./_-]", clause.strip()) and not re.search(r"\s", clause.strip()):
+        return False
+
     tokens = significant_tokens(clause)
     if not tokens:
         return False
@@ -296,7 +526,12 @@ def clause_matches(clause: str, context_text: str, context_tokens: set[str]) -> 
     return any(token_present(token) for token in tokens)
 
 
-def detection_matches(detection: str, context_text: str, context_tokens: set[str]) -> bool:
+def detection_matches(
+    detection: str,
+    context_text: str,
+    context_tokens: set[str],
+    context_fragments: list[ContextFragment] | None = None,
+) -> bool:
     detection = detection.strip()
     if not detection:
         return True
@@ -308,8 +543,12 @@ def detection_matches(detection: str, context_text: str, context_tokens: set[str
     # All three split the detection into independent OR-clauses; a match
     # on ANY clause qualifies the skill.
     clauses = re.split(r"\bOR\b|\|\|?", detection, flags=re.IGNORECASE)
+    clauses = expand_manifest_family_qualifiers(clauses)
 
-    return any(clause_matches(clause, context_text, context_tokens) for clause in clauses)
+    return any(
+        clause_matches(clause, context_text, context_tokens, context_fragments)
+        for clause in clauses
+    )
 
 
 def default_skill_dirs() -> list[Path]:
@@ -318,11 +557,56 @@ def default_skill_dirs() -> list[Path]:
     return [home / "system" / "skills", home / "user" / "skills"]
 
 
-def build_context(project_root: Path, task: str, changed_files: Iterable[str]) -> tuple[str, set[str]]:
-    parts = [str(project_root), project_root.name, task, *changed_files]
-    context_text = normalize_text(" ".join(parts))
+def project_context_fragments(project_root: Path) -> list[ContextFragment]:
+    fragments: list[ContextFragment] = []
 
-    return context_text, set(context_text.split())
+    for relative_path in PROJECT_CONTEXT_FILES:
+        path = project_root / relative_path
+        if not path.is_file():
+            continue
+
+        content = ""
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")[
+                :PROJECT_CONTEXT_FILE_LIMIT
+            ]
+        except OSError:
+            pass
+
+        fragments.append(
+            context_fragment(
+                f"{relative_path}\n{content}",
+                project_context_file=relative_path,
+            )
+        )
+
+    return fragments
+
+
+def build_context(
+    project_root: Path,
+    task: str,
+    changed_files: Iterable[str],
+) -> tuple[str, set[str], list[ContextFragment]]:
+    searchable_fragments = [
+        context_fragment(str(project_root)),
+        context_fragment(project_root.name),
+        context_fragment(task),
+        *(
+            context_fragment(
+                path,
+                project_context_file=project_context_file_for_path(path),
+            )
+            for path in changed_files
+        ),
+    ]
+    context_fragments = [
+        *searchable_fragments,
+        *project_context_fragments(project_root),
+    ]
+    context_text = " ".join(fragment.text for fragment in searchable_fragments)
+
+    return context_text, set(context_text.split()), context_fragments
 
 
 def iter_skill_files(skills_dirs: Iterable[Path]) -> Iterable[Path]:
@@ -449,6 +733,7 @@ def unindexed_user_skill_applies_to_agent(
     agent_name: str,
     context_text: str,
     context_tokens: set[str],
+    context_fragments: list[ContextFragment],
 ) -> bool:
     """Return whether an incomplete user skill should be surfaced as a gap.
 
@@ -481,6 +766,7 @@ def unindexed_user_skill_applies_to_agent(
             metadata_value(metadata, "detection"),
             context_text,
             context_tokens,
+            context_fragments,
         )
 
     if metadata:
@@ -531,7 +817,11 @@ def resolve_skills_for_agent(
     task: str,
     changed_files: Iterable[str],
 ) -> dict:
-    context_text, context_tokens = build_context(project_root, task, changed_files)
+    context_text, context_tokens, context_fragments = build_context(
+        project_root,
+        task,
+        changed_files,
+    )
     candidates: list[dict] = []
     unindexed_user_skills: list[dict] = []
 
@@ -548,6 +838,7 @@ def resolve_skills_for_agent(
                 agent_name=agent_name,
                 context_text=context_text,
                 context_tokens=context_tokens,
+                context_fragments=context_fragments,
             ):
                 unindexed_user_skills.append(build_unindexed_skill(path, metadata, layer))
             continue
@@ -564,7 +855,12 @@ def resolve_skills_for_agent(
             continue
 
         detection = metadata_value(metadata, "detection")
-        if not detection_matches(detection, context_text, context_tokens):
+        if not detection_matches(
+            detection,
+            context_text,
+            context_tokens,
+            context_fragments,
+        ):
             continue
 
         candidates.append(

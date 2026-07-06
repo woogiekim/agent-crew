@@ -195,12 +195,12 @@ Add a one-paragraph cross-reference to the new
 `core/rules/agent-tool-dispatch.md`:
 
 > Dispatcher agents that load adapter skills by convention (rather than via
-> the explicit `## Skills (Loaded On Demand)` section above) follow the
+> the explicit `## Skills (Loaded Upfront)` section above) follow the
 > 5-step protocol in `core/rules/agent-tool-dispatch.md`. The two
 > conventions are complementary: skill-loading covers **declared**
 > skill consumption; tool-dispatch covers **convention-discovered**
 > adapter skills. An agent may use both — for example, `backend` may
-> declare `effective-kotlin.md` and `tdd.md` via the on-demand section
+> declare `effective-kotlin.md` and `tdd.md` via the agent-associated section
 > while *also* dispatching to `backend-kotlin-spring` via convention.
 
 This is a 5-line edit. It prevents the two conventions from being

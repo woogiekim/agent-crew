@@ -6,7 +6,7 @@ dispatcher primitive (`core/rules/agent-tool-dispatch.md`), declares the
 the Wave B backend exemplar — UI work can still proceed with
 language-agnostic TDD + ui-component-design skills even when the
 framework-specific template is absent), and preserves its existing
-runtime contract (declared on-demand skills section, language-agnostic
+runtime contract (declared agent-associated skills section, language-agnostic
 identity).
 """
 from __future__ import annotations
@@ -150,10 +150,10 @@ def test_frontend_md_references_backend_as_peer_exemplar(frontend_md_text: str) 
 # --------------------------------------------------------------------------- #
 
 
-def test_frontend_md_preserves_on_demand_skills_section(frontend_md_text: str) -> None:
-    """The existing declared on-demand skills section must survive the refactor."""
-    assert "## Skills (Loaded On Demand)" in frontend_md_text, (
-        "frontend.md must retain its `## Skills (Loaded On Demand)` section "
+def test_frontend_md_preserves_agent_associated_skills_section(frontend_md_text: str) -> None:
+    """The declared agent-associated skills section must survive the refactor."""
+    assert "## Skills (Loaded Upfront)" in frontend_md_text, (
+        "frontend.md must retain its `## Skills (Loaded Upfront)` section "
         "(declared skill loading is complementary to the dispatcher per "
         "agent-tool-dispatch.md § 'An agent MAY use both conventions')."
     )

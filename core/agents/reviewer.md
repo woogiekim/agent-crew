@@ -120,10 +120,10 @@ The supervisor validates this contract with
 An unclassified or weakly evidenced new Must is `review_contract_invalid`; it
 retries the reviewer only and must not send work back to the implementer.
 
-## Skills (Loaded On Demand)
+## Skills (Loaded Upfront)
 
-Read the following skill files using the Read tool **only when needed** — do not
-load them at agent startup:
+Read every skill file listed below before execution. These are the skills
+associated with this agent; do not select a subset:
 - Code review methodology and PRD coverage: `~/.agent-crew/system/agents/skills/code-review.md`
 - Layered architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
 - Agile and XP practices (Definition of Done): `~/.agent-crew/system/agents/skills/agile-xp.md`
