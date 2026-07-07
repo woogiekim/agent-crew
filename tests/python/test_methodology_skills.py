@@ -192,6 +192,16 @@ def _skills_dir_with_messaging(tmp_path: Path) -> Path:
     return skills_dir
 
 
+# NAMING DISCIPLINE (load-bearing): the dispatcher folds str(project_root) into
+# its global detection match text, and pytest names each tmp_path dir after the
+# test function. So NO dispatch-test function name may contain a messaging
+# detection keyword (kafka, amqp, rabbitmq, outbox, dead-letter, event-driven,
+# message-queue) — such a keyword would leak into the tmp path and satisfy the
+# bare task-keyword clause independent of the manifest, giving positives a false
+# reason to pass and breaking the negatives. Keyword-free neutral names
+# ("broker"/"stream") are used here; the exact dependency lives in the docstring
+# (docstrings are not part of the path) and in the manifest content, which is the
+# real signal under test.
 def _dispatch_messaging(
     tmp_path: Path,
     *,
@@ -214,8 +224,12 @@ def _dispatch_messaging(
     return _matched_names(payload)
 
 
-def test_gradle_spring_kafka_manifest_matches_messaging(tmp_path: Path) -> None:
-    """TC-001 (MUST, AC-3): build.gradle with spring-kafka matches for backend."""
+def test_gradle_broker_manifest_matches(tmp_path: Path) -> None:
+    """TC-001 (MUST, AC-3): build.gradle with spring-kafka matches for backend.
+
+    Match derives from scanned build.gradle content; the function name is
+    keyword-free so the tmp-path leak cannot manufacture the match.
+    """
     names = _dispatch_messaging(
         tmp_path,
         manifest=(
@@ -228,8 +242,8 @@ def test_gradle_spring_kafka_manifest_matches_messaging(tmp_path: Path) -> None:
     assert MESSAGING_SKILL_NAME in names
 
 
-def test_gradle_kts_spring_kafka_manifest_matches_messaging(tmp_path: Path) -> None:
-    """TC-002 (SHOULD, AC-3): the build.gradle.kts variant binds too."""
+def test_gradle_kts_broker_manifest_matches(tmp_path: Path) -> None:
+    """TC-002 (SHOULD, AC-3): the build.gradle.kts variant (spring-kafka) binds too."""
     names = _dispatch_messaging(
         tmp_path,
         manifest=(
@@ -242,8 +256,8 @@ def test_gradle_kts_spring_kafka_manifest_matches_messaging(tmp_path: Path) -> N
     assert MESSAGING_SKILL_NAME in names
 
 
-def test_pom_xml_spring_kafka_manifest_matches_messaging(tmp_path: Path) -> None:
-    """TC-003 (SHOULD, AC-3): pom.xml carries the kafka clause."""
+def test_pom_broker_manifest_matches(tmp_path: Path) -> None:
+    """TC-003 (SHOULD, AC-3): pom.xml carries the spring-kafka clause."""
     names = _dispatch_messaging(
         tmp_path,
         manifest=(
@@ -259,7 +273,7 @@ def test_pom_xml_spring_kafka_manifest_matches_messaging(tmp_path: Path) -> None
     assert MESSAGING_SKILL_NAME in names
 
 
-def test_package_json_amqplib_matches_messaging(tmp_path: Path) -> None:
+def test_npm_manifest_broker_dep_matches(tmp_path: Path) -> None:
     """TC-004 (MUST, F5/F6): package.json with amqplib matches."""
     names = _dispatch_messaging(
         tmp_path,
@@ -271,7 +285,7 @@ def test_package_json_amqplib_matches_messaging(tmp_path: Path) -> None:
     assert MESSAGING_SKILL_NAME in names
 
 
-def test_package_json_kafkajs_matches_messaging(tmp_path: Path) -> None:
+def test_npm_manifest_stream_dep_matches(tmp_path: Path) -> None:
     """TC-005 (SHOULD, F5): the kafkajs alternative of the npm binding matches."""
     names = _dispatch_messaging(
         tmp_path,
@@ -283,16 +297,24 @@ def test_package_json_kafkajs_matches_messaging(tmp_path: Path) -> None:
     assert MESSAGING_SKILL_NAME in names
 
 
-def test_python_requirements_kafka_matches_messaging(tmp_path: Path) -> None:
-    """TC-006 (SHOULD, F5): a Python manifest carrying kafka matches."""
+def test_pyproject_stream_dep_matches(tmp_path: Path) -> None:
+    """TC-006 (SHOULD, F5): pyproject.toml carrying a kafka dependency matches.
+
+    The dispatcher scans pyproject.toml (a scanned manifest); it does NOT scan
+    requirements.txt. The Python-manifest positive therefore binds through
+    pyproject.toml, and the match must derive from that scanned content.
+    """
     names = _dispatch_messaging(
         tmp_path,
-        manifest=("requirements.txt", "kafka-python==2.0.2\n"),
+        manifest=(
+            "pyproject.toml",
+            "[project]\ndependencies = [\"kafka-python==2.0.2\"]\n",
+        ),
     )
     assert MESSAGING_SKILL_NAME in names
 
 
-def test_pyproject_pika_matches_messaging(tmp_path: Path) -> None:
+def test_pyproject_broker_dep_matches(tmp_path: Path) -> None:
     """TC-006 (SHOULD, F5): pyproject.toml carrying pika matches (amqp variant)."""
     names = _dispatch_messaging(
         tmp_path,
@@ -342,21 +364,27 @@ def test_plain_npm_project_does_not_match_messaging(tmp_path: Path) -> None:
     assert MESSAGING_SKILL_NAME not in names
 
 
-def test_unbound_incidental_kafka_keyword_does_not_match_messaging(
+def test_unbound_incidental_broker_keyword_in_scripts_does_not_match(
     tmp_path: Path,
 ) -> None:
     """TC-010 (MUST, F5 + binding rule at test_skill_dispatch.py:990/:1079).
 
-    A `kafka` token that appears only as an unbound incidental hit — here a
-    package.json *scripts* name, not a kafkajs/amqplib dependency — with a
-    non-messaging task must NOT match. Guards against false positives from
-    manifest-content keywords that are not bound to the named manifest fragment.
+    A broker token (`kafka`) that appears only as an unbound incidental hit —
+    here inside a package.json *scripts* value, not a kafkajs/amqplib
+    dependency — with a non-messaging task must NOT match. Guards against false
+    positives from manifest-content keywords not bound to the named manifest
+    fragment.
+
+    The function name is deliberately keyword-free: the dispatcher folds the
+    (pytest-function-named) tmp project path into its global match text, so a
+    detection keyword in the test name would leak into the path and spuriously
+    satisfy the bare task-keyword clause, masking this very guard.
     """
     names = _dispatch_messaging(
         tmp_path,
         manifest=(
             "package.json",
-            json.dumps({"scripts": {"kafka": "echo kafka"}}),
+            json.dumps({"scripts": {"start": "run-kafka-consumer"}}),
         ),
         task="Implement a new button.",
     )
