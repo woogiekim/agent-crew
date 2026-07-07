@@ -172,5 +172,3 @@ order otherwise, and design consumers to tolerate out-of-order arrival.
   ISBN 978-0321200686.
 - Chris Richardson, *Microservices Patterns: With Examples in Java*, Manning,
   2018. ISBN 978-1617294549.
-</content>
-</invoke>

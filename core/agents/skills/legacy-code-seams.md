@@ -179,5 +179,3 @@ introduced) so the reviewer can see the safety net was built before the change.
 ## References
 - Michael C. Feathers, *Working Effectively with Legacy Code*, Prentice Hall,
   2004. ISBN 978-0131177055.
-</content>
-</invoke>

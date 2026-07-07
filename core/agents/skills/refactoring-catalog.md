@@ -213,5 +213,3 @@ revert cheap and keep review focused.
   2nd ed., Addison-Wesley, 2018. ISBN 978-0134757599.
 - Kent Beck, *Tidy First? A Personal Exercise in Empirical Software Design*,
   O'Reilly Media, 2023. ISBN 978-1098151249.
-</content>
-</invoke>
