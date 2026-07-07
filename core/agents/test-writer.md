@@ -50,6 +50,7 @@ Read every skill file listed below before execution. These are the skills
 associated with this agent; do not select a subset:
 - TDD cycle and FIRST principles: `~/.agent-crew/system/agents/skills/tdd.md`
 - Agile and XP practices (test-first discipline): `~/.agent-crew/system/agents/skills/agile-xp.md`
+- Legacy-code seams and characterization tests (Feathers): `~/.agent-crew/system/agents/skills/legacy-code-seams.md`
 - Kotlin test conventions: `~/.agent-crew/system/agents/skills/effective-kotlin.md`
 - Java test conventions: `~/.agent-crew/system/agents/skills/effective-java.md`
 - TypeScript test conventions: `~/.agent-crew/system/agents/skills/effective-typescript.md`

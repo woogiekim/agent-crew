@@ -212,6 +212,8 @@ load every skill listed in this section before execution; do not select a subset
 - Clean architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
 - Agile and XP practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
 - Domain-Driven Design review and modeling: `~/.agent-crew/system/agents/skills/domain-driven-design.md`
+- Refactoring catalog and tidyings (Fowler + Beck): `~/.agent-crew/system/agents/skills/refactoring-catalog.md`
+- Legacy-code seams and characterization tests (Feathers): `~/.agent-crew/system/agents/skills/legacy-code-seams.md`
 - DGS DataLoader and resolver batching: `~/.agent-crew/system/agents/skills/dgs-dataloader.md`
 
 These declared agent-associated skills are **complementary** to the dispatcher

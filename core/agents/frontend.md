@@ -198,6 +198,8 @@ subset based on perceived task need.
 - Clean architecture and UI/API boundaries: `~/.agent-crew/system/agents/skills/clean-architecture.md`
 - Agile and XP practices: `~/.agent-crew/system/agents/skills/agile-xp.md`
 - Error handling contracts: `~/.agent-crew/system/agents/skills/error-handling.md`
+- Refactoring catalog and tidyings (Fowler + Beck): `~/.agent-crew/system/agents/skills/refactoring-catalog.md`
+- Legacy-code seams and characterization tests (Feathers): `~/.agent-crew/system/agents/skills/legacy-code-seams.md`
 
 **Capability/domain skills load via metadata dispatch (#186).**
 Additional cross-cutting capability skills (e.g.

@@ -138,6 +138,7 @@ associated with this agent; do not select a subset:
 - Scala review checklist: `~/.agent-crew/system/agents/skills/effective-scala.md`
 - Swift review checklist: `~/.agent-crew/system/agents/skills/effective-swift.md`
 - Domain-Driven Design review: `~/.agent-crew/system/agents/skills/domain-driven-design.md`
+- Refactoring catalog and tidyings (Fowler + Beck): `~/.agent-crew/system/agents/skills/refactoring-catalog.md`
 
 > **MANDATORY: Before reviewing any code change, read `~/.agent-crew/system/agents/skills/code-review.md`.**
 > This skill defines the PRD coverage matrix, git diff analysis procedure, and the NEEDS_CHANGES / APPROVED decision criteria.

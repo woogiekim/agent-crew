@@ -216,6 +216,8 @@ Every skill file MUST follow the structure defined in
 | `clean-architecture.md` | yes | yes | — | MANDATORY |
 | `agile-xp.md` | yes | yes | yes | yes |
 | `domain-driven-design.md` | yes | — | — | yes |
+| `refactoring-catalog.md` | yes | yes | — | yes |
+| `legacy-code-seams.md` | yes | yes | yes | — |
 
 > This matrix is informational. The authoritative source of truth is the
 > "## Skills (Loaded Upfront)" section in each agent file. Update both when

@@ -360,6 +360,33 @@ capability skill — production-proven vendor knowledge continues to live
 at `~/.agent-crew/user/skills/<agent>-<tool>.md` and is never
 auto-loaded from the source repo.
 
+### Additive note: messaging-integration-patterns (manifest-detected axis)
+
+`messaging-integration-patterns` (`axis: messaging-integration`,
+`loaded_by: backend`) is a metadata-dispatched capability skill for the
+`backend` agent. Unlike `dead-code-elimination`, whose `detection` keys
+off generic task keywords system-wide, this skill is **manifest-gated**:
+its `detection` expression pairs messaging task keywords (`kafka`,
+`amqp`, `rabbitmq`, `message queue`, `event driven`, `outbox`,
+`dead letter`) with manifest-bound clauses that follow the binding rule
+above — content matches only when the clause names the manifest file:
+
+```yaml
+detection: kafka OR amqp OR ... OR build.gradle containing kafka
+           OR build.gradle.kts containing kafka OR pom.xml containing kafka
+           OR package.json containing kafkajs OR package.json containing amqplib
+           OR pyproject.toml containing kafka OR pyproject.toml containing pika
+```
+
+So a project that declares `spring-kafka` in `build.gradle` (or
+`kafkajs`/`amqplib` in `package.json`) matches, while a plain
+Gradle/Maven/npm project with no messaging dependency and no messaging
+task keyword does not. This is metadata dispatch per the "Metadata-driven
+skill dispatch" section; it is **Channel B only** and MUST NOT appear in
+any agent's `## Skills (Loaded Upfront)` section or in the
+`agent-skill-loading.md` matrix consumer columns. Extending it to another
+agent (e.g. `reviewer`) is a one-line `loaded_by` edit (Open/Closed).
+
 ---
 
 ## Open/Closed extension protocol
