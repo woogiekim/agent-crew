@@ -504,4 +504,44 @@ assert_contains "${REVIEWER_CONTENT}" "skill-content-audit.py"
 assert_contains "${REVIEWER_CONTENT}" "context/skill-content-audit.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Test 11: methodology skills Channel A wiring (refactoring-catalog,
+# legacy-code-seams) and the messaging-integration-patterns hard negative.
+#
+# Derived from context/prd.md F4/F6 and AC-2:
+#   - backend/frontend/reviewer declare refactoring-catalog.md upfront.
+#   - backend/frontend/test-writer declare legacy-code-seams.md upfront.
+#   - NO agent upfront section declares messaging-integration-patterns.md
+#     (Channel B metadata dispatch only — never Channel A).
+# Path resolution for the new bullets is already covered by Test 4's
+# "every declared path resolves to a real file" invariant (AC-2/AC-7).
+# ─────────────────────────────────────────────────────────────────────────────
+REVIEWER_UPFRONT_SKILLS="$(extract_skill_paths "${REPO_ROOT}/core/agents/reviewer.md")"
+TEST_WRITER_UPFRONT_SKILLS="$(extract_skill_paths "${REPO_ROOT}/core/agents/test-writer.md")"
+
+it "backend.md upfront registry declares refactoring-catalog skill"
+assert_contains "${BACKEND_UPFRONT_SKILLS}" "refactoring-catalog.md"
+
+it "frontend.md upfront registry declares refactoring-catalog skill"
+assert_contains "${FRONTEND_UPFRONT_SKILLS}" "refactoring-catalog.md"
+
+it "reviewer.md upfront registry declares refactoring-catalog skill"
+assert_contains "${REVIEWER_UPFRONT_SKILLS}" "refactoring-catalog.md"
+
+it "backend.md upfront registry declares legacy-code-seams skill"
+assert_contains "${BACKEND_UPFRONT_SKILLS}" "legacy-code-seams.md"
+
+it "frontend.md upfront registry declares legacy-code-seams skill"
+assert_contains "${FRONTEND_UPFRONT_SKILLS}" "legacy-code-seams.md"
+
+it "test-writer.md upfront registry declares legacy-code-seams skill"
+assert_contains "${TEST_WRITER_UPFRONT_SKILLS}" "legacy-code-seams.md"
+
+for agent_file in "${AGENTS[@]}"; do
+  agent_name="$(basename "${agent_file}" .md)"
+  AGENT_UPFRONT_SKILLS="$(extract_skill_paths "${agent_file}")"
+  it "${agent_name}.md upfront section does NOT declare messaging-integration-patterns (Channel B only)"
+  assert_not_contains "${AGENT_UPFRONT_SKILLS}" "messaging-integration-patterns"
+done
+
+# ─────────────────────────────────────────────────────────────────────────────
 end_report
