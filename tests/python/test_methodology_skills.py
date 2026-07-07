@@ -560,3 +560,37 @@ def test_messaging_skill_absent_from_matrix_consumer_columns() -> None:
                 "messaging-integration-patterns.md must not be marked 'yes' "
                 "in any matrix consumer column (Channel B only)"
             )
+
+
+# ---------------------------------------------------------------------------
+# F-001 (reviewer loop-back) — no stray tool-invocation control tokens leak
+# into skill bodies. An authoring/paste artifact left closing control tokens
+# (`</content>`, `</invoke>`) at the end of the three new skill files. These
+# are host tool-call framing tokens and must never appear in a provider-neutral
+# skill body. Scoped to every *.md in the skills dir (non-recursive) to also
+# future-proof peer skills, per the reviewer's request.
+# ---------------------------------------------------------------------------
+
+# Constructed piecewise so this test file itself carries no literal control
+# token that a naive whole-tree scan could false-positive on.
+STRAY_CONTROL_TOKENS = ("</" + "content>", "</" + "invoke>")
+
+
+def test_no_skill_body_contains_stray_tool_invocation_tokens() -> None:
+    """F-001 (MUST): no skill under core/agents/skills/ leaks control tokens.
+
+    RED until the backend strips the trailing `</content>` / `</invoke>`
+    artifacts from the three new skill files; GREEN once cleaned. The backend
+    owns the skill files — this test only asserts the contract.
+    """
+    skill_files = sorted(SKILLS_DIR.glob("*.md"))
+    assert skill_files, f"no skill files found under {SKILLS_DIR}"
+    offenders: list[str] = []
+    for skill_file in skill_files:
+        text = skill_file.read_text(encoding="utf-8")
+        for token in STRAY_CONTROL_TOKENS:
+            if token in text:
+                offenders.append(f"{skill_file.name} contains stray token {token!r}")
+    assert not offenders, "stray tool-invocation control tokens in skill bodies:\n" + "\n".join(
+        offenders
+    )
