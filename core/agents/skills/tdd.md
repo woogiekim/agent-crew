@@ -64,6 +64,28 @@ either a concrete test reference with `Covered = YES` or a reviewer-accepted
 explanation for why that case cannot be implemented. Every MUST item must be
 implemented or explicitly explained.
 
+## Durable Contract vs Temporary Repair Evidence
+
+Before keeping a new or changed test in the final diff, classify it as one of:
+
+- **durable product-contract test**: verifies behavior backed by public API
+  behavior, product requirement, security policy, data rule, legacy parity, or
+  compatibility requirement.
+- **temporary internal-repair evidence**: supports local diagnosis, repair, or
+  revert confidence but is not itself a durable product contract.
+
+Do not keep a test that only proves that a bad intermediate implementation was
+reverted. For revert-only or internal-repair work, prefer temporary local
+checks, focused command output, diff evidence, or task-context notes. Temporary
+repair evidence can be mentioned in task artifacts, review notes, or command
+logs, but it should not widen the product contract by remaining as a permanent
+test.
+
+Durable regression tests are still required when the behavior is backed by a
+real contract source. Record that source in the checklist reason, test-case
+mapping, test name/docstring, or nearby task evidence so reviewers can
+distinguish valid regression coverage from short-lived repair evidence.
+
 ```kotlin
 // RED — test that does not compile yet
 @Test

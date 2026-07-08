@@ -222,6 +222,24 @@ grep -c "if\|for\|while\|when\|catch\|\?\." {file}
 - Parameterized tests used where multiple similar inputs exist
 - For documentation-only or config-only changes: markdown lint, broken-reference check, or schema validation instead of product tests
 
+### Repair-Only Test Check
+
+Review changed tests for repair-only or revert-only tests before approving the
+final diff. If a test only proves that a bad intermediate implementation was
+reverted, and no durable contract source backs the behavior, mark
+`REVIEW: NEEDS_CHANGES` with `REASON: code_quality` and ask for the test to be
+removed or converted into evidence.
+
+A durable contract source can be public API behavior, product requirement,
+security policy, data rule, legacy parity, or compatibility requirement. When
+that source exists, preserve the regression test and require the source to be
+visible in the PRD, checklist reason, test-case mapping, test name/docstring,
+or task evidence.
+
+For internal repair confidence without a durable contract source, prefer
+temporary local checks, focused command output, diff evidence, or task-context
+notes instead of permanent tests.
+
 ---
 
 ## Conventional Commits Verification
