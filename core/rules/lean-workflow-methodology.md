@@ -35,10 +35,13 @@ Align -> Plan -> Execute/TDD -> Review
 - **Align**: clarify objective, scope boundary, target artifact, and known
   exclusions. Short, unambiguous tasks may pass with a one-line assumption.
 - **Plan**: produce the minimum PRD, pipeline, and handoff needed for the next
-  agent. Prefer concrete paths and acceptance criteria over broad prose.
-- **Execute/TDD**: make the smallest behavior change that satisfies the plan.
-  For testable code behavior, identify the focused test target before production
-  mutation.
+  agent. Prefer concrete paths and acceptance criteria over broad prose. For
+  mutating implementation work, every PRD `AC-*` item must be mapped into at
+  least one implementation or QA-verification stage's `acceptance_criteria`
+  field so "minimum" cannot mean an unassigned requirement.
+- **Execute/TDD**: make the smallest complete behavior change that satisfies
+  every mapped Must and acceptance criterion in the plan. For testable code
+  behavior, identify the focused test target before production mutation.
 - **Review**: run an independent read-only quality pass. Re-review should verify
   prior Must findings before starting a new broad sweep.
 
@@ -47,7 +50,7 @@ existing `pipeline.json`, progress events, quality-loop, or reviewer contracts.
 
 ## Minimal-Change Decision Doctrine
 
-Before planning implementation, prefer the smallest sufficient solution in this
+Before planning implementation, prefer the smallest complete solution in this
 order:
 
 1. Reuse existing project code or utilities.
@@ -57,6 +60,10 @@ order:
 4. Delete or simplify behavior instead of adding behavior.
 5. Compose existing pieces instead of introducing a new abstraction.
 6. Write new code only after the paths above are insufficient.
+
+Scope discipline constrains unnecessary work; it never authorizes partial
+delivery. A planned implementation stage is invalid when it cannot close every
+Must and every mapped PRD acceptance criterion assigned to it.
 
 Analyst/planner output for mutating implementation work must record this
 decision in existing artifacts, not in a new proof-only file:

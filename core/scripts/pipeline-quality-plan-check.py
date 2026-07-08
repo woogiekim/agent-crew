@@ -64,10 +64,18 @@ Result payload additions:
 - ``prd_placeholder_hits`` (list of ``{token, line, snippet}`` dicts) —
   one entry per hit (NOT deduplicated). ``snippet`` is the stripped
   matched line, truncated to 120 characters.
+- ``prd_acceptance_section_present`` (bool) — ``True`` when the PRD contains
+  an ``Acceptance Criteria`` heading outside blockquotes/fenced code.
+- ``prd_acceptance_criteria`` / ``pipeline_acceptance_criteria`` /
+  ``prd_unmapped_acceptance_criteria`` — stable ``AC-*`` traceability IDs
+  found in the PRD and mapped implementation/QA stages.
 
 Exit code interaction: any placeholder hit causes exit 1 (joins the
-existing failure-driven exit logic). A missing PRD has no effect on the
-exit code by itself.
+existing failure-driven exit logic). For mutating implementation plans, a PRD
+``Acceptance Criteria`` section with no ``AC-*`` IDs emits
+``prd_acceptance_criteria_missing_ids``; unmapped ``AC-*`` IDs emit
+``prd_acceptance_criteria_unmapped``. A missing PRD has no effect on the exit
+code by itself.
 """
 
 from __future__ import annotations
@@ -149,6 +157,7 @@ NEED_ANALYSIS_ANSWERS = {"yes", "no"}
 _BLOCKQUOTE_RE = re.compile(r"^\s*>")
 _FENCE_RE = re.compile(r"^\s*```")
 _AC_ID_RE = re.compile(r"\bAC-\d+\b", re.IGNORECASE)
+_AC_SECTION_RE = re.compile(r"^\s{0,3}#{1,6}\s+acceptance\s+criteria\b", re.IGNORECASE)
 _SNIPPET_MAX = 120
 
 
@@ -218,6 +227,7 @@ def extract_prd_acceptance_criteria(prd_path: Path) -> list[str]:
         return []
 
     ids: list[str] = []
+    in_acceptance_section = False
     in_fence = False
     for raw_line in prd_path.read_text(encoding="utf-8").splitlines():
         if _FENCE_RE.match(raw_line):
@@ -225,12 +235,37 @@ def extract_prd_acceptance_criteria(prd_path: Path) -> list[str]:
             continue
         if in_fence or _BLOCKQUOTE_RE.match(raw_line):
             continue
+        if _AC_SECTION_RE.search(raw_line):
+            in_acceptance_section = True
+            continue
+        if in_acceptance_section and re.match(r"^\s{0,3}#{1,6}\s+\S", raw_line):
+            in_acceptance_section = False
+            continue
+        if not in_acceptance_section:
+            continue
         for match in _AC_ID_RE.finditer(raw_line):
             value = match.group(0).upper()
             if value not in ids:
                 ids.append(value)
 
     return ids
+
+
+def prd_has_acceptance_section(prd_path: Path) -> bool:
+    if not prd_path.is_file():
+        return False
+
+    in_fence = False
+    for raw_line in prd_path.read_text(encoding="utf-8").splitlines():
+        if _FENCE_RE.match(raw_line):
+            in_fence = not in_fence
+            continue
+        if in_fence or _BLOCKQUOTE_RE.match(raw_line):
+            continue
+        if _AC_SECTION_RE.search(raw_line):
+            return True
+
+    return False
 
 
 def stage_acceptance_criteria_ids(stages: list) -> list[str]:
@@ -443,15 +478,17 @@ def _apply_prd_scan(result: dict, pipeline_path: Path) -> dict:
     result["prd_missing"] = scan["prd_missing"]
     result["prd_placeholder_hits"] = placeholder_hits
     prd_acceptance = extract_prd_acceptance_criteria(prd_path)
+    acceptance_section_present = prd_has_acceptance_section(prd_path)
     stage_acceptance = stage_acceptance_criteria_ids(
         load_json(pipeline_path).get("stages") or []
     )
-    acceptance_mapping_required = bool(result.get("required") and stage_acceptance)
+    acceptance_mapping_required = bool(result.get("required") and prd_acceptance)
     unmapped = [
         item for item in prd_acceptance
         if acceptance_mapping_required and item not in stage_acceptance
     ]
     result["prd_acceptance_criteria"] = prd_acceptance
+    result["prd_acceptance_section_present"] = acceptance_section_present
     result["pipeline_acceptance_criteria"] = stage_acceptance
     result["prd_acceptance_mapping_required"] = acceptance_mapping_required
     result["prd_unmapped_acceptance_criteria"] = unmapped
@@ -465,6 +502,11 @@ def _apply_prd_scan(result: dict, pipeline_path: Path) -> dict:
     if unmapped:
         existing = set(result.get("failures") or [])
         existing.add("prd_acceptance_criteria_unmapped")
+        result["failures"] = sorted(existing)
+        result["passed"] = False
+    if result.get("required") and acceptance_section_present and not prd_acceptance:
+        existing = set(result.get("failures") or [])
+        existing.add("prd_acceptance_criteria_missing_ids")
         result["failures"] = sorted(existing)
         result["passed"] = False
 

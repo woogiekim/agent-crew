@@ -202,10 +202,14 @@ Based on the collected information, save the following to `{TASK_DIR}/context/pr
 - Non-functional requirements, including KISS, YAGNI, and DRY from
   `core/rules/code-quality.md` for implementation work
 - Implementation scope and excluded items
-- `Will Do`: concrete implementation tasks in the smallest sufficient scope
+- `Will Do`: concrete implementation tasks in the smallest complete scope that
+  satisfies every Must and assigned `AC-*`
 - `Will NOT Do`: explicit non-goals such as no schema/API/dependency/cache/queue
   changes unless required
 - `Diff Budget`: `XS|S|M|L|XL` plus rationale
+- `Acceptance Criteria`: stable `AC-*` identifiers. For mutating implementation
+  work, every `AC-*` must be assigned to at least one implementation or
+  QA-verification stage in `pipeline.json`.
 
 ### Step 2.5: Minimal-change decision
 
@@ -315,25 +319,25 @@ to reduce total wall-clock time:
 
 | Request Type | stages |
 |---|---|
-| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
-| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
 | Design / Analysis only | `[]` |
 | Matches custom agent role | Include the custom agent in an appropriate stage, then `["reviewer"]` last |
-| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation" }, ["reviewer"]]` |
+| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 
 ```json
 {
   "task": "Original request",
   "stages": [
     ["designer"],
-    { "agents": ["backend"], "tdd_parallel": true },
+    { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] },
     ["reviewer"],
-    { "agents": ["frontend"], "tdd_parallel": true },
+    { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] },
     ["reviewer"]
   ],
   "decision_context": {
@@ -359,7 +363,7 @@ to reduce total wall-clock time:
     ],
     "diff_budget": {
       "category": "XS|S|M|L|XL",
-      "rationale": "{why this is the smallest sufficient change}"
+      "rationale": "{why this is the smallest complete change that satisfies all assigned ACs}"
     },
     "will_do": ["{concrete implementation task}"],
     "will_not_do": ["{explicit non-goal}"],
@@ -393,6 +397,11 @@ frontend, or a generic implementer custom agent). For mutating code
 work this is not an optimization knob; it is the pipeline's quality
 contract: implementation runs with a TDD partner, then reviewer output
 can drive a TDD remediation pass and re-review.
+
+Every mutating implementation or QA-verification stage must declare the PRD
+`AC-*` identifiers it owns in `acceptance_criteria`. Do not emit a code
+implementation pipeline when a PRD `AC-*` item is unassigned; the
+planning-time quality gate rejects that as incomplete planning.
 
 Coverage responsibility: the planner owns creating a pipeline where
 100% changed-surface test coverage is achievable and enforceable. For every code

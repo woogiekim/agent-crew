@@ -72,19 +72,21 @@ Write testable acceptance criteria in Gherkin format:
 ```gherkin
 Feature: Order status filter
 
-  Scenario: Filter orders by PENDING status
+  Scenario: AC-001 - Filter orders by PENDING status
     Given there are 10 orders with PENDING status and 5 with PAID status
     When the manager filters orders by "PENDING"
     Then only 10 orders are shown
     And each row displays status "PENDING"
 
-  Scenario: Empty result set
+  Scenario: AC-002 - Empty result set
     Given there are no CANCELLED orders
     When the manager filters orders by "CANCELLED"
     Then an empty state message "No orders found" is displayed
 ```
 
-Each acceptance criterion becomes a test case for the reviewer agent's coverage matrix.
+Each acceptance criterion must have a stable `AC-*` identifier so the planner
+can map it into `pipeline.json` stage `acceptance_criteria` entries. Each
+criterion becomes a test case for the reviewer agent's coverage matrix.
 
 ---
 
@@ -156,7 +158,7 @@ target: {r1_target}
 constraints: {r1_constraints}
 priority: {must/should/could/wont}
 acceptance_criteria:
-  - Given {condition} When {action} Then {outcome}
+  - AC-001: Given {condition} When {action} Then {outcome}
 followup:
   {key}: {value}
 nfr:
@@ -183,7 +185,7 @@ mkdir -p "{TASK_DIR}/context"
 - [ ] User stories written in "As a / I want / So that" format for each core feature
 - [ ] Each user story validated against INVEST criteria
 - [ ] MoSCoW priority recorded for each feature
-- [ ] At least one Given/When/Then acceptance criterion per must-have story
+- [ ] At least one `AC-*` acceptance criterion per must-have story
 - [ ] NFR categories covered (performance, security, availability)
 - [ ] `{TASK_DIR}/context/requirements.md` written successfully
 - [ ] REQUIREMENTS block returned inline to the caller

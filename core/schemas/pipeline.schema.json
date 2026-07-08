@@ -19,7 +19,7 @@
     },
     "stages": {
       "type": "array",
-      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel, parallelizable_units, streaming_review, qa_mode, qa_loop_target} (TDD parallel form, sub-task fan-out, streaming review, and/or QA planning/verification — see core/rules/state-files/pipeline-json.md for the per-flag semantics). Consumers normalize the three shapes. New mutating code implementation stages must use the object form with tdd_parallel=true; legacy bare code stages are schema-compatible but fail the planning-time quality gate.",
+      "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel, acceptance_criteria, parallelizable_units, streaming_review, qa_mode, qa_loop_target} (TDD parallel form, PRD AC ownership, sub-task fan-out, streaming review, and/or QA planning/verification — see core/rules/state-files/pipeline-json.md for the per-flag semantics). Consumers normalize the three shapes. New mutating code implementation stages must use the object form with tdd_parallel=true; legacy bare code stages are schema-compatible but fail the planning-time quality gate.",
       "items": {
         "oneOf": [
           { "type": "string", "minLength": 1 },
@@ -43,6 +43,11 @@
                 "type": "boolean",
                 "default": false,
                 "description": "When true, supervisor co-spawns the test-writer agent in parallel with every agent listed in `agents`. Both must complete before the stage advances. Mandatory for newly planned mutating code implementation stages. See core/agents/supervisor-stages.md § TDD Parallel Dispatch."
+              },
+              "acceptance_criteria": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "description": "PRD acceptance criterion IDs, such as AC-001, owned by this implementation or QA-verification stage. Optional for legacy and non-mutating state; required by the planning-time quality gate for newly planned mutating implementation work when the PRD has AC-* items."
               },
               "streaming_review": {
                 "type": "boolean",

@@ -237,23 +237,87 @@ def test_plan_checker_blocks_unmapped_prd_acceptance_criteria(tmp_path: Path):
     assert payload["prd_unmapped_acceptance_criteria"] == ["AC-002"]
 
 
-def test_plan_checker_does_not_require_prd_acceptance_mapping_by_default(tmp_path: Path):
+def test_plan_checker_blocks_prd_acceptance_criteria_with_no_stage_mapping(tmp_path: Path):
     path = write_pipeline(tmp_path, _passing_pipeline())
     write_prd(
         tmp_path,
         "# PRD\n\n"
         "## Acceptance Criteria\n"
-        "- AC-001: documented but not mapped by this legacy pipeline.\n",
+        "- AC-001: first required behavior is implemented.\n"
+        "- AC-002: second required behavior is implemented.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["required"] is True
+    assert payload["prd_acceptance_mapping_required"] is True
+    assert payload["pipeline_acceptance_criteria"] == []
+    assert payload["prd_unmapped_acceptance_criteria"] == ["AC-001", "AC-002"]
+    assert "prd_acceptance_criteria_unmapped" in payload["failures"]
+
+
+def test_plan_checker_accepts_all_prd_acceptance_criteria_mapped_to_stage(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0]["acceptance_criteria"] = ["AC-001", "AC-002"]
+    path = write_pipeline(tmp_path, pipeline)
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- AC-001: first required behavior is implemented.\n"
+        "- AC-002: second required behavior is implemented.\n",
     )
 
     result = run_checker(path)
 
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
-    assert payload["required"] is True
-    assert payload["pipeline_acceptance_criteria"] == []
+    assert payload["prd_acceptance_mapping_required"] is True
+    assert payload["pipeline_acceptance_criteria"] == ["AC-001", "AC-002"]
     assert payload["prd_unmapped_acceptance_criteria"] == []
-    assert "prd_acceptance_criteria_unmapped" not in payload["failures"]
+
+
+def test_plan_checker_blocks_acceptance_section_without_ac_ids(tmp_path: Path):
+    path = write_pipeline(tmp_path, _passing_pipeline())
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- Given a valid request When the workflow runs Then it completes fully.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["prd_acceptance_section_present"] is True
+    assert payload["prd_acceptance_criteria"] == []
+    assert "prd_acceptance_criteria_missing_ids" in payload["failures"]
+
+
+def test_plan_checker_ignores_ac_ids_outside_acceptance_section_for_missing_id_gate(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0]["acceptance_criteria"] = ["AC-001"]
+    path = write_pipeline(tmp_path, pipeline)
+    write_prd(
+        tmp_path,
+        "# PRD\n\n"
+        "## Acceptance Criteria\n"
+        "- Given a valid request When the workflow runs Then it completes fully.\n\n"
+        "## Will Do\n"
+        "- Satisfy AC-001 with the smallest complete change.\n",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["prd_acceptance_section_present"] is True
+    assert payload["prd_acceptance_criteria"] == []
+    assert payload["pipeline_acceptance_criteria"] == ["AC-001"]
+    assert "prd_acceptance_criteria_missing_ids" in payload["failures"]
 
 
 def test_plan_checker_does_not_map_acceptance_ids_for_design_only_pipeline(tmp_path: Path):

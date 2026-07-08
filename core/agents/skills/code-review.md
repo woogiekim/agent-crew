@@ -63,6 +63,11 @@ For each item in the PRD's Core Features list, verify whether it is present in t
 
 Mark any missing feature as a NEEDS_CHANGES finding.
 
+When the current pipeline stage declares assigned `AC-*` identifiers in
+`acceptance_criteria`, include those IDs in the coverage check. Mark any
+missing assigned `AC-*` as `REVIEW: NEEDS_CHANGES` with
+`REASON: spec_incomplete`.
+
 ## Two-Stage Review Order
 
 Run review in this order:

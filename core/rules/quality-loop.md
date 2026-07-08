@@ -38,6 +38,8 @@ the retry limit is reached:
 Treat all of the following as required before a stage is considered complete:
 
 - All items listed in the PRD for this stage are present in the output.
+- All assigned `acceptance_criteria` IDs for this stage are satisfied or
+  explicitly reported as blocked with evidence.
 - No obvious regressions introduced (run existing tests / checks if available).
 - Expected artifact files exist at their specified paths.
 - No TODO, placeholder, or stub left in implementation output.

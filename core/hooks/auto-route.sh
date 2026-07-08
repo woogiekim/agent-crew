@@ -332,7 +332,7 @@ READONLY_REVIEW_PAT = (
     r"review|evaluate|assess|compare|honest\s+review|check|diagnos(?:e|is)|"
     r"inspect|determine|identify\s+(?:gaps|issues|problems|fixes)|"
     r"리뷰|검토|평가|비교|솔직|쓸만|쓸\s*만|"
-    r"괜찮|문제점|개선점|부족|체크|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
+    r"괜찮|문제점|개선점|부족|체크|분석|진단|모색|고쳐야\s*하|뭘\s*고쳐|확인할\s*기준"
 )
 MENTOR_ROUTE_PAT = (
     r"\b(?:mentor\s+me|be\s+my\s+mentor|mentoring|coach|coaching|teach|"
@@ -363,9 +363,9 @@ MENTOR_METHOD_CONCRETE_MUTATION_PAT = (
     r"테스트\s*(?:해|해줘|해주세요|돌려|수행|추가)|배포|머지|커밋"
 )
 KOREAN_PLAN_EXECUTION_PAT = (
-    r"(?:구현|개선)\s*(?:계획|전략|방안|우선순위)"
+    r"(?:구현|개선|수정|보완|해결)\s*(?:계획|전략|방안|우선순위)"
     r"\s*(?:을|를)?\s*(?:대로|그대로|에\s*따라)?\s*"
-    r"(?:진행|실행|반영|수정|구현|개선)"
+    r"(?:진행|실행|반영|수정|구현|개선|보완|해결)"
     r"\s*(?:해|해주세요|해줘|하자|하세요|해라)?\s*[.!?。]*\s*$"
 )
 READONLY_COMPLAINT_PAT = (
@@ -549,10 +549,10 @@ def compile_prompt_context(route_kind: str, *, target_agent: str = "", detected_
         f"- Background: {_compact_text(prompt)}\n"
         f"- Scope: {scope}\n"
         "- Context enrichment: use repository architecture, existing conventions, testing policy, review policy, glossary, and project rules before asking the user.\n"
-        "- Architecture rules: existing code first; platform/configuration before implementation; minimal diff; no duplicate logic; preserve boundaries and backward compatibility.\n"
+        "- Architecture rules: existing code first; platform/configuration before implementation; smallest complete diff; no duplicate logic; preserve boundaries and backward compatibility.\n"
         "- Missing information recovery: infer from repository, surrounding files, existing architecture, and implementation patterns before asking a clarification question.\n"
         f"- Risk assessment: risk={risk}; complexity={complexity}; diff_budget={diff_budget}; breaking_changes=avoid; dependencies=avoid new; db_api_migration=none unless proven required; performance_concurrency_security=review explicitly; testing=required for implementation.\n"
-        "- Success criteria: deterministic downstream prompt, minimal clarification, smallest sufficient change, tests remain passing, stable agent execution.\n"
+        "- Success criteria: deterministic downstream prompt, minimal clarification, smallest complete change that satisfies all Must/AC items, tests remain passing, stable agent execution.\n"
         "- Deliverables: root cause or plan, implementation when routed to crew-run, focused tests, review result, validation summary.\n"
         "- Soft validation: normalize and proceed unless unsafe, impossible, or outside project scope.\n"
         f"{_agent_specific_prompts(route_kind, target_agent, intent, normalized)}"

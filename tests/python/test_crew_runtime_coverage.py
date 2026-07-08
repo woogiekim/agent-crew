@@ -766,6 +766,15 @@ def test_agent_mutating_guard_honors_read_only_overrides():
         "심층분석해서 구체적인 수정 방안 계획해"
     ) is False
     assert runtime.looks_mutating(
+        "ai가 최소구현만 해서 그런지 제대로 구현하는게 아니라 많이 비어있는 구현을 하는 양상을 개선 할 수 있는 방법을 모색해봐"
+    ) is False
+    assert runtime.looks_mutating(
+        "방법을 모색하라고 했는데 구현을 해버리네"
+    ) is False
+    assert runtime.looks_mutating(
+        "왜 구현을 했는지 분석해줘"
+    ) is False
+    assert runtime.looks_mutating(
         "Read-only review. Output sections: Must Fix, Should Fix."
     ) is False
     assert runtime.looks_mutating(

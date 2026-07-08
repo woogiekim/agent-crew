@@ -50,7 +50,10 @@ Canonical shape:
       "platform_capabilities",
       "infrastructure_configuration"
     ],
-    "diff_budget": {"category": "S", "rationale": "Smallest sufficient change."},
+    "diff_budget": {
+      "category": "S",
+      "rationale": "Smallest complete change that satisfies every assigned AC."
+    },
     "will_do": ["Add the requested endpoint."],
     "will_not_do": ["No schema change.", "No new dependency."],
     "selected_solution": "Small implementation after reuse/configuration search.",
@@ -100,7 +103,11 @@ array:
 ```json
 {
   "stages": [
-    { "agents": ["backend"], "tdd_parallel": true },
+    {
+      "agents": ["backend"],
+      "tdd_parallel": true,
+      "acceptance_criteria": ["AC-001"]
+    },
     ["reviewer"]
   ]
 }
@@ -122,8 +129,10 @@ by a solo `["reviewer"]`.
 
 Planning contract: newly emitted mutating code implementation pipelines
 must use this form for each backend, frontend, or custom implementer
-stage, each TDD stage must contain exactly one code implementer, and
-the pipeline must include a later reviewer stage. Run
+stage, each TDD stage must contain exactly one code implementer, every
+PRD `AC-*` item must appear in at least one implementation or QA-verification
+stage's `acceptance_criteria`, and the pipeline must include a later reviewer
+stage. Run
 `${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py --pipeline
 ${TASK_DIR}/pipeline.json` after analyst/planner emission. A failure
 such as `implementation_stage_without_tdd_parallel` means the
@@ -151,11 +160,16 @@ reviewer:
 {
   "stages": [
     { "agents": ["qa-owner"], "qa_mode": "plan" },
-    { "agents": ["backend"], "tdd_parallel": true },
+    {
+      "agents": ["backend"],
+      "tdd_parallel": true,
+      "acceptance_criteria": ["AC-001"]
+    },
     {
       "agents": ["qa-owner"],
       "qa_mode": "verify",
-      "qa_loop_target": "previous_implementation"
+      "qa_loop_target": "previous_implementation",
+      "acceptance_criteria": ["AC-001"]
     },
     ["reviewer"]
   ]

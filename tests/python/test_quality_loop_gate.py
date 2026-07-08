@@ -264,6 +264,23 @@ def test_repair_classifier_shares_read_only_overrides_with_quality_loop():
         assert repair_state.looks_quality_gated_task(task) is False
 
 
+def test_repair_classifier_keeps_korean_exploration_and_complaints_read_only():
+    """success-case(regression) - Korean exploration/meta complaints stay read-only."""
+    # given
+    read_only_tasks = (
+        "ai가 최소구현만 해서 그런지 제대로 구현하는게 아니라 많이 비어있는 구현을 하는 양상을 개선 할 수 있는 방법을 모색해봐",
+        "방법을 모색하라고 했는데 구현을 해버리네",
+        "구현하지 말고 개선 방안만 모색해줘",
+        "왜 구현을 했는지 분석해줘",
+    )
+
+    # when / then
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
+
+
 def test_repair_classifier_keeps_korean_review_and_test_follow_up_mutating():
     """failure-case(regression) - Korean follow-up requests that run tests stay mutating."""
     # given

@@ -26,7 +26,7 @@ Translate scope/target/constraints answers into a structured Product Requirement
 - {feature 2} [Should have]
 
 ## Acceptance Criteria
-- Given {context} When {action} Then {outcome}
+- AC-001: Given {context} When {action} Then {outcome}
 
 ## Non-Functional Requirements
 - Performance: {response time / throughput target}
@@ -49,7 +49,7 @@ Out: {explicitly excluded}
 
 ## Diff Budget
 - Category: {XS|S|M|L|XL}
-- Rationale: {why this is the smallest sufficient category}
+- Rationale: {why this is the smallest complete category that satisfies every assigned AC}
 ```
 
 ---
@@ -110,7 +110,7 @@ For mutating implementation work, write this machine-readable summary into
     ],
     "diff_budget": {
       "category": "XS",
-      "rationale": "Smallest sufficient change."
+      "rationale": "Smallest complete change that satisfies every assigned AC."
     },
     "will_do": ["..."],
     "will_not_do": ["No new dependency.", "No schema change."],
@@ -150,22 +150,29 @@ frontend consumes: design-spec.md + OpenAPI contract
 
 Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
 run sequentially. Every code implementation stage must use the object form
-`{ "agents": ["backend"], "tdd_parallel": true }` (or frontend/custom
-equivalent) and must be followed by a deterministic quality gate: either a solo
-`["reviewer"]` stage, or `{"agents":["qa-owner"],"qa_mode":"verify",
-"qa_loop_target":"previous_implementation"}` followed by a solo `["reviewer"]`.
-Do not emit bare code stages for new implementation work, and do not batch
-multiple code implementation stages before one quality gate.
+`{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }`
+(or frontend/custom equivalent) and must be followed by a deterministic quality
+gate: either a solo `["reviewer"]` stage, or
+`{"agents":["qa-owner"],"qa_mode":"verify","qa_loop_target":"previous_implementation"}`
+followed by a solo `["reviewer"]`. Do not emit bare code stages for new
+implementation work, and do not batch multiple code implementation stages
+before one quality gate.
+
+For mutating implementation work, assign every PRD `AC-*` item to at least one
+implementation or QA-verification stage through that stage's
+`acceptance_criteria` field. "Smallest complete" means the smallest stage set
+that closes all Must and mapped acceptance criteria, not a partial
+implementation that leaves PRD behavior unowned.
 
 | Scope | stages |
 |---|---|
-| Backend API | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
-| UI only | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
+| Backend API | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
+| UI only | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | CI/CD / infra | `[["devops"], ["reviewer"]]` |
-| Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| High-risk/user-facing QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation" }, ["reviewer"]]` |
+| Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| High-risk/user-facing QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 
 Only place agents in the same inner array when their outputs are **independent**
 and the stage is not a code implementation stage that needs a TDD partner. If
@@ -178,9 +185,9 @@ both changes touch different files.
   "task": "User authentication flow",
   "stages": [
     ["designer"],
-    { "agents": ["backend"], "tdd_parallel": true },
+    { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] },
     ["reviewer"],
-    { "agents": ["frontend"], "tdd_parallel": true },
+    { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] },
     ["reviewer"]
   ],
   "needs_creation": [],
@@ -222,7 +229,9 @@ After writing pipeline.json, cross-check:
 4. `completed_stages` is an integer and starts at `0` for new runs
 5. `execution_mode` matches the orchestrator context (`single` or `parallel`)
 6. Final stage is always `["reviewer"]`
-7. `pipeline-quality-plan-check.py --pipeline {TASK_DIR}/pipeline.json` passes
+7. Every PRD `AC-*` item is mapped into an implementation or QA-verification
+   stage's `acceptance_criteria`
+8. `pipeline-quality-plan-check.py --pipeline {TASK_DIR}/pipeline.json` passes
    for mutating implementation work
 
 ---
@@ -258,12 +267,12 @@ Write a concise handoff.md that gives downstream agents exactly what they need w
 - [ ] PRD maintainability NFR names KISS, YAGNI, and DRY when implementation
       work is planned
 - [ ] Core Features marked with MoSCoW priority
-- [ ] At least one acceptance criterion per Must-have feature
+- [ ] At least one `AC-*` acceptance criterion per Must-have feature
 - [ ] Dependency graph analyzed; critical path identified
 - [ ] Existing agent list discovered (builtin + custom)
 - [ ] Agent sufficiency evaluated for each required role
 - [ ] `needs_creation` populated for any role that existing agents cannot fulfill
-- [ ] `stages` follows canonical mapping and ends with `["reviewer"]`
+- [ ] `stages` follows canonical mapping, maps every PRD `AC-*`, and ends with `["reviewer"]`
 - [ ] Parallel stages contain only independent agents (no data dependency between them)
 - [ ] Parallelization cost/benefit analyzed for same-file overlap
 - [ ] Pipeline validation passed (cross-referencing `needs_creation` and `stages`)

@@ -39,7 +39,7 @@ READ_ONLY_TASK_RE = re.compile(
     r"inspect|investigate|analyze|analyse|review|validate|validation|"
     r"check|audit|status|diagnostic|diagnostics"
     r")\b|"
-    r"읽기\s*전용|조회|분석|검토|리뷰|확인|진단|딥다이브|계획",
+    r"읽기\s*전용|조회|분석|검토|리뷰|확인|진단|딥다이브|계획|모색|방안",
     re.IGNORECASE,
 )
 READ_ONLY_HISTORY_QUERY_RE = re.compile(
@@ -94,6 +94,27 @@ KOREAN_READ_ONLY_BACKGROUND_RE = re.compile(
     r"(?:구현|개선|수정|보완|해결)\s*작업\s*(?:이후|후|관련)|"
     r"(?:구현|개선|수정|보완|해결)\s*(?:한\s*거|한\s*것|했던\s*것|된\s*것|된\s*거|한거)"
     r"[^.!?\n。]*(?:리뷰|검토|분석|확인)",
+    re.IGNORECASE,
+)
+KOREAN_READ_ONLY_EXPLORATION_RE = re.compile(
+    r"(?:구현|개선|수정|보완|해결)"
+    r"[^.!?\n。]*(?:방법|방안|원인|이유|문제|양상)"
+    r"[^.!?\n。]*(?:모색|분석|검토|확인|알려|설명)"
+    r"(?:해|해줘|해주세요|하라|해봐)?|"
+    r"(?:왜|어째서|무엇\s*때문에)"
+    r"[^.!?\n。]*(?:구현|개선|수정|보완|해결)"
+    r"[^.!?\n。]*(?:분석|검토|확인|알려|설명)"
+    r"(?:해|해줘|해주세요|해봐)?|"
+    r"(?:방법|방안)"
+    r"[^.!?\n。]*(?:모색|분석|검토|확인|알려|설명)"
+    r"(?:해|해줘|해주세요|해봐)?",
+    re.IGNORECASE,
+)
+KOREAN_READ_ONLY_COMPLAINT_RE = re.compile(
+    r"(?:방법|방안|계획|분석|검토|리뷰|확인|모색)"
+    r"[^.!?\n。]*(?:하라고|요청했|부탁했)"
+    r"[^.!?\n。]*(?:구현|개선|수정|보완|해결)"
+    r"[^.!?\n。]*(?:해버리|했네|하네|됐네|되어버리|해\s*버리)",
     re.IGNORECASE,
 )
 REVIEW_OUTPUT_SECTION_LABEL_RE = re.compile(
@@ -156,7 +177,7 @@ NON_MUTATING_CONSTRAINT_RE = re.compile(
     re.IGNORECASE,
 )
 KOREAN_NON_MUTATING_CONSTRAINT_RE = re.compile(
-    r"((?:수정|변경|편집|저장|발행|커밋|푸시|배포|작성|생성)하지|(?:고치|만들)지)"
+    r"((?:구현|개발|추가|수정|개선|보완|변경|편집|반영|저장|발행|커밋|푸시|배포|작성|생성|해결)하지|(?:고치|만들)지)"
     r"\s*(?:마|말고|않고|않으며|않기)?",
     re.IGNORECASE,
 )
@@ -934,6 +955,8 @@ def looks_mutating_task(text: str) -> bool:
         constrained_value = REVIEW_OUTPUT_SECTION_LABEL_RE.sub("", constrained_value)
         constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_BACKGROUND_RE.sub("", constrained_value)
+        constrained_value = KOREAN_READ_ONLY_COMPLAINT_RE.sub("", constrained_value)
+        constrained_value = KOREAN_READ_ONLY_EXPLORATION_RE.sub("", constrained_value)
         constrained_value = KOREAN_PLAN_ONLY_CONTEXT_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_METHOD_LEARNING_RE.sub("", constrained_value)

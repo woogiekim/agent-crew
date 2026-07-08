@@ -380,15 +380,15 @@ Choosing sequential to avoid conflicts is the wrong trade-off.
 
 | Request Type | stages |
 |---|---|
-| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` |
-| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
-| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"]]` |
+| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
-| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation" }, ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
+| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 | Analysis only | `[]` |
 
 Write `{TASK_DIR}/pipeline.json`:
@@ -422,7 +422,7 @@ Write `{TASK_DIR}/pipeline.json`:
     ],
     "diff_budget": {
       "category": "XS|S|M|L|XL",
-      "rationale": "{why this is the smallest sufficient change}"
+      "rationale": "{why this is the smallest complete change that satisfies all assigned ACs}"
     },
     "will_do": ["{concrete implementation task}"],
     "will_not_do": ["{explicit non-goal}"],
@@ -451,11 +451,17 @@ alongside the implementer in a single parallel host dispatch — see
 `core/agents/supervisor-stages.md` § TDD Parallel Dispatch and
 `core/rules/state-files/pipeline-json.md` § TDD parallel stage form.
 
+For mutating implementation work, every PRD `AC-*` item must be assigned to at
+least one implementation or QA-verification stage through that stage's
+`acceptance_criteria` field. Do not emit a pipeline where "smallest complete"
+means an unowned Must or acceptance criterion remains outside the implementation
+contract.
+
 Example stages with one TDD parallel stage:
 
 ```json
 [
-  { "agents": ["backend"], "tdd_parallel": true },
+  { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] },
   ["reviewer"]
 ]
 ```
@@ -593,10 +599,14 @@ Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
   YAGNI, and DRY from `core/rules/code-quality.md` must guide implementation
   and review when code changes are planned
 - Implementation scope and exclusions
-- `Will Do`: concrete tasks in the smallest sufficient scope
+- `Will Do`: concrete tasks in the smallest complete scope that satisfies every
+  Must and assigned `AC-*`
 - `Will NOT Do`: explicit non-goals such as no schema/API/dependency/cache/queue
   changes unless required
 - `Diff Budget`: `XS|S|M|L|XL` plus rationale
+- `Acceptance Criteria`: stable `AC-*` identifiers, with every mutating
+  implementation `AC-*` mapped to an implementation or QA-verification stage in
+  `pipeline.json`
 
 ### Step 7.5 — PRD self-review (writing-plans gate)
 

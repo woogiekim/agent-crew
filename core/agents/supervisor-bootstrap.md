@@ -924,9 +924,10 @@ fi
 
 Common remediation: rewrite bare code stages such as `["backend"]` or
 `["designer", "backend"]` into separate object stages with
-`{ "agents": ["backend"], "tdd_parallel": true }`, then keep either a later
-solo `["reviewer"]` stage or a QA verify stage followed by a solo
-`["reviewer"]` stage.
+`{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }`,
+assign every PRD `AC-*` item to an implementation or QA-verification stage, then
+keep either a later solo `["reviewer"]` stage or a QA verify stage followed by a
+solo `["reviewer"]` stage.
 
 #### Phase 1b pipeline capability gate: runtime role/tool preflight
 
