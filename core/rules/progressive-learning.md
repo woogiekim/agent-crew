@@ -33,6 +33,25 @@ The loop is one-directional in terms of trust: a recalled candidate cannot bypas
 review, cannot bypass TDD, and cannot replace current-code evidence. It can only
 influence *what is planned* before the verification gates run.
 
+## Evolution Report Sidecar
+
+After task close-out, the supervisor may run
+`core/scripts/evolution-analyzer.py` to write
+`${TASK_DIR}/context/evolution-report.json` and
+`${TASK_DIR}/context/evolution-report.md`. This sidecar is the first
+report-only discovery artifact for the self-evolving architecture:
+
+- It reads recorded task state and telemetry such as retries, reviewer
+  loop-backs, blockers, changed files, reused pipeline assets, and
+  skill-content-audit signals.
+- It never creates, registers, modifies, or selects generated assets.
+- It records `generation_mode: report_only` and guardrails proving that asset
+  writes and generator invocation were disabled.
+- It is optional and non-blocking; absence must not fail task completion.
+
+See `core/rules/state-files/evolution-report-json.md` and
+`core/schemas/evolution-report.schema.json` for the artifact contract.
+
 ## Maturity Levels
 
 A learning candidate is recorded at one of three maturity levels. The level is

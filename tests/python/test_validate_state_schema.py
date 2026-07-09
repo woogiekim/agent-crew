@@ -502,6 +502,86 @@ class TestValidateStateSchema:
 
         assert r.returncode == 2, r.stdout + r.stderr
 
+    def test_evolution_report_optional_file_is_schema_validated(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """Evolution reports are optional, but schema-validated when present."""
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl",
+                     [_valid_progress_row()])
+        (task_dir / "context").mkdir(exist_ok=True)
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": "20260101-120000-0",
+                "task": "test task",
+                "generation_mode": "report_only",
+                "meaningful": False,
+                "signals": {
+                    "retries": 0,
+                    "reviewer_loop_backs": 0,
+                    "blockers": [],
+                    "changed_files": [],
+                    "skill_content_audit": {
+                        "available": False,
+                        "shallow_finding_count": 0,
+                    },
+                },
+                "reused_assets": [],
+                "observed_patterns": [],
+                "asset_candidates": [],
+                "rejected_candidates": [],
+                "learning_summary": "No reusable asset candidate produced.",
+                "guardrails": {
+                    "asset_writes": "disabled",
+                    "generator_invoked": False,
+                    "verification_bypass": False,
+                },
+            })
+        )
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_invalid_evolution_report_exits_2(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """Malformed evolution reports are hard state-schema errors."""
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl",
+                     [_valid_progress_row()])
+        (task_dir / "context").mkdir(exist_ok=True)
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": "20260101-120000-0",
+                "generation_mode": "auto_generate",
+                "meaningful": "no",
+                "guardrails": {
+                    "asset_writes": "enabled",
+                    "generator_invoked": True,
+                    "verification_bypass": False,
+                },
+            })
+        )
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 2, r.stdout + r.stderr
+
     def test_strict_mode_promotes_warnings_to_errors(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

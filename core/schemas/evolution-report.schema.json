@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/evolution-report.schema.json",
+  "title": "agent-crew post-task evolution report",
+  "description": "Optional report-only learning artifact. Lives at {TASK_DIR}/context/evolution-report.json and records reusable-work signals without creating or registering assets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "task",
+    "generation_mode",
+    "meaningful",
+    "signals",
+    "reused_assets",
+    "observed_patterns",
+    "asset_candidates",
+    "rejected_candidates",
+    "learning_summary",
+    "guardrails"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}(-[0-9]+)?$"
+    },
+    "task": {
+      "type": "string"
+    },
+    "generation_mode": {
+      "type": "string",
+      "enum": ["report_only"]
+    },
+    "meaningful": {
+      "type": "boolean"
+    },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "retries",
+        "reviewer_loop_backs",
+        "blockers",
+        "changed_files",
+        "skill_content_audit"
+      ],
+      "properties": {
+        "retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewer_loop_backs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skill_content_audit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "available",
+            "shallow_finding_count"
+          ],
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "shallow_finding_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "effective_followup_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "reused_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_type", "name", "evidence_ref"],
+        "properties": {
+          "asset_type": {
+            "type": "string",
+            "enum": ["agent", "skill", "command", "rule", "template", "workflow", "prompt", "checklist", "playbook", "documentation"]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "observed_patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "summary", "evidence_refs"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "asset_candidates": {
+      "type": "array",
+      "description": "Report-only mode keeps this empty. Future approval-gated proposal modes may add a separate schema.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "rejected_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_type", "name", "reason", "rejection_reason", "required_evidence"],
+        "properties": {
+          "asset_type": {
+            "type": "string",
+            "enum": ["agent", "skill", "command", "rule", "template", "workflow", "prompt", "checklist", "playbook", "documentation"]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rejection_reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required_evidence": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "learning_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "guardrails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_writes",
+        "generator_invoked",
+        "verification_bypass"
+      ],
+      "properties": {
+        "asset_writes": {
+          "type": "string",
+          "enum": ["disabled"]
+        },
+        "generator_invoked": {
+          "type": "boolean",
+          "enum": [false],
+          "const": false
+        },
+        "verification_bypass": {
+          "type": "boolean",
+          "enum": [false],
+          "const": false
+        }
+      }
+    }
+  }
+}

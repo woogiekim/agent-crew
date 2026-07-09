@@ -160,6 +160,11 @@ invocation in SKILL.md; generic adds guidance).
 - `validate-state-schema.py` — validates project/task state artifacts and
   schema-validates optional reviewer quality labels at
   `{TASK_DIR}/context/quality-metrics.json` when present.
+- `evolution-analyzer.py` — report-only post-task learning analyzer. It reads
+  one task directory, reuses telemetry signals for retries, reviewer loop-backs,
+  blockers, changed files, reused pipeline assets, and skill-content-audit
+  signals, then writes deterministic `context/evolution-report.{json,md}` when
+  requested. It never creates, registers, or selects generated assets.
 - `phase-2-validation.py` — runs or plans the second validation pass across
   unit, smoke, integration, alpha, and beta levels, then emits structured
   findings, gaps, recommended follow-up actions, per-command log artifacts,

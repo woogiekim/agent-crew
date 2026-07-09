@@ -78,6 +78,7 @@ TASK_FILES = [
 # Optional task files are validated when present, but absence is not a finding.
 OPTIONAL_TASK_FILES = [
     ("context/quality-metrics.json", "quality-metrics.schema.json", "error", False),
+    ("context/evolution-report.json", "evolution-report.schema.json", "error", False),
 ]
 
 

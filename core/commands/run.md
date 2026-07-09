@@ -2263,6 +2263,11 @@ else
 fi
 ```
 
+If `${TASK_DIR}/context/evolution-report.md` exists, include a compact
+Learning Report excerpt after the commits block. Use the sidecar report as
+read-only evidence; do not infer generated assets from it. If the file is
+absent, omit this section entirely.
+
 ```text
 **📦 Run Summary**
 
@@ -2280,6 +2285,9 @@ Diff:
 
 Commits ({N}):
   {git log --oneline, up to 5 lines}
+
+Learning Report:
+  {context/evolution-report.md summary lines, when present}
 \`\`\`
 
 \`\`\`
@@ -2598,6 +2606,7 @@ use this sequence:
      ```text
      **📦 Run Summary**
      {task status, branch/change evidence, blockers if any}
+     {Learning Report excerpt from context/evolution-report.md when present}
 
      **🛠️ Implementation Summary**
      {merged/local implementation state, commits ready for push, or explicit no-code-change result}

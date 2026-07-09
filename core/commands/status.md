@@ -477,6 +477,10 @@ else
 fi
 ```
 
+If `${TASK_DIR}/context/evolution-report.md` exists, include a compact
+Learning Report excerpt after the commits block. The report is a read-only
+closeout artifact; it is not proof that any generated asset was created.
+
 ```text
 **📦 Run Summary**
 
@@ -493,6 +497,9 @@ Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == 
 
   Commits ({N}):
     {git log --oneline, up to 5 lines}
+
+  Learning Report:
+    {context/evolution-report.md summary lines, when present}
 
 Task 2: {description}
   ...

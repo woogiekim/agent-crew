@@ -933,6 +933,55 @@ quality-loop loop-backs** on recurring work.
 If `telemetry-aggregate.py` is absent or the debrief crashes, this step is a
 no-op — it logs nothing and never blocks close-out (out-of-band rule).
 
+#### 2d. Evolution report — report-only reusable asset analysis
+
+This step creates the first Self-Evolving Agent Operating System artifact:
+a deterministic post-task learning report at
+`{TASK_DIR}/context/evolution-report.json` and
+`{TASK_DIR}/context/evolution-report.md`.
+
+The analyzer is intentionally **report-only** in this phase. It may observe
+retries, reviewer loop-backs, blockers, changed files, reused pipeline assets,
+and skill-content-audit signals, but it must not generate, register, modify,
+or select any Agent, Skill, Command, Rule, Template, Workflow, Prompt,
+Checklist, Playbook, or Documentation asset.
+
+Run this step after the AAR debrief. It is out of band of stage retries and
+must never fail task close-out.
+
+```bash
+EVOLUTION_MODE="${AGENT_CREW_EVOLUTION_MODE:-report}"
+EVOLUTION_SCRIPT="${AGENT_CREW_HOME}/scripts/evolution-analyzer.py"
+
+if [ "${EVOLUTION_MODE}" = "off" ]; then
+  log_progress "EVOLUTION_ANALYZER_SKIPPED" "reason=disabled"
+elif [ -f "${EVOLUTION_SCRIPT}" ]; then
+  python3 "${EVOLUTION_SCRIPT}" \
+    --state-dir "${STATE_DIR}" \
+    --task-dir "${TASK_DIR}" \
+    --json-output "${TASK_DIR}/context/evolution-report.json" \
+    --markdown-output "${TASK_DIR}/context/evolution-report.md" \
+    2>"${TASK_DIR}/context/evolution-report.stderr.txt" || true
+
+  if [ -f "${TASK_DIR}/context/evolution-report.json" ]; then
+    log_progress "EVOLUTION_ANALYZER" "mode=report artifact=context/evolution-report.json"
+  else
+    log_progress "EVOLUTION_ANALYZER_FAILED" "non_blocking=true"
+  fi
+else
+  log_progress "EVOLUTION_ANALYZER_SKIPPED" "reason=script_missing"
+fi
+```
+
+The events are added to the Phase 0 event catalog
+(`supervisor-bootstrap.md` Progress Mirroring):
+
+| EVENT | When emitted | Detail |
+|---|---|---|
+| `EVOLUTION_ANALYZER` | Phase 3 close-out — report-only analyzer wrote `context/evolution-report.json` | `mode=report artifact=context/evolution-report.json` |
+| `EVOLUTION_ANALYZER_SKIPPED` | Phase 3 close-out — analyzer skipped because disabled or unavailable | `reason={disabled\|script_missing}` |
+| `EVOLUTION_ANALYZER_FAILED` | Phase 3 close-out — analyzer failed to create the report, but task close-out continues | `non_blocking=true` |
+
 #### 3. Clear active task marker
 
 Two marker layouts are supported by `core/hooks/direct-edit-guard.sh` (see
