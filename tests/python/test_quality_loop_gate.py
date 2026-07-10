@@ -1005,3 +1005,79 @@ def test_quality_loop_check_accepts_tdd_exception_without_test_file(tmp_path: Pa
     result = run_quality_loop_check(task_dir)
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Routing classifier false-negative regressions (TASK 20260710-170319-0).
+#
+# Two confirmed false-negatives in ``looks_mutating_task`` (quality_loop_lib.py)
+# misroute genuine mutation directives as read-only. These red-first regression
+# tests are derived from context/prd.md § Input/Output Contract (AC-001..AC-003)
+# and the approved context/test-checklist.md. TC-IDs are recorded in
+# context/test-case-mapping.md, not in the human-facing names below.
+# ---------------------------------------------------------------------------
+
+
+def test_classifier_treats_cross_verb_negation_as_mutating():
+    """boundary-case(regression) - a "do not <other-verb>" clause must not cancel a different leading mutation verb (TC-001..TC-004 / AC-001)."""
+    # given: the leading VC verb differs from the negated verb, so the
+    # negated-clause strip must NOT delete the genuine leading directive.
+    mutating_tasks = (
+        "Cherry-pick this, do not push it.",
+        "Apply this patch, do not push.",
+        "Revert this, do not push.",
+        "Amend this, do not push.",
+    )
+
+    # when / then
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+
+def test_classifier_treats_bare_push_origin_branch_as_mutating():
+    """success-case(regression) - bare "push <remote> <branch>" with no git prefix is a mutation directive (TC-005..TC-007 / AC-002)."""
+    # given: the bare push form (no leading "git ", no "to") that currently
+    # escapes the mutation command lookahead.
+    mutating_tasks = (
+        "push origin main",
+        "push origin master",
+        "push origin develop",
+    )
+
+    # when / then
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+
+def test_classifier_covers_bare_push_upstream_and_namespaced_branch():
+    """boundary-case(regression) - bare push detection spans the upstream remote and the namespaced branch set (TC-012, TC-013 / AC-002)."""
+    # given: boundary variants of the bare push form that lock the new
+    # alternative to the full documented remote + branch-name set.
+    mutating_tasks = (
+        "push origin feature/login",
+        "push upstream main",
+    )
+
+    # when / then
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+
+def test_classifier_keeps_off_set_bare_push_and_advisory_read_only():
+    """boundary-case(regression) - off-set branch tokens and advisory prose must not be classified as mutation (TC-010, TC-014 / AC-003)."""
+    # given: a branch token outside the documented set, and advisory prose with
+    # no imperative boundary before "push" — both must stay read-only so the
+    # bare-push fix does not over-generalize.
+    read_only_tasks = (
+        "push origin scratch-notes",
+        "the team should push to origin main",
+    )
+
+    # when / then
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
