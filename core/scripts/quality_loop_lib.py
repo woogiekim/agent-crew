@@ -74,14 +74,27 @@ GERUND_MUTATING_TASK_RE = re.compile(
     re.IGNORECASE,
 )
 NEGATED_VERSION_CONTROL_REFERENCE_RE = re.compile(
-    r"(?:git\s+(?:apply|push|cherry[- ]pick|revert)\b|"
-    r"(?:apply|push|cherry[- ]pick|amend|revert)\b)"
+    r"(?:git\s+)?(apply|push|cherry[- ]pick|amend|revert)\b"
     r"(?:(?![.!?\n]).){0,160}?[;,]\s*"
     r"(?:do\s+not|don't|dont|must\s+not|should\s+not|never)\s+"
-    r"(?:run|execute|apply|push|cherry[- ]pick|amend|revert)\b"
+    r"(run|execute|apply|push|cherry[- ]pick|amend|revert)\b"
     r"(?:(?!\b(?:then|and\s+then|also)\b)[^.!?\n])*[.!?]?",
     re.IGNORECASE,
 )
+
+
+def _normalize_negated_vc_verb(verb: str) -> str:
+    return re.sub(r"cherry[- ]pick", "cherrypick", verb.strip().lower())
+
+
+def _cancel_negated_version_control(match: re.Match[str]) -> str:
+    leading = _normalize_negated_vc_verb(match.group(1))
+    negated = _normalize_negated_vc_verb(match.group(2))
+
+    if negated in {"run", "execute"} or negated == leading:
+        return ""
+
+    return match.group(0)
 VERSION_CONTROL_MUTATION_COMMAND_RE = re.compile(
     r"(?:^\s*|[.;!?]\s*|\b(?:and|then|also)\s+|"
     r"\b(?:(?:can|could|would|will)\s+you|"
@@ -101,6 +114,10 @@ VERSION_CONTROL_MUTATION_COMMAND_RE = re.compile(
     r"push\s+to\s+(?:origin|upstream)"
     r"(?:\s+(?:main|master|develop|development|trunk|"
     r"(?:feature|release|hotfix|bugfix)/[A-Za-z0-9._/-]+))?"
+    r"(?=\s*(?:[,.!?;]|$|(?:and|then)\b))|"
+    r"push\s+(?:origin|upstream)\s+"
+    r"(?:main|master|develop|development|trunk|"
+    r"(?:feature|release|hotfix|bugfix)/[A-Za-z0-9._/-]+)"
     r"(?=\s*(?:[,.!?;]|$|(?:and|then)\b))|"
     r"push\s+(?:(?:the|this|that|my|our)\s+)?(?:branch|changes?)"
     r"\s+to\s+(?:origin|upstream)"
@@ -1087,7 +1104,9 @@ def looks_mutating_task(text: str) -> bool:
         return True
     if GERUND_MUTATING_TASK_RE.search(value):
         return True
-    version_control_value = NEGATED_VERSION_CONTROL_REFERENCE_RE.sub("", value)
+    version_control_value = NEGATED_VERSION_CONTROL_REFERENCE_RE.sub(
+        _cancel_negated_version_control, value
+    )
     if VERSION_CONTROL_MUTATION_COMMAND_RE.search(version_control_value):
         return True
     if KOREAN_TEST_EXECUTION_RE.search(value):
