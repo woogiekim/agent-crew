@@ -956,17 +956,31 @@ EVOLUTION_SCRIPT="${AGENT_CREW_HOME}/scripts/evolution-analyzer.py"
 if [ "${EVOLUTION_MODE}" = "off" ]; then
   log_progress "EVOLUTION_ANALYZER_SKIPPED" "reason=disabled"
 elif [ -f "${EVOLUTION_SCRIPT}" ]; then
-  python3 "${EVOLUTION_SCRIPT}" \
-    --state-dir "${STATE_DIR}" \
-    --task-dir "${TASK_DIR}" \
-    --json-output "${TASK_DIR}/context/evolution-report.json" \
-    --markdown-output "${TASK_DIR}/context/evolution-report.md" \
-    2>"${TASK_DIR}/context/evolution-report.stderr.txt" || true
+  EVOLUTION_CONTEXT="${TASK_DIR}/context"
+  EVOLUTION_JSON_OUTPUT="${EVOLUTION_CONTEXT}/evolution-report.json"
+  EVOLUTION_MARKDOWN_OUTPUT="${EVOLUTION_CONTEXT}/evolution-report.md"
 
-  if [ -f "${TASK_DIR}/context/evolution-report.json" ]; then
-    log_progress "EVOLUTION_ANALYZER" "mode=report artifact=context/evolution-report.json"
+  if EVOLUTION_ANALYZER_OUTPUT="$(
+    python3 "${EVOLUTION_SCRIPT}" \
+      --state-dir "${STATE_DIR}" \
+      --task-dir "${TASK_DIR}" \
+      --json-output "${EVOLUTION_JSON_OUTPUT}" \
+      --markdown-output "${EVOLUTION_MARKDOWN_OUTPUT}" \
+      2>&1
+  )"
+  then
+    if [ -f "${EVOLUTION_JSON_OUTPUT}" ] && [ ! -L "${EVOLUTION_JSON_OUTPUT}" ] && \
+      [ -f "${EVOLUTION_MARKDOWN_OUTPUT}" ] && [ ! -L "${EVOLUTION_MARKDOWN_OUTPUT}" ]
+    then
+      log_progress "EVOLUTION_ANALYZER" \
+        "mode=report artifacts=context/evolution-report.json,context/evolution-report.md"
+    else
+      log_progress "EVOLUTION_ANALYZER_FAILED" \
+        "non_blocking=true reason=incomplete_artifacts"
+    fi
   else
-    log_progress "EVOLUTION_ANALYZER_FAILED" "non_blocking=true"
+    log_progress "EVOLUTION_ANALYZER_FAILED" \
+      "non_blocking=true reason=analyzer_or_artifact_prep_failed"
   fi
 else
   log_progress "EVOLUTION_ANALYZER_SKIPPED" "reason=script_missing"
@@ -978,7 +992,7 @@ The events are added to the Phase 0 event catalog
 
 | EVENT | When emitted | Detail |
 |---|---|---|
-| `EVOLUTION_ANALYZER` | Phase 3 close-out — report-only analyzer wrote `context/evolution-report.json` | `mode=report artifact=context/evolution-report.json` |
+| `EVOLUTION_ANALYZER` | Phase 3 close-out — report-only analyzer exited successfully after freshly writing both report artifacts | `mode=report artifacts=context/evolution-report.json,context/evolution-report.md` |
 | `EVOLUTION_ANALYZER_SKIPPED` | Phase 3 close-out — analyzer skipped because disabled or unavailable | `reason={disabled\|script_missing}` |
 | `EVOLUTION_ANALYZER_FAILED` | Phase 3 close-out — analyzer failed to create the report, but task close-out continues | `non_blocking=true` |
 

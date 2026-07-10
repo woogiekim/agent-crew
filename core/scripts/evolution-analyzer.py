@@ -15,8 +15,8 @@ Inputs:
   --markdown-output PATH  Optional markdown artifact path to write.
 
 Outputs:
-  JSON and/or markdown. Writes report artifacts only inside the task directory
-  when output paths are provided.
+  JSON and/or markdown. Writes only the canonical report artifacts under the
+  task context directory when output paths are provided.
 
 Exit codes:
   0 - report generated
@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -57,9 +58,43 @@ def read_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+DIRECTORY_OPEN_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+)
+OUTPUT_OPEN_FLAGS = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+)
+
+
+def open_context_directory(task_dir: Path) -> int:
+    task_fd = os.open(task_dir, DIRECTORY_OPEN_FLAGS)
+    try:
+        return os.open("context", DIRECTORY_OPEN_FLAGS, dir_fd=task_fd)
+    finally:
+        os.close(task_fd)
+
+
+def unlink_output(context_fd: int, filename: str) -> None:
+    try:
+        os.unlink(filename, dir_fd=context_fd)
+    except FileNotFoundError:
+        pass
+
+
+def write_output_at(context_fd: int, filename: str, text: str) -> None:
+    descriptor = os.open(
+        filename,
+        OUTPUT_OPEN_FLAGS,
+        0o600,
+        dir_fd=context_fd,
+    )
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def resolve_state_dir(override: str | None) -> Path:
@@ -207,6 +242,9 @@ def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, str]]:
     elif any(pattern["kind"] == "blocker" for pattern in patterns):
         asset_type = "workflow"
         name = "blocker-recovery-playbook"
+    elif any(pattern["kind"] == "skill_content_depth" for pattern in patterns):
+        asset_type = "skill"
+        name = "skill-content-hardening"
     else:
         asset_type = "workflow"
         name = "retry-reduction-playbook"
@@ -341,31 +379,59 @@ def to_markdown(report: dict[str, Any]) -> str:
     ])
 
 
-def write_report_outputs(report: dict[str, Any], args: argparse.Namespace) -> None:
+def write_report_outputs(
+    report: dict[str, Any],
+    args: argparse.Namespace,
+    task_dir: Path,
+) -> None:
+    validate_output_paths(args, task_dir)
+    outputs: list[tuple[str, str]] = []
     if args.json_output:
-        write_text(
-            Path(args.json_output),
+        outputs.append((
+            "evolution-report.json",
             json.dumps(report, indent=2, sort_keys=True) + "\n",
-        )
+        ))
     if args.markdown_output:
-        write_text(Path(args.markdown_output), to_markdown(report))
+        outputs.append(("evolution-report.md", to_markdown(report)))
+    if not outputs:
+        return
 
-
-def output_path_inside_task_dir(output_path: str, task_dir: Path) -> bool:
-    path = Path(output_path).resolve(strict=False)
-    root = task_dir.resolve(strict=False)
+    context_fd = open_context_directory(task_dir)
     try:
-        path.relative_to(root)
-    except ValueError:
+        for filename, _ in outputs:
+            unlink_output(context_fd, filename)
+        try:
+            for filename, content in outputs:
+                write_output_at(context_fd, filename, content)
+        except OSError:
+            for filename, _ in outputs:
+                unlink_output(context_fd, filename)
+            raise
+    finally:
+        os.close(context_fd)
+
+
+def output_path_is_canonical(output_path: str, task_dir: Path, filename: str) -> bool:
+    root = task_dir.resolve(strict=False)
+    expected = root / "context" / filename
+    try:
+        actual = Path(output_path).resolve(strict=False)
+    except (OSError, RuntimeError):
         return False
-    return True
+
+    return actual == expected
 
 
 def validate_output_paths(args: argparse.Namespace, task_dir: Path) -> None:
-    for output_path in (args.json_output, args.markdown_output):
-        if output_path and not output_path_inside_task_dir(output_path, task_dir):
+    outputs = (
+        (args.json_output, "evolution-report.json"),
+        (args.markdown_output, "evolution-report.md"),
+    )
+    for output_path, filename in outputs:
+        if output_path and not output_path_is_canonical(output_path, task_dir, filename):
             raise ValueError(
-                "output path must be inside the task directory; "
+                "output path must be the canonical task report artifact "
+                f"{task_dir.resolve(strict=False) / 'context' / filename}; "
                 f"got {output_path}"
             )
 
@@ -398,7 +464,11 @@ def main() -> int:
         return 3
 
     report = build_report(state_dir, task_dir)
-    write_report_outputs(report, args)
+    try:
+        write_report_outputs(report, args, task_dir)
+    except OSError as exc:
+        print(f"error: secure report write failed: {exc}", file=sys.stderr)
+        return 3
 
     if not args.json_output and not args.markdown_output:
         if args.format == "markdown":
