@@ -15,7 +15,8 @@ Inputs:
   --markdown-output PATH  Optional markdown artifact path to write.
 
 Outputs:
-  JSON and/or markdown. Writes files only when output paths are provided.
+  JSON and/or markdown. Writes report artifacts only inside the task directory
+  when output paths are provided.
 
 Exit codes:
   0 - report generated
@@ -350,6 +351,25 @@ def write_report_outputs(report: dict[str, Any], args: argparse.Namespace) -> No
         write_text(Path(args.markdown_output), to_markdown(report))
 
 
+def output_path_inside_task_dir(output_path: str, task_dir: Path) -> bool:
+    path = Path(output_path).resolve(strict=False)
+    root = task_dir.resolve(strict=False)
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def validate_output_paths(args: argparse.Namespace, task_dir: Path) -> None:
+    for output_path in (args.json_output, args.markdown_output):
+        if output_path and not output_path_inside_task_dir(output_path, task_dir):
+            raise ValueError(
+                "output path must be inside the task directory; "
+                f"got {output_path}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="agent-crew evolution report analyzer")
     parser.add_argument("--state-dir")
@@ -369,6 +389,12 @@ def main() -> int:
 
     if not task_dir.is_dir():
         print(f"error: task directory not found: {task_dir}", file=sys.stderr)
+        return 3
+
+    try:
+        validate_output_paths(args, task_dir)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 3
 
     report = build_report(state_dir, task_dir)

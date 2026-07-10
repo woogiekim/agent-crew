@@ -141,6 +141,7 @@
     "asset_candidates": {
       "type": "array",
       "description": "Report-only mode keeps this empty. Future approval-gated proposal modes may add a separate schema.",
+      "enum": [[]],
       "items": {
         "type": "object",
         "additionalProperties": true

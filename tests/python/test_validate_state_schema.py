@@ -582,6 +582,60 @@ class TestValidateStateSchema:
 
         assert r.returncode == 2, r.stdout + r.stderr
 
+    def test_report_only_evolution_report_rejects_asset_candidates(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """Report-only evolution reports must not carry generated asset candidates."""
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl",
+                     [_valid_progress_row()])
+        (task_dir / "context").mkdir(exist_ok=True)
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": "20260101-120000-0",
+                "task": "test task",
+                "generation_mode": "report_only",
+                "meaningful": False,
+                "signals": {
+                    "retries": 0,
+                    "reviewer_loop_backs": 0,
+                    "blockers": [],
+                    "changed_files": [],
+                    "skill_content_audit": {
+                        "available": False,
+                        "shallow_finding_count": 0,
+                    },
+                },
+                "reused_assets": [],
+                "observed_patterns": [],
+                "asset_candidates": [
+                    {
+                        "asset_type": "skill",
+                        "name": "unapproved-skill",
+                    }
+                ],
+                "rejected_candidates": [],
+                "learning_summary": "No reusable asset candidate produced.",
+                "guardrails": {
+                    "asset_writes": "disabled",
+                    "generator_invoked": False,
+                    "verification_bypass": False,
+                },
+            })
+        )
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "asset_candidates" in r.stdout
+
     def test_strict_mode_promotes_warnings_to_errors(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

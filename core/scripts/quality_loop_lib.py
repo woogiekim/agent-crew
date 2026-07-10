@@ -117,6 +117,33 @@ KOREAN_READ_ONLY_COMPLAINT_RE = re.compile(
     r"[^.!?\n。]*(?:해버리|했네|하네|됐네|되어버리|해\s*버리)",
     re.IGNORECASE,
 )
+READ_ONLY_REVIEW_COMMAND_SOURCE_RE = re.compile(
+    r"독립\s*리뷰\s*패스|read-only\s*(?:서브에이전트|리뷰)|"
+    r"리뷰\s*포커스|Code\s+Review\s+Summary|다음\s*액션\s*제안",
+    re.IGNORECASE,
+)
+READ_ONLY_REVIEW_COMMAND_FRONTMATTER_RE = re.compile(
+    r"(?ms)\A---.*?^---\s*",
+    re.IGNORECASE,
+)
+READ_ONLY_REVIEW_OUTPUT_EXAMPLE_RE = re.compile(
+    r"(?ms)^##\s*출력\s*형식.*?(?=^##\s*다음\s*액션\s*제안|\Z)",
+    re.IGNORECASE,
+)
+READ_ONLY_REVIEW_COMMAND_SECTION_RE = re.compile(
+    r"(?ms)^##\s*"
+    r"(?:리뷰\s*포커스|출력\s*형식|다음\s*액션\s*제안|사용\s*예시|주의)"
+    r".*?(?=^##\s|\Z)",
+    re.IGNORECASE,
+)
+READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE = re.compile(
+    r"(?m)^.*(?:"
+    r"구현\s*컨텍스트|구현과\s*분리|변경분|변경\s*(?:파일|규모|범위)|"
+    r"리뷰\s*(?:대상|포커스)|검토\s*대상|빌드/테스트\s*증거|"
+    r"다음\s*액션\s*제안"
+    r").*$",
+    re.IGNORECASE,
+)
 REVIEW_OUTPUT_SECTION_LABEL_RE = re.compile(
     r"\b(?:must|should)\s+fix\b",
     re.IGNORECASE,
@@ -952,6 +979,11 @@ def looks_mutating_task(text: str) -> bool:
         or READ_ONLY_METHOD_LEARNING_RE.search(value)
     )
     if has_read_only_signal:
+        if READ_ONLY_REVIEW_COMMAND_SOURCE_RE.search(constrained_value):
+            constrained_value = READ_ONLY_REVIEW_COMMAND_FRONTMATTER_RE.sub("", constrained_value)
+            constrained_value = READ_ONLY_REVIEW_OUTPUT_EXAMPLE_RE.sub("", constrained_value)
+            constrained_value = READ_ONLY_REVIEW_COMMAND_SECTION_RE.sub("", constrained_value)
+            constrained_value = READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE.sub("", constrained_value)
         constrained_value = REVIEW_OUTPUT_SECTION_LABEL_RE.sub("", constrained_value)
         constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_BACKGROUND_RE.sub("", constrained_value)

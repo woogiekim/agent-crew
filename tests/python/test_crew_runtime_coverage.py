@@ -1187,6 +1187,26 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
     ) == 0
     assert "STATUS: handoff_ready" in capsys.readouterr().out
 
+    review_context = (
+        "---\n"
+        "description: 독립 코드 리뷰 패스 (작성자≠리뷰어, read-only)\n"
+        "---\n"
+        "구현 컨텍스트와 분리된 독립 리뷰 패스(read-only 서브에이전트)로 "
+        "현재 브랜치 변경분에 대한 코드 리뷰를 수행해줘.\n\n"
+        "1. base 브랜치 감지 후 최근 커밋/변경 범위 확인\n\n"
+        "## 출력 형식\n"
+        "```markdown\n"
+        "## Code Review Summary\n\n"
+        "### Must Fix (머지 차단)\n"
+        "- `file:line` 문제 → 수정 제안\n\n"
+        "```\n\n"
+        "## 다음 액션 제안\n"
+        "- Must Fix 있으면 /fix <대상> 또는 직접 수정 후 재실행\n"
+        "- 에이전트가 코드를 수정하지 않도록 프롬프트에 read-only 리뷰임을 명시."
+    )
+    assert runtime.command_agent(_agent_args(root, "analyst", review_context)) == 0
+    assert "STATUS: handoff_ready" in capsys.readouterr().out
+
 
 def test_command_issue_ingest_error_and_output(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(runtime, "load_issue_payload", lambda *_args, **_kwargs: (None, "offline"))
