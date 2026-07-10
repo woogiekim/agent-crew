@@ -34,6 +34,13 @@ memory_trace = _load_module(MEMORY_TRACE, "memory_evidence_trace")
 report_quality = _load_module(REPORT_CHECK, "report_quality_check")
 
 
+def test_report_quality_uses_shared_mutation_classifier_boundaries():
+    assert report_quality.looks_mutating_task("Review whether to fix issues.") is False
+    assert report_quality.looks_mutating_task(
+        "Review whether to fix issues, then fix them."
+    ) is True
+
+
 def test_memory_retrieval_fixture_defines_fixed_expected_ids_and_budgets():
     fixture = json.loads(MEMORY_FIXTURE.read_text(encoding="utf-8"))
 

@@ -30,6 +30,31 @@ def _load_module(path: Path, name: str):
 repair_state = _load_module(REPAIR, "repair_task_state")
 quality_loop = _load_module(QUALITY_LIB, "quality_loop_lib_under_test")
 
+READ_ONLY_REVIEW_CONTEXT = (
+    "---\n"
+    "description: 독립 코드 리뷰 패스 (작성자≠리뷰어, read-only)\n"
+    "---\n"
+    "구현 컨텍스트와 분리된 독립 리뷰 패스(read-only 서브에이전트)로 "
+    "현재 브랜치 변경분에 대한 코드 리뷰를 수행해줘.\n\n"
+    "1. base 브랜치 감지 후 최근 커밋/변경 범위 확인\n\n"
+    "## 출력 형식\n"
+    "```markdown\n"
+    "## Code Review Summary\n\n"
+    "### Must Fix (머지 차단)\n"
+    "- `file:line` 문제 → 수정 제안\n\n"
+    "```\n\n"
+    "## 다음 액션 제안\n"
+    "- Must Fix 있으면 /fix <대상> 또는 직접 수정 후 재실행\n"
+    "- 에이전트가 코드를 수정하지 않도록 프롬프트에 read-only 리뷰임을 명시.\n\n"
+    "## 사용 예시\n"
+    "```bash\n"
+    "/review\n"
+    "```\n\n"
+    "## 주의\n"
+    "- 에이전트가 코드를 수정하지 않도록 read-only 리뷰임을 명시.\n"
+    "- 비정상 결과는 성공으로 바꾸지 않고 그대로 노출."
+)
+
 
 def make_task(tmp_path: Path, task: str) -> tuple[Path, str, Path]:
     state_dir = tmp_path / "state" / "project"
@@ -267,28 +292,204 @@ def test_repair_classifier_shares_read_only_overrides_with_quality_loop():
 def test_repair_classifier_keeps_read_only_review_command_context_read_only():
     """failure-case(regression) - imported read-only review docs stay direct-agent safe."""
     # given
-    read_only_review_context = (
-        "---\n"
-        "description: 독립 코드 리뷰 패스 (작성자≠리뷰어, read-only)\n"
-        "---\n"
-        "구현 컨텍스트와 분리된 독립 리뷰 패스(read-only 서브에이전트)로 "
-        "현재 브랜치 변경분에 대한 코드 리뷰를 수행해줘.\n\n"
-        "1. base 브랜치 감지 후 최근 커밋/변경 범위 확인\n\n"
-        "## 출력 형식\n"
-        "```markdown\n"
-        "## Code Review Summary\n\n"
-        "### Must Fix (머지 차단)\n"
-        "- `file:line` 문제 → 수정 제안\n\n"
-        "```\n\n"
-        "## 다음 액션 제안\n"
-        "- Must Fix 있으면 /fix <대상> 또는 직접 수정 후 재실행\n"
-        "- 에이전트가 코드를 수정하지 않도록 프롬프트에 read-only 리뷰임을 명시."
-    )
+    read_only_review_context = READ_ONLY_REVIEW_CONTEXT
 
     # when / then
     assert quality_loop.looks_mutating_task(read_only_review_context) is False
     assert repair_state.looks_mutating_task(read_only_review_context) is False
     assert repair_state.looks_quality_gated_task(read_only_review_context) is False
+
+
+def test_repair_classifier_ignores_mutation_examples_inside_review_documentation():
+    """boundary-case(regression) - documented examples are not user directives."""
+    review_context = READ_ONLY_REVIEW_CONTEXT.replace(
+        "```markdown\n",
+        "```markdown\nUser request: Please review and fix it.\n",
+        1,
+    )
+
+    assert quality_loop.looks_mutating_task(review_context) is False
+    assert repair_state.looks_mutating_task(review_context) is False
+
+
+def test_repair_classifier_preserves_explicit_mutation_after_review_command_context():
+    """failure-case(regression) - TC-002 keeps user mutation directives visible."""
+    # given
+    mutating_tasks = (
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\n사용자 요청: README를 수정해",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\n사용자 요청: README를 수정해 주세요.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\n사용자 요청: README 수정 바랍니다.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\n사용자 요청: README 수정 부탁해.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\n사용자 요청: README를 수정해. 커밋은 하지 마.",
+        "리뷰 포커스\n변경분을 수정해",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nUser request: Fix the implementation.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nPlease review and fix it.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nPlease review the diff and fix issues.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nAnalyze and fix it.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nPlease review, then update the implementation.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nI want you to fix the implementation.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nI want you to push main.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\n사용자 요청: 변경분 수정 진행",
+    )
+
+    # when / then
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+
+def test_repair_classifier_keeps_compound_review_explanations_read_only():
+    """success-case(regression) - compound review wording without mutation stays read-only."""
+    # given
+    read_only_tasks = (
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nPlease review and explain how to fix it.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nPlease review whether we should fix it.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nAnalyze the proposed fix and report risks.",
+        f"{READ_ONLY_REVIEW_CONTEXT}\n\nPlease review and do not fix anything.",
+    )
+
+    # when / then
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+
+
+def test_boundary_case_regression_distinguishes_whether_to_discussion_from_mutation():
+    """boundary-case(regression) - preserves discussion but exposes a later command."""
+    # given
+    read_only_task = "Review whether to fix issues."
+    mutating_task = "Review whether to fix issues, then fix them."
+
+    # when / then
+    assert quality_loop.looks_mutating_task(read_only_task) is False
+    assert repair_state.looks_mutating_task(read_only_task) is False
+    assert quality_loop.looks_mutating_task(mutating_task) is True
+    assert repair_state.looks_mutating_task(mutating_task) is True
+
+
+def test_repair_classifier_keeps_explain_how_capability_references_read_only():
+    """boundary-case(regression) - capability explanations do not hide later commands."""
+    read_only_tasks = (
+        "Please review and explain how I can fix it.",
+        "Please review and explain how we can update it.",
+    )
+    mutating_tasks = (
+        "Please review and explain how I can fix it, then fix it.",
+        "Please review and explain how we can update it, then update it.",
+    )
+
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+
+def test_repair_classifier_preserves_explicit_mutations_after_read_only_prefix():
+    """failure-case(regression) - read-only context cannot hide imperative work."""
+    mutating_tasks = (
+        "Read-only review. You should fix it.",
+        "Read-only review. Please apply the migration.",
+        "Read-only review. Execute git push origin main.",
+        "Read-only review. Please review and test it.",
+        "Read-only review. Then test it.",
+    )
+    read_only_tasks = (
+        "Read-only review. Explain why you should fix it.",
+        "Read-only review. Explain how to apply the migration.",
+        "Read-only review. Show how to execute git push origin main.",
+        "Read-only review. Explain whether to test it.",
+    )
+
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+
+
+def test_repair_classifier_treats_commit_as_read_only_review_target():
+    """success-case(regression) - TC-003 distinguishes commit objects from commands."""
+    # given
+    read_only_tasks = (
+        "Read-only review of commit 7decdd1. Do not modify files.",
+        "Inspect commit 7decdd1 and report correctness risks. Do not edit files.",
+        "Review commit 7decdd1 but do not amend it.",
+        "Review commit 7decdd1. Do not amend it.",
+        "Inspect commit 7decdd1 and explain how to cherry-pick it. Do not modify files.",
+        "Could you explain how to amend this?",
+        "Can you review whether to cherry-pick this?",
+        "Would you explain how to apply the patch?",
+        "Could you review revert behavior?",
+        "Review how git cherry-pick works.",
+        "Could you explain git revert behavior?",
+        "Revert is a Git command; explain what it does.",
+        "Amend is a confusing Git term; explain it.",
+        "Read-only code review: verify commit review plus branch push remains mutating without changing files.",
+        "Explain what commit review means.",
+        "Could you apply this policy in your analysis?",
+        "Can you push this notification explanation further?",
+        "Do not push anything; review only.",
+        "Review commit 7decdd1 and do not apply it.",
+        "git push origin main; do not push it.",
+        "git push origin main is shown here for analysis; do not run it.",
+    )
+    mutating_tasks = (
+        "Commit the changes.",
+        "Amend the commit with the updated tests.",
+        "Review commit 7decdd1, then fix the issues.",
+        "Review commit 7decdd1 and amend it.",
+        "Review commit 7decdd1. Amend it with the updated tests.",
+        "Inspect commit 7decdd1, then cherry-pick it.",
+        "Review commit 7decdd1 and apply the patch.",
+        "Could you amend this?",
+        "Can you cherry-pick this?",
+        "Would you apply the patch?",
+        "Would you please apply this patch?",
+        "Could you revert this?",
+        "git push origin main",
+        "git cherry-pick abc123",
+        "git revert abc123",
+        "Could you git cherry-pick abc123?",
+        "Could you git revert abc123?",
+        "Could you push these changes?",
+        "Could you apply this?",
+        "Could you push this?",
+        "Review commit 7decdd1 and apply it.",
+        "Review commit 7decdd1 and push main.",
+        "Commit review changes.",
+        "Please review, then commit review changes.",
+        "Could you push this branch?",
+        "Push this branch.",
+        "Apply these changes.",
+        "Review commit 7decdd1 and apply these changes.",
+        "Push that branch.",
+        "Push my branch.",
+        "Push our branch.",
+        "Apply those changes.",
+        "Apply my changes.",
+        "Apply our changes.",
+        "Please push to origin main.",
+        "Review the changes and push the branch to origin.",
+        "Review commit abc123, then amend with updated tests.",
+        "Inspect commit abc123 and revert due to the regression.",
+        "Review commit abc123 and cherry-pick onto develop.",
+        "git push origin main; do not push it, then push this branch.",
+    )
+
+    # when / then
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+        assert repair_state.looks_quality_gated_task(task) is False
+
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
 
 
 def test_repair_classifier_keeps_korean_exploration_and_complaints_read_only():

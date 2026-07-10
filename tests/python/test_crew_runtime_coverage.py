@@ -1158,6 +1158,7 @@ def test_command_run_normalization_bridge_success_blocks_missing_normalized_task
 
 
 def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
+    """failure-case(regression) - direct-agent routing rejects only mutating tasks."""
     root = tmp_path / "runtime-root"
     _write_registry(root)
     (root / "project").mkdir()
@@ -1202,10 +1203,92 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
         "```\n\n"
         "## 다음 액션 제안\n"
         "- Must Fix 있으면 /fix <대상> 또는 직접 수정 후 재실행\n"
-        "- 에이전트가 코드를 수정하지 않도록 프롬프트에 read-only 리뷰임을 명시."
+        "- 에이전트가 코드를 수정하지 않도록 프롬프트에 read-only 리뷰임을 명시.\n\n"
+        "## 사용 예시\n"
+        "```bash\n"
+        "/review\n"
+        "```\n\n"
+        "## 주의\n"
+        "- 에이전트가 코드를 수정하지 않도록 read-only 리뷰임을 명시.\n"
+        "- 비정상 결과는 성공으로 바꾸지 않고 그대로 노출."
     )
     assert runtime.command_agent(_agent_args(root, "analyst", review_context)) == 0
     assert "STATUS: handoff_ready" in capsys.readouterr().out
+
+    assert runtime.command_agent(
+        _agent_args(
+            root,
+            "analyst",
+            "Read-only review of commit 7decdd1. Do not modify files.",
+        )
+    ) == 0
+    assert "STATUS: handoff_ready" in capsys.readouterr().out
+
+    assert runtime.command_agent(
+        _agent_args(
+            root,
+            "analyst",
+            f"{review_context}\n\n사용자 요청: README를 수정해",
+        )
+    ) == 2
+    assert "direct invocation is read-only" in capsys.readouterr().err
+
+    mutating_variants = (
+        f"{review_context}\n\nPlease review and fix it.",
+        f"{review_context}\n\nI want you to fix the implementation.",
+        f"{review_context}\n\nI want you to push main.",
+        f"{review_context}\n\n사용자 요청: 변경분 수정 진행",
+        "Could you amend this?",
+        "git push origin main",
+        "git cherry-pick abc123",
+        "Could you git revert abc123?",
+        "Review commit 7decdd1 and apply it.",
+        "Review commit 7decdd1 and push main.",
+        "Commit review changes.",
+        "Please review, then commit review changes.",
+        "Review whether to fix issues, then fix them.",
+        "Please review and explain how I can fix it, then fix it.",
+        "Could you push this branch?",
+        "Push this branch.",
+        "Apply these changes.",
+        "Review commit 7decdd1 and apply these changes.",
+        "Please push to origin main.",
+        "Review the changes and push the branch to origin.",
+        "Review commit abc123, then amend with updated tests.",
+        "Inspect commit abc123 and revert due to the regression.",
+        "Review commit abc123 and cherry-pick onto develop.",
+        "git push origin main; do not push it, then push this branch.",
+        "Read-only review. You should fix it.",
+        "Read-only review. Please apply the migration.",
+        "Read-only review. Execute git push origin main.",
+        "Read-only review. Please review and test it.",
+        "Read-only review. Then test it.",
+    )
+    for task in mutating_variants:
+        assert runtime.command_agent(_agent_args(root, "analyst", task)) == 2
+        assert "direct invocation is read-only" in capsys.readouterr().err
+
+    read_only_variants = (
+        "Could you explain how to amend this?",
+        "Could you explain git revert behavior?",
+        "Revert is a Git command; explain what it does.",
+        "Amend is a confusing Git term; explain it.",
+        "Read-only code review: verify commit review plus branch push remains mutating without changing files.",
+        "Explain what commit review means.",
+        "Review whether to fix issues.",
+        "Review commit 7decdd1 and do not apply it.",
+        "Please review and explain how I can fix it.",
+        "Please review and explain how we can update it.",
+        "git push origin main; do not push it.",
+        "git push origin main is shown here for analysis; do not run it.",
+        "Read-only review. Explain why you should fix it.",
+        "Read-only review. Explain how to apply the migration.",
+        "Read-only review. Show how to execute git push origin main.",
+        "Read-only review. Explain whether to test it.",
+    )
+    for task in read_only_variants:
+        assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0
+        assert "STATUS: handoff_ready" in capsys.readouterr().out
 
 
 def test_command_issue_ingest_error_and_output(monkeypatch, tmp_path: Path, capsys):

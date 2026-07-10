@@ -8,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-from quality_loop_lib import check_quality_loop
+from quality_loop_lib import check_quality_loop, looks_mutating_task
 
 
 MEASUREMENT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds|m|minutes|%|tokens?|retries?|failures?|passes?|tests?)\b", re.I)
@@ -16,16 +16,6 @@ EVIDENCE_RE = re.compile(r"^(?:[-*]\s*)?(?:EVIDENCE|Evidence|evidence)\s*:\s*(.+
 BLOCKER_RE = re.compile(r"^(?:[-*]\s*)?BLOCKER\s*:\s*([a-zA-Z0-9_.:-]+)", re.M)
 UNCERTAINTY_RE = re.compile(r"\b(?:Assumption|Unverified|Unknown|uncertain|uncertainty)\b", re.I)
 STATUS_COMPLETED_RE = re.compile(r"^STATUS\s*:\s*completed\b", re.I | re.M)
-MUTATING_TASK_RE = re.compile(
-    r"\b("
-    r"build|implement|create|add|update|fix|remove|move|change|migrate|"
-    r"refactor|replace|extend|integrate|test|deploy|merge|rollback|write|"
-    r"save|edit|publish|commit|resolve|close"
-    r")\b|"
-    r"구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
-    r"리팩터|테스트|배포|머지|롤백|반영|저장|발행|고쳐|해결",
-    re.I,
-)
 TDD_RE = re.compile(r"\b(TDD|RED|GREEN|test evidence|tests? passed|pytest|JUnit|MockK)\b", re.I)
 REVIEW_RE = re.compile(
     r"\b(REVIEW:\s*APPROVED|REVIEW_APPROVED|APPROVED|reviewer approved|"
@@ -99,10 +89,6 @@ def load_task_text(task_dir: Path, report_text: str) -> str:
         pass
     match = re.search(r"^#\s+(.+)$", report_text, re.M)
     return match.group(1) if match else ""
-
-
-def looks_mutating_task(text: str) -> bool:
-    return bool(MUTATING_TASK_RE.search(text or ""))
 
 
 def quality_evidence_from(task_dir: Path, paths: list[str]) -> dict:

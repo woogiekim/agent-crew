@@ -58,10 +58,62 @@ READ_ONLY_METHOD_LEARNING_RE = re.compile(
     r"테스트\s*(?:방법|법|가이드|전략|개념)",
     re.IGNORECASE,
 )
+READ_ONLY_MUTATION_REFERENCE_RE = re.compile(
+    r"\b(?:explain\s+how\s+to\s+|whether\s+to\s+|"
+    r"explain\s+how\s+(?:i|we|you|they)\s+(?:can|could|should|would)\s+|"
+    r"whether\s+(?:i|we|you|they)\s+should\s+|"
+    r"proposed\s+|potential\s+|possible\s+)"
+    r"(?:build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|save|"
+    r"edit|publish|commit|resolve|close|test)\b",
+    re.IGNORECASE,
+)
 GERUND_MUTATING_TASK_RE = re.compile(
     r"\b(?:while\s+)?(?:refactoring|removing|changing|testing)\s+"
     r"(?:this|that|the|my|our|a|an)\b",
     re.IGNORECASE,
+)
+NEGATED_VERSION_CONTROL_REFERENCE_RE = re.compile(
+    r"(?:git\s+(?:apply|push|cherry[- ]pick|revert)\b|"
+    r"(?:apply|push|cherry[- ]pick|amend|revert)\b)"
+    r"(?:(?![.!?\n]).){0,160}?[;,]\s*"
+    r"(?:do\s+not|don't|dont|must\s+not|should\s+not|never)\s+"
+    r"(?:run|execute|apply|push|cherry[- ]pick|amend|revert)\b"
+    r"(?:(?!\b(?:then|and\s+then|also)\b)[^.!?\n])*[.!?]?",
+    re.IGNORECASE,
+)
+VERSION_CONTROL_MUTATION_COMMAND_RE = re.compile(
+    r"(?:^\s*|[.;!?]\s*|\b(?:and|then|also)\s+|"
+    r"\b(?:(?:can|could|would|will)\s+you|"
+    r"i\s+(?:want|need)\s+you\s+to)\s+)(?:please\s+)?"
+    r"(?:"
+    r"git\s+(?:apply|push|cherry[- ]pick|revert)\b|"
+    r"cherry[- ]pick(?=\s+(?:it|this|that|(?:the\s+)?commit|[0-9a-f]{7,40})\b|"
+    r"\s+onto\s+(?:main|master|develop|development|trunk|"
+    r"(?:feature|release|hotfix|bugfix)/[A-Za-z0-9._/-]+)\b|"
+    r"\s*[.!?]?\s*$)|"
+    r"amend(?=\s+(?:it|this|that|(?:the\s+)?commit)\b|"
+    r"\s+(?:with|using)\b|\s*[.!?]?\s*$)|"
+    r"revert(?=\s+(?:it|this|that|(?:the\s+)?(?:commit|changes?)|"
+    r"[0-9a-f]{7,40})\b|\s+(?:due\s+to|because\s+of)\b|\s*[.!?]?\s*$)|"
+    r"apply\s+(?:(?:(?:the|this|that)\s+)?(?:commit|patch)|"
+    r"(?:(?:the|these|those|my|our)\s+)?changes?)\b|"
+    r"push\s+to\s+(?:origin|upstream)"
+    r"(?:\s+(?:main|master|develop|development|trunk|"
+    r"(?:feature|release|hotfix|bugfix)/[A-Za-z0-9._/-]+))?"
+    r"(?=\s*(?:[,.!?;]|$|(?:and|then)\b))|"
+    r"push\s+(?:(?:the|this|that|my|our)\s+)?(?:branch|changes?)"
+    r"\s+to\s+(?:origin|upstream)"
+    r"(?=\s*(?:[,.!?;]|$|(?:and|then)\b))|"
+    r"push\s+(?:(?:(?:the|these|those|my|our)\s+)?changes?|"
+    r"(?:(?:the|this|that|my|our)\s+)?branch|"
+    r"origin|upstream|main|master|develop|development|trunk|"
+    r"(?:feature|release|hotfix|bugfix)/[A-Za-z0-9._/-]+)"
+    r"(?=\s*(?:[,.!?;]|$|(?:and|then)\b))|"
+    r"(?:apply|push)\s+(?:it|this|that)"
+    r"(?=\s*(?:[,.!?;]|$|(?:and|then)\b))"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
 )
 KOREAN_TEST_EXECUTION_RE = re.compile(
     r"테스트\s*"
@@ -136,12 +188,74 @@ READ_ONLY_REVIEW_COMMAND_SECTION_RE = re.compile(
     r".*?(?=^##\s|\Z)",
     re.IGNORECASE,
 )
+READ_ONLY_REVIEW_TRAILING_LIST_SECTION_RE = re.compile(
+    r"(?m)^##\s*(?:다음\s*액션\s*제안|주의)"
+    r"(?:\s*\([^\n)]*\))?\s*\n"
+    r"(?:[ \t]*-[^\n]*(?:\n|$))+",
+    re.IGNORECASE,
+)
 READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE = re.compile(
     r"(?m)^.*(?:"
     r"구현\s*컨텍스트|구현과\s*분리|변경분|변경\s*(?:파일|규모|범위)|"
     r"리뷰\s*(?:대상|포커스)|검토\s*대상|빌드/테스트\s*증거|"
     r"다음\s*액션\s*제안"
     r").*$",
+    re.IGNORECASE,
+)
+ENGLISH_EXPLICIT_MUTATION_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?"
+    r"(?:(?:user|operator)\s+request\s*:\s*)?"
+    r"(?:"
+    r"(?:please\s+)?"
+    r"(?:review|inspect|investigate|analy[sz]e|audit|check|validate)\b"
+    r"(?:(?!\b(?:and|then|also)\b)[^\n.!?]){0,160}"
+    r"\b(?:and|then|also)\s+(?:please\s+)?|"
+    r"(?:(?:please|then|also|and\s+then)\s+)*"
+    r")"
+    r"(?:build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|save|"
+    r"edit|publish|commit|resolve|close)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+ENGLISH_IMPERATIVE_MUTATION_DIRECTIVE_RE = re.compile(
+    r"(?:\A|[.!?]\s+|\b(?:and|then|also)\s+)"
+    r"(?:"
+    r"(?:you\s+(?:should|must|need\s+to)\s+|please\s+)"
+    r"(?:build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|save|"
+    r"edit|publish|commit|resolve|close|apply|push|test)\b|"
+    r"execute\s+(?:git\s+(?:apply|push|cherry[- ]pick|revert)\b|"
+    r"(?:build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|save|"
+    r"edit|publish|commit|resolve|close|apply|push|test)\b)"
+    r"|test(?=\s+(?:it|this|that|the\s+(?:change|code|implementation))\b)"
+    r")",
+    re.IGNORECASE,
+)
+KOREAN_EXPLICIT_MUTATION_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:사용자\s*요청\s*:\s*)?[^\n]{0,200}?"
+    r"(?:"
+    r"(?:구현|개발|추가|수정|개선|보완|변경|삭제|이동|마이그레이션|"
+    r"작성|생성|리팩터|배포|머지|롤백|반영|저장|발행|커밋|해결)"
+    r"(?:을|를)?\s*(?:(?:진행|실행|적용)\s*)?"
+    r"(?:해(?:\s*(?:주세요|줘))?|하세요|하자|해라|바랍니다|"
+    r"부탁(?:해|드려요|드립니다))|"
+    r"(?:고쳐|만들어)(?:\s*(?:주세요|줘|라|요))?"
+    r")"
+    r"(?=\s*(?:[.!?。,:;]|$|(?:그리고|그다음|그\s*후|다만|단|but|and)\b))",
+    re.IGNORECASE | re.MULTILINE,
+)
+READ_ONLY_COMMIT_TARGET_RE = re.compile(
+    r"\b(?P<verb>review|inspect|investigate|analy[sz]e|audit|check|validate)"
+    r"(?P<link>\s+(?:(?:of|the|a|an|latest|current)\s+)*)commit\b",
+    re.IGNORECASE,
+)
+READ_ONLY_COMMIT_NOUN_REFERENCE_RE = re.compile(
+    r"(?P<prefix>\b(?:"
+    r"(?:verify|explain|describe|discuss|analy[sz]e|inspect|review|check|audit|"
+    r"validate)(?:(?!\b(?:and|then|also)\b)[^.!?\n]){0,120}?|"
+    r"(?:the|a|this|that|read[- ]only)\s+"
+    r"))commit(?=\s+(?:review|analysis|inspection|audit|validation)\b)",
     re.IGNORECASE,
 )
 REVIEW_OUTPUT_SECTION_LABEL_RE = re.compile(
@@ -954,11 +1068,27 @@ def auto_record_minor_findings(
     return existing
 
 
+def split_review_command_source_and_suffix(text: str) -> tuple[str, str]:
+    matches = list(READ_ONLY_REVIEW_TRAILING_LIST_SECTION_RE.finditer(text))
+    if not matches:
+        return text, ""
+
+    source_end = matches[-1].end()
+    suffix = text[source_end:]
+    if not suffix.strip():
+        return text, ""
+
+    return text[:source_end], suffix
+
+
 def looks_mutating_task(text: str) -> bool:
     value = text or ""
     if KOREAN_PLAN_EXECUTION_RE.search(value):
         return True
     if GERUND_MUTATING_TASK_RE.search(value):
+        return True
+    version_control_value = NEGATED_VERSION_CONTROL_REFERENCE_RE.sub("", value)
+    if VERSION_CONTROL_MUTATION_COMMAND_RE.search(version_control_value):
         return True
     if KOREAN_TEST_EXECUTION_RE.search(value):
         return True
@@ -980,10 +1110,40 @@ def looks_mutating_task(text: str) -> bool:
     )
     if has_read_only_signal:
         if READ_ONLY_REVIEW_COMMAND_SOURCE_RE.search(constrained_value):
-            constrained_value = READ_ONLY_REVIEW_COMMAND_FRONTMATTER_RE.sub("", constrained_value)
-            constrained_value = READ_ONLY_REVIEW_OUTPUT_EXAMPLE_RE.sub("", constrained_value)
-            constrained_value = READ_ONLY_REVIEW_COMMAND_SECTION_RE.sub("", constrained_value)
-            constrained_value = READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE.sub("", constrained_value)
+            source_value, appended_value = split_review_command_source_and_suffix(
+                constrained_value
+            )
+            structured_review_source = bool(
+                READ_ONLY_REVIEW_COMMAND_FRONTMATTER_RE.search(constrained_value)
+                or READ_ONLY_REVIEW_OUTPUT_EXAMPLE_RE.search(constrained_value)
+                or READ_ONLY_REVIEW_TRAILING_LIST_SECTION_RE.search(constrained_value)
+            )
+            directive_source = (
+                appended_value if structured_review_source else constrained_value
+            )
+            directive_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub(
+                "", directive_source
+            )
+            if (
+                ENGLISH_EXPLICIT_MUTATION_DIRECTIVE_RE.search(directive_value)
+                or KOREAN_EXPLICIT_MUTATION_DIRECTIVE_RE.search(directive_value)
+            ):
+                return True
+            source_value = READ_ONLY_REVIEW_COMMAND_FRONTMATTER_RE.sub("", source_value)
+            source_value = READ_ONLY_REVIEW_OUTPUT_EXAMPLE_RE.sub("", source_value)
+            source_value = READ_ONLY_REVIEW_COMMAND_SECTION_RE.sub("", source_value)
+            source_value = READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE.sub("", source_value)
+            constrained_value = source_value + appended_value
+        if ENGLISH_IMPERATIVE_MUTATION_DIRECTIVE_RE.search(constrained_value):
+            return True
+        constrained_value = READ_ONLY_COMMIT_NOUN_REFERENCE_RE.sub(
+            r"\g<prefix>revision",
+            constrained_value,
+        )
+        constrained_value = READ_ONLY_COMMIT_TARGET_RE.sub(
+            r"\g<verb>\g<link>revision",
+            constrained_value,
+        )
         constrained_value = REVIEW_OUTPUT_SECTION_LABEL_RE.sub("", constrained_value)
         constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_BACKGROUND_RE.sub("", constrained_value)
@@ -992,6 +1152,7 @@ def looks_mutating_task(text: str) -> bool:
         constrained_value = KOREAN_PLAN_ONLY_CONTEXT_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_METHOD_LEARNING_RE.sub("", constrained_value)
+        constrained_value = READ_ONLY_MUTATION_REFERENCE_RE.sub("", constrained_value)
     if has_read_only_signal and not STRONG_MUTATING_TASK_RE.search(constrained_value):
         return False
     return bool(MUTATING_TASK_RE.search(constrained_value))
