@@ -218,6 +218,7 @@ Every skill file MUST follow the structure defined in
 | `domain-driven-design.md` | yes | — | — | yes |
 | `refactoring-catalog.md` | yes | yes | — | yes |
 | `legacy-code-seams.md` | yes | yes | yes | — |
+| `documentation-impact.md` | yes | yes | — | yes |
 
 > This matrix is informational. The authoritative source of truth is the
 > "## Skills (Loaded Upfront)" section in each agent file. Update both when

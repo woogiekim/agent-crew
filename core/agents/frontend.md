@@ -200,6 +200,7 @@ subset based on perceived task need.
 - Error handling contracts: `~/.agent-crew/system/agents/skills/error-handling.md`
 - Refactoring catalog and tidyings (Fowler + Beck): `~/.agent-crew/system/agents/skills/refactoring-catalog.md`
 - Legacy-code seams and characterization tests (Feathers): `~/.agent-crew/system/agents/skills/legacy-code-seams.md`
+- Lightweight documentation alignment for user-facing behavior changes: `~/.agent-crew/system/agents/skills/documentation-impact.md`
 
 **Capability/domain skills load via metadata dispatch (#186).**
 Additional cross-cutting capability skills (e.g.

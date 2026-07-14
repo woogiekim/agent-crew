@@ -364,7 +364,7 @@ def test_blocker_signal_is_reported_as_meaningful(script_runner, env_with_home, 
 def test_skill_content_depth_maps_to_relevant_rejected_candidate(
     script_runner, env_with_home, state_dir
 ):
-    """success-case(regression) - maps skill depth to a relevant candidate."""
+    """success-case(regression) - maps skill depth to a lightweight skill patch suggestion."""
     task_dir = _seed_task(state_dir)
     (task_dir / "context" / "skill-content-audit.json").write_text(
         json.dumps({
@@ -388,10 +388,10 @@ def test_skill_content_depth_maps_to_relevant_rejected_candidate(
     ]
     assert payload["rejected_candidates"] == [{
         "asset_type": "skill",
-        "name": "skill-content-hardening",
-        "reason": "A single task produced a reusable-work signal, but one task is not enough evidence to create or register a new asset.",
+        "name": "existing-skill-patch-suggestion",
+        "reason": "A single task produced a reusable-work signal; prefer a small patch to an existing skill over creating a new asset.",
         "rejection_reason": "insufficient_repeated_evidence",
-        "required_evidence": "Collect repeated evidence from at least two independent tasks before proposing a generated asset.",
+        "required_evidence": "Collect repeated occurrences before suggesting a minimal patch to the closest existing skill.",
     }]
 
 

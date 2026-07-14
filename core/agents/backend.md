@@ -215,6 +215,7 @@ load every skill listed in this section before execution; do not select a subset
 - Refactoring catalog and tidyings (Fowler + Beck): `~/.agent-crew/system/agents/skills/refactoring-catalog.md`
 - Legacy-code seams and characterization tests (Feathers): `~/.agent-crew/system/agents/skills/legacy-code-seams.md`
 - DGS DataLoader and resolver batching: `~/.agent-crew/system/agents/skills/dgs-dataloader.md`
+- Lightweight documentation alignment for public behavior changes: `~/.agent-crew/system/agents/skills/documentation-impact.md`
 
 These declared agent-associated skills are **complementary** to the dispatcher
 (per `core/rules/agent-tool-dispatch.md` line 16–18: "An agent MAY use

@@ -236,25 +236,12 @@ def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, str]]:
     if not patterns:
         return []
 
-    if any(pattern["kind"] == "review_loop_back" for pattern in patterns):
-        asset_type = "skill"
-        name = "review-loop-hardening"
-    elif any(pattern["kind"] == "blocker" for pattern in patterns):
-        asset_type = "workflow"
-        name = "blocker-recovery-playbook"
-    elif any(pattern["kind"] == "skill_content_depth" for pattern in patterns):
-        asset_type = "skill"
-        name = "skill-content-hardening"
-    else:
-        asset_type = "workflow"
-        name = "retry-reduction-playbook"
-
     return [{
-        "asset_type": asset_type,
-        "name": name,
-        "reason": "A single task produced a reusable-work signal, but one task is not enough evidence to create or register a new asset.",
+        "asset_type": "skill",
+        "name": "existing-skill-patch-suggestion",
+        "reason": "A single task produced a reusable-work signal; prefer a small patch to an existing skill over creating a new asset.",
         "rejection_reason": "insufficient_repeated_evidence",
-        "required_evidence": "Collect repeated evidence from at least two independent tasks before proposing a generated asset.",
+        "required_evidence": "Collect repeated occurrences before suggesting a minimal patch to the closest existing skill.",
     }]
 
 
@@ -268,8 +255,8 @@ def learning_summary(meaningful: bool, patterns: list[dict[str, Any]]) -> str:
     kinds = ", ".join(pattern["kind"] for pattern in patterns)
     return (
         "Reusable-work signals were observed (" + kinds + "), but automatic "
-        "asset generation is disabled in this first slice. Treat the report as "
-        "evidence for future registry-reviewed proposals only."
+        "asset generation remains disabled. Prefer lightweight follow-up: patch "
+        "the closest existing skill only after the pattern repeats."
     )
 
 

@@ -142,6 +142,9 @@ assert_contains "${BACKEND_UPFRONT_SKILLS}" "effective-java.md"
 it "backend.md upfront registry declares Clean Architecture skill"
 assert_contains "${BACKEND_UPFRONT_SKILLS}" "clean-architecture.md"
 
+it "backend.md upfront registry declares documentation impact skill"
+assert_contains "${BACKEND_UPFRONT_SKILLS}" "documentation-impact.md"
+
 it "frontend.md upfront registry declares TDD skill"
 assert_contains "${FRONTEND_UPFRONT_SKILLS}" "tdd.md"
 
@@ -150,6 +153,9 @@ assert_contains "${FRONTEND_UPFRONT_SKILLS}" "effective-typescript.md"
 
 it "frontend.md upfront registry declares UI component skill"
 assert_contains "${FRONTEND_UPFRONT_SKILLS}" "ui-component-design.md"
+
+it "frontend.md upfront registry declares documentation impact skill"
+assert_contains "${FRONTEND_UPFRONT_SKILLS}" "documentation-impact.md"
 
 it "agent-skill-loading.md requires upfront loading of every associated skill"
 assert_contains "${LOADING_RULE_CONTENT}" "MUST load every skill listed"
@@ -265,6 +271,7 @@ EXPECTED_SKILLS=(
   "agile-xp.md"
   "domain-driven-design.md"
   "dgs-dataloader.md"
+  "documentation-impact.md"
   "SKILL-TEMPLATE.md"
 )
 for skill in "${EXPECTED_SKILLS[@]}"; do
@@ -288,6 +295,7 @@ NEW_SKILLS=(
   "agile-xp.md"
   "domain-driven-design.md"
   "dgs-dataloader.md"
+  "documentation-impact.md"
 )
 REQUIRED_SECTIONS=("## Source" "## When to Apply" "## Core Rules" "## Anti-Patterns" "## References")
 for skill in "${NEW_SKILLS[@]}"; do
@@ -526,6 +534,9 @@ assert_contains "${FRONTEND_UPFRONT_SKILLS}" "refactoring-catalog.md"
 
 it "reviewer.md upfront registry declares refactoring-catalog skill"
 assert_contains "${REVIEWER_UPFRONT_SKILLS}" "refactoring-catalog.md"
+
+it "reviewer.md upfront registry declares documentation impact skill"
+assert_contains "${REVIEWER_UPFRONT_SKILLS}" "documentation-impact.md"
 
 it "backend.md upfront registry declares legacy-code-seams skill"
 assert_contains "${BACKEND_UPFRONT_SKILLS}" "legacy-code-seams.md"

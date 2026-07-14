@@ -140,6 +140,7 @@ associated with this agent; do not select a subset:
 - Git branching, committing, and PR workflow: `~/.agent-crew/system/agents/skills/git-workflow.md`
 - Security hardening (auth, secrets, transport): `~/.agent-crew/system/agents/skills/security-hardening.md`
 - Observability (structured logging, tracing, metrics): `~/.agent-crew/system/agents/skills/observability.md`
+- Lightweight documentation alignment for config, workflow, and operator-facing changes: `~/.agent-crew/system/agents/skills/documentation-impact.md`
 
 ## Language-Agnostic Quality Rules
 
