@@ -14,7 +14,6 @@
 # heredoc would bind stdin to the program text, so the payload is captured here
 # and handed to python through the environment instead.
 HOOK_PAYLOAD="$(cat)"
-printf '%s' "${HOOK_PAYLOAD}"  # pass the payload through untouched
 
 HOOK_PAYLOAD="${HOOK_PAYLOAD}" python3 <<'PYEOF'
 import sys, json, os, subprocess, hashlib, re, importlib.util

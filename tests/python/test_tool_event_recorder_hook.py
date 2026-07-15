@@ -96,6 +96,7 @@ def test_boundary_case_hook_appends_schema_v1_row_for_bash(tmp_path):
     result = run_hook(state_dir, task_id, _bash_payload("pytest tests/", exit_code=0))
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
     rows = _rows(task_dir)
     assert len(rows) == 1
     row = rows[0]
