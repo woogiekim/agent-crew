@@ -1092,3 +1092,19 @@ def test_korean_self_evolution_complaint_is_read_only_diagnostic():
 
     assert quality_loop.looks_mutating_task(task) is False
     assert repair_state.looks_mutating_task(task) is False
+
+
+def test_korean_root_cause_questions_stay_read_only_diagnostics():
+    """regression: root-cause wording with mutation nouns is still analysis."""
+    read_only_tasks = (
+        "근본해결을 목표로한다. 폴백은 왜 되는데?",
+        "근본해결 방향을 분석해줘",
+        "왜 자동 성장 제안이 안 나오는지 원인을 알려줘",
+    )
+
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+
+    assert quality_loop.looks_mutating_task("근본해결 방향대로 수정해") is True
+    assert repair_state.looks_mutating_task("근본해결 방향대로 수정해") is True

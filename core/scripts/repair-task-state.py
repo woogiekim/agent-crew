@@ -7,6 +7,8 @@ import argparse
 import json
 import os
 import re
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -190,6 +192,136 @@ def append_jsonl(path: Path, row: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def scripts_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def append_progress_log(task_dir: Path, event: str, detail: str) -> None:
+    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
+        handle.write(f"{utc_now_z()} | {event} | {detail}\n")
+
+
+def run_python_script(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(script), *args],
+        text=True,
+        capture_output=True,
+    )
+
+
+def pending_proposal_count(proposals_path: Path) -> int:
+    payload = load_json(proposals_path)
+    return sum(
+        1
+        for item in payload.get("proposals") or []
+        if isinstance(item, dict) and item.get("status") == "approval_required"
+    )
+
+
+def run_evolution_closeout(args: argparse.Namespace, state_dir: Path, task_dir: Path) -> dict:
+    status = {
+        "analyzer": "skipped",
+        "proposals": "skipped",
+        "pending_proposals": 0,
+        "artifacts": [],
+        "errors": [],
+    }
+    if args.status != "completed":
+        status["reason"] = "repair_status_not_completed"
+        return status
+    if os.environ.get("AGENT_CREW_EVOLUTION_MODE", "report") == "off":
+        status["reason"] = "disabled"
+        append_progress_log(task_dir, "EVOLUTION_ANALYZER_SKIPPED", "reason=disabled")
+        append_progress_log(task_dir, "EVOLUTION_PROPOSALS_SKIPPED", "reason=disabled")
+        return status
+
+    context_dir = task_dir / "context"
+    analyzer = scripts_dir() / "evolution-analyzer.py"
+    aggregate = scripts_dir() / "evolution-proposal-aggregate.py"
+    summary = scripts_dir() / "evolution-proposal-summary.py"
+    report_json = context_dir / "evolution-report.json"
+    report_md = context_dir / "evolution-report.md"
+    proposals_json = state_dir / "learning-candidates" / "proposals.json"
+    proposals_summary = context_dir / "evolution-proposals-summary.txt"
+
+    if analyzer.is_file():
+        result = run_python_script(
+            analyzer,
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            "--json-output", str(report_json),
+            "--markdown-output", str(report_md),
+        )
+        if result.returncode == 0 and report_json.is_file() and report_md.is_file():
+            status["analyzer"] = "completed"
+            status["artifacts"].extend([
+                "context/evolution-report.json",
+                "context/evolution-report.md",
+            ])
+            append_progress_log(
+                task_dir,
+                "EVOLUTION_ANALYZER",
+                "mode=repair artifacts=context/evolution-report.json,context/evolution-report.md",
+            )
+        else:
+            status["analyzer"] = "failed"
+            status["errors"].append("evolution_analyzer_failed")
+            append_progress_log(task_dir, "EVOLUTION_ANALYZER_FAILED", "non_blocking=true")
+    else:
+        status["reason"] = "analyzer_script_missing"
+        append_progress_log(task_dir, "EVOLUTION_ANALYZER_SKIPPED", "reason=script_missing")
+
+    if not (aggregate.is_file() and summary.is_file()):
+        status["proposals"] = "skipped"
+        status["errors"].append("proposal_script_missing")
+        append_progress_log(task_dir, "EVOLUTION_PROPOSALS_SKIPPED", "reason=script_missing")
+        return status
+
+    aggregate_result = run_python_script(
+        aggregate,
+        "--state-dir", str(state_dir),
+        "--output", str(proposals_json),
+        "--format", "json",
+    )
+    if aggregate_result.returncode != 0:
+        status["proposals"] = "failed"
+        status["errors"].append("proposal_aggregate_failed")
+        append_progress_log(task_dir, "EVOLUTION_PROPOSALS_FAILED", "non_blocking=true")
+        return status
+
+    count = pending_proposal_count(proposals_json)
+    status["pending_proposals"] = count
+    if count <= 0:
+        proposals_summary.unlink(missing_ok=True)
+        status["proposals"] = "skipped"
+        append_progress_log(task_dir, "EVOLUTION_PROPOSALS_SKIPPED", "reason=no_repeated_evidence")
+        return status
+
+    summary_result = run_python_script(
+        summary,
+        "--proposals", str(proposals_json),
+        "--format", "text",
+    )
+    if summary_result.returncode != 0:
+        status["proposals"] = "failed"
+        status["errors"].append("proposal_summary_failed")
+        append_progress_log(task_dir, "EVOLUTION_PROPOSALS_FAILED", "non_blocking=true")
+        return status
+
+    proposals_summary.write_text(summary_result.stdout, encoding="utf-8")
+    status["proposals"] = "completed"
+    status["artifacts"].extend([
+        "learning-candidates/proposals.json",
+        "context/evolution-proposals-summary.txt",
+    ])
+    append_progress_log(
+        task_dir,
+        "EVOLUTION_PROPOSALS",
+        f"pending={count} output=learning-candidates/proposals.json summary=context/evolution-proposals-summary.txt",
+    )
+    return status
 
 
 def resolve_task_dir(state_dir: Path, task_id: str) -> Path:
@@ -2067,6 +2199,39 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
     return "\n".join(lines).rstrip() + "\n"
 
 
+def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
+    lines = [
+        "",
+        "## Learning Report",
+        "",
+        f"EVOLUTION_ANALYZER: {status.get('analyzer', 'skipped')}",
+    ]
+    if status.get("analyzer") == "completed":
+        lines.append("EVOLUTION_REPORT: context/evolution-report.md")
+
+    lines.extend([
+        "",
+        "## Self-Evolution Proposals",
+        "",
+        f"EVOLUTION_PROPOSALS: {status.get('proposals', 'skipped')}",
+        f"PENDING_PROPOSALS: {int(status.get('pending_proposals') or 0)}",
+    ])
+
+    summary_path = task_dir / "context" / "evolution-proposals-summary.txt"
+    if summary_path.is_file():
+        lines.append("EVOLUTION_PROPOSALS_SUMMARY: context/evolution-proposals-summary.txt")
+        lines.append("")
+        lines.append(summary_path.read_text(encoding="utf-8").strip())
+
+    errors = status.get("errors") or []
+    if errors:
+        lines.append("")
+        lines.append("EVOLUTION_CLOSEOUT_WARNINGS: " + ", ".join(errors))
+
+    with (task_dir / "result.md").open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines).rstrip() + "\n")
+
+
 def repair(args: argparse.Namespace) -> dict:
     state_dir = Path(args.state_dir).expanduser().resolve()
     task_dir = resolve_task_dir(state_dir, args.task_id)
@@ -2202,6 +2367,10 @@ def repair(args: argparse.Namespace) -> dict:
             "files": [],
         },
     )
+    evolution_closeout = run_evolution_closeout(args, state_dir, task_dir)
+    repair_record["evolution_closeout"] = evolution_closeout
+    write_json(task_dir / "context" / "manual-fallback-repair.json", repair_record)
+    append_evolution_closeout_result(task_dir, evolution_closeout)
     return repair_record
 
 

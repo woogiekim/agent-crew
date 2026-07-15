@@ -466,6 +466,54 @@ def test_proposal_aggregator_promotes_repeated_report_signals_without_asset_writ
     ]
 
 
+def test_proposal_aggregator_groups_same_pattern_across_candidate_name_drift(
+    script_runner, env_with_home, state_dir
+):
+    first = _seed_task(state_dir, "20260101-120000-0")
+    second = _seed_task(state_dir, "20260102-120000-0")
+    for task_dir, candidate_name in (
+        (first, "skill-content-hardening"),
+        (second, "existing-skill-patch-suggestion"),
+    ):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": task_dir.name,
+                "generation_mode": "report_only",
+                "meaningful": True,
+                "observed_patterns": [{
+                    "kind": "skill_content_depth",
+                    "summary": "Skill content audit found shallow skill material.",
+                    "evidence_refs": ["context/skill-content-audit.json"],
+                }],
+                "asset_candidates": [],
+                "rejected_candidates": [{
+                    "asset_type": "skill",
+                    "name": candidate_name,
+                    "rejection_reason": "insufficient_repeated_evidence",
+                }],
+            }),
+            encoding="utf-8",
+        )
+
+    output = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
+    assert proposal["target_asset"] == "skill_content_depth"
+    assert proposal["occurrence_count"] == 2
+    assert proposal["evidence_refs"] == [
+        "tasks/20260101-120000-0/context/evolution-report.json",
+        "tasks/20260102-120000-0/context/evolution-report.json",
+    ]
+
+
 def test_proposal_aggregator_preserves_existing_lifecycle_decisions(
     script_runner, env_with_home, state_dir
 ):

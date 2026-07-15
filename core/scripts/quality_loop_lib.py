@@ -179,6 +179,17 @@ KOREAN_READ_ONLY_EXPLORATION_RE = re.compile(
     r"(?:해|해줘|해주세요|해봐)?",
     re.IGNORECASE,
 )
+KOREAN_ROOT_CAUSE_DIAGNOSTIC_RE = re.compile(
+    r"근본\s*해결\s*을?\s*목표로\s*(?:한다|함|하되)|"
+    r"(?:근본\s*해결|해결)"
+    r"[^.!?\n。]*(?:왜|원인|이유|분석|검토|확인|알려|설명)"
+    r"(?:해|해줘|해주세요|해봐)?|"
+    r"(?:왜|원인|이유)"
+    r"[^.!?\n。]*(?:안\s*되|안되|못\s*하|못하|폴백|제안|동작)"
+    r"[^.!?\n。]*(?:분석|검토|확인|알려|설명)?"
+    r"(?:해|해줘|해주세요|해봐)?",
+    re.IGNORECASE,
+)
 KOREAN_READ_ONLY_COMPLAINT_RE = re.compile(
     r"(?:방법|방안|계획|분석|검토|리뷰|확인|모색)"
     r"[^.!?\n。]*(?:하라고|요청했|부탁했)"
@@ -1153,6 +1164,7 @@ def looks_mutating_task(text: str) -> bool:
         READ_ONLY_TASK_RE.search(value)
         or KOREAN_PLAN_ONLY_CONTEXT_RE.search(value)
         or KOREAN_SELF_EVOLUTION_COMPLAINT_RE.search(value)
+        or KOREAN_ROOT_CAUSE_DIAGNOSTIC_RE.search(value)
         or READ_ONLY_HISTORY_QUERY_RE.search(value)
         or READ_ONLY_METHOD_LEARNING_RE.search(value)
     )
@@ -1197,6 +1209,7 @@ def looks_mutating_task(text: str) -> bool:
         constrained_value = KOREAN_READ_ONLY_BACKGROUND_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_COMPLAINT_RE.sub("", constrained_value)
         constrained_value = KOREAN_SELF_EVOLUTION_COMPLAINT_RE.sub("", constrained_value)
+        constrained_value = KOREAN_ROOT_CAUSE_DIAGNOSTIC_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_EXPLORATION_RE.sub("", constrained_value)
         constrained_value = KOREAN_PLAN_ONLY_CONTEXT_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)

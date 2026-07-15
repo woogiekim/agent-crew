@@ -33,6 +33,15 @@ def report_paths(state_dir: Path) -> list[Path]:
 
 
 def proposal_key(report: dict[str, Any]) -> str:
+    patterns = report.get("observed_patterns") or []
+    kinds = [
+        str(item.get("kind"))
+        for item in patterns
+        if isinstance(item, dict) and item.get("kind")
+    ]
+    if kinds:
+        return "+".join(sorted(set(kinds)))
+
     for item in report.get("rejected_candidates") or []:
         if not isinstance(item, dict):
             continue
@@ -40,13 +49,7 @@ def proposal_key(report: dict[str, Any]) -> str:
         if name:
             return name
 
-    patterns = report.get("observed_patterns") or []
-    kinds = [
-        str(item.get("kind"))
-        for item in patterns
-        if isinstance(item, dict) and item.get("kind")
-    ]
-    return "+".join(sorted(kinds)) if kinds else ""
+    return ""
 
 
 def candidate_source(report: dict[str, Any]) -> str:
@@ -66,6 +69,22 @@ def existing_proposals(output_path: Path) -> dict[str, dict[str, Any]]:
         if key:
             proposals[stable_key(key)] = item
     return proposals
+
+
+def existing_proposal_for_key(
+    existing: dict[str, dict[str, Any]],
+    key: str,
+) -> dict[str, Any]:
+    candidates = [stable_key(key)]
+    if key == "skill_content_depth":
+        candidates.extend([
+            "existing-skill-patch-suggestion",
+            "skill-content-hardening",
+        ])
+    for candidate in candidates:
+        if candidate in existing:
+            return existing[candidate]
+    return {}
 
 
 def preserve_decision_fields(proposal: dict[str, Any], existing: dict[str, Any]) -> None:
@@ -111,10 +130,10 @@ def build_proposals(
         ]
         proposal_type = (
             "patch_existing_skill"
-            if key == "existing-skill-patch-suggestion"
+            if key in {"existing-skill-patch-suggestion", "skill_content_depth"}
             else "investigate_reusable_asset"
         )
-        preserved = existing.get(stable_key(key), {})
+        preserved = existing_proposal_for_key(existing, key)
         candidate_id = str(preserved.get("candidate_id") or f"{slug(key)}-{len(paths)}x")
         proposal = {
             "schema_version": 1,
