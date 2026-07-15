@@ -330,7 +330,28 @@ SOFT_QUALITY_FAILURES = {
     "missing_tdd_refactor_phase_evidence",
     "missing_reviewer_quality_metrics_artifact",
     "missing_pipeline_reviewer_approval",
+    # Trace-derived: a reviewer approval that lacks an independent corroborating
+    # span is soft on the standard-risk path and escalates to hard under
+    # strict_gate_required (see classify_quality_failures).
+    "reviewer_approval_without_independent_span",
 }
+# Recognizes tool-event action_summary rows that represent a test invocation.
+# Used by tool_event_test_runs to derive trace-based red/green ordering.
+TEST_RUN_COMMAND_RE = re.compile(
+    r"(?:^|[\s;&|(=])"
+    r"(?:"
+    r"pytest|py\.test|"
+    r"python[0-9.]*\s+-m\s+(?:pytest|unittest)|"
+    r"(?:npm|yarn|pnpm)\s+(?:run\s+)?test|"
+    r"go\s+test|"
+    r"(?:\./)?gradlew?\b[^\n]*\btest\b|gradle\b[^\n]*\btest\b|"
+    r"mvn\b[^\n]*\btest\b|"
+    r"cargo\s+test|"
+    r"bats\b|"
+    r"(?:[\w./-]*/)?run-all\.sh"
+    r")",
+    re.IGNORECASE,
+)
 NON_MUTATING_CONSTRAINT_RE = re.compile(
     r"\b("
     r"do\s+not|don't|dont|must\s+not|should\s+not|never|without|no"
@@ -1669,6 +1690,335 @@ def delegation_fidelity_status(task_dir: Path) -> dict:
     }
 
 
+# --------------------------------------------------------------------------
+# Trace-derived quality evidence (F1-F4).
+#
+# These helpers derive TDD red/green/refactor and independent-review coverage
+# from execution traces the runtime records as a side effect (git diffs against
+# recorded head baselines, tool-events.jsonl test-run rows, delegation.jsonl /
+# cost / host-bridge spans) instead of trusting LLM-authored attestation
+# documents. Every read tolerates missing or malformed input and degrades to a
+# source-unavailable result; it never raises.
+# --------------------------------------------------------------------------
+
+
+def _iso_epoch(value) -> float | None:
+    """Convert an ISO-8601 (…Z) timestamp string to epoch seconds, or None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = _dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_dt.timezone.utc)
+    return parsed.timestamp()
+
+
+def _run_git(root: Path, args: list[str]) -> str | None:
+    """Run a git subcommand in ``root``; return stdout, or None on any error."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def git_baseline_sha(task_dir: Path) -> str | None:
+    """Resolve the run's base commit from recorded head baselines.
+
+    Ordering: context/start-head.txt first, then pre-run-head.txt fallback.
+    """
+    candidates = (
+        task_dir / "context" / "start-head.txt",
+        task_dir / "pre-run-head.txt",
+    )
+    for path in candidates:
+        if not path.is_file():
+            continue
+        text = load_text(path).strip()
+        if text:
+            return text.split()[0]
+    return None
+
+
+def git_change_evidence(task_dir: Path, register: dict) -> dict:
+    """F1: real git diff of {base}..HEAD plus uncommitted working-tree changes.
+
+    Returns ``{available, base, test_paths, prod_paths, commits}``.
+    ``available`` is False when the repo root or base commit cannot be resolved,
+    or any git call errors (source-unavailable, never raises).
+    """
+    task_dir = Path(task_dir)
+    unavailable = {
+        "available": False,
+        "base": "",
+        "test_paths": [],
+        "prod_paths": [],
+        "commits": [],
+    }
+    root = register_project_root(register)
+    if root is None:
+        return dict(unavailable)
+
+    base = git_baseline_sha(task_dir)
+    if not base:
+        return dict(unavailable)
+
+    committed = _run_git(root, ["diff", "--name-status", f"{base}..HEAD"])
+    if committed is None:
+        return dict(unavailable)
+    uncommitted = _run_git(root, ["diff", "--name-status", "HEAD"]) or ""
+    log_out = _run_git(root, ["log", "--format=%H %ct", f"{base}..HEAD"]) or ""
+
+    changed: set[str] = set()
+    for chunk in (committed, uncommitted):
+        for line in chunk.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            # parts[0] is the status letter; remaining columns are paths
+            # (renames/copies carry both the old and new path).
+            for candidate in parts[1:]:
+                candidate = candidate.strip()
+                if candidate:
+                    changed.add(candidate)
+
+    test_paths = sorted(p for p in changed if looks_like_test_file(p))
+    prod_paths = sorted(p for p in changed if not looks_like_test_file(p))
+
+    commits: list[dict] = []
+    for line in log_out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        sha, _, ct_text = line.partition(" ")
+        try:
+            ct = int(ct_text.strip())
+        except ValueError:
+            continue
+        if sha.strip():
+            commits.append({"sha": sha.strip(), "ct": ct})
+
+    return {
+        "available": True,
+        "base": base,
+        "test_paths": test_paths,
+        "prod_paths": prod_paths,
+        "commits": commits,
+    }
+
+
+def tool_event_test_runs(task_dir: Path, *, last_commit_ct: int | None = None) -> dict:
+    """F2: ordered test-run rows from tool-events.jsonl and red/green derivation.
+
+    A test-run row has an ``action_summary`` matching a known test command and
+    an integer ``exit_code``. Returns
+    ``{available, runs, red_run, green_run, final_green_after_last_commit}``.
+    ``final_green_after_last_commit`` is None when ``last_commit_ct`` is unknown.
+    """
+    task_dir = Path(task_dir)
+    rows = load_jsonl(task_dir / "tool-events.jsonl")
+
+    runs: list[dict] = []
+    for row in rows:
+        exit_code = row.get("exit_code")
+        if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+            continue
+        summary = str(row.get("action_summary") or "")
+        if not TEST_RUN_COMMAND_RE.search(summary):
+            continue
+        started = str(row.get("started_at") or "")
+        ended = str(row.get("ended_at") or "")
+        runs.append(
+            {
+                "command": summary,
+                "exit_code": exit_code,
+                "started_at": started,
+                "ended_at": ended,
+                "ts": ended or started,
+            }
+        )
+
+    if not runs:
+        return {
+            "available": False,
+            "runs": [],
+            "red_run": None,
+            "green_run": None,
+            "final_green_after_last_commit": None,
+        }
+
+    def _order_key(run: dict) -> str:
+        return run["ended_at"] or run["started_at"] or ""
+
+    ordered = sorted(runs, key=_order_key)
+    passing = [run for run in ordered if run["exit_code"] == 0]
+    failing = [run for run in ordered if run["exit_code"] != 0]
+
+    red_run = failing[0] if failing else None
+    green_run = None
+    if red_run is not None:
+        red_key = _order_key(red_run)
+        green_run = next((run for run in passing if _order_key(run) > red_key), None)
+    elif passing:
+        green_run = passing[0]
+
+    final_green_after_last_commit: bool | None = None
+    if last_commit_ct is not None:
+        final_green_after_last_commit = any(
+            (epoch := _iso_epoch(run["started_at"])) is not None and epoch >= last_commit_ct
+            for run in passing
+        )
+
+    return {
+        "available": True,
+        "runs": ordered,
+        "red_run": red_run,
+        "green_run": green_run,
+        "final_green_after_last_commit": final_green_after_last_commit,
+    }
+
+
+def _event_is_reviewer_approved_text(row: dict) -> bool:
+    return (
+        str(row.get("agent") or "").strip().lower() == "reviewer"
+        and bool(REVIEW_APPROVED_RE.search(event_text(row)))
+    )
+
+
+def independent_review_evidence(task_dir: Path, state_dir: Path | None = None) -> dict:
+    """F3: is a reviewer approval corroborated by an independent trace?
+
+    Sources, any of which corroborates:
+      - delegation.jsonl row with ``agent_role == "reviewer"``            -> "delegation"
+      - {STATE_DIR}/cost/{TASK_ID}.jsonl row with ``agent == "reviewer"`` -> "cost"
+      - a host_bridge_command tool-event whose [started_at, ended_at]
+        window brackets a reviewer-approved progress event ts    -> "host_bridge_window"
+
+    ``state_dir`` defaults to the task dir's grandparent ({STATE_DIR}/tasks/{ID}).
+    Returns ``{available, corroborated, sources}``; never raises.
+    """
+    task_dir = Path(task_dir)
+    if state_dir is None:
+        state_dir = task_dir.parent.parent
+
+    delegation = load_jsonl(task_dir / "delegation.jsonl")
+    tool_events = load_jsonl(task_dir / "tool-events.jsonl")
+    cost_rows = load_jsonl(Path(state_dir) / "cost" / f"{task_dir.name}.jsonl")
+    events = load_jsonl(task_dir / "progress.buffer.jsonl")
+
+    sources: list[str] = []
+    if any(str(row.get("agent_role") or "").strip().lower() == "reviewer" for row in delegation):
+        sources.append("delegation")
+    if any(str(row.get("agent") or "").strip().lower() == "reviewer" for row in cost_rows):
+        sources.append("cost")
+
+    reviewer_event_epochs = [
+        epoch
+        for row in events
+        if _event_is_reviewer_approved_text(row)
+        for epoch in (_iso_epoch(str(row.get("ts") or "")),)
+        if epoch is not None
+    ]
+    host_bridge_windows = [
+        (_iso_epoch(str(row.get("started_at") or "")), _iso_epoch(str(row.get("ended_at") or "")))
+        for row in tool_events
+        if str(row.get("tool_name") or "") == "host_bridge_command"
+    ]
+    bracketed = any(
+        start is not None and end is not None and start <= ts <= end
+        for (start, end) in host_bridge_windows
+        for ts in reviewer_event_epochs
+    )
+    if bracketed:
+        sources.append("host_bridge_window")
+
+    available = bool(delegation or cost_rows or tool_events)
+    return {
+        "available": available,
+        "corroborated": bool(sources),
+        "sources": sources,
+    }
+
+
+def _trace_phase(passed: bool, source: str) -> dict:
+    return {"passed": bool(passed), "evidence_source": source}
+
+
+def trace_quality_evidence(task_dir: Path, register: dict) -> dict:
+    """F4: compose F1-F3 into per-phase trace-first / doc-fallback verdicts.
+
+    Returns per-phase ``red``/``green``/``refactor``/``review`` dicts, each
+    ``{passed, evidence_source}`` where ``evidence_source`` is
+    ``"trace"`` | ``"document"`` | ``"none"``, plus the three sub-reports under
+    ``git`` / ``tool_events`` / ``review``.
+    """
+    task_dir = Path(task_dir)
+
+    git = git_change_evidence(task_dir, register)
+    last_commit_ct = None
+    if git["available"] and git["commits"]:
+        last_commit_ct = max(commit["ct"] for commit in git["commits"])
+    tool_events = tool_event_test_runs(task_dir, last_commit_ct=last_commit_ct)
+    review = independent_review_evidence(task_dir)
+
+    tool_available = tool_events["available"]
+
+    # Red: trace ordering when tool events exist, else legacy doc/exception.
+    if tool_available:
+        red = _trace_phase(tool_events["red_run"] is not None, "trace")
+    elif has_tdd_red_or_exception(task_dir):
+        red = _trace_phase(True, "document")
+    else:
+        red = _trace_phase(False, "none")
+
+    # Green: passing run after red (or any passing run) from the trace.
+    if tool_available:
+        green = _trace_phase(tool_events["green_run"] is not None, "trace")
+    else:
+        green = _trace_phase(False, "none")
+
+    # Refactor: a green run at/after the last implementation commit. When there
+    # are no commits (uncommitted work only), any green run counts.
+    if tool_available:
+        final_green = tool_events["final_green_after_last_commit"]
+        refactor_passed = bool(final_green) or (
+            final_green is None and tool_events["green_run"] is not None
+        )
+        refactor = _trace_phase(refactor_passed, "trace")
+    elif has_tdd_refactor_evidence(task_dir):
+        refactor = _trace_phase(True, "document")
+    else:
+        refactor = _trace_phase(False, "none")
+
+    # Review: independent corroboration when any review trace source exists.
+    if review["available"]:
+        reviewer = _trace_phase(review["corroborated"], "trace")
+    else:
+        reviewer = _trace_phase(False, "none")
+
+    return {
+        "red": red,
+        "green": green,
+        "refactor": refactor,
+        "review": reviewer,
+        "git": git,
+        "tool_events": tool_events,
+        "review_report": review,
+    }
+
+
 def rejection_followups(events: list[dict], rejected_index: int, pipeline: dict | None = None) -> dict:
     rejected = events[rejected_index]
     rejected_stage = event_stage(rejected)
@@ -2031,6 +2381,7 @@ def check_quality_loop(
     ]
     test_checklist = test_checklist_status(task_dir)
     finding_register = finding_register_status(task_dir)
+    trace_evidence = trace_quality_evidence(task_dir, register)
     delegation_fidelity = delegation_fidelity_status(task_dir)
     human_acceptance = human_acceptance_matrix_status(task_dir)
     evaluation_metrics = evaluation_metrics_status(task_dir)
@@ -2077,20 +2428,44 @@ def check_quality_loop(
             failures.append("missing_pipeline_implementation_completion")
         if events and not any(event_is_tdd_done(row) for row in events):
             failures.append("missing_pipeline_tdd_event")
-        if (
-            shape["has_tdd_stage"]
-            and not has_test_file_evidence(events, result_text)
-            and not has_tdd_exception(task_dir)
-        ):
-            failures.append("missing_tdd_test_file")
-        if shape["has_tdd_stage"] and not has_tdd_red_or_exception(task_dir):
-            failures.append("missing_tdd_red_phase_evidence")
-        if shape["has_tdd_stage"] and not has_tdd_refactor_evidence(task_dir):
-            failures.append("missing_tdd_refactor_phase_evidence")
+        if shape["has_tdd_stage"]:
+            git_evidence = trace_evidence["git"]
+            string_claims_test = has_test_file_evidence(events, result_text)
+            if git_evidence["available"]:
+                # Git is authoritative: test-file evidence passes only when a
+                # real test path changed in the diff. A string/doc claim with no
+                # matching git change is active fabrication (always hard).
+                if git_evidence["test_paths"]:
+                    pass
+                elif string_claims_test:
+                    failures.append("test_file_claim_contradicts_git")
+                elif not has_tdd_exception(task_dir):
+                    failures.append("missing_tdd_test_file")
+            elif not string_claims_test and not has_tdd_exception(task_dir):
+                # Git unresolvable: fall back to the legacy string check.
+                failures.append("missing_tdd_test_file")
+
+            # Red / refactor: trace-first, legacy doc fallback only when the
+            # trace source is unavailable (both folded into trace_evidence).
+            if not trace_evidence["red"]["passed"]:
+                failures.append("missing_tdd_red_phase_evidence")
+            if not trace_evidence["refactor"]["passed"]:
+                failures.append("missing_tdd_refactor_phase_evidence")
         if test_checklist_required:
             failures.extend(test_checklist["errors"])
         if events and approved_events and not valid_approval_events:
             failures.append("missing_reviewer_quality_metrics_artifact")
+        review_report = trace_evidence["review_report"]
+        # The independence check activates only when this task dir participates
+        # in the trace regime (a resolvable git baseline, or a review trace file
+        # present). Legacy dirs with neither are left on the pre-trace path so a
+        # self-reported reviewer approval still passes exactly as before.
+        trace_regime_active = review_report["available"] or trace_evidence["git"]["available"]
+        if approved_events and trace_regime_active and not review_report["corroborated"]:
+            # A reviewer approval exists but no independent trace corroborates it
+            # (no reviewer delegation span / cost row / bracketing host-bridge
+            # window). Hard under strict_gate_required, soft otherwise.
+            failures.append("reviewer_approval_without_independent_span")
         if any(error.startswith("invalid_") or error in {
             "malformed_quality_metrics_json",
             "quality_metrics_not_object",
@@ -2193,6 +2568,7 @@ def check_quality_loop(
         "test_checklist": test_checklist,
         "finding_register": finding_register,
         "delegation_fidelity": delegation_fidelity,
+        "trace_evidence": trace_evidence,
         "human_acceptance": human_acceptance,
         "evaluation_metrics": evaluation_metrics,
         "skill_content_audit": skill_audit,

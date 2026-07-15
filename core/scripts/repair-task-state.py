@@ -1683,28 +1683,63 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     pipeline_status = check_quality_loop(task_dir, target_status=args.status)
     pipeline_soft_failures = set(pipeline_status.get("soft_failures", []))
     pipeline_hard_failures = set(pipeline_status.get("hard_failures", []))
+    pipeline_failures = set(pipeline_status.get("failures", []))
+    trace = pipeline_status.get("trace_evidence") or {}
+    trace_red = trace.get("red", {})
+    trace_green = trace.get("green", {})
+    trace_refactor = trace.get("refactor", {})
     pipeline_tdd_passed = bool(pipeline_status.get("passed") and pipeline_status.get("tdd_event_count"))
     pipeline_review_passed = bool(pipeline_status.get("passed") and pipeline_status.get("reviewer_approval_count"))
+
+    # A git-verified contradiction (a claimed test path the diff does not
+    # contain) always blocks, regardless of any document evidence.
+    contradiction = "test_file_claim_contradicts_git" in pipeline_failures
+    reviewer_independence_hard = "reviewer_approval_without_independent_span" in pipeline_hard_failures
+
+    # Red phase — trace-first (a recorded failing test run), doc fallback only
+    # when the trace source (tool-events.jsonl) is unavailable.
+    red_from_trace = trace_red.get("evidence_source") == "trace"
     red_phase_explicit = bool(status["red_phase_evidence_paths"] or status["tdd_exception_paths"])
     red_phase_advisory = bool(
-        not red_phase_explicit
+        not red_from_trace
+        and not red_phase_explicit
         and pipeline_status.get("passed")
         and "missing_tdd_red_phase_evidence" in pipeline_soft_failures
         and "missing_tdd_red_phase_evidence" not in pipeline_hard_failures
     )
+    if red_from_trace:
+        red_phase_passed = bool(trace_red.get("passed"))
+    else:
+        red_phase_passed = red_phase_explicit or red_phase_advisory
+
+    # Green phase — trace-first (a recorded passing test run), else the legacy
+    # pipeline/document tdd signal.
+    green_from_trace = trace_green.get("evidence_source") == "trace"
+    if green_from_trace:
+        green_phase_passed = bool(trace_green.get("passed"))
+    else:
+        green_phase_passed = bool((status["tdd_evidence_paths"] or pipeline_tdd_passed) and pipeline_status["passed"])
+
+    # Refactor phase — trace-first (a green run at/after the last commit), doc
+    # fallback only when the trace source is unavailable.
+    refactor_from_trace = trace_refactor.get("evidence_source") == "trace"
     refactor_phase_explicit = bool(status["refactor_phase_evidence_paths"])
     refactor_phase_advisory = bool(
-        not refactor_phase_explicit
+        not refactor_from_trace
+        and not refactor_phase_explicit
         and pipeline_status.get("passed")
         and "missing_tdd_refactor_phase_evidence" in pipeline_soft_failures
         and "missing_tdd_refactor_phase_evidence" not in pipeline_hard_failures
     )
-    red_phase_passed = red_phase_explicit or red_phase_advisory
-    green_phase_passed = bool((status["tdd_evidence_paths"] or pipeline_tdd_passed) and pipeline_status["passed"])
-    refactor_phase_passed = refactor_phase_explicit or refactor_phase_advisory
+    if refactor_from_trace:
+        refactor_phase_passed = bool(trace_refactor.get("passed"))
+    else:
+        refactor_phase_passed = refactor_phase_explicit or refactor_phase_advisory
+
     tdd_and_review_passed = bool(status["passed"] or (pipeline_tdd_passed and pipeline_review_passed))
     status["pipeline_gate"] = pipeline_status
     status["pipeline_passed"] = pipeline_status["passed"]
+    status["trace_evidence"] = trace
     status["tdd_outcome_source"] = "evidence" if status["tdd_evidence_paths"] else ("pipeline" if pipeline_tdd_passed else "")
     status["review_outcome_source"] = (
         "evidence"
@@ -1713,15 +1748,23 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     )
     status["red_phase_advisory"] = red_phase_advisory
     status["refactor_phase_advisory"] = refactor_phase_advisory
+    status["red_phase_source"] = trace_red.get("evidence_source") if red_from_trace else (
+        "document" if red_phase_explicit else ("advisory" if red_phase_advisory else "")
+    )
+    status["refactor_phase_source"] = trace_refactor.get("evidence_source") if refactor_from_trace else (
+        "document" if refactor_phase_explicit else ("advisory" if refactor_phase_advisory else "")
+    )
     status["red_phase_passed"] = red_phase_passed
     status["green_phase_passed"] = green_phase_passed
     status["refactor_phase_passed"] = refactor_phase_passed
+    status["contradiction"] = contradiction
     status["passed"] = bool(
         tdd_and_review_passed
         and pipeline_status["passed"]
         and red_phase_passed
         and green_phase_passed
         and refactor_phase_passed
+        and not contradiction
     )
     status["bypassed"] = False
     status["bypass_reason"] = ""
@@ -1733,92 +1776,88 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
         status["bypass_reason"] = args.quality_bypass_reason
         return status
 
-    if (
-        status.get("tdd_evidence_paths")
-        and status.get("review_evidence_paths")
-        and status.get("pipeline_passed")
-        and not red_phase_passed
-    ):
+    # Only raise a phase-specific blocker when there is enough TDD/review
+    # substance that the specific phase is the actual gap. With no substance at
+    # all, fall through to the generic missing_quality_loop_evidence blocker.
+    has_evidence_substance = bool(
+        tdd_and_review_passed
+        or status.get("tdd_evidence_paths")
+        or status.get("review_evidence_paths")
+        or status.get("red_phase_evidence_paths")
+        or status.get("refactor_phase_evidence_paths")
+        or pipeline_status.get("tdd_event_count")
+        or pipeline_status.get("reviewer_approval_count")
+    )
+
+    if contradiction:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: test_file_claim_contradicts_git\n"
+            "DETAIL: git shows no test-file change between the recorded base commit "
+            "and HEAD, but progress events or result.md claim a test path. The claimed "
+            "test coverage is absent from the actual diff.\n"
+            "NEXT: commit the real test file so it appears in the git diff, then re-run "
+            "the focused test so the tool-event trace records the run. Do not claim a "
+            "test path the diff does not contain."
+        )
+
+    if reviewer_independence_hard:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: reviewer_approval_without_independent_span\n"
+            "DETAIL: the reviewer-approved event is not corroborated by an independent "
+            "review trace (no reviewer delegation span, no reviewer-attributed cost row, "
+            "and no host-bridge tool-event window bracketing the approval).\n"
+            "NEXT: invoke an independent reviewer so a reviewer delegation span, a "
+            "reviewer-attributed cost row, or a bracketing host-bridge tool event is "
+            "recorded before repair."
+        )
+
+    if has_evidence_substance and not red_phase_passed:
         raise SystemExit(
             "STATUS: blocked\n"
             "BLOCKER: missing_tdd_red_phase_evidence\n"
-            "DETAIL: completed repair for a mutating implementation task requires "
-            "TDD red-phase evidence before production-code mutation, or an explicit "
-            "TDD exception explaining why a runnable red failure could not be produced.\n"
-            "NEXT: record context/tdd-red.md with the focused failing test result, "
-            "or context/tdd-exception.md with the exception reason before repair."
+            "DETAIL: completed repair for a mutating implementation task requires a "
+            "failing (red) test run before production-code mutation, or an explicit TDD "
+            "exception explaining why a runnable red failure could not be produced.\n"
+            "NEXT: re-run the focused failing test so the tool-event trace records the "
+            "red run before it is made to pass, or record context/tdd-exception.md with "
+            "the reason a runnable red failure could not be produced."
         )
 
-    if (
-        status.get("tdd_evidence_paths")
-        and status.get("review_evidence_paths")
-        and status.get("pipeline_passed")
-        and red_phase_passed
-        and not refactor_phase_passed
-    ):
+    if has_evidence_substance and red_phase_passed and not refactor_phase_passed:
         raise SystemExit(
             "STATUS: blocked\n"
             "BLOCKER: missing_tdd_refactor_phase_evidence\n"
-            "DETAIL: completed repair for a mutating implementation task requires "
-            "TDD refactor-phase evidence after green, including the refactor or no-op "
-            "refactor decision and post-refactor verification.\n"
-            "NEXT: record context/tdd-refactor.md with the refactor decision and "
-            "post-refactor verification before repair."
+            "DETAIL: completed repair for a mutating implementation task requires a "
+            "passing test run after the last implementation commit (the post-refactor "
+            "green verification).\n"
+            "NEXT: re-run the focused test after the refactor so the tool-event trace "
+            "records a passing run at or after the last implementation commit."
         )
 
-    pipeline_failures = set(pipeline_status.get("failures", []))
-    if (
-        status.get("tdd_evidence_paths")
-        and status.get("review_evidence_paths")
-        and "missing_tdd_red_phase_evidence" in pipeline_failures
-        and not red_phase_passed
-    ):
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: missing_tdd_red_phase_evidence\n"
-            "DETAIL: completed repair for a mutating implementation task requires "
-            "TDD red-phase evidence before production-code mutation, or an explicit "
-            "TDD exception explaining why a runnable red failure could not be produced.\n"
-            "NEXT: record context/tdd-red.md with the focused failing test result, "
-            "or context/tdd-exception.md with the exception reason before repair."
-        )
-
-    if (
-        status.get("tdd_evidence_paths")
-        and status.get("review_evidence_paths")
-        and "missing_tdd_refactor_phase_evidence" in pipeline_failures
-        and red_phase_passed
-        and not refactor_phase_passed
-    ):
-        raise SystemExit(
-            "STATUS: blocked\n"
-            "BLOCKER: missing_tdd_refactor_phase_evidence\n"
-            "DETAIL: completed repair for a mutating implementation task requires "
-            "TDD refactor-phase evidence after green, including the refactor or no-op "
-            "refactor decision and post-refactor verification.\n"
-            "NEXT: record context/tdd-refactor.md with the refactor decision and "
-            "post-refactor verification before repair."
-        )
-
-    if status.get("tdd_evidence_paths") and status.get("review_evidence_paths"):
+    if has_evidence_substance:
         raise SystemExit(
             "STATUS: blocked\n"
             "BLOCKER: missing_quality_loop_pipeline\n"
             "DETAIL: completed repair for a mutating implementation task requires "
-            "pipeline-level quality-loop events, not only evidence files.\n"
+            "pipeline-level quality-loop evidence (implementer/TDD completion plus an "
+            "independently corroborated reviewer approval), not only evidence files.\n"
             "FAILURES: " + ", ".join(pipeline_status.get("failures", [])) + "\n"
-            "NEXT: ensure pipeline.json includes TDD-capable implementation and reviewer stages, "
-            "and progress.buffer.jsonl proves implementer/TDD completion plus reviewer approval. "
-            "If review rejected, the trace must show implementer/TDD retry followed by reviewer re-approval."
+            "NEXT: re-run the focused test so the trace records implementer/TDD "
+            "completion, and invoke an independent reviewer so the approval is "
+            "corroborated. If review was rejected, the trace must show implementer/TDD "
+            "retry followed by reviewer re-approval."
         )
 
     raise SystemExit(
         "STATUS: blocked\n"
         "BLOCKER: missing_quality_loop_evidence\n"
-        "DETAIL: completed repair for a mutating implementation task requires "
-        "TDD/test evidence, reviewer evidence, and pipeline-level quality-loop events.\n"
-        "NEXT: add --quality-evidence paths for TDD/reviewer artifacts, or "
-        "record an explicit --quality-bypass-reason."
+        "DETAIL: completed repair for a mutating implementation task requires trace "
+        "evidence of TDD red/green/refactor and an independently corroborated reviewer "
+        "approval.\n"
+        "NEXT: re-run the focused test so the tool-event trace records the run and "
+        "invoke an independent reviewer, or record an explicit --quality-bypass-reason."
     )
 
 
