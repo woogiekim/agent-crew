@@ -83,6 +83,11 @@ settings = {
                 "hooks": [
                     {
                         "type": "command",
+                        "command": f"bash '{home}/hooks/tool-event-recorder.sh'",
+                        "timeout": 5,
+                    },
+                    {
+                        "type": "command",
                         "command": f"bash '{home}/hooks/auto-issue-report.sh'",
                         "timeout": 10,
                     }

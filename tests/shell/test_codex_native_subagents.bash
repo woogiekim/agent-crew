@@ -12,6 +12,7 @@ mkdir -p "${ac_home}/setup" "${ac_home}/user/agents" "${repo}/.codex/agents"
 cp "${REPO_ROOT}/core/setup/common.sh" "${ac_home}/setup/common.sh"
 mkdir -p "${ac_home}/adapters/codex" "${ac_home}/hooks" "${ac_home}/system"
 cp -R "${REPO_ROOT}/adapters/codex/template" "${ac_home}/adapters/codex/template"
+cp "${REPO_ROOT}/core/hooks/"*.sh "${ac_home}/hooks/"
 cp -R "${REPO_ROOT}/core/agents" "${ac_home}/system/agents"
 
 cat >"${ac_home}/user/agents/scout.md" <<'EOF'
@@ -110,6 +111,7 @@ EOF
 setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
 setup_inherit_out="$(cat "${setup_repo}/.codex/agents/inherit-model.toml")"
 setup_config_out="$(cat "${setup_repo}/.codex/config.toml")"
+setup_hooks_out="$(cat "${setup_repo}/.codex/hooks.json")"
 
 it "Codex setup user-agent conversion omits reasoning_tier"
 assert_not_contains "${setup_out}" 'reasoning_tier ='
@@ -138,6 +140,14 @@ assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model_reaso
 
 it "Codex setup maps xhigh system agents to Codex frontier model"
 assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model = "gpt-5.5"'
+
+it "Codex setup installs tool-event-recorder hook file"
+assert_file_exists "${setup_repo}/.codex/hooks/tool-event-recorder.sh"
+
+it "Codex setup registers tool-event-recorder for Bash PostToolUse"
+assert_contains "${setup_hooks_out}" "tool-event-recorder.sh" "hooks.json registers tool event recorder"
+assert_contains "${setup_hooks_out}" '"matcher": "Bash"' "hooks.json has Bash matcher"
+assert_contains "${setup_hooks_out}" '"PostToolUse"' "hooks.json has PostToolUse section"
 
 it "Codex setup maps deep implementation agents to high effort"
 assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model_reasoning_effort = "high"'

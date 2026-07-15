@@ -24,6 +24,8 @@ import _trace_gate_fixtures as fx  # noqa: E402
 
 HOOK = fx.REPO_ROOT / "core" / "hooks" / "tool-event-recorder.sh"
 SCRIPTS = fx.SCRIPTS_DIR
+CODEX_SETUP = fx.REPO_ROOT / "adapters" / "codex" / "setup.sh"
+CLAUDE_SETUP = fx.REPO_ROOT / "adapters" / "claude" / "setup.sh"
 
 APPEND_TOOL_EVENT_KEYS = {
     "schema_version",
@@ -179,3 +181,17 @@ def test_external_dependency_case_downstream_consumers_read_hook_rows(tmp_path):
             [sys.executable, str(SCRIPTS / script), *args], text=True, capture_output=True
         )
         assert proc.returncode == 0, f"{script}: {proc.stdout}\n{proc.stderr}"
+
+
+def test_regression_case_supported_host_setups_register_tool_event_recorder():
+    # TC-055: setup/update must wire the hook into supported host configs;
+    # otherwise trace-first repair gates have no new Bash execution rows to read.
+    codex_setup = CODEX_SETUP.read_text(encoding="utf-8")
+    claude_setup = CLAUDE_SETUP.read_text(encoding="utf-8")
+
+    assert "tool-event-recorder.sh" in codex_setup
+    assert "tool-event-recorder.sh" in claude_setup
+    assert '"matcher": "Bash"' in codex_setup
+    assert '"PostToolUse"' in codex_setup
+    assert '"Bash"' in claude_setup
+    assert '"PostToolUse"' in claude_setup
