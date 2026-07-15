@@ -186,6 +186,13 @@ KOREAN_READ_ONLY_COMPLAINT_RE = re.compile(
     r"[^.!?\n。]*(?:해버리|했네|하네|됐네|되어버리|해\s*버리)",
     re.IGNORECASE,
 )
+KOREAN_SELF_EVOLUTION_COMPLAINT_RE = re.compile(
+    r"(?:에이전트크루|agent-crew)"
+    r"[^.!?\n。]*(?:서브\s*에이전트|에이전트|스킬)"
+    r"[^.!?\n。]*(?:성장|보강|보완|개선|자동|알아서)"
+    r"[^.!?\n。]*(?:안\s*되|안되|제대로\s*안|못\s*하|못하|않)",
+    re.IGNORECASE,
+)
 READ_ONLY_REVIEW_COMMAND_SOURCE_RE = re.compile(
     r"독립\s*리뷰\s*패스|read-only\s*(?:서브에이전트|리뷰)|"
     r"리뷰\s*포커스|Code\s+Review\s+Summary|다음\s*액션\s*제안",
@@ -1124,6 +1131,7 @@ def looks_mutating_task(text: str) -> bool:
     has_read_only_signal = bool(
         READ_ONLY_TASK_RE.search(value)
         or KOREAN_PLAN_ONLY_CONTEXT_RE.search(value)
+        or KOREAN_SELF_EVOLUTION_COMPLAINT_RE.search(value)
         or READ_ONLY_HISTORY_QUERY_RE.search(value)
         or READ_ONLY_METHOD_LEARNING_RE.search(value)
     )
@@ -1167,6 +1175,7 @@ def looks_mutating_task(text: str) -> bool:
         constrained_value = KOREAN_NON_MUTATING_CONSTRAINT_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_BACKGROUND_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_COMPLAINT_RE.sub("", constrained_value)
+        constrained_value = KOREAN_SELF_EVOLUTION_COMPLAINT_RE.sub("", constrained_value)
         constrained_value = KOREAN_READ_ONLY_EXPLORATION_RE.sub("", constrained_value)
         constrained_value = KOREAN_PLAN_ONLY_CONTEXT_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)

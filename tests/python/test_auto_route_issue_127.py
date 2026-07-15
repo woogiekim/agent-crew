@@ -71,6 +71,31 @@ def _directive_type(prompt: str) -> str:
     return "OTHER"
 
 
+def test_generic_route_writes_routing_miss_log(tmp_path: Path):
+    env = os.environ.copy()
+    env["AGENT_CREW_HOST_BRIDGE_COMMAND"] = "true"
+    env["AGENT_CREW_HOME"] = str(tmp_path / "home")
+    env["PROJECT_ROOT"] = str(tmp_path / "project")
+    Path(env["PROJECT_ROOT"]).mkdir(parents=True)
+
+    result = subprocess.run(
+        [str(HOOK_PATH)],
+        input=json.dumps({"prompt": "the docs feel inconsistent"}),
+        text=True,
+        capture_output=True,
+        check=True,
+        env=env,
+    )
+
+    assert "[agent-crew] ROUTE" in result.stdout
+    logs = list((tmp_path / "home" / "state").glob("*/routing-misses.log"))
+    assert len(logs) == 1
+    row = json.loads(logs[0].read_text(encoding="utf-8").strip())
+    assert row["route"] == "ROUTE"
+    assert row["reason"] == "general user request"
+    assert row["prompt"] == "the docs feel inconsistent"
+
+
 # ---------------------------------------------------------------------------
 # Acceptance criteria #1, #2: read-only Q&A routes to crew:agent (ROUTE).
 # The pipeline is NOT started.

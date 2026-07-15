@@ -165,6 +165,15 @@ invocation in SKILL.md; generic adds guidance).
   blockers, changed files, reused pipeline assets, and skill-content-audit
   signals, then writes deterministic `context/evolution-report.{json,md}` when
   requested. It never creates, registers, or selects generated assets.
+- `evolution-proposal-aggregate.py` — cross-task proposal aggregator for
+  report-only evolution signals. It writes approval-gated learning proposals
+  only after repeated evidence and never writes assets or `pipeline.needs_creation`.
+- `evolution-proposal-apply.py` — applies approved self-evolution proposals
+  only when they patch an existing skill. It never creates agents, creates new
+  skills, or writes `pipeline.needs_creation`, and records an audit JSON.
+- `evolution-proposal-summary.py` — read-only compact renderer for pending
+  approval-gated proposals. It is used by close-out/status surfaces to show
+  when repeated evidence has produced proposals without applying them.
 - `phase-2-validation.py` — runs or plans the second validation pass across
   unit, smoke, integration, alpha, and beta levels, then emits structured
   findings, gaps, recommended follow-up actions, per-command log artifacts,

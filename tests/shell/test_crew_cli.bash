@@ -562,6 +562,9 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" "refreshed runtime assets"
 
+it "runtime refresh does not overwrite the running PATH crew file"
+assert_contains "$(tail -n 1 "${RUNTIME_SYNC_BIN}/crew")" "stale managed PATH crew copy"
+
 it "crew run installs missing runtime repair script during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
 
@@ -610,8 +613,13 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/evaluations/workflow-replay.json"
 it "crew run installs retry chaos fixture during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/evaluations/retry-chaos.json"
 
-it "crew run refreshes managed PATH crew CLI during auto-refresh"
+it "crew run skips currently running managed PATH crew CLI during auto-refresh"
 cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
+rc=$?
+assert_exit 1 "${rc}"
+
+it "crew run still refreshes installed AGENT_CREW_HOME bin CLI during auto-refresh"
+cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_HOME}/bin/crew"
 rc=$?
 assert_exit 0 "${rc}"
 

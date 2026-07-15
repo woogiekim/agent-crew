@@ -1081,3 +1081,14 @@ def test_classifier_keeps_off_set_bare_push_and_advisory_read_only():
         assert quality_loop.looks_mutating_task(task) is False
         assert repair_state.looks_mutating_task(task) is False
         assert repair_state.looks_quality_gated_task(task) is False
+
+
+def test_korean_self_evolution_complaint_is_read_only_diagnostic():
+    """regression: missing self-evolution complaints are diagnostics, not implementation."""
+    task = (
+        "에이전트크루에서 알아서 서브에이전트나 스킬을 보강하거나 만들어서 "
+        "지속적으로 성장하도록 했는데 제대로 안되는거같아"
+    )
+
+    assert quality_loop.looks_mutating_task(task) is False
+    assert repair_state.looks_mutating_task(task) is False

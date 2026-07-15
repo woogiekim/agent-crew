@@ -11,6 +11,7 @@ import sys
 import os
 import shutil
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -77,6 +78,31 @@ def _default_bridge_command():
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return str(candidate)
     return ""
+
+
+def _state_dir():
+    home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))).expanduser()
+    project_root = Path(os.environ.get("PROJECT_ROOT", os.getcwd())).expanduser().resolve()
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", project_root.name.strip()).strip(".-").lower() or "project"
+    digest = hashlib.sha256(str(project_root).encode("utf-8")).hexdigest()[:10]
+    return home / "state" / f"{slug}-{digest}"
+
+
+def _log_routing_miss(route, target_agent, reason):
+    try:
+        state_dir = _state_dir()
+        state_dir.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "route": route,
+            "target_agent": target_agent,
+            "reason": reason,
+            "prompt": _compact_text(prompt),
+        }
+        with (state_dir / "routing-misses.log").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 HOST_BRIDGE_READY, HOST_BRIDGE_REASON = _bridge_status()
@@ -918,6 +944,7 @@ if not detected_type and match(ACTION_PAT):
         suggested_pipeline = 'crew:run "your request"'
 
 if not detected_type:
+    _log_routing_miss("ROUTE", "analyst", "general user request")
     emit_question_route("analyst", "general user request")
 
 if emit_no_bridge_inline_fallback("implementation request"):

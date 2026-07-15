@@ -395,6 +395,309 @@ def test_skill_content_depth_maps_to_relevant_rejected_candidate(
     }]
 
 
+def test_proposal_aggregator_promotes_repeated_report_signals_without_asset_writes(
+    script_runner, env_with_home, state_dir
+):
+    first = _seed_task(state_dir, "20260101-120000-0")
+    second = _seed_task(state_dir, "20260102-120000-0")
+    for task_dir in (first, second):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": task_dir.name,
+                "task": "improve self evolution",
+                "generation_mode": "report_only",
+                "meaningful": True,
+                "signals": {
+                    "retries": 0,
+                    "reviewer_loop_backs": 0,
+                    "blockers": [],
+                    "changed_files": [],
+                    "skill_content_audit": {
+                        "available": True,
+                        "shallow_finding_count": 1,
+                    },
+                },
+                "reused_assets": [],
+                "observed_patterns": [{
+                    "kind": "skill_content_depth",
+                    "summary": "Skill content audit found shallow skill material.",
+                    "evidence_refs": ["context/skill-content-audit.json"],
+                }],
+                "asset_candidates": [],
+                "rejected_candidates": [{
+                    "asset_type": "skill",
+                    "name": "existing-skill-patch-suggestion",
+                    "reason": "A single task produced a reusable-work signal; prefer a small patch to an existing skill over creating a new asset.",
+                    "rejection_reason": "insufficient_repeated_evidence",
+                    "required_evidence": "Collect repeated occurrences before suggesting a minimal patch to the closest existing skill.",
+                }],
+                "learning_summary": "Reusable-work signals were observed.",
+                "guardrails": {
+                    "asset_writes": "disabled",
+                    "generator_invoked": False,
+                    "verification_bypass": False,
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    output = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["guardrails"] == {
+        "asset_writes": "disabled",
+        "generator_invoked": False,
+        "needs_creation_writes": "disabled",
+        "approval_required": True,
+    }
+    assert payload["proposals"][0]["proposal_type"] == "patch_existing_skill"
+    assert payload["proposals"][0]["status"] == "approval_required"
+    assert payload["proposals"][0]["evidence_refs"] == [
+        "tasks/20260101-120000-0/context/evolution-report.json",
+        "tasks/20260102-120000-0/context/evolution-report.json",
+    ]
+
+
+def test_proposal_aggregator_preserves_existing_lifecycle_decisions(
+    script_runner, env_with_home, state_dir
+):
+    first = _seed_task(state_dir, "20260101-120000-0")
+    second = _seed_task(state_dir, "20260102-120000-0")
+    third = _seed_task(state_dir, "20260103-120000-0")
+    for task_dir in (first, second, third):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": task_dir.name,
+                "generation_mode": "report_only",
+                "observed_patterns": [{"kind": "skill_content_depth"}],
+                "asset_candidates": [],
+                "rejected_candidates": [{
+                    "asset_type": "skill",
+                    "name": "existing-skill-patch-suggestion",
+                }],
+            }),
+            encoding="utf-8",
+        )
+
+    output = state_dir / "learning-candidates" / "proposals.json"
+    output.parent.mkdir(parents=True)
+    output.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [{
+                "candidate_id": "existing-skill-patch-suggestion-2x",
+                "proposal_type": "patch_existing_skill",
+                "status": "approved",
+                "target_skill": "documentation-impact.md",
+                "patch_body": "## Approved Patch\n\nKeep this text.\n",
+                "decision_reason": "operator approved",
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
+    assert proposal["candidate_id"] == "existing-skill-patch-suggestion-2x"
+    assert proposal["status"] == "approved"
+    assert proposal["target_skill"] == "documentation-impact.md"
+    assert proposal["patch_body"] == "## Approved Patch\n\nKeep this text.\n"
+    assert proposal["decision_reason"] == "operator approved"
+    assert proposal["occurrence_count"] == 3
+    assert len(proposal["evidence_refs"]) == 3
+
+
+def test_proposal_apply_requires_approved_patch_existing_skill(
+    script_runner, env_with_home, state_dir, tmp_path: Path
+):
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    skill = skill_dir / "example.md"
+    skill.write_text("# Skill: example\n", encoding="utf-8")
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [{
+                "candidate_id": "example-2x",
+                "proposal_type": "patch_existing_skill",
+                "status": "approval_required",
+                "target_skill": "example.md",
+                "patch_body": "## Added Rule\n\nUse repeated evidence only.\n",
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-apply.py",
+        "--proposals", str(proposals),
+        "--skill-dir", str(skill_dir),
+        "--audit-output", str(state_dir / "learning-candidates" / "apply-audit.json"),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert skill.read_text(encoding="utf-8") == "# Skill: example\n"
+    audit = json.loads((state_dir / "learning-candidates" / "apply-audit.json").read_text(encoding="utf-8"))
+    assert audit["applied"] == []
+    assert audit["skipped"][0]["reason"] == "not_approved"
+
+
+def test_proposal_apply_appends_approved_patch_to_existing_skill_only(
+    script_runner, env_with_home, state_dir, tmp_path: Path
+):
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    skill = skill_dir / "example.md"
+    skill.write_text("# Skill: example\n", encoding="utf-8")
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [
+                {
+                    "candidate_id": "example-2x",
+                    "proposal_type": "patch_existing_skill",
+                    "status": "approved",
+                    "target_skill": "example.md",
+                    "patch_body": "## Added Rule\n\nUse repeated evidence only.\n",
+                    "evidence_refs": ["tasks/one/context/evolution-report.json"],
+                },
+                {
+                    "candidate_id": "new-agent-2x",
+                    "proposal_type": "create_agent",
+                    "status": "approved",
+                    "target_skill": "new-agent.md",
+                    "patch_body": "must not be written\n",
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-apply.py",
+        "--proposals", str(proposals),
+        "--skill-dir", str(skill_dir),
+        "--audit-output", str(state_dir / "learning-candidates" / "apply-audit.json"),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    text = skill.read_text(encoding="utf-8")
+    assert "<!-- agent-crew-evolution:example-2x:start -->" in text
+    assert "Use repeated evidence only." in text
+    assert not (skill_dir / "new-agent.md").exists()
+    audit = json.loads((state_dir / "learning-candidates" / "apply-audit.json").read_text(encoding="utf-8"))
+    assert audit["guardrails"]["asset_creation"] == "disabled"
+    assert audit["guardrails"]["needs_creation_writes"] == "disabled"
+    assert audit["applied"][0]["candidate_id"] == "example-2x"
+    assert audit["skipped"][0]["reason"] == "unsupported_proposal_type"
+
+
+def test_proposal_summary_reports_pending_items(script_runner, env_with_home, state_dir):
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [
+                {
+                    "candidate_id": "existing-skill-patch-suggestion-2x",
+                    "proposal_type": "patch_existing_skill",
+                    "status": "approval_required",
+                    "target_asset": "existing-skill-patch-suggestion",
+                    "occurrence_count": 2,
+                    "evidence_refs": [
+                        "tasks/one/context/evolution-report.json",
+                        "tasks/two/context/evolution-report.json",
+                    ],
+                },
+                {
+                    "candidate_id": "already-approved-2x",
+                    "proposal_type": "patch_existing_skill",
+                    "status": "approved",
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-summary.py",
+        "--proposals", str(proposals),
+        "--format", "text",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "SELF_EVOLUTION_PROPOSALS: 1 pending" in result.stdout
+    assert "- existing-skill-patch-suggestion-2x" in result.stdout
+    assert "type: patch_existing_skill" in result.stdout
+    assert "evidence: 2 tasks" in result.stdout
+    assert "already-approved-2x" not in result.stdout
+
+
+def test_proposal_summary_json_counts_pending_items(script_runner, env_with_home, state_dir):
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [{
+                "candidate_id": "investigate-reusable-asset-2x",
+                "proposal_type": "investigate_reusable_asset",
+                "status": "approval_required",
+                "occurrence_count": 3,
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-summary.py",
+        "--proposals", str(proposals),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["pending_count"] == 1
+    assert payload["proposals"][0]["candidate_id"] == "investigate-reusable-asset-2x"
+
+
+def test_supervisor_closeout_documents_proposal_aggregation_step():
+    document = SUPERVISOR_RETRY.read_text(encoding="utf-8")
+
+    assert "#### 2e. Evolution proposals — approval-gated surfacing" in document
+    assert "evolution-proposal-aggregate.py" in document
+    assert "evolution-proposal-summary.py" in document
+    assert "EVOLUTION_PROPOSALS" in document
+    assert "EVOLUTION_PROPOSALS_FAILED" in document
+    assert "rm -f \"${EVOLUTION_PROPOSALS_SUMMARY}\"" in document
+    assert "--format text > \"${EVOLUTION_PROPOSALS_SUMMARY}\"" in document
+
+
 def _evolution_closeout_block() -> str:
     document = SUPERVISOR_RETRY.read_text(encoding="utf-8")
     section = document.split(
@@ -402,6 +705,51 @@ def _evolution_closeout_block() -> str:
         1,
     )[1]
     return section.split("```bash\n", 1)[1].split("\n```", 1)[0]
+
+
+def _aar_closeout_block() -> str:
+    document = SUPERVISOR_RETRY.read_text(encoding="utf-8")
+    section = document.split(
+        "#### 2c. AAR debrief — close the learning loop",
+        1,
+    )[1]
+    return section.split("```bash\n", 1)[1].split("\n```", 1)[0]
+
+
+def test_aar_debrief_logs_failed_event_when_debrief_json_is_unreadable(tmp_path: Path):
+    """regression: AAR debrief parser failures must not disappear as not_meaningful."""
+    agent_crew_home = tmp_path / "home"
+    script = agent_crew_home / "scripts" / "telemetry-aggregate.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "#!/usr/bin/env python3\nprint('not-json')\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    block = _aar_closeout_block()
+    harness = (
+        "log_progress() { printf '%s|%s\\n' \"$1\" \"$2\"; }\n"
+        "HAS_COST_TRACKING=0\n"
+        + block
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "AGENT_CREW_HOME": str(agent_crew_home),
+            "STATE_DIR": str(tmp_path / "state"),
+            "TASK_ID": "20260101-120000-0",
+        },
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "AAR_DEBRIEF_FAILED|non_blocking=true reason=invalid_debrief_output"
+    ]
 
 
 def _write_evolution_stub(agent_crew_home: Path) -> None:

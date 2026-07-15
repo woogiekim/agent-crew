@@ -74,6 +74,36 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
             f.write(json.dumps(row) + "\n")
 
 
+def test_learning_candidate_schema_accepts_approved_proposal_apply_fields(schemas_dir: Path, tmp_path: Path):
+    schema = validate_state.load_schema(schemas_dir, "learning-candidate.schema.json")
+    proposal = {
+        "schema_version": 1,
+        "candidate_id": "existing-skill-patch-suggestion-2x",
+        "source": "aar_memo",
+        "memory_layer": "project",
+        "evidence_refs": ["tasks/one/context/evolution-report.json"],
+        "promotion_reason": "Repeated evidence supports a skill patch proposal.",
+        "trust_boundary": "advisory_until_rule_promotion",
+        "proposal_type": "patch_existing_skill",
+        "status": "approved",
+        "target_asset": "existing-skill-patch-suggestion",
+        "target_skill": "documentation-impact.md",
+        "patch_body": "## Approved Patch\n\nKeep this text.\n",
+        "decision_reason": "operator approved",
+        "approved_by": "operator",
+        "approved_at": "2026-07-15T02:25:00Z",
+        "rejected_reason": "prior rejected rationale",
+        "occurrence_count": 2,
+        "approval_gate": "crew:run_or_supervisor_approval_required",
+        "guardrail": "proposal_only_no_needs_creation_write",
+    }
+    findings = validate_state.Findings()
+
+    validate_state.validate(proposal, schema, findings, tmp_path / "proposal.json")
+
+    assert findings.errors == []
+
+
 def test_validate_state_schema_helpers_cover_validator_edges(monkeypatch, tmp_path: Path):
     findings = validate_state.Findings()
     validate_state.validate("value", None, findings, tmp_path / "file.json")

@@ -874,15 +874,21 @@ it never blocks task close-out). It is **out of band** of stage retries and
 
 ```bash
 # Distill the just-finished task into an AAR memo (reuses aggregate_task()).
+AAR_DEBRIEF_STATUS=0
 AAR_JSON=$(python3 "${AGENT_CREW_HOME}/scripts/telemetry-aggregate.py" \
   --state-dir "${STATE_DIR}" \
   --task-id "${TASK_ID}" \
-  --debrief --format json 2>/dev/null) || true
+  --debrief --format json 2>/dev/null) || AAR_DEBRIEF_STATUS=$?
 
-AAR_MEANINGFUL=$(printf '%s' "${AAR_JSON}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('meaningful', False))" 2>/dev/null || echo "False")
-AAR_RECALL_HINT=$(printf '%s' "${AAR_JSON}" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('recall_hint', ''))" 2>/dev/null || echo "")
+AAR_PARSE_OK=1
+AAR_MEANINGFUL="False"
+AAR_RECALL_HINT=""
+if [ "${AAR_DEBRIEF_STATUS}" = "0" ]; then
+  AAR_MEANINGFUL=$(printf '%s' "${AAR_JSON}" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('meaningful', False))" 2>/dev/null) || AAR_PARSE_OK=0
+  AAR_RECALL_HINT=$(printf '%s' "${AAR_JSON}" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('recall_hint', ''))" 2>/dev/null) || AAR_PARSE_OK=0
+fi
 
 # Guardrail-2 (cost): skip capture when the cost circuit breaker is exhausted,
 # mirroring the handoff page-out precedent (Phase 3.5). A post-hoc capture must
@@ -896,7 +902,11 @@ if [ "${HAS_COST_TRACKING}" = "1" ]; then
   fi
 fi
 
-if [ "${AAR_COST_OK}" != "1" ]; then
+if [ "${AAR_DEBRIEF_STATUS}" != "0" ]; then
+  log_progress "AAR_DEBRIEF_FAILED" "non_blocking=true reason=debrief_command_failed"
+elif [ "${AAR_PARSE_OK}" != "1" ]; then
+  log_progress "AAR_DEBRIEF_FAILED" "non_blocking=true reason=invalid_debrief_output"
+elif [ "${AAR_COST_OK}" != "1" ]; then
   # Guardrail-2 skip.
   log_progress "AAR_DEBRIEF_SKIPPED" "reason=cost_exceeded"
 elif [ "${AAR_MEANINGFUL}" = "True" ]; then
@@ -923,6 +933,7 @@ The two events are added to the Phase 0 event catalog
 |---|---|---|
 | `AAR_DEBRIEF` | Phase 3 close-out — debrief ran, signals were meaningful (Guardrail-1), cost breaker not exhausted (Guardrail-2), and the AAR memo was captured to project memory | `meaningful=true captured recall_hint to project memory` |
 | `AAR_DEBRIEF_SKIPPED` | Phase 3 close-out — debrief skipped without capture, either because no meaningful signals existed (Guardrail-1) or because the cost circuit breaker was exhausted (Guardrail-2) | `reason={not_meaningful\|cost_exceeded}` |
+| `AAR_DEBRIEF_FAILED` | Phase 3 close-out — debrief failed or returned invalid JSON; close-out continues but the signal pipeline is visibly broken | `non_blocking=true reason={debrief_command_failed\|invalid_debrief_output}` |
 
 **Ship-threshold (user-visible delta).** Over repeated runs of similar task
 shapes, the captured AAR memo is recalled by the analyst/planner and used to
@@ -995,6 +1006,75 @@ The events are added to the Phase 0 event catalog
 | `EVOLUTION_ANALYZER` | Phase 3 close-out — report-only analyzer exited successfully after freshly writing both report artifacts | `mode=report artifacts=context/evolution-report.json,context/evolution-report.md` |
 | `EVOLUTION_ANALYZER_SKIPPED` | Phase 3 close-out — analyzer skipped because disabled or unavailable | `reason={disabled\|script_missing}` |
 | `EVOLUTION_ANALYZER_FAILED` | Phase 3 close-out — analyzer failed to create the report, but task close-out continues | `non_blocking=true` |
+
+#### 2e. Evolution proposals — approval-gated surfacing
+
+After the report-only analyzer has had a chance to write the current task's
+sidecar, aggregate repeated report signals into project-level proposal records
+and render a compact pending-proposal summary. This is the operator-visible
+surface for self-evolution suggestions: it tells the user that repeated
+evidence exists, but it does not approve, apply, create, register, or select
+any asset.
+
+This step is non-blocking and runs after `EVOLUTION_ANALYZER`; it must never
+fail task close-out.
+
+```bash
+EVOLUTION_PROPOSAL_AGGREGATE="${AGENT_CREW_HOME}/scripts/evolution-proposal-aggregate.py"
+EVOLUTION_PROPOSAL_SUMMARY="${AGENT_CREW_HOME}/scripts/evolution-proposal-summary.py"
+EVOLUTION_PROPOSALS_DIR="${STATE_DIR}/learning-candidates"
+EVOLUTION_PROPOSALS_JSON="${EVOLUTION_PROPOSALS_DIR}/proposals.json"
+EVOLUTION_PROPOSALS_SUMMARY="${TASK_DIR}/context/evolution-proposals-summary.txt"
+
+if [ "${EVOLUTION_MODE}" = "off" ]; then
+  log_progress "EVOLUTION_PROPOSALS_SKIPPED" "reason=disabled"
+elif [ -f "${EVOLUTION_PROPOSAL_AGGREGATE}" ] && [ -f "${EVOLUTION_PROPOSAL_SUMMARY}" ]; then
+  mkdir -p "${EVOLUTION_PROPOSALS_DIR}" "${TASK_DIR}/context"
+
+  if python3 "${EVOLUTION_PROPOSAL_AGGREGATE}" \
+      --state-dir "${STATE_DIR}" \
+      --output "${EVOLUTION_PROPOSALS_JSON}" \
+      --format json >/dev/null 2>&1
+  then
+    EVOLUTION_PENDING_COUNT=$(python3 "${EVOLUTION_PROPOSAL_SUMMARY}" \
+      --proposals "${EVOLUTION_PROPOSALS_JSON}" \
+      --format json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('pending_count', 0))" 2>/dev/null || echo 0)
+
+    if [ "${EVOLUTION_PENDING_COUNT}" = "0" ]; then
+      rm -f "${EVOLUTION_PROPOSALS_SUMMARY}" 2>/dev/null || true
+      log_progress "EVOLUTION_PROPOSALS_SKIPPED" "reason=no_repeated_evidence"
+    else
+      if python3 "${EVOLUTION_PROPOSAL_SUMMARY}" \
+          --proposals "${EVOLUTION_PROPOSALS_JSON}" \
+          --format text > "${EVOLUTION_PROPOSALS_SUMMARY}" 2>/dev/null
+      then
+        log_progress "EVOLUTION_PROPOSALS" \
+          "pending=${EVOLUTION_PENDING_COUNT} output=learning-candidates/proposals.json summary=context/evolution-proposals-summary.txt"
+        {
+          printf '\n'
+          cat "${EVOLUTION_PROPOSALS_SUMMARY}"
+        } >> "${TASK_DIR}/result.md" 2>/dev/null || true
+      else
+        log_progress "EVOLUTION_PROPOSALS_FAILED" "non_blocking=true"
+      fi
+    fi
+  else
+    log_progress "EVOLUTION_PROPOSALS_FAILED" "non_blocking=true"
+  fi
+else
+  log_progress "EVOLUTION_PROPOSALS_SKIPPED" "reason=script_missing"
+fi
+```
+
+The events are added to the Phase 0 event catalog
+(`supervisor-bootstrap.md` Progress Mirroring):
+
+| EVENT | When emitted | Detail |
+|---|---|---|
+| `EVOLUTION_PROPOSALS` | Phase 3 close-out — repeated report-only signals produced one or more approval-gated pending proposals | `pending={n} output=learning-candidates/proposals.json summary=context/evolution-proposals-summary.txt` |
+| `EVOLUTION_PROPOSALS_SKIPPED` | Phase 3 close-out — proposal surfacing skipped because evolution is disabled, scripts are unavailable, or no repeated evidence exists | `reason={disabled\|script_missing\|no_repeated_evidence}` |
+| `EVOLUTION_PROPOSALS_FAILED` | Phase 3 close-out — proposal aggregation or summary rendering failed, but task close-out continues | `non_blocking=true` |
 
 #### 3. Clear active task marker
 

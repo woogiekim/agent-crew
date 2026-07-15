@@ -2268,6 +2268,11 @@ Learning Report excerpt after the commits block. Use the sidecar report as
 read-only evidence; do not infer generated assets from it. If the file is
 absent, omit this section entirely.
 
+If `${TASK_DIR}/context/evolution-proposals-summary.txt` exists, include a
+compact Self-Evolution Proposals block immediately after the Learning Report.
+This block is advisory only: it surfaces pending approval-gated proposals and
+does not mean any asset was created or applied.
+
 ```text
 **📦 Run Summary**
 
@@ -2288,6 +2293,9 @@ Commits ({N}):
 
 Learning Report:
   {context/evolution-report.md summary lines, when present}
+
+Self-Evolution Proposals:
+  {context/evolution-proposals-summary.txt lines, when present}
 \`\`\`
 
 \`\`\`
@@ -2607,6 +2615,7 @@ use this sequence:
      **📦 Run Summary**
      {task status, branch/change evidence, blockers if any}
      {Learning Report excerpt from context/evolution-report.md when present}
+     {Self-Evolution Proposals excerpt from context/evolution-proposals-summary.txt when present}
 
      **🛠️ Implementation Summary**
      {merged/local implementation state, commits ready for push, or explicit no-code-change result}

@@ -159,8 +159,9 @@ is_managed_crew_cli() {
 }
 
 sync_managed_path_crew_cli() {
-  local source_crew="$1" candidate resolved
+  local source_crew="$1" running resolved_running candidate resolved tmp
   [ -f "${source_crew}" ] || return 0
+  running="$(absolute_file_path "${BASH_SOURCE[0]:-}" 2>/dev/null || true)"
 
   for candidate in \
     "${BASH_SOURCE[0]:-}" \
@@ -169,10 +170,16 @@ sync_managed_path_crew_cli() {
     resolved="$(absolute_file_path "${candidate}" 2>/dev/null || true)"
     [ -n "${resolved}" ] || continue
     [ -f "${resolved}" ] || continue
+    resolved_running="${running}"
+    if [ -n "${resolved_running}" ] && [ "${resolved}" = "${resolved_running}" ]; then
+      continue
+    fi
     is_managed_crew_cli "${resolved}" || continue
     cmp -s "${source_crew}" "${resolved}" 2>/dev/null && continue
-    cp -f "${source_crew}" "${resolved}"
-    chmod +x "${resolved}"
+    tmp="${resolved}.tmp.$$"
+    cp -f "${source_crew}" "${tmp}" || continue
+    chmod +x "${tmp}" 2>/dev/null || true
+    mv -f "${tmp}" "${resolved}"
   done
 }
 
@@ -210,6 +217,9 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/retry-chaos-check.py:${AGENT_CREW_HOME}/scripts/retry-chaos-check.py" \
     "core/scripts/telemetry-taxonomy-check.py:${AGENT_CREW_HOME}/scripts/telemetry-taxonomy-check.py" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
+    "core/scripts/evolution-proposal-aggregate.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-aggregate.py" \
+    "core/scripts/evolution-proposal-apply.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-apply.py" \
+    "core/scripts/evolution-proposal-summary.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-summary.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
     "core/scripts/generate-release-checksums.py:${AGENT_CREW_HOME}/scripts/generate-release-checksums.py" \

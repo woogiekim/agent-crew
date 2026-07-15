@@ -1291,6 +1291,23 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
         assert "STATUS: handoff_ready" in capsys.readouterr().out
 
 
+def test_command_agent_accepts_korean_self_evolution_complaint(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    _write_registry(root)
+    (root / "project").mkdir()
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+
+    task = (
+        "에이전트크루에서 알아서 서브에이전트나 스킬을 보강하거나 만들어서 "
+        "지속적으로 성장하도록 했는데 제대로 안되는거같아"
+    )
+
+    assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0
+    assert "STATUS: handoff_ready" in capsys.readouterr().out
+
+
 def test_command_agent_routes_bare_push_and_cross_verb_false_negatives(
     monkeypatch, tmp_path: Path, capsys
 ):

@@ -64,6 +64,61 @@
     "captured_at": {
       "type": "string",
       "description": "Optional ISO-8601 timestamp of when the candidate was first recorded. Useful for lifecycle audits but not required — the loop is content-deterministic."
+    },
+    "proposal_type": {
+      "type": "string",
+      "enum": ["patch_existing_skill", "investigate_reusable_asset"],
+      "description": "Optional approval-gated proposal action. Proposal records are advisory and do not write assets or pipeline needs_creation."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["approval_required", "approved", "rejected", "superseded"],
+      "description": "Optional lifecycle status for approval-gated proposal records."
+    },
+    "target_asset": {
+      "type": "string",
+      "description": "Optional proposed target asset or existing asset patch target."
+    },
+    "target_skill": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional existing skill filename targeted by an approved patch_existing_skill proposal. Used only by the approval-gated proposal apply step."
+    },
+    "patch_body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional approved patch body to append to target_skill. Must be present only after operator approval; proposal aggregation preserves it but does not generate or apply it."
+    },
+    "decision_reason": {
+      "type": "string",
+      "description": "Optional human-readable reason for the current proposal decision."
+    },
+    "approved_by": {
+      "type": "string",
+      "description": "Optional actor identifier for the operator or supervisor approval."
+    },
+    "approved_at": {
+      "type": "string",
+      "description": "Optional ISO-8601 timestamp for proposal approval."
+    },
+    "rejected_reason": {
+      "type": "string",
+      "description": "Optional human-readable reason why the proposal was rejected."
+    },
+    "occurrence_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional number of independent reports that support this proposal."
+    },
+    "approval_gate": {
+      "type": "string",
+      "const": "crew:run_or_supervisor_approval_required",
+      "description": "Optional explicit gate proving this proposal cannot auto-create or auto-register assets."
+    },
+    "guardrail": {
+      "type": "string",
+      "const": "proposal_only_no_needs_creation_write",
+      "description": "Optional guardrail proving the proposal aggregator must not populate pipeline.needs_creation."
     }
   }
 }

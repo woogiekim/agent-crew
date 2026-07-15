@@ -52,6 +52,21 @@ report-only discovery artifact for the self-evolving architecture:
 See `core/rules/state-files/evolution-report-json.md` and
 `core/schemas/evolution-report.schema.json` for the artifact contract.
 
+Repeated report-only signals may be aggregated by
+`core/scripts/evolution-proposal-aggregate.py` into approval-gated learning
+candidate proposals. The aggregator is intentionally separate from
+`evolution-analyzer.py`: it reads completed report sidecars across tasks, writes
+proposal records only after repeated evidence, and never writes generated
+assets or `pipeline.needs_creation`. A proposal can become an asset change only
+through a later approved `crew:run` / supervisor path.
+
+Approved `patch_existing_skill` proposals may be applied by
+`core/scripts/evolution-proposal-apply.py`. The apply step is deliberately
+narrow: it appends a marked block to an existing skill file only when the
+proposal status is `approved`; it skips unapproved proposals, unsupported
+proposal types, missing targets, and any request that would create an agent,
+create a new skill, or write `pipeline.needs_creation`.
+
 ## Maturity Levels
 
 A learning candidate is recorded at one of three maturity levels. The level is
