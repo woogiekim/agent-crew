@@ -167,6 +167,36 @@ class PostgresOrderRepository(private val jpa: OrderJpaRepository) : OrderReposi
 }
 ```
 
+### Rule 9: Continuous Model Integration — keep code and docs in one shared model
+> Source: Evans, Ch. 2 "Communication and the Use of Language"; Beck, Ch. 7 "Continuous Integration"
+
+In DDD work, documentation is part of the shared model, not an after-the-fact
+report. When a change adds, removes, renames, or reinterprets a domain concept,
+the agent must update the durable documentation that carries the Ubiquitous
+Language before the work can be considered integrated.
+
+Treat these artifacts as model-integration surfaces:
+
+- README or guide sections that define operator-facing workflow language
+- PRDs, handoffs, and architecture docs that explain bounded contexts,
+  aggregates, invariants, or domain events
+- Agent skills and rules that teach future agents the domain vocabulary
+- Changelog or migration notes when behavior, workflow, or meaning changes
+
+Every domain-affecting task must leave a short Ubiquitous Language ledger in
+its handoff, PRD, review, or result artifact:
+
+```markdown
+## Ubiquitous Language ledger
+- Added: `OrderReservation` means inventory has been held for an order.
+- Changed: `confirmed` now means payment authorized and inventory reserved.
+- Docs synchronized: `docs/orders.md`, `README.md`
+```
+
+If no tracked documentation needs an update, record the reason explicitly
+(`doc_impact: none`) so reviewers can distinguish a deliberate no-op from an
+omission.
+
 ---
 
 ## Anti-Patterns
@@ -176,11 +206,15 @@ class PostgresOrderRepository(private val jpa: OrderJpaRepository) : OrderReposi
 - Referencing one aggregate's internal entities from another aggregate directly
 - Domain Events named in present tense or imperative mood (`ProcessOrder`, `PayingOrder`)
 - Repositories that return DTOs instead of domain aggregates
+- Code, tests, or prompts that change the Ubiquitous Language while leaving
+  the corresponding README, PRD, handoff, or architecture guide stale
 
 ## Interaction with Other Skills
 - Combine with `clean-architecture.md`: DDD aggregates are the entities of Clean Architecture; bounded contexts map to components
 - Combine with `oop-principles.md`: Rule 4 (protect aggregate invariants) is SRP + Tell-Don't-Ask in domain terms
 - Combine with `tdd.md`: domain model classes are the primary unit-test targets
+- Combine with `agile-xp.md`: Continuous Integration includes keeping the
+  shared domain model coherent across code, tests, and documentation
 
 ## References
 - Eric Evans, *Domain-Driven Design: Tackling Complexity in the Heart of Software*, Addison-Wesley, 2003. ISBN 978-0-32-112521-7.

@@ -50,8 +50,10 @@ def _git_env() -> dict[str, str]:
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     env["GIT_AUTHOR_NAME"] = "Trace Test"
     env["GIT_AUTHOR_EMAIL"] = "trace@test.invalid"
+    env["GIT_AUTHOR_DATE"] = "2026-07-15T00:00:00Z"
     env["GIT_COMMITTER_NAME"] = "Trace Test"
     env["GIT_COMMITTER_EMAIL"] = "trace@test.invalid"
+    env["GIT_COMMITTER_DATE"] = "2026-07-15T00:00:00Z"
     return env
 
 

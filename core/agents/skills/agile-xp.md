@@ -54,8 +54,26 @@ pipeline merges) at least once per day. Long-lived feature branches accumulate
 merge debt. The integration build must be green at all times — a red build is
 the team's top priority.
 
-Implementation implication: agents must commit and push incremental, working
-slices — not one massive commit at the end.
+CI integrates code, tests, and documentation. In an agent-crew task, the
+integration unit is the whole shared understanding that the next agent, reviewer,
+or human operator must inherit.
+
+Documentation synchronization is part of the integration slice whenever a
+change alters public behavior, workflow commands, domain language, operational
+constraints, setup/update flows, or architecture decisions.
+
+Implementation implications:
+
+- Agents must commit incremental, working slices — not one massive commit at the
+  end.
+- Each slice must keep durable docs coherent with the changed code, rules,
+  prompts, and tests. This can mean updating tracked docs (`README.md`,
+  `docs/**`, agent/rule markdown) or recording `doc_impact: none` with a reason
+  in the task artifacts.
+- If a documentation backend is configured, the documenter or adapter skill must
+  produce the repo-side evidence first and then synchronize externally through
+  the configured backend. A missing external adapter may degrade to side-car
+  output, but it must not silently erase the documentation obligation.
 
 ### Rule 4: Small Releases — ship the smallest useful increment
 > Source: Beck, Ch. 4 "Small Releases"; Scrum Guide § Sprint
@@ -141,10 +159,16 @@ A user story is done when it:
 - Passes the acceptance criteria in the PRD
 - Has been code-reviewed / reviewer-approved
 - Has no known regressions
+- Has documentation synchronized for changed behavior, workflow, domain
+  language, or architecture decisions
 - Is committed to the main branch (or ready for merge)
 
 "90% done" is not done. Partially implemented features must not be committed
 to the main branch without a feature flag or an incomplete-but-safe state.
+
+Done means code, tests, and docs are coherent. When docs are intentionally not
+changed, the task must carry a reviewable explanation rather than leaving the
+absence implicit.
 
 ---
 
@@ -161,6 +185,8 @@ to the main branch without a feature flag or an incomplete-but-safe state.
 - `tdd.md` is the implementation of Rule 1 and Rule 6 (RED → GREEN → REFACTOR)
 - `clean-architecture.md` Rule 5 (Simple Design) and Rule 8 (Humble Object) express the same simplicity values
 - `code-review.md` is the implementation of Rule 8 (Pair Programming / Code Review)
+- `domain-driven-design.md` Rule 9 explains why documentation is part of shared
+  model integration for domain and workflow language changes
 - All language-specific skills (`effective-kotlin.md`, etc.) should be applied during Rule 6 (Refactor Mercilessly)
 
 ## References

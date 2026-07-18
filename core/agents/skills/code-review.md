@@ -240,6 +240,31 @@ For internal repair confidence without a durable contract source, prefer
 temporary local checks, focused command output, diff evidence, or task-context
 notes instead of permanent tests.
 
+## Documentation Integration Review
+
+Treat documentation synchronization as part of CI, not as optional polish. For
+each diff, compare the PRD and handoff `doc_impact` entry with the changed files
+and the public/domain surface of the task.
+
+Return `REVIEW: NEEDS_CHANGES` with `REASON: documentation_ci_missing` when any
+of these are true:
+
+- Public behavior, CLI/API/UI usage, setup/update/deploy flow, domain language,
+  architecture, or long-lived agent guidance changed but no tracked doc,
+  side-car doc, or external-sync evidence was updated.
+- The PRD marks `documentation_ci_required: true` but the diff and task
+  artifacts do not name synchronized documentation targets.
+- The PRD omits `doc_impact` for a change whose impact is visible to future
+  operators, agents, or domain readers.
+- Documentation is intentionally unchanged but there is no reviewable
+  `doc_impact: none` rationale.
+
+For severity, missing documentation synchronization is an IMPORTANT finding
+unless it hides a safety, setup, migration, or security change; escalate those
+to CRITICAL. Acceptable evidence includes tracked markdown changes,
+`{TASK_DIR}/result.md`, side-car README/CHANGELOG drafts, external backend sync
+logs, or an explicit no-impact rationale.
+
 ---
 
 ## Conventional Commits Verification
@@ -325,6 +350,8 @@ terminal-status contract.
 - [ ] Context-break blank line rule checked for new/changed code
 - [ ] Conventional Commits format verified
 - [ ] Tests or risk-appropriate validation checks verified
+- [ ] Documentation Integration Review completed; doc targets or
+      `doc_impact: none` rationale verified
 - [ ] Anti-pattern scan completed
 - [ ] `{TASK_DIR}/context/review.md` written with status, coverage, issues, and recommendation
 - [ ] No implementation files modified

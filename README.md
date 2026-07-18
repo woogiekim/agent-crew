@@ -577,6 +577,19 @@ If the custom agent file does not exist at invocation time (e.g., Phase 1.5 was 
 | **learning-mentor** | Legacy alias for the mentor agent's structured concept-teaching mode |
 | **supervisor** | Autonomous full-pipeline executor — the single execution engine behind `crew:run` |
 
+### Documentation CI Contract
+
+agent-crew treats CI as continuous integration of the shared model, not only as
+code merge plus test execution. When a task changes public behavior, workflow
+commands, setup/update/deploy flow, DDD language, architecture decisions, or
+long-lived agent guidance, docs are part of the integration evidence.
+
+Planner outputs must include a `doc_impact` entry that either sets
+`documentation_ci_required: true` and names the tracked, side-car, or external
+documentation targets, or records `doc_impact: none` with a reason. Reviewer
+approval must reject missing documentation synchronization with
+`REASON: documentation_ci_missing` when the implementation and docs diverge.
+
 ### Backend Agent Workflow (TDD Cycle)
 
 ```

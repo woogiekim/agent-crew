@@ -15,6 +15,11 @@ Enables the planner agent to translate a structured requirements block into a co
 
 Translate scope/target/constraints answers into a structured Product Requirements Document. Keep goals declarative and implementation-agnostic. For tooling, documentation, prompt, or agent-skill work, frame the PRD around workflow reliability and safety rather than product screens or API behavior.
 
+For any implementation or workflow change, include documentation integration in
+the PRD when the change affects public behavior, commands, domain language,
+operator guidance, setup/update flows, architecture boundaries, or long-lived
+agent instructions.
+
 ```markdown
 # PRD: {feature name}
 
@@ -179,6 +184,47 @@ and the stage is not a code implementation stage that needs a TDD partner. If
 an agent consumes another agent's artifact, put it in a later stage even when
 both changes touch different files.
 
+### Documentation Integration Plan
+
+Before finalizing `pipeline.json`, classify the task's documentation impact and
+write the result into `{TASK_DIR}/context/prd.md` and `{TASK_DIR}/handoff.md`.
+Use the field name `doc_impact` so downstream agents and reviewers can find it
+deterministically:
+
+```yaml
+doc_impact:
+  documentation_ci_required: true
+  reason: "Workflow command behavior and agent guidance changed."
+  tracked_targets:
+    - README.md
+    - core/agents/skills/agile-xp.md
+    - core/agents/skills/domain-driven-design.md
+  sidecar_targets:
+    - "{TASK_DIR}/result.md"
+  external_sync: "repo-only | configured-backend | none"
+```
+
+Set `documentation_ci_required: true` when the work changes:
+
+- Public behavior, CLI/API/UI usage, setup/update/deploy instructions, or
+  operator-facing workflow
+- DDD Ubiquitous Language, bounded-context names, aggregate invariants, domain
+  events, or architecture decisions
+- Agent prompts, skills, rules, templates, or review criteria that future agents
+  rely on
+- CI/CD, test, release, or recovery behavior that operators must understand
+
+When documentation synchronization is required, either assign the relevant
+implementation agent explicit doc targets in the handoff or add a `documenter`
+stage before the final reviewer. Use the implementation agent when docs live in
+the same files or require exact code context; use `documenter` when the output is
+a result summary, README/CHANGELOG side-car, external wiki draft, or a dedicated
+documentation artifact. The final reviewer must remain last.
+
+Set `documentation_ci_required: false` only with a reason, for example
+`doc_impact: none — internal refactor kept public behavior and domain language
+unchanged`.
+
 **Example pipeline.json:**
 ```json
 {
@@ -275,6 +321,10 @@ Write a concise handoff.md that gives downstream agents exactly what they need w
 - [ ] `stages` follows canonical mapping, maps every PRD `AC-*`, and ends with `["reviewer"]`
 - [ ] Parallel stages contain only independent agents (no data dependency between them)
 - [ ] Parallelization cost/benefit analyzed for same-file overlap
+- [ ] Documentation Integration Plan written with `doc_impact` and
+      `documentation_ci_required`
+- [ ] Handoff names documentation targets or records `doc_impact: none` with a
+      reason
 - [ ] Pipeline validation passed (cross-referencing `needs_creation` and `stages`)
 - [ ] `pipeline.json` written to `{TASK_DIR}/pipeline.json`
 - [ ] `handoff.md` written to `{TASK_DIR}/handoff.md`
