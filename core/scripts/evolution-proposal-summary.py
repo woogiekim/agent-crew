@@ -57,6 +57,13 @@ def build_summary(proposals_path: Path, limit: int) -> dict[str, Any]:
                 "proposal_type": str(item.get("proposal_type") or ""),
                 "status": str(item.get("status") or ""),
                 "target_asset": str(item.get("target_asset") or item.get("target_skill") or ""),
+                "target_assets": [
+                    str(asset)
+                    for asset in item.get("target_assets", [])
+                    if str(asset).strip()
+                ] if isinstance(item.get("target_assets"), list) else [],
+                "review_principle": str(item.get("review_principle") or ""),
+                "promotion_reason": str(item.get("promotion_reason") or ""),
                 "evidence_count": evidence_count(item),
             }
             for item in visible
@@ -79,8 +86,23 @@ def render_text(summary: dict[str, Any]) -> str:
             f"  type: {proposal_type}",
             f"  evidence: {evidence} tasks",
             "  status: approval_required",
-            "  next: review and approve before apply",
         ])
+        target_assets = proposal.get("target_assets") or []
+        target_asset = proposal.get("target_asset") or ""
+        if target_assets:
+            lines.append(f"  target: {', '.join(target_assets)}")
+        elif target_asset:
+            lines.append(f"  target: {target_asset}")
+
+        principle = proposal.get("review_principle") or ""
+        if principle:
+            lines.append(f"  principle: {principle}")
+
+        reason = proposal.get("promotion_reason") or ""
+        if reason:
+            lines.append(f"  reason: {reason}")
+
+        lines.append("  next: review and approve before apply")
     return "\n".join(lines) + "\n"
 
 

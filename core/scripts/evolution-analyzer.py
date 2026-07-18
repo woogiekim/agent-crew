@@ -28,6 +28,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,22 @@ def _load_telemetry_module():
 
 
 telemetry = _load_telemetry_module()
+
+
+REVIEW_PRINCIPLE_DETECTORS: tuple[dict[str, Any], ...] = (
+    {
+        "principle_key": "kotlin_spring_kotest_default",
+        "required_terms": ("kotlin", "spring", "junit"),
+        "any_terms": ("kotest", "funspec", "mockk"),
+        "summary": "Reviewer identified a reusable Kotlin/Spring testing convention.",
+        "principle": (
+            "Kotlin/Spring tests default to Kotest FunSpec + MockK; "
+            "JUnit 5 is allowed only when an existing harness or framework "
+            "constraint makes Kotest impractical and the reason is stated first."
+        ),
+        "target_assets": ["backend-kotlin-spring.md", "tdd.md"],
+    },
+)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -198,8 +215,57 @@ def skill_content_audit_signal(task_dir: Path) -> dict[str, Any]:
     }
 
 
+def read_review_sources(task_dir: Path) -> list[tuple[str, str]]:
+    sources: list[tuple[str, str]] = []
+    for relative in (
+        "context/review.md",
+        "context/reviewer-response.txt",
+        "context/review-result.md",
+        "context/code-review.md",
+    ):
+        path = task_dir / relative
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if text.strip():
+            sources.append((relative, text))
+    return sources
+
+
+def review_principle_signals(task_dir: Path) -> list[dict[str, Any]]:
+    matches: dict[str, set[str]] = {
+        detector["principle_key"]: set()
+        for detector in REVIEW_PRINCIPLE_DETECTORS
+    }
+    for relative, text in read_review_sources(task_dir):
+        normalized = re.sub(r"\s+", " ", text.lower())
+        for detector in REVIEW_PRINCIPLE_DETECTORS:
+            required_terms = detector.get("required_terms") or ()
+            any_terms = detector.get("any_terms") or ()
+            if (
+                all(str(token).lower() in normalized for token in required_terms)
+                and any(str(token).lower() in normalized for token in any_terms)
+            ):
+                matches[detector["principle_key"]].add(relative)
+
+    signals: list[dict[str, Any]] = []
+    for detector in REVIEW_PRINCIPLE_DETECTORS:
+        evidence_refs = sorted(matches[detector["principle_key"]])
+        if not evidence_refs:
+            continue
+        signals.append({
+            "principle_key": detector["principle_key"],
+            "principle": detector["principle"],
+            "target_assets": detector["target_assets"],
+            "evidence_refs": evidence_refs,
+        })
+    return signals
+
+
 def observed_patterns(row: dict[str, Any], loop_backs: int,
-                      skill_audit: dict[str, Any]) -> list[dict[str, Any]]:
+                      skill_audit: dict[str, Any],
+                      review_principles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     patterns: list[dict[str, Any]] = []
     retries = int(row.get("retries") or 0)
     blockers = list(row.get("blockers") or [])
@@ -228,28 +294,64 @@ def observed_patterns(row: dict[str, Any], loop_backs: int,
             "summary": "Skill content audit found shallow skill material.",
             "evidence_refs": ["context/skill-content-audit.json"],
         })
+    for principle in review_principles:
+        patterns.append({
+            "kind": "review_principle",
+            "principle_key": principle["principle_key"],
+            "summary": review_principle_summary(principle["principle_key"]),
+            "principle": principle["principle"],
+            "target_assets": principle["target_assets"],
+            "evidence_refs": principle["evidence_refs"],
+        })
 
     return patterns
 
 
-def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, str]]:
+def review_principle_summary(principle_key: str) -> str:
+    for detector in REVIEW_PRINCIPLE_DETECTORS:
+        if detector["principle_key"] == principle_key:
+            return str(detector["summary"])
+
+    return "Reviewer identified a reusable implementation convention."
+
+
+def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not patterns:
         return []
 
-    return [{
-        "asset_type": "skill",
-        "name": "existing-skill-patch-suggestion",
-        "reason": "A single task produced a reusable-work signal; prefer a small patch to an existing skill over creating a new asset.",
-        "rejection_reason": "insufficient_repeated_evidence",
-        "required_evidence": "Collect repeated occurrences before suggesting a minimal patch to the closest existing skill.",
-    }]
+    candidates: list[dict[str, Any]] = []
+    for pattern in patterns:
+        if pattern.get("kind") != "review_principle":
+            continue
+        candidates.append({
+            "asset_type": "skill",
+            "name": f"review-principle:{pattern['principle_key']}",
+            "reason": "A reviewer finding captured a reusable implementation principle that may belong in existing skills.",
+            "rejection_reason": "insufficient_repeated_evidence",
+            "required_evidence": "Collect repeated independent review findings before suggesting a patch to existing skills.",
+            "principle_key": pattern["principle_key"],
+            "principle": pattern["principle"],
+            "target_assets": pattern["target_assets"],
+        })
+
+    if any(pattern.get("kind") != "review_principle" for pattern in patterns):
+        candidates.append({
+            "asset_type": "skill",
+            "name": "existing-skill-patch-suggestion",
+            "reason": "A single task produced a reusable-work signal; prefer a small patch to an existing skill over creating a new asset.",
+            "rejection_reason": "insufficient_repeated_evidence",
+            "required_evidence": "Collect repeated occurrences before suggesting a minimal patch to the closest existing skill.",
+        })
+
+    return candidates
 
 
 def learning_summary(meaningful: bool, patterns: list[dict[str, Any]]) -> str:
     if not meaningful:
         return (
             "No reusable asset candidate produced; the task completed without "
-            "retry, blocker, reviewer loop-back, or skill-content-depth signals."
+            "retry, blocker, reviewer loop-back, skill-content-depth, or "
+            "review-principle signals."
         )
 
     kinds = ", ".join(pattern["kind"] for pattern in patterns)
@@ -266,7 +368,8 @@ def build_report(state_dir: Path, task_dir: Path) -> dict[str, Any]:
     register = telemetry.read_register(task_dir) or {}
     loop_backs = telemetry.count_reviewer_loop_backs(events)
     skill_audit = skill_content_audit_signal(task_dir)
-    patterns = observed_patterns(row, loop_backs, skill_audit)
+    review_principles = review_principle_signals(task_dir)
+    patterns = observed_patterns(row, loop_backs, skill_audit, review_principles)
     meaningful = bool(patterns)
 
     return {
@@ -281,6 +384,7 @@ def build_report(state_dir: Path, task_dir: Path) -> dict[str, Any]:
             "blockers": list(row.get("blockers") or []),
             "changed_files": changed_files_from_events(events, register),
             "skill_content_audit": skill_audit,
+            "review_principles": review_principles,
         },
         "reused_assets": pipeline_reused_assets(task_dir),
         "observed_patterns": patterns,
@@ -316,6 +420,14 @@ def to_markdown(report: dict[str, Any]) -> str:
         f"{item['asset_type']}: {item['name']} - {item['rejection_reason']}"
         for item in report["rejected_candidates"]
     ]
+    review_principles = [
+        (
+            f"{item['principle_key']}: {item['principle']} "
+            f"(targets: {', '.join(item['target_assets'])}; "
+            f"evidence: {', '.join(item['evidence_refs'])})"
+        )
+        for item in signals.get("review_principles", [])
+    ]
 
     return "\n".join([
         "# Learning Report",
@@ -340,10 +452,15 @@ def to_markdown(report: dict[str, Any]) -> str:
             f"shallow={skill_audit['shallow_finding_count']}, "
             f"effective_followups={skill_audit.get('effective_followup_count', 0)}"
         ),
+        f"- Review principles: {len(signals.get('review_principles', []))}",
         "",
         "## Reused Assets",
         "",
         markdown_list(reused),
+        "",
+        "## Review Principles",
+        "",
+        markdown_list(review_principles),
         "",
         "## Observed Patterns",
         "",

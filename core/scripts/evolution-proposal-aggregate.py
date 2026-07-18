@@ -32,31 +32,82 @@ def report_paths(state_dir: Path) -> list[Path]:
     return sorted((state_dir / "tasks").glob("*/context/evolution-report.json"))
 
 
-def proposal_key(report: dict[str, Any]) -> str:
+def proposal_keys(report: dict[str, Any]) -> list[str]:
     patterns = report.get("observed_patterns") or []
+    keys: list[str] = []
+    for item in patterns:
+        if not isinstance(item, dict):
+            continue
+        if item.get("kind") != "review_principle":
+            continue
+        principle_key = str(item.get("principle_key") or "")
+        if principle_key:
+            keys.append(f"review_principle:{principle_key}")
+
     kinds = [
         str(item.get("kind"))
         for item in patterns
-        if isinstance(item, dict) and item.get("kind")
+        if (
+            isinstance(item, dict)
+            and item.get("kind")
+            and item.get("kind") != "review_principle"
+        )
     ]
     if kinds:
-        return "+".join(sorted(set(kinds)))
+        keys.append("+".join(sorted(set(kinds))))
 
-    for item in report.get("rejected_candidates") or []:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "")
-        if name:
-            return name
+    if not keys:
+        for item in report.get("rejected_candidates") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "")
+            if name:
+                keys.append(name)
+                break
 
-    return ""
+    return sorted(set(keys))
 
 
-def candidate_source(report: dict[str, Any]) -> str:
+def proposal_key(report: dict[str, Any]) -> str:
+    keys = proposal_keys(report)
+    return keys[0] if keys else ""
+
+
+def candidate_source(report: dict[str, Any], key: str = "") -> str:
+    if key.startswith("review_principle:"):
+        return "reviewer_finding"
+
     for pattern in report.get("observed_patterns") or []:
         if isinstance(pattern, dict) and pattern.get("kind") == "review_loop_back":
             return "reviewer_finding"
     return "aar_memo"
+
+
+def review_principle_metadata(report: dict[str, Any], key: str) -> dict[str, Any]:
+    if not key.startswith("review_principle:"):
+        return {}
+
+    principle_key = key.split(":", 1)[1]
+    for pattern in report.get("observed_patterns") or []:
+        if not isinstance(pattern, dict):
+            continue
+        if pattern.get("kind") != "review_principle":
+            continue
+        if str(pattern.get("principle_key") or "") != principle_key:
+            continue
+
+        metadata: dict[str, Any] = {}
+        principle = pattern.get("principle")
+        target_assets = pattern.get("target_assets")
+        if isinstance(principle, str) and principle.strip():
+            metadata["review_principle"] = principle.strip()
+        if isinstance(target_assets, list):
+            assets = [str(item) for item in target_assets if str(item).strip()]
+            if assets:
+                metadata["target_assets"] = assets
+        return metadata
+
+    return {}
 
 
 def existing_proposals(output_path: Path) -> dict[str, dict[str, Any]]:
@@ -115,8 +166,7 @@ def build_proposals(
             continue
         if report.get("asset_candidates"):
             continue
-        key = proposal_key(report)
-        if key:
+        for key in proposal_keys(report):
             groups[key].append(path)
 
     proposals: list[dict[str, Any]] = []
@@ -128,22 +178,22 @@ def build_proposals(
             str(path.relative_to(state_dir))
             for path in paths
         ]
-        proposal_type = (
-            "patch_existing_skill"
-            if key in {"existing-skill-patch-suggestion", "skill_content_depth"}
-            else "investigate_reusable_asset"
+        is_skill_patch_signal = (
+            key.startswith("review_principle:")
+            or key in {"existing-skill-patch-suggestion", "skill_content_depth"}
         )
+        proposal_type = "patch_existing_skill" if is_skill_patch_signal else "investigate_reusable_asset"
         preserved = existing_proposal_for_key(existing, key)
         candidate_id = str(preserved.get("candidate_id") or f"{slug(key)}-{len(paths)}x")
         proposal = {
             "schema_version": 1,
             "candidate_id": candidate_id,
-            "source": candidate_source(first_report),
+            "source": candidate_source(first_report, key),
             "memory_layer": "project",
             "evidence_refs": evidence_refs,
             "promotion_reason": (
-                f"{len(paths)} independent evolution reports recorded the "
-                f"same reusable-work signal: {key}."
+                f"{len(paths)} independent evolution reports recorded the same "
+                f"{'repeated review principle' if key.startswith('review_principle:') else 'reusable-work signal'}: {key}."
             ),
             "trust_boundary": "advisory_until_rule_promotion",
             "proposal_type": proposal_type,
@@ -153,6 +203,7 @@ def build_proposals(
             "approval_gate": "crew:run_or_supervisor_approval_required",
             "guardrail": "proposal_only_no_needs_creation_write",
         }
+        proposal.update(review_principle_metadata(first_report, key))
         preserve_decision_fields(proposal, preserved)
         proposals.append(proposal)
     return proposals

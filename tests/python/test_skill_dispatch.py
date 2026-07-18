@@ -34,6 +34,12 @@ DISPATCH_SCRIPT = REPO_ROOT / "core" / "scripts" / "review-profile-dispatch.py"
 # asserted (and the templates/ seed copy is explicitly absent) in
 # test_skill_locations.py.
 DEAD_CODE_SKILL = REPO_ROOT / "core" / "agents" / "skills" / "dead-code-elimination.md"
+DOCUMENTATION_IMPACT_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "documentation-impact.md"
+)
+DGS_GRAPHQL_CONTRACT_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "dgs-graphql-contract.md"
+)
 BACKEND_KOTLIN_TEMPLATE = (
     REPO_ROOT / "core" / "agents" / "skills" / "templates" / "backend-kotlin-spring.md"
 )
@@ -170,9 +176,80 @@ Fixture body.
 def test_dead_code_skill_ships_with_required_frontmatter() -> None:
     assert DEAD_CODE_SKILL.is_file(), f"missing example skill at {DEAD_CODE_SKILL}"
     text = DEAD_CODE_SKILL.read_text(encoding="utf-8")
-    assert "loaded_by: backend,frontend" in text
+    assert text.startswith("---\n")
+    assert "loaded_by: backend,frontend,reviewer" in text
     assert "axis: code-cleanup" in text
-    assert "detection: cleanup|refactor|dead.code|unused" in text
+    assert "profile_type: review-policy" in text
+    assert "detection: cleanup|refactor|dead.code|dead-code|unused" in text
+
+
+def test_documentation_impact_skill_ships_with_dispatchable_frontmatter() -> None:
+    assert DOCUMENTATION_IMPACT_SKILL.is_file()
+    text = DOCUMENTATION_IMPACT_SKILL.read_text(encoding="utf-8")
+
+    assert text.startswith("---\n")
+    assert "loaded_by: backend,frontend,devops,reviewer" in text
+    assert "axis: documentation-impact" in text
+    assert "profile_type: review-policy" in text
+    assert "detection: documentation OR README OR changelog" in text
+
+
+def test_dgs_graphql_contract_skill_ships_with_dispatchable_frontmatter() -> None:
+    assert DGS_GRAPHQL_CONTRACT_SKILL.is_file()
+    text = DGS_GRAPHQL_CONTRACT_SKILL.read_text(encoding="utf-8")
+
+    assert text.startswith("---\n")
+    assert "loaded_by: backend,reviewer" in text
+    assert "axis: graphql-dgs-contract" in text
+    assert "profile_type: review-policy" in text
+    assert "detection: DGS OR GraphQL resolver" in text
+
+
+def test_system_contract_skills_dispatch_for_backend_and_reviewer() -> None:
+    backend_payload = _run_cli(
+        "--skills-dir",
+        str(SKILL_TEMPLATE.parent),
+        "--agent",
+        "backend",
+        "--project-root",
+        str(REPO_ROOT),
+        "--task",
+        (
+            "Implement a DGS GraphQL resolver with generated types, update "
+            "CLAUDE.md documentation, and remove dead code during refactor."
+        ),
+        "--format",
+        "json",
+    )
+    reviewer_payload = _run_cli(
+        "--skills-dir",
+        str(SKILL_TEMPLATE.parent),
+        "--agent",
+        "reviewer",
+        "--project-root",
+        str(REPO_ROOT),
+        "--task",
+        (
+            "Review DGS GraphQL resolver generated type, CLAUDE.md drift, "
+            "documentation impact, and dead code cleanup."
+        ),
+        "--format",
+        "json",
+    )
+
+    backend_names = {match["name"] for match in backend_payload["matched"]}
+    reviewer_names = {match["name"] for match in reviewer_payload["matched"]}
+
+    assert {
+        "dead-code-elimination",
+        "dgs-graphql-contract",
+        "documentation-impact",
+    }.issubset(backend_names)
+    assert {
+        "dead-code-elimination",
+        "dgs-graphql-contract",
+        "documentation-impact",
+    }.issubset(reviewer_names)
 
 
 def test_skill_template_documents_dispatcher_slots() -> None:

@@ -1,9 +1,10 @@
 ---
 name: dead-code-elimination
 description: Identify and safely remove unreachable, unused, or stale code paths.
-loaded_by: backend,frontend
+loaded_by: backend,frontend,reviewer
 axis: code-cleanup
-detection: cleanup|refactor|dead.code|unused
+profile_type: review-policy
+detection: cleanup|refactor|dead.code|dead-code|unused|remove.code|delete.code|stale.code
 ---
 
 # Skill: dead-code-elimination

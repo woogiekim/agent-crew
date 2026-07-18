@@ -395,6 +395,92 @@ def test_skill_content_depth_maps_to_relevant_rejected_candidate(
     }]
 
 
+def test_analyzer_extracts_review_principle_from_kotlin_test_feedback(
+    script_runner, env_with_home, state_dir
+):
+    """success-case(regression) - review philosophy becomes a reusable signal."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "context" / "review.md").write_text(
+        "REVIEW: NEEDS_CHANGES\n"
+        "- [P2] Kotlin/Spring tests should default to Kotest FunSpec + MockK. "
+        "JUnit 5 is acceptable only when an existing harness or framework "
+        "constraint makes Kotest impractical, and that reason must be stated "
+        "before using JUnit 5.\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--json-output", str(task_dir / "context" / "evolution-report.json"),
+        "--markdown-output", str(task_dir / "context" / "evolution-report.md"),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads((task_dir / "context" / "evolution-report.json").read_text(encoding="utf-8"))
+    principle = payload["signals"]["review_principles"][0]
+    assert principle["principle_key"] == "kotlin_spring_kotest_default"
+    assert principle["target_assets"] == ["backend-kotlin-spring.md", "tdd.md"]
+    assert "Kotest FunSpec + MockK" in principle["principle"]
+    assert "JUnit 5 is allowed only" in principle["principle"]
+    assert payload["observed_patterns"][0]["kind"] == "review_principle"
+    assert payload["observed_patterns"][0]["principle_key"] == "kotlin_spring_kotest_default"
+    assert payload["rejected_candidates"][0]["name"] == "review-principle:kotlin_spring_kotest_default"
+    assert "Review Principles" in (task_dir / "context" / "evolution-report.md").read_text(encoding="utf-8")
+
+    schema = script_runner(
+        "validate-state-schema.py",
+        "--state-dir", str(state_dir),
+        "--task-dir", str(task_dir),
+        env=env_with_home,
+    )
+    assert schema.returncode == 0, schema.stdout + schema.stderr
+
+
+def test_analyzer_does_not_extract_review_principle_from_result_summary(
+    script_runner, env_with_home, state_dir
+):
+    """failure-case(regression) - final summaries are not reviewer evidence."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "result.md").write_text(
+        "Status: completed\n"
+        "Kotlin/Spring tests default to Kotest FunSpec + MockK; "
+        "JUnit 5 is allowed only when an existing harness constraint applies.\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["signals"]["review_principles"] == []
+    assert not any(
+        pattern["kind"] == "review_principle"
+        for pattern in payload["observed_patterns"]
+    )
+
+
+def test_review_principle_detectors_are_registry_driven() -> None:
+    """success-case(maintainability) - reusable review principles live in detector metadata."""
+    detectors = evolution_analyzer.REVIEW_PRINCIPLE_DETECTORS
+    keys = [detector["principle_key"] for detector in detectors]
+
+    assert keys
+    assert len(keys) == len(set(keys))
+    assert any(
+        detector["principle_key"] == "kotlin_spring_kotest_default"
+        and "Kotest FunSpec + MockK" in detector["principle"]
+        and detector["target_assets"] == ["backend-kotlin-spring.md", "tdd.md"]
+        for detector in detectors
+    )
+
+
 def test_proposal_aggregator_promotes_repeated_report_signals_without_asset_writes(
     script_runner, env_with_home, state_dir
 ):
@@ -512,6 +598,75 @@ def test_proposal_aggregator_groups_same_pattern_across_candidate_name_drift(
         "tasks/20260101-120000-0/context/evolution-report.json",
         "tasks/20260102-120000-0/context/evolution-report.json",
     ]
+
+
+def test_proposal_aggregator_promotes_repeated_review_principles_to_skill_patch(
+    script_runner, env_with_home, state_dir
+):
+    """success-case(regression) - repeated review principles become visible proposals."""
+    first = _seed_task(state_dir, "20260101-120000-0")
+    second = _seed_task(state_dir, "20260102-120000-0")
+    for task_dir in (first, second):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": task_dir.name,
+                "task": "implement Kotlin/Spring tests",
+                "generation_mode": "report_only",
+                "meaningful": True,
+                "signals": {
+                    "retries": 0,
+                    "reviewer_loop_backs": 0,
+                    "blockers": [],
+                    "changed_files": [],
+                    "skill_content_audit": {
+                        "available": False,
+                        "shallow_finding_count": 0,
+                    },
+                    "review_principles": [{
+                        "principle_key": "kotlin_spring_kotest_default",
+                        "principle": "Kotlin/Spring tests default to Kotest FunSpec + MockK; JUnit 5 is allowed only when an existing harness or framework constraint makes Kotest impractical and the reason is stated first.",
+                        "target_assets": ["backend-kotlin-spring.md", "tdd.md"],
+                        "evidence_refs": ["context/review.md"],
+                    }],
+                },
+                "reused_assets": [],
+                "observed_patterns": [{
+                    "kind": "review_principle",
+                    "principle_key": "kotlin_spring_kotest_default",
+                    "summary": "Reviewer identified a reusable Kotlin/Spring testing convention.",
+                    "principle": "Kotlin/Spring tests default to Kotest FunSpec + MockK; JUnit 5 is allowed only when an existing harness or framework constraint makes Kotest impractical and the reason is stated first.",
+                    "target_assets": ["backend-kotlin-spring.md", "tdd.md"],
+                    "evidence_refs": ["context/review.md"],
+                }],
+                "asset_candidates": [],
+                "rejected_candidates": [],
+                "learning_summary": "Reusable-work signals were observed.",
+                "guardrails": {
+                    "asset_writes": "disabled",
+                    "generator_invoked": False,
+                    "verification_bypass": False,
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    output = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
+    assert proposal["target_asset"] == "review_principle:kotlin_spring_kotest_default"
+    assert proposal["proposal_type"] == "patch_existing_skill"
+    assert proposal["source"] == "reviewer_finding"
+    assert proposal["target_assets"] == ["backend-kotlin-spring.md", "tdd.md"]
+    assert "Kotest FunSpec + MockK" in proposal["review_principle"]
+    assert "repeated review principle" in proposal["promotion_reason"]
 
 
 def test_proposal_aggregator_preserves_existing_lifecycle_decisions(
@@ -703,6 +858,45 @@ def test_proposal_summary_reports_pending_items(script_runner, env_with_home, st
     assert "type: patch_existing_skill" in result.stdout
     assert "evidence: 2 tasks" in result.stdout
     assert "already-approved-2x" not in result.stdout
+
+
+def test_proposal_summary_surfaces_target_principle_and_reason(
+    script_runner, env_with_home, state_dir
+):
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [{
+                "candidate_id": "review-principle-kotlin-spring-kotest-default-2x",
+                "proposal_type": "patch_existing_skill",
+                "status": "approval_required",
+                "target_asset": "review_principle:kotlin_spring_kotest_default",
+                "target_assets": ["backend-kotlin-spring.md", "tdd.md"],
+                "review_principle": "Kotlin/Spring tests default to Kotest FunSpec + MockK; JUnit 5 is allowed only when a concrete existing harness or framework constraint makes Kotest impractical and the reason is stated first.",
+                "promotion_reason": "2 independent evolution reports recorded the same repeated review principle.",
+                "occurrence_count": 2,
+                "evidence_refs": [
+                    "tasks/one/context/evolution-report.json",
+                    "tasks/two/context/evolution-report.json",
+                ],
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-summary.py",
+        "--proposals", str(proposals),
+        "--format", "text",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "target: backend-kotlin-spring.md, tdd.md" in result.stdout
+    assert "principle: Kotlin/Spring tests default to Kotest FunSpec + MockK" in result.stdout
+    assert "reason: 2 independent evolution reports" in result.stdout
 
 
 def test_proposal_summary_json_counts_pending_items(script_runner, env_with_home, state_dir):
