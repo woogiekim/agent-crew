@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-07-03T08:38:38Z from 14 mnemos rules (host=generic) -->
+<!-- Assembled: 2026-07-16T04:01:31Z from 15 mnemos rules (host=generic) -->
 
 # agent-crew - Global Rules
 
@@ -283,6 +283,12 @@ Project state is stored under:
 ~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/{TASK_ID}
 ```
 
+## Contents-System Scope Guard
+
+When the active repository or task scope is contents-system / contents-systsem, never modify `apps/proxy/contents/src/main/resources/api-docs/**` or any other `api-docs` generated artifact unless the user explicitly requests API documentation changes.
+
+For sprint-scoped contents-system tasks, Enuri-related logic is out of scope unless the user explicitly reopens Enuri scope. Do not change Enuri channel or legacy behavior merely because nearby Danawa/contents code is being edited.
+
 ## Structured Choice Rules
 
 Use the host AI tool's structured choice UI when confirmation is required.
@@ -399,3 +405,27 @@ Proceed with this plan?
 ```
 
 <!-- agent-crew-end -->
+
+
+## Local And Offline Default Convention
+
+Unless the user explicitly says otherwise, all work targets are local by
+default. Apply this to coding, git, MR drafting, verification, issue workflows,
+and deployment-adjacent wording.
+
+- Do not infer remote mutation from short commands.
+- Do not push, deploy, merge, create/update remote MRs, trigger remote CI, or
+  mutate external systems unless explicitly requested.
+- Prefer the current local repository/worktree, local generated text, local
+  verification, and local clipboard operations when the user does not name a
+  remote target.
+- For build/test/check/verification commands, avoid remote network access by
+  default. Prefer offline or cache-only modes when available, such as Gradle
+  `--offline`.
+- If offline/cache-only verification cannot run because required dependencies
+  or artifacts are not cached, report that directly and ask before switching to
+  an online/network-backed run.
+- Exception: `mnemos` and `agent-crew` are allowed to perform their own required
+  memory, state, hook, and instruction-management operations. Do not use this
+  local/offline convention to block `mnemos` or `agent-crew` from maintaining
+  their own stores or workflow state.
