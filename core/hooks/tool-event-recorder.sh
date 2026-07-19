@@ -10,12 +10,18 @@
 #
 # This hook is a no-op when no crew task is active or the tool call is not Bash.
 
-# Read the hook payload from stdin before starting python. A `python3 - <<EOF`
-# heredoc would bind stdin to the program text, so the payload is captured here
-# and handed to python through the environment instead.
-HOOK_PAYLOAD="$(cat)"
+# Read the hook payload before starting Python. The program remains on stdin;
+# file descriptor 3 carries the payload without environment-size limits.
+HOOK_PAYLOAD=""
+IFS= read -r -d '' HOOK_PAYLOAD || true
 
-HOOK_PAYLOAD="${HOOK_PAYLOAD}" python3 <<'PYEOF'
+# Most PostToolUse events are not Bash. Avoid Python startup, project
+# resolution, and runtime imports for those events.
+if [[ ! "${HOOK_PAYLOAD}" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"Bash\" ]]; then
+    exit 0
+fi
+
+python3 3<<<"${HOOK_PAYLOAD}" <<'PYEOF'
 import sys, json, os, subprocess, hashlib, re, importlib.util
 from pathlib import Path
 
@@ -91,7 +97,8 @@ def load_crew_runtime():
     return None
 
 
-raw = os.environ.get("HOOK_PAYLOAD", "")
+with os.fdopen(3, encoding="utf-8") as payload_stream:
+    raw = payload_stream.read()
 
 try:
     data = json.loads(raw)

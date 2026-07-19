@@ -460,6 +460,7 @@ update_registered_projects() {
   local source="$1"
   local current="$2"
   local registry setup_script roots_file current_resolved project project_resolved
+  local global_codex_dir project_codex_dir
   local total=0 refreshed=0 skipped=0 current_seen=0
 
   registry="$(update_registry_script 2>/dev/null || true)"
@@ -481,6 +482,7 @@ update_registered_projects() {
     list-projects > "${roots_file}" || true
 
   current_resolved="$(cd "${current}" 2>/dev/null && pwd || printf '%s' "${current}")"
+  global_codex_dir="$(cd "${CODEX_HOME:-${HOME}/.codex}" 2>/dev/null && pwd || printf '%s' "${CODEX_HOME:-${HOME}/.codex}")"
   while IFS= read -r project; do
     [ -n "${project}" ] || continue
     total=$((total + 1))
@@ -491,6 +493,12 @@ update_registered_projects() {
     fi
 
     project_resolved="$(cd "${project}" 2>/dev/null && pwd || printf '%s' "${project}")"
+    project_codex_dir="$(cd "${project_resolved}/.codex" 2>/dev/null && pwd || printf '%s' "${project_resolved}/.codex")"
+    if [ "${project_codex_dir}" = "${global_codex_dir}" ]; then
+      printf 'update_scope: project=%s status=skipped reason=codex_global_home_collision\n' "${project_resolved}"
+      skipped=$((skipped + 1))
+      continue
+    fi
     if [ "${project_resolved}" = "${current_resolved}" ]; then
       printf 'update_scope: project=%s status=already-refreshed\n' "${project_resolved}"
       current_seen=1

@@ -530,7 +530,15 @@ chmod +x "${AGENT_CREW_HOME}/system/adapters/codex/bin/"* 2>/dev/null || true
 # agents may still provide explicit `model`, `model_reasoning_effort`, and
 # `sandbox_mode` keys in frontmatter. See core/rules/capabilities/reasoning-tier.md.
 
-sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
+PROJECT_CODEX_DIR="$(cd "${PROJECT_ROOT}/.codex" 2>/dev/null && pwd || printf '%s' "${PROJECT_ROOT}/.codex")"
+GLOBAL_CODEX_DIR="$(cd "${CODEX_HOME}" 2>/dev/null && pwd || printf '%s' "${CODEX_HOME}")"
+CODEX_GLOBAL_HOME_COLLISION=0
+if [ "${PROJECT_CODEX_DIR}" = "${GLOBAL_CODEX_DIR}" ]; then
+  CODEX_GLOBAL_HOME_COLLISION=1
+  printf 'codex_project_hooks: skipped reason=codex_global_home_collision project=%s\n' "${PROJECT_ROOT}"
+else
+  sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
+fi
 
 # Detect old flat layout and safely clean managed duplicates.
 if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
@@ -545,9 +553,11 @@ if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; t
     "${AGENT_CREW_HOME}/user/agents" \
     "mcp-manager.md"
 fi
-chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
-copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md"
-write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
+if [ "${CODEX_GLOBAL_HOME_COLLISION}" = "0" ]; then
+  chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
+  copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md"
+  write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
+fi
 prune_codex_global_hooks_json
 install_codex_skills
 install_system_agents_codex

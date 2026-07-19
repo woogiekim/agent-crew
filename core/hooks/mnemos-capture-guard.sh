@@ -6,10 +6,23 @@
 # Related: core/rules/memory.md — capture notification convention.
 # See also: GitHub issue #16.
 
+if [ "$#" -gt 0 ]; then
+  TURN_OUTPUT="$1"
+else
+  TURN_OUTPUT=""
+  IFS= read -r -d '' TURN_OUTPUT || true
+fi
+
+# Notification-free output is the overwhelmingly common path. Keep it free
+# from Python and mnemos CLI startup.
+case "${TURN_OUTPUT}" in
+  *"✻"*"🧠"*) ;;
+  *) exit 0 ;;
+esac
+
 # Graceful degradation — if mnemos is not installed, skip entirely.
 command -v mnemos >/dev/null 2>&1 || exit 0
 
-TURN_OUTPUT="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 MEMORY_BIN="${AGENT_CREW_HOME}/bin/memory"
@@ -33,10 +46,11 @@ mnemos_id_exists() {
 #   NOTIFICATION_COUNT — number of ✻ 🧠 lines
 #   NOTIFICATION_IDS   — newline-separated UUIDs from [id: <uuid>] tokens
 #   MISSING_ID_COUNT   — notifications missing a [id: <uuid>]
-_PARSED=$(python3 - <<PYEOF
+_PARSED=$(python3 3<<<"${TURN_OUTPUT}" <<'PYEOF'
 import re, sys
 
-text = """${TURN_OUTPUT}"""
+with open(3, encoding="utf-8", closefd=False) as payload_stream:
+    text = payload_stream.read()
 
 notification_re = re.compile(r'✻\s+🧠')
 id_re = re.compile(r'✻\s+🧠.*?\[id:\s+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\]')

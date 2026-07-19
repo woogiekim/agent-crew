@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 
 
@@ -28,6 +29,14 @@ approval_check = _load_module(SCRIPT, "check_plaintext_approval")
 
 
 class TestEnglishViolations:
+    def test_modal_whitespace_variants_remain_violations(self):
+        for text in (
+            "Should    I merge now?",
+            "Should\nI push now?",
+            "Shall\tI deploy now?",
+        ):
+            assert approval_check.find_violation(text) is not None, text
+
     def test_shall_i_merge_is_violation(self, script_runner):
         r = script_runner(
             "check-plaintext-approval.py",
@@ -101,6 +110,16 @@ class TestKoreanViolations:
 
 
 class TestNonViolations:
+    def test_large_agent_response_is_scanned_with_bounded_latency(self):
+        text = "x" * 1_000_000
+
+        started = time.perf_counter()
+        result = approval_check.find_violation(text)
+        elapsed = time.perf_counter() - started
+
+        assert result is None
+        assert elapsed < 0.5, f"large safe response took {elapsed:.3f}s"
+
     def test_can_i_help_you_is_not_violation(self, script_runner):
         """The 'Can I help' greeting-style pattern is explicitly excluded."""
         r = script_runner(

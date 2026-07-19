@@ -144,6 +144,31 @@ def test_boundary_case_hook_noop_for_non_bash_tool(tmp_path):
     assert _rows(task_dir) == []
 
 
+def test_boundary_case_hook_accepts_valid_json_whitespace_before_colon(tmp_path):
+    state_dir, task_id, task_dir = fx.make_state_task(tmp_path)
+    _mark_active(state_dir, task_id)
+    payload = json.dumps(_bash_payload("pytest tests/"), indent=2).replace(
+        '"tool_name": "Bash"',
+        '"tool_name" : "Bash"',
+    )
+
+    result = subprocess.run(
+        ["bash", str(HOOK)],
+        input=payload,
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "AGENT_CREW_STATE_DIR": str(state_dir),
+            "AGENT_CREW_TASK_ID": task_id,
+            "AGENT_CREW_PROJECT": state_dir.name,
+        },
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(_rows(task_dir)) == 1
+
+
 def test_security_case_hook_redacts_secret_like_tokens(tmp_path):
     # TC-051: command text with a secret-like token is redacted in the row.
     state_dir, task_id, task_dir = fx.make_state_task(tmp_path)

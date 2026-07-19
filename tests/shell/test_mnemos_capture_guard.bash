@@ -25,12 +25,18 @@ run_hook_rc() {
 }
 
 # --------------------------------------------------------------------------- #
-# AC1: First executable line is the mnemos absence guard                      #
+# AC1: Notification-free input exits before dependency startup                #
 # --------------------------------------------------------------------------- #
 
-it "AC1: hook begins with command -v mnemos guard"
-FIRST_EXEC=$(grep -v '^#' "${HOOK}" | grep -v '^$' | head -1)
-assert_eq 'command -v mnemos >/dev/null 2>&1 || exit 0' "${FIRST_EXEC}" "first executable line"
+it "AC1: hook has a notification fast-reject before command -v mnemos"
+FAST_REJECT_LINE=$(grep -n 'case "${TURN_OUTPUT}"' "${HOOK}" | cut -d: -f1)
+MNEMOS_GUARD_LINE=$(grep -n 'command -v mnemos' "${HOOK}" | cut -d: -f1)
+if [ -n "${FAST_REJECT_LINE}" ] && [ -n "${MNEMOS_GUARD_LINE}" ] \
+  && [ "${FAST_REJECT_LINE}" -lt "${MNEMOS_GUARD_LINE}" ]; then
+  _pass
+else
+  _fail "notification fast-reject must precede mnemos lookup"
+fi
 
 # --------------------------------------------------------------------------- #
 # AC2: Hook always exits 0 (never blocking)                                   #
@@ -60,6 +66,10 @@ it "AC3: notification without id triggers WARNING on stderr"
 output=$(run_hook "✻ 🧠 a capture without id (session)")
 assert_contains "${output}" "WARNING" "missing-id warning"
 assert_contains "${output}" "missing [id: <uuid>]" "missing-id warning text"
+
+it "AC3: PostToolUse stdin payload is inspected"
+output=$(printf '%s' '✻ 🧠 stdin capture without id' | bash "${HOOK}" 2>&1)
+assert_contains "${output}" "WARNING" "stdin missing-id warning"
 
 it "AC3: warning counts missing notifications correctly (2 missing)"
 output=$(run_hook "$(printf '✻ 🧠 first (session)\n✻ 🧠 second (session)')")

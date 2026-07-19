@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import subprocess
 from pathlib import Path
 
 
@@ -118,6 +121,44 @@ def test_progress_guard_hook_is_registered_for_supported_hosts():
     assert hook.is_file()
     assert "supervisor-progress-guard.sh" in codex_setup
     assert "supervisor-progress-guard.sh" in claude_setup
+
+
+def test_progress_guard_resolves_keyed_state_without_runtime_subprocess(tmp_path: Path):
+    project_root = tmp_path / "Example Project"
+    (project_root / ".git").mkdir(parents=True)
+    touched_file = project_root / "README.md"
+    touched_file.write_text("example\n", encoding="utf-8")
+
+    digest = hashlib.sha256(str(project_root.resolve()).encode("utf-8")).hexdigest()[:10]
+    state_dir = tmp_path / "agent-crew" / "state" / f"example-project-{digest}"
+    task_dir = state_dir / "tasks" / "task-1"
+    task_dir.mkdir(parents=True)
+    (state_dir / "tasks" / "active.task-1").write_text("", encoding="utf-8")
+    (task_dir / "progress.log").write_text(
+        "2026-07-19T00:00:00Z | STAGE | backend\n",
+        encoding="utf-8",
+    )
+
+    payload = json.dumps(
+        {
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(touched_file)},
+            "tool_response": {},
+        }
+    )
+    hook = REPO_ROOT / "core" / "hooks" / "supervisor-progress-guard.sh"
+
+    result = subprocess.run(
+        ["bash", str(hook)],
+        input=payload,
+        text=True,
+        capture_output=True,
+        env={"HOME": str(tmp_path), "AGENT_CREW_HOME": str(tmp_path / "agent-crew")},
+    )
+
+    assert result.returncode == 2
+    assert "supervisor_pipeline_bypass_prevented" in result.stderr
+    assert (task_dir / "result.violation.md").is_file()
 
 
 def test_analyst_skill_reads_have_supervisor_verified_evidence():

@@ -53,6 +53,21 @@ def test_prune_managed_global_hooks_when_project_hooks_exist(tmp_path: Path):
                         ],
                     }
                 ],
+                "PostToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": f"bash '{home}/hooks/tool-event-recorder.sh'",
+                            },
+                            {
+                                "type": "command",
+                                "command": "/usr/local/bin/aoe-post-tool-hook",
+                            },
+                        ],
+                    }
+                ],
             },
             "other": "preserved",
         },
@@ -68,6 +83,9 @@ def test_prune_managed_global_hooks_when_project_hooks_exist(tmp_path: Path):
     ]
     assert data["hooks"]["PreToolUse"][0]["hooks"] == [
         {"type": "command", "command": "/usr/local/bin/user-pre-hook"}
+    ]
+    assert data["hooks"]["PostToolUse"][0]["hooks"] == [
+        {"type": "command", "command": "/usr/local/bin/aoe-post-tool-hook"}
     ]
 
 

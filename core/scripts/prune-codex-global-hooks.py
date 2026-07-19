@@ -35,6 +35,7 @@ MANAGED_HOOKS = {
     "normalize-task-guard.sh",
     "route-directive-guard.sh",
     "supervisor-progress-guard.sh",
+    "tool-event-recorder.sh",
     "tracker-mutation-guard.sh",
     "verify-rules.sh",
 }

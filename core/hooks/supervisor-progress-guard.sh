@@ -5,14 +5,15 @@
 
 set -euo pipefail
 
-INPUT="$(cat)"
+INPUT=""
+IFS= read -r -d '' INPUT || true
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 
 python3 - "$INPUT" "$AGENT_CREW_HOME" <<'PYEOF'
 import json
+import hashlib
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -61,63 +62,60 @@ def candidate_path(payload: dict) -> str:
 
 def git_root(path_text: str):
     path = Path(path_text).expanduser()
-    cwd = path if path.is_dir() else path.parent
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except Exception:
-        return None
-    root = result.stdout.strip()
-    return Path(root) if result.returncode == 0 and root else None
+    cwd = (path if path.is_dir() else path.parent).resolve()
+    for candidate in (cwd, *cwd.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
 
 
 def resolved_state_dirs(project_root) -> list[Path]:
-    dirs: list[Path] = []
     if project_root is None:
         override = os.environ.get("AGENT_CREW_STATE_DIR")
         return [Path(override).expanduser()] if override else []
 
-    if project_root is not None:
-        resolver = agent_crew_home / "scripts" / "project_state.py"
-        if resolver.is_file():
-            result = subprocess.run(
-                [
-                    "python3",
-                    str(resolver),
-                    "resolve",
-                    "--agent-crew-home",
-                    str(agent_crew_home),
-                    "--project-root",
-                    str(project_root),
-                    "--prefer-existing-legacy",
-                    "--format",
-                    "json",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                try:
-                    state_dir = json.loads(result.stdout).get("state_dir")
-                except Exception:
-                    state_dir = ""
-                if state_dir:
-                    dirs.append(Path(state_dir))
-        dirs.append(agent_crew_home / "state" / project_root.name)
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", project_root.name.strip()).strip(".-").lower()
+    slug = slug or "project"
+    digest = hashlib.sha256(str(project_root).encode("utf-8")).hexdigest()[:10]
+    keyed = agent_crew_home / "state" / f"{slug}-{digest}"
+    legacy = agent_crew_home / "state" / project_root.name
 
-    unique: list[Path] = []
-    seen: set[str] = set()
-    for path in dirs:
-        key = str(path)
-        if key not in seen:
-            unique.append(path)
-            seen.add(key)
-    return unique
+    if keyed.exists() or not legacy.exists():
+        return [keyed]
+    if legacy_matches_project(legacy, project_root):
+        return [legacy]
+    return [keyed]
+
+
+def legacy_matches_project(state_dir: Path, project_root: Path) -> bool:
+    evidence_paths = [state_dir / "project.json", state_dir / "project-update.json"]
+    evidence_paths.extend(sorted((state_dir / "tasks").glob("*/register.json"))[:25])
+
+    for path in evidence_paths:
+        if not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8")).get("project_root")
+        except Exception:
+            continue
+        if value:
+            try:
+                return Path(str(value)).expanduser().resolve() == project_root
+            except Exception:
+                return False
+
+    for path in sorted((state_dir / "tasks").glob("*/project-root.txt"))[:25]:
+        try:
+            value = path.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            continue
+        if value:
+            try:
+                return Path(value).expanduser().resolve() == project_root
+            except Exception:
+                return False
+
+    return True
 
 
 def task_dirs_for_state(state_dir: Path) -> list[Path]:

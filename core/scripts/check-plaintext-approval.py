@@ -88,7 +88,17 @@ PATTERNS_KO = [
     r"[가-힣\w]{1,40}\s*해도\s*되나요\s*\?",
 ]
 
-PATTERNS = [re.compile(p, re.IGNORECASE) for p in PATTERNS_EN + PATTERNS_KO]
+PATTERNS_EN_COMPILED = [re.compile(p, re.IGNORECASE) for p in PATTERNS_EN]
+PATTERNS_KO_COMPILED = [re.compile(p, re.IGNORECASE) for p in PATTERNS_KO]
+PATTERNS = PATTERNS_EN_COMPILED + PATTERNS_KO_COMPILED
+
+EN_CANDIDATE_RE = re.compile(
+    r"\b(?:shall|should|may|can)\s+i\b|"
+    r"\bdo\s+you\s+want\s+me\s+to\b|"
+    r"\bwould\s+you\s+like\s+me\s+to\b",
+    re.IGNORECASE,
+)
+KO_CANDIDATES = ("할까요", "드릴까요", "될까요", "되나요")
 
 
 # --------------------------------------------------------------------------- #
@@ -127,10 +137,17 @@ def extract_text(payload):
 
 def find_violation(text):
     """Return (pattern_source, match_str) on first hit, else None."""
-    for rx in PATTERNS:
-        m = rx.search(text)
-        if m:
-            return rx.pattern, m.group(0)
+    if EN_CANDIDATE_RE.search(text):
+        for rx in PATTERNS_EN_COMPILED:
+            m = rx.search(text)
+            if m:
+                return rx.pattern, m.group(0)
+
+    if any(candidate in text for candidate in KO_CANDIDATES):
+        for rx in PATTERNS_KO_COMPILED:
+            m = rx.search(text)
+            if m:
+                return rx.pattern, m.group(0)
     return None
 
 
