@@ -286,4 +286,41 @@ register_local_git_excludes "${TMP}" "x" >/dev/null 2>&1
 rc=$?
 assert_exit 0 "${rc}" "non-git dir is a silent no-op"
 
+# --------------------------------------------------------------------------- #
+# merge_agent_crew_section — managed block only + idempotency                 #
+# --------------------------------------------------------------------------- #
+
+TMP=$(make_tmp)
+cat > "${TMP}/source.md" <<'EOF'
+<!-- agent-crew-start -->
+# Managed rules
+<!-- agent-crew-end -->
+
+## Source host-only rule
+Do not copy this into project files.
+EOF
+cat > "${TMP}/dest.md" <<'EOF'
+# Project instructions
+
+<!-- agent-crew-start -->
+# Old managed rules
+<!-- agent-crew-end -->
+
+## Project host-only rule
+Preserve this exactly once.
+EOF
+
+it "merge_agent_crew_section excludes source host-specific content"
+merge_agent_crew_section "${TMP}/source.md" "${TMP}/dest.md"
+content=$(cat "${TMP}/dest.md")
+assert_not_contains "${content}" "Source host-only rule"
+
+it "merge_agent_crew_section preserves project host-specific content"
+assert_contains "${content}" "Project host-only rule"
+
+it "merge_agent_crew_section is idempotent across repeated setup runs"
+snapshot=$(cat "${TMP}/dest.md")
+merge_agent_crew_section "${TMP}/source.md" "${TMP}/dest.md"
+assert_eq "${snapshot}" "$(cat "${TMP}/dest.md")"
+
 end_report

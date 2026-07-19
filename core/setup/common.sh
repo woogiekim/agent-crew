@@ -616,8 +616,10 @@ dest = Path(sys.argv[2])
 start = sys.argv[3]
 end = sys.argv[4]
 src_content = src.read_text().strip()
-if start in src_content and end in src_content:
-    new_section = f"{src_content}\n"
+source_pattern = re.escape(start) + r".*?" + re.escape(end)
+source_match = re.search(source_pattern, src_content, re.DOTALL)
+if source_match:
+    new_section = f"{source_match.group(0)}\n"
 else:
     new_section = f"{start}\n{src_content}\n{end}\n"
 
