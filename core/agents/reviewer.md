@@ -676,6 +676,34 @@ Paths are **NOT** considered provably equivalent when:
 When the check passes (or HAS_SH or HAS_CODE is 0), continue to
 Step 1 — static review.
 
+### Phase 1.5.5 — Early-Rejection Report Contract
+
+Any short-circuit below that returns
+`REPORT: ${TASK_DIR}/context/review.md` must write
+`${TASK_DIR}/context/review.md` before returning. Do not emit a prospective path
+and rely on the later Step 3 save, because the supervisor validates the report
+before routing the rejection.
+
+The durable early-rejection report must contain the actual gate result without
+invented evidence:
+
+```markdown
+# Review: {task name}
+
+## Status
+REJECTED
+
+## Reason
+REASON: {the same machine-readable reason returned to the supervisor}
+
+## Evidence
+{the observed coverage, checklist, mapping, or test-name failure}
+```
+
+After the file write succeeds, return the documented `STATUS: REJECTED` block.
+This keeps semantic report validation intact while preserving the intended
+implementer retry and remediation directive.
+
 ### Phase 1.6 — Enforce 100% changed-surface coverage
 
 If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to

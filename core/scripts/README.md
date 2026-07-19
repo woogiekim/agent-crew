@@ -81,6 +81,12 @@ invocation in SKILL.md; generic adds guidance).
 
 ## Diagnostic tooling
 
+- `check-completion-artifact.py` — validates that semantic analyst, planner,
+  and reviewer completion responses point to existing task-local regular files.
+  It reads only enough UTF-8 content to reject empty or whitespace-only
+  artifacts and returns validation-retry reasons without mutating task state.
+  `completion_artifact_lib.py` provides the same validation to runtime
+  classifiers without launching another process.
 - `smoke-test-state.sh` — end-to-end regression test for the F4
   validator + F5 progress buffer + G6 plain-text-approval validator +
   J13 telemetry aggregator. Pure read-only against the repo; writes

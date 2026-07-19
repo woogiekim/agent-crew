@@ -795,10 +795,36 @@ Return the ANALYSIS block.
 
 Pass only paths in the prompt — never inline file contents.
 
-Extract the `ANALYSIS` block from the analyst's response.
+Wrap this analyst delegation in a semantic completion validation loop. Initialize
+`ANALYST_VALIDATION_ATTEMPTS=0` before the first invocation. Immediately after
+each analyst response, bind its host invocation return value without rewriting
+it. Bind the exact returned text to `ANALYST_RESPONSE`; do not reconstruct a
+summary or create a separate proof artifact.
 
-If the analyst returns `readiness: BLOCKED`, write `STATUS: BLOCKED` to
-`{TASK_DIR}/result.md` with the analyst's blocker explanation and stop.
+Extract the `ANALYSIS` block from the analyst's response, but do not read
+`pipeline.json` or any referenced artifact yet. If the analyst returns
+`readiness: BLOCKED`, write `STATUS: BLOCKED` to `{TASK_DIR}/result.md` with the
+analyst's blocker explanation and stop. This preserves legitimate blocked
+responses, for which the analyst contract intentionally omits `pipeline.json`
+and `handoff.md`.
+
+Validate only a `readiness: READY` response. Before reading `pipeline.json`, run:
+
+```bash
+printf '%s\n' "${ANALYST_RESPONSE}" |
+  python3 "${AGENT_CREW_HOME}/system/scripts/check-completion-artifact.py" \
+    --agent "analyst" \
+    --task-dir "${TASK_DIR}" \
+    --format json
+```
+
+On `retry_validation`, increment `ANALYST_VALIDATION_ATTEMPTS`, log the returned
+reason, and continue to the next loop iteration so the analyst is invoked once.
+Do not read `pipeline.json` from the rejected response and do not increment a
+crash counter. When `ANALYST_VALIDATION_ATTEMPTS > 3`, write
+`STATUS: BLOCKED` with `BLOCKER: completion_artifact_validation_exhausted` to
+`result.md` and stop. The source-checkout fallback is
+`${PROJECT_ROOT}/core/scripts/check-completion-artifact.py`.
 
 After completion, read only `pipeline.json` (never read `handoff.md` contents).
 Use the `PIPELINE_PATH` variable resolved in Phase 0:

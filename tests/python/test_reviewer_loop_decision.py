@@ -7,6 +7,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "reviewer-loop-decision.py"
@@ -319,6 +321,9 @@ def test_review_approved_without_quality_metrics_retries_reviewer():
 
 
 def test_review_approved_missing_quality_metrics_file_retries(tmp_path: Path):
+    (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "review.md").write_text("review\n", encoding="utf-8")
+
     result = run_decision_with_task_dir(
         "REVIEW: APPROVED\n"
         "REPORT: context/review.md\n"
@@ -333,8 +338,148 @@ def test_review_approved_missing_quality_metrics_file_retries(tmp_path: Path):
     assert payload["reason"] == "quality_metrics_file_missing"
 
 
+def test_review_approved_missing_report_retries_reviewer(tmp_path: Path):
+    (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "quality-metrics.json").write_text(
+        "{}", encoding="utf-8"
+    )
+
+    result = run_decision_with_task_dir(
+        "REVIEW: APPROVED\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 0\n"
+        "QUALITY_METRICS: context/quality-metrics.json\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "completion_artifact_missing"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["implementation_retry_budget_consumed"] is False
+
+
+def test_review_needs_changes_missing_report_retries_reviewer(tmp_path: Path):
+    (tmp_path / "context").mkdir()
+
+    result = run_decision_with_task_dir(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "completion_artifact_missing"
+    assert payload["retry_target"] == "reviewer"
+
+
+def test_status_rejected_missing_report_retries_reviewer(tmp_path: Path):
+    (tmp_path / "context").mkdir()
+
+    result = run_decision_with_task_dir(
+        "STATUS: REJECTED\n"
+        "REASON: tests_failed\n"
+        "REPORT: context/review-tests.md\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "completion_artifact_missing"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["implementation_retry_budget_consumed"] is False
+
+
+def test_status_rejected_existing_report_retries_implementer(tmp_path: Path):
+    (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "review.md").write_text(
+        "# Review\n\nREASON: missing_coverage_evidence\n", encoding="utf-8"
+    )
+
+    result = run_decision_with_task_dir(
+        "STATUS: REJECTED\n"
+        "REASON: missing_coverage_evidence\n"
+        "REPORT: context/review.md\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["reason"] == "missing_coverage_evidence"
+    assert payload["retry_target"] == "implementer"
+    assert payload["implementation_retry_budget_consumed"] is True
+
+
+@pytest.mark.parametrize("content", ["", "  \n\t"])
+def test_review_verdict_empty_report_retries_reviewer(
+    tmp_path: Path, content: str
+):
+    (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "review.md").write_text(content, encoding="utf-8")
+
+    result = run_decision_with_task_dir(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "completion_artifact_empty"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["implementation_retry_budget_consumed"] is False
+
+
+def test_review_verdict_symlink_loop_retries_reviewer_without_crashing(
+    tmp_path: Path,
+):
+    (tmp_path / "context").mkdir()
+    report = tmp_path / "context" / "review.md"
+    report.symlink_to(report)
+
+    result = run_decision_with_task_dir(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: context/review.md\n"
+        "ISSUES: 1\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "completion_artifact_unreadable"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["implementation_retry_budget_consumed"] is False
+
+
+def test_review_verdict_unknown_tilde_user_retries_without_crashing(
+    tmp_path: Path,
+):
+    (tmp_path / "context").mkdir()
+
+    result = run_decision_with_task_dir(
+        "REVIEW: NEEDS_CHANGES\n"
+        "REPORT: ~agent_crew_user_that_does_not_exist/review.md\n"
+        "ISSUES: 1\n",
+        tmp_path,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["action"] == "retry"
+    assert payload["reason"] == "completion_artifact_unreadable"
+    assert payload["retry_target"] == "reviewer"
+    assert payload["implementation_retry_budget_consumed"] is False
+
+
 def test_review_approved_existing_quality_metrics_file_approves(tmp_path: Path):
     (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "review.md").write_text("review\n", encoding="utf-8")
     (tmp_path / "context" / "quality-metrics.json").write_text("{}", encoding="utf-8")
 
     result = run_decision_with_task_dir(
@@ -355,6 +500,7 @@ def test_response_file_and_relative_quality_metrics_path_are_supported(tmp_path:
     response = tmp_path / "review.md"
     response.write_text(
         "REVIEW: APPROVED\n"
+        "REPORT: review.md\n"
         "QUALITY_METRICS: quality-metrics.json\n",
         encoding="utf-8",
     )

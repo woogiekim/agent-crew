@@ -23,6 +23,13 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from completion_artifact_lib import validate as validate_completion_artifact
+except ModuleNotFoundError:
+    from core.scripts.completion_artifact_lib import (
+        validate as validate_completion_artifact,
+    )
+
 
 STATUS_REJECTED_RE = re.compile(r"^STATUS\s*:\s*REJECTED\b", re.I | re.M)
 REVIEW_NEEDS_CHANGES_RE = re.compile(r"^REVIEW\s*:\s*NEEDS_CHANGES\b", re.I | re.M)
@@ -121,6 +128,31 @@ DIRECTIVES = {
         "NEW_MUST_CLASSIFICATION: regression | missed_existing | "
         "severity_escalation | unclear_requirement and NEW_MUST_EVIDENCE with "
         "concrete repository/test/context references."
+    ),
+    "completion_artifact_missing": (
+        "Reviewer completion did not reference an existing task-local REPORT. "
+        "Re-run the reviewer only and require REPORT to point to the durable "
+        "review artifact."
+    ),
+    "completion_artifact_ambiguous": (
+        "Reviewer completion returned multiple REPORT fields. Re-run the "
+        "reviewer only and require one unambiguous task-local REPORT path."
+    ),
+    "completion_artifact_outside_task": (
+        "Reviewer completion referenced a REPORT outside TASK_DIR. Re-run the "
+        "reviewer only and write the report under the current task."
+    ),
+    "completion_artifact_not_file": (
+        "Reviewer REPORT does not reference a regular file. Re-run the "
+        "reviewer only and write the durable review artifact first."
+    ),
+    "completion_artifact_unreadable": (
+        "Reviewer REPORT is not readable UTF-8 text. Re-run the reviewer only "
+        "and write a readable durable review artifact."
+    ),
+    "completion_artifact_empty": (
+        "Reviewer REPORT contains no semantic content. Re-run the reviewer "
+        "only and write the durable review findings before completion."
     ),
 }
 
@@ -319,6 +351,26 @@ def review_contract_status(text: str, active_review_mode: str, task_dir: str | N
 
 def classify(text: str, task_dir: str | None = None, explicit_review_mode: str | None = None) -> dict:
     active_review_mode = review_mode(text, explicit_review_mode)
+    has_review_verdict = bool(
+        STATUS_REJECTED_RE.search(text)
+        or REVIEW_NEEDS_CHANGES_RE.search(text)
+        or REVIEW_APPROVED_RE.search(text)
+    )
+    if task_dir and has_review_verdict:
+        artifact = validate_completion_artifact("reviewer", Path(task_dir), text)
+        if artifact["action"] == "retry_validation":
+            reason = artifact["reason"]
+            return with_budget({
+                "action": "retry",
+                "trigger": "semantic_completion_artifact",
+                "reason": reason,
+                "directive": DIRECTIVES[reason],
+                "retry_target": "reviewer",
+                "review_mode": active_review_mode,
+                "artifact_field": artifact["field"],
+                "artifact_path": artifact["path"],
+            }, "reviewer")
+
     if STATUS_REJECTED_RE.search(text):
         reason_match = REASON_RE.search(text)
         reason = reason_match.group(1) if reason_match else "reviewer_rejected"
