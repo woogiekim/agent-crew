@@ -182,3 +182,46 @@ def test_supervisor_guard_fast_rejects_unrelated_payload_before_python(tmp_path)
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_supervisor_guard_ignores_active_markers_from_other_projects_before_python(tmp_path):
+    home = tmp_path / "home"
+    other_task = home / "state" / "other-project" / "tasks" / "stale"
+    other_task.mkdir(parents=True)
+    (other_task.parent / "active.stale").touch()
+
+    project = tmp_path / "current-project"
+    (project / ".git").mkdir(parents=True)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    python3 = fake_bin / "python3"
+    python3.write_text(
+        "#!/usr/bin/env bash\nprintf 'python should not run\\n' >&2\nexit 97\n",
+        encoding="utf-8",
+    )
+    python3.chmod(0o755)
+
+    payload = json.dumps(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"cwd": str(project), "command": "pwd"},
+            "tool_response": {"stdout": str(project), "returncode": 0},
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "core/hooks/supervisor-progress-guard.sh")],
+        input=payload,
+        text=True,
+        capture_output=True,
+        env={
+            "AGENT_CREW_HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+        },
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+    assert result.stderr == ""

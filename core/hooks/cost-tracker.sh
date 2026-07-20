@@ -8,7 +8,12 @@
 #
 # This hook is a no-op when no task is active or no usage data is present.
 
-python3 - <<'PYEOF'
+# Read the host hook payload before starting Python. The Python program itself
+# is supplied on stdin, so fd 3 carries the payload.
+HOOK_PAYLOAD=""
+IFS= read -r -d '' HOOK_PAYLOAD || true
+
+python3 3<<<"${HOOK_PAYLOAD}" <<'PYEOF'
 import sys, json, os, subprocess, hashlib, re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,8 +66,8 @@ def resolve_task_id():
     return None
 
 
-raw = sys.stdin.read(1024 * 1024)
-sys.stdout.write(raw)  # pass through untouched
+with os.fdopen(3, encoding="utf-8") as payload_stream:
+    raw = payload_stream.read(1024 * 1024)
 
 try:
     data = json.loads(raw)

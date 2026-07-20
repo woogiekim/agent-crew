@@ -9,24 +9,65 @@ INPUT=""
 IFS= read -r -d '' INPUT || true
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 
+payload_path_hint() {
+    printf '%s' "${INPUT}" \
+        | sed -nE 's/.*"cwd"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p; s/.*"file_path"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p; s/.*"path"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p; s/.*"new_path"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+        | sed -n '1p'
+}
+
+state_dirs_for_current_project() {
+    if [ -n "${AGENT_CREW_STATE_DIR:-}" ]; then
+        printf '%s\n' "${AGENT_CREW_STATE_DIR}"
+        return
+    fi
+
+    local hint root slug digest keyed legacy
+    hint="$(payload_path_hint)"
+    [ -n "${hint}" ] || hint="${PWD}"
+
+    root="$(git -C "${hint}" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -z "${root}" ] && [ -n "${hint}" ] && [ ! -d "${hint}" ]; then
+        root="$(git -C "$(dirname "${hint}")" rev-parse --show-toplevel 2>/dev/null || true)"
+    fi
+    [ -n "${root}" ] || return
+
+    root="$(cd "${root}" 2>/dev/null && pwd -P)" || return
+    slug="$(basename "${root}" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^[.-]+//; s/[.-]+$//' | tr '[:upper:]' '[:lower:]')"
+    [ -n "${slug}" ] || slug="project"
+    if command -v shasum >/dev/null 2>&1; then
+        digest="$(printf '%s' "${root}" | shasum -a 256 | awk '{print substr($1,1,10)}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        digest="$(printf '%s' "${root}" | sha256sum | awk '{print substr($1,1,10)}')"
+    else
+        return
+    fi
+
+    keyed="${AGENT_CREW_HOME}/state/${slug}-${digest}"
+    legacy="${AGENT_CREW_HOME}/state/${slug}"
+    if [ -d "${keyed}" ] || [ ! -d "${legacy}" ]; then
+        printf '%s\n' "${keyed}"
+    else
+        printf '%s\n' "${legacy}"
+    fi
+}
+
 has_active_task_marker() {
     if [ -n "${AGENT_CREW_TASK_ID:-}" ]; then
         return 0
     fi
 
-    if [ -n "${AGENT_CREW_STATE_DIR:-}" ]; then
-        if [ -f "${AGENT_CREW_STATE_DIR}/tasks/active" ]; then
+    local state_dir
+    while IFS= read -r state_dir; do
+        [ -n "${state_dir}" ] || continue
+        if [ -f "${state_dir}/tasks/active" ]; then
             return 0
         fi
-        if compgen -G "${AGENT_CREW_STATE_DIR}/tasks/active.*" >/dev/null; then
+        if compgen -G "${state_dir}/tasks/active.*" >/dev/null; then
             return 0
         fi
-    fi
+    done < <(state_dirs_for_current_project)
 
-    if compgen -G "${AGENT_CREW_HOME}/state/*/tasks/active" >/dev/null; then
-        return 0
-    fi
-    compgen -G "${AGENT_CREW_HOME}/state/*/tasks/active.*" >/dev/null
+    return 1
 }
 
 # Most Codex/Claude PostToolUse events happen outside an active supervisor
