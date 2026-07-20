@@ -68,6 +68,15 @@ READ_ONLY_MUTATION_REFERENCE_RE = re.compile(
     r"edit|publish|commit|resolve|close|test)\b",
     re.IGNORECASE,
 )
+READ_ONLY_MUTATION_SCOPE_NOUN_RE = re.compile(
+    r"\b[A-Za-z][A-Za-z0-9_-]*/"
+    r"(?:build|implement|create|add|update|fix|remove|move|change|migrate|"
+    r"refactor|replace|extend|integrate|deploy|merge|rollback|write|save|"
+    r"edit|publish|commit|resolve|close|test)"
+    r"(?=\s+(?:semantics|behaviou?r|scope|surface|flow|logic|path|paths|"
+    r"contract|contracts|handling|policy|policies|risk|risks|impact)\b)",
+    re.IGNORECASE,
+)
 GERUND_MUTATING_TASK_RE = re.compile(
     r"\b(?:while\s+)?(?:refactoring|removing|changing|testing)\s+"
     r"(?:this|that|the|my|our|a|an)\b",
@@ -249,7 +258,7 @@ ENGLISH_EXPLICIT_MUTATION_DIRECTIVE_RE = re.compile(
     r")"
     r"(?:build|implement|create|add|update|fix|remove|move|change|migrate|"
     r"refactor|replace|extend|integrate|deploy|merge|rollback|write|save|"
-    r"edit|publish|commit|resolve|close)\b",
+    r"edit|publish|commit|resolve|close|test)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 ENGLISH_IMPERATIVE_MUTATION_DIRECTIVE_RE = re.compile(
@@ -1194,6 +1203,8 @@ def looks_mutating_task(text: str) -> bool:
             source_value = READ_ONLY_REVIEW_COMMAND_SECTION_RE.sub("", source_value)
             source_value = READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE.sub("", source_value)
             constrained_value = source_value + appended_value
+        if ENGLISH_EXPLICIT_MUTATION_DIRECTIVE_RE.search(constrained_value):
+            return True
         if ENGLISH_IMPERATIVE_MUTATION_DIRECTIVE_RE.search(constrained_value):
             return True
         constrained_value = READ_ONLY_COMMIT_NOUN_REFERENCE_RE.sub(
@@ -1215,6 +1226,7 @@ def looks_mutating_task(text: str) -> bool:
         constrained_value = READ_ONLY_HISTORY_QUERY_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_METHOD_LEARNING_RE.sub("", constrained_value)
         constrained_value = READ_ONLY_MUTATION_REFERENCE_RE.sub("", constrained_value)
+        constrained_value = READ_ONLY_MUTATION_SCOPE_NOUN_RE.sub("", constrained_value)
     if has_read_only_signal and not STRONG_MUTATING_TASK_RE.search(constrained_value):
         return False
     return bool(MUTATING_TASK_RE.search(constrained_value))

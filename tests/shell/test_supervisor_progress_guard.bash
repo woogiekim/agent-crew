@@ -79,6 +79,55 @@ grep -q "STATUS: completed" "${LEGACY_TASK_DIR}/result.md"
 test ! -f "${LEGACY_TASK_DIR}/result.violation.md"
 rm -f "${STATE_DIR}/tasks/active"
 
+LEGACY_BYPASS_TASK_DIR="${STATE_DIR}/tasks/20260605-legacy-bypass-0"
+mkdir -p "${LEGACY_BYPASS_TASK_DIR}"
+printf '%s | STAGE_DONE | legacy marker task without pipeline\n' "2026-06-05T00:00:00Z" > "${LEGACY_BYPASS_TASK_DIR}/progress.log"
+touch "${STATE_DIR}/tasks/active"
+
+set +e
+OUTPUT_LEGACY_BYPASS="$(
+  printf '{"tool_name":"Bash","tool_input":{"cwd":"%s","command":"true"}}' "${PROJECT_ROOT}" \
+    | bash "${HOOK}" 2>&1
+)"
+RC_LEGACY_BYPASS=$?
+set -e
+
+if [ "${RC_LEGACY_BYPASS}" -ne 2 ]; then
+  printf 'expected legacy active marker to enforce pipeline guard, got %s\n%s\n' "${RC_LEGACY_BYPASS}" "${OUTPUT_LEGACY_BYPASS}" >&2
+  exit 1
+fi
+
+grep -q "supervisor_pipeline_bypass_prevented" "${LEGACY_BYPASS_TASK_DIR}/result.violation.md"
+grep -q "supervisor_pipeline_bypass_prevented" <<< "${OUTPUT_LEGACY_BYPASS}"
+touch "${LEGACY_BYPASS_TASK_DIR}/pipeline.json"
+rm -f "${STATE_DIR}/tasks/active"
+
+LEGACY_OLD_BYPASS_TASK_DIR="${STATE_DIR}/tasks/20260605-legacy-old-bypass-0"
+LEGACY_NEW_IDLE_TASK_DIR="${STATE_DIR}/tasks/20260605-legacy-new-idle-0"
+mkdir -p "${LEGACY_OLD_BYPASS_TASK_DIR}" "${LEGACY_NEW_IDLE_TASK_DIR}"
+printf '%s | STAGE_DONE | older legacy marker task without pipeline\n' "2026-06-05T00:00:00Z" > "${LEGACY_OLD_BYPASS_TASK_DIR}/progress.log"
+printf '%s | STARTED | newer task without forbidden progress\n' "2026-06-05T00:01:00Z" > "${LEGACY_NEW_IDLE_TASK_DIR}/progress.log"
+touch -t 202606050000 "${LEGACY_OLD_BYPASS_TASK_DIR}/progress.log"
+touch -t 202606050001 "${LEGACY_NEW_IDLE_TASK_DIR}/progress.log"
+touch "${STATE_DIR}/tasks/active"
+
+set +e
+OUTPUT_LEGACY_OLD_BYPASS="$(
+  printf '{"tool_name":"Bash","tool_input":{"cwd":"%s","command":"true"}}' "${PROJECT_ROOT}" \
+    | bash "${HOOK}" 2>&1
+)"
+RC_LEGACY_OLD_BYPASS=$?
+set -e
+
+if [ "${RC_LEGACY_OLD_BYPASS}" -ne 2 ]; then
+  printf 'expected legacy active marker to scan every non-terminal task, got %s\n%s\n' "${RC_LEGACY_OLD_BYPASS}" "${OUTPUT_LEGACY_OLD_BYPASS}" >&2
+  exit 1
+fi
+
+grep -q "supervisor_pipeline_bypass_prevented" "${LEGACY_OLD_BYPASS_TASK_DIR}/result.violation.md"
+grep -q "supervisor_pipeline_bypass_prevented" <<< "${OUTPUT_LEGACY_OLD_BYPASS}"
+rm -f "${STATE_DIR}/tasks/active"
+
 TERMINAL_TASK_DIR="${STATE_DIR}/tasks/20260605-terminal-0"
 mkdir -p "${TERMINAL_TASK_DIR}"
 printf '%s | COMPLETED | already terminal task\n' "2026-06-05T00:00:00Z" > "${TERMINAL_TASK_DIR}/progress.log"

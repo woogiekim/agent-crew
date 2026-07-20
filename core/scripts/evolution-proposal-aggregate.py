@@ -38,6 +38,11 @@ def proposal_keys(report: dict[str, Any]) -> list[str]:
     for item in patterns:
         if not isinstance(item, dict):
             continue
+        if item.get("kind") == "mistake_correction":
+            pattern_key = str(item.get("pattern_key") or "")
+            if pattern_key:
+                keys.append(f"mistake_correction:{pattern_key}")
+            continue
         if item.get("kind") != "review_principle":
             continue
         principle_key = str(item.get("principle_key") or "")
@@ -50,7 +55,7 @@ def proposal_keys(report: dict[str, Any]) -> list[str]:
         if (
             isinstance(item, dict)
             and item.get("kind")
-            and item.get("kind") != "review_principle"
+            and item.get("kind") not in {"review_principle", "mistake_correction"}
         )
     ]
     if kinds:
@@ -76,6 +81,8 @@ def proposal_key(report: dict[str, Any]) -> str:
 def candidate_source(report: dict[str, Any], key: str = "") -> str:
     if key.startswith("review_principle:"):
         return "reviewer_finding"
+    if key.startswith("mistake_correction:"):
+        return "user_feedback"
 
     for pattern in report.get("observed_patterns") or []:
         if isinstance(pattern, dict) and pattern.get("kind") == "review_loop_back":
@@ -108,6 +115,57 @@ def review_principle_metadata(report: dict[str, Any], key: str) -> dict[str, Any
         return metadata
 
     return {}
+
+
+def target_assets_for_pattern(report: dict[str, Any], *, kind: str, key_field: str, key_value: str) -> list[str]:
+    assets: list[str] = []
+    seen: set[str] = set()
+    for pattern in report.get("observed_patterns") or []:
+        if not isinstance(pattern, dict):
+            continue
+        if pattern.get("kind") != kind:
+            continue
+        if str(pattern.get(key_field) or "") != key_value:
+            continue
+
+        target_assets = pattern.get("target_assets")
+        if not isinstance(target_assets, list):
+            continue
+        for item in target_assets:
+            asset = str(item).strip()
+            if asset and asset not in seen:
+                seen.add(asset)
+                assets.append(asset)
+    return assets
+
+
+def mistake_correction_metadata(reports: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    if not key.startswith("mistake_correction:"):
+        return {}
+
+    pattern_key = key.split(":", 1)[1]
+    assets: list[str] = []
+    seen: set[str] = set()
+    for report in reports:
+        for asset in target_assets_for_pattern(
+            report,
+            kind="mistake_correction",
+            key_field="pattern_key",
+            key_value=pattern_key,
+        ):
+            if asset not in seen:
+                seen.add(asset)
+                assets.append(asset)
+
+    return {"target_assets": assets} if assets else {}
+
+
+def proposal_reason_label(key: str) -> str:
+    if key.startswith("review_principle:"):
+        return "repeated review principle"
+    if key.startswith("mistake_correction:"):
+        return "corrected mistake pattern"
+    return "reusable-work signal"
 
 
 def existing_proposals(output_path: Path) -> dict[str, dict[str, Any]]:
@@ -173,7 +231,8 @@ def build_proposals(
     for key, paths in sorted(groups.items()):
         if len(paths) < minimum_occurrences:
             continue
-        first_report = read_json(paths[0])
+        reports = [read_json(path) for path in paths]
+        first_report = reports[0]
         evidence_refs = [
             str(path.relative_to(state_dir))
             for path in paths
@@ -193,7 +252,7 @@ def build_proposals(
             "evidence_refs": evidence_refs,
             "promotion_reason": (
                 f"{len(paths)} independent evolution reports recorded the same "
-                f"{'repeated review principle' if key.startswith('review_principle:') else 'reusable-work signal'}: {key}."
+                f"{proposal_reason_label(key)}: {key}."
             ),
             "trust_boundary": "advisory_until_rule_promotion",
             "proposal_type": proposal_type,
@@ -204,6 +263,7 @@ def build_proposals(
             "guardrail": "proposal_only_no_needs_creation_write",
         }
         proposal.update(review_principle_metadata(first_report, key))
+        proposal.update(mistake_correction_metadata(reports, key))
         preserve_decision_fields(proposal, preserved)
         proposals.append(proposal)
     return proposals

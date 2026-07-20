@@ -9,6 +9,34 @@ INPUT=""
 IFS= read -r -d '' INPUT || true
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 
+has_active_task_marker() {
+    if [ -n "${AGENT_CREW_TASK_ID:-}" ]; then
+        return 0
+    fi
+
+    if [ -n "${AGENT_CREW_STATE_DIR:-}" ]; then
+        if [ -f "${AGENT_CREW_STATE_DIR}/tasks/active" ]; then
+            return 0
+        fi
+        if compgen -G "${AGENT_CREW_STATE_DIR}/tasks/active.*" >/dev/null; then
+            return 0
+        fi
+    fi
+
+    if compgen -G "${AGENT_CREW_HOME}/state/*/tasks/active" >/dev/null; then
+        return 0
+    fi
+    compgen -G "${AGENT_CREW_HOME}/state/*/tasks/active.*" >/dev/null
+}
+
+# Most Codex/Claude PostToolUse events happen outside an active supervisor
+# task. Avoid Python startup entirely until there is state the guard can
+# actually inspect. Active-task cases still run the existing fail-closed Python
+# verifier below.
+if ! has_active_task_marker; then
+    exit 0
+fi
+
 python3 - "$INPUT" "$AGENT_CREW_HOME" <<'PYEOF'
 import json
 import hashlib
@@ -134,6 +162,21 @@ def task_dirs_for_state(state_dir: Path) -> list[Path]:
         task_dir = tasks_dir / task_id
         if task_dir.is_dir():
             dirs.append(task_dir)
+
+    legacy_marker = tasks_dir / "active"
+    if legacy_marker.is_file():
+        seen_dirs = {path.resolve() for path in dirs}
+        task_dirs = [
+            path
+            for path in tasks_dir.iterdir()
+            if (
+                path.is_dir()
+                and path.resolve() not in seen_dirs
+                and not has_terminal_result(path)
+            )
+        ]
+        task_dirs.sort()
+        dirs.extend(task_dirs)
     return dirs
 
 

@@ -11,7 +11,7 @@ SCRIPT="${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py"
 # native crew CLI. Claude runs this hook for every prompt and Bash result, so
 # the idle path must stay cheap and independent from Python/CLI startup.
 if ! printf '%s' "${INPUT}" | grep -Eiq \
-  'agent[-_[:space:]]?crew|(^|[^[:alnum:]_])crew([^[:alnum:]_]|$)|[$]crew|에이전트[[:space:]]*크루|에이전트크루|supervisor_blocked|blocked_by|STATUS:[[:space:]]*blocked|BLOCKER:'; then
+  '(^|[^./[:alnum:]_-])agent[-_[:space:]]?crew([^/[:alnum:]_-]|$)|(^|[^[:alnum:]_])crew[[:space:]]+(run|agent|status|repair|report|update|setup|sync|cost|smm)([^[:alnum:]_]|$)|crew:[[:alpha:]-]+|[$]crew|에이전트[[:space:]]*크루|에이전트크루|supervisor_blocked|blocked_by|STATUS:[[:space:]]*blocked|BLOCKER:'; then
   exit 0
 fi
 

@@ -263,9 +263,49 @@ def review_principle_signals(task_dir: Path) -> list[dict[str, Any]]:
     return signals
 
 
+def read_mistake_corrections(task_dir: Path) -> list[dict[str, Any]]:
+    path = task_dir / "context" / "mistake-events.jsonl"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+
+    corrections: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("event_type") != "mistake_correction":
+            continue
+        pattern_key = str(payload.get("pattern_key") or "").strip()
+        if not pattern_key:
+            continue
+
+        evidence_refs = payload.get("evidence_refs") or []
+        target_assets = payload.get("target_assets") or []
+        corrections.append({
+            "surface": str(payload.get("surface") or "unknown"),
+            "mistake_type": str(payload.get("mistake_type") or "unknown"),
+            "pattern_key": pattern_key,
+            "corrected_decision": str(payload.get("corrected_decision") or ""),
+            "summary": str(payload.get("summary") or "Corrected mistake was recorded."),
+            "evidence_refs": [str(item) for item in evidence_refs if str(item).strip()]
+            if isinstance(evidence_refs, list) else [],
+            "target_assets": [str(item) for item in target_assets if str(item).strip()]
+            if isinstance(target_assets, list) else [],
+        })
+    return corrections
+
+
 def observed_patterns(row: dict[str, Any], loop_backs: int,
                       skill_audit: dict[str, Any],
-                      review_principles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                      review_principles: list[dict[str, Any]],
+                      mistake_corrections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     patterns: list[dict[str, Any]] = []
     retries = int(row.get("retries") or 0)
     blockers = list(row.get("blockers") or [])
@@ -303,6 +343,17 @@ def observed_patterns(row: dict[str, Any], loop_backs: int,
             "target_assets": principle["target_assets"],
             "evidence_refs": principle["evidence_refs"],
         })
+    for correction in mistake_corrections:
+        patterns.append({
+            "kind": "mistake_correction",
+            "surface": correction["surface"],
+            "mistake_type": correction["mistake_type"],
+            "pattern_key": correction["pattern_key"],
+            "summary": correction["summary"],
+            "corrected_decision": correction["corrected_decision"],
+            "target_assets": correction["target_assets"],
+            "evidence_refs": correction["evidence_refs"] or ["context/mistake-events.jsonl"],
+        })
 
     return patterns
 
@@ -333,8 +384,19 @@ def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "principle": pattern["principle"],
             "target_assets": pattern["target_assets"],
         })
+    for pattern in patterns:
+        if pattern.get("kind") != "mistake_correction":
+            continue
+        candidates.append({
+            "asset_type": "rule",
+            "name": f"mistake-correction:{pattern['pattern_key']}",
+            "reason": "A corrected mistake produced a reusable system-learning pattern.",
+            "rejection_reason": "insufficient_repeated_evidence",
+            "required_evidence": "Collect repeated corrected mistakes before proposing a system change.",
+            "target_assets": pattern.get("target_assets", []),
+        })
 
-    if any(pattern.get("kind") != "review_principle" for pattern in patterns):
+    if any(pattern.get("kind") not in {"review_principle", "mistake_correction"} for pattern in patterns):
         candidates.append({
             "asset_type": "skill",
             "name": "existing-skill-patch-suggestion",
@@ -369,7 +431,14 @@ def build_report(state_dir: Path, task_dir: Path) -> dict[str, Any]:
     loop_backs = telemetry.count_reviewer_loop_backs(events)
     skill_audit = skill_content_audit_signal(task_dir)
     review_principles = review_principle_signals(task_dir)
-    patterns = observed_patterns(row, loop_backs, skill_audit, review_principles)
+    mistake_corrections = read_mistake_corrections(task_dir)
+    patterns = observed_patterns(
+        row,
+        loop_backs,
+        skill_audit,
+        review_principles,
+        mistake_corrections,
+    )
     meaningful = bool(patterns)
 
     return {
@@ -385,6 +454,7 @@ def build_report(state_dir: Path, task_dir: Path) -> dict[str, Any]:
             "changed_files": changed_files_from_events(events, register),
             "skill_content_audit": skill_audit,
             "review_principles": review_principles,
+            "mistake_corrections": mistake_corrections,
         },
         "reused_assets": pipeline_reused_assets(task_dir),
         "observed_patterns": patterns,
@@ -428,6 +498,15 @@ def to_markdown(report: dict[str, Any]) -> str:
         )
         for item in signals.get("review_principles", [])
     ]
+    mistake_corrections = [
+        (
+            f"{item['pattern_key']}: {item['summary']} "
+            f"(surface: {item['surface']}; type: {item['mistake_type']}; "
+            f"targets: {', '.join(item.get('target_assets', [])) or 'none'}; "
+            f"evidence: {', '.join(item.get('evidence_refs', [])) or 'context/mistake-events.jsonl'})"
+        )
+        for item in signals.get("mistake_corrections", [])
+    ]
 
     return "\n".join([
         "# Learning Report",
@@ -453,6 +532,7 @@ def to_markdown(report: dict[str, Any]) -> str:
             f"effective_followups={skill_audit.get('effective_followup_count', 0)}"
         ),
         f"- Review principles: {len(signals.get('review_principles', []))}",
+        f"- Mistake corrections: {len(signals.get('mistake_corrections', []))}",
         "",
         "## Reused Assets",
         "",
@@ -461,6 +541,10 @@ def to_markdown(report: dict[str, Any]) -> str:
         "## Review Principles",
         "",
         markdown_list(review_principles),
+        "",
+        "## Mistake Corrections",
+        "",
+        markdown_list(mistake_corrections),
         "",
         "## Observed Patterns",
         "",

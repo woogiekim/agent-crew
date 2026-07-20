@@ -89,6 +89,9 @@ assert_contains "${out}" 'nickname_candidates = ["Scout One", "Scout Two"]'
 mkdir -p "${setup_repo}"
 mkdir -p "${setup_repo}/.codex/agents"
 printf 'name = "local-custom"\n' > "${setup_repo}/.codex/agents/local-custom.toml"
+printf '#!/usr/bin/env bash\nprintf "custom global hook\\n"\n' > "${ac_home}/hooks/custom-local-hook.sh"
+printf '#!/usr/bin/env bash\nprintf "stale hook should be refreshed\\n" >&2\nexit 97\n' > "${ac_home}/hooks/auto-issue-report.sh"
+chmod +x "${ac_home}/hooks/custom-local-hook.sh" "${ac_home}/hooks/auto-issue-report.sh"
 cat > "${setup_repo}/.codex/config.toml" <<'EOF'
 model = "gpt-test"
 
@@ -112,6 +115,7 @@ setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
 setup_inherit_out="$(cat "${setup_repo}/.codex/agents/inherit-model.toml")"
 setup_config_out="$(cat "${setup_repo}/.codex/config.toml")"
 setup_hooks_out="$(cat "${setup_repo}/.codex/hooks.json")"
+setup_auto_issue_hook_out="$(cat "${setup_repo}/.codex/hooks/auto-issue-report.sh")"
 
 it "Codex setup user-agent conversion omits reasoning_tier"
 assert_not_contains "${setup_out}" 'reasoning_tier ='
@@ -148,6 +152,13 @@ it "Codex setup registers tool-event-recorder for Bash PostToolUse"
 assert_contains "${setup_hooks_out}" "tool-event-recorder.sh" "hooks.json registers tool event recorder"
 assert_contains "${setup_hooks_out}" '"matcher": "Bash"' "hooks.json has Bash matcher"
 assert_contains "${setup_hooks_out}" '"PostToolUse"' "hooks.json has PostToolUse section"
+
+it "Codex setup refreshes project hooks from source checkout"
+assert_not_contains "${setup_auto_issue_hook_out}" "stale hook should be refreshed"
+assert_contains "${setup_auto_issue_hook_out}" "Advisory hook wrapper"
+
+it "Codex setup preserves custom global hooks while refreshing source hooks"
+assert_file_exists "${ac_home}/hooks/custom-local-hook.sh"
 
 it "Codex setup maps deep implementation agents to high effort"
 assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model_reasoning_effort = "high"'

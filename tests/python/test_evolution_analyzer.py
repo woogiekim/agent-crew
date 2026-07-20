@@ -20,6 +20,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SUPERVISOR_RETRY = REPO_ROOT / "core" / "agents" / "supervisor-retry.md"
 EVOLUTION_ANALYZER = REPO_ROOT / "core" / "scripts" / "evolution-analyzer.py"
+MISTAKE_EVENTS = REPO_ROOT / "core" / "scripts" / "mistake-events.py"
 
 
 def _load_evolution_analyzer():
@@ -174,6 +175,108 @@ def test_register_modified_files_are_reported(script_runner, env_with_home, stat
     assert payload["signals"]["changed_files"] == [
         "core/scripts/evolution-analyzer.py",
         "tests/python/test_evolution_analyzer.py",
+    ]
+
+
+def test_mistake_event_recorder_is_best_effort_and_non_blocking(tmp_path: Path):
+    """success-case(regression) - mistake learning cannot block the main path."""
+    task_dir = tmp_path / "task"
+    context_dir = task_dir / "context"
+    context_dir.mkdir(parents=True)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(MISTAKE_EVENTS),
+            "record",
+            "--task-dir", str(task_dir),
+            "--surface", "routing",
+            "--mistake-type", "routing_false_positive",
+            "--pattern-key", "readonly_review_scope_noun",
+            "--original-decision", "crew:run",
+            "--corrected-decision", "crew:agent",
+            "--correction-source", "review",
+            "--summary", "Read-only review scope was corrected after routing.",
+            "--evidence-ref", "context/review.md",
+            "--target-asset", "core/scripts/quality_loop_lib.py",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    events = [
+        json.loads(line)
+        for line in (context_dir / "mistake-events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[0]["event_type"] == "mistake_correction"
+    assert events[0]["non_blocking"] is True
+    assert events[0]["pattern_key"] == "readonly_review_scope_noun"
+
+    blocked_task_dir = tmp_path / "blocked-task"
+    blocked_task_dir.mkdir()
+    (blocked_task_dir / "context").write_text("not a directory", encoding="utf-8")
+    blocked = subprocess.run(
+        [
+            sys.executable,
+            str(MISTAKE_EVENTS),
+            "record",
+            "--task-dir", str(blocked_task_dir),
+            "--surface", "routing",
+            "--mistake-type", "routing_false_positive",
+            "--pattern-key", "readonly_review_scope_noun",
+            "--original-decision", "crew:run",
+            "--corrected-decision", "crew:agent",
+            "--correction-source", "review",
+            "--summary", "This write cannot succeed but must not block.",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert blocked.returncode == 0, blocked.stdout + blocked.stderr
+
+
+def test_evolution_analyzer_reports_mistake_correction_patterns(
+    script_runner, env_with_home, state_dir
+):
+    """success-case(regression) - corrected mistakes become reusable signals."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "context" / "mistake-events.jsonl").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "event_type": "mistake_correction",
+            "surface": "routing",
+            "mistake_type": "routing_false_positive",
+            "pattern_key": "readonly_review_scope_noun",
+            "original_decision": "crew:run",
+            "corrected_decision": "crew:agent",
+            "correction_source": "review",
+            "summary": "Read-only review scope noun was initially routed as mutation.",
+            "evidence_refs": ["context/review.md"],
+            "target_assets": ["core/scripts/quality_loop_lib.py", "tests/python/test_quality_loop_gate.py"],
+            "non_blocking": True,
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["meaningful"] is True
+    assert payload["signals"]["mistake_corrections"][0]["pattern_key"] == "readonly_review_scope_noun"
+    pattern = payload["observed_patterns"][0]
+    assert pattern["kind"] == "mistake_correction"
+    assert pattern["pattern_key"] == "readonly_review_scope_noun"
+    assert pattern["target_assets"] == [
+        "core/scripts/quality_loop_lib.py",
+        "tests/python/test_quality_loop_gate.py",
     ]
 
 
@@ -667,6 +770,129 @@ def test_proposal_aggregator_promotes_repeated_review_principles_to_skill_patch(
     assert proposal["target_assets"] == ["backend-kotlin-spring.md", "tdd.md"]
     assert "Kotest FunSpec + MockK" in proposal["review_principle"]
     assert "repeated review principle" in proposal["promotion_reason"]
+
+
+def test_proposal_aggregator_promotes_repeated_mistake_corrections(
+    script_runner, env_with_home, state_dir
+):
+    """success-case(regression) - repeated corrected mistakes become visible proposals."""
+    first = _seed_task(state_dir, "20260101-120000-0")
+    second = _seed_task(state_dir, "20260102-120000-0")
+    for task_dir in (first, second):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": task_dir.name,
+                "task": "fix routing correction",
+                "generation_mode": "report_only",
+                "meaningful": True,
+                "signals": {
+                    "retries": 0,
+                    "reviewer_loop_backs": 0,
+                    "blockers": [],
+                    "changed_files": [],
+                    "skill_content_audit": {
+                        "available": False,
+                        "shallow_finding_count": 0,
+                    },
+                    "mistake_corrections": [{
+                        "surface": "routing",
+                        "mistake_type": "routing_false_positive",
+                        "pattern_key": "readonly_review_scope_noun",
+                        "corrected_decision": "crew:agent",
+                        "evidence_refs": ["context/review.md"],
+                        "target_assets": ["core/scripts/quality_loop_lib.py"],
+                    }],
+                },
+                "reused_assets": [],
+                "observed_patterns": [{
+                    "kind": "mistake_correction",
+                    "surface": "routing",
+                    "mistake_type": "routing_false_positive",
+                    "pattern_key": "readonly_review_scope_noun",
+                    "summary": "Routing false positive was corrected.",
+                    "corrected_decision": "crew:agent",
+                    "target_assets": ["core/scripts/quality_loop_lib.py"],
+                    "evidence_refs": ["context/review.md"],
+                }],
+                "asset_candidates": [],
+                "rejected_candidates": [{
+                    "asset_type": "rule",
+                    "name": "mistake-correction:readonly_review_scope_noun",
+                    "reason": "A corrected mistake produced a reusable routing pattern.",
+                    "rejection_reason": "insufficient_repeated_evidence",
+                    "required_evidence": "Collect repeated corrected mistakes before proposing a system change.",
+                }],
+                "learning_summary": "Reusable-work signals were observed.",
+                "guardrails": {
+                    "asset_writes": "disabled",
+                    "generator_invoked": False,
+                    "verification_bypass": False,
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    output = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
+    assert proposal["target_asset"] == "mistake_correction:readonly_review_scope_noun"
+    assert proposal["proposal_type"] == "investigate_reusable_asset"
+    assert proposal["source"] == "user_feedback"
+    assert proposal["target_assets"] == ["core/scripts/quality_loop_lib.py"]
+    assert "corrected mistake pattern" in proposal["promotion_reason"]
+
+
+def test_proposal_aggregator_unions_mistake_correction_targets_across_reports(
+    script_runner, env_with_home, state_dir
+):
+    """failure-case(regression) - later evidence must not lose target assets."""
+    first = _seed_task(state_dir, "20260101-120000-0")
+    second = _seed_task(state_dir, "20260102-120000-0")
+    for task_dir, target_assets in (
+        (first, []),
+        (second, ["core/scripts/quality_loop_lib.py"]),
+    ):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "task_id": task_dir.name,
+                "task": "fix routing correction",
+                "generation_mode": "report_only",
+                "meaningful": True,
+                "observed_patterns": [{
+                    "kind": "mistake_correction",
+                    "surface": "routing",
+                    "mistake_type": "routing_false_positive",
+                    "pattern_key": "readonly_review_scope_noun",
+                    "summary": "Routing false positive was corrected.",
+                    "corrected_decision": "crew:agent",
+                    "target_assets": target_assets,
+                    "evidence_refs": ["context/review.md"],
+                }],
+                "asset_candidates": [],
+            }),
+            encoding="utf-8",
+        )
+
+    output = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
+    assert proposal["target_assets"] == ["core/scripts/quality_loop_lib.py"]
 
 
 def test_proposal_aggregator_preserves_existing_lifecycle_decisions(

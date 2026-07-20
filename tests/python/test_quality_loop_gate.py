@@ -300,6 +300,33 @@ def test_repair_classifier_keeps_read_only_review_command_context_read_only():
     assert repair_state.looks_quality_gated_task(read_only_review_context) is False
 
 
+def test_repair_classifier_keeps_uncommitted_patch_review_prompt_read_only():
+    """failure-case(regression) - code review scope nouns are not mutation directives."""
+    review_prompt = (
+        "Review the current uncommitted patch for correctness issues. "
+        "Focus on bugs, regressions, destructive behavior, missing tests, "
+        "and hook/update semantics. Report findings first with file/line references."
+    )
+
+    assert quality_loop.looks_mutating_task(review_prompt) is False
+    assert repair_state.looks_mutating_task(review_prompt) is False
+    assert repair_state.looks_quality_gated_task(review_prompt) is False
+
+
+def test_repair_classifier_preserves_scope_noun_mutation_directives():
+    """failure-case(regression) - read-only signal cannot erase imperative mutations."""
+    mutating_tasks = (
+        "Review and fix risks.",
+        "Review and update contract.",
+        "Review and test contract.",
+        "Review and update flow.",
+    )
+
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True
+
+
 def test_repair_classifier_ignores_mutation_examples_inside_review_documentation():
     """boundary-case(regression) - documented examples are not user directives."""
     review_context = READ_ONLY_REVIEW_CONTEXT.replace(

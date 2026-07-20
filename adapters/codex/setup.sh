@@ -537,6 +537,11 @@ if [ "${PROJECT_CODEX_DIR}" = "${GLOBAL_CODEX_DIR}" ]; then
   CODEX_GLOBAL_HOME_COLLISION=1
   printf 'codex_project_hooks: skipped reason=codex_global_home_collision project=%s\n' "${PROJECT_ROOT}"
 else
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
+    diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
+    diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks"
+    chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
+  fi
   sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
 fi
 
