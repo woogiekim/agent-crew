@@ -50,6 +50,15 @@ mkdir -p "${AGENT_CREW_HOME}/system/skills"
 mkdir -p "${AGENT_CREW_HOME}/user/skills"
 mkdir -p "${AGENT_CREW_HOME}/skills"
 
+if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+  cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
+# User Skills
+
+Place your custom skill definitions here.
+Files in this directory are NEVER overwritten by crew:update.
+UEOF
+fi
+
 # Sync system skills from source repo when SOURCE_ROOT is available
 if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
   sync_system_skills \

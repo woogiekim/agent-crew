@@ -574,6 +574,17 @@ mkdir -p "${AGENT_CREW_HOME}/user/skills"
 mkdir -p "${AGENT_CREW_HOME}/skills"
 mkdir -p "${CODEX_HOME}/agent-crew/skills"
 
+# Write user/skills README placeholder before merging/copying so generated
+# discovery mirrors are stable within the same setup/update run.
+if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+  cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
+# User Skills
+
+Place your custom skill definitions here.
+Files in this directory are NEVER overwritten by crew:update.
+UEOF
+fi
+
 # Sync system skills from source repo when SOURCE_ROOT is available
 if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
   sync_system_skills \
@@ -589,16 +600,6 @@ merge_skills_to_discovery \
 
 # Copy unified skills to Codex host discovery path
 sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${CODEX_HOME}/agent-crew/skills"
-
-# Write user/skills README placeholder (idempotent)
-if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
-  cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
-# User Skills
-
-Place your custom skill definitions here.
-Files in this directory are NEVER overwritten by crew:update.
-UEOF
-fi
 
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"

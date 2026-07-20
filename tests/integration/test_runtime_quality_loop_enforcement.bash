@@ -152,6 +152,16 @@ with (task_dir / "progress.buffer.jsonl").open("w", encoding="utf-8") as handle:
             "files": ["tests/test_quality_loop_bridge.py"] if agent == "test-writer" else []
         }) + "\n")
 
+(task_dir / "delegation.jsonl").write_text(json.dumps({
+    "trace_id": f"{session_id}.{task_id}.2.2",
+    "task_id": task_id,
+    "session_id": session_id,
+    "agent_role": "reviewer",
+    "stage": 2,
+    "attempt": 2,
+    "status": "completed",
+}) + "\n", encoding="utf-8")
+
 (task_dir / "result.md").write_text(
     "# Implement auto bridge quality loop enforcement\n\n"
     "STATUS: completed\n"

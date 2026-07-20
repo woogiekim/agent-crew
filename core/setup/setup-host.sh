@@ -84,7 +84,7 @@ for adapter_dir in "${AGENT_CREW_HOME}"/adapters/*/; do
   host_name="$(basename "${adapter_dir}")"
   # Skip generic here; it is handled as the unconditional fallback below.
   [ "${host_name}" = "generic" ] && continue
-  if is_installed "${host_name}"; then
+  if [ "${host_name}" = "${ACTIVE_HOST}" ] || is_installed "${host_name}"; then
     if [ "${AGENT_CREW_MODE}" = "update" ] && [ "${host_name}" != "${ACTIVE_HOST}" ]; then
       AGENT_CREW_WRITE_CAPABILITIES=0 run_adapter "${host_name}"
     else

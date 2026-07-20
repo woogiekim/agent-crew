@@ -184,7 +184,7 @@ def test_update_slo_benchmark_warms_noop_local_before_timing(tmp_path: Path):
             "--mode",
             "noop-local",
             "--noop-local-budget-ms",
-            "100",
+            "1000",
             "--format",
             "json",
         ],

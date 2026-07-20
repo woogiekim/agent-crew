@@ -385,9 +385,11 @@ assert_contains "${out}" "PASS: e2e slo check"
 
 SETUP_HOME=$(make_tmp)
 SETUP_PROJECT=$(make_tmp)
+SETUP_CODEX_HOME=$(make_tmp)
+SETUP_CLAUDE_DIR=$(make_tmp)
 
 it "crew setup bootstraps an empty AGENT_CREW_HOME from source checkout"
-out=$(AGENT_CREW_HOME="${SETUP_HOME}" PROJECT_ROOT="${SETUP_PROJECT}" bash "${CREW}" setup "${SETUP_PROJECT}" 2>&1)
+out=$(AGENT_CREW_HOME="${SETUP_HOME}" CODEX_HOME="${SETUP_CODEX_HOME}" CLAUDE_DIR="${SETUP_CLAUDE_DIR}" PROJECT_ROOT="${SETUP_PROJECT}" bash "${CREW}" setup "${SETUP_PROJECT}" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 

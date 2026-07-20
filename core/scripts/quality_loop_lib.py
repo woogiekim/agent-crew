@@ -1203,8 +1203,11 @@ def looks_mutating_task(text: str) -> bool:
             source_value = READ_ONLY_REVIEW_COMMAND_SECTION_RE.sub("", source_value)
             source_value = READ_ONLY_REVIEW_COMMAND_CONTEXT_LINE_RE.sub("", source_value)
             constrained_value = source_value + appended_value
-        if ENGLISH_EXPLICIT_MUTATION_DIRECTIVE_RE.search(constrained_value):
-            return True
+        explicit_mutation = ENGLISH_EXPLICIT_MUTATION_DIRECTIVE_RE.search(constrained_value)
+        if explicit_mutation:
+            explicit_text = explicit_mutation.group(0).strip().lower()
+            if not (explicit_text == "test" and READ_ONLY_TASK_RE.search(constrained_value)):
+                return True
         if ENGLISH_IMPERATIVE_MUTATION_DIRECTIVE_RE.search(constrained_value):
             return True
         constrained_value = READ_ONLY_COMMIT_NOUN_REFERENCE_RE.sub(

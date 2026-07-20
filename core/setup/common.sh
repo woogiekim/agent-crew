@@ -43,10 +43,32 @@ diff_copy() {
 
   mkdir -p "$(dirname "${dest}")"
 
+  if [ ! -f "${dest}" ]; then
+    local added_count
+    added_count="$(awk 'END { print NR }' "${src}" 2>/dev/null || printf '0')"
+    printf '%s(%s)\n' "${label}" "${dest}"
+    if [ "${added_count}" = "0" ]; then
+      printf '  (empty file)\n'
+    else
+      printf '  Added %s lines\n' "${added_count}"
+    fi
+    _DIFF_LOG+=("${label}(${dest})"$'\t'"+${added_count}"$'\t'"-0")
+    cp "${src}" "${dest}"
+    return 0
+  fi
+
+  if cmp -s "${src}" "${dest}" 2>/dev/null; then
+    printf '%s(%s)\n' "${label}" "${dest}"
+    printf '  (no changes)\n'
+    _DIFF_LOG+=("${label}(${dest})"$'\t'"+0"$'\t'"-0")
+    return 0
+  fi
+
   # Compute diff via python3 (cross-platform, no external diff flags needed)
   if command -v python3 >/dev/null 2>&1; then
     local diff_output
     diff_output=$(python3 - "${src}" "${dest}" "${label}" <<'PYEOF'
+import os
 import sys, difflib
 from pathlib import Path
 
@@ -69,13 +91,14 @@ else:
     if added:   parts.append(f"Added {added} lines")
     if removed: parts.append(f"Removed {removed} lines")
     print("  " + " / ".join(parts))
-    for line in difflib.unified_diff(dest_lines, src_lines, lineterm=""):
-        if line.startswith('+++') or line.startswith('---') or line.startswith('@@'):
-            continue
-        if line.startswith('+'):
-            print(f"  {line}")
-        elif line.startswith('-'):
-            print(f"  {line}")
+    if os.environ.get("AGENT_CREW_DIFF_DETAIL", "0") == "1":
+        for line in difflib.unified_diff(dest_lines, src_lines, lineterm=""):
+            if line.startswith('+++') or line.startswith('---') or line.startswith('@@'):
+                continue
+            if line.startswith('+'):
+                print(f"  {line}")
+            elif line.startswith('-'):
+                print(f"  {line}")
 
 # Summary token on last line (tab-separated, not shown to user)
 print(f"__DIFF_SUMMARY__\t{label}({dest_path})\t+{added}\t-{removed}", end="")
@@ -150,7 +173,11 @@ copy_dir_contents() {
   local src="$1" dest="$2"
   [ -d "${src}" ] || return 0
   mkdir -p "${dest}"
-  diff_install "${src}" "${dest}"
+  if [ "${AGENT_CREW_COPY_DETAIL:-0}" = "1" ]; then
+    diff_install "${src}" "${dest}"
+  else
+    cp -R "${src}/." "${dest}/"
+  fi
   find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
 }
 

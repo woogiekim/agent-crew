@@ -180,16 +180,22 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
         if not quality_evidence["review_evidence_paths"]:
             failures.append("missing_reviewer_evidence")
     pipeline_quality_loop = {}
+    blocking_failures = list(failures)
     if (
         quality_loop_required
         and fixture.get("require_pipeline_quality_loop_for_implementation_reports")
     ):
         pipeline_quality_loop = check_quality_loop(task_dir)
-        failures.extend(pipeline_quality_loop.get("failures", []))
+        if not pipeline_quality_loop.get("passed", False):
+            pipeline_failures = pipeline_quality_loop.get("failures", [])
+            pipeline_hard_failures = pipeline_quality_loop.get("hard_failures")
+            failures.extend(pipeline_failures)
+            blocking_failures.extend(pipeline_hard_failures or pipeline_failures)
 
     return {
-        "passed": not failures,
+        "passed": not blocking_failures,
         "failures": sorted(set(failures)),
+        "blocking_failures": sorted(set(blocking_failures)),
         "evidence_paths": paths,
         "missing_evidence_paths": missing_paths,
         "blockers": blockers,

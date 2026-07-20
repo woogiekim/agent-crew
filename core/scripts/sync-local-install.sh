@@ -281,6 +281,16 @@ merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/user/agents" \
   "${CLAUDE_DIR}/agents"
 
+if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+  mkdir -p "${AGENT_CREW_HOME}/user/skills"
+  cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
+# User Skills
+
+Place your custom skill definitions here.
+Files in this directory are NEVER overwritten by crew:update.
+UEOF
+fi
+
 sync_system_skills \
   "${SOURCE_ROOT}/core/agents/skills" \
   "${AGENT_CREW_HOME}/system/skills"
