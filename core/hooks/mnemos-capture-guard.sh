@@ -13,6 +13,39 @@ else
   IFS= read -r -d '' TURN_OUTPUT || true
 fi
 
+case "${TURN_OUTPUT}" in
+  *\"agent_crew_hook_envelope\"*)
+    _ENVELOPE_PARSED=$(python3 3<<<"${TURN_OUTPUT}" <<'PYEOF'
+import json
+import sys
+
+with open(3, encoding="utf-8", closefd=False) as payload_stream:
+    try:
+        data = json.load(payload_stream)
+    except Exception:
+        data = {}
+
+if data.get("agent_crew_hook_envelope") == 1:
+    print("1")
+    print("1" if data.get("contains_mnemos_capture_notification") else "0")
+    print(data.get("payload_path") or "")
+else:
+    print("0")
+    print("0")
+    print("")
+PYEOF
+)
+    _IS_ENVELOPE=$(printf '%s\n' "${_ENVELOPE_PARSED}" | sed -n '1p')
+    _HAS_NOTIFICATION=$(printf '%s\n' "${_ENVELOPE_PARSED}" | sed -n '2p')
+    _PAYLOAD_PATH=$(printf '%s\n' "${_ENVELOPE_PARSED}" | sed -n '3p')
+    if [ "${_IS_ENVELOPE}" = "1" ]; then
+      [ "${_HAS_NOTIFICATION}" = "1" ] || exit 0
+      [ -f "${_PAYLOAD_PATH}" ] || exit 0
+      TURN_OUTPUT="$(cat "${_PAYLOAD_PATH}" 2>/dev/null || true)"
+    fi
+    ;;
+esac
+
 # Notification-free output is the overwhelmingly common path. Keep it free
 # from Python and mnemos CLI startup.
 case "${TURN_OUTPUT}" in

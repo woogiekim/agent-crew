@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -225,3 +226,75 @@ def test_supervisor_guard_ignores_active_markers_from_other_projects_before_pyth
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_post_tool_use_dispatcher_spools_large_payload_without_truncation(tmp_path):
+    home = tmp_path / "home"
+    child_log = tmp_path / "child.log"
+    child = tmp_path / "child-hook.sh"
+    child.write_text(
+        "#!/usr/bin/env bash\n"
+        "payload=$(cat)\n"
+        "python3 - \"$1\" \"$payload\" <<'PY'\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "payload = sys.argv[2]\n"
+        "data = json.loads(payload)\n"
+        "assert data['agent_crew_hook_envelope'] == 1\n"
+        "assert 'xxxxxxxxxx' not in payload\n"
+        "Path(sys.argv[1]).write_text(json.dumps({\n"
+        "    'payload_path': data['payload_path'],\n"
+        "    'payload_sha256': data['payload_sha256'],\n"
+        "    'payload_bytes': data['payload_bytes'],\n"
+        "    'tool_name': data['tool_name'],\n"
+        "    'command': data['command'],\n"
+        "    'envelope_bytes': len(payload),\n"
+        "}), encoding='utf-8')\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    child.chmod(0o755)
+
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+            "cwd": str(tmp_path),
+            "command": "python3 -c 'print large output'",
+        },
+        "tool_response": {
+            "stdout": "x" * 20_000_000,
+            "stderr": "",
+            "returncode": 0,
+        },
+    }
+    raw = json.dumps(payload)
+    expected_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    started = time.perf_counter()
+
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh")],
+        input=raw,
+        text=True,
+        capture_output=True,
+        env={
+            "AGENT_CREW_HOME": str(home),
+            "AGENT_CREW_POST_TOOL_USE_CHILDREN": f"*:bash {child} {child_log}",
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        },
+        timeout=5,
+        check=False,
+    )
+
+    elapsed = time.perf_counter() - started
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert elapsed < 5
+    record = json.loads(child_log.read_text(encoding="utf-8"))
+    payload_path = Path(record["payload_path"])
+    assert payload_path.is_file()
+    assert record["payload_sha256"] == expected_hash
+    assert record["payload_bytes"] == len(raw.encode("utf-8"))
+    assert record["tool_name"] == "Bash"
+    assert record["command"] == payload["tool_input"]["command"]
+    assert record["envelope_bytes"] < 4096
+    assert hashlib.sha256(payload_path.read_bytes()).hexdigest() == expected_hash

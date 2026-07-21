@@ -220,13 +220,240 @@ def pending_proposal_count(proposals_path: Path) -> int:
     )
 
 
-def run_evolution_closeout(args: argparse.Namespace, state_dir: Path, task_dir: Path) -> dict:
+def slug(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip().lower()).strip(".-")
+
+
+def load_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
+def relative_context_ref(path: Path, task_dir: Path) -> str:
+    try:
+        return str(path.relative_to(task_dir))
+    except ValueError:
+        return str(path)
+
+
+def existing_mistake_event_identities(task_dir: Path) -> set[tuple[str, str]]:
+    identities: set[tuple[str, str]] = set()
+    for event in load_jsonl(task_dir / "context" / "mistake-events.jsonl"):
+        if event.get("event_type") != "mistake_correction":
+            continue
+        pattern_key = str(event.get("pattern_key") or "").strip()
+        if not pattern_key:
+            continue
+        provenance = event.get("provenance") if isinstance(event.get("provenance"), dict) else {}
+        source_ref = str(provenance.get("source_ref") or "").strip()
+        if source_ref:
+            identities.add((pattern_key, source_ref))
+        for evidence_ref in event.get("evidence_refs") or []:
+            evidence = str(evidence_ref).strip()
+            if evidence:
+                identities.add((pattern_key, evidence))
+    return identities
+
+
+def finding_source_ref(finding: dict) -> str:
+    finding_id = str(finding.get("id") or "").strip()
+    if not finding_id:
+        return ""
+    return f"context/finding-register.json#{finding_id}"
+
+
+def finding_artifact_ref(finding: dict) -> str:
+    source = finding.get("source")
+    if isinstance(source, dict):
+        artifact = str(source.get("artifact") or "").strip()
+        if artifact:
+            return artifact
+    if isinstance(source, str) and source.strip():
+        return source.strip()
+    return ""
+
+
+def finding_target_assets(finding: dict) -> list[str]:
+    assets: list[str] = []
+    seen: set[str] = set()
+    affected = finding.get("affected")
+    if not isinstance(affected, list):
+        return assets
+    for item in affected:
+        if not isinstance(item, dict):
+            continue
+        file_ref = str(item.get("file") or "").strip()
+        if file_ref and file_ref not in seen:
+            seen.add(file_ref)
+            assets.append(file_ref)
+    return assets
+
+
+def finding_pattern_key(finding: dict) -> str:
+    learning = finding.get("learning")
+    if isinstance(learning, dict):
+        explicit = str(learning.get("pattern_key") or "").strip()
+        if explicit:
+            return slug(explicit)
+
+    finding_id = slug(str(finding.get("id") or ""))
+    assets = finding_target_assets(finding)
+    if not (finding_id and assets):
+        return ""
+    asset_key = slug(assets[0])[:80]
+    return f"review-finding-{asset_key}-{finding_id}"
+
+
+def finding_correction_event(finding: dict, task_dir: Path, now: str):
+    source_ref = finding_source_ref(finding)
+    artifact_ref = finding_artifact_ref(finding)
+    pattern_key = finding_pattern_key(finding)
+    title = str(finding.get("title") or "").strip()
+    recommended_fix = str(finding.get("recommended_fix") or "").strip()
+    resolution_note = str(finding.get("resolution_note") or "").strip()
+    target_assets = finding_target_assets(finding)
+    verification = finding.get("verification")
+
+    if not (
+        source_ref
+        and artifact_ref
+        and pattern_key
+        and title
+        and recommended_fix
+        and (resolution_note or isinstance(verification, dict))
+        and target_assets
+    ):
+        return None
+
+    evidence_refs = [source_ref, artifact_ref, "context/manual-fallback-repair.json"]
+    quality_evidence = task_dir / "context" / "quality-evidence.md"
+    if quality_evidence.is_file():
+        evidence_refs.append(relative_context_ref(quality_evidence, task_dir))
+
+    return {
+        "schema_version": 1,
+        "event_type": "mistake_correction",
+        "recorded_at": now,
+        "surface": "current_session_fallback",
+        "mistake_type": "review_learning_not_ingested",
+        "pattern_key": pattern_key,
+        "original_decision": title,
+        "corrected_decision": resolution_note or recommended_fix,
+        "correction_source": "reviewer_finding_register",
+        "summary": f"Fixed reviewer finding: {title}",
+        "evidence_refs": sorted(dict.fromkeys(evidence_refs)),
+        "target_assets": target_assets,
+        "non_blocking": True,
+        "provenance": {
+            "source_ref": source_ref,
+            "explicit_reviewer_finding": True,
+            "inferred": False,
+        },
+    }
+
+
+def materialize_current_session_fallback_learning(
+    task_dir: Path,
+    *,
+    original_host_bridge_status: str,
+    status: str,
+    now: str,
+) -> dict:
+    result = {
+        "status": "skipped",
+        "recorded": 0,
+        "skipped_existing": 0,
+        "skipped_insufficient": 0,
+        "source": "context/finding-register.json",
+        "errors": [],
+    }
+    if status != "completed":
+        result["reason"] = "repair_status_not_completed"
+        return result
+    if original_host_bridge_status != "current_session_required":
+        result["reason"] = "not_current_session_fallback"
+        return result
+
+    register = load_json(task_dir / "context" / "finding-register.json")
+    findings = register.get("findings") if isinstance(register, dict) else None
+    if not isinstance(findings, list):
+        result["reason"] = "finding_register_missing"
+        return result
+
+    identities = existing_mistake_event_identities(task_dir)
+    writable_events: list[dict] = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            result["skipped_insufficient"] += 1
+            continue
+        if str(finding.get("status") or "").strip() != "fixed":
+            continue
+        event = finding_correction_event(finding, task_dir, now)
+        if not event:
+            result["skipped_insufficient"] += 1
+            continue
+        identity = (event["pattern_key"], event["provenance"]["source_ref"])
+        if identity in identities:
+            result["skipped_existing"] += 1
+            continue
+        identities.add(identity)
+        writable_events.append(event)
+
+    if not writable_events:
+        result["status"] = "completed"
+        return result
+
+    try:
+        for event in writable_events:
+            append_jsonl(task_dir / "context" / "mistake-events.jsonl", event)
+    except Exception:
+        result["status"] = "failed"
+        result["errors"].append("learning_materialization_failed")
+        return result
+
+    result["status"] = "completed"
+    result["recorded"] = len(writable_events)
+    append_progress_log(
+        task_dir,
+        "EVOLUTION_LEARNING_MATERIALIZED",
+        f"source=context/finding-register.json recorded={len(writable_events)}",
+    )
+    return result
+
+
+def run_evolution_closeout(
+    args: argparse.Namespace,
+    state_dir: Path,
+    task_dir: Path,
+    *,
+    original_host_bridge_status: str = "",
+) -> dict:
     status = {
         "analyzer": "skipped",
         "proposals": "skipped",
         "pending_proposals": 0,
         "artifacts": [],
         "errors": [],
+        "learning_materialization": {
+            "status": "skipped",
+            "recorded": 0,
+            "skipped_existing": 0,
+            "skipped_insufficient": 0,
+            "errors": [],
+        },
     }
     if args.status != "completed":
         status["reason"] = "repair_status_not_completed"
@@ -245,6 +472,17 @@ def run_evolution_closeout(args: argparse.Namespace, state_dir: Path, task_dir: 
     report_md = context_dir / "evolution-report.md"
     proposals_json = state_dir / "learning-candidates" / "proposals.json"
     proposals_summary = context_dir / "evolution-proposals-summary.txt"
+
+    materialization = materialize_current_session_fallback_learning(
+        task_dir,
+        original_host_bridge_status=original_host_bridge_status,
+        status=args.status,
+        now=utc_now_z(),
+    )
+    status["learning_materialization"] = materialization
+    status["errors"].extend(materialization.get("errors") or [])
+    if materialization.get("status") == "failed":
+        append_progress_log(task_dir, "EVOLUTION_LEARNING_MATERIALIZATION_FAILED", "non_blocking=true")
 
     if analyzer.is_file():
         result = run_python_script(
@@ -2241,6 +2479,7 @@ def repair(args: argparse.Namespace) -> dict:
 
     register = load_json(register_path)
     pipeline = load_json(pipeline_path)
+    original_host_bridge_status = str(register.get("host_bridge_status") or "")
     quality_gate = enforce_quality_gate(args, task_dir, register)
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
     required_capability_gate = enforce_required_capability_gate(args, task_dir, register, specialist_gate)
@@ -2367,7 +2606,12 @@ def repair(args: argparse.Namespace) -> dict:
             "files": [],
         },
     )
-    evolution_closeout = run_evolution_closeout(args, state_dir, task_dir)
+    evolution_closeout = run_evolution_closeout(
+        args,
+        state_dir,
+        task_dir,
+        original_host_bridge_status=original_host_bridge_status,
+    )
     repair_record["evolution_closeout"] = evolution_closeout
     write_json(task_dir / "context" / "manual-fallback-repair.json", repair_record)
     append_evolution_closeout_result(task_dir, evolution_closeout)

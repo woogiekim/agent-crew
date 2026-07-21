@@ -11,6 +11,15 @@ AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
 
 . "${AGENT_CREW_HOME}/setup/common.sh"
 
+if [ -z "${SOURCE_ROOT:-}" ]; then
+  _SOURCE_TOPLEVEL="$(git -C "${PROJECT_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "${_SOURCE_TOPLEVEL}" ] \
+    && [ -d "${_SOURCE_TOPLEVEL}/core" ] \
+    && [ -d "${_SOURCE_TOPLEVEL}/adapters" ]; then
+    SOURCE_ROOT="${_SOURCE_TOPLEVEL}"
+  fi
+fi
+
 if [ "${AGENT_CREW_MODE}" = "update" ]; then
   printf 'MODE: update (host=codex)\n'
 fi
@@ -69,54 +78,18 @@ settings = {
         ],
         "PostToolUse": [
             {
-                "matcher": "Agent",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/route-directive-guard.sh'",
-                        "timeout": 5,
-                    }
-                ],
-            },
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/tool-event-recorder.sh'",
-                        "timeout": 5,
-                    },
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/auto-issue-report.sh'",
-                        "timeout": 10,
-                    }
-                ],
-            },
-            {
-                "matcher": "Edit|Write|MultiEdit|apply_patch",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/verify-rules.sh'",
-                    }
-                ],
-            },
-            {
                 "matcher": "*",
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"bash '{home}/hooks/supervisor-progress-guard.sh'",
+                        # Single-read spool dispatcher. It preserves the exact
+                        # PostToolUse payload on disk, then fans out a small
+                        # envelope to route-directive-guard.sh,
+                        # tool-event-recorder.sh, auto-issue-report.sh,
+                        # verify-rules.sh, supervisor-progress-guard.sh, and
+                        # mnemos-capture-guard.sh.
+                        "command": f"bash '{home}/hooks/post-tool-use-dispatcher.sh'",
                         "timeout": 5,
-                    },
-                    {
-                        "type": "command",
-                        # Issue #16: mnemos-capture-guard.sh — validates ✻ 🧠 capture notifications
-                        # against actual mnemos captures. Advisory only: always exits 0.
-                        # mnemos absence = silent no-op (graceful degradation).
-                        "command": f"bash '{home}/hooks/mnemos-capture-guard.sh'",
-                        "timeout": 10,
                     }
                 ],
             },

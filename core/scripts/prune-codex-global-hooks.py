@@ -33,6 +33,7 @@ MANAGED_HOOKS = {
     "guard-dangerous-commands.sh",
     "mnemos-capture-guard.sh",
     "normalize-task-guard.sh",
+    "post-tool-use-dispatcher.sh",
     "route-directive-guard.sh",
     "supervisor-progress-guard.sh",
     "tool-event-recorder.sh",

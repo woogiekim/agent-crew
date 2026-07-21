@@ -105,10 +105,15 @@ try:
 except Exception:
     sys.exit(0)
 
+is_envelope = data.get("agent_crew_hook_envelope") == 1
+
 if str(data.get("tool_name") or "") != "Bash":
     sys.exit(0)  # only record Bash tool calls
 
-command = str((data.get("tool_input") or {}).get("command") or "").strip()
+if is_envelope:
+    command = str(data.get("command") or "").strip()
+else:
+    command = str((data.get("tool_input") or {}).get("command") or "").strip()
 if not command:
     sys.exit(0)
 
@@ -125,7 +130,7 @@ if runtime is None:
     sys.exit(0)  # cannot reuse the canonical row shape — skip rather than diverge
 
 # Derive an integer exit_code and status from the tool response.
-response = data.get("tool_response")
+response = data if is_envelope else data.get("tool_response")
 exit_code = None
 if isinstance(response, dict):
     raw_code = response.get("exit_code")

@@ -29,6 +29,19 @@ state_dirs_for_current_project() {
     if [ -z "${root}" ] && [ -n "${hint}" ] && [ ! -d "${hint}" ]; then
         root="$(git -C "$(dirname "${hint}")" rev-parse --show-toplevel 2>/dev/null || true)"
     fi
+    if [ -z "${root}" ]; then
+        local cursor
+        cursor="${hint}"
+        [ -d "${cursor}" ] || cursor="$(dirname "${cursor}")"
+        cursor="$(cd "${cursor}" 2>/dev/null && pwd -P)" || return
+        while [ "${cursor}" != "/" ]; do
+            if [ -e "${cursor}/.git" ]; then
+                root="${cursor}"
+                break
+            fi
+            cursor="$(dirname "${cursor}")"
+        done
+    fi
     [ -n "${root}" ] || return
 
     root="$(cd "${root}" 2>/dev/null && pwd -P)" || return
