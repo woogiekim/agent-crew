@@ -241,9 +241,10 @@ def test_regression_case_supported_host_setups_register_tool_event_recorder():
     claude_setup = CLAUDE_SETUP.read_text(encoding="utf-8")
 
     assert "post-tool-use-dispatcher.sh" in codex_setup
-    assert "tool-event-recorder.sh" in codex_setup
+    assert "tool-event-recorder.sh" not in codex_setup
     assert "tool-event-recorder.sh" in claude_setup
     assert '"matcher": "*"' in codex_setup
     assert '"PostToolUse"' in codex_setup
+    assert '"timeout": 15' in codex_setup
     assert '"Bash"' in claude_setup
     assert '"PostToolUse"' in claude_setup

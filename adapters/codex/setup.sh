@@ -83,13 +83,11 @@ settings = {
                     {
                         "type": "command",
                         # Single-read spool dispatcher. It preserves the exact
-                        # PostToolUse payload on disk, then fans out a small
-                        # envelope to route-directive-guard.sh,
-                        # tool-event-recorder.sh, auto-issue-report.sh,
-                        # verify-rules.sh, supervisor-progress-guard.sh, and
-                        # mnemos-capture-guard.sh.
+                        # PostToolUse payload on disk, records latency-critical
+                        # evidence inline, and moves heavyweight reporting or
+                        # learning checks off the synchronous response path.
                         "command": f"bash '{home}/hooks/post-tool-use-dispatcher.sh'",
-                        "timeout": 5,
+                        "timeout": 15,
                     }
                 ],
             },
@@ -514,6 +512,12 @@ else
     diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
     diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks"
     chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
+  fi
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
+    diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
+    diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/scripts"
+    chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/"*.py 2>/dev/null || true
+    chmod +x "${AGENT_CREW_HOME}/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.py 2>/dev/null || true
   fi
   sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
 fi

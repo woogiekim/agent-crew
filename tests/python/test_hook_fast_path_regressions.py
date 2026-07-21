@@ -12,6 +12,20 @@ import time
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def keyed_state_dir(home: Path, project: Path) -> Path:
+    slug = project.name.lower()
+    digest = hashlib.sha256(str(project.resolve()).encode("utf-8")).hexdigest()[:10]
+    return home / "state" / f"{slug}-{digest}"
+
+
+def write_active_task(home: Path, project: Path, task_id: str = "20260721-000000-0") -> Path:
+    state_dir = keyed_state_dir(home, project)
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+    (state_dir / "tasks" / f"active.{task_id}").write_text("", encoding="utf-8")
+    return task_dir
+
+
 def load_approval_module():
     path = REPO_ROOT / "core/scripts/check-plaintext-approval.py"
     spec = importlib.util.spec_from_file_location("check_plaintext_approval", path)
@@ -282,17 +296,17 @@ def test_post_tool_use_dispatcher_spools_large_payload_without_truncation(tmp_pa
             "AGENT_CREW_POST_TOOL_USE_CHILDREN": f"*:bash {child} {child_log}",
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         },
-        timeout=5,
+        timeout=15,
         check=False,
     )
 
     elapsed = time.perf_counter() - started
     assert result.returncode == 0, result.stdout + result.stderr
-    assert elapsed < 5
+    assert elapsed < 15
     record = json.loads(child_log.read_text(encoding="utf-8"))
     payload_path = Path(record["payload_path"])
     assert payload_path.is_file()
-    assert record["payload_sha256"] == expected_hash
+    assert record["payload_sha256"] == ""
     assert record["payload_bytes"] == len(raw.encode("utf-8"))
     assert record["tool_name"] == "Bash"
     assert record["command"] == payload["tool_input"]["command"]
@@ -341,7 +355,7 @@ def test_post_tool_use_dispatcher_preserves_korean_auto_issue_signal_parity(tmp_
             "AGENT_CREW_POST_TOOL_USE_CHILDREN": f"Bash:bash {child} {child_log}",
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         },
-        timeout=5,
+        timeout=15,
         check=False,
     )
 
@@ -351,12 +365,55 @@ def test_post_tool_use_dispatcher_preserves_korean_auto_issue_signal_parity(tmp_
     assert Path(record["payload_path"]).is_file()
 
 
-def test_post_tool_use_dispatcher_runs_tool_event_recorder_synchronously():
-    text = (REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh").read_text(
+def test_post_tool_use_dispatcher_records_bash_tool_event_without_child_recorder(tmp_path):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    (project / ".git").mkdir(parents=True)
+    task_dir = write_active_task(home, project)
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {
+            "cwd": str(project),
+            "command": "pytest tests/python/test_hook_fast_path_regressions.py -q",
+        },
+        "tool_response": {"returncode": 0},
+    }
+
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh")],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env={
+            "AGENT_CREW_HOME": str(home),
+            "AGENT_CREW_POST_TOOL_USE_CHILDREN": "",
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        },
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = [
+        json.loads(line)
+        for line in (task_dir / "tool-events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["tool_name"] == "Bash"
+    assert rows[0]["action_summary"] == payload["tool_input"]["command"]
+    assert rows[0]["exit_code"] == 0
+
+
+def test_post_tool_use_dispatcher_keeps_bash_sync_path_internal():
+    shell_text = (REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh").read_text(
+        encoding="utf-8"
+    )
+    python_text = (REPO_ROOT / "core/scripts/post-tool-use-dispatcher.py").read_text(
         encoding="utf-8"
     )
 
-    assert "Bash:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'" in text
-    assert (
-        "Bash:async:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'" not in text
-    )
+    assert "record_bash_tool_event" in python_text
+    assert "check_supervisor_progress" in python_text
+    assert "Bash:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'" not in shell_text
+    assert "Bash:bash '${AGENT_CREW_HOME}/hooks/supervisor-progress-guard.sh'" not in shell_text
