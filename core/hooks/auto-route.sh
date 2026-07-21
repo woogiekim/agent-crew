@@ -1,9 +1,11 @@
 #!/bin/bash
 # auto-route.sh - detect natural-language development requests and inject routing context.
 
-INPUT=$(cat)
+PAYLOAD_FILE="$(mktemp "${TMPDIR:-/tmp}/agent-crew-auto-route.XXXXXX")"
+trap 'rm -f "${PAYLOAD_FILE}"' EXIT
+cat >"${PAYLOAD_FILE}"
 
-python3 - "$INPUT" <<'PYEOF'
+python3 - "$PAYLOAD_FILE" <<'PYEOF'
 import json
 import re
 import shlex
@@ -14,7 +16,12 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+raw_input = ""
+if len(sys.argv) > 1:
+    try:
+        raw_input = Path(sys.argv[1]).read_text(encoding="utf-8")
+    except Exception:
+        sys.exit(0)
 
 def _env_flag(name):
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
@@ -112,6 +119,19 @@ try:
     prompt = data.get("prompt", "")
 except Exception:
     sys.exit(0)
+
+def _routing_view(text: str, limit: int = 65536) -> str:
+    value = str(text)
+    if len(value) <= limit:
+        return value
+    half = limit // 2
+    return (
+        value[:half]
+        + "\n...[agent-crew auto-route omitted middle for hook classification]...\n"
+        + value[-half:]
+    )
+
+prompt = _routing_view(prompt)
 
 if prompt.startswith("/"):
     sys.exit(0)
