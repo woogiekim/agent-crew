@@ -112,6 +112,28 @@ def _write_fixed_review_finding(
     )
 
 
+def _write_structured_quality_correction(
+    task_dir: Path,
+    *,
+    pattern_key: str = "current-session-fallback-evolution-ingestion",
+) -> None:
+    (task_dir / "context" / "quality-evidence.md").write_text(
+        "\n".join(
+            [
+                "# Quality Evidence",
+                "",
+                "Reviewer finding: Current-session fallback review learning is not ingested.",
+                "Corrected decision: Repair closeout materializes fallback review corrections before evolution analyzer runs.",
+                f"Pattern key: {pattern_key}",
+                "Target assets: core/scripts/repair-task-state.py, core/scripts/evolution-analyzer.py",
+                "Evidence ref: context/quality-evidence.md",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_completed_repair_runs_evolution_closeout_and_surfaces_pending_proposals(tmp_path: Path):
     state_dir = tmp_path / "state"
     previous = _write_task(state_dir, "20260101-120000-0")
@@ -199,11 +221,89 @@ def test_current_session_repair_materializes_fixed_review_finding_before_evoluti
     assert repair["evolution_closeout"]["learning_materialization"]["recorded"] == 1
 
 
+def test_current_session_repair_materializes_structured_quality_evidence_without_finding_register(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "state"
+    task_id = "20260102-120000-0"
+    task_dir = _write_task(state_dir, task_id, task="Audit current-session fallback learning evidence")
+    _write_structured_quality_correction(task_dir)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--state-dir", str(state_dir),
+            "--status", "completed",
+            "--note", "review finding fixed",
+            task_id,
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    events = [
+        json.loads(line)
+        for line in (task_dir / "context" / "mistake-events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(events) == 1
+    assert events[0]["event_type"] == "mistake_correction"
+    assert events[0]["pattern_key"] == "current-session-fallback-evolution-ingestion"
+    assert events[0]["correction_source"] == "quality_evidence"
+    assert events[0]["provenance"]["source_ref"] == "context/quality-evidence.md#current-session-fallback-evolution-ingestion"
+    assert events[0]["provenance"]["explicit_reviewer_finding"] is True
+    assert events[0]["provenance"]["inferred"] is False
+    assert "context/quality-evidence.md" in events[0]["evidence_refs"]
+    assert "context/manual-fallback-repair.json" in events[0]["evidence_refs"]
+    assert events[0]["target_assets"] == [
+        "core/scripts/repair-task-state.py",
+        "core/scripts/evolution-analyzer.py",
+    ]
+
+    report = json.loads((task_dir / "context" / "evolution-report.json").read_text(encoding="utf-8"))
+    assert any(
+        item.get("kind") == "mistake_correction"
+        and item.get("pattern_key") == "current-session-fallback-evolution-ingestion"
+        for item in report["observed_patterns"]
+    )
+
+
 def test_current_session_repair_does_not_duplicate_materialized_review_events(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260102-120000-0"
     task_dir = _write_task(state_dir, task_id, task="Audit current-session fallback learning evidence")
     _write_fixed_review_finding(task_dir)
+
+    for _ in range(2):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--state-dir", str(state_dir),
+                "--status", "completed",
+                "--note", "review finding fixed",
+                task_id,
+            ],
+            text=True,
+            capture_output=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    events = [
+        json.loads(line)
+        for line in (task_dir / "context" / "mistake-events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(events) == 1
+
+
+def test_current_session_repair_does_not_duplicate_structured_quality_evidence_events(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / "state"
+    task_id = "20260102-120000-0"
+    task_dir = _write_task(state_dir, task_id, task="Audit current-session fallback learning evidence")
+    _write_structured_quality_correction(task_dir)
 
     for _ in range(2):
         result = subprocess.run(
@@ -237,10 +337,18 @@ def test_clean_or_malformed_current_session_repair_does_not_emit_noisy_learning(
         json.dumps({"schema_version": 1, "findings": [{"id": "F-bad", "status": "fixed"}]}) + "\n",
         encoding="utf-8",
     )
+    insufficient_quality_task = _write_task(
+        state_dir, "20260102-120002-0", task="Insufficient fallback review"
+    )
+    (insufficient_quality_task / "context" / "quality-evidence.md").write_text(
+        "Reviewer evidence\n\n- Tests passed after manual repair.\n",
+        encoding="utf-8",
+    )
 
     for task_id, task_dir in [
         ("20260102-120000-0", clean_task),
         ("20260102-120001-0", malformed_task),
+        ("20260102-120002-0", insufficient_quality_task),
     ]:
         result = subprocess.run(
             [

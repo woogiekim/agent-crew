@@ -148,8 +148,8 @@ assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model = "gp
 it "Codex setup installs tool-event-recorder hook file"
 assert_file_exists "${setup_repo}/.codex/hooks/tool-event-recorder.sh"
 
-it "Codex setup registers tool-event-recorder for Bash PostToolUse"
-assert_contains "${setup_hooks_out}" "tool-event-recorder.sh" "hooks.json registers tool event recorder"
+it "Codex setup registers PostToolUse dispatcher for Bash fan-out"
+assert_contains "${setup_hooks_out}" "post-tool-use-dispatcher.sh" "hooks.json registers PostToolUse dispatcher"
 assert_contains "${setup_hooks_out}" '"matcher": "Bash"' "hooks.json has Bash matcher"
 assert_contains "${setup_hooks_out}" '"PostToolUse"' "hooks.json has PostToolUse section"
 

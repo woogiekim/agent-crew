@@ -365,6 +365,70 @@ def finding_correction_event(finding: dict, task_dir: Path, now: str):
     }
 
 
+def markdown_field(text: str, label: str) -> str:
+    pattern = re.compile(rf"^\s*{re.escape(label)}\s*:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+    match = pattern.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def split_csv_field(value: str) -> list[str]:
+    seen: set[str] = set()
+    items: list[str] = []
+    for item in str(value or "").split(","):
+        normalized = item.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            items.append(normalized)
+    return items
+
+
+def quality_evidence_correction_event(task_dir: Path, now: str):
+    path = task_dir / "context" / "quality-evidence.md"
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    reviewer_finding = markdown_field(text, "Reviewer finding")
+    corrected_decision = markdown_field(text, "Corrected decision")
+    pattern_key = slug(markdown_field(text, "Pattern key"))
+    target_assets = split_csv_field(markdown_field(text, "Target assets"))
+    extra_evidence_refs = split_csv_field(markdown_field(text, "Evidence ref"))
+
+    if not (reviewer_finding and corrected_decision and pattern_key and target_assets):
+        return None
+
+    source_ref = f"context/quality-evidence.md#{pattern_key}"
+    evidence_refs = [
+        "context/quality-evidence.md",
+        "context/manual-fallback-repair.json",
+        *extra_evidence_refs,
+    ]
+
+    return {
+        "schema_version": 1,
+        "event_type": "mistake_correction",
+        "recorded_at": now,
+        "surface": "current_session_fallback",
+        "mistake_type": "review_learning_not_ingested",
+        "pattern_key": pattern_key,
+        "original_decision": reviewer_finding,
+        "corrected_decision": corrected_decision,
+        "correction_source": "quality_evidence",
+        "summary": f"Fixed reviewer finding: {reviewer_finding}",
+        "evidence_refs": sorted(dict.fromkeys(evidence_refs)),
+        "target_assets": target_assets,
+        "non_blocking": True,
+        "provenance": {
+            "source_ref": source_ref,
+            "explicit_reviewer_finding": True,
+            "inferred": False,
+        },
+    }
+
+
 def materialize_current_session_fallback_learning(
     task_dir: Path,
     *,
@@ -377,7 +441,7 @@ def materialize_current_session_fallback_learning(
         "recorded": 0,
         "skipped_existing": 0,
         "skipped_insufficient": 0,
-        "source": "context/finding-register.json",
+        "source": "context/finding-register.json,context/quality-evidence.md",
         "errors": [],
     }
     if status != "completed":
@@ -387,30 +451,40 @@ def materialize_current_session_fallback_learning(
         result["reason"] = "not_current_session_fallback"
         return result
 
-    register = load_json(task_dir / "context" / "finding-register.json")
-    findings = register.get("findings") if isinstance(register, dict) else None
-    if not isinstance(findings, list):
-        result["reason"] = "finding_register_missing"
-        return result
-
     identities = existing_mistake_event_identities(task_dir)
     writable_events: list[dict] = []
-    for finding in findings:
-        if not isinstance(finding, dict):
-            result["skipped_insufficient"] += 1
-            continue
-        if str(finding.get("status") or "").strip() != "fixed":
-            continue
-        event = finding_correction_event(finding, task_dir, now)
-        if not event:
-            result["skipped_insufficient"] += 1
-            continue
+
+    register = load_json(task_dir / "context" / "finding-register.json")
+    findings = register.get("findings") if isinstance(register, dict) else None
+    if isinstance(findings, list):
+        for finding in findings:
+            if not isinstance(finding, dict):
+                result["skipped_insufficient"] += 1
+                continue
+            if str(finding.get("status") or "").strip() != "fixed":
+                continue
+            event = finding_correction_event(finding, task_dir, now)
+            if not event:
+                result["skipped_insufficient"] += 1
+                continue
+            identity = (event["pattern_key"], event["provenance"]["source_ref"])
+            if identity in identities:
+                result["skipped_existing"] += 1
+                continue
+            identities.add(identity)
+            writable_events.append(event)
+
+    quality_event = quality_evidence_correction_event(task_dir, now)
+    if quality_event:
+        event = quality_event
         identity = (event["pattern_key"], event["provenance"]["source_ref"])
         if identity in identities:
             result["skipped_existing"] += 1
-            continue
-        identities.add(identity)
-        writable_events.append(event)
+        else:
+            identities.add(identity)
+            writable_events.append(event)
+    elif (task_dir / "context" / "quality-evidence.md").is_file():
+        result["skipped_insufficient"] += 1
 
     if not writable_events:
         result["status"] = "completed"
