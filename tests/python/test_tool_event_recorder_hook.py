@@ -169,6 +169,31 @@ def test_boundary_case_hook_accepts_valid_json_whitespace_before_colon(tmp_path)
     assert len(_rows(task_dir)) == 1
 
 
+def test_regression_case_hook_writes_schema_row_without_runtime_import(tmp_path):
+    state_dir, task_id, task_dir = fx.make_state_task(tmp_path)
+    agent_home = tmp_path / "agent-crew-home"
+    scripts_dir = agent_home / "scripts"
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / "crew-runtime.py").write_text(
+        "raise SystemExit('runtime import should not be required')\n",
+        encoding="utf-8",
+    )
+
+    result = run_hook(
+        state_dir,
+        task_id,
+        _bash_payload("pytest tests/python/test_hook_fast_path_regressions.py"),
+        extra_env={"AGENT_CREW_HOME": str(agent_home)},
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = _rows(task_dir)
+    assert len(rows) == 1
+    assert APPEND_TOOL_EVENT_KEYS.issubset(rows[0].keys())
+    assert rows[0]["trace_id"] == task_id
+    assert rows[0]["token_usage_ref"] == f"cost/{task_id}.jsonl"
+
+
 def test_security_case_hook_redacts_secret_like_tokens(tmp_path):
     # TC-051: command text with a secret-like token is redacted in the row.
     state_dir, task_id, task_dir = fx.make_state_task(tmp_path)

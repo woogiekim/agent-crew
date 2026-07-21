@@ -202,8 +202,8 @@ KOREAN_ROOT_CAUSE_DIAGNOSTIC_RE = re.compile(
 KOREAN_READ_ONLY_COMPLAINT_RE = re.compile(
     r"(?:방법|방안|계획|분석|검토|리뷰|확인|모색)"
     r"[^.!?\n。]*(?:하라고|요청했|부탁했)"
-    r"[^.!?\n。]*(?:구현|개선|수정|보완|해결)"
-    r"[^.!?\n。]*(?:해버리|했네|하네|됐네|되어버리|해\s*버리)",
+    r"[^.!?\n。]*(?:구현|개선|수정|보완|해결|변경|고쳐|고치)"
+    r"[^.!?\n。]*(?:해버리|했네|하네|됐네|되어버리|해\s*버리|버리)",
     re.IGNORECASE,
 )
 KOREAN_SELF_EVOLUTION_COMPLAINT_RE = re.compile(

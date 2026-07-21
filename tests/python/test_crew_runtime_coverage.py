@@ -1308,6 +1308,20 @@ def test_command_agent_accepts_korean_self_evolution_complaint(
     assert "STATUS: handoff_ready" in capsys.readouterr().out
 
 
+def test_command_agent_accepts_korean_analysis_complaint_about_accidental_mutation(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    _write_registry(root)
+    (root / "project").mkdir()
+    monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
+
+    task = "분석하라고 하는데 코드를 고쳐버리는 문제가 있음"
+
+    assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0
+    assert "STATUS: handoff_ready" in capsys.readouterr().out
+
+
 def test_command_agent_routes_bare_push_and_cross_verb_false_negatives(
     monkeypatch, tmp_path: Path, capsys
 ):

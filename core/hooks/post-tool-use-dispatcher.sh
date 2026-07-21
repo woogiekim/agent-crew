@@ -87,10 +87,15 @@ auto_issue_re = re.compile(
     rb"|crew:[A-Za-z-]+|[$]crew|supervisor_blocked|blocked_by|STATUS:\s*blocked|BLOCKER:",
     re.IGNORECASE,
 )
+korean_auto_issue_re = re.compile("에이전트\\s*크루|에이전트크루".encode("utf-8"))
 if len(raw) > 1_000_000:
     auto_issue_signal = True
 else:
-    auto_issue_signal = bool(auto_issue_re.search(command_bytes) or auto_issue_re.search(raw))
+    auto_issue_signal = bool(
+        auto_issue_re.search(command_bytes)
+        or auto_issue_re.search(raw)
+        or korean_auto_issue_re.search(raw)
+    )
 route_directive_signal = (
     b"[agent-crew] STOP" in raw
     or b"[agent-crew] ROUTE" in raw
@@ -141,7 +146,7 @@ matches_hook() {
 default_children() {
     cat <<EOF
 Agent:bash '${AGENT_CREW_HOME}/hooks/route-directive-guard.sh'
-Bash:async:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'
+Bash:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'
 Bash:async:bash '${AGENT_CREW_HOME}/hooks/auto-issue-report.sh'
 Edit|Write|MultiEdit|apply_patch:bash '${AGENT_CREW_HOME}/hooks/verify-rules.sh'
 *:bash '${AGENT_CREW_HOME}/hooks/supervisor-progress-guard.sh'

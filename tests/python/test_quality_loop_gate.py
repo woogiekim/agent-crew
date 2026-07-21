@@ -1135,3 +1135,27 @@ def test_korean_root_cause_questions_stay_read_only_diagnostics():
 
     assert quality_loop.looks_mutating_task("근본해결 방향대로 수정해") is True
     assert repair_state.looks_mutating_task("근본해결 방향대로 수정해") is True
+
+
+def test_korean_analysis_complaints_about_accidental_mutation_stay_read_only():
+    """regression: complaints about agents editing during analysis are diagnostics."""
+    read_only_tasks = (
+        "분석하라고 하는데 코드를 고쳐버리는 문제가 있음",
+        "분석하라고 했는데 코드를 수정해버리는 문제가 있음",
+        "검토 요청했는데 변경을 해버리는 문제를 분석해줘",
+        "모색하라고 했는데 구현을 해버리는 문제가 있음",
+    )
+
+    for task in read_only_tasks:
+        assert quality_loop.looks_mutating_task(task) is False
+        assert repair_state.looks_mutating_task(task) is False
+
+    mutating_tasks = (
+        "분석 결과대로 코드를 고쳐줘",
+        "검토 후 README를 수정해주세요",
+        "리뷰에서 찾은점 수정해",
+    )
+
+    for task in mutating_tasks:
+        assert quality_loop.looks_mutating_task(task) is True
+        assert repair_state.looks_mutating_task(task) is True

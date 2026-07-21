@@ -22,8 +22,57 @@ if [[ ! "${HOOK_PAYLOAD}" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"Bash\" ]]; 
 fi
 
 python3 3<<<"${HOOK_PAYLOAD}" <<'PYEOF'
-import sys, json, os, subprocess, hashlib, re, importlib.util
+import sys, json, os, subprocess, hashlib, re
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+SECRET_PATTERNS = [
+    re.compile(r"gh[pousr]_[A-Za-z0-9_]+"),
+    re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{8,}"),
+    re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)\b(token|password|passwd|secret|api[_-]?key)=\S+"),
+]
+
+
+def utc_now_z() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def redact(text: str) -> str:
+    redacted = text
+    for pattern in SECRET_PATTERNS:
+        redacted = pattern.sub("[REDACTED]", redacted)
+    return redacted
+
+
+def append_tool_event(
+    task_dir: Path,
+    *,
+    trace_id: str,
+    tool_name: str,
+    action_summary: str,
+    started_at: str,
+    ended_at: str,
+    status: str,
+    exit_code,
+    failure_class: str,
+) -> None:
+    row = {
+        "schema_version": 1,
+        "trace_id": trace_id,
+        "tool_name": tool_name,
+        "action_summary": redact(action_summary)[:500],
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "status": status,
+        "exit_code": exit_code,
+        "token_usage_ref": f"cost/{task_dir.name}.jsonl",
+        "failure_class": failure_class,
+    }
+    path = task_dir / "tool-events.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
 def project_root():
@@ -73,30 +122,6 @@ def resolve_task_id():
     return None
 
 
-def load_crew_runtime():
-    home = os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))
-    candidates = [
-        Path(home).expanduser() / "scripts" / "crew-runtime.py",
-        Path(home).expanduser() / "system" / "scripts" / "crew-runtime.py",
-    ]
-    root = project_root()
-    if root is not None:
-        candidates.append(root / "core" / "scripts" / "crew-runtime.py")
-    for path in candidates:
-        if not path.is_file():
-            continue
-        spec = importlib.util.spec_from_file_location("crew_runtime", path)
-        if spec is None or spec.loader is None:
-            continue
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)
-        except Exception:
-            continue
-        return module
-    return None
-
-
 with os.fdopen(3, encoding="utf-8") as payload_stream:
     raw = payload_stream.read()
 
@@ -125,10 +150,6 @@ task_dir = state_dir_for_project() / "tasks" / task_id
 if not task_dir.is_dir():
     sys.exit(0)
 
-runtime = load_crew_runtime()
-if runtime is None:
-    sys.exit(0)  # cannot reuse the canonical row shape — skip rather than diverge
-
 # Derive an integer exit_code and status from the tool response.
 response = data if is_envelope else data.get("tool_response")
 exit_code = None
@@ -147,7 +168,7 @@ else:
 
 status = "ok" if exit_code == 0 else "error"
 failure_class = "" if exit_code == 0 else "bash_command_failed"
-now = runtime.utc_now_z()
+now = utc_now_z()
 trace_id = (
     os.environ.get("AGENT_CREW_TRACE_ID")
     or os.environ.get("AGENT_CREW_SESSION_ID")
@@ -155,7 +176,7 @@ trace_id = (
 )
 
 try:
-    runtime.append_tool_event(
+    append_tool_event(
         task_dir,
         trace_id=trace_id,
         tool_name="Bash",

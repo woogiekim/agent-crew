@@ -475,6 +475,7 @@ class TestReadOnlyReviewEvaluationRouting:
             "ai가 최소구현만 해서 그런지 제대로 구현하는게 아니라 많이 비어있는 구현을 하는 양상을 개선 할 수 있는 방법을 모색해봐",
             "방법을 모색하라고 했는데 구현을 해버리네",
             "왜 구현을 했는지 분석해줘",
+            "분석하라고 하는데 코드를 고쳐버리는 문제가 있음",
         ):
             # given
             payload = {"prompt": prompt}

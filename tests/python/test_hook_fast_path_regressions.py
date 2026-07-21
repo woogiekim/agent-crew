@@ -298,3 +298,65 @@ def test_post_tool_use_dispatcher_spools_large_payload_without_truncation(tmp_pa
     assert record["command"] == payload["tool_input"]["command"]
     assert record["envelope_bytes"] < 4096
     assert hashlib.sha256(payload_path.read_bytes()).hexdigest() == expected_hash
+
+
+def test_post_tool_use_dispatcher_preserves_korean_auto_issue_signal_parity(tmp_path):
+    home = tmp_path / "home"
+    child_log = tmp_path / "child.log"
+    child = tmp_path / "child-hook.sh"
+    child.write_text(
+        "#!/usr/bin/env bash\n"
+        "payload=$(cat)\n"
+        "python3 - \"$1\" \"$payload\" <<'PY'\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "data = json.loads(sys.argv[2])\n"
+        "Path(sys.argv[1]).write_text(json.dumps({\n"
+        "    'contains_auto_issue_signal': data['contains_auto_issue_signal'],\n"
+        "    'payload_path': data['payload_path'],\n"
+        "}), encoding='utf-8')\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    child.chmod(0o755)
+
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"cwd": str(tmp_path), "command": "echo ok"},
+        "tool_response": {
+            "stdout": "에이전트크루 오류 발생\n",
+            "stderr": "",
+            "returncode": 0,
+        },
+    }
+
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh")],
+        input=json.dumps(payload, ensure_ascii=False),
+        text=True,
+        capture_output=True,
+        env={
+            "AGENT_CREW_HOME": str(home),
+            "AGENT_CREW_POST_TOOL_USE_CHILDREN": f"Bash:bash {child} {child_log}",
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        },
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    record = json.loads(child_log.read_text(encoding="utf-8"))
+    assert record["contains_auto_issue_signal"] is True
+    assert Path(record["payload_path"]).is_file()
+
+
+def test_post_tool_use_dispatcher_runs_tool_event_recorder_synchronously():
+    text = (REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Bash:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'" in text
+    assert (
+        "Bash:async:bash '${AGENT_CREW_HOME}/hooks/tool-event-recorder.sh'" not in text
+    )
