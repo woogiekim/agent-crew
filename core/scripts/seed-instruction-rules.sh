@@ -468,11 +468,11 @@ The native shell CLI uses space-separated commands such as `crew run` and
 CLI control plane.
 
 When the user's message begins with a workflow command such as `crew:run`,
-`crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
+`crew:setup`, `crew:status`, `crew:cost`, `crew:feature-step`, or `crew:agent-maker`,
 treat it as an explicit command invocation, not as ordinary natural language.
 Codex wrapper forms at the beginning of the message, such as `$crew-run`,
 `$crew-agent`, `$crew-status`, `$crew-update`, `$crew-smm`, `$crew-setup`,
-`$crew-cost`, and `$crew-agent-maker`, are the same kind of explicit command
+`$crew-cost`, `$feature-step`, and `$crew-agent-maker`, are the same kind of explicit command
 invocation. The text after a leading `$crew-run` is the task description; only
 treat `$crew-run` as the review target when the prompt explicitly names the
 skill, wrapper, file, or `SKILL.md` as the object.
@@ -500,6 +500,7 @@ For `crew:setup` specifically:
 | `crew:setup` | Install the current host adapter and initialize the project workspace |
 | `crew:run` | Canonical workflow entry point for one or more tasks |
 | `crew:cost` | Show the session cost summary |
+| `crew:feature-step` | Step-gated implementation workflow for one complete feature |
 | `crew:agent-maker` | Design and register a custom agent |
 | `crew:sync-instructions` | Re-assemble host AI md files from mnemos rules |
 | `$crew-run` | Codex wrapper for `crew:run` |
@@ -509,6 +510,7 @@ For `crew:setup` specifically:
 | `$crew-smm` | Codex wrapper for `crew:smm` |
 | `$crew-setup` | Codex wrapper for `crew:setup` |
 | `$crew-cost` | Codex wrapper for `crew:cost` |
+| `$feature-step` | Codex wrapper for `crew:feature-step` |
 | `$crew-agent-maker` | Codex wrapper for `crew:agent-maker` |
 
 Use `crew:<intent>` as the default invocation style.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove legacy global Codex agent-crew hooks when project hooks are active.
+"""Remove blocking global Codex hooks when project hooks are active.
 
 Inputs:
   --global-hooks PATH   Codex global hooks.json, usually ~/.codex/hooks.json.
@@ -7,8 +7,11 @@ Inputs:
   --agent-crew-home PATH  agent-crew install root, usually ~/.agent-crew.
 
 Outputs:
-  JSON or quiet text summary. The script only removes hook commands that point
-  at known agent-crew managed scripts under {agent_crew_home}/hooks/.
+  JSON or quiet text summary. The script removes hook commands that point at
+  known agent-crew managed scripts under {agent_crew_home}/hooks/. It also
+  removes known Orca PreToolUse/PostToolUse global hooks because those run on
+  every tool call and can time out independently of project-local agent-crew
+  hooks. Prompt/session Orca hooks are preserved.
 
 Exit codes:
   0 - completed or skipped safely.
@@ -41,6 +44,9 @@ MANAGED_HOOKS = {
     "verify-rules.sh",
 }
 
+ORCA_CODEX_HOOK = "/.orca/agent-hooks/codex-hook.sh"
+ORCA_PRUNED_EVENTS = {"PreToolUse", "PostToolUse"}
+
 
 def _same_path(a: Path, b: Path) -> bool:
     try:
@@ -70,7 +76,15 @@ def _is_managed_hook(entry: Any, agent_crew_home: Path) -> bool:
     return any(str(hook_root / basename) in unquoted for basename in MANAGED_HOOKS)
 
 
-def _prune_hook_blocks(blocks: Any, agent_crew_home: Path) -> tuple[list[Any], int]:
+def _is_known_blocking_global_hook(entry: Any, event_name: str) -> bool:
+    if event_name not in ORCA_PRUNED_EVENTS or not isinstance(entry, dict):
+        return False
+
+    command = entry.get("command")
+    return isinstance(command, str) and ORCA_CODEX_HOOK in command
+
+
+def _prune_hook_blocks(blocks: Any, agent_crew_home: Path, event_name: str) -> tuple[list[Any], int]:
     if not isinstance(blocks, list):
         return blocks, 0
 
@@ -83,7 +97,10 @@ def _prune_hook_blocks(blocks: Any, agent_crew_home: Path) -> tuple[list[Any], i
 
         hooks = []
         for hook in block["hooks"]:
-            if _is_managed_hook(hook, agent_crew_home):
+            if _is_managed_hook(hook, agent_crew_home) or _is_known_blocking_global_hook(
+                hook,
+                event_name,
+            ):
                 removed += 1
             else:
                 hooks.append(hook)
@@ -119,7 +136,7 @@ def prune(global_hooks: Path, project_hooks: Path, agent_crew_home: Path) -> dic
     updated_hooks: dict[str, Any] = {}
     removed_total = 0
     for event_name, blocks in hooks.items():
-        pruned_blocks, removed = _prune_hook_blocks(blocks, agent_crew_home)
+        pruned_blocks, removed = _prune_hook_blocks(blocks, agent_crew_home, event_name)
         removed_total += removed
         if isinstance(pruned_blocks, list) and not pruned_blocks:
             continue

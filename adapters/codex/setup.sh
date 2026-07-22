@@ -103,7 +103,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/auto-route.sh'",
-                        "timeout": 5,
+                        "timeout": 15,
                     }
                 ]
             }

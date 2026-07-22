@@ -135,3 +135,39 @@ def test_prune_removes_empty_managed_only_hook_sections(tmp_path: Path):
 
     assert result["changed"] is True
     assert json.loads(global_hooks.read_text(encoding="utf-8")) == {}
+
+
+def test_prune_removes_orca_pre_post_tool_global_hooks_but_preserves_prompt_hooks(
+    tmp_path: Path,
+):
+    home = tmp_path / "agent-crew"
+    global_hooks = tmp_path / "codex" / "hooks.json"
+    project_hooks = tmp_path / "project" / ".codex" / "hooks.json"
+    orca_command = (
+        "if [ -f '/Users/wook/.orca/agent-hooks/codex-hook.sh' ]; "
+        "then /bin/sh '/Users/wook/.orca/agent-hooks/codex-hook.sh'; fi"
+    )
+
+    _write_json(project_hooks, {"hooks": {"PostToolUse": [{"hooks": []}]}})
+    _write_json(
+        global_hooks,
+        {
+            "hooks": {
+                "PreToolUse": [{"hooks": [{"type": "command", "command": orca_command, "timeout": 10}]}],
+                "PostToolUse": [{"hooks": [{"type": "command", "command": orca_command, "timeout": 10}]}],
+                "UserPromptSubmit": [
+                    {"hooks": [{"type": "command", "command": orca_command, "timeout": 10}]}
+                ],
+                "SessionStart": [{"hooks": [{"type": "command", "command": orca_command, "timeout": 10}]}],
+            }
+        },
+    )
+
+    result = module.prune(global_hooks, project_hooks, home)
+
+    assert result["changed"] is True
+    data = json.loads(global_hooks.read_text(encoding="utf-8"))
+    assert "PreToolUse" not in data["hooks"]
+    assert "PostToolUse" not in data["hooks"]
+    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == orca_command
+    assert data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == orca_command

@@ -1017,6 +1017,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew:status` | Snapshot of the most recent task's pipeline state |
 | `crew:cost` | Show the session cost summary |
 | `crew:telemetry` | Pipeline timing, retry, and token aggregates across recent runs |
+| `crew:feature-step` | Step-gated implementation workflow for one complete feature |
 | `crew:agent-maker` | Design and register a custom agent or agent-crew skill |
 | `crew:update` | Sync `~/.agent-crew/` with the source checkout |
 
