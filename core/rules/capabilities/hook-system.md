@@ -28,11 +28,16 @@ Consumers:
   wrapper: `core/hooks/forbid-plaintext-approval.sh`. Registered by
   `adapters/claude/setup.sh` when `hook_system=true`.
 - **Route directive compliance** (Issue #125 — implemented). A
-  `PostToolUse[Agent]` validator detects Agent responses that received
-  an auto-route `[agent-crew] STOP` or `[agent-crew] ROUTE` directive
-  but answered inline instead of entering `crew:run` / `crew:agent`.
-  Script: `core/scripts/check-route-directive-compliance.py`. Hook
-  wrapper: `core/hooks/route-directive-guard.sh`.
+  `PostToolUse[Agent|multi_agent_v1wait_agent]` validator detects delegated
+  agent responses that received an auto-route `[agent-crew] STOP` or
+  `[agent-crew] ROUTE` directive but answered inline instead of entering
+  `crew:run` / `crew:agent`. The tool_name filter is a pipe-delimited alias
+  list (`Agent|multi_agent_v1wait_agent`) so the gate also fires on the
+  aliased Codex subagent tool_name; `spawn_agent` and
+  `multi_agent_v1send_input` are deliberately excluded (ack-only response
+  shapes, confirmed by direct payload inspection). Script:
+  `core/scripts/check-route-directive-compliance.py`. Hook wrapper:
+  `core/hooks/route-directive-guard.sh`.
 - **Autonomous task injection** (Phase J14 — implemented in `crew:run`
   Step 1.5, no hook required). `core/scripts/detect-inject-intent.sh`
   classifies the user's input for inject-intent phrases ("추가로 해줘",
