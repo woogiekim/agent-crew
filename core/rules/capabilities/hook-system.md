@@ -120,7 +120,7 @@ Enforcement is best-effort, not strict, in this mode.
 
 | Adapter | hook_system | How it is implemented |
 |---|---|---|
-| claude  | true  | Native `settings.json` hooks block; `adapters/claude/setup.sh` wires every script under `core/hooks/` via Python merge snippets into `~/.claude/settings.json`. |
+| claude  | true  | Native `settings.json` hooks block; `adapters/claude/setup.sh` wires most `core/hooks/*.sh` scripts (including `guard-dangerous-commands.sh` as a `PreToolUse[Bash]` hook) via Python merge snippets into `~/.claude/settings.json`. |
 | codex   | false | No equivalent lifecycle-hook surface today. Uses `SKILL.md` model-side rules to convey the same invariants. |
 | generic | false | No lifecycle-hook surface; model-side guidance only. |
 
