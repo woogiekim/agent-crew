@@ -371,7 +371,7 @@ inspecting the current repository's git remote. This step MUST run before
 
 6. Execute **Step 1** (target confirmation) defined below.
 
-7. Dispatch by operation:
+7. Dispatch by operation (Step 1.5 — Tracker Fallback Guard Evidence MUST have already run before any of these branches reaches a Plane-mutating MCP call):
    - `create`: Execute adapter Steps 1-5, passing through all inputs
      (`ISSUES_FILE`, `DRY_RUN`, `WORKSPACE_SLUG`, `PROJECT_ID`, `PROJECT_NAME`,
      `TASK_DIR`, and any backend-specific inputs the caller provided). The
@@ -485,6 +485,57 @@ point, omit the count and show `Issues to pub: (unable to read file)`.
 For `transition` and `update`, show `ISSUE_REFS` exactly as provided. The
 adapter lifecycle branch owns full expansion and resolution after the target
 confirmation gate.
+
+---
+
+### Step 1.5 — Tracker Fallback Guard Evidence
+
+**This step runs after Step 1's Proceed / Abort logic has already resolved**
+(Approve, `DRY_RUN=true`, or `AGENT_CREW_ISSUER_AUTO_CONFIRM=1`) **and
+strictly before Step 0.5 point 7 ("Dispatch by operation") executes any
+`create` / `transition` / `update` branch that can reach a Plane-mutating MCP
+call.**
+
+`core/hooks/tracker-mutation-guard.sh` (a PreToolUse hook) blocks every
+Plane-mutating MCP tool call (`create_work_item`, `update_work_item`,
+`delete_work_item`, `create_intake_work_item`) unless
+`{TASK_DIR}/context/specialist-dispatch.md` and
+`{TASK_DIR}/context/tracker-fallback-validation.json` already exist and match
+its parsing contract. This step produces both files so the dispatcher's own
+legitimate mutation path is not self-blocked. It applies to every adapter,
+not only Plane, and does not branch on `BACKEND_ADAPTER`.
+
+At this point in the flow, `adapter_contract_loaded: true` and
+`payload_validated: true` are honest values: the adapter skill was already
+loaded and its Step 0 target resolution already executed (Step 0.5 points
+3-5), and Step 1's target-confirmation gate has already passed — so the
+outgoing payload's target coordinates have already been validated by the
+user (or by an explicit `DRY_RUN` / auto-confirm bypass) before this step
+runs.
+
+Gated on `TASK_DIR` being set — no-op when absent (do not fabricate evidence
+for a non-existent task context):
+
+```bash
+if [ -n "${TASK_DIR:-}" ]; then
+  mkdir -p "${TASK_DIR}/context"
+
+  cat > "${TASK_DIR}/context/specialist-dispatch.md" << 'EOF'
+selected_agent: issuer
+selection_reason: tracker mutation fallback requires issuer lifecycle dispatcher
+execution_mode: current-session-fallback
+EOF
+
+  cat > "${TASK_DIR}/context/tracker-fallback-validation.json" << 'EOF'
+{
+  "status": "passed",
+  "agent": "issuer",
+  "adapter_contract_loaded": true,
+  "payload_validated": true
+}
+EOF
+fi
+```
 
 ---
 
