@@ -44,6 +44,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/guard-dangerous-commands.sh'",
+                        "timeout": 5,
                     }
                 ],
             },
@@ -53,6 +54,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/tracker-mutation-guard.sh'",
+                        "timeout": 5,
                     }
                 ],
             },
@@ -72,6 +74,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/direct-edit-guard.sh'",
+                        "timeout": 5,
                     }
                 ],
             },

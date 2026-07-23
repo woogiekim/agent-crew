@@ -101,8 +101,11 @@ assert_exit 2 "${RC}"
 it "Claude setup registers route-directive-guard for Agent PostToolUse"
 assert_contains "$(cat "${REPO_ROOT}/adapters/claude/setup.sh")" "route-directive-guard.sh" "Claude adapter registration"
 
-it "Codex setup registers route-directive-guard in hooks.json"
-assert_contains "$(cat "${REPO_ROOT}/adapters/codex/setup.sh")" "route-directive-guard.sh" "Codex adapter registration"
+it "Codex setup registers PostToolUse dispatcher in hooks.json"
+assert_contains "$(cat "${REPO_ROOT}/adapters/codex/setup.sh")" "post-tool-use-dispatcher.sh" "Codex adapter dispatcher registration"
+
+it "Codex PostToolUse dispatcher invokes route-directive-guard"
+assert_contains "$(cat "${REPO_ROOT}/core/hooks/post-tool-use-dispatcher.sh")" "route-directive-guard.sh" "Codex dispatcher route guard registration"
 
 it "auto-route STOP directive carries a route lock"
 CTX="$(run_auto_route_ctx "$(make_prompt_payload '수정해줘 파일')")"

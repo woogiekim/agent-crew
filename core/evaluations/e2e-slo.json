@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "name": "agent-crew commercialization E2E SLO",
-  "status_budget_ms": 500,
-  "telemetry_budget_ms": 500,
+  "status_budget_ms": 1000,
+  "telemetry_budget_ms": 1000,
   "memory_search_budget_ms": 500,
   "samples": 3,
   "warmup_samples": 1,

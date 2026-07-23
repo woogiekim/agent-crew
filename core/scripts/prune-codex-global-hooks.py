@@ -9,9 +9,9 @@ Inputs:
 Outputs:
   JSON or quiet text summary. The script removes hook commands that point at
   known agent-crew managed scripts under {agent_crew_home}/hooks/. It also
-  removes known Orca PreToolUse/PostToolUse global hooks because those run on
-  every tool call and can time out independently of project-local agent-crew
-  hooks. Prompt/session Orca hooks are preserved.
+  removes known Orca Codex global hooks because they can time out independently
+  of project-local agent-crew hooks and can remain visible in lifecycle events
+  such as Stop after a project-local update.
 
 Exit codes:
   0 - completed or skipped safely.
@@ -45,7 +45,6 @@ MANAGED_HOOKS = {
 }
 
 ORCA_CODEX_HOOK = "/.orca/agent-hooks/codex-hook.sh"
-ORCA_PRUNED_EVENTS = {"PreToolUse", "PostToolUse"}
 
 
 def _same_path(a: Path, b: Path) -> bool:
@@ -77,7 +76,8 @@ def _is_managed_hook(entry: Any, agent_crew_home: Path) -> bool:
 
 
 def _is_known_blocking_global_hook(entry: Any, event_name: str) -> bool:
-    if event_name not in ORCA_PRUNED_EVENTS or not isinstance(entry, dict):
+    del event_name
+    if not isinstance(entry, dict):
         return False
 
     command = entry.get("command")

@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-07-16T04:01:31Z from 15 mnemos rules (host=generic) -->
+<!-- Assembled: 2026-07-22T08:24:09Z from 16 mnemos rules (host=generic) -->
 
 # agent-crew - Global Rules
 
@@ -282,6 +282,14 @@ Project state is stored under:
 ```text
 ~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/{TASK_ID}
 ```
+
+## Korean Output Default
+
+이 PC의 agent-crew 산출물, 작업 메모, 리뷰/검증 요약, 코드 주석, 문서 보강, 사용자-facing workflow 설명은 기본적으로 한국어로 작성한다.
+
+사용자가 명시적으로 영어를 요청한 경우에만 영어로 작성한다.
+
+예외: `STATUS:`, `PLAN:`, `BLOCKER:`, `REVIEW:`, 파일 경로, 명령어, 프로토콜 키워드, API 이름, 코드 식별자처럼 도구나 파서가 요구하는 구조화 토큰과 원문 보존이 필요한 literal은 기존 표기를 유지한다.
 
 ## Contents-System Scope Guard
 

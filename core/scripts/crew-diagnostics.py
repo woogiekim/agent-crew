@@ -451,6 +451,84 @@ def claude_performance_probe(asset_root: Path, claude_dir: Path | None = None) -
     return rc == 0, str(summary)
 
 
+def _hook_blocks(payload: dict[str, Any]) -> dict[str, list[Any]]:
+    hooks = payload.get("hooks")
+    return hooks if isinstance(hooks, dict) else {}
+
+
+def _hook_entries(path: Path, source: str) -> tuple[list[dict[str, Any]], list[str]]:
+    payload = load_json(path)
+    blocks = _hook_blocks(payload)
+    entries: list[dict[str, Any]] = []
+    events: list[str] = []
+    for event_name, event_blocks in blocks.items():
+        events.append(str(event_name))
+        if not isinstance(event_blocks, list):
+            continue
+        for block in event_blocks:
+            if not isinstance(block, dict):
+                continue
+            matcher = block.get("matcher", "*")
+            hooks = block.get("hooks")
+            if not isinstance(hooks, list):
+                continue
+            for hook in hooks:
+                if not isinstance(hook, dict):
+                    continue
+                entries.append(
+                    {
+                        "source": source,
+                        "event": str(event_name),
+                        "matcher": str(matcher),
+                        "command": str(hook.get("command") or ""),
+                        "timeout": hook.get("timeout"),
+                    }
+                )
+    return entries, sorted(events)
+
+
+def codex_hook_config_probe(project_root: Path, codex_home: Path | None = None) -> dict[str, Any]:
+    codex_home = codex_home or Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
+    global_hooks = codex_home / "hooks.json"
+    project_hooks = project_root / ".codex" / "hooks.json"
+
+    global_entries, global_events = _hook_entries(global_hooks, "global")
+    project_entries, project_events = _hook_entries(project_hooks, "project")
+    entries = global_entries + project_entries
+    stop_hook_registered = any(entry["event"] == "Stop" for entry in entries)
+    missing_timeouts = [
+        f"{entry['source']}:{entry['event']}:{entry['matcher']}"
+        for entry in entries
+        if entry["timeout"] is None
+    ]
+    duplicate_events = sorted(
+        set(global_events).intersection(project_events)
+    )
+
+    detail_parts = [
+        f"global_events={','.join(global_events) if global_events else 'none'}",
+        f"project_events={','.join(project_events) if project_events else 'none'}",
+        f"stop_hook_registered={str(stop_hook_registered).lower()}",
+    ]
+    if duplicate_events:
+        detail_parts.append(f"duplicate_global_project_events={','.join(duplicate_events)}")
+    if missing_timeouts:
+        detail_parts.append(f"missing_timeouts={','.join(missing_timeouts[:5])}")
+    if not stop_hook_registered:
+        detail_parts.append("Stop hook timeout indicates stale session or external hook source")
+
+    return {
+        "global_hooks": str(global_hooks),
+        "project_hooks": str(project_hooks),
+        "global_events": global_events,
+        "project_events": project_events,
+        "stop_hook_registered": stop_hook_registered,
+        "missing_timeouts": missing_timeouts,
+        "duplicate_events": duplicate_events,
+        "detail": "; ".join(detail_parts),
+    }
+
+
 def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
     hook = asset_root / "hooks" / "auto-issue-report.sh"
     if not hook.is_file():
@@ -656,6 +734,16 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
     )
     claude_ok, claude_detail = claude_performance_probe(Path(args.asset_root))
     findings.append(print_status("claude performance budgets", claude_ok, claude_detail, emit=args.format == "text"))
+    codex_hooks = codex_hook_config_probe(
+        Path(args.project_root).resolve(),
+        Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser(),
+    )
+    findings.append(print_finding(
+        "codex hook disk registration",
+        "warn" if codex_hooks["missing_timeouts"] or codex_hooks["duplicate_events"] else "pass",
+        codex_hooks["detail"],
+        emit=args.format == "text",
+    ))
     codex_invocation = adapter_doc_path(
         Path(args.asset_root),
         Path(args.agent_crew_home).expanduser(),

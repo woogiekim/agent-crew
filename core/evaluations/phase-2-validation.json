@@ -2,6 +2,7 @@
   "schema_version": 2,
   "name": "agent-crew phase 2 validation framework",
   "objective": "Validate the next readiness pass across unit, smoke, integration, alpha, and beta levels with structured findings, gaps, and follow-up actions.",
+  "default_command_timeout_seconds": 300,
   "levels": [
     {
       "id": "unit",
@@ -66,6 +67,7 @@
             "tests/run-all.sh",
             "shell"
           ],
+          "timeout_seconds": 180,
           "allowed_returncodes": [
             0
           ],

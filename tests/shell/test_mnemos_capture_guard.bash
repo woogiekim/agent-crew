@@ -29,8 +29,8 @@ run_hook_rc() {
 # --------------------------------------------------------------------------- #
 
 it "AC1: hook has a notification fast-reject before command -v mnemos"
-FAST_REJECT_LINE=$(grep -n 'case "${TURN_OUTPUT}"' "${HOOK}" | cut -d: -f1)
-MNEMOS_GUARD_LINE=$(grep -n 'command -v mnemos' "${HOOK}" | cut -d: -f1)
+FAST_REJECT_LINE=$(grep -n '^[[:space:]]*\*"✻"\*"🧠"\*)' "${HOOK}" | cut -d: -f1 | head -n 1)
+MNEMOS_GUARD_LINE=$(grep -n '^[[:space:]]*command -v mnemos' "${HOOK}" | cut -d: -f1 | head -n 1)
 if [ -n "${FAST_REJECT_LINE}" ] && [ -n "${MNEMOS_GUARD_LINE}" ] \
   && [ "${FAST_REJECT_LINE}" -lt "${MNEMOS_GUARD_LINE}" ]; then
   _pass

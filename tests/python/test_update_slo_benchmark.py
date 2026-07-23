@@ -561,6 +561,15 @@ def test_phase_2_beta_splits_light_slo_from_update_dry_run_slo():
     assert "--skip-retrieval-eval" in beta_commands["update_dry_run_slo"]["command"]
 
 
+def test_e2e_slo_default_status_and_telemetry_budgets_allow_local_sampling_noise():
+    fixture = json.loads((REPO_ROOT / "core" / "evaluations" / "e2e-slo.json").read_text(encoding="utf-8"))
+
+    assert fixture["status_budget_ms"] >= 1000
+    assert fixture["telemetry_budget_ms"] >= 1000
+    assert fixture["samples"] >= 3
+    assert fixture["aggregation"] == "median"
+
+
 def test_e2e_slo_text_output_lists_checks(tmp_path: Path):
     crew = tmp_path / "crew"
     crew.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")

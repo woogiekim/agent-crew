@@ -376,6 +376,39 @@ def test_claude_performance_probe_reports_budget_summary(tmp_path: Path):
     assert "hook_timeout_total=5s" in detail
 
 
+def test_codex_hook_config_probe_flags_absent_stop_hook_as_stale_signal(tmp_path: Path):
+    codex_home = tmp_path / ".codex"
+    project_root = tmp_path / "project"
+    (codex_home).mkdir()
+    (project_root / ".codex").mkdir(parents=True)
+    (codex_home / "hooks.json").write_text("{}\n", encoding="utf-8")
+    (project_root / ".codex" / "hooks.json").write_text(
+        json.dumps({
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "bash ~/.agent-crew/hooks/post-tool-use-dispatcher.sh",
+                                "timeout": 15,
+                            }
+                        ],
+                    }
+                ]
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    report = diagnostics.codex_hook_config_probe(project_root, codex_home)
+
+    assert report["stop_hook_registered"] is False
+    assert report["missing_timeouts"] == []
+    assert "Stop hook timeout indicates stale session or external hook source" in report["detail"]
+
+
 def test_run_cmd_reports_subprocess_exceptions(monkeypatch):
     def raise_run(*_args, **_kwargs):
         raise RuntimeError("boom")

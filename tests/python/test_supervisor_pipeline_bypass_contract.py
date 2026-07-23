@@ -115,11 +115,14 @@ def test_supervisor_ignores_leaked_direct_mode_preamble():
 
 def test_progress_guard_hook_is_registered_for_supported_hosts():
     hook = REPO_ROOT / "core" / "hooks" / "supervisor-progress-guard.sh"
+    dispatcher = REPO_ROOT / "core" / "scripts" / "post-tool-use-dispatcher.py"
     codex_setup = CODEX_SETUP.read_text(encoding="utf-8")
     claude_setup = CLAUDE_SETUP.read_text(encoding="utf-8")
+    dispatcher_text = dispatcher.read_text(encoding="utf-8")
 
     assert hook.is_file()
-    assert "supervisor-progress-guard.sh" in codex_setup
+    assert "post-tool-use-dispatcher.sh" in codex_setup
+    assert "supervisor-progress-guard detected" in dispatcher_text
     assert "supervisor-progress-guard.sh" in claude_setup
 
 

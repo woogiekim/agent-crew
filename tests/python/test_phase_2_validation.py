@@ -149,6 +149,30 @@ def test_phase_2_validation_required_failure_fails_run_with_follow_up(tmp_path: 
     assert any(action["criterion_id"] == "quality" for action in payload["recommended_follow_up_actions"])
 
 
+def test_phase_2_validation_timeout_records_failure_without_hanging(tmp_path: Path):
+    framework = tmp_path / "framework.json"
+    write_framework(framework)
+    data = json.loads(framework.read_text(encoding="utf-8"))
+    data["levels"][0]["commands"][0]["command"] = [
+        "{python}",
+        "-c",
+        "import time; print('before sleep'); time.sleep(5)",
+    ]
+    data["levels"][0]["commands"][0]["timeout_seconds"] = 0.1
+    framework.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    result = run_runner("--framework", str(framework))
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    command = next(item for item in payload["commands"] if item["id"] == "pass_cmd")
+    assert command["timed_out"] is True
+    assert command["timeout_seconds"] == 0.1
+    assert command["returncode"] == 124
+    assert command["passed"] is False
+    assert "timed out after 0.1s" in command["stderr_tail"]
+
+
 def test_phase_2_validation_failure_artifacts_preserve_markers_before_tail(tmp_path: Path):
     framework = tmp_path / "framework.json"
     output = tmp_path / "report.json"
@@ -278,6 +302,18 @@ def test_phase_2_validation_helpers_cover_selection_and_status_branches(tmp_path
 
     assert {item["id"]: item["status"] for item in report["criteria"]}["quality"] == "passed"
     assert {item["id"]: item["status"] for item in report["levels"]}["unselected"] == "unselected"
+
+
+def test_phase_2_framework_bounds_shell_smoke_command_runtime():
+    framework = json.loads(DEFAULT_FRAMEWORK.read_text(encoding="utf-8"))
+    smoke_commands = {
+        command["id"]: command
+        for level in framework["levels"]
+        if level["id"] == "smoke"
+        for command in level["commands"]
+    }
+
+    assert smoke_commands["shell_suite"]["timeout_seconds"] <= 180
 
 
 def test_phase_2_validation_command_filter_can_skip_unselected_commands(tmp_path: Path):

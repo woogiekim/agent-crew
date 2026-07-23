@@ -121,25 +121,49 @@ def run_command(
     artifact_dir: Path | None = None,
     command_id: str = "command",
     attempt: str = "initial",
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    proc = subprocess.run(command, cwd=str(cwd), env=env, text=True, capture_output=True)
+    timed_out = False
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=str(cwd),
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+        )
+        stdout = proc.stdout
+        stderr = proc.stderr
+        returncode = proc.returncode
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        stderr = f"{stderr}\nphase-2-validation: command timed out after {timeout_seconds}s\n"
+        returncode = 124
     elapsed_ms = (time.perf_counter() - started) * 1000
     artifacts = write_artifacts(
         artifact_dir=artifact_dir,
         command_id=command_id,
         attempt=attempt,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=stdout,
+        stderr=stderr,
     )
 
     return {
         "command": command,
-        "returncode": proc.returncode,
+        "returncode": returncode,
         "elapsed_ms": round(elapsed_ms, 3),
-        "stdout_tail": tail(proc.stdout),
-        "stderr_tail": tail(proc.stderr),
-        "failure_markers": extract_failure_markers(proc.stdout, proc.stderr),
+        "stdout_tail": tail(stdout),
+        "stderr_tail": tail(stderr),
+        "failure_markers": extract_failure_markers(stdout, stderr),
+        "timed_out": timed_out,
         **artifacts,
     }
 
@@ -329,6 +353,7 @@ def build_report(
 ) -> dict[str, Any]:
     env = os.environ.copy()
     env.setdefault("PROJECT_ROOT", str(root))
+    default_timeout = framework.get("default_command_timeout_seconds")
     command_results = []
 
     for level, command in iter_commands(framework):
@@ -338,6 +363,8 @@ def build_report(
 
         allowed = {int(value) for value in command.get("allowed_returncodes", [0])}
         expanded = expand_command([str(part) for part in command.get("command", [])], root)
+        timeout_value = command.get("timeout_seconds", default_timeout)
+        timeout_seconds = float(timeout_value) if timeout_value is not None else None
         result: dict[str, Any] = {
             "id": command_id,
             "label": command.get("label", command_id),
@@ -346,6 +373,7 @@ def build_report(
             "optional": bool(command.get("optional", False)),
             "allowed_returncodes": sorted(allowed),
             "command": expanded,
+            "timeout_seconds": timeout_seconds,
         }
 
         if plan_only:
@@ -358,6 +386,7 @@ def build_report(
                 artifact_dir=artifact_dir,
                 command_id=command_id,
                 attempt="initial",
+                timeout_seconds=timeout_seconds,
             )
             result.update(observed)
             result["passed"] = observed["returncode"] in allowed
@@ -369,6 +398,7 @@ def build_report(
                     artifact_dir=artifact_dir,
                     command_id=command_id,
                     attempt="rerun",
+                    timeout_seconds=timeout_seconds,
                 )
                 rerun_passed = rerun["returncode"] in allowed
                 result.update({
