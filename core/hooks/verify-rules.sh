@@ -1,16 +1,34 @@
 #!/bin/bash
 # Detect common rule violations after file edits.
-# PostToolUse hook: receives JSON via stdin with tool_input.file_path.
+# PostToolUse hook: receives the flattened envelope JSON via stdin, as
+# produced by core/scripts/post-tool-use-dispatcher.py — top-level
+# file_path / new_path / path fields, no tool_input wrapper. The legacy
+# nested tool_input.file_path / tool_input.new_path shape is kept as a
+# defensive fallback only, in case a caller ever sends the old shape.
 
 INPUT=$(cat)
 CHANGED_FILE=$(python3 -c "
 import json, sys
+
+def pick(d, *keys):
+    if not isinstance(d, dict):
+        return ''
+    for key in keys:
+        value = d.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ''
+
 try:
     data = json.loads(sys.argv[1])
-    ti = data.get('tool_input', {})
-    print(ti.get('file_path', ti.get('new_path', '')) if isinstance(ti, dict) else '')
 except Exception:
-    print('')
+    data = {}
+
+result = pick(data, 'file_path', 'new_path', 'path')
+if not result:
+    result = pick(data.get('tool_input', {}), 'file_path', 'new_path')
+
+print(result)
 " "$INPUT" 2>/dev/null)
 
 if [[ -z "$CHANGED_FILE" || ! -f "$CHANGED_FILE" ]]; then
