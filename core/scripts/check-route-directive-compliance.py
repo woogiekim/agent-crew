@@ -3,9 +3,11 @@
 check-route-directive-compliance.py — Detect ignored STOP/ROUTE directives.
 
 The UserPromptSubmit auto-route hook can only inject advisory context. This
-validator runs on Agent/PostToolUse payloads and catches a delegated agent that
-received a STOP/ROUTE directive but returned a normal inline answer instead of
-entering the required crew workflow.
+validator runs on PostToolUse payloads whose tool_name matches --tool
+(default: "Agent|multi_agent_v1wait_agent", pipe-delimited alias list; see
+Issue #125 follow-up) and catches a delegated agent that received a
+STOP/ROUTE directive but returned a normal inline answer instead of entering
+the required crew workflow.
 """
 
 from __future__ import annotations
@@ -46,6 +48,14 @@ def _text_from_value(value: Any) -> str:
                 parts.append(_text_from_value(item.get("text") or item.get("content")))
         return "\n".join(part for part in parts if part)
     if isinstance(value, dict):
+        # NOTE (AC-005, residual limitation): this fixed top-level key list
+        # does not descend into a nested `status.<target_id>.<field>` shape.
+        # For the aliased `multi_agent_v1wait_agent` tool_name, every
+        # observed sample has `tool_response == {"status": {}, "timed_out":
+        # true}` (empty status), so the populated (non-timed-out) key shape
+        # is unconfirmed. Detection for that tool_name remains best-effort
+        # until a populated sample confirms the real key shape and this
+        # function is extended accordingly in a follow-up change.
         parts = []
         for key in ("prompt", "message", "description", "content", "text", "output"):
             part = _text_from_value(value.get(key))
@@ -105,8 +115,21 @@ def main() -> int:
     )
     parser.add_argument(
         "--tool",
-        default="Agent",
-        help="tool_name to filter on when reading a hook payload (default: Agent; '*' scans all)",
+        # Pipe-delimited alias list (Issue #125 follow-up). `Agent` is
+        # Claude Code's single-shot delegation tool; `multi_agent_v1wait_agent`
+        # is the only Codex subagent tool_name whose tool_response schema is
+        # designed to carry a completed-agent-response body. `spawn_agent`
+        # and `multi_agent_v1send_input` are deliberately NOT aliased —
+        # direct inspection of spooled PostToolUse payloads confirmed both
+        # are ack-only (agent_id/nickname, submission_id) and never carry a
+        # completed response, so aliasing them would only produce
+        # false-positive blocks on the kickoff/interrupt ack.
+        default="Agent|multi_agent_v1wait_agent",
+        help=(
+            "pipe-delimited tool_name alias list to filter on when reading a "
+            "hook payload (default: 'Agent|multi_agent_v1wait_agent'; "
+            "'*' scans all)"
+        ),
     )
     args = parser.parse_args()
 
@@ -123,7 +146,8 @@ def main() -> int:
             return 0
         if not isinstance(payload, dict):
             return 0
-        if args.tool != "*" and payload.get("tool_name", "") != args.tool:
+        allowed_tools = set(args.tool.split("|"))
+        if args.tool != "*" and payload.get("tool_name", "") not in allowed_tools:
             return 0
 
         prompt = extract_prompt(payload)

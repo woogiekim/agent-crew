@@ -48,8 +48,18 @@ matches_hook() {
 }
 
 default_children() {
+    # route-directive-guard.sh fan-out matcher: aliases the Codex
+    # subagent tool_name `multi_agent_v1wait_agent` alongside `Agent`
+    # (Issue #125 follow-up). `multi_agent_v1wait_agent` is the only
+    # Codex tool_name whose tool_response schema is designed to carry a
+    # completed-agent-response body (status keyed by target); `spawn_agent`
+    # and `multi_agent_v1send_input` are deliberately NOT aliased here —
+    # direct inspection of spooled PostToolUse payloads confirmed both are
+    # ack-only (agent_id/nickname, submission_id) and never carry a
+    # completed response, so aliasing them would only produce false-positive
+    # blocks on the kickoff/interrupt ack.
     cat <<EOF
-Agent:bash '${AGENT_CREW_HOME}/hooks/route-directive-guard.sh'
+Agent|multi_agent_v1wait_agent:bash '${AGENT_CREW_HOME}/hooks/route-directive-guard.sh'
 Bash:async:bash '${AGENT_CREW_HOME}/hooks/auto-issue-report.sh'
 Edit|Write|MultiEdit|apply_patch:bash '${AGENT_CREW_HOME}/hooks/verify-rules.sh'
 *:async:bash '${AGENT_CREW_HOME}/hooks/mnemos-capture-guard.sh'

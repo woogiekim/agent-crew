@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# PostToolUse[Agent] hook: detect ignored STOP/ROUTE auto-route directives.
+# PostToolUse[Agent|multi_agent_v1wait_agent] hook: detect ignored STOP/ROUTE
+# auto-route directives (Issue #125 follow-up widens coverage beyond the
+# bare "Agent" tool_name to also catch the aliased Codex subagent call).
 
 INPUT=$(cat)
 
@@ -50,4 +52,4 @@ if [ -z "${VALIDATOR}" ]; then
   exit 0
 fi
 
-printf '%s' "${INPUT}" | python3 "${VALIDATOR}" --tool Agent
+printf '%s' "${INPUT}" | python3 "${VALIDATOR}" --tool "Agent|multi_agent_v1wait_agent"
