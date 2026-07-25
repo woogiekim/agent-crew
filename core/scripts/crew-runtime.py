@@ -189,6 +189,57 @@ def load_text(path: Path) -> str:
         return ""
 
 
+def git_branch(project_root: Path) -> str:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(project_root), "branch", "--show-current"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    return ""
+
+
+def git_status_short(project_root: Path) -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(project_root), "status", "--short"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return ""
+
+
+def text_snippet(path: Path, *, limit: int = 4000) -> str:
+    text = load_text(path).strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n...[truncated]"
+
+
+def clipboard_available() -> bool:
+    if Path("/usr/bin/pbcopy").is_file():
+        return True
+    try:
+        return subprocess.run(["which", "pbcopy"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    except Exception:
+        return False
+
+
+def copy_to_clipboard(text: str) -> bool:
+    if not clipboard_available():
+        return False
+    try:
+        result = subprocess.run(["pbcopy"], input=text, text=True, check=False)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def append_progress(task_dir: Path, row: dict) -> None:
     append_jsonl(task_dir / "progress.buffer.jsonl", row)
 
@@ -2624,6 +2675,171 @@ def command_issue_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def build_relay_prompt(manifest: dict, context: dict, prompt_text: str) -> str:
+    from_task = context.get("from_task") if isinstance(context.get("from_task"), dict) else {}
+    task_text = prompt_text or str(from_task.get("task") or "").strip()
+    if not task_text:
+        task_text = "Continue from the packaged context."
+
+    sections = [
+        "# agent-crew Relay Prompt",
+        "",
+        "## ROLE",
+        f"You are the target AI session for a local agent-crew relay package in `{manifest['mode']}` mode.",
+        "",
+        "## ROUTING",
+        f"SOURCE_HOST: {manifest['source_host']}",
+        f"TARGET_HOST: {manifest['target_host']}",
+        f"PROJECT_ROOT: {context['project_root']}",
+        f"BRANCH: {context.get('branch') or 'unknown'}",
+        "",
+        "## TASK",
+        task_text,
+        "",
+        "## CONTEXT",
+        f"Relay ID: {manifest['relay_id']}",
+        f"From task: {manifest.get('from_task') or 'none'}",
+        "Paths:",
+    ]
+    paths = context.get("paths") or []
+    sections.extend([f"- {path}" for path in paths] if paths else ["- none"])
+    sections.extend(
+        [
+            "",
+            "Git status:",
+            "```text",
+            context.get("git_status") or "clean or unavailable",
+            "```",
+        ]
+    )
+
+    if from_task:
+        sections.extend(
+            [
+                "",
+                "Existing task context:",
+                "```text",
+                from_task.get("summary") or "",
+                "```",
+            ]
+        )
+
+    sections.extend(
+        [
+            "",
+            "## INSTRUCTIONS",
+            "- Treat this as a local handoff package, not permission to operate on external state.",
+            "- Do not execute remote, push, deploy, merge, or destructive actions unless the user explicitly approves them in your session.",
+            "- Preserve the project architecture and constraints already described in this package.",
+            "",
+            "## EXPECTED_OUTPUT",
+            "- Start with the concrete answer, plan, or code review result requested by TASK.",
+            "- Mention any missing context explicitly instead of guessing.",
+            "",
+        ]
+    )
+    return "\n".join(sections)
+
+
+def load_relay_task_context(state_dir: Path, task_id: str) -> tuple[dict, str]:
+    if not task_id:
+        return {}, ""
+
+    task_dir = state_dir / "tasks" / task_id
+    if not task_dir.is_dir():
+        return {}, f"crew relay: task not found: {task_id}"
+
+    register = load_json(task_dir / "register.json", {})
+    snippets = []
+    for name in ("handoff.md", "result.md"):
+        snippet = text_snippet(task_dir / name)
+        if snippet:
+            snippets.append(f"--- {name} ---\n{snippet}")
+
+    return {
+        "task_id": task_id,
+        "task": str(register.get("task") or "").strip(),
+        "task_dir": str(task_dir),
+        "summary": "\n\n".join(snippets),
+    }, ""
+
+
+def command_relay(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    state_info = resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    state_dir = Path(state_info["state_dir"])
+    relays_dir = state_dir / "relays"
+    relays_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now(timezone.utc)
+    session_id = now.strftime("%Y%m%d-%H%M%S")
+    relay_id = f"relay-{session_id}-0"
+    index = 0
+    while (relays_dir / relay_id).exists():
+        index += 1
+        relay_id = f"relay-{session_id}-{index}"
+
+    from_task, error = load_relay_task_context(state_dir, args.from_task)
+    if error:
+        print(error, file=sys.stderr)
+        return 1
+
+    relay_dir = relays_dir / relay_id
+    relay_dir.mkdir(parents=True)
+    paths = [str(path) for path in (args.paths or [])]
+    prompt_text = " ".join(args.prompt or []).strip()
+    source_host = os.environ.get("AGENT_CREW_HOST", "").strip() or active_host_from_env() or "unknown"
+    manifest = {
+        "schema_version": 1,
+        "relay_id": relay_id,
+        "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source_host": source_host,
+        "target_host": args.to,
+        "mode": args.mode,
+        "project_root": str(project_root),
+        "project_state_key": state_info["project_state_key"],
+        "state_dir": str(state_dir),
+        "relay_dir": str(relay_dir),
+        "manifest_file": str(relay_dir / "manifest.json"),
+        "context_file": str(relay_dir / "context.json"),
+        "prompt_file": str(relay_dir / "prompt.md"),
+        "copy_file": str(relay_dir / "copy.txt"),
+        "from_task": args.from_task,
+        "paths": paths,
+        "copy_requested": bool(args.copy),
+        "auto_execute": False,
+    }
+    context = {
+        "schema_version": 1,
+        "project_root": str(project_root),
+        "project_name": state_info["project_name"],
+        "branch": git_branch(project_root),
+        "git_status": git_status_short(project_root),
+        "paths": paths,
+        "from_task": from_task,
+    }
+    prompt = build_relay_prompt(manifest, context, prompt_text)
+
+    write_json(relay_dir / "manifest.json", manifest)
+    write_json(relay_dir / "context.json", context)
+    (relay_dir / "prompt.md").write_text(prompt, encoding="utf-8")
+    (relay_dir / "copy.txt").write_text(prompt, encoding="utf-8")
+
+    copied = copy_to_clipboard(prompt) if args.copy else False
+    print("STATUS: completed")
+    print(f"RELAY_ID: {relay_id}")
+    print(f"TARGET: {args.to}")
+    print(f"PROMPT: {relay_dir / 'prompt.md'}")
+    print(f"COPY: {'copied' if copied else 'not_requested' if not args.copy else 'unavailable'}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="agent-crew deterministic runtime")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2652,6 +2868,16 @@ def build_parser() -> argparse.ArgumentParser:
     issue_ingest.add_argument("--output", default="")
     issue_ingest.add_argument("--format", choices=["text", "json"], default="text")
     issue_ingest.set_defaults(func=command_issue_ingest)
+
+    relay = sub.add_parser("relay", help="package a prompt for another AI session")
+    relay.add_argument("--project-root")
+    relay.add_argument("--to", required=True, help="target AI host name, such as claude, codex, or gemini")
+    relay.add_argument("--mode", choices=["ask", "run", "review", "debug"], default="ask")
+    relay.add_argument("--from-task", default="")
+    relay.add_argument("--paths", action="append", default=[])
+    relay.add_argument("--copy", action="store_true")
+    relay.add_argument("prompt", nargs=argparse.REMAINDER)
+    relay.set_defaults(func=command_relay)
 
     return parser
 

@@ -5,14 +5,14 @@ context/test-checklist.md TC-014 ("a repo-wide ... grep for feature-step/
 feature_step ... returns zero matches in the tracked repository"), TC-015 and
 TC-016 (regression: unrelated suites and the full suite keep passing once the
 old command name is gone). This test is written before the `backend` agent
-performs the feature-step -> stageer rename (TDD red phase); it is expected to
+performs the feature-step -> stager rename (TDD red phase); it is expected to
 fail until that rename lands, since `core/commands/feature-step.md`,
 `adapters/codex/skill/feature-step/`, and the registration mentions in
 `core/global-agents.md`, `core/scripts/seed-instruction-rules.sh`, `README.md`,
 and `adapters/codex/skill/agent-crew/SKILL.md` still exist at authoring time.
 
 Per the handoff's explicit scope: the personal, out-of-repo destination paths
-(`~/.agent-crew/user/commands/stageer.md`, `~/.codex/skills/stageer/SKILL.md`)
+(`~/.agent-crew/user/commands/stager.md`, `~/.codex/skills/stager/SKILL.md`)
 are outside this repo's git working tree and are intentionally not asserted on
 here (non-reproducible local machine state, same rationale as AC-004). The
 stale `.crew-worktrees/20260723-123704-0/` worktree is out of scope and
