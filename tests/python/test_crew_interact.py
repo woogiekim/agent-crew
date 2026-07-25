@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -97,6 +98,56 @@ def _write_codex_session(
             )
             + "\n"
         )
+
+
+def _write_codex_rollout(
+    codex_home: Path,
+    *,
+    session_id: str,
+    cwd: Path,
+    timestamp: str,
+    mtime: int,
+    last_message: str = "",
+) -> Path:
+    rollout_path = codex_home / "sessions" / "2026" / "07" / "25" / f"rollout-{session_id}.jsonl"
+    rollout_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp": timestamp,
+            "type": "session_meta",
+            "payload": {
+                "id": session_id,
+                "session_id": session_id,
+                "cwd": str(cwd),
+                "originator": "codex-tui",
+                "thread_source": "user",
+            },
+        },
+        {
+            "timestamp": timestamp,
+            "type": "turn_context",
+            "payload": {
+                "cwd": str(cwd),
+                "workspace_roots": [str(cwd)],
+                "current_date": "2026-07-25",
+                "model": "gpt-5.5",
+            },
+        },
+    ]
+    if last_message:
+        rows.append(
+            {
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "agent_message", "message": last_message},
+            }
+        )
+    rollout_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    os.utime(rollout_path, (mtime, mtime))
+    return rollout_path
 
 
 def _write_claude_session(
@@ -289,6 +340,82 @@ def test_interact_to_without_match_does_not_fall_back_to_all(monkeypatch, tmp_pa
     out = capsys.readouterr().out
     assert "최근 AI 세션을 찾지 못했습니다." in out
     assert "Codex 작업" not in out
+
+
+def test_sessions_include_recent_codex_rollout_worktree_candidates(monkeypatch, tmp_path: Path, capsys):
+    """regression-case - Codex rollout logs expose cwd/branch when session_index lacks them."""
+    _, codex_home, _ = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "contents-systsem-worktrees" / "feature-enrtc-878"
+    project.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "checkout", "-q", "-b", "feature/enrtc-878"], cwd=project, check=True)
+    _write_codex_rollout(
+        codex_home,
+        session_id="rollout-878",
+        cwd=project,
+        timestamp="2026-07-25T15:24:16.078Z",
+        mtime=int(time.time()),
+        last_message="회원명 조회 서비스 커밋 완료",
+    )
+
+    assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
+
+    out = capsys.readouterr().out
+    assert "① Codex · feature-enrtc-878 · feature/enrtc-878" in out
+    assert "회원명 조회 서비스 커밋 완료" in out
+    assert "rollout-878" not in out
+
+
+def test_sessions_ignore_stale_codex_rollouts(monkeypatch, tmp_path: Path, capsys):
+    """regression-case - old rollout logs do not create noisy Codex candidates."""
+    _, codex_home, _ = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "cnas-worktrees" / "feature-enrtc-879"
+    project.mkdir(parents=True)
+    _write_codex_rollout(
+        codex_home,
+        session_id="old-rollout-879",
+        cwd=project,
+        timestamp="2026-07-21T11:52:35.004Z",
+        mtime=1000,
+        last_message="오래된 세션",
+    )
+
+    assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
+
+    out = capsys.readouterr().out
+    assert "최근 AI 세션을 찾지 못했습니다." in out
+    assert "오래된 세션" not in out
+
+
+def test_interact_to_matches_multiple_natural_tokens(monkeypatch, tmp_path: Path, capsys):
+    """regression-case - --to supports natural multi-token session descriptions."""
+    _, codex_home, _ = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "contents-systsem-worktrees" / "feature-enrtc-878"
+    project.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "checkout", "-q", "-b", "feature/enrtc-878"], cwd=project, check=True)
+    _write_codex_rollout(
+        codex_home,
+        session_id="rollout-878",
+        cwd=project,
+        timestamp="2026-07-25T15:24:16.078Z",
+        mtime=int(time.time()),
+        last_message="contents-systsem worktree 작업",
+    )
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="Codex contents-systsem feature/enrtc-878",
+            select="",
+            limit=10,
+            prompt=["리뷰해줘"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "① Codex · feature-enrtc-878 · feature/enrtc-878" in out
+    assert "contents-systsem worktree 작업" in out
 
 
 def test_parser_accepts_sessions_and_interact_commands():

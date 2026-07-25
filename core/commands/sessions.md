@@ -6,6 +6,10 @@ AI sessions mean real host sessions from installed AI tools such as Codex and
 Claude. agent-crew task/request state may enrich project, branch, or summary
 fields, but it must not create a standalone session candidate.
 
+Codex candidates include `session_index.jsonl` plus recent rollout session
+headers from the last 3 days. Rollout discovery reads only session metadata and
+turn-context headers, not full transcript bodies.
+
 ## CLI
 
 ```bash

@@ -52,6 +52,7 @@ AMBIGUOUS_TASKS = {
     "do the thing",
     "do the thing from before",
 }
+GIT_BRANCH_CACHE: dict[str, str] = {}
 
 
 def utc_now_z() -> str:
@@ -334,8 +335,23 @@ def branch_from_session(metadata: dict, cwd: object) -> str:
     value = str(cwd or "").strip()
     if not value:
         return "unknown"
-    detected = git_branch(Path(value))
+    detected = GIT_BRANCH_CACHE.get(value)
+    if detected is None:
+        detected = git_branch(Path(value))
+        GIT_BRANCH_CACHE[value] = detected
     return detected or "unknown"
+
+
+def project_name_from_worktree_cwd(cwd: object) -> str:
+    value = str(cwd or "").strip()
+    if not value:
+        return "unknown"
+    path = Path(value)
+    name = path.name
+    parent = path.parent.name
+    if parent.endswith("-worktrees") and name:
+        return name
+    return name or "unknown"
 
 
 def text_from_value(value: object) -> str:
@@ -360,6 +376,55 @@ def extract_message_text(row: dict) -> str:
     message = row.get("message")
     if isinstance(message, dict):
         return text_from_value(message.get("content"))
+    if isinstance(message, str):
+        return message
+    return ""
+
+
+def is_low_signal_summary(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return True
+    prefixes = (
+        "<permissions instructions>",
+        "<apps_instructions>",
+        "<skills_instructions>",
+        "<environment_context>",
+        "# AGENTS.md instructions",
+    )
+    return any(stripped.startswith(prefix) for prefix in prefixes)
+
+
+def tail_jsonl_summary(path: Path, *, byte_limit: int = 256_000, line_limit: int = 240) -> str:
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - byte_limit))
+            raw = handle.read().decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+    for line in reversed(raw.splitlines()[-line_limit:]):
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        text = ""
+        if row.get("type") == "event_msg":
+            text = extract_message_text(payload)
+        elif row.get("type") == "response_item":
+            role = payload.get("role")
+            if role in {"assistant", "user"}:
+                text = extract_message_text(payload)
+        summary = first_summary_line(text)
+        if summary and summary != "최근 작업 요약 없음" and not is_low_signal_summary(summary):
+            return summary
     return ""
 
 
@@ -402,26 +467,23 @@ def claude_summary_for_session(home: Path, session_id: str, cwd: object) -> str:
 
 
 def codex_session_candidates(home: Path) -> list[dict]:
+    candidates_by_ref: dict[str, dict] = {}
     index_path = home / "session_index.jsonl"
-    if not index_path.is_file():
-        return []
-
-    candidates: list[dict] = []
-    for line in load_text(index_path).splitlines():
-        try:
-            row = json.loads(line)
-        except Exception:
-            continue
-        if not isinstance(row, dict):
-            continue
-        session_id = str(row.get("id") or "").strip()
-        if not session_id:
-            continue
-        cwd = row.get("cwd") or row.get("project_root")
-        project = row.get("project") or row.get("project_name") or project_name_from_cwd(cwd)
-        updated_at = parse_iso_epoch(str(row.get("updated_at") or row.get("created_at") or ""))
-        candidates.append(
-            {
+    if index_path.is_file():
+        for line in load_text(index_path).splitlines():
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            session_id = str(row.get("id") or "").strip()
+            if not session_id:
+                continue
+            cwd = row.get("cwd") or row.get("project_root")
+            project = row.get("project") or row.get("project_name") or project_name_from_worktree_cwd(cwd)
+            updated_at = parse_iso_epoch(str(row.get("updated_at") or row.get("created_at") or ""))
+            candidate = {
                 "source": "codex",
                 "session_ref": f"codex:{session_id}",
                 "ai_type": "Codex",
@@ -430,9 +492,83 @@ def codex_session_candidates(home: Path) -> list[dict]:
                 "summary": first_summary_line(str(row.get("thread_name") or row.get("summary") or "")),
                 "updated_at": updated_at or file_mtime(index_path),
                 "status": str(row.get("status") or "최근 세션"),
+                "cwd": str(cwd or ""),
             }
-        )
+            candidates_by_ref[candidate["session_ref"]] = candidate
+
+    for candidate in codex_rollout_session_candidates(home):
+        current = candidates_by_ref.get(candidate["session_ref"])
+        if current is None or candidate.get("updated_at", 0) >= current.get("updated_at", 0):
+            candidates_by_ref[candidate["session_ref"]] = candidate
+
+    return list(candidates_by_ref.values())
+
+
+def codex_rollout_session_candidates(home: Path, *, recent_days: int = 3) -> list[dict]:
+    sessions_dir = home / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    cutoff = time.time() - recent_days * 24 * 60 * 60
+    candidates: list[dict] = []
+    for path in sessions_dir.rglob("*.jsonl"):
+        if file_mtime(path) < cutoff:
+            continue
+        candidate = codex_rollout_session_candidate(path)
+        if candidate:
+            candidates.append(candidate)
     return candidates
+
+
+def codex_rollout_session_candidate(path: Path, *, scan_line_limit: int = 80) -> dict | None:
+    meta: dict = {}
+    context: dict = {}
+    summary = ""
+    latest_timestamp = ""
+    try:
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if line_number > scan_line_limit and meta and context:
+                    break
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                latest_timestamp = str(row.get("timestamp") or latest_timestamp)
+                row_type = row.get("type")
+                payload = row.get("payload")
+                if row_type == "session_meta" and isinstance(payload, dict):
+                    meta = payload
+                elif row_type == "turn_context" and isinstance(payload, dict):
+                    context = payload
+                elif not summary:
+                    summary = extract_message_text(payload if isinstance(payload, dict) else {})
+    except Exception:
+        return None
+
+    session_id = str(meta.get("id") or meta.get("session_id") or "").strip()
+    if not session_id:
+        return None
+    cwd = meta.get("cwd") or context.get("cwd")
+    if not cwd:
+        workspace_roots = context.get("workspace_roots")
+        if isinstance(workspace_roots, list) and workspace_roots:
+            cwd = workspace_roots[0]
+    summary = tail_jsonl_summary(path) or summary
+    updated_at = parse_iso_epoch(latest_timestamp) or file_mtime(path)
+    return {
+        "source": "codex-rollout",
+        "session_ref": f"codex:{session_id}",
+        "ai_type": "Codex",
+        "project": project_name_from_worktree_cwd(cwd),
+        "branch": branch_from_session(meta, cwd),
+        "summary": first_summary_line(summary, str(meta.get("thread_name") or "")),
+        "updated_at": updated_at,
+        "status": str(meta.get("thread_source") or "최근 세션"),
+        "cwd": str(cwd or ""),
+    }
 
 
 def claude_session_candidates(home: Path) -> list[dict]:
@@ -528,7 +664,8 @@ def collect_session_candidates(agent_crew_home: Path, *, limit: int = 20) -> lis
         *codex_session_candidates(codex_home()),
         *claude_session_candidates(claude_home()),
     ]
-    enrich_session_candidates(candidates, collect_task_enrichments(agent_crew_home))
+    if any(not row.get("summary") or row.get("summary") == "최근 작업 요약 없음" for row in candidates):
+        enrich_session_candidates(candidates, collect_task_enrichments(agent_crew_home))
 
     candidates.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
     for index, row in enumerate(candidates[:limit], start=1):
@@ -586,8 +723,21 @@ def session_match_text(candidate: dict) -> str:
             str(candidate.get("project", "")),
             str(candidate.get("branch", "")),
             str(candidate.get("summary", "")),
+            str(candidate.get("cwd", "")),
         ]
     ).lower()
+
+
+def session_selector_tokens(selector: str) -> list[str]:
+    return [token for token in re.split(r"\s+", str(selector or "").lower()) if token]
+
+
+def session_matches_selector(candidate: dict, selector: str) -> bool:
+    tokens = session_selector_tokens(selector)
+    if not tokens:
+        return True
+    match_text = session_match_text(candidate)
+    return all(token in match_text for token in tokens)
 
 
 def select_session_candidate(candidates: list[dict], selector: str) -> dict | None:
@@ -600,7 +750,7 @@ def select_session_candidate(candidates: list[dict], selector: str) -> dict | No
             return candidates[index - 1]
         return None
 
-    tokens = [token for token in re.split(r"\s+", value.lower()) if token]
+    tokens = session_selector_tokens(value)
     best: tuple[int, dict | None] = (0, None)
     for candidate in candidates:
         match_text = session_match_text(candidate)
@@ -3253,10 +3403,7 @@ def command_interact(args: argparse.Namespace) -> int:
         candidates = [
             row
             for row in candidates
-            if target in row["ai_type"].lower()
-            or target in row["project"].lower()
-            or target in row["branch"].lower()
-            or target in row["summary"].lower()
+            if session_matches_selector(row, target)
         ]
         for index, row in enumerate(candidates, start=1):
             row["index"] = index

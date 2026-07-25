@@ -10,6 +10,10 @@ Session candidates come from real AI host session stores, not from agent-crew
 task/request state. agent-crew state is only optional enrichment for project,
 branch, and recent-work summary fields.
 
+For Codex, `interact` combines the lightweight `session_index.jsonl` list with
+recent rollout session headers from the last 3 days so worktree sessions can be
+selected by project and branch.
+
 ## CLI
 
 ```bash
@@ -51,4 +55,6 @@ agent-crew
 - Put the recommended candidate first.
 - Treat user input `1` as choosing the recommended first candidate.
 - Group many candidates by project while keeping global numbering.
+- Match `--to` as natural tokens across AI type, project, branch, summary, and
+  session cwd.
 - Keep `relay` as the internal package/state protocol.
