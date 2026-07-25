@@ -65,6 +65,8 @@ Commands:
                                     Refresh installed assets
   run "task"                       Write state and host handoff for a task
   relay [args]                     Package a prompt for another AI session
+  sessions [args]                  List recent AI session candidates
+  interact [args]                  Start natural-language cross-AI interaction
   report auto|publish|cleanup [args]
                                     Store/publish/cleanup native agent-crew reports
   issue-ingest ISSUE [args]        Record issue body/comment ingestion evidence
@@ -1371,6 +1373,18 @@ cmd_relay() {
   python3 "${runtime}" relay --project-root "${PROJECT_ROOT}" "$@"
 }
 
+cmd_sessions() {
+  local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
+  require_file "${runtime}" "crew runtime"
+  python3 "${runtime}" sessions --project-root "${PROJECT_ROOT}" "$@"
+}
+
+cmd_interact() {
+  local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
+  require_file "${runtime}" "crew runtime"
+  python3 "${runtime}" interact --project-root "${PROJECT_ROOT}" "$@"
+}
+
 cmd_cleanup_host_bridge() {
   local helper="${ASSET_ROOT}/scripts/crew-cli-cleanup.sh"
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -1438,6 +1452,8 @@ main() {
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
     relay) cmd_relay "$@" ;;
+    sessions) cmd_sessions "$@" ;;
+    interact) cmd_interact "$@" ;;
     report) cmd_report "$@" ;;
     issue-ingest) cmd_issue_ingest "$@" ;;
     cancel) cmd_cancel "$@" ;;

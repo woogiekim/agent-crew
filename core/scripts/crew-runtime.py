@@ -240,6 +240,388 @@ def copy_to_clipboard(text: str) -> bool:
         return False
 
 
+def display_host(value: str) -> str:
+    host = str(value or "unknown").strip()
+    if not host:
+        host = "unknown"
+    known = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "unknown": "Unknown"}
+    return known.get(host.lower(), host[:1].upper() + host[1:])
+
+
+def circled_number(index: int) -> str:
+    values = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+    if 1 <= index <= len(values):
+        return values[index - 1]
+    return f"[{index}]"
+
+
+def relative_time_label(epoch: float, *, now: float | None = None) -> str:
+    now_value = time.time() if now is None else now
+    age = max(0, int(now_value - epoch))
+    if age < 60:
+        return "방금 전"
+    minutes = age // 60
+    if minutes < 60:
+        return f"{minutes}분 전"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}시간 전"
+    return f"{hours // 24}일 전"
+
+
+def first_summary_line(*texts: str, limit: int = 52) -> str:
+    for text in texts:
+        for line in str(text or "").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("STATUS:"):
+                continue
+            if stripped.startswith("SUMMARY:"):
+                stripped = stripped.removeprefix("SUMMARY:").strip()
+            if len(stripped) > limit:
+                return stripped[: limit - 3].rstrip() + "..."
+            return stripped
+    return "최근 작업 요약 없음"
+
+
+def file_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def latest_path_mtime(paths: list[Path]) -> float:
+    values = [file_mtime(path) for path in paths if path.exists()]
+    return max(values) if values else 0.0
+
+
+def parse_iso_epoch(value: str) -> float:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def epoch_from_millis(value: object) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        return 0.0
+    if number > 10_000_000_000:
+        return number / 1000
+    return number
+
+
+def codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+
+
+def claude_home() -> Path:
+    return Path(os.environ.get("CLAUDE_HOME", Path.home() / ".claude")).expanduser()
+
+
+def project_name_from_cwd(cwd: object) -> str:
+    value = str(cwd or "").strip()
+    if not value:
+        return "unknown"
+    return Path(value).name or "unknown"
+
+
+def branch_from_session(metadata: dict, cwd: object) -> str:
+    branch = str(metadata.get("branch") or "").strip()
+    if branch:
+        return branch
+    value = str(cwd or "").strip()
+    if not value:
+        return "unknown"
+    detected = git_branch(Path(value))
+    return detected or "unknown"
+
+
+def text_from_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+        return "\n".join(part for part in parts if part)
+    return ""
+
+
+def extract_message_text(row: dict) -> str:
+    for key in ("summary", "prompt", "text", "content"):
+        text = text_from_value(row.get(key))
+        if text:
+            return text
+    message = row.get("message")
+    if isinstance(message, dict):
+        return text_from_value(message.get("content"))
+    return ""
+
+
+def latest_jsonl_summary(path: Path, *, limit: int = 52) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
+    except Exception:
+        return ""
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        text = extract_message_text(row)
+        if text:
+            return first_summary_line(text, limit=limit)
+    return ""
+
+
+def claude_project_dir_name(cwd: object) -> str:
+    return str(cwd or "").replace("/", "-")
+
+
+def claude_summary_for_session(home: Path, session_id: str, cwd: object) -> str:
+    candidates: list[Path] = []
+    if cwd:
+        candidates.append(home / "projects" / claude_project_dir_name(cwd) / f"{session_id}.jsonl")
+    candidates.extend((home / "projects").glob(f"*/{session_id}.jsonl"))
+    seen: set[Path] = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        summary = latest_jsonl_summary(path)
+        if summary:
+            return summary
+    return ""
+
+
+def codex_session_candidates(home: Path) -> list[dict]:
+    index_path = home / "session_index.jsonl"
+    if not index_path.is_file():
+        return []
+
+    candidates: list[dict] = []
+    for line in load_text(index_path).splitlines():
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict):
+            continue
+        session_id = str(row.get("id") or "").strip()
+        if not session_id:
+            continue
+        cwd = row.get("cwd") or row.get("project_root")
+        project = row.get("project") or row.get("project_name") or project_name_from_cwd(cwd)
+        updated_at = parse_iso_epoch(str(row.get("updated_at") or row.get("created_at") or ""))
+        candidates.append(
+            {
+                "source": "codex",
+                "session_ref": f"codex:{session_id}",
+                "ai_type": "Codex",
+                "project": str(project or "unknown"),
+                "branch": branch_from_session(row, cwd),
+                "summary": first_summary_line(str(row.get("thread_name") or row.get("summary") or "")),
+                "updated_at": updated_at or file_mtime(index_path),
+                "status": str(row.get("status") or "최근 세션"),
+            }
+        )
+    return candidates
+
+
+def claude_session_candidates(home: Path) -> list[dict]:
+    sessions_dir = home / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    candidates: list[dict] = []
+    for path in sorted(sessions_dir.glob("*.json")):
+        row = load_json(path, {})
+        session_id = str(row.get("sessionId") or row.get("session_id") or "").strip()
+        if not session_id:
+            continue
+        cwd = row.get("cwd") or row.get("project_root")
+        summary = claude_summary_for_session(home, session_id, cwd)
+        candidates.append(
+            {
+                "source": "claude",
+                "session_ref": f"claude:{session_id}",
+                "ai_type": "Claude",
+                "project": project_name_from_cwd(cwd),
+                "branch": branch_from_session(row, cwd),
+                "summary": first_summary_line(summary, str(row.get("name") or "")),
+                "updated_at": epoch_from_millis(row.get("updatedAt")) or file_mtime(path),
+                "status": str(row.get("status") or row.get("kind") or "최근 세션"),
+            }
+        )
+    return candidates
+
+
+def task_session_enrichment(state_dir: Path, task_dir: Path) -> dict:
+    register = load_json(task_dir / "register.json", {})
+    result = load_text(task_dir / "result.md")
+    handoff = load_text(task_dir / "handoff.md")
+    latest_progress = latest_progress_event(task_dir)
+    project_name = register.get("project_name") or load_json(state_dir / "project.json", {}).get("project_name") or state_dir.name
+    branch = register.get("branch") or "unknown"
+    summary = first_summary_line(
+        result,
+        latest_progress.get("detail", ""),
+        handoff,
+        register.get("task", ""),
+    )
+    updated_at = latest_path_mtime(
+        [
+            task_dir / "result.md",
+            task_dir / "progress.buffer.jsonl",
+            task_dir / "handoff.md",
+            task_dir / "register.json",
+        ]
+    )
+    return {
+        "project": str(project_name),
+        "branch": str(branch),
+        "summary": summary,
+        "updated_at": updated_at,
+    }
+
+
+def collect_task_enrichments(agent_crew_home: Path) -> list[dict]:
+    enrichments: list[dict] = []
+    states_dir = agent_crew_home / "state"
+    for state_dir in sorted(states_dir.glob("*")):
+        tasks_dir = state_dir / "tasks"
+        if not tasks_dir.is_dir():
+            continue
+        for task_dir in sorted(tasks_dir.iterdir()):
+            if not task_dir.is_dir() or task_dir.name.startswith("active."):
+                continue
+            if not (task_dir / "register.json").is_file():
+                continue
+            enrichments.append(task_session_enrichment(state_dir, task_dir))
+    enrichments.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
+    return enrichments
+
+
+def enrich_session_candidates(candidates: list[dict], enrichments: list[dict]) -> None:
+    for candidate in candidates:
+        if candidate.get("summary") and candidate["summary"] != "최근 작업 요약 없음":
+            continue
+        for enrichment in enrichments:
+            if enrichment.get("project") != candidate.get("project"):
+                continue
+            branch = str(enrichment.get("branch") or "")
+            if branch != "unknown" and branch != candidate.get("branch"):
+                continue
+            candidate["summary"] = enrichment.get("summary") or candidate["summary"]
+            break
+
+
+def collect_session_candidates(agent_crew_home: Path, *, limit: int = 20) -> list[dict]:
+    candidates = [
+        *codex_session_candidates(codex_home()),
+        *claude_session_candidates(claude_home()),
+    ]
+    enrich_session_candidates(candidates, collect_task_enrichments(agent_crew_home))
+
+    candidates.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
+    for index, row in enumerate(candidates[:limit], start=1):
+        row["index"] = index
+    return candidates[:limit]
+
+
+def render_session_candidates(candidates: list[dict], *, grouped_threshold: int = 4) -> str:
+    if not candidates:
+        return "최근 AI 세션을 찾지 못했습니다.\n"
+
+    lines = ["전송할 AI 세션 후보를 찾았습니다.", ""]
+    first = candidates[0]
+    lines.extend(
+        [
+            "추천:",
+            f"{circled_number(1)} {first['ai_type']} · {first['project']} · {first['branch']}",
+            f"   {first['summary']} · {relative_time_label(first['updated_at'])}",
+        ]
+    )
+
+    others = candidates[1:]
+    if others:
+        lines.append("")
+        if len(candidates) >= grouped_threshold:
+            current_project = ""
+            for row in others:
+                if row["project"] != current_project:
+                    current_project = row["project"]
+                    lines.extend(["", current_project])
+                lines.extend(
+                    [
+                        f"{circled_number(row['index'])} {row['ai_type']} · {row['branch']}",
+                        f"   {row['summary']} · {relative_time_label(row['updated_at'])}",
+                    ]
+                )
+        else:
+            lines.append("다른 후보:")
+            for row in others:
+                lines.extend(
+                    [
+                        f"{circled_number(row['index'])} {row['ai_type']} · {row['project']} · {row['branch']}",
+                        f"   {row['summary']} · {relative_time_label(row['updated_at'])}",
+                    ]
+                )
+
+    lines.extend(["", "번호나 설명으로 선택하세요.", "예: 1, Claude agent-crew, main 브랜치"])
+    return "\n".join(lines) + "\n"
+
+
+def session_match_text(candidate: dict) -> str:
+    return " ".join(
+        [
+            str(candidate.get("ai_type", "")),
+            str(candidate.get("project", "")),
+            str(candidate.get("branch", "")),
+            str(candidate.get("summary", "")),
+        ]
+    ).lower()
+
+
+def select_session_candidate(candidates: list[dict], selector: str) -> dict | None:
+    value = str(selector or "").strip()
+    if not value or not candidates:
+        return None
+    if value.isdigit():
+        index = int(value)
+        if 1 <= index <= len(candidates):
+            return candidates[index - 1]
+        return None
+
+    tokens = [token for token in re.split(r"\s+", value.lower()) if token]
+    best: tuple[int, dict | None] = (0, None)
+    for candidate in candidates:
+        match_text = session_match_text(candidate)
+        score = sum(1 for token in tokens if token in match_text)
+        if score > best[0]:
+            best = (score, candidate)
+    return best[1] if best[0] else None
+
+
+def render_selected_session(candidate: dict) -> str:
+    index = int(candidate.get("index") or 1)
+    lines = [
+        "선택한 세션:",
+        f"{circled_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
+        f"   {candidate['summary']} · {relative_time_label(candidate['updated_at'])}",
+        "",
+        "STATUS: selected",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def append_progress(task_dir: Path, row: dict) -> None:
     append_jsonl(task_dir / "progress.buffer.jsonl", row)
 
@@ -2840,6 +3222,66 @@ def command_relay(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_sessions(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    candidates = collect_session_candidates(agent_crew_home, limit=args.limit)
+
+    print(render_session_candidates(candidates), end="")
+    return 0
+
+
+def command_interact(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    resolve_project_state(
+        home=agent_crew_home,
+        project_root=project_root,
+        ensure=True,
+        migrate_legacy=True,
+    )
+    request = " ".join(args.prompt or []).strip()
+    candidates = collect_session_candidates(agent_crew_home, limit=args.limit)
+    if args.to:
+        target = args.to.lower()
+        candidates = [
+            row
+            for row in candidates
+            if target in row["ai_type"].lower()
+            or target in row["project"].lower()
+            or target in row["branch"].lower()
+            or target in row["summary"].lower()
+        ]
+        for index, row in enumerate(candidates, start=1):
+            row["index"] = index
+
+    if request:
+        print(f"요청: {request}")
+        print("")
+    selector = getattr(args, "select", "")
+    if selector:
+        selected = select_session_candidate(candidates, selector)
+        if selected is None:
+            print("선택한 조건에 맞는 AI 세션을 찾지 못했습니다.")
+            print("")
+            print(render_session_candidates(candidates), end="")
+            return 1
+        print(render_selected_session(selected), end="")
+        return 0
+
+    print(render_session_candidates(candidates), end="")
+    if candidates:
+        print("")
+        print("그대로 보낼까요? 아니면 번호를 선택하세요.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="agent-crew deterministic runtime")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2878,6 +3320,19 @@ def build_parser() -> argparse.ArgumentParser:
     relay.add_argument("--copy", action="store_true")
     relay.add_argument("prompt", nargs=argparse.REMAINDER)
     relay.set_defaults(func=command_relay)
+
+    sessions = sub.add_parser("sessions", help="list recent AI session candidates")
+    sessions.add_argument("--project-root")
+    sessions.add_argument("--limit", type=int, default=20)
+    sessions.set_defaults(func=command_sessions)
+
+    interact = sub.add_parser("interact", help="start a natural-language interaction with another AI session")
+    interact.add_argument("--project-root")
+    interact.add_argument("--to", default="")
+    interact.add_argument("--select", default="")
+    interact.add_argument("--limit", type=int, default=20)
+    interact.add_argument("prompt", nargs=argparse.REMAINDER)
+    interact.set_defaults(func=command_interact)
 
     return parser
 

@@ -1,6 +1,6 @@
 ---
 name: agent-crew
-description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, $crew-run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
+description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, $crew-run, crew:status, crew:cost, crew:interact, $crew-interact, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
 ---
 
 # Agent Crew Command Bootstrap
@@ -24,11 +24,15 @@ explicit command invocation, not ordinary natural language:
 - `crew:run "..."`
 - `crew:status`
 - `crew:cost`
+- `crew:sessions`
+- `crew:interact`
 - `crew:agent-maker`
 - `$crew-run`
 - `$crew-run "..."`
 - `$crew-agent ...`
 - `$crew-status`
+- `$crew-sessions`
+- `$crew-interact ...`
 - `$crew-update`
 - `$crew-smm`
 - `$crew-setup`
@@ -127,10 +131,14 @@ Load and follow the matching command definition:
 | `crew:run` | `~/.agent-crew/commands/run.md` |
 | `crew:status` | `~/.agent-crew/commands/status.md` |
 | `crew:cost` | `~/.agent-crew/commands/cost.md` |
+| `crew:sessions` | `~/.agent-crew/commands/sessions.md` |
+| `crew:interact` | `~/.agent-crew/commands/interact.md` |
 | `crew:agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
 | `$crew-run` | `~/.agent-crew/commands/run.md` |
 | `$crew-agent` | `~/.agent-crew/commands/agent.md` |
 | `$crew-status` | `~/.agent-crew/commands/status.md` |
+| `$crew-sessions` | `~/.agent-crew/commands/sessions.md` |
+| `$crew-interact` | `~/.agent-crew/commands/interact.md` |
 | `$crew-update` | `~/.agent-crew/commands/update.md` |
 | `$crew-smm` | `~/.agent-crew/commands/smm.md` |
 | `$crew-setup` | `~/.agent-crew/commands/setup.md` |
