@@ -64,6 +64,7 @@ Commands:
   update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]
                                     Refresh installed assets
   run "task"                       Write state and host handoff for a task
+  relay [args]                     Package a prompt for another AI session
   report auto|publish|cleanup [args]
                                     Store/publish/cleanup native agent-crew reports
   issue-ingest ISSUE [args]        Record issue body/comment ingestion evidence
@@ -1364,6 +1365,12 @@ cmd_issue_ingest() {
   python3 "${runtime}" issue-ingest --project-root "${PROJECT_ROOT}" "$@"
 }
 
+cmd_relay() {
+  local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
+  require_file "${runtime}" "crew runtime"
+  python3 "${runtime}" relay --project-root "${PROJECT_ROOT}" "$@"
+}
+
 cmd_cleanup_host_bridge() {
   local helper="${ASSET_ROOT}/scripts/crew-cli-cleanup.sh"
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -1430,6 +1437,7 @@ main() {
     resume) cmd_resume "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
+    relay) cmd_relay "$@" ;;
     report) cmd_report "$@" ;;
     issue-ingest) cmd_issue_ingest "$@" ;;
     cancel) cmd_cancel "$@" ;;

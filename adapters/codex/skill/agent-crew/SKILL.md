@@ -1,6 +1,6 @@
 ---
 name: agent-crew
-description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, $crew-run, crew:status, crew:cost, crew:feature-step, $feature-step, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
+description: Use when the user invokes agent-crew workflow commands in Codex, including crew:setup, crew:run, $crew-run, crew:status, crew:cost, or crew:agent-maker. Also use for natural-language coding, implementation, refactoring, migration, testing, deployment, or agent-crew workflow requests in a workspace initialized with agent-crew. This skill bootstraps agent-crew before project-local AGENTS.md or .codex hooks exist, preserves explicitly invoked Codex skill context, and prevents Codex from interpreting crew commands as generic repository inspection, verification, CI, Gradle, npm, lint, or direct implementation requests.
 ---
 
 # Agent Crew Command Bootstrap
@@ -24,7 +24,6 @@ explicit command invocation, not ordinary natural language:
 - `crew:run "..."`
 - `crew:status`
 - `crew:cost`
-- `crew:feature-step`
 - `crew:agent-maker`
 - `$crew-run`
 - `$crew-run "..."`
@@ -34,7 +33,6 @@ explicit command invocation, not ordinary natural language:
 - `$crew-smm`
 - `$crew-setup`
 - `$crew-cost`
-- `$feature-step ...`
 - `$crew-agent-maker ...`
 
 Do not reinterpret these commands as requests to inspect the repository, run
@@ -129,7 +127,6 @@ Load and follow the matching command definition:
 | `crew:run` | `~/.agent-crew/commands/run.md` |
 | `crew:status` | `~/.agent-crew/commands/status.md` |
 | `crew:cost` | `~/.agent-crew/commands/cost.md` |
-| `crew:feature-step` | `~/.agent-crew/commands/feature-step.md` |
 | `crew:agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
 | `$crew-run` | `~/.agent-crew/commands/run.md` |
 | `$crew-agent` | `~/.agent-crew/commands/agent.md` |
@@ -138,7 +135,6 @@ Load and follow the matching command definition:
 | `$crew-smm` | `~/.agent-crew/commands/smm.md` |
 | `$crew-setup` | `~/.agent-crew/commands/setup.md` |
 | `$crew-cost` | `~/.agent-crew/commands/cost.md` |
-| `$feature-step` | `~/.agent-crew/commands/feature-step.md` |
 | `$crew-agent-maker` | `~/.agent-crew/commands/agent-maker.md` |
 
 If the command definition file is missing, tell the user to install agent-crew

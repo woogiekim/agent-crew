@@ -15,6 +15,7 @@
 
 # Build outputs
 build/
+dist/
 .gradle/
 out/
 .coverage
