@@ -3296,9 +3296,17 @@ def load_relay_task_context(state_dir: Path, task_id: str) -> tuple[dict, str]:
     }, ""
 
 
-def command_relay(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
-    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+def create_relay_package(
+    *,
+    project_root: Path,
+    agent_crew_home: Path,
+    target_host: str,
+    mode: str,
+    prompt_text: str,
+    paths: list[str] | None = None,
+    from_task_id: str = "",
+    copy_requested: bool = False,
+) -> tuple[dict, str]:
     state_info = resolve_project_state(
         home=agent_crew_home,
         project_root=project_root,
@@ -3317,23 +3325,21 @@ def command_relay(args: argparse.Namespace) -> int:
         index += 1
         relay_id = f"relay-{session_id}-{index}"
 
-    from_task, error = load_relay_task_context(state_dir, args.from_task)
+    from_task, error = load_relay_task_context(state_dir, from_task_id)
     if error:
-        print(error, file=sys.stderr)
-        return 1
+        return {}, error
 
     relay_dir = relays_dir / relay_id
     relay_dir.mkdir(parents=True)
-    paths = [str(path) for path in (args.paths or [])]
-    prompt_text = " ".join(args.prompt or []).strip()
+    relay_paths = [str(path) for path in (paths or [])]
     source_host = os.environ.get("AGENT_CREW_HOST", "").strip() or active_host_from_env() or "unknown"
     manifest = {
         "schema_version": 1,
         "relay_id": relay_id,
         "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source_host": source_host,
-        "target_host": args.to,
-        "mode": args.mode,
+        "target_host": target_host,
+        "mode": mode,
         "project_root": str(project_root),
         "project_state_key": state_info["project_state_key"],
         "state_dir": str(state_dir),
@@ -3342,9 +3348,9 @@ def command_relay(args: argparse.Namespace) -> int:
         "context_file": str(relay_dir / "context.json"),
         "prompt_file": str(relay_dir / "prompt.md"),
         "copy_file": str(relay_dir / "copy.txt"),
-        "from_task": args.from_task,
-        "paths": paths,
-        "copy_requested": bool(args.copy),
+        "from_task": from_task_id,
+        "paths": relay_paths,
+        "copy_requested": bool(copy_requested),
         "auto_execute": False,
     }
     context = {
@@ -3353,7 +3359,7 @@ def command_relay(args: argparse.Namespace) -> int:
         "project_name": state_info["project_name"],
         "branch": git_branch(project_root),
         "git_status": git_status_short(project_root),
-        "paths": paths,
+        "paths": relay_paths,
         "from_task": from_task,
     }
     prompt = build_relay_prompt(manifest, context, prompt_text)
@@ -3363,11 +3369,57 @@ def command_relay(args: argparse.Namespace) -> int:
     (relay_dir / "prompt.md").write_text(prompt, encoding="utf-8")
     (relay_dir / "copy.txt").write_text(prompt, encoding="utf-8")
 
-    copied = copy_to_clipboard(prompt) if args.copy else False
+    copied = copy_to_clipboard(prompt) if copy_requested else False
+    return {
+        "manifest": manifest,
+        "context": context,
+        "prompt": prompt,
+        "relay_dir": relay_dir,
+        "copied": copied,
+    }, ""
+
+
+def deliver_relay_to_session(candidate: dict, package: dict) -> dict:
+    return {
+        "status": "packaged",
+        "reason": "host_session_injection_unsupported",
+    }
+
+
+def render_selected_session_target(candidate: dict) -> str:
+    index = int(candidate.get("index") or 1)
+    lines = [
+        "선택한 세션:",
+        f"{circled_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
+        f"   {candidate['summary']} · {relative_time_label(candidate['updated_at'])}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def command_relay(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    package, error = create_relay_package(
+        project_root=project_root,
+        agent_crew_home=agent_crew_home,
+        target_host=args.to,
+        mode=args.mode,
+        prompt_text=" ".join(args.prompt or []).strip(),
+        paths=args.paths or [],
+        from_task_id=args.from_task,
+        copy_requested=bool(args.copy),
+    )
+    if error:
+        print(error, file=sys.stderr)
+        return 1
+
+    manifest = package["manifest"]
+    copied = bool(package["copied"])
     print("STATUS: completed")
-    print(f"RELAY_ID: {relay_id}")
+    print(f"RELAY_ID: {manifest['relay_id']}")
     print(f"TARGET: {args.to}")
-    print(f"PROMPT: {relay_dir / 'prompt.md'}")
+    print(f"PROMPT: {manifest['prompt_file']}")
     print(f"COPY: {'copied' if copied else 'not_requested' if not args.copy else 'unavailable'}")
     return 0
 
@@ -3419,7 +3471,41 @@ def command_interact(args: argparse.Namespace) -> int:
             print("")
             print(render_session_candidates(candidates), end="")
             return 1
-        print(render_selected_session(selected), end="")
+        if not getattr(args, "send", False):
+            print(render_selected_session(selected), end="")
+            return 0
+
+        package, error = create_relay_package(
+            project_root=project_root,
+            agent_crew_home=agent_crew_home,
+            target_host=str(selected.get("ai_type") or "").lower() or "unknown",
+            mode="ask",
+            prompt_text=request,
+            paths=[],
+            copy_requested=bool(getattr(args, "copy", False)),
+        )
+        if error:
+            print(error, file=sys.stderr)
+            return 1
+        delivery = deliver_relay_to_session(selected, package)
+        status = str(delivery.get("status") or "packaged").strip().lower()
+        if status == "sent":
+            final_status = "sent"
+        elif getattr(args, "copy", False) and package.get("copied"):
+            final_status = "copy_fallback"
+        elif status in {"failed", "packaged"}:
+            final_status = status
+        else:
+            final_status = "packaged"
+
+        print(render_selected_session_target(selected))
+        print(f"STATUS: {final_status}")
+        if final_status != "sent":
+            print(f"PROMPT: {package['manifest']['prompt_file']}")
+        if getattr(args, "copy", False):
+            print(f"COPY: {'copied' if package.get('copied') else 'unavailable'}")
+        if final_status == "failed":
+            return 1
         return 0
 
     print(render_session_candidates(candidates), end="")
@@ -3478,6 +3564,11 @@ def build_parser() -> argparse.ArgumentParser:
     interact.add_argument("--to", default="")
     interact.add_argument("--select", default="")
     interact.add_argument("--limit", type=int, default=20)
+    interact_send = interact.add_mutually_exclusive_group()
+    interact_send.add_argument("--send", dest="send", action="store_true", help="attempt delivery after selecting a session")
+    interact_send.add_argument("--no-send", dest="send", action="store_false", help="select only without delivery")
+    interact.set_defaults(send=False)
+    interact.add_argument("--copy", action="store_true", help="copy packaged fallback prompt only when explicitly requested")
     interact.add_argument("prompt", nargs=argparse.REMAINDER)
     interact.set_defaults(func=command_interact)
 

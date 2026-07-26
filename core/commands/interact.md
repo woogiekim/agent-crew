@@ -4,7 +4,8 @@ Start a natural-language interaction with another AI session.
 
 `interact` is the user-facing command. It keeps relay ids and session refs
 internal, lists friendly session candidates, and asks the user to choose by
-number or natural-language description before any future send step.
+number or natural-language description. Delivery only happens when `--send` is
+explicitly requested.
 
 Session candidates come from real AI host session stores, not from agent-crew
 task/request state. agent-crew state is only optional enrichment for project,
@@ -20,6 +21,8 @@ selected by project and branch.
 crew interact "방금 relay 변경사항 클로드한테 리뷰 받아줘"
 crew interact --to claude "agent-crew main 세션에 이 설계 물어봐줘"
 crew interact --select 1 "방금 relay 변경사항 클로드한테 리뷰 받아줘"
+crew interact --to contents-systsem --select 1 --send "hello"
+crew interact --to contents-systsem --select 1 --send --copy "hello"
 ```
 
 ## Prompt Command
@@ -58,3 +61,11 @@ agent-crew
 - Match `--to` as natural tokens across AI type, project, branch, summary, and
   session cwd.
 - Keep `relay` as the internal package/state protocol.
+- `--select` without `--send` only selects the target and prints
+  `STATUS: selected`.
+- `--send` attempts delivery after selection. Only a host adapter that returns
+  explicit success may print `STATUS: sent`.
+- Unsupported host/session delivery creates a relay package and prints
+  `STATUS: packaged`; it must not pretend the prompt was sent.
+- Clipboard fallback is available only when `--copy` is explicit. Normal
+  natural-language delivery must not copy by default.

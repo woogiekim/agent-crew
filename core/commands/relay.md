@@ -4,6 +4,8 @@ Package a local prompt handoff for another AI session.
 
 Use this when the current session needs to prepare context for Claude, Codex,
 Gemini, or another AI host without automatically executing that host.
+`crew interact --send` also uses this relay package shape as the safe fallback
+when direct host/session delivery is unsupported.
 
 ## CLI
 
@@ -41,3 +43,5 @@ The package contains:
 
 This command is local-only. It does not start another AI session, call a host
 bridge, push, deploy, merge, or mutate external systems.
+Clipboard copy is explicit only; no command should copy a fallback prompt unless
+the user requested `--copy`.

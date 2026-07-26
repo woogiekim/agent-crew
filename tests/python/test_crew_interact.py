@@ -254,6 +254,9 @@ def test_interact_shows_candidates_for_natural_language_request(monkeypatch, tmp
             project_root=str(project),
             to="",
             limit=10,
+            select="",
+            send=False,
+            copy=False,
             prompt=["방금", "relay", "변경사항", "클로드한테", "리뷰", "받아줘"],
         )
     ) == 0
@@ -288,6 +291,8 @@ def test_interact_select_one_chooses_recommended_candidate(monkeypatch, tmp_path
             to="",
             select="1",
             limit=10,
+            send=False,
+            copy=False,
             prompt=["리뷰", "부탁"],
         )
     ) == 0
@@ -296,7 +301,111 @@ def test_interact_select_one_chooses_recommended_candidate(monkeypatch, tmp_path
     assert "선택한 세션:" in out
     assert "① Claude · agent-crew · main" in out
     assert "STATUS: selected" in out
-    assert "c1" not in out
+    assert "session c1" not in out
+
+
+def test_interact_select_send_uses_delivery_adapter_success(monkeypatch, tmp_path: Path, capsys):
+    """success-case - --send reports sent only when the delivery adapter succeeds."""
+    _, _, claude_home = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    _write_claude_session(claude_home, session_id="c1", cwd=project, branch="main", updated_at=1002)
+    _write_claude_project_log(claude_home, cwd=project, session_id="c1", text="relay 리뷰")
+
+    deliveries: list[dict] = []
+
+    def fake_deliver(candidate: dict, package: dict) -> dict:
+        deliveries.append({"candidate": candidate, "package": package})
+        return {"status": "sent"}
+
+    monkeypatch.setattr(runtime, "deliver_relay_to_session", fake_deliver)
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["리뷰", "부탁"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "STATUS: sent" in out
+    assert "① Claude · agent-crew · main" in out
+    assert "STATUS: packaged" not in out
+    assert "copy_fallback" not in out
+    assert len(deliveries) == 1
+    assert "리뷰 부탁" in deliveries[0]["package"]["prompt"]
+    assert "session c1" not in out
+
+
+def test_interact_select_send_packages_when_delivery_is_unsupported(monkeypatch, tmp_path: Path, capsys):
+    """success-case - unsupported direct delivery creates a relay package without pretending it was sent."""
+    _, _, claude_home = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    _write_claude_session(claude_home, session_id="c1", cwd=project, branch="main", updated_at=1002)
+    _write_claude_project_log(claude_home, cwd=project, session_id="c1", text="relay 리뷰")
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["리뷰", "부탁"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    prompt_line = next(line for line in out.splitlines() if line.startswith("PROMPT: "))
+    prompt_path = Path(prompt_line.removeprefix("PROMPT: "))
+    prompt = prompt_path.read_text(encoding="utf-8")
+    manifest = json.loads((prompt_path.parent / "manifest.json").read_text(encoding="utf-8"))
+
+    assert "STATUS: packaged" in out
+    assert "STATUS: sent" not in out
+    assert "copy_fallback" not in out
+    assert "COPY:" not in out
+    assert "① Claude · agent-crew · main" in out
+    assert "리뷰 부탁" in prompt
+    assert manifest["target_host"] == "claude"
+    assert manifest["auto_execute"] is False
+    assert "session c1" not in out
+
+
+def test_interact_select_send_copy_fallback_requires_explicit_copy(monkeypatch, tmp_path: Path, capsys):
+    """success-case - clipboard fallback is available only when --copy is explicit."""
+    _, _, claude_home = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    _write_claude_session(claude_home, session_id="c1", cwd=project, branch="main", updated_at=1002)
+    _write_claude_project_log(claude_home, cwd=project, session_id="c1", text="relay 리뷰")
+    monkeypatch.setattr(runtime, "copy_to_clipboard", lambda text: True)
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="",
+            select="1",
+            limit=10,
+            send=True,
+            copy=True,
+            prompt=["리뷰", "부탁"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "STATUS: copy_fallback" in out
+    assert "STATUS: packaged" not in out
+    assert "STATUS: sent" not in out
+    assert "COPY: copied" in out
+    assert "session c1" not in out
 
 
 def test_agent_crew_tasks_are_enrichment_not_session_candidates(monkeypatch, tmp_path: Path, capsys):
@@ -333,6 +442,8 @@ def test_interact_to_without_match_does_not_fall_back_to_all(monkeypatch, tmp_pa
             to="claude",
             select="",
             limit=10,
+            send=False,
+            copy=False,
             prompt=["리뷰해줘"],
         )
     ) == 0
@@ -409,6 +520,8 @@ def test_interact_to_matches_multiple_natural_tokens(monkeypatch, tmp_path: Path
             to="Codex contents-systsem feature/enrtc-878",
             select="",
             limit=10,
+            send=False,
+            copy=False,
             prompt=["리뷰해줘"],
         )
     ) == 0
@@ -423,13 +536,15 @@ def test_parser_accepts_sessions_and_interact_commands():
     parser = runtime.build_parser()
 
     sessions = parser.parse_args(["sessions", "--limit", "5"])
-    interact = parser.parse_args(["interact", "--to", "claude", "--select", "1", "리뷰해줘"])
+    interact = parser.parse_args(["interact", "--to", "claude", "--select", "1", "--send", "리뷰해줘"])
 
     assert sessions.func is runtime.command_sessions
     assert sessions.limit == 5
     assert interact.func is runtime.command_interact
     assert interact.to == "claude"
     assert interact.select == "1"
+    assert interact.send is True
+    assert interact.copy is False
     assert interact.prompt == ["리뷰해줘"]
 
 
