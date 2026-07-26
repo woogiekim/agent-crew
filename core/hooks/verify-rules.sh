@@ -35,6 +35,13 @@ if [[ -z "$CHANGED_FILE" || ! -f "$CHANGED_FILE" ]]; then
   exit 0
 fi
 
+AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+case "$CHANGED_FILE" in
+  "${AGENT_CREW_HOME}/state"/*)
+    exit 0
+    ;;
+esac
+
 VIOLATIONS=()
 
 file_extension() {

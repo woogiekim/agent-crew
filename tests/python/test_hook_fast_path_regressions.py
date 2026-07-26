@@ -164,6 +164,60 @@ def test_auto_issue_hook_fast_rejects_unrelated_error_output(tmp_path):
     assert not crew_log.exists()
 
 
+def test_auto_issue_hook_reports_matching_user_prompt_without_blocking(tmp_path):
+    home = tmp_path / "home"
+    bin_dir = home / "bin"
+    bin_dir.mkdir(parents=True)
+    crew_started = tmp_path / "crew.started"
+    crew_finished = tmp_path / "crew.finished"
+    crew = bin_dir / "crew"
+    crew.write_text(
+        "#!/usr/bin/env bash\n"
+        f"touch '{crew_started}'\n"
+        "cat >/dev/null\n"
+        "sleep 10\n"
+        f"touch '{crew_finished}'\n",
+        encoding="utf-8",
+    )
+    crew.chmod(0o755)
+
+    payload = {
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "agent-crew hook timed out with traceback",
+    }
+    started = time.perf_counter()
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "core/hooks/auto-issue-report.sh")],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env={
+            "AGENT_CREW_HOME": str(home),
+            "HOME": str(tmp_path),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        },
+        timeout=5,
+        check=False,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 5
+    for _ in range(60):
+        if crew_started.exists():
+            break
+        time.sleep(0.05)
+    assert crew_started.exists()
+    assert not crew_finished.exists()
+
+
+def test_auto_route_delays_bridge_status_until_prompt_can_route():
+    text = (REPO_ROOT / "core/hooks/auto-route.sh").read_text(encoding="utf-8")
+
+    assert "HOST_BRIDGE_READY, HOST_BRIDGE_REASON = _bridge_status()" not in text
+    assert "_HOST_BRIDGE_STATUS = _bridge_status()" in text
+
+
 def test_supervisor_guard_fast_rejects_unrelated_payload_before_python(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -363,6 +417,46 @@ def test_post_tool_use_dispatcher_preserves_korean_auto_issue_signal_parity(tmp_
     record = json.loads(child_log.read_text(encoding="utf-8"))
     assert record["contains_auto_issue_signal"] is True
     assert Path(record["payload_path"]).is_file()
+
+
+def test_post_tool_use_dispatcher_skips_default_async_children_without_signals(tmp_path):
+    home = tmp_path / "home"
+    hook_dir = home / "hooks"
+    hook_dir.mkdir(parents=True)
+    for name in ("auto-issue-report.sh", "mnemos-capture-guard.sh"):
+        hook = hook_dir / name
+        hook.write_text(
+            "#!/usr/bin/env bash\n"
+            "cat >/dev/null\n"
+            f"touch '{tmp_path / (name + '.called')}'\n",
+            encoding="utf-8",
+        )
+        hook.chmod(0o755)
+
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"cwd": str(tmp_path), "command": "echo ok"},
+        "tool_response": {"stdout": "plain output", "stderr": "", "returncode": 0},
+    }
+
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh")],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env={
+            "AGENT_CREW_HOME": str(home),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        },
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (tmp_path / "auto-issue-report.sh.called").exists()
+    assert not (tmp_path / "mnemos-capture-guard.sh.called").exists()
+    assert not (home / "state/hook-payloads/.async").exists()
 
 
 def test_post_tool_use_dispatcher_records_bash_tool_event_without_child_recorder(tmp_path):

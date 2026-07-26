@@ -37,6 +37,18 @@ fi
 
 TOOL_NAME="$(printf '%s' "${ENVELOPE}" | sed -nE 's/.*"tool_name":"([^"]*)".*/\1/p')"
 
+envelope_bool() {
+    local name="$1"
+    case "${ENVELOPE}" in
+        *"\"${name}\":true"*|*"\"${name}\": true"*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 matches_hook() {
     local matcher="$1" tool="$2" part
     [ "${matcher}" = "*" ] && return 0
@@ -92,6 +104,15 @@ while IFS= read -r child; do
         continue
     fi
     if [ "${mode}" = "async" ]; then
+        case "${command}" in
+            *mnemos-capture-guard.sh*)
+                envelope_bool "contains_mnemos_capture_notification" || continue
+                ;;
+            *auto-issue-report.sh*)
+                envelope_bool "contains_auto_issue_signal" || continue
+                ;;
+        esac
+
         ASYNC_DIR="${PAYLOAD_ROOT}/.async"
         mkdir -p "${ASYNC_DIR}" 2>/dev/null || true
         ASYNC_ENVELOPE="$(mktemp "${ASYNC_DIR}/posttooluse-envelope.XXXXXX" 2>/dev/null || true)"

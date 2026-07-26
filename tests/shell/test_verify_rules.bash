@@ -75,6 +75,26 @@ run_hook_rc() {
 
 TMP=$(make_tmp)
 
+it "fast-path: agent-crew state artifacts bypass source-rule scans"
+AGENT_HOME="$(make_tmp)"
+STATE_FILE="${AGENT_HOME}/state/project/tasks/demo/context/verification.py"
+mkdir -p "$(dirname "${STATE_FILE}")"
+printf 'else:\n' > "${STATE_FILE}"
+FAKE_BIN="$(make_tmp)"
+mkdir -p "${FAKE_BIN}"
+GREP_LOG="${FAKE_BIN}/grep-called.log"
+cat > "${FAKE_BIN}/grep" <<SH
+#!/usr/bin/env bash
+printf 'grep called\n' >> "${GREP_LOG}"
+exit 1
+SH
+chmod +x "${FAKE_BIN}/grep"
+out=$(PATH="${FAKE_BIN}:${PATH}" AGENT_CREW_HOME="${AGENT_HOME}" run_payload "$(make_payload "${STATE_FILE}")")
+rc=$?
+assert_exit 0 "${rc}" "agent-crew state artifact ignored"
+assert_eq "" "${out}" "agent-crew state artifact emits no violation"
+assert_file_absent "${GREP_LOG}"
+
 JSP_FILE="${TMP}/legacy.jsp"
 cat > "${JSP_FILE}" <<'EOF'
 <%

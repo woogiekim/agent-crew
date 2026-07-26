@@ -7,6 +7,30 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 CREW_BIN="${AGENT_CREW_HOME}/bin/crew"
 SCRIPT="${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py"
 
+run_report_async() {
+  local payload_file="$1"
+  local cleanup_payload="${2:-no}"
+
+  nohup bash -c '
+    payload_file="$1"
+    cleanup_payload="$2"
+    crew_bin="$3"
+    script="$4"
+
+    if [ -x "${crew_bin}" ]; then
+      "${crew_bin}" report auto < "${payload_file}" >/dev/null 2>&1 || true
+    elif command -v crew >/dev/null 2>&1; then
+      crew report auto < "${payload_file}" >/dev/null 2>&1 || true
+    elif [ -f "${script}" ]; then
+      python3 "${script}" auto < "${payload_file}" >/dev/null 2>&1 || true
+    fi
+
+    if [ "${cleanup_payload}" = "yes" ]; then
+      rm -f "${payload_file}" 2>/dev/null || true
+    fi
+  ' _ "${payload_file}" "${cleanup_payload}" "${CREW_BIN}" "${SCRIPT}" </dev/null >/dev/null 2>&1 &
+}
+
 case "${INPUT}" in
   *\"agent_crew_hook_envelope\"*)
     _ENVELOPE_PARSED=$(python3 3<<<"${INPUT}" <<'PYEOF'
@@ -34,15 +58,7 @@ PYEOF
     if [ "${_IS_ENVELOPE}" = "1" ]; then
       [ "${_HAS_SIGNAL}" = "1" ] || exit 0
       [ -f "${_PAYLOAD_PATH}" ] || exit 0
-      (
-        if [ -x "${CREW_BIN}" ]; then
-          "${CREW_BIN}" report auto < "${_PAYLOAD_PATH}" >/dev/null 2>&1 || true
-        elif command -v crew >/dev/null 2>&1; then
-          crew report auto < "${_PAYLOAD_PATH}" >/dev/null 2>&1 || true
-        elif [ -f "${SCRIPT}" ]; then
-          python3 "${SCRIPT}" auto < "${_PAYLOAD_PATH}" >/dev/null 2>&1 || true
-        fi
-      ) >/dev/null 2>&1 &
+      run_report_async "${_PAYLOAD_PATH}" "no"
       exit 0
     fi
     ;;
@@ -56,18 +72,10 @@ if ! printf '%s' "${INPUT}" | grep -Eiq \
   exit 0
 fi
 
-if [ -x "${CREW_BIN}" ]; then
-  printf '%s' "${INPUT}" | "${CREW_BIN}" report auto >/dev/null 2>&1 || true
-  exit 0
-fi
-
-if command -v crew >/dev/null 2>&1; then
-  printf '%s' "${INPUT}" | crew report auto >/dev/null 2>&1 || true
-  exit 0
-fi
-
-if [ -f "${SCRIPT}" ]; then
-  printf '%s' "${INPUT}" | python3 "${SCRIPT}" auto >/dev/null 2>&1 || true
+PAYLOAD_FILE="$(mktemp "${TMPDIR:-/tmp}/agent-crew-auto-issue.XXXXXX" 2>/dev/null || true)"
+if [ -n "${PAYLOAD_FILE}" ]; then
+  printf '%s' "${INPUT}" > "${PAYLOAD_FILE}" 2>/dev/null || true
+  run_report_async "${PAYLOAD_FILE}" "yes"
 fi
 
 exit 0

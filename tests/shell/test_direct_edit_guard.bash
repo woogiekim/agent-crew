@@ -282,6 +282,27 @@ rc=$(run_hook_env_rc "${PAYLOAD}" \
   "AGENT_CREW_ALLOW_DIRECT_EDIT=")
 assert_exit 0 "${rc}" "agent-crew-home path allowed"
 
+it "fast-path: agent-crew state writes bypass git root lookup"
+STATE_FILE="${FAKE_AGENT_CREW_HOME}/state/${FAKE_PROJECT_NAME}/tasks/demo/context/verification.md"
+mkdir -p "$(dirname "${STATE_FILE}")"
+printf 'verification\n' > "${STATE_FILE}"
+FAKE_BIN="$(make_tmp)"
+mkdir -p "${FAKE_BIN}"
+GIT_LOG="${FAKE_BIN}/git-called.log"
+cat > "${FAKE_BIN}/git" <<SH
+#!/usr/bin/env bash
+printf 'git called\n' >> "${GIT_LOG}"
+exit 97
+SH
+chmod +x "${FAKE_BIN}/git"
+PAYLOAD="$(make_edit_payload "${STATE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=" \
+  "PATH=${FAKE_BIN}:${PATH}")
+assert_exit 0 "${rc}" "agent-crew state write allowed"
+assert_file_absent "${GIT_LOG}"
+
 # --------------------------------------------------------------------------- #
 # AC3: Escape hatch documented in core/rules/direct-edit-guard.md             #
 # --------------------------------------------------------------------------- #

@@ -112,7 +112,14 @@ def _log_routing_miss(route, target_agent, reason):
         pass
 
 
-HOST_BRIDGE_READY, HOST_BRIDGE_REASON = _bridge_status()
+_HOST_BRIDGE_STATUS = None
+
+
+def _host_bridge_status():
+    global _HOST_BRIDGE_STATUS
+    if _HOST_BRIDGE_STATUS is None:
+        _HOST_BRIDGE_STATUS = _bridge_status()
+    return _HOST_BRIDGE_STATUS
 
 try:
     data = json.loads(raw_input)
@@ -625,10 +632,11 @@ def emit_question_route(target_agent: str, route_reason: str):
         target_agent=target_agent,
         route_reason=route_reason,
     )
-    if not HOST_BRIDGE_READY:
+    host_bridge_ready, host_bridge_reason = _host_bridge_status()
+    if not host_bridge_ready:
         question_directive += (
             "\n\nHost bridge is unavailable ("
-            f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
+            f"{host_bridge_reason}). Crew routing still proceeds."
             "\nThe runtime will record a resumable internal handoff when no "
             "external bridge command is configured."
         )
@@ -670,10 +678,11 @@ Enter the crew-run workflow now."""
         "STOP",
         detected_type=detected_type,
     )
-    if not HOST_BRIDGE_READY:
+    host_bridge_ready, host_bridge_reason = _host_bridge_status()
+    if not host_bridge_ready:
         directive += (
             "\n\nHost bridge is unavailable ("
-            f"{HOST_BRIDGE_REASON}). Crew routing still proceeds."
+            f"{host_bridge_reason}). Crew routing still proceeds."
             "\nThe runtime will record a resumable internal handoff when no "
             "external bridge command is configured."
         )
@@ -691,7 +700,7 @@ Enter the crew-run workflow now."""
 
 def emit_no_bridge_inline_fallback(reason: str):
     """Compatibility shim for callsites that previously short-circuited inline."""
-    return not HOST_BRIDGE_READY
+    return not _host_bridge_status()[0]
 
 
 if re.search(CONTROL_REPLY_PAT, prompt, re.IGNORECASE):

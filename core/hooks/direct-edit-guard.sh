@@ -58,6 +58,33 @@ if not file_path:
 if os.environ.get("AGENT_CREW_ALLOW_DIRECT_EDIT", "").strip() == "1":
     sys.exit(0)
 
+def is_under(path, prefix):
+    if not prefix:
+        return False
+
+    try:
+        target = Path(path).expanduser().resolve(strict=False)
+        base = Path(prefix).expanduser().resolve(strict=False)
+        return target == base or base in target.parents
+    except Exception:
+        normalized_path = os.path.abspath(os.path.expanduser(path))
+        normalized_prefix = os.path.abspath(os.path.expanduser(prefix))
+        return (
+            normalized_path == normalized_prefix
+            or normalized_path.startswith(normalized_prefix.rstrip(os.sep) + os.sep)
+        )
+
+agent_crew_home = os.environ.get("AGENT_CREW_HOME", os.path.expanduser("~/.agent-crew"))
+
+# Allow edits to crew state, agent definitions, and harness config itself before
+# any git lookup. State writes are common hook side effects and must stay cheap.
+allowed_prefixes = [
+    agent_crew_home,
+    os.path.expanduser("~/.claude"),
+]
+if any(is_under(file_path, prefix) for prefix in allowed_prefixes):
+    sys.exit(0)
+
 # Resolve project root
 try:
     result = subprocess.run(
@@ -69,15 +96,6 @@ except Exception:
     sys.exit(0)
 
 if not project_root or not file_path.startswith(project_root):
-    sys.exit(0)
-
-# Allow edits to crew state, agent definitions, and harness config itself
-agent_crew_home = os.environ.get("AGENT_CREW_HOME", os.path.expanduser("~/.agent-crew"))
-allowed_prefixes = [
-    agent_crew_home,
-    os.path.expanduser("~/.claude"),
-]
-if any(file_path.startswith(p) for p in allowed_prefixes):
     sys.exit(0)
 
 # Check for an active crew task marker.

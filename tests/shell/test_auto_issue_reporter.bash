@@ -266,6 +266,10 @@ printf '%s' "${PROMPT_PAYLOAD}" | \
   bash "${HOOKS_DIR}/auto-issue-report.sh" >"${TMP}/hook.out" 2>&1
 rc=$?
 assert_exit 0 "${rc}"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  [ -f "${FAKE_CREW_LOG}" ] && break
+  sleep 0.1
+done
 assert_contains "$(cat "${FAKE_CREW_LOG}")" "report auto"
 
 it "auto issue hook wrapper fast-rejects unrelated prompts"
