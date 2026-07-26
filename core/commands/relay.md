@@ -45,3 +45,7 @@ This command is local-only. It does not start another AI session, call a host
 bridge, push, deploy, merge, or mutate external systems.
 Clipboard copy is explicit only; no command should copy a fallback prompt unless
 the user requested `--copy`.
+
+`crew interact --send` may run a separately configured delivery command after
+creating the relay package. That execution result is recorded as `delivery.json`
+inside the relay directory; `crew relay` itself remains package-only.

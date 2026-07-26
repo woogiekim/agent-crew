@@ -71,6 +71,7 @@ def _session_home(monkeypatch, tmp_path: Path) -> tuple[Path, Path, Path]:
     monkeypatch.setenv("AGENT_CREW_HOME", str(home))
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("AGENT_CREW_INTERACT_AOE_ENABLED", "0")
     return state_dir, codex_home, claude_home
 
 
@@ -186,6 +187,26 @@ def _write_claude_project_log(claude_home: Path, *, cwd: Path, session_id: str, 
     )
 
 
+class _Completed:
+    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _fake_aoe_run(calls: list[list[str]], *, list_stdout: str):
+    def fake_run(argv, **kwargs):
+        argv = list(argv)
+        calls.append(argv)
+        if argv[:2] == ["aoe", "list"]:
+            return _Completed(stdout=list_stdout)
+        if argv[:2] == ["aoe", "send"]:
+            return _Completed(stdout=f"Sent message to '{argv[2]}'\n")
+        return _Completed(returncode=127, stderr="unexpected command")
+
+    return fake_run
+
+
 def test_sessions_render_recommended_card_without_internal_ids(monkeypatch, tmp_path: Path, capsys):
     """success-case - sessions output hides ids and shows friendly card fields."""
     _, _, claude_home = _session_home(monkeypatch, tmp_path)
@@ -202,6 +223,32 @@ def test_sessions_render_recommended_card_without_internal_ids(monkeypatch, tmp_
     assert "relay 명령 구현 리뷰" in out
     assert "번호나 설명으로 선택하세요" in out
     assert "claude-1" not in out
+
+
+def test_sessions_include_aoe_registered_ai_sessions(monkeypatch, tmp_path: Path, capsys):
+    """success-case - AoE-registered sessions are usable session candidates."""
+    _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    list_stdout = (
+        "Profile: main\n\n"
+        "TITLE                GROUP           PATH                                     ID\n"
+        "--------------------------------------------------------------------------------------------\n"
+        f"agent-crew claude    99. ETC         {project}      f59dec8ab2bd\n"
+        f"agent-crew codex     99. ETC         {project}      525f6f52f1a7\n"
+        "\nTotal: 2 sessions\n"
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setenv("AGENT_CREW_INTERACT_AOE_ENABLED", "1")
+    monkeypatch.setattr(runtime.subprocess, "run", _fake_aoe_run(calls, list_stdout=list_stdout))
+
+    assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
+
+    out = capsys.readouterr().out
+    assert "Claude · agent-crew · unknown" in out
+    assert "Codex · agent-crew · unknown" in out
+    assert "AoE registered session" in out
+    assert "f59dec8ab2bd" not in out
 
 
 def test_sessions_group_by_project_when_many_candidates(monkeypatch, tmp_path: Path, capsys):
@@ -269,8 +316,44 @@ def test_interact_shows_candidates_for_natural_language_request(monkeypatch, tmp
     assert "그대로 보낼까요? 아니면 번호를 선택하세요." in out
 
 
-def test_interact_select_one_chooses_recommended_candidate(monkeypatch, tmp_path: Path, capsys):
-    """success-case - selecting 1 chooses the recommended first candidate."""
+def test_interact_select_one_sends_to_recommended_candidate_by_default(monkeypatch, tmp_path: Path, capsys):
+    """success-case - selecting 1 attempts delivery by default."""
+    _, codex_home, claude_home = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    _write_claude_session(claude_home, session_id="c1", cwd=project, branch="main", updated_at=1002)
+    _write_claude_project_log(claude_home, cwd=project, session_id="c1", text="relay 리뷰")
+    _write_codex_session(
+        codex_home,
+        session_id="x1",
+        thread_name="E2E 테스트",
+        updated_at="1970-01-01T00:16:41Z",
+        project="agent-crew",
+        branch="feature-a",
+    )
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["리뷰", "부탁"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "선택한 세션:" in out
+    assert "① Claude · agent-crew · main" in out
+    assert "STATUS: packaged" in out
+    assert "PROMPT:" in out
+    assert "session c1" not in out
+
+
+def test_interact_no_send_selects_without_delivery(monkeypatch, tmp_path: Path, capsys):
+    """success-case - --no-send keeps explicit selection-only behavior."""
     _, codex_home, claude_home = _session_home(monkeypatch, tmp_path)
     project = tmp_path / "agent-crew"
     project.mkdir()
@@ -301,7 +384,46 @@ def test_interact_select_one_chooses_recommended_candidate(monkeypatch, tmp_path
     assert "선택한 세션:" in out
     assert "① Claude · agent-crew · main" in out
     assert "STATUS: selected" in out
+    assert "STATUS: packaged" not in out
+    assert "PROMPT:" not in out
     assert "session c1" not in out
+
+
+def test_interact_selected_aoe_session_sends_with_aoe_without_env_config(monkeypatch, tmp_path: Path, capsys):
+    """success-case - selected AoE sessions are delivered through aoe send by default."""
+    _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    list_stdout = (
+        "Profile: main\n\n"
+        "TITLE                GROUP           PATH                                     ID\n"
+        "--------------------------------------------------------------------------------------------\n"
+        f"agent-crew claude    99. ETC         {project}      f59dec8ab2bd\n"
+        "\nTotal: 1 sessions\n"
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setenv("AGENT_CREW_INTERACT_AOE_ENABLED", "1")
+    monkeypatch.setattr(runtime.subprocess, "run", _fake_aoe_run(calls, list_stdout=list_stdout))
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="aoe agent-crew claude",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["hi"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "STATUS: sent" in out
+    assert "DELIVERY:" in out
+    assert "PROMPT:" not in out
+    send_calls = [call for call in calls if call[:3] == ["aoe", "send", "agent-crew claude"]]
+    assert len(send_calls) == 1
+    assert "hi" in send_calls[0][3]
 
 
 def test_interact_select_send_uses_delivery_adapter_success(monkeypatch, tmp_path: Path, capsys):
@@ -340,6 +462,88 @@ def test_interact_select_send_uses_delivery_adapter_success(monkeypatch, tmp_pat
     assert len(deliveries) == 1
     assert "리뷰 부탁" in deliveries[0]["package"]["prompt"]
     assert "session c1" not in out
+
+
+def test_interact_select_send_executes_configured_delivery_command(monkeypatch, tmp_path: Path, capsys):
+    """success-case - configured delivery command is real execution evidence for STATUS: sent."""
+    _, _, claude_home = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    runner = tmp_path / "delivery-runner.py"
+    runner.write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "prompt = Path(sys.argv[1]).read_text(encoding='utf-8')\n"
+        "Path(sys.argv[2]).write_text('executed:' + prompt, encoding='utf-8')\n"
+        "print('delivery-ok')\n",
+        encoding="utf-8",
+    )
+    _write_claude_session(claude_home, session_id="c1", cwd=project, branch="main", updated_at=1002)
+    _write_claude_project_log(claude_home, cwd=project, session_id="c1", text="relay 리뷰")
+    monkeypatch.setenv(
+        "AGENT_CREW_INTERACT_DELIVERY_COMMAND_CLAUDE",
+        f"{sys.executable} {runner} {{prompt_file}} {{output_file}}",
+    )
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["진짜", "실행"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    delivery_line = next(line for line in out.splitlines() if line.startswith("DELIVERY: "))
+    delivery_path = Path(delivery_line.removeprefix("DELIVERY: "))
+    delivery = json.loads(delivery_path.read_text(encoding="utf-8"))
+    output = Path(delivery["output_file"]).read_text(encoding="utf-8")
+
+    assert "STATUS: sent" in out
+    assert "STATUS: packaged" not in out
+    assert delivery["returncode"] == 0
+    assert delivery["stdout"].strip() == "delivery-ok"
+    assert "진짜 실행" in output
+    assert "PROMPT:" not in out
+
+
+def test_interact_select_send_reports_failed_when_configured_delivery_fails(monkeypatch, tmp_path: Path, capsys):
+    """failure-case - configured delivery command failure must not be reported as sent."""
+    _, _, claude_home = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    runner = tmp_path / "delivery-fail.py"
+    runner.write_text("import sys\nprint('delivery-failed', file=sys.stderr)\nsys.exit(7)\n", encoding="utf-8")
+    _write_claude_session(claude_home, session_id="c1", cwd=project, branch="main", updated_at=1002)
+    _write_claude_project_log(claude_home, cwd=project, session_id="c1", text="relay 리뷰")
+    monkeypatch.setenv("AGENT_CREW_INTERACT_DELIVERY_COMMAND_CLAUDE", f"{sys.executable} {runner}")
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["실패", "검증"],
+        )
+    ) == 1
+
+    out = capsys.readouterr().out
+    delivery_line = next(line for line in out.splitlines() if line.startswith("DELIVERY: "))
+    delivery_path = Path(delivery_line.removeprefix("DELIVERY: "))
+    delivery = json.loads(delivery_path.read_text(encoding="utf-8"))
+
+    assert "STATUS: failed" in out
+    assert "STATUS: sent" not in out
+    assert delivery["returncode"] == 7
+    assert "delivery-failed" in delivery["stderr"]
+    assert "PROMPT:" in out
 
 
 def test_interact_select_send_packages_when_delivery_is_unsupported(monkeypatch, tmp_path: Path, capsys):
@@ -536,7 +740,8 @@ def test_parser_accepts_sessions_and_interact_commands():
     parser = runtime.build_parser()
 
     sessions = parser.parse_args(["sessions", "--limit", "5"])
-    interact = parser.parse_args(["interact", "--to", "claude", "--select", "1", "--send", "리뷰해줘"])
+    interact = parser.parse_args(["interact", "--to", "claude", "--select", "1", "리뷰해줘"])
+    select_only = parser.parse_args(["interact", "--to", "claude", "--select", "1", "--no-send", "리뷰해줘"])
 
     assert sessions.func is runtime.command_sessions
     assert sessions.limit == 5
@@ -546,6 +751,7 @@ def test_parser_accepts_sessions_and_interact_commands():
     assert interact.send is True
     assert interact.copy is False
     assert interact.prompt == ["리뷰해줘"]
+    assert select_only.send is False
 
 
 def test_e2e_case_crew_bin_interact_lists_friendly_candidates(tmp_path: Path):

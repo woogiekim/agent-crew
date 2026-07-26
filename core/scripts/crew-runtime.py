@@ -599,6 +599,58 @@ def claude_session_candidates(home: Path) -> list[dict]:
     return candidates
 
 
+def aoe_session_candidates() -> list[dict]:
+    if os.environ.get("AGENT_CREW_INTERACT_AOE_ENABLED", "1").strip().lower() in {"0", "false", "no"}:
+        return []
+    try:
+        completed = subprocess.run(
+            ["aoe", "list"],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return []
+    if completed.returncode != 0:
+        return []
+
+    candidates: list[dict] = []
+    for line in (completed.stdout or "").splitlines():
+        parts = re.split(r"\s{2,}", line.strip())
+        if len(parts) < 4:
+            continue
+        title, _group, cwd, session_id = parts[0], parts[1], parts[2], parts[3]
+        if title.upper() == "TITLE" or not cwd.startswith("/"):
+            continue
+        title_lower = title.lower()
+        if "claude" in title_lower:
+            ai_type = "Claude"
+        elif "codex" in title_lower:
+            ai_type = "Codex"
+        elif "opencode" in title_lower:
+            ai_type = "OpenCode"
+        else:
+            continue
+
+        candidates.append(
+            {
+                "source": "aoe",
+                "session_ref": f"aoe:{session_id}",
+                "ai_type": ai_type,
+                "project": project_name_from_cwd(cwd),
+                "branch": branch_from_session({}, cwd),
+                "summary": "AoE registered session",
+                "updated_at": time.time(),
+                "status": "aoe",
+                "cwd": cwd,
+                "aoe_title": title,
+                "aoe_id": session_id,
+            }
+        )
+    return candidates
+
+
 def task_session_enrichment(state_dir: Path, task_dir: Path) -> dict:
     register = load_json(task_dir / "register.json", {})
     result = load_text(task_dir / "result.md")
@@ -661,6 +713,7 @@ def enrich_session_candidates(candidates: list[dict], enrichments: list[dict]) -
 
 def collect_session_candidates(agent_crew_home: Path, *, limit: int = 20) -> list[dict]:
     candidates = [
+        *aoe_session_candidates(),
         *codex_session_candidates(codex_home()),
         *claude_session_candidates(claude_home()),
     ]
@@ -724,6 +777,9 @@ def session_match_text(candidate: dict) -> str:
             str(candidate.get("branch", "")),
             str(candidate.get("summary", "")),
             str(candidate.get("cwd", "")),
+            str(candidate.get("source", "")),
+            str(candidate.get("aoe_title", "")),
+            str(candidate.get("aoe_id", "")),
         ]
     ).lower()
 
@@ -3379,11 +3435,205 @@ def create_relay_package(
     }, ""
 
 
-def deliver_relay_to_session(candidate: dict, package: dict) -> dict:
-    return {
-        "status": "packaged",
-        "reason": "host_session_injection_unsupported",
+def interact_delivery_command_template(host: str) -> str:
+    normalized = re.sub(r"[^A-Z0-9]+", "_", str(host or "").upper()).strip("_")
+    if normalized:
+        value = os.environ.get(f"AGENT_CREW_INTERACT_DELIVERY_COMMAND_{normalized}", "").strip()
+        if value:
+            return value
+    return os.environ.get("AGENT_CREW_INTERACT_DELIVERY_COMMAND", "").strip()
+
+
+def render_interact_delivery_command(template: str, candidate: dict, package: dict) -> tuple[list[str], str]:
+    argv, error = host_bridge_command_argv(template)
+    if error:
+        return [], error
+    manifest = package.get("manifest") if isinstance(package.get("manifest"), dict) else {}
+    context = package.get("context") if isinstance(package.get("context"), dict) else {}
+    relay_dir = Path(str(manifest.get("relay_dir") or package.get("relay_dir") or ""))
+    output_file = relay_dir / "delivery-output.txt"
+    cwd = str(candidate.get("cwd") or context.get("project_root") or manifest.get("project_root") or "")
+    replacements = {
+        "prompt_file": str(manifest.get("prompt_file") or ""),
+        "copy_file": str(manifest.get("copy_file") or ""),
+        "context_file": str(manifest.get("context_file") or ""),
+        "manifest_file": str(manifest.get("manifest_file") or ""),
+        "relay_dir": str(relay_dir),
+        "output_file": str(output_file),
+        "project_root": str(context.get("project_root") or manifest.get("project_root") or ""),
+        "cwd": cwd,
+        "target_host": str(manifest.get("target_host") or candidate.get("ai_type") or "").lower(),
     }
+
+    rendered: list[str] = []
+    try:
+        for token in argv:
+            rendered.append(token.format(**replacements))
+    except KeyError as exc:
+        return [], f"unknown delivery command placeholder: {exc}"
+    return rendered, ""
+
+
+def write_delivery_result(package: dict, result: dict) -> Path:
+    manifest = package.get("manifest") if isinstance(package.get("manifest"), dict) else {}
+    relay_dir = Path(str(manifest.get("relay_dir") or package.get("relay_dir") or ""))
+    delivery_path = relay_dir / "delivery.json"
+    serializable = dict(result)
+    serializable["delivery_file"] = str(delivery_path)
+    write_json(delivery_path, serializable)
+    return delivery_path
+
+
+def deliver_relay_to_aoe_session(candidate: dict, package: dict) -> dict:
+    title = str(candidate.get("aoe_title") or "").strip()
+    if not title:
+        delivery_file = write_delivery_result(
+            package,
+            {
+                "status": "failed",
+                "reason": "aoe_session_title_missing",
+                "command": ["aoe", "send"],
+            },
+        )
+        return {"status": "failed", "delivery_file": str(delivery_file), "reason": "aoe_session_title_missing"}
+
+    context = package.get("context") if isinstance(package.get("context"), dict) else {}
+    cwd = Path(str(candidate.get("cwd") or context.get("project_root") or ".")).expanduser()
+    if not cwd.is_dir():
+        cwd = Path(str(context.get("project_root") or ".")).expanduser()
+    prompt = str(package.get("prompt") or "")
+    argv = ["aoe", "send", title, prompt]
+    timeout = int(os.environ.get("AGENT_CREW_INTERACT_DELIVERY_TIMEOUT_SECONDS", "120") or "120")
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        result = {
+            "status": "sent" if completed.returncode == 0 else "failed",
+            "reason": "aoe_send_completed" if completed.returncode == 0 else "aoe_send_failed",
+            "command": ["aoe", "send", title, "<prompt>"],
+            "cwd": str(cwd),
+            "returncode": completed.returncode,
+            "stdout": redact(completed.stdout or ""),
+            "stderr": redact(completed.stderr or ""),
+            "output_file": "",
+        }
+    except subprocess.TimeoutExpired as exc:
+        result = {
+            "status": "failed",
+            "reason": "aoe_send_timeout",
+            "command": ["aoe", "send", title, "<prompt>"],
+            "cwd": str(cwd),
+            "returncode": None,
+            "stdout": redact(exc.stdout or ""),
+            "stderr": redact(exc.stderr or ""),
+            "output_file": "",
+        }
+    except Exception as exc:
+        result = {
+            "status": "failed",
+            "reason": "aoe_send_exception",
+            "command": ["aoe", "send", title, "<prompt>"],
+            "cwd": str(cwd),
+            "returncode": None,
+            "stdout": "",
+            "stderr": redact(str(exc)),
+            "output_file": "",
+        }
+
+    delivery_file = write_delivery_result(package, result)
+    return {
+        "status": result["status"],
+        "delivery_file": str(delivery_file),
+        "reason": result["reason"],
+    }
+
+
+def deliver_relay_to_session(candidate: dict, package: dict) -> dict:
+    if str(candidate.get("source") or "").lower() == "aoe":
+        return deliver_relay_to_aoe_session(candidate, package)
+
+    manifest = package.get("manifest") if isinstance(package.get("manifest"), dict) else {}
+    context = package.get("context") if isinstance(package.get("context"), dict) else {}
+    target_host = str(manifest.get("target_host") or candidate.get("ai_type") or "").strip().lower()
+    template = interact_delivery_command_template(target_host)
+    if not template:
+        return {
+            "status": "packaged",
+            "reason": "host_session_injection_unsupported",
+        }
+
+    argv, error = render_interact_delivery_command(template, candidate, package)
+    if error:
+        delivery_file = write_delivery_result(
+            package,
+            {
+                "status": "failed",
+                "reason": "delivery_command_invalid",
+                "error": error,
+                "command": template,
+            },
+        )
+        return {"status": "failed", "delivery_file": str(delivery_file), "reason": "delivery_command_invalid"}
+
+    cwd = Path(str(candidate.get("cwd") or context.get("project_root") or ".")).expanduser()
+    if not cwd.is_dir():
+        cwd = Path(str(context.get("project_root") or ".")).expanduser()
+    timeout = int(os.environ.get("AGENT_CREW_INTERACT_DELIVERY_TIMEOUT_SECONDS", "120") or "120")
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        result = {
+            "status": "sent" if completed.returncode == 0 else "failed",
+            "reason": "delivery_command_completed" if completed.returncode == 0 else "delivery_command_failed",
+            "command": argv,
+            "cwd": str(cwd),
+            "returncode": completed.returncode,
+            "stdout": redact(completed.stdout or ""),
+            "stderr": redact(completed.stderr or ""),
+            "output_file": str(Path(str(manifest.get("relay_dir") or package.get("relay_dir"))) / "delivery-output.txt"),
+        }
+    except subprocess.TimeoutExpired as exc:
+        result = {
+            "status": "failed",
+            "reason": "delivery_command_timeout",
+            "command": argv,
+            "cwd": str(cwd),
+            "returncode": None,
+            "stdout": redact(exc.stdout or ""),
+            "stderr": redact(exc.stderr or ""),
+            "output_file": str(Path(str(manifest.get("relay_dir") or package.get("relay_dir"))) / "delivery-output.txt"),
+        }
+    except Exception as exc:
+        result = {
+            "status": "failed",
+            "reason": "delivery_command_exception",
+            "command": argv,
+            "cwd": str(cwd),
+            "returncode": None,
+            "stdout": "",
+            "stderr": redact(str(exc)),
+            "output_file": str(Path(str(manifest.get("relay_dir") or package.get("relay_dir"))) / "delivery-output.txt"),
+        }
+
+    delivery_file = write_delivery_result(package, result)
+    return {
+        "status": result["status"],
+        "delivery_file": str(delivery_file),
+        "reason": result["reason"],
+    }
+
 
 
 def render_selected_session_target(candidate: dict) -> str:
@@ -3500,6 +3750,9 @@ def command_interact(args: argparse.Namespace) -> int:
 
         print(render_selected_session_target(selected))
         print(f"STATUS: {final_status}")
+        delivery_file = str(delivery.get("delivery_file") or "").strip()
+        if delivery_file:
+            print(f"DELIVERY: {delivery_file}")
         if final_status != "sent":
             print(f"PROMPT: {package['manifest']['prompt_file']}")
         if getattr(args, "copy", False):
@@ -3567,7 +3820,7 @@ def build_parser() -> argparse.ArgumentParser:
     interact_send = interact.add_mutually_exclusive_group()
     interact_send.add_argument("--send", dest="send", action="store_true", help="attempt delivery after selecting a session")
     interact_send.add_argument("--no-send", dest="send", action="store_false", help="select only without delivery")
-    interact.set_defaults(send=False)
+    interact.set_defaults(send=True)
     interact.add_argument("--copy", action="store_true", help="copy packaged fallback prompt only when explicitly requested")
     interact.add_argument("prompt", nargs=argparse.REMAINDER)
     interact.set_defaults(func=command_interact)
