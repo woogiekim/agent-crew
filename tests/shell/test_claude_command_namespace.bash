@@ -48,6 +48,16 @@ assert_file_exists "${CLAUDE_DIR_T}/commands/crew/run.md"
 it "claude setup installs direct-agent command in crew namespace"
 assert_file_exists "${CLAUDE_DIR_T}/commands/crew/agent.md"
 
+it "claude setup installs parity-check as a flat user command"
+assert_file_exists "${CLAUDE_DIR_T}/commands/parity-check.md"
+
+it "claude setup installs parity-implement as a flat user command"
+assert_file_exists "${CLAUDE_DIR_T}/commands/parity-implement.md"
+
+it "claude setup does not install parity commands in crew namespace"
+assert_file_absent "${CLAUDE_DIR_T}/commands/crew/parity-check.md"
+assert_file_absent "${CLAUDE_DIR_T}/commands/crew/parity-implement.md"
+
 it "claude setup prunes legacy flat run command"
 assert_file_absent "${CLAUDE_DIR_T}/commands/run.md"
 

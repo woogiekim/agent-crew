@@ -190,6 +190,7 @@ fi
 
 mkdir -p \
   "${AGENT_CREW_HOME}/system/commands" "${AGENT_CREW_HOME}/commands" \
+  "${AGENT_CREW_HOME}/user/commands" \
   "${AGENT_CREW_HOME}/system/rules" "${AGENT_CREW_HOME}/rules" \
   "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks" \
   "${AGENT_CREW_HOME}/system/scripts" "${AGENT_CREW_HOME}/scripts" \
@@ -205,6 +206,19 @@ copy_flat() {
   [ -d "${src}" ] || return 0
   # shellcheck disable=SC2086
   cp -f "${src}"/${pattern} "${dest}/" 2>/dev/null || true
+}
+
+copy_flat_if_absent() {
+  local src="$1" dest="$2" pattern="$3" src_file base
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+  # shellcheck disable=SC2086
+  for src_file in "${src}"/${pattern}; do
+    [ -f "${src_file}" ] || continue
+    base="$(basename "${src_file}")"
+    [ -f "${dest}/${base}" ] && continue
+    cp -f "${src_file}" "${dest}/${base}" 2>/dev/null || true
+  done
 }
 
 copy_tree() {
@@ -236,6 +250,8 @@ install_path_crew_cli() {
 
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
+copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/rules"
 copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"
@@ -307,6 +323,9 @@ SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/setup/setup-host.sh" "${PROJECT_ROOT}"
 print_update_phase "adapter_setup"
 record_project_update_scope
+
+copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
+copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 
 if [ -n "${PRESERVATION_MANIFEST}" ]; then
   python3 "${AGENT_CREW_HOME}/system/scripts/update-preservation-manifest.py" finish \

@@ -57,6 +57,7 @@ def build_payload(args: argparse.Namespace) -> dict:
 
     for rel in (
         "core/commands",
+        "core/user",
         "core/rules",
         "core/hooks",
         "core/scripts",
@@ -72,6 +73,7 @@ def build_payload(args: argparse.Namespace) -> dict:
 
     add_tree(entries, "user/agents", home / "user" / "agents")
     add_tree(entries, "user/skills", home / "user" / "skills")
+    add_tree(entries, "user/commands", home / "user" / "commands")
     add_tree(entries, "output/project-codex", project / ".codex")
     add_tree(entries, "output/global-codex-skill", codex_home / "skills" / "agent-crew")
     add_tree(entries, "output/global-codex-crew-skills", codex_home / "agent-crew" / "skills")

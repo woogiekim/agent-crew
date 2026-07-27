@@ -39,7 +39,13 @@ def dest_files(root: Path) -> dict[str, Path]:
 
 
 def compare_tree(src: Path, dest: Path, *, prune_extra: bool) -> dict:
-    src_map = source_files(src)
+    return compare_trees([src], dest, prune_extra=prune_extra)
+
+
+def compare_trees(src_roots: list[Path], dest: Path, *, prune_extra: bool) -> dict:
+    src_map: dict[str, Path] = {}
+    for src in src_roots:
+        src_map.update(source_files(src))
     dest_map = dest_files(dest)
     missing = []
     mismatched = []
@@ -61,7 +67,7 @@ def compare_tree(src: Path, dest: Path, *, prune_extra: bool) -> dict:
             dest_path.unlink()
 
     return {
-        "source": str(src),
+        "source": ", ".join(str(src) for src in src_roots),
         "destination": str(dest),
         "missing": missing,
         "mismatched": mismatched,
@@ -104,10 +110,28 @@ def main() -> int:
     path_bin = Path(args.path_bin).expanduser().resolve()
 
     checks = []
-    for rel in ("commands", "hooks", "scripts", "evaluations", "policies"):
+    for rel in ("hooks", "scripts", "evaluations", "policies"):
         src = source_root / "core" / rel
         for dest in (home / "system" / rel, home / rel):
             checks.append(compare_tree(src, dest, prune_extra=args.prune_extra))
+
+    checks.append(
+        compare_tree(
+            source_root / "core" / "commands",
+            home / "system" / "commands",
+            prune_extra=args.prune_extra,
+        )
+    )
+    checks.append(
+        compare_trees(
+            [
+                source_root / "core" / "commands",
+                source_root / "core" / "user" / "commands",
+            ],
+            home / "commands",
+            prune_extra=args.prune_extra,
+        )
+    )
 
     checks.append(compare_tree(source_root / "core" / "bin", home / "bin", prune_extra=args.prune_extra))
     if not args.skip_path_bin:

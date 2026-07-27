@@ -22,6 +22,7 @@ def load_update_fingerprint_module():
 def _make_checkout(root: Path) -> None:
     for rel in (
         "core/commands",
+        "core/user",
         "core/rules",
         "core/hooks",
         "core/scripts",

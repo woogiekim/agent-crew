@@ -32,7 +32,6 @@ install_claude_namespaced_commands() {
     agent \
     cost \
     interact \
-    parity-check \
     relay \
     run \
     sessions \
@@ -50,7 +49,21 @@ install_claude_namespaced_commands() {
   sync_dir_contents_prune "${src}" "${dest}"
 }
 
+install_claude_user_commands() {
+  local src="${AGENT_CREW_HOME}/user/commands"
+  local dest="${CLAUDE_DIR}/commands"
+
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/user/commands" ]; then
+    src="${SOURCE_ROOT}/core/user/commands"
+  fi
+
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+  diff_install "${src}" "${dest}"
+}
+
 install_claude_namespaced_commands
+install_claude_user_commands
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${CLAUDE_DIR}/agent-crew/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/rules" "${CLAUDE_DIR}/agent-crew/rules"
 copy_dir_contents "${AGENT_CREW_HOME}/scripts" "${CLAUDE_DIR}/agent-crew/scripts"

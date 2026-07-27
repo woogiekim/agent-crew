@@ -113,6 +113,19 @@ copy_flat_assets() {
   cp -f "${src}"/${pattern} "${dest}/" 2>/dev/null || true
 }
 
+copy_flat_assets_if_absent() {
+  local src="$1" dest="$2" pattern="$3" src_file base
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+  # shellcheck disable=SC2086
+  for src_file in "${src}"/${pattern}; do
+    [ -f "${src_file}" ] || continue
+    base="$(basename "${src_file}")"
+    [ -f "${dest}/${base}" ] && continue
+    cp -f "${src_file}" "${dest}/${base}" 2>/dev/null || true
+  done
+}
+
 copy_tree_assets() {
   local src="$1" dest="$2" tmp
   [ -d "${src}" ] || return 0
@@ -261,6 +274,8 @@ sync_source_runtime_assets_if_drifted() {
 
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+  copy_flat_assets_if_absent "${source}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
+  copy_flat_assets "${source}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
   copy_tree_assets "${source}/core/rules" "${AGENT_CREW_HOME}/system/rules"
   copy_tree_assets "${source}/core/rules" "${AGENT_CREW_HOME}/rules"
   copy_flat_assets "${source}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"

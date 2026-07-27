@@ -96,8 +96,10 @@ if [ -d "${_TOPLEVEL}/core" ] && [ -d "${_TOPLEVEL}/adapters" ]; then
 fi
 ```
 
-If `SOURCE_ROOT` resolves and `${SOURCE_ROOT}/core/commands/` exists, sync all
-command files to the three installed locations:
+If `SOURCE_ROOT` resolves and `${SOURCE_ROOT}/core/commands/` exists, sync system
+command files to the installed system and discovery locations. User command
+seeds from `${SOURCE_ROOT}/core/user/commands/` sync only to the user/discovery
+command locations, never to `system/commands`.
 
 ```bash
 if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
@@ -105,6 +107,14 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
   cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/system/commands/" 2>/dev/null || true
   # Sync commands: source → compat alias (backward-compatible path)
   cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/commands/" 2>/dev/null || true
+  # Sync user command seeds: source → user/discovery paths only.
+  mkdir -p "${AGENT_CREW_HOME}/user/commands"
+  for _cmd in "${SOURCE_ROOT}/core/user/commands/"*.md; do
+    [ -f "${_cmd}" ] || continue
+    [ -f "${AGENT_CREW_HOME}/user/commands/$(basename "${_cmd}")" ] \
+      || cp "${_cmd}" "${AGENT_CREW_HOME}/user/commands/" 2>/dev/null || true
+    cp "${_cmd}" "${AGENT_CREW_HOME}/commands/" 2>/dev/null || true
+  done
   # Sync commands: source → Claude namespaced slash-command path (/crew:<intent>)
   mkdir -p "${CLAUDE_DIR}/commands/crew"
   rm -f \
@@ -112,7 +122,6 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
     "${CLAUDE_DIR}/commands/agent.md" \
     "${CLAUDE_DIR}/commands/cost.md" \
     "${CLAUDE_DIR}/commands/interact.md" \
-    "${CLAUDE_DIR}/commands/parity-check.md" \
     "${CLAUDE_DIR}/commands/relay.md" \
     "${CLAUDE_DIR}/commands/run.md" \
     "${CLAUDE_DIR}/commands/sessions.md" \
@@ -126,6 +135,7 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
     "${CLAUDE_DIR}/commands/workflow.md" \
     2>/dev/null || true
   cp "${SOURCE_ROOT}/core/commands/"*.md "${CLAUDE_DIR}/commands/crew/" 2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/user/commands/"*.md "${CLAUDE_DIR}/commands/" 2>/dev/null || true
 fi
 
 # Also sync rules (session protocol references core/rules/task-injection.md).
