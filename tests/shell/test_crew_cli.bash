@@ -703,7 +703,7 @@ assert_contains "${result}" "agent-crew recorded a resumable internal handoff."
 it "crew run handoff-ready result does not require shell profile bridge configuration"
 assert_not_contains "${result}" "set AGENT_CREW_HOST_BRIDGE_COMMAND"
 
-it "crew run routes Korean task text through input-normalizer gate"
+it "crew run preserves Korean task text without input normalization"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "방금 멈춤 현상을 검증해주세요" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
@@ -711,35 +711,33 @@ KOREAN_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $
 register_json=$(cat "${KOREAN_RUN_TASK_DIR}/register.json")
 pipeline_json=$(cat "${KOREAN_RUN_TASK_DIR}/pipeline.json")
 run_result=$(cat "${KOREAN_RUN_TASK_DIR}/result.md")
-assert_contains "${register_json}" '"task": "Normalize raw user input into a canonical English agent-crew workflow instruction.'
-assert_contains "${pipeline_json}" '"input-normalizer"'
-assert_contains "${run_result}" "NORMALIZATION_GATE: required"
-assert_not_contains "${register_json}" "방금"
-assert_not_contains "${pipeline_json}" "방금"
-assert_not_contains "${run_result}" "방금"
-assert_contains "$(cat "${KOREAN_RUN_TASK_DIR}/handoff.md")" "RAW_TASK: 방금 멈춤 현상을 검증해주세요"
-assert_contains "$(cat "${KOREAN_RUN_TASK_DIR}/context/input-normalization.json")" '"source_language": "ko"'
+assert_contains "${register_json}" '"task": "방금 멈춤 현상을 검증해주세요"'
+assert_not_contains "${pipeline_json}" '"input-normalizer"'
+assert_contains "${pipeline_json}" '"supervisor"'
+assert_not_contains "${run_result}" "NORMALIZATION_GATE: required"
+assert_contains "$(cat "${KOREAN_RUN_TASK_DIR}/handoff.md")" "TASK: 방금 멈춤 현상을 검증해주세요"
+assert_file_absent "${KOREAN_RUN_TASK_DIR}/context/input-normalization.json"
+assert_file_absent "${KOREAN_RUN_TASK_DIR}/context/normalized_task.md"
 
-it "crew run routes non-English multilingual input through input-normalizer gate"
+it "crew run preserves non-English multilingual input without input normalization"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "Corrigez ce problème" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 MULTI_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 multi_register_json=$(cat "${MULTI_RUN_TASK_DIR}/register.json")
 multi_pipeline_json=$(cat "${MULTI_RUN_TASK_DIR}/pipeline.json")
-assert_contains "${multi_register_json}" '"task": "Normalize raw user input into a canonical English agent-crew workflow instruction.'
-assert_contains "${multi_pipeline_json}" '"input-normalizer"'
-assert_not_contains "${multi_register_json}" "Corrigez"
-assert_contains "$(cat "${MULTI_RUN_TASK_DIR}/context/input-normalization.json")" '"translation_required": true'
+assert_contains "${multi_register_json}" '"task": "Corrigez ce problème"'
+assert_not_contains "${multi_pipeline_json}" '"input-normalizer"'
+assert_file_absent "${MULTI_RUN_TASK_DIR}/context/input-normalization.json"
 
-it "crew run routes ambiguous conversational input through input-normalizer gate"
+it "crew run preserves ambiguous conversational input without input normalization"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "go" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 AMBIGUOUS_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 ambiguous_pipeline_json=$(cat "${AMBIGUOUS_RUN_TASK_DIR}/pipeline.json")
-assert_contains "${ambiguous_pipeline_json}" '"input-normalizer"'
-assert_contains "$(cat "${AMBIGUOUS_RUN_TASK_DIR}/context/input-normalization.json")" "short conversational shorthand"
+assert_not_contains "${ambiguous_pipeline_json}" '"input-normalizer"'
+assert_file_absent "${AMBIGUOUS_RUN_TASK_DIR}/context/input-normalization.json"
 
 it "crew run blocked result avoids verbose fallback narration"
 assert_not_contains "${result}" "If the host bridge is unavailable"
@@ -1214,32 +1212,30 @@ assert_file_exists "${AGENT_REQUEST_DIR}/request.json"
 it "crew agent writes direct handoff"
 assert_file_exists "${AGENT_REQUEST_DIR}/handoff.md"
 
-it "crew agent keeps intended agent for Korean inline normalization"
+it "crew agent preserves Korean task text for direct handoff"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "방금 질문을 설명해주세요" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 KOREAN_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
 request_json=$(cat "${KOREAN_REQUEST_DIR}/request.json")
 assert_contains "${request_json}" '"agent": "analyst"'
-assert_contains "${request_json}" '"normalization_status": "required"'
-assert_contains "${request_json}" '"normalization_mode": "inline_direct_bridge"'
-assert_contains "${request_json}" '"normalization_agent": "input-normalizer"'
-assert_contains "${request_json}" '"intended_agent_after_normalization": "analyst"'
-assert_not_contains "${request_json}" "방금"
-assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 방금 질문을 설명해주세요"
-assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "NORMALIZATION_MODE: inline_direct_bridge"
-assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "Do not spawn input-normalizer"
+assert_contains "${request_json}" '"task": "방금 질문을 설명해주세요"'
+assert_not_contains "${request_json}" '"normalization_status": "required"'
+assert_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "TASK: 방금 질문을 설명해주세요"
+assert_not_contains "$(cat "${KOREAN_REQUEST_DIR}/handoff.md")" "NORMALIZATION_MODE: inline_direct_bridge"
+assert_file_absent "${KOREAN_REQUEST_DIR}/context/input-normalization.json"
 
-it "crew agent treats Korean deep-dive planning as read-only normalization"
+it "crew agent treats Korean deep-dive planning as read-only direct analysis"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "심층분석해서 구체적인 수정 방안 계획해" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 assert_not_contains "${out}" "Use crew run for mutating work"
 KOREAN_PLAN_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
-assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/request.json")" '"normalization_status": "required"'
-assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/handoff.md")" "RAW_TASK: 심층분석해서 구체적인 수정 방안 계획해"
+assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/request.json")" '"task": "심층분석해서 구체적인 수정 방안 계획해"'
+assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/handoff.md")" "TASK: 심층분석해서 구체적인 수정 방안 계획해"
+assert_file_absent "${KOREAN_PLAN_REQUEST_DIR}/context/input-normalization.json"
 
-it "crew agent blocks Korean mutating direct requests before normalization"
+it "crew agent blocks Korean mutating direct requests without rewriting input"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "파일을 수정해주세요" 2>&1)
 rc=$?
 assert_exit 2 "${rc}"

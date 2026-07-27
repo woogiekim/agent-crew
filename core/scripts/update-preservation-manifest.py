@@ -27,8 +27,6 @@ LEGACY_SYSTEM_CODEX_AGENT_NAMES = {
     "frontend.toml",
     "historian.toml",
     "issuer.toml",
-    "input-normalizer.toml",
-    "korean-normalizer.toml",
     "learning-mentor.toml",
     "mentor.toml",
     "mcp-manager.toml",

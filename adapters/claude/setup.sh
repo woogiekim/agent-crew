@@ -106,7 +106,7 @@ Files in this directory are NEVER overwritten by crew:update.
 
 Naming: avoid filenames that match built-in agents (analyst.md, backend.md,
 designer.md, devops.md, frontend.md, planner.md, requirements.md, resolver.md,
-reviewer.md, supervisor.md, supervisor-bootstrap.md, supervisor-stages.md, supervisor-retry.md, documenter.md, korean-normalizer.md). Use a unique prefix, e.g.
+reviewer.md, supervisor.md, supervisor-bootstrap.md, supervisor-stages.md, supervisor-retry.md, documenter.md). Use a unique prefix, e.g.
 my-agent.md, or an org-prefixed name like acme-deploy.md.
 
 crew:update merges these into ~/.claude/agents/ automatically.
@@ -650,42 +650,6 @@ python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/route-di
 import sys, json, os
 dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 5}
-if os.path.exists(dest):
-  with open(dest) as f:
-    try: settings = json.load(f)
-    except json.JSONDecodeError: settings = {}
-else:
-  settings = {}
-hooks = settings.setdefault("hooks", {})
-hook_list = hooks.setdefault(hook_type, [])
-hook_path_base = os.path.basename(hook_path)
-for block in hook_list:
-  if block.get("matcher") == matcher:
-    for h in block.get("hooks", []):
-      if hook_path_base in h.get("command", ""):
-        h["command"] = hook_entry["command"]
-        break
-    else:
-      block.setdefault("hooks", []).append(hook_entry)
-    break
-else:
-  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
-with open(dest, "w") as f:
-  json.dump(settings, f, indent=2, ensure_ascii=False)
-  f.write("\n")
-PYEOF
-
-# Issue #130: normalize-task-guard.sh — PreToolUse[Agent|Task] hook that blocks
-# Agent/Task tool calls whose prompt carries raw non-English (Hangul) content
-# in TASK:/REQUIREMENTS: slots without a matching NORMALIZED_TASK: provenance
-# line. Capability-gated defence-in-depth augmentation for the AI-agnostic
-# enforcement in core/rules/normalization-adapter.md and core/rules/korean-input.md.
-# Exempts input-normalizer / korean-normalizer agents and the explicit
-# AGENT_CREW_ALLOW_RAW_NON_ASCII_TASK=1 escape hatch.
-python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/normalize-task-guard.sh" "Agent|Task" "PreToolUse" <<'PYEOF'
-import sys, json, os
-dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 10}
 if os.path.exists(dest):
   with open(dest) as f:
     try: settings = json.load(f)

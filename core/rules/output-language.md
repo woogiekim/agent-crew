@@ -4,20 +4,15 @@
 
 **User-facing output should appear in the AI's natural response language
 for the conversation** (which, in practice, means the language the user
-used in their input). This is the counterpart to the Input
-Normalization rule (`core/rules/normalization-adapter.md`): inputs are
-normalized to canonical English for internal artifacts, but the AI's
-communication back to the user is **not** forced into English.
+used in their input). Input task text is preserved verbatim in internal
+artifacts; it is not translated to English before planning or handoff.
 
-This rule is intentionally permissive on output and strict on internal
-artifacts. A Korean-speaking user submitting `crew:run "주문 API
-구현해"` should:
+A Korean-speaking user submitting `crew:run "주문 API 구현해"` should:
 
 - See progress emits, approval prompts, summary tables, and result
   narratives in Korean (matches their input).
-- Have `pipeline.json.task`, `register.json.task`, `handoff.md`
-  content, and agent-to-agent prompts written in English (canonical
-  internal language).
+- Have the original Korean task text preserved in `pipeline.json.task`,
+  `register.json.task`, `handoff.md`, and agent-to-agent prompts.
 
 ## What This Rule Covers
 
@@ -37,12 +32,9 @@ artifacts. A Korean-speaking user submitting `crew:run "주문 API
 
 **Out of scope (always English):**
 
-- All structured state files: `pipeline.json`, `register.json`,
-  `session.json`, `capabilities.json`, `progress.buffer.jsonl`
-- The `task` field in any state file (normalized per
-  `core/rules/normalization-adapter.md` before write)
-- Agent prompts (inter-agent handoff text, system preambles)
-- `handoff.md` content (agents read each other's output as English)
+- All status keywords and parser-owned schema keys inside structured state
+  files: `pipeline.json`, `register.json`, `session.json`,
+  `capabilities.json`, `progress.buffer.jsonl`
 - All status keywords and structured-block headers (see invariant)
 
 ## English-Only Status Invariant
@@ -108,15 +100,14 @@ internal handoff content in English.
 
 | Scenario | Internal artifact | User-facing output |
 |---|---|---|
-| Korean user: `crew:run "주문 API 구현"` | `pipeline.json.task = "Implement order domain API"` | `crew:status` shows `Task: 주문 API 구현` (mirrored from user's input phrasing) OR English (acceptable either way per AI's default) |
+| Korean user: `crew:run "주문 API 구현"` | `pipeline.json.task = "주문 API 구현"` | `crew:status` shows `Task: 주문 API 구현` |
 | Korean user devops PLAN review | `STATUS: plan_ready` keyword (English) | "다음 작업을 실행할 예정입니다: ..." (Korean narrative) |
 | English user devops PLAN review | `STATUS: plan_ready` keyword (English) | "The following actions will be performed: ..." (English narrative) |
 | Reviewer terminal status | `REVIEW: APPROVED` (English) | "구현이 PRD 요건을 모두 충족합니다" (Korean narrative around the keyword) |
 
 ## Cross-References
 
-- `core/rules/korean-input.md` — companion rule (input → English normalization)
-- `core/global-agents.md` — Input Language section + this rule's pointer
+- `core/global-agents.md` — Raw Input Preservation section + this rule's pointer
 - `core/agents/supervisor.md` — invariant on status keywords (the regex parser)
 - `core/agents/devops.md` — PLAN block format (English keywords, localized narrative)
 - `core/agents/reviewer.md` — REVIEW: keyword (English)

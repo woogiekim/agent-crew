@@ -122,7 +122,7 @@ assert_contains "${prompt}" "context/specialist-dispatch.md"
 assert_contains "${prompt}" "context/tdd-red.md"
 assert_contains "${prompt}" "context/tdd-refactor.md"
 
-it "claude host bridge narrows crew-run normalization prompts"
+it "claude host bridge treats legacy normalization markers as regular handoff text"
 NORMALIZATION_TASK_DIR="${TMP_ROOT}/normalization-task"
 NORMALIZATION_HANDOFF="${TMP_ROOT}/normalization-handoff.md"
 mkdir -p "${NORMALIZATION_TASK_DIR}"
@@ -150,12 +150,12 @@ out=$(
 rc=$?
 assert_exit 0 "${rc}"
 prompt="$(cat "${NORMALIZATION_TASK_DIR}/context/claude-host-bridge-prompt.md")"
-assert_contains "${prompt}" "Complete only the input-normalizer contract"
-assert_contains "${prompt}" "Do not continue to supervisor"
-assert_not_contains "${prompt}" "HOST_BRIDGE: auto_completed"
-assert_not_contains "${prompt}" "Current-Session Fallback"
+assert_contains "${prompt}" "Resume this existing agent-crew crew:run handoff in Claude Code."
+assert_contains "${prompt}" "installed agent-crew supervisor workflow"
+assert_contains "${prompt}" "Current-Session Fallback"
+assert_not_contains "${prompt}" "Complete only the input-normalizer contract"
 
-it "claude direct-agent bridge forbids normalizer subagent spawn"
+it "claude direct-agent bridge preserves direct-agent handoff without normalizer instructions"
 out=$(
   AGENT_CREW_CLAUDE_BIN="${FAKE_CLAUDE}" \
   FAKE_CLAUDE_ARGV_PATH="${ARGV_PATH}" \
@@ -176,8 +176,8 @@ rc=$?
 assert_exit 0 "${rc}"
 argv=$(cat "${ARGV_PATH}")
 assert_contains "${argv}" "Resume this existing agent-crew direct-agent handoff in Claude Code."
-assert_contains "${argv}" "perform the input-normalizer contract inline"
-assert_contains "${argv}" "Do not spawn input-normalizer"
+assert_not_contains "${argv}" "perform the input-normalizer contract inline"
+assert_not_contains "${argv}" "Do not spawn input-normalizer"
 assert_contains "${argv}" "AGENT_CREW_AGENT_NAME: analyst"
 
 EMPTY_CLAUDE="${TMP_ROOT}/claude-empty"

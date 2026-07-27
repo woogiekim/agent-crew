@@ -7,12 +7,12 @@
 
 # agent-crew - Global Rules
 
-## Input Language
+## Raw Input Preservation
 
-Task descriptions may arrive in Korean. Always apply the Korean Input
-Normalization rule (`core/rules/korean-input.md`) before passing TASK to
-any agent or writing it to pipeline state. Never pass raw Korean text
-as a TASK description to downstream agents.
+Task descriptions may arrive in Korean or any other language. Preserve the
+exact user text as the canonical TASK and Root Input Snapshot. Do not translate
+or normalize the task to English before passing it to agents or writing it to
+pipeline state.
 
 ## Output Language
 

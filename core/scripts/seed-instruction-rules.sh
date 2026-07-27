@@ -127,18 +127,18 @@ except Exception:
 echo "[seed-instruction-rules] mode=${MODE} mnemos=${MNEMOS_BIN}"
 echo ""
 
-# --- rule:input-language --------------------------------------------------
+# --- rule:raw-input-preservation ------------------------------------------
 read -r -d '' BODY_INPUT_LANGUAGE <<'RULE_EOF' || true
 ---
-title: Input Language
+title: Raw Input Preservation
 applies_to: [all]
 priority: 10
 ---
 
-Task descriptions may arrive in Korean. Always apply the Korean Input
-Normalization rule (`core/rules/korean-input.md`) before passing TASK to
-any agent or writing it to pipeline state. Never pass raw Korean text
-as a TASK description to downstream agents.
+Task descriptions may arrive in Korean or any other language. Preserve the
+exact user text as the canonical TASK and Root Input Snapshot. Do not translate
+or normalize the task to English before passing it to agents or writing it to
+pipeline state.
 RULE_EOF
 capture_rule "rule:input-language" 10 BODY_INPUT_LANGUAGE
 

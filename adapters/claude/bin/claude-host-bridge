@@ -46,10 +46,6 @@ PROMPT_PATH="${CONTEXT_DIR}/claude-host-bridge-prompt.md"
 LAST_MESSAGE_PATH="${CONTEXT_DIR}/claude-host-bridge-last-message.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-handoff_has_normalization_gate() {
-  grep -Eq '^[[:space:]]*NORMALIZATION_GATE:[[:space:]]*required[[:space:]]*$' "${HANDOFF_PATH}" 2>/dev/null
-}
-
 resolve_token_usage_script() {
   local root
   local home_root="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -94,30 +90,11 @@ Resume this existing agent-crew direct-agent handoff in Claude Code.
 
 Do not create a new crew:run task. Do not invoke crew:run or any slash command. Read the existing handoff/request artifacts from the paths below, then complete or update the existing request state according to the installed agent-crew workflow.
 
-If the handoff contains NORMALIZATION_MODE: inline_direct_bridge, perform the input-normalizer contract inline in this same bridge session, then continue as AGENT_CREW_AGENT_NAME. Do not spawn input-normalizer, korean-normalizer, a background agent, or a nested crew:agent/crew:run command for this normalization step.
-
 Do not run crew repair for normal bridge completion. If the handoff completes successfully, exit 0 and let the parent agent-crew runtime record HOST_BRIDGE: auto_completed from the bridge process exit status. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
 
 AGENT_CREW_AGENT_NAME: ${AGENT_CREW_AGENT_NAME:-}
 AGENT_CREW_AGENT_REQUEST_ID: ${AGENT_CREW_AGENT_REQUEST_ID}
 AGENT_CREW_REQUEST_DIR: ${AGENT_CREW_REQUEST_DIR:-${TASK_DIR}}
-AGENT_CREW_TASK_ID: ${TASK_ID}
-AGENT_CREW_TASK_DIR: ${TASK_DIR}
-AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}
-AGENT_CREW_RESULT_PATH: ${RESULT_PATH}
-AGENT_CREW_PROJECT_ROOT: ${PROJECT_ROOT}
-EOF
-elif handoff_has_normalization_gate; then
-  APPEND_CURRENT_SESSION_FALLBACK=0
-  cat > "${PROMPT_PATH}" <<EOF
-Resume this existing agent-crew crew:run input-normalization handoff in Claude Code.
-
-Complete only the input-normalizer contract described in the handoff. Do not continue to supervisor, do not invoke crew:run, and do not perform implementation, git, push, setup, or global update work.
-
-Read AGENT_CREW_HANDOFF_PATH, return the requested normalization JSON/metadata, update only the existing task state files needed for the normalization gate when possible, and exit. If the task must continue beyond normalization, leave that for the parent runtime or current session after this bridge exits.
-
-Do not run crew repair for normal bridge completion. If the input-normalizer contract completes successfully, exit 0 and let the parent agent-crew runtime keep the downstream supervisor handoff pending. Use repair guidance only when the task is genuinely blocked, manually completed outside this bridge, or requires operator reconciliation after a failed bridge run.
-
 AGENT_CREW_TASK_ID: ${TASK_ID}
 AGENT_CREW_TASK_DIR: ${TASK_DIR}
 AGENT_CREW_HANDOFF_PATH: ${HANDOFF_PATH}

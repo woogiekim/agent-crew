@@ -77,7 +77,7 @@ stdin_payload=$(cat "${STDIN_PATH}")
 assert_contains "${stdin_payload}" "Resume this existing agent-crew crew:run handoff in Codex."
 assert_contains "${stdin_payload}" "AGENT_CREW_TASK_ID: task-1"
 
-it "codex host bridge narrows crew-run normalization prompts"
+it "codex host bridge treats legacy normalization markers as regular handoff text"
 NORMALIZATION_TASK_DIR="${TMP_ROOT}/normalization-task"
 NORMALIZATION_HANDOFF="${TMP_ROOT}/normalization-handoff.md"
 mkdir -p "${NORMALIZATION_TASK_DIR}"
@@ -105,12 +105,11 @@ out=$(
 rc=$?
 assert_exit 0 "${rc}"
 stdin_payload=$(cat "${STDIN_PATH}")
-assert_contains "${stdin_payload}" "Complete only the input-normalizer contract"
-assert_contains "${stdin_payload}" "Do not continue to supervisor"
-assert_not_contains "${stdin_payload}" "HOST_BRIDGE: auto_completed"
-assert_not_contains "${stdin_payload}" "installed agent-crew supervisor workflow"
+assert_contains "${stdin_payload}" "Resume this existing agent-crew crew:run handoff in Codex."
+assert_contains "${stdin_payload}" "installed agent-crew supervisor workflow"
+assert_not_contains "${stdin_payload}" "Complete only the input-normalizer contract"
 
-it "codex direct-agent bridge forbids normalizer subagent spawn"
+it "codex direct-agent bridge preserves direct-agent handoff without normalizer instructions"
 out=$(
   AGENT_CREW_CODEX_BIN="${FAKE_CODEX}" \
   AGENT_CREW_CODEX_ALLOW_NESTED=1 \
@@ -139,8 +138,8 @@ assert_contains "${argv}" "--skip-git-repo-check"
 assert_not_contains "${argv}" "--add-dir"
 assert_not_contains "${argv}" "${PROJECT_ROOT}"
 assert_contains "${stdin_payload}" "Resume this existing agent-crew direct-agent handoff in Codex."
-assert_contains "${stdin_payload}" "perform the input-normalizer contract inline"
-assert_contains "${stdin_payload}" "Do not spawn input-normalizer"
+assert_not_contains "${stdin_payload}" "perform the input-normalizer contract inline"
+assert_not_contains "${stdin_payload}" "Do not spawn input-normalizer"
 assert_contains "${stdin_payload}" "Direct-agent bridges run with a read-only project sandbox."
 assert_contains "${stdin_payload}" "AGENT_CREW_AGENT_NAME: analyst"
 

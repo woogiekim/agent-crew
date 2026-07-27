@@ -121,7 +121,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Forbid plain-text approval** — when `hook_system` is advertised (Claude), a `PostToolUse[Agent]` validator blocks free-text yes/no prompts ("Shall I merge?" / "...진행할까요?") and feeds the violation back to the model. Hook script: `core/hooks/forbid-plaintext-approval.sh`.
 - **Native issue reporting** — installed hooks detect explicit agent-crew bug/error reports, failed `crew` Bash payloads, and unexpected supervisor infrastructure blockers, redact common secrets, deduplicate by fingerprint, and store a local report/outbox entry through `crew report auto`. GitHub publication is an optional backend via `crew report publish`. Hook script: `core/hooks/auto-issue-report.sh`; contract: `core/rules/auto-issue-reporting.md`.
 - **Autonomous task injection** — when a session is already running and the user submits "추가로 해줘", "이것도 부탁해", "Also do...", "While you're at it..." etc., `crew:run` Step 1.5 auto-routes the new task into the live session without prompting.
-- **Bilingual input + localized output** — Korean task descriptions are normalized to English for internal artifacts (pipeline.json, register.json, handoff.md, agent prompts) per `core/rules/korean-input.md`, while user-facing output (progress messages, approval prompts, result narratives) follows the user's input language per `core/rules/output-language.md`. Structured status tokens (`STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`) remain English as a parser invariant.
+- **Raw input + localized output** — Korean task descriptions and other non-English inputs are preserved verbatim in internal artifacts (`pipeline.json`, `register.json`, `handoff.md`, agent prompts). User-facing output follows the user's input language per `core/rules/output-language.md`. Structured status tokens (`STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`) remain English as a parser invariant.
 
 ## Installation
 
@@ -829,7 +829,7 @@ return PLAN: block  →    collect all PLAN blocks
 poll approval.md         compose consolidated plan
                          issue single AskUserQuestion
                          write APPROVED/CANCELLED to approval.md
-execute (if APPROVED) ←  
+execute (if APPROVED) ←
 ```
 
 Plain-text approval requests ("Shall I?", "Should I?") are forbidden at every level. The `AskUserQuestion` structured UI is the only permitted approval method for deploy, push, merge, and destructive operations.

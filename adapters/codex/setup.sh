@@ -312,7 +312,6 @@ legacy_system_names = {
     "frontend.toml",
     "historian.toml",
     "issuer.toml",
-    "korean-normalizer.toml",
     "learning-mentor.toml",
     "mentor.toml",
     "planner.toml",

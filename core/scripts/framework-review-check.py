@@ -599,19 +599,19 @@ def evaluate_repo(root: Path) -> dict:
         ),
         control(
             "reliability",
-            "input_normalization_gate_all_entrypoints",
+            "raw_input_preservation_all_entrypoints",
             "high",
-            has_all(crew_runtime, ["detect_source_language", "input_normalization_task", "input_normalization_handoff"])
+            has_all(crew_runtime, ["raw input is preserved verbatim", "forced English normalization is disabled"])
             and has_all(
                 crew_cli_test,
                 [
-                    "crew run routes Korean task text through input-normalizer gate",
-                    "crew run routes non-English multilingual input through input-normalizer gate",
-                    "crew run routes ambiguous conversational input through input-normalizer gate",
-                    "crew agent keeps intended agent for Korean inline normalization",
+                    "crew run preserves Korean task text without input normalization",
+                    "crew run preserves non-English multilingual input without input normalization",
+                    "crew run preserves ambiguous conversational input without input normalization",
+                    "crew agent preserves Korean task text for direct handoff",
                 ],
             ),
-            "Non-English or ambiguous task input must be normalized before every crew run or direct-agent downstream handoff.",
+            "Crew entrypoints must preserve raw user input and avoid forced English normalization.",
         ),
         control(
             "reliability",

@@ -37,8 +37,6 @@ whether it is safe for direct invocation via `crew:agent`.
 | documenter | Documentation, README, API docs | docs, readme, documentation, guide, reference, changelog, comment | yes | — |
 | mentor | Mentoring, coaching, concept teaching, growth feedback, engineering guidance Q&A | mentor, mentoring, coach, guide, teach, learn, explain, concept, pattern, question, example, tutorial, feedback, study plan, growth, 멘토, 코칭, 가르쳐, 학습, 개념, 설명 | yes | — |
 | learning-mentor | Legacy concept-teaching alias; prefer mentor for new routing | teach, learn, explain, concept, pattern, question, example, tutorial | yes | — |
-| input-normalizer | Multilingual input translation and instruction normalization (utility) | (internal — invoked automatically for multilingual or ambiguous input) | yes | — |
-| korean-normalizer | Korean text normalization compatibility alias (utility) | (legacy internal alias; prefer input-normalizer) | yes | — |
 | issuer | Issue lifecycle management for creation, state transitions, and field updates (user-installed, tool-agnostic dispatcher) | publish issues, create work items, issue tracking, task list import, import issues, bulk create issues, seed project, upload task list, issue file, issue lifecycle, status transition, state change, field update, label update, priority update, assignee update | yes | — |
 | reviewer | Code review (needs prior stage output) | review, lint, quality, approve, check | no | Requires completed stage output from supervisor context |
 | qa-owner | QA test-case planning and implementation verification (needs PRD and stage output) | qa, test case, tc, acceptance validation, regression, exploratory, verification | no | Requires supervisor context, qa_mode, PRD, and implementation evidence |

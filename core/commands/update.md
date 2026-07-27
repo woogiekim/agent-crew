@@ -1063,11 +1063,10 @@ the next run.
 
 ### Phase L15 — Output language rule
 
-Adds the explicit counterpart to the long-standing Korean Input
-Normalization rule (`core/rules/korean-input.md`). User-facing output
-now has a documented contract: it should match the user's input
-language (Claude does this naturally), while structured status tokens
-remain English as a parser invariant.
+Adds an explicit output-language contract without changing task input
+semantics. User-facing output should match the user's input language
+(Claude does this naturally), while the raw task text is preserved verbatim
+and structured status tokens remain English as a parser invariant.
 
 **No migration code required.** Pure documentation:
 

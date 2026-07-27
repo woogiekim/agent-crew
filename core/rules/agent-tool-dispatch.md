@@ -501,7 +501,6 @@ future drift in the form of "should we add a vendor adapter to X?" discussions.
 | `resolver` | Pure git operation. `git` is the only "tool". (Capability-skill dispatch: opted in — see catalog above.) |
 | `requirements` | Interactive structured choice. Host-capability axis already covered by `core/rules/capabilities/interactive-question.md`. (Capability-skill dispatch: opted in.) |
 | `supervisor` (+ `supervisor-bootstrap`, `supervisor-stages`, `supervisor-retry`) | Internal orchestration. The host-capability axis is its vendor axis and is already factored out via `capabilities.json`. |
-| `input-normalizer`, `korean-normalizer` | Pure-text utilities. No tool axis. |
 | `analyst`, `planner` | Moderate-fit candidates for vendor adapters; not opting in until concrete vendor-axis evidence appears (see `docs/issuer-vendor-skill-layer-dip-review/generalized-dispatcher-primitive.md` § 1 Verdict statement). (Capability-skill dispatch: opted in.) |
 | `mentor`, `learning-mentor` | Moderate-fit candidates; not opting in until concrete vendor-axis evidence appears. |
 | `test-writer` | Test framework variation is already covered by language skills (`tdd.md`, `effective-*.md`). Vendor-adapter split would over-engineer. (Capability-skill dispatch: opted in.) |

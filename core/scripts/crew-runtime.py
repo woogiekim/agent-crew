@@ -1310,277 +1310,6 @@ def has_non_english_script(text: str) -> bool:
     )
 
 
-def valid_normalized_task_value(value: object) -> str:
-    if not isinstance(value, str):
-        return ""
-
-    normalized_task = value.strip()
-    if not normalized_task:
-        return ""
-    if has_non_english_script(normalized_task):
-        return ""
-
-    return normalized_task
-
-
-def normalized_task_from_bridge_payload(payload: object) -> str:
-    if isinstance(payload, dict):
-        normalized_task = valid_normalized_task_value(payload.get("normalized_task"))
-        if normalized_task:
-            return normalized_task
-
-        for key in ("result", "content", "message", "output", "text", "stdout"):
-            if key not in payload:
-                continue
-            normalized_task = normalized_task_from_bridge_payload(payload[key])
-            if normalized_task:
-                return normalized_task
-
-    if isinstance(payload, list):
-        for item in payload:
-            normalized_task = normalized_task_from_bridge_payload(item)
-            if normalized_task:
-                return normalized_task
-
-    if isinstance(payload, str):
-        return normalized_task_from_bridge_text(payload)
-
-    return ""
-
-
-def normalized_task_from_bridge_text(text: str) -> str:
-    for candidate in json_candidate_texts(text):
-        try:
-            payload = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-
-        normalized_task = normalized_task_from_bridge_payload(payload)
-        if normalized_task:
-            return normalized_task
-
-    return ""
-
-
-def normalized_task_from_bridge_record(bridge_record: dict) -> str:
-    normalized_task = valid_normalized_task_value(bridge_record.get("normalized_task"))
-    if normalized_task:
-        return normalized_task
-
-    return normalized_task_from_bridge_text(str(bridge_record.get("stdout") or ""))
-
-
-def write_normalized_task_audit(
-    task_dir: Path,
-    *,
-    raw_task: str,
-    normalized_task: str,
-    normalized_at: str,
-    bridge_record: dict,
-) -> Path:
-    normalized_by = str(bridge_record.get("bridge_selection_host") or "").strip() or "other"
-    audit_path = task_dir / "context" / "normalized_task.md"
-    audit_path.write_text(
-        (
-            f"RAW_INPUT: {raw_task}\n"
-            f"SOURCE_LANGUAGE: {detect_source_language(raw_task)}\n"
-            f"NORMALIZED_TASK: {normalized_task}\n"
-            f"NORMALIZED_AT: {normalized_at}\n"
-            f"NORMALIZED_BY: {normalized_by}\n"
-            "PATH: crew-run\n"
-        ),
-        encoding="utf-8",
-    )
-    return audit_path
-
-
-def mark_normalization_bridge_blocked(
-    task_dir: Path,
-    register: dict,
-    pipeline: dict,
-    bridge_record: dict,
-    *,
-    raw_task: str,
-) -> None:
-    now = utc_now_z()
-    completion_path = task_dir / "context" / "host-bridge-normalization.json"
-    write_json(completion_path, bridge_record)
-
-    register.update({
-        "current_phase": "blocked",
-        "blocked_by": ["missing_normalized_task"],
-        "host_bridge_status": "failed",
-        "host_bridge_failure_reason": "missing_normalized_task",
-        "host_bridge_completion_path": str(completion_path),
-        "host_bridge_completed_at": now,
-    })
-    pipeline.update({
-        "stages": ["input-normalizer", "supervisor"],
-        "completed_stages": 0,
-        "stage_agent_status": {
-            "1": {"input-normalizer": "blocked"},
-        },
-    })
-
-    handoff = (
-        "# Input Normalization Blocked\n\n"
-        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
-        f"TASK: {register.get('task', task_dir.name)}\n"
-        "MODE: normalization-completed\n"
-        "STATUS: blocked\n"
-        "NORMALIZATION_GATE: blocked\n"
-        "BLOCKER: missing_normalized_task\n"
-        f"RAW_INPUT: {raw_task}\n"
-        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
-        "NEXT: Re-run input normalization and return a non-empty normalized_task before supervisor handoff.\n"
-    )
-    result = (
-        f"# {register.get('task', task_dir.name)}\n\n"
-        "STATUS: blocked\n"
-        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
-        f"BRANCH: {register.get('branch', '')}\n"
-        "NORMALIZATION_GATE: blocked\n"
-        "BLOCKER: missing_normalized_task\n"
-        "HOST_BRIDGE: failed\n"
-        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
-        "DETAIL: Host bridge exited successfully but did not return the required normalized_task value.\n"
-    )
-
-    write_json(task_dir / "register.json", register)
-    write_json(task_dir / "pipeline.json", pipeline)
-    (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
-    (task_dir / "result.md").write_text(result, encoding="utf-8")
-
-    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
-        handle.write(f"{now} | NORMALIZATION_BLOCKED | missing_normalized_task\n")
-        handle.write(f"{now} | STATUS | blocked\n")
-
-    append_progress(
-        task_dir,
-        {
-            "ts": now,
-            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
-            "task_id": task_dir.name,
-            "session_id": register.get("session_id", ""),
-            "event": "NORMALIZATION_BLOCKED",
-            "stage": 0,
-            "agent": "input-normalizer",
-            "attempt": 0,
-            "status": "failed",
-            "detail": "missing_normalized_task",
-            "files": ["context/host-bridge-normalization.json", "handoff.md", "result.md"],
-        },
-    )
-
-
-def mark_normalization_bridge_handoff(
-    task_dir: Path,
-    register: dict,
-    pipeline: dict,
-    bridge_record: dict,
-    *,
-    raw_task: str,
-    normalized_task: str,
-    project_root: Path,
-) -> str:
-    now = utc_now_z()
-    completion_path = task_dir / "context" / "host-bridge-normalization.json"
-    normalization_pipeline_path = task_dir / "context" / "normalization-pipeline.json"
-    write_json(completion_path, bridge_record)
-    audit_path = write_normalized_task_audit(
-        task_dir,
-        raw_task=raw_task,
-        normalized_task=normalized_task,
-        normalized_at=now,
-        bridge_record=bridge_record,
-    )
-
-    register.update({
-        "task": normalized_task,
-        "current_phase": "handoff_ready",
-        "blocked_by": [],
-        "host_bridge_status": "internal_handoff_ready",
-        "host_bridge_completion_path": str(completion_path),
-        "host_bridge_completed_at": now,
-        "normalization_pipeline_path": str(normalization_pipeline_path),
-    })
-    normalization_pipeline = dict(pipeline)
-    normalization_pipeline.update({
-        "task": normalized_task,
-        "stages": ["input-normalizer"],
-        "completed_stages": 1,
-        "stage_agent_status": {
-            "1": {"input-normalizer": "completed"},
-        },
-        "downstream_supervisor_pending": True,
-    })
-    write_json(normalization_pipeline_path, normalization_pipeline)
-
-    handoff = (
-        "# Supervisor Handoff\n\n"
-        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
-        f"TASK: {normalized_task}\n"
-        f"PROJECT_ROOT: {project_root}\n"
-        "MODE: normalization-completed\n"
-        "STATUS: handoff_ready\n"
-        "NORMALIZATION_GATE: completed\n"
-        f"RAW_INPUT: {raw_task}\n"
-        "HOST_BRIDGE: internal_handoff_ready\n"
-        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
-        f"EVIDENCE: {audit_path.relative_to(task_dir)}\n"
-        f"EVIDENCE: {normalization_pipeline_path.relative_to(task_dir)}\n"
-        f"REPAIR: crew repair {register.get('task_id', task_dir.name)} --status completed --note \"<summary>\"\n"
-    )
-    result = (
-        f"# {normalized_task}\n\n"
-        "STATUS: handoff_ready\n"
-        f"TASK_ID: {register.get('task_id', task_dir.name)}\n"
-        f"BRANCH: {register.get('branch', '')}\n"
-        "NORMALIZATION_GATE: completed\n"
-        "HOST_BRIDGE: internal_handoff_ready\n"
-        f"EVIDENCE: {completion_path.relative_to(task_dir)}\n"
-        f"EVIDENCE: {audit_path.relative_to(task_dir)}\n"
-        f"EVIDENCE: {normalization_pipeline_path.relative_to(task_dir)}\n"
-        "NEXT: Continue downstream crew:run supervisor execution from handoff.md; "
-        "the bridge completed input normalization only.\n"
-    )
-
-    write_json(task_dir / "register.json", register)
-    pipeline_path = task_dir / "pipeline.json"
-    if pipeline_path.exists():
-        pipeline_path.unlink()
-    (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
-    (task_dir / "result.md").write_text(result, encoding="utf-8")
-
-    with (task_dir / "progress.log").open("a", encoding="utf-8") as handle:
-        handle.write(f"{now} | NORMALIZATION_COMPLETED | host bridge completed input-normalizer only\n")
-        handle.write(f"{now} | STATUS | handoff_ready\n")
-
-    append_progress(
-        task_dir,
-        {
-            "ts": now,
-            "trace_id": f"{register.get('session_id', task_dir.name)}.{task_dir.name}.0.0",
-            "task_id": task_dir.name,
-            "session_id": register.get("session_id", ""),
-            "event": "NORMALIZATION_COMPLETED",
-            "stage": 0,
-            "agent": "input-normalizer",
-            "attempt": 0,
-            "status": "handoff_ready",
-            "detail": "host bridge completed input normalization only; downstream supervisor is still pending",
-            "files": [
-                "context/host-bridge-normalization.json",
-                "context/normalized_task.md",
-                "context/normalization-pipeline.json",
-                "handoff.md",
-                "result.md",
-            ],
-        },
-    )
-    return normalized_task
-
-
 def active_codex_session() -> bool:
     return any(
         os.environ.get(name, "").strip()
@@ -1895,7 +1624,6 @@ def invoke_host_bridge(
         **running_record,
         "finished_at": finished.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "returncode": returncode,
-        "normalized_task": normalized_task_from_bridge_text(stdout),
         "stdout": stdout[-4000:],
         "stderr": stderr[-4000:],
         "timed_out": timed_out,
@@ -2191,12 +1919,10 @@ def ambiguous_input_reason(text: str) -> str:
 def input_normalization_metadata(raw_task: str, *, next_target: str) -> dict:
     source_language = detect_source_language(raw_task)
     ambiguity = ambiguous_input_reason(raw_task)
-    translation_required = source_language != "en"
-    normalization_required = translation_required or bool(ambiguity)
-    confidence = 0.9 if source_language == "en" and not ambiguity else 0.55
-    reason = []
-    if translation_required:
-        reason.append(f"source_language={source_language}")
+    translation_required = False
+    normalization_required = False
+    confidence = 0.9 if not ambiguity else 0.55
+    reason = ["raw input is preserved verbatim; forced English normalization is disabled"]
     if ambiguity:
         reason.append(ambiguity)
     return {
@@ -2209,77 +1935,9 @@ def input_normalization_metadata(raw_task: str, *, next_target: str) -> dict:
         "required_capabilities": required_capabilities_for_task(raw_task),
         "raw_input_ref": "handoff.md#RAW_INPUT",
         "downstream_route_hint": next_target,
-        "normalization_sources": [
-            "OpenAI prompting guide",
-            "Anthropic prompt engineering overview",
-            "Google Gemini prompting intro",
-            "Microsoft Azure OpenAI prompt engineering",
-        ],
-        "reason": "; ".join(reason) if reason else "input is already a specific English instruction",
+        "normalization_sources": [],
+        "reason": "; ".join(reason),
     }
-
-
-def needs_input_normalization(raw_task: str) -> bool:
-    return bool(input_normalization_metadata(raw_task, next_target="").get("normalization_required"))
-
-
-def input_normalization_task(raw_task: str, *, next_target: str) -> str:
-    metadata = input_normalization_metadata(raw_task, next_target=next_target)
-    return (
-        "Normalize raw user input into a canonical English agent-crew workflow "
-        "instruction. Return structured NORMALIZED_TASK metadata with objective, "
-        "scope, constraints, acceptance criteria, missing context, risk flags, "
-        f"and confidence, then re-route the normalized instruction to {next_target}. "
-        f"Detected source_language={metadata['source_language']}; "
-        f"translation_required={str(metadata['translation_required']).lower()}."
-    )
-
-
-def input_normalization_handoff(
-    *,
-    request_id: str,
-    project_root: Path,
-    normalized_task: str,
-    raw_task: str,
-    next_target: str,
-    status: str,
-    metadata: dict,
-) -> str:
-    raw_label = "RAW_TASK" if metadata.get("source_language") == "ko" else "RAW_INPUT"
-    return (
-        "# Input Normalization Handoff\n\n"
-        f"REQUEST_ID: {request_id}\n"
-        "AGENT: input-normalizer\n"
-        f"TASK: {normalized_task}\n"
-        f"PROJECT_ROOT: {project_root}\n"
-        "MODE: normalization-gate\n"
-        f"STATUS: {status}\n\n"
-        "NORMALIZATION_GATE: required\n"
-        f"SOURCE_LANGUAGE: {metadata.get('source_language', 'unknown')}\n"
-        f"TRANSLATION_REQUIRED: {str(bool(metadata.get('translation_required'))).lower()}\n"
-        f"CONFIDENCE: {metadata.get('confidence', 0.0)}\n"
-        f"INTENDED_TARGET_AFTER_NORMALIZATION: {next_target}\n"
-        f"{raw_label}: {raw_task}\n"
-        "OUTPUT_CONTRACT: Return JSON with source_language, translation_required, "
-        "raw_input_ref, normalized_task, objective, scope, out_of_scope, "
-        "constraints, acceptance_criteria, missing_context, risk_flags, "
-        "downstream_route_hint, confidence, and normalization_sources. Do not "
-        "execute the downstream workflow until the normalized English instruction "
-        "is available.\n"
-    )
-
-
-def korean_normalization_task(raw_task: str, *, next_target: str) -> str:
-    return input_normalization_task(raw_task, next_target=next_target)
-
-
-def korean_normalization_handoff(**kwargs) -> str:
-    if "metadata" not in kwargs:
-        kwargs["metadata"] = input_normalization_metadata(
-            kwargs.get("raw_task", ""),
-            next_target=kwargs.get("next_target", ""),
-        )
-    return input_normalization_handoff(**kwargs)
 
 
 def extract_comment_requirements(comments: list[dict]) -> list[str]:
@@ -2519,8 +2177,7 @@ def command_run(args: argparse.Namespace) -> int:
 
     raw_task = args.task
     normalization_metadata = input_normalization_metadata(raw_task, next_target="crew run supervisor")
-    normalization_required = bool(normalization_metadata["normalization_required"])
-    task = input_normalization_task(raw_task, next_target="crew run supervisor") if normalization_required else raw_task
+    task = raw_task
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
@@ -2582,41 +2239,29 @@ def command_run(args: argparse.Namespace) -> int:
     pipeline = {
         "schema_version": 1,
         "task": task,
-        "stages": ["input-normalizer"] if normalization_required else ["supervisor"],
+        "stages": ["supervisor"],
         "completed_stages": 1 if result_status == "completed" else 0,
         "stage_agent_status": {
             "1": {
-                ("input-normalizer" if normalization_required else "supervisor"):
-                    "completed" if result_status == "completed" else "blocked"
+                "supervisor": "completed" if result_status == "completed" else "blocked"
             }
         },
     }
 
-    if normalization_required:
-        handoff = input_normalization_handoff(
-            request_id=task_id,
-            project_root=project_root,
-            normalized_task=task,
-            raw_task=raw_task,
-            next_target="crew run supervisor",
-            status=result_status,
-            metadata=normalization_metadata,
-        )
-    else:
-        handoff = (
-            f"# Supervisor Handoff\n\n"
-            f"TASK_ID: {task_id}\n"
-            f"TASK: {task}\n"
-            f"PROJECT_ROOT: {project_root}\n"
-            f"MODE: fake-host\n" if args.fake_host_result else
-            f"# Supervisor Handoff\n\n"
-            f"TASK_ID: {task_id}\n"
-            f"TASK: {task}\n"
-            f"PROJECT_ROOT: {project_root}\n"
-            f"MODE: native-cli\n"
-            f"STATUS: {result_status}\n"
-            f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
-        )
+    handoff = (
+        f"# Supervisor Handoff\n\n"
+        f"TASK_ID: {task_id}\n"
+        f"TASK: {task}\n"
+        f"PROJECT_ROOT: {project_root}\n"
+        f"MODE: fake-host\n" if args.fake_host_result else
+        f"# Supervisor Handoff\n\n"
+        f"TASK_ID: {task_id}\n"
+        f"TASK: {task}\n"
+        f"PROJECT_ROOT: {project_root}\n"
+        f"MODE: native-cli\n"
+        f"STATUS: {result_status}\n"
+        f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
+    )
     if result_status == "blocked":
         handoff += "BLOCKER: host AI bridge has not completed this handoff\n"
 
@@ -2626,8 +2271,6 @@ def command_run(args: argparse.Namespace) -> int:
         f"TASK_ID: {task_id}\n"
         f"BRANCH: {register['branch']}\n"
     )
-    if normalization_required:
-        result += "NORMALIZATION_GATE: required\n"
     if result_status == "handoff_ready":
         result += "HOST_BRIDGE: internal_handoff_ready\n"
         result += blocked_next
@@ -2645,8 +2288,6 @@ def command_run(args: argparse.Namespace) -> int:
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
-    if normalization_required:
-        write_json(task_dir / "context" / "input-normalization.json", normalization_metadata)
     issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
     if issue_ingestions:
         register["issue_comment_ingestion"] = issue_ingestions
@@ -2740,27 +2381,16 @@ def command_run(args: argparse.Namespace) -> int:
             )
             write_json(task_dir / "register.json", register)
 
-            if normalization_required:
-                handoff = input_normalization_handoff(
-                    request_id=task_id,
-                    project_root=project_root,
-                    normalized_task=task,
-                    raw_task=raw_task,
-                    next_target="crew run supervisor",
-                    status="handoff_ready",
-                    metadata=normalization_metadata,
-                )
-            else:
-                handoff = (
-                    f"# Supervisor Handoff\n\n"
-                    f"TASK_ID: {task_id}\n"
-                    f"TASK: {task}\n"
-                    f"PROJECT_ROOT: {project_root}\n"
-                    f"MODE: native-cli\n"
-                    f"STATUS: handoff_ready\n"
-                    f"HOST_BRIDGE: current_session_required\n"
-                    f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
-                )
+            handoff = (
+                f"# Supervisor Handoff\n\n"
+                f"TASK_ID: {task_id}\n"
+                f"TASK: {task}\n"
+                f"PROJECT_ROOT: {project_root}\n"
+                f"MODE: native-cli\n"
+                f"STATUS: handoff_ready\n"
+                f"HOST_BRIDGE: current_session_required\n"
+                f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
+            )
 
             result = (
                 f"# {task}\n\n"
@@ -2768,8 +2398,6 @@ def command_run(args: argparse.Namespace) -> int:
                 f"TASK_ID: {task_id}\n"
                 f"BRANCH: {register['branch']}\n"
             )
-            if normalization_required:
-                result += "NORMALIZATION_GATE: required\n"
             result += "HOST_BRIDGE: current_session_required\n"
             result += current_next
 
@@ -2807,38 +2435,6 @@ def command_run(args: argparse.Namespace) -> int:
         if bridge_record["returncode"] == 0 and not host_bridge_reported_blocked(bridge_record):
             latest_register = load_json(task_dir / "register.json", register)
             latest_pipeline = load_json(task_dir / "pipeline.json", pipeline)
-            if normalization_required:
-                normalized_task = normalized_task_from_bridge_record(bridge_record)
-                if not normalized_task:
-                    mark_normalization_bridge_blocked(
-                        task_dir,
-                        latest_register,
-                        latest_pipeline,
-                        bridge_record,
-                        raw_task=raw_task,
-                    )
-                    print(f"TASK_ID: {task_id}")
-                    print(f"TASK_DIR: {task_dir}")
-                    print("STATUS: blocked")
-                    print("BLOCKER: missing_normalized_task")
-                    print("HOST_BRIDGE: failed")
-                    return 3
-
-                mark_normalization_bridge_handoff(
-                    task_dir,
-                    latest_register,
-                    latest_pipeline,
-                    bridge_record,
-                    raw_task=raw_task,
-                    normalized_task=normalized_task,
-                    project_root=project_root,
-                )
-                print(f"TASK_ID: {task_id}")
-                print(f"TASK_DIR: {task_dir}")
-                print("STATUS: handoff_ready")
-                print("HOST_BRIDGE: internal_handoff_ready")
-                return 0
-
             if looks_mutating_task(str(latest_register.get("task", args.task))):
                 quality_result = check_quality_loop(task_dir, target_status="completed")
                 if not quality_result["passed"]:
@@ -2963,27 +2559,6 @@ def command_agent(args: argparse.Namespace) -> int:
         task,
         next_target=intended_agent_name or "direct-agent auto-routing",
     )
-    normalization_required = (
-        bool(normalization_metadata["normalization_required"])
-        and agent_name not in {"input-normalizer", "korean-normalizer"}
-    )
-    raw_task_for_normalizer = task if normalization_required else ""
-    if normalization_required:
-        if looks_mutating(raw_task_for_normalizer):
-            print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
-            return 2
-
-        normalization_metadata = input_normalization_metadata(task, next_target=intended_agent_name or "direct-agent auto-routing")
-        route_reason = (
-            "inline input normalization before "
-            f"{intended_agent_name or 'direct-agent auto-routing'}"
-        )
-        task = (
-            "Complete this direct-agent request after inline input normalization. "
-            f"First normalize RAW_TASK from the handoff into a canonical English read-only request, "
-            f"then answer it as the {intended_agent_name or 'selected'} agent. "
-            "Do not spawn utility agents."
-        )
 
     if looks_mutating(task):
         print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
@@ -3042,18 +2617,6 @@ def command_agent(args: argparse.Namespace) -> int:
         "progress_log_path": str(request_dir / "progress.log"),
         "progress_buffer_path": str(request_dir / "progress.buffer.jsonl"),
     }
-    if normalization_required:
-        request.update(
-            {
-                "normalization_status": "required",
-                "source_language": normalization_metadata.get("source_language", "unknown"),
-                "translation_required": normalization_metadata.get("translation_required", False),
-                "confidence": normalization_metadata.get("confidence", 0.0),
-                "normalization_mode": "inline_direct_bridge",
-                "normalization_agent": "input-normalizer",
-                "intended_agent_after_normalization": intended_agent_name or "",
-            }
-        )
     handoff = (
         f"# Direct Agent Handoff\n\n"
         f"REQUEST_ID: {request_id}\n"
@@ -3064,26 +2627,8 @@ def command_agent(args: argparse.Namespace) -> int:
         f"STATUS: handoff_ready\n"
         f"NEXT: Invoke crew:agent {agent_name!r} with this task inside the host prompt runtime.\n"
     )
-    if normalization_required:
-        handoff += (
-            "\nNORMALIZATION_GATE: required\n"
-            "NORMALIZATION_MODE: inline_direct_bridge\n"
-            "NORMALIZATION_AGENT: input-normalizer\n"
-            f"SOURCE_LANGUAGE: {normalization_metadata.get('source_language', 'unknown')}\n"
-            f"TRANSLATION_REQUIRED: {str(bool(normalization_metadata.get('translation_required'))).lower()}\n"
-            f"INTENDED_AGENT_AFTER_NORMALIZATION: {intended_agent_name or 'auto-route'}\n"
-            f"RAW_TASK: {raw_task_for_normalizer}\n"
-            "OUTPUT_CONTRACT: Return JSON with source_language, translation_required, "
-            "raw_input_ref, normalized_task, objective, scope, constraints, "
-            "acceptance_criteria, missing_context, risk_flags, downstream_route_hint, "
-            "confidence, and normalization_sources. Perform this normalization inline "
-            "inside the direct-agent bridge session. Do not spawn input-normalizer, "
-            "korean-normalizer, a background agent, or a nested crew:agent command.\n"
-        )
 
     write_json(request_dir / "request.json", request)
-    if normalization_required:
-        write_json(request_dir / "context" / "input-normalization.json", normalization_metadata)
     (request_dir / "handoff.md").write_text(handoff, encoding="utf-8")
     append_progress_log(request_dir, "DIRECT_AGENT_REQUEST", f"{agent_name}: handoff_ready")
     append_progress(

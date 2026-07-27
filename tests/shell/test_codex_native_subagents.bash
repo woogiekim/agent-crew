@@ -169,11 +169,10 @@ assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model_reaso
 it "Codex setup maps deep implementation agents to Codex frontier model"
 assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model = "gpt-5.5"'
 
-it "Codex setup maps light utility agents to low effort"
-assert_contains "$(cat "${setup_repo}/.codex/agents/input-normalizer.toml")" 'model_reasoning_effort = "low"'
-
-it "Codex setup maps light utility agents to Codex mini model"
-assert_contains "$(cat "${setup_repo}/.codex/agents/input-normalizer.toml")" 'model = "gpt-5.4-mini"'
+it "Codex setup does not install removed input normalizer agents"
+if [ -e "${setup_repo}/.codex/agents/input-normalizer.toml" ] || [ -e "${setup_repo}/.codex/agents/korean-normalizer.toml" ]; then
+  fail "normalizer agents should not be installed"
+fi
 
 it "Generated Codex TOML parses as valid TOML"
 python3 - "${toml}" <<'PYEOF'
