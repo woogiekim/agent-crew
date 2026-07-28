@@ -33,6 +33,30 @@ coverage conclusions. Review output must cite first-party evidence with
 `file:line`, task-artifact paths, or `tool-output` where applicable, and must
 show an explicit evidence-to-inference-to-conclusion flow.
 
+## Review Intent Fidelity
+
+Read and apply `core/rules/review-intent-fidelity.md` before approving any
+review follow-up or declaring that review comments were reflected, handled,
+addressed, fixed, accepted, or completed. The review unit is the reviewer's
+requested meaning, not the presence of a changed line or a method call.
+
+When a task is responding to review comments, require
+`{TASK_DIR}/context/review-ledger.json` or
+`{TASK_DIR}/context/review-ledger.md`. Verify every ledger row against the
+original review text:
+
+- `implemented` rows must cite code evidence, test evidence, and semantic
+  verification for the requested state, value, side effect, or behavior.
+- `deferred` rows must cite tracking evidence such as a TODO, issue, decision
+  record, or external approval dependency.
+- `rejected` rows must cite technical rationale and an alternative.
+- `not-applicable` rows must cite the scope basis.
+
+Return `REVIEW: NEEDS_CHANGES` when the ledger is missing for a review
+follow-up, when a row lacks disposition-specific evidence, or when an
+`implemented` row proves only call existence instead of the reviewer's intended
+meaning.
+
 ## Code Intelligence Evidence
 
 Read and apply `core/rules/code-intelligence-evidence.md` before approving code

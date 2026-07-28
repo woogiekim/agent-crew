@@ -400,6 +400,13 @@ TDD_EVENT_RE = re.compile(
 )
 TC_ID_RE = re.compile(r"\bTC-\d{3,}\b", re.I)
 MARKDOWN_TABLE_DELIMITER_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
+REVIEW_LEDGER_DISPOSITIONS = {"implemented", "deferred", "rejected", "not-applicable"}
+REVIEW_LEDGER_REQUIRED_FIELDS = {
+    "implemented": ("review", "intent", "code_evidence", "test_evidence", "semantic_verification"),
+    "deferred": ("review", "intent", "tracking_evidence"),
+    "rejected": ("review", "intent", "rejection_rationale", "alternative"),
+    "not-applicable": ("review", "intent", "scope_basis"),
+}
 # Split this placeholder so the fake-completion scanner does not flag its own
 # scanner vocabulary.
 NO_TEST_PLACEHOLDER = "to" "do"
@@ -684,6 +691,142 @@ def is_no_test_reference(value: str) -> bool:
 def has_reviewer_accepted_exception(row: dict[str, str]) -> bool:
     text = " ".join(row.get(key, "") for key in ("notes", "reason", "exception", "explanation"))
     return bool(EXCEPTION_ACCEPTED_RE.search(text))
+
+
+def normalize_review_ledger_key(value: str) -> str:
+    normalized = normalize_table_header(value)
+    aliases = {
+        "review_comment": "review",
+        "reviewer_comment": "review",
+        "comment": "review",
+        "code_evidence": "code_evidence",
+        "code": "code_evidence",
+        "test_evidence": "test_evidence",
+        "test": "test_evidence",
+        "tests": "test_evidence",
+        "semantic_evidence": "semantic_verification",
+        "semantic_verification": "semantic_verification",
+        "meaning_verification": "semantic_verification",
+        "state_value_side_effect_evidence": "semantic_verification",
+        "tracking_link": "tracking_evidence",
+        "tracking": "tracking_evidence",
+        "todo": "tracking_evidence",
+        "technical_rationale": "rejection_rationale",
+        "rationale": "rejection_rationale",
+        "scope_evidence": "scope_basis",
+        "scope": "scope_basis",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def normalize_review_ledger_item(item: dict, fallback_id: str) -> dict:
+    normalized = {
+        normalize_review_ledger_key(str(key)): value
+        for key, value in item.items()
+    }
+    normalized.setdefault("id", fallback_id)
+    return normalized
+
+
+def review_ledger_value_present(value) -> bool:
+    if isinstance(value, list):
+        return any(review_ledger_value_present(item) for item in value)
+    if isinstance(value, dict):
+        return any(review_ledger_value_present(item) for item in value.values())
+
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return not is_no_test_reference(text)
+
+
+def review_ledger_json_items(path: Path) -> tuple[list[dict], list[str]]:
+    payload = load_json(path)
+    if not isinstance(payload, dict):
+        return [], ["review_ledger_json_not_object"]
+    if payload.get("schema_version") != 1:
+        return [], ["review_ledger_schema_version_invalid"]
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return [], ["review_ledger_items_not_list"]
+
+    rows = [
+        normalize_review_ledger_item(item, f"item-{index}")
+        for index, item in enumerate(items, start=1)
+        if isinstance(item, dict)
+    ]
+    if len(rows) != len(items):
+        return rows, ["review_ledger_item_not_object"]
+    return rows, []
+
+
+def review_ledger_markdown_items(path: Path) -> tuple[list[dict], list[str]]:
+    rows = markdown_table_rows(load_text(path))
+    return [
+        normalize_review_ledger_item(row, f"item-{index}")
+        for index, row in enumerate(rows, start=1)
+    ], []
+
+
+def review_ledger_item_errors(item: dict) -> list[str]:
+    disposition = str(item.get("disposition") or "").strip().lower()
+    if disposition not in REVIEW_LEDGER_DISPOSITIONS:
+        return ["invalid_disposition"]
+
+    missing = [
+        field for field in REVIEW_LEDGER_REQUIRED_FIELDS[disposition]
+        if not review_ledger_value_present(item.get(field))
+    ]
+    return [f"missing_{field}" for field in missing]
+
+
+def review_ledger_status(task_dir: Path) -> dict:
+    json_path = task_dir / "context" / "review-ledger.json"
+    markdown_path = task_dir / "context" / "review-ledger.md"
+    if json_path.is_file():
+        rows, errors = review_ledger_json_items(json_path)
+        artifact = relative_evidence_name(task_dir, json_path)
+    elif markdown_path.is_file():
+        rows, errors = review_ledger_markdown_items(markdown_path)
+        artifact = relative_evidence_name(task_dir, markdown_path)
+    else:
+        return {
+            "required": False,
+            "present": False,
+            "valid": True,
+            "artifact": "",
+            "errors": [],
+            "item_count": 0,
+            "implemented_count": 0,
+            "invalid_item_ids": [],
+        }
+
+    item_errors: dict[str, list[str]] = {}
+    for index, row in enumerate(rows, start=1):
+        item_id = str(row.get("id") or f"item-{index}").strip() or f"item-{index}"
+        errors_for_item = review_ledger_item_errors(row)
+        if errors_for_item:
+            item_errors[item_id] = errors_for_item
+
+    if not rows:
+        errors.append("review_ledger_empty")
+
+    invalid_ids = sorted(item_errors)
+    if invalid_ids:
+        errors.append("incomplete_review_ledger")
+
+    return {
+        "required": True,
+        "present": True,
+        "valid": not errors,
+        "artifact": artifact,
+        "errors": sorted(set(errors)),
+        "item_count": len(rows),
+        "implemented_count": sum(1 for row in rows if str(row.get("disposition") or "").strip().lower() == "implemented"),
+        "invalid_item_ids": invalid_ids,
+        "item_errors": item_errors,
+    }
 
 
 def has_valid_must_mapping(row: dict[str, str]) -> bool:
@@ -2146,6 +2289,7 @@ def quality_coverage_status(
     approval_metric_errors: list[str],
     test_checklist: dict,
     finding_register: dict,
+    review_ledger: dict,
     delegation_fidelity: dict,
     human_acceptance: dict,
     evaluation_metrics: dict,
@@ -2231,12 +2375,20 @@ def quality_coverage_status(
         ),
         quality_coverage_dimension(
             "finding_register",
-            10,
+            5,
             [
                 ("schema_valid", not finding_register["present"] or finding_register["valid"]),
                 ("no_open_findings", not finding_register["open_ids"]),
                 ("terminal_findings_have_tests", not finding_register["missing_test_mapping_ids"]),
                 ("scope_status_has_owner_or_followup", not finding_register["missing_owner_or_followup_ids"]),
+            ],
+        ),
+        quality_coverage_dimension(
+            "review_ledger",
+            5,
+            [
+                ("valid_when_present", (not review_ledger["present"]) or review_ledger["valid"]),
+                ("items_have_disposition", not review_ledger.get("invalid_item_ids")),
             ],
         ),
         quality_coverage_dimension(
@@ -2413,6 +2565,7 @@ def check_quality_loop(
     ]
     test_checklist = test_checklist_status(task_dir)
     finding_register = finding_register_status(task_dir)
+    review_ledger = review_ledger_status(task_dir)
     trace_evidence = trace_quality_evidence(task_dir, register)
     delegation_fidelity = delegation_fidelity_status(task_dir)
     human_acceptance = human_acceptance_matrix_status(task_dir)
@@ -2513,6 +2666,8 @@ def check_quality_loop(
             failures.append("missing_finding_test_mapping")
         if finding_register["missing_owner_or_followup_ids"]:
             failures.append("missing_finding_owner_or_followup")
+        if review_ledger["present"] and not review_ledger["valid"]:
+            failures.extend(review_ledger["errors"] or ["incomplete_review_ledger"])
         if delegation_required and not delegation_fidelity["has_delegation"]:
             failures.append("missing_delegation_fidelity_evidence")
         if delegation_required and not delegation_fidelity["has_tool_events"]:
@@ -2554,6 +2709,7 @@ def check_quality_loop(
         approval_metric_errors=approval_metric_errors,
         test_checklist=test_checklist,
         finding_register=finding_register,
+        review_ledger=review_ledger,
         delegation_fidelity=delegation_fidelity,
         human_acceptance=human_acceptance,
         evaluation_metrics=evaluation_metrics,
@@ -2599,6 +2755,7 @@ def check_quality_loop(
         "reviewer_quality_metrics_errors": sorted(set(approval_metric_errors)),
         "test_checklist": test_checklist,
         "finding_register": finding_register,
+        "review_ledger": review_ledger,
         "delegation_fidelity": delegation_fidelity,
         "trace_evidence": trace_evidence,
         "human_acceptance": human_acceptance,

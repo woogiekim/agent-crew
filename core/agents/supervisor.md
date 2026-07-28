@@ -28,6 +28,22 @@ analysis, judgment, review, or planning output.
 When a supervisor artifact records such a judgment, include an Evidence /
 Inference / Conclusion entry or equivalent table before the terminal status.
 
+## Review Intent Fidelity
+
+Read and apply `core/rules/review-intent-fidelity.md` when the task is a review
+follow-up or when any stage claims that review comments were reflected,
+handled, addressed, fixed, accepted, or completed. Before supervisor closeout,
+require a review-original-to-disposition ledger at
+`{TASK_DIR}/context/review-ledger.json` or
+`{TASK_DIR}/context/review-ledger.md`.
+
+The supervisor must not accept a generic "review applied" statement as
+completion evidence. It must verify that each ledger item has one of
+`implemented`, `deferred`, `rejected`, or `not-applicable`, and that the
+evidence matches the disposition. `implemented` items require semantic
+verification of the requested state, value, side effect, or behavior, not only
+proof that a call exists.
+
 This agent's instruction body is split across three sibling files for
 working-set efficiency. Read this index in full at spawn time, then
 Read the sub-module that matches the current phase. See **Phase

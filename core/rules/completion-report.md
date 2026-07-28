@@ -8,6 +8,11 @@ artifact referenced by `{ARTIFACT_FIELD}` must already satisfy
 `core/rules/evidence-grounded-reasoning.md`: cited first-party evidence and an
 explicit evidence-to-inference-to-conclusion flow are required before this
 completion report may be returned.
+When the stage claims review comments were reflected, handled, addressed,
+fixed, accepted, or completed, it must also satisfy
+`core/rules/review-intent-fidelity.md`: the completion report may only claim
+the dispositions recorded in `{TASK_DIR}/context/review-ledger.json` or
+`{TASK_DIR}/context/review-ledger.md`.
 
 ```text
 STATUS: completed
@@ -25,6 +30,9 @@ STATUS: completed
   semantic content. It must not be accepted as semantic stage completion.
 - Implementation agents keep their agent-specific `FILES`, `VERIFIED`, and
   related return shapes; this generic three-line example does not replace them.
+- Review follow-up completion must reference a review ledger or explicitly state
+  that no review comments were in scope. A summary of code changes or passing
+  tests cannot replace the review-original-to-disposition ledger.
 - When this generic shape applies, include one metrics field (a count, hash, or
   identifier) and no additional lines, prose, or explanations beyond the three
   fields. Agent-specific compact contracts keep their documented field count.

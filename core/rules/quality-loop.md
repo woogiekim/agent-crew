@@ -47,6 +47,10 @@ Treat all of the following as required before a stage is considered complete:
   `core/rules/evidence-grounded-reasoning.md`: it cites first-party evidence
   with `file:line`, task-artifact paths, or `tool-output` where applicable, and
   shows an explicit evidence-to-inference-to-conclusion flow.
+- Any review follow-up satisfies `core/rules/review-intent-fidelity.md`: each
+  review comment has a review-original-to-disposition ledger item, and each
+  `implemented` item proves the requested state, value, side effect, or behavior
+  with code evidence, test evidence, and semantic verification.
 
 ## Runtime Completion Gate
 
@@ -65,6 +69,7 @@ The following remain hard failures for standard-risk tasks:
 
 - Missing test file or TDD exception evidence for a TDD-required stage.
 - Invalid or unresolved finding-register entries.
+- Invalid review-ledger entries when a review ledger is present.
 - Invalid reviewer quality metrics.
 - Missing task-specific optional gates such as delegation fidelity, human
   acceptance, or evaluation metrics when the pipeline explicitly requires them.

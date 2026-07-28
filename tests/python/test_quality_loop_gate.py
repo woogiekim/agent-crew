@@ -209,6 +209,89 @@ def run_quality_loop_check(task_dir: Path, *extra: str) -> subprocess.CompletedP
     )
 
 
+def test_quality_gate_blocks_incomplete_review_ledger_for_review_followup(tmp_path: Path):
+    """failure-case(regression) - review follow-up completion requires semantic ledger evidence."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "items": [
+                    {
+                        "review": "로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨",
+                        "intent": "자동승인 이력을 뉴스봇 ActionLog로 남긴다",
+                        "disposition": "implemented",
+                        "code_evidence": ["CmsArticleService.java:120"],
+                        "test_evidence": [],
+                        "semantic_verification": "",
+                        "residual_risk": "none",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert status["passed"] is False
+    assert "incomplete_review_ledger" in status["hard_failures"]
+    assert status["review_ledger"]["present"] is True
+    assert status["review_ledger"]["invalid_item_ids"] == ["item-1"]
+
+
+def test_quality_gate_accepts_review_ledger_with_semantic_evidence(tmp_path: Path):
+    """success-case - implemented review comments preserve intent with code and test evidence."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "items": [
+                    {
+                        "review": "로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨",
+                        "intent": "자동승인 이력을 뉴스봇 ActionLog로 남긴다",
+                        "disposition": "implemented",
+                        "code_evidence": ["CmsArticleService.java:120"],
+                        "test_evidence": ["CmsArticleServiceNewsBotActorTest.java:42"],
+                        "semantic_verification": "memberSeq/status/comment/contentSeq/contentType values are asserted",
+                        "residual_risk": "none",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert "incomplete_review_ledger" not in status["failures"]
+    assert status["review_ledger"]["valid"] is True
+    assert status["review_ledger"]["implemented_count"] == 1
+
+
+def test_quality_gate_accepts_markdown_review_ledger(tmp_path: Path):
+    """success-case - human-readable review ledger tables are accepted when complete."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.md").write_text(
+        "| Review | Intent | Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨 | 자동승인 이력을 뉴스봇 ActionLog로 남긴다 | implemented | CmsArticleService.java:120 | CmsArticleServiceNewsBotActorTest.java:42 | memberSeq/status/comment/contentSeq/contentType values are asserted | none |\n",
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert status["review_ledger"]["valid"] is True
+    assert status["review_ledger"]["artifact"] == "context/review-ledger.md"
+
+
 def test_repair_blocks_mutating_task_without_quality_loop_evidence(tmp_path: Path):
     state_dir, task_id, _task_dir = make_task(tmp_path, "Implement a new update gate")
 
