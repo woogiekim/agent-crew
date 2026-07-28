@@ -57,6 +57,7 @@ def test_direct_invocation_remains_available_for_analysis_agents() -> None:
         "planner",
         "designer",
         "analyst",
+        "debugger",
         "documenter",
         "historian",
         "issuer",
@@ -99,6 +100,7 @@ def test_agent_command_is_not_globally_read_only() -> None:
 def test_existing_read_only_agents_declare_read_only_in_their_own_rules() -> None:
     for relative in (
         "core/agents/analyst.md",
+        "core/agents/debugger.md",
         "core/agents/historian.md",
         "core/agents/mentor.md",
         "core/agents/learning-mentor.md",

@@ -1870,6 +1870,72 @@ def read_agent_registry(root: Path) -> dict[str, dict]:
     return agents
 
 
+def _markdown_table_rows(text: str, section: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    in_section = False
+    section_level = 0
+    for line in text.splitlines():
+        heading_match = re.match(r"^(#{2,})\s+", line)
+        if heading_match and re.search(re.escape(section), line, re.IGNORECASE):
+            in_section = True
+            section_level = len(heading_match.group(1))
+            continue
+        if in_section and heading_match and len(heading_match.group(1)) <= section_level:
+            break
+        if not in_section or not line.startswith("|"):
+            continue
+        if "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells:
+            rows.append(cells)
+    return rows
+
+
+def _route_tokens(pattern: str) -> list[str]:
+    if not pattern or pattern.strip().lower() == "(no match)":
+        return []
+
+    tokens: list[str] = []
+    for raw in re.split(r"\s+OR\s+", pattern, flags=re.IGNORECASE):
+        token = raw.strip().strip('"').strip()
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def read_agent_routing_rules(root: Path) -> list[dict[str, str | list[str]]]:
+    routing_path = root / "rules" / "agent-routing.md"
+    if not routing_path.exists():
+        return []
+
+    rules: list[dict[str, str | list[str]]] = []
+    for cells in _markdown_table_rows(routing_path.read_text(encoding="utf-8"), "Auto-Routing Rules"):
+        if cells[:5] == ["Priority", "Pattern (case-insensitive, any word matches)", "Agent", "Confidence", "Reason shown to user"]:
+            continue
+        if len(cells) < 5:
+            continue
+        priority, pattern, agent, confidence, reason = cells[:5]
+        tokens = _route_tokens(pattern)
+        if not tokens or agent in {"— NONE —", "-", ""}:
+            continue
+        rules.append({
+            "priority": priority,
+            "agent": agent,
+            "tokens": tokens,
+            "confidence": confidence,
+            "reason": reason,
+        })
+
+    def sort_key(rule: dict[str, str | list[str]]) -> float:
+        try:
+            return float(str(rule.get("priority") or "999"))
+        except ValueError:
+            return 999.0
+
+    return sorted(rules, key=sort_key)
+
+
 def looks_mutating(task: str) -> bool:
     return looks_mutating_task(task)
 
@@ -2039,110 +2105,14 @@ def record_issue_ingestion_evidence(task_dir: Path, raw_task: str) -> list[dict]
 def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
     lowered = task.lower()
 
-    historian_tokens = [
-        "어떤 에이전트",
-        "방금",
-        "what just",
-        "what did this session",
-        "what did we",
-        "what ran",
-        "what agent",
-        "this session",
-        "이번 세션",
-        "this branch",
-        "session history",
-        "spawned agent",
-        "what's running",
-        "whats running",
-        "currently running",
-        "recent activity",
-        "어떤 commit",
-        "무슨 commit",
-        "latest commit",
-        "git log",
-        "git history",
-    ]
-    if "historian" in agents and any(
-        token in lowered or token in task
-        for token in historian_tokens
-    ):
-        return "historian", "matched historian keywords"
-
-    explicit_mentor_tokens = [
-        "mentor me",
-        "be my mentor",
-        "mentoring",
-        "coach",
-        "coaching",
-        "teach",
-        "learn",
-        "tutorial",
-        "study plan",
-        "growth",
-        "멘토링",
-        "멘토 역할",
-        "멘토처럼",
-        "코칭",
-        "코치",
-        "가르쳐",
-        "학습",
-        "개념",
-    ]
-    if "mentor" in agents and any(
-        token in lowered or token in task
-        for token in explicit_mentor_tokens
-    ):
-        return "mentor", "matched explicit mentor keywords"
-
-    route_patterns = [
-        ("historian", historian_tokens),
-        ("backend", ["api", "endpoint", "server", "database", "schema", "domain", "service", "repository", "entity"]),
-        ("frontend", ["component", " page", " ui ", " css", "style", "layout", "button", "form", "modal", "react", "vue"]),
-        ("designer", ["wireframe", "mockup", "figma", "prototype", "sketch"]),
-        ("planner", ["design", "architecture", "plan", "decompose", "structure", "diagram"]),
-        ("analyst", [
-            "explain",
-            "analyze",
-            "analyse",
-            "investigate",
-            "understand",
-            "validate",
-            "trace",
-            "audit",
-            "explore",
-            "리뷰",
-            "검토",
-            "평가",
-            "검증",
-            "동작",
-            "작동",
-        ]),
-        ("documenter", ["docs", "readme", "documentation", "guide", "reference", "changelog"]),
-        ("mentor", [
-            "mentor",
-            "mentoring",
-            "coach",
-            "teach",
-            "learn",
-            "concept",
-            "pattern",
-            "tutorial",
-            "example",
-            "feedback",
-            "study plan",
-            "growth",
-            "멘토",
-            "코칭",
-            "가르쳐",
-            "학습",
-            "개념",
-            "설명",
-        ]),
-        ("learning-mentor", ["teach", "learn", "concept", "pattern", "tutorial", "example"]),
-    ]
-    for name, tokens in route_patterns:
-        if name in agents and any(token in lowered or token in task for token in tokens):
-            return name, f"matched {name} keywords"
+    for rule in read_agent_routing_rules(asset_root()):
+        name = str(rule.get("agent") or "")
+        tokens = rule.get("tokens") or []
+        if name not in agents:
+            continue
+        if any(str(token).lower() in lowered or str(token) in task for token in tokens):
+            reason = str(rule.get("reason") or f"matched {name} keywords")
+            return name, f"{reason} ({name})"
     return None, "no direct-agent routing rule matched"
 
 

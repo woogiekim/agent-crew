@@ -189,6 +189,31 @@
       "destructive_requires_approval": false,
       "notes": "Highest-impact analysis and pipeline synthesis role; quality dominates latency and cost."
     },
+    "debugger": {
+      "role": "readonly",
+      "model_tier": "xhigh",
+      "reasoning_tier": "xhigh",
+      "allowed_capabilities": [
+        "memory_write_project_verified_root_cause",
+        "read_file",
+        "run_tests",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "delegate_agents",
+        "destructive_command",
+        "edit_file",
+        "external_state_write",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Read-only failure diagnosis agent; may run existing safe tests and capture only verified root causes through the memory wrapper."
+    },
     "planner": {
       "role": "planner",
       "model_tier": "xhigh",
