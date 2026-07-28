@@ -24,6 +24,7 @@ def test_every_codex_command_wrapper_references_a_shipped_command():
 
 def test_parity_check_wrapper_and_command_ship_together():
     assert (SKILL_ROOT / "parity-check" / "SKILL.md").is_file()
+    assert not (SKILL_ROOT / "crew:parity-check" / "SKILL.md").is_file()
     assert (COMMAND_ROOT / "parity-check.md").is_file()
 
 

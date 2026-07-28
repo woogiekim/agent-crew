@@ -39,7 +39,10 @@ def _context(prompt: str) -> str:
 
 
 def _directive_type(prompt: str) -> str:
-    ctx = _context(prompt)
+    output = _run_hook(prompt)
+    if not output:
+        return "EMPTY"
+    ctx = output["hookSpecificOutput"]["additionalContext"]
     if "[agent-crew] COMMAND" in ctx:
         return "COMMAND"
     if "[agent-crew] STOP" in ctx:
@@ -50,33 +53,30 @@ def _directive_type(prompt: str) -> str:
 
 
 def test_list_item_crew_run_wrapper_invocation_is_command():
-    """success-case(command-boundary) - list-item $crew-run stays a workflow origin."""
+    """success-case(command-boundary) - list-item $crew:run stays a workflow origin."""
     # given
-    prompt = "- $crew-run 코드리뷰"
+    prompt = "- $crew:run 코드리뷰"
 
     # when
     ctx = _context(prompt)
 
     # then
     assert "[agent-crew] COMMAND" in ctx
-    assert "explicit $crew-run invocation detected" in ctx
+    assert "explicit $crew:run invocation detected" in ctx
     assert "Command arguments detected: 코드리뷰" in ctx
-    assert "ROUTE_LOCK: crew-agent" not in ctx
+    assert "ROUTE_LOCK: crew:agent" not in ctx
 
 
-def test_mixed_review_and_crew_run_parallel_prompt_routes_to_crew_run():
-    """success-case(precedence) - explicit workflow execution beats read-only review fallback."""
+def test_mixed_review_and_crew_run_parallel_prompt_emits_no_hidden_route():
+    """non-leading natural language/list content is not classified by the hook."""
     # given
-    prompt = "- $review\n- $crew-run 코드리뷰\n\n병렬실행"
+    prompt = "- $review\n- $crew:run 코드리뷰\n\n병렬실행"
 
     # when
-    ctx = _context(prompt)
+    out = _run_hook(prompt)
 
     # then
-    assert "[agent-crew] STOP" in ctx
-    assert "ROUTE_LOCK: crew-run" in ctx
-    assert "ROUTE_LOCK: crew-agent" not in ctx
-    assert "Scope: read-only analysis" not in ctx
+    assert out == {}
 
 
 @pytest.mark.parametrize(
@@ -87,13 +87,13 @@ def test_mixed_review_and_crew_run_parallel_prompt_routes_to_crew_run():
         "코드리뷰 병렬로 실행",
     ],
 )
-def test_korean_parallel_review_execution_routes_to_crew_run(prompt: str):
-    """success-case(korean-execution) - Korean parallel review execution routes to crew-run."""
+def test_korean_parallel_review_execution_emits_no_hidden_route(prompt: str):
+    """Korean natural-language execution phrasing is not auto-classified."""
     # given / when
     route = _directive_type(prompt)
 
     # then
-    assert route == "STOP"
+    assert route == "EMPTY"
 
 
 @pytest.mark.parametrize(
@@ -105,10 +105,10 @@ def test_korean_parallel_review_execution_routes_to_crew_run(prompt: str):
         "$review",
     ],
 )
-def test_read_only_review_and_questions_still_route_to_crew_agent(prompt: str):
-    """success-case(read-only-boundary) - read-only review and questions stay on crew-agent."""
+def test_read_only_review_and_questions_emit_no_hidden_route(prompt: str):
+    """Natural-language read-only phrasing is not auto-classified."""
     # given / when
     route = _directive_type(prompt)
 
     # then
-    assert route == "ROUTE"
+    assert route == "EMPTY"

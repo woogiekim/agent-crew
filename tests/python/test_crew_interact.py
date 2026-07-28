@@ -772,6 +772,7 @@ def test_e2e_case_crew_bin_interact_lists_friendly_candidates(tmp_path: Path):
             "CODEX_HOME": str(codex_home),
             "CLAUDE_HOME": str(claude_home),
             "PROJECT_ROOT": str(project),
+            "AGENT_CREW_INTERACT_AOE_ENABLED": "0",
         }
     )
 

@@ -914,7 +914,7 @@ def test_command_run_bridge_success_preserves_raw_task_despite_normalized_task_o
 
 
 def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
-    """failure-case(regression) - direct-agent routing rejects only mutating tasks."""
+    """direct-agent routing rejects invalid targets, not mutating wording."""
     root = tmp_path / "runtime-root"
     _write_registry(root)
     (root / "project").mkdir()
@@ -986,8 +986,8 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
             "analyst",
             f"{review_context}\n\n사용자 요청: README를 수정해",
         )
-    ) == 2
-    assert "direct invocation is read-only" in capsys.readouterr().err
+    ) == 0
+    assert "STATUS: handoff_ready" in capsys.readouterr().out
 
     mutating_variants = (
         f"{review_context}\n\nPlease review and fix it.",
@@ -1021,8 +1021,8 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
         "Read-only review. Then test it.",
     )
     for task in mutating_variants:
-        assert runtime.command_agent(_agent_args(root, "analyst", task)) == 2
-        assert "direct invocation is read-only" in capsys.readouterr().err
+        assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0
+        assert "STATUS: handoff_ready" in capsys.readouterr().out
 
     read_only_variants = (
         "Could you explain how to amend this?",
@@ -1078,18 +1078,16 @@ def test_command_agent_accepts_korean_analysis_complaint_about_accidental_mutati
     assert "STATUS: handoff_ready" in capsys.readouterr().out
 
 
-def test_command_agent_routes_bare_push_and_cross_verb_false_negatives(
+def test_command_agent_allows_bare_push_and_cross_verb_direct_handoffs(
     monkeypatch, tmp_path: Path, capsys
 ):
-    """failure-case(regression) - direct-agent routing rejects the two classifier false-negatives while preservation prose stays read-only (mirrors test_quality_loop_gate.py; AC-001..AC-003)."""
+    """direct-agent command no longer rejects mutating-looking task text."""
     # given
     root = tmp_path / "runtime-root"
     _write_registry(root)
     (root / "project").mkdir()
     monkeypatch.setenv("AGENT_CREW_HOME", str(tmp_path / "home"))
 
-    # cross-verb negation (#1) plus bare "push <remote> <branch>" (#2) must all
-    # route as mutation, so direct read-only invocation is rejected (exit 2).
     mutating_variants = (
         "Cherry-pick this, do not push it.",
         "Apply this patch, do not push.",
@@ -1101,7 +1099,6 @@ def test_command_agent_routes_bare_push_and_cross_verb_false_negatives(
         "push origin feature/login",
         "push upstream main",
     )
-    # narrowness locks: off-set branch token and advisory prose stay read-only.
     read_only_variants = (
         "push origin scratch-notes",
         "the team should push to origin main",
@@ -1109,8 +1106,8 @@ def test_command_agent_routes_bare_push_and_cross_verb_false_negatives(
 
     # when / then
     for task in mutating_variants:
-        assert runtime.command_agent(_agent_args(root, "analyst", task)) == 2
-        assert "direct invocation is read-only" in capsys.readouterr().err
+        assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0
+        assert "STATUS: handoff_ready" in capsys.readouterr().out
 
     for task in read_only_variants:
         assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0

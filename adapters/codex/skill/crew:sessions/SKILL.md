@@ -1,9 +1,9 @@
 ---
-name: crew-sessions
-description: Use when the user invokes $crew-sessions to list recent AI session candidates for crew interact.
+name: crew:sessions
+description: Use when the user invokes $crew:sessions to list recent AI session candidates for crew interact.
 ---
 
-# crew-sessions
+# crew:sessions
 
 This Codex skill is an alias for:
 

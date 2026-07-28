@@ -211,11 +211,13 @@ def test_auto_issue_hook_reports_matching_user_prompt_without_blocking(tmp_path)
     assert not crew_finished.exists()
 
 
-def test_auto_route_delays_bridge_status_until_prompt_can_route():
+def test_auto_route_does_not_run_hidden_bridge_status_router():
     text = (REPO_ROOT / "core/hooks/auto-route.sh").read_text(encoding="utf-8")
 
     assert "HOST_BRIDGE_READY, HOST_BRIDGE_REASON = _bridge_status()" not in text
-    assert "_HOST_BRIDGE_STATUS = _bridge_status()" in text
+    assert "_bridge_status()" not in text
+    assert "COMMAND_PAT" in text
+    assert "explicit {command} invocation detected" in text
 
 
 def test_supervisor_guard_fast_rejects_unrelated_payload_before_python(tmp_path):

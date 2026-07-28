@@ -30,7 +30,7 @@ set +e
 #
 # Both claude and codex are "installed" by creating their installation dirs:
 #   <acHome>/claude-inst/agent-crew       — stands in for ~/.claude/agent-crew
-#   <acHome>/codex-inst/skills/agent-crew — stands in for ~/.codex/skills/agent-crew
+#   <acHome>/codex-inst/skills/crew:run — stands in for ~/.codex/skills/crew:run
 #
 # CLAUDE_DIR and CODEX_HOME are exported to point at the fake install roots.
 
@@ -120,7 +120,7 @@ RAN="${ACHOME}/ran"
 CLAUDE_INST_DIR="${TMP}/claude-inst"
 CODEX_INST_DIR="${TMP}/codex-inst"
 mkdir -p "${CLAUDE_INST_DIR}/agent-crew"
-mkdir -p "${CODEX_INST_DIR}/skills/agent-crew"
+mkdir -p "${CODEX_INST_DIR}/skills/crew:run"
 
 run_setup_host "${ACHOME}" "${CLAUDE_INST_DIR}" "${CODEX_INST_DIR}"
 
@@ -170,7 +170,7 @@ RAN3="${ACHOME3}/ran"
 # claude NOT installed
 CLAUDE_INST3="${TMP3}/claude-inst-absent"
 CODEX_INST3="${TMP3}/codex-inst"
-mkdir -p "${CODEX_INST3}/skills/agent-crew"
+mkdir -p "${CODEX_INST3}/skills/crew:run"
 
 run_setup_host "${ACHOME3}" "${CLAUDE_INST3}" "${CODEX_INST3}"
 
@@ -218,7 +218,7 @@ RAN5="${ACHOME5}/ran"
 CLAUDE_INST5="${TMP5}/claude-inst"
 CODEX_INST5="${TMP5}/codex-inst"
 mkdir -p "${CLAUDE_INST5}/agent-crew"
-mkdir -p "${CODEX_INST5}/skills/agent-crew"
+mkdir -p "${CODEX_INST5}/skills/crew:run"
 
 AGENT_CREW_HOME="${ACHOME5}" \
 CLAUDE_DIR="${CLAUDE_INST5}" \
@@ -249,7 +249,7 @@ RAN6="${ACHOME6}/ran"
 CLAUDE_INST6="${TMP6}/claude-inst"
 CODEX_INST6="${TMP6}/codex-inst"
 mkdir -p "${CLAUDE_INST6}/agent-crew"
-mkdir -p "${CODEX_INST6}/skills/agent-crew"
+mkdir -p "${CODEX_INST6}/skills/crew:run"
 
 cat >"${ACHOME6}/adapters/claude/detect.sh" <<'SH'
 #!/usr/bin/env bash

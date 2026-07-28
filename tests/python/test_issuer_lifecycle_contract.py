@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 ISSUER_PATH = REPO_ROOT / "core" / "agents" / "issuer.md"
-AUTO_ROUTE_PATH = REPO_ROOT / "core" / "hooks" / "auto-route.sh"
+AGENT_ROUTING_PATH = REPO_ROOT / "core" / "rules" / "agent-routing.md"
 CAPABILITIES_PATH = REPO_ROOT / "core" / "policies" / "agent-capabilities.json"
 
 
@@ -49,12 +49,14 @@ def test_issuer_contract_requires_lifecycle_adapter_methods():
         assert marker in text
 
 
-def test_auto_route_defines_issue_lifecycle_pattern():
-    text = AUTO_ROUTE_PATH.read_text(encoding="utf-8")
+def test_agent_routing_defines_issue_lifecycle_pattern():
+    routing = AGENT_ROUTING_PATH.read_text(encoding="utf-8")
+    issuer = ISSUER_PATH.read_text(encoding="utf-8")
 
-    assert "ISSUE_LIFECYCLE_PAT" in text
+    for marker in ("issue lifecycle", "status transition", "priority update", "assignee update"):
+        assert marker in routing
     for marker in ("완료", "진행", "reopen", "priority", "assignee"):
-        assert marker in text
+        assert marker in issuer
 
 
 def test_issuer_capability_manifest_mentions_lifecycle_dispatch():

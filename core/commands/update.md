@@ -102,7 +102,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    | claude hooks | `${AGENT_CREW_HOME}/hooks/` | `${CLAUDE_DIR}/agent-crew/hooks/` | — |
    | claude rules | `${AGENT_CREW_HOME}/rules/` | `${CLAUDE_DIR}/agent-crew/rules/` | — |
    | claude setup | `${AGENT_CREW_HOME}/setup/` | `${CLAUDE_DIR}/agent-crew/setup/` | — |
-   | claude commands | `${AGENT_CREW_HOME}/commands/` | `${CLAUDE_DIR}/commands/` | — |
+   | claude commands | `${AGENT_CREW_HOME}/commands/` | `${CLAUDE_DIR}/commands/crew/` | — |
    | claude agents | `${AGENT_CREW_HOME}/system/agents/` | `${CLAUDE_DIR}/agent-crew/agents/` | — |
    | claude skills | `${AGENT_CREW_HOME}/skills/` | `${CLAUDE_DIR}/agent-crew/skills/` | — |
 
@@ -410,7 +410,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    after source fixes have landed.
 
    **(a) Global-scope update** — runs all installed global-scope adapters
-   (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/agent-crew/` and
+   (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/crew:<intent>/` and
    the internal agent-crew guide mirror at `~/.codex/agent-crew/skills/`)
    without requiring PROJECT_ROOT context. The mirror is not the native Codex
    skill directory; native Codex skills live under `~/.codex/skills/`.

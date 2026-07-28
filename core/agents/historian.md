@@ -54,6 +54,12 @@ about code semantics, propose changes, or spawn other agents.
 - `mnemos search` — for prior decisions / project context
 - Any host-provided TaskList / TaskGet equivalent (read-only)
 
+## Read-Only Contract
+
+Historian is always read-only. It may perform factual lookups only and must not
+edit files, write docs, update issues, commit, push, deploy, create task state,
+or mutate project or workflow state.
+
 The historian MUST NOT:
 - Edit files
 - Commit code

@@ -11,9 +11,9 @@
 # directory:
 #
 #   - Claude:  ~/.claude/agent-crew/  (via install_claude_compat)
-#   - Codex:   ~/.codex/skills/agent-crew/  (native Codex bootstrap skill)
-#              ~/.codex/agent-crew/skills/  (internal agent-crew guide mirror,
-#                                            not the native Codex skill dir)
+#   - Codex:   ~/.codex/skills/crew:<intent>/  (native Codex command skills)
+#              ~/.codex/agent-crew/skills/     (internal agent-crew guide mirror,
+#                                               not the native Codex skill dir)
 #
 # Generic has no global scope (all paths are project-local), so it is not
 # handled here — setup-host.sh covers it for the current PROJECT_ROOT.
@@ -91,7 +91,7 @@ else
 fi
 
 # ── Codex global paths ────────────────────────────────────────────────────────
-CODEX_SKILL_DIR="${CODEX_HOME}/skills/agent-crew"
+CODEX_NATIVE_SKILLS_DIR="${CODEX_HOME}/skills"
 CODEX_CREW_SKILLS_DIR="${CODEX_HOME}/agent-crew/skills"
 CODEX_AGENTS_DIR="${CODEX_HOME}/agents"
 CODEX_AGENT_GENERATOR="${SOURCE_DIR}/scripts/generate-codex-system-agents.py"
@@ -113,16 +113,45 @@ prune_and_copy_dir() {
   cp -R "${src}/." "${dest}/"
 }
 
-if [ -d "${CODEX_SKILL_DIR}" ]; then
-  printf '[update-global-adapters] Updating Codex bootstrap skill → %s\n' "${CODEX_SKILL_DIR}"
-  if [ -d "${ADAPTERS_DIR}/codex/skill/agent-crew" ]; then
-    prune_and_copy_dir "${ADAPTERS_DIR}/codex/skill/agent-crew" "${CODEX_SKILL_DIR}"
-    printf '[update-global-adapters] Codex bootstrap skill refreshed → %s\n' "${CODEX_SKILL_DIR}"
-  else
-    printf '[update-global-adapters] WARNING: Codex skill source not found at %s/codex/skill/agent-crew\n' "${ADAPTERS_DIR}" >&2
+prune_legacy_codex_dash_skills() {
+  local dest="$1"
+  local legacy_name
+  [ -d "${dest}" ] || return 0
+
+  for legacy_name in \
+    crew-agent-maker \
+    crew-agent \
+    crew-cost \
+    crew-interact \
+    crew-run \
+    crew-sessions \
+    crew-setup \
+    crew-smm \
+    crew-sync-instructions \
+    crew-status \
+    crew-task \
+    crew-telemetry \
+    crew-update \
+    crew-workflow; do
+    rm -rf "${dest}/${legacy_name}"
+  done
+
+  rm -rf "${dest}/agent-crew"
+}
+
+if [ -d "${CODEX_NATIVE_SKILLS_DIR}" ]; then
+  printf '[update-global-adapters] Updating Codex native command skills → %s\n' "${CODEX_NATIVE_SKILLS_DIR}"
+  prune_legacy_codex_dash_skills "${CODEX_NATIVE_SKILLS_DIR}"
+  if [ -d "${ADAPTERS_DIR}/codex/skill" ]; then
+    for skill_src in "${ADAPTERS_DIR}/codex/skill"/*; do
+      [ -d "${skill_src}" ] || continue
+      skill_name="$(basename "${skill_src}")"
+      prune_and_copy_dir "${skill_src}" "${CODEX_NATIVE_SKILLS_DIR}/${skill_name}"
+    done
+    printf '[update-global-adapters] Codex native command skills refreshed → %s\n' "${CODEX_NATIVE_SKILLS_DIR}"
   fi
 else
-  printf '[update-global-adapters] Skipping Codex bootstrap skill — not installed (%s does not exist)\n' "${CODEX_SKILL_DIR}"
+  printf '[update-global-adapters] Skipping Codex native command skills — directory not present (%s)\n' "${CODEX_NATIVE_SKILLS_DIR}"
 fi
 
 if [ -d "${CODEX_CREW_SKILLS_DIR}" ]; then

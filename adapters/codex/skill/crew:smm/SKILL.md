@@ -1,9 +1,9 @@
 ---
-name: crew-smm
-description: Use when the user explicitly mentions $crew-smm or asks for the agent-crew Shared Mental Model single-view (the whole per-task state — pipeline, progress, register, handoff — as one read-only block) in Codex. This is a thin Codex skill wrapper for crew:smm and delegates all behavior to ~/.agent-crew/commands/smm.md.
+name: crew:smm
+description: Use when the user explicitly mentions $crew:smm or asks for the agent-crew Shared Mental Model single-view (the whole per-task state — pipeline, progress, register, handoff — as one read-only block) in Codex. This is a thin Codex skill wrapper for crew:smm and delegates all behavior to ~/.agent-crew/commands/smm.md.
 ---
 
-# crew-smm
+# crew:smm
 
 This Codex skill is an alias for:
 

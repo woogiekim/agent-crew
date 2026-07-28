@@ -1,9 +1,9 @@
 ---
-name: crew-setup
-description: Use when the user explicitly mentions $crew-setup or asks to initialize agent-crew in Codex. This is a thin Codex skill wrapper for crew:setup and delegates all behavior to ~/.agent-crew/commands/setup.md.
+name: crew:setup
+description: Use when the user explicitly mentions $crew:setup or asks to initialize agent-crew in Codex. This is a thin Codex skill wrapper for crew:setup and delegates all behavior to ~/.agent-crew/commands/setup.md.
 ---
 
-# crew-setup
+# crew:setup
 
 This Codex skill is an alias for:
 

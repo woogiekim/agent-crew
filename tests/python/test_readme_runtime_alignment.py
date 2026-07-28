@@ -65,7 +65,7 @@ def test_docs_distinguish_workflow_notation_from_native_cli_forms():
     assert "native shell CLI uses space-separated commands such as `crew run` and `crew agent`" in compact
     assert "Slash-style commands are host-specific aliases" in combined
     assert "this adapter does not create adapter-owned slash aliases" in compact
-    for wrapper in ("$crew-setup", "$crew-cost", "$crew-agent-maker"):
+    for wrapper in ("$crew:setup", "$crew:cost", "$crew:agent-maker"):
         assert f"| `{wrapper}` |" in global_agents
         assert f"| `{wrapper}` |" in seed_rules
 

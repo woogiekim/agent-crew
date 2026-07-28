@@ -477,12 +477,12 @@ assert_not_contains "${out}" "possible user-modified file(s)"
 it "local sync post-check reports install drift success"
 assert_contains "${out}" "PASS: install drift check"
 
-it "PATH crew now serves native mutating-agent guard without Codex launcher"
+it "PATH crew allows explicit mutating direct-agent handoff without Codex launcher"
 out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" PROJECT_ROOT="${PATH_PROJECT}" \
   "${PATH_BIN}/crew" agent "fix the pipeline" 2>&1)
 rc=$?
 assert_exit 2 "${rc}"
-assert_contains "${out}" "Use crew run for mutating work"
+assert_contains "${out}" "cannot auto-route this task; specify an agent name"
 
 it "local sync preserves user-owned agent and skill files"
 assert_file_exists "${PATH_INSTALL}/user/agents/custom-agent.md"
@@ -647,10 +647,10 @@ it "crew run reports hook drift repair"
 assert_contains "${out}" "refreshed auto-route hooks"
 
 it "crew run refreshes installed global auto-route hook"
-assert_contains "$(cat "${HOOK_SYNC_HOME}/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
+assert_contains "$(cat "${HOOK_SYNC_HOME}/hooks/auto-route.sh")" 'explicit {command} invocation detected'
 
 it "crew run refreshes project-local Codex auto-route hook"
-assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
+assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'explicit {command} invocation detected'
 
 printf 'stale project hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
 
@@ -661,7 +661,7 @@ assert_exit 0 "${rc}"
 assert_contains "${out}" "refreshed auto-route hooks"
 
 it "crew run refreshes stale project-local hook after global hook is fresh"
-assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'Invoke Skill("crew-run")'
+assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'explicit {command} invocation detected'
 
 it "crew run writes deterministic state then exits handoff_ready"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
@@ -1235,11 +1235,12 @@ assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/request.json")" '"task": "심
 assert_contains "$(cat "${KOREAN_PLAN_REQUEST_DIR}/handoff.md")" "TASK: 심층분석해서 구체적인 수정 방안 계획해"
 assert_file_absent "${KOREAN_PLAN_REQUEST_DIR}/context/input-normalization.json"
 
-it "crew agent blocks Korean mutating direct requests without rewriting input"
+it "crew agent allows Korean mutating direct requests without rewriting input"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "파일을 수정해주세요" 2>&1)
 rc=$?
-assert_exit 2 "${rc}"
-assert_contains "${out}" "Use crew run for mutating work"
+assert_exit 0 "${rc}"
+KOREAN_MUTATING_REQUEST_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^REQUEST_DIR:/ {print $2; exit}')
+assert_contains "$(cat "${KOREAN_MUTATING_REQUEST_DIR}/handoff.md")" "TASK: 파일을 수정해주세요"
 
 ISSUE_BIN=$(make_tmp)
 mkdir -p "${ISSUE_BIN}"
@@ -1290,19 +1291,19 @@ assert_contains "${issue_run_register}" '"issue_comment_ingestion"'
 assert_contains "${issue_run_ingestion}" '"comments_ingested": true'
 assert_contains "${issue_run_ingestion}" "should record comments_ingested evidence"
 
-it "crew agent blocks mutating direct requests"
+it "crew agent allows explicit mutating direct requests"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent analyst "fix the bug" 2>&1)
 rc=$?
-assert_exit 2 "${rc}"
+assert_exit 0 "${rc}"
 
-it "crew agent mutating failure redirects to crew run"
-assert_contains "${out}" "Use crew run for mutating work"
+it "crew agent mutating direct request creates handoff"
+assert_contains "${out}" "STATUS: handoff_ready"
 
-it "crew agent auto-route mutating failure redirects to crew run"
+it "crew agent auto-route no-match asks for explicit agent"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" agent "fix the pipeline" 2>&1)
 rc=$?
 assert_exit 2 "${rc}"
-assert_contains "${out}" "Use crew run for mutating work"
+assert_contains "${out}" "cannot auto-route this task; specify an agent name"
 
 it "crew update --help exits 0"
 out=$(bash "${CREW}" update --help 2>&1)

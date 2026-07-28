@@ -23,13 +23,13 @@ STOP_PAT = re.compile(r"\[agent-crew\]\s+STOP\b", re.IGNORECASE)
 ROUTE_PAT = re.compile(r"\[agent-crew\]\s+ROUTE\b", re.IGNORECASE)
 
 STOP_COMPLIANCE_PAT = re.compile(
-    r"\bcrew\s*:?\s*run\b|Skill\([\"']crew-run[\"']\)|"
+    r"\bcrew\s*:?\s*run\b|Skill\([\"']crew:run[\"']\)|"
     r"\bTASK_ID:|\bSUPERVISOR_HANDOFF\b|\bHOST_BRIDGE:|"
     r"\bSTATUS:\s*handoff_ready\b|Background Session Started",
     re.IGNORECASE,
 )
 ROUTE_COMPLIANCE_PAT = re.compile(
-    r"\bcrew\s*:?\s*agent\b|Skill\([\"']crew-agent[\"']\)|"
+    r"\bcrew\s*:?\s*agent\b|Skill\([\"']crew:agent[\"']\)|"
     r"\bAGENT_REQUEST_ID:|\bHOST_BRIDGE:|"
     r"\bSTATUS:\s*handoff_ready\b",
     re.IGNORECASE,
@@ -157,7 +157,7 @@ def main() -> int:
     if not kind or not response or is_compliant(kind, response):
         return 0
 
-    expected = "crew:run / Skill(\"crew-run\")" if kind == "STOP" else "crew:agent / Skill(\"crew-agent\")"
+    expected = "crew:run / Skill(\"crew:run\")" if kind == "STOP" else "crew:agent / Skill(\"crew:agent\")"
     print(
         "agent-crew: routed Agent response ignored an auto-route directive.\n"
         f"  Directive: {kind}\n"

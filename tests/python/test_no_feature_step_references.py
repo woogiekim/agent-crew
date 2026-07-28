@@ -8,8 +8,8 @@ old command name is gone). This test is written before the `backend` agent
 performs the feature-step -> stager rename (TDD red phase); it is expected to
 fail until that rename lands, since `core/commands/feature-step.md`,
 `adapters/codex/skill/feature-step/`, and the registration mentions in
-`core/global-agents.md`, `core/scripts/seed-instruction-rules.sh`, `README.md`,
-and `adapters/codex/skill/agent-crew/SKILL.md` still exist at authoring time.
+`core/global-agents.md`, `core/scripts/seed-instruction-rules.sh`, and
+`README.md` still exist at authoring time.
 
 Per the handoff's explicit scope: the personal, out-of-repo destination paths
 (`~/.agent-crew/user/commands/stager.md`, `~/.codex/skills/stager/SKILL.md`)

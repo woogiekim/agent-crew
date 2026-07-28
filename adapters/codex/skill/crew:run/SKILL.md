@@ -1,9 +1,9 @@
 ---
-name: crew-run
-description: Use when the user explicitly mentions $crew-run or asks to run an agent-crew task workflow in Codex. This is a thin Codex skill wrapper for crew:run and delegates all behavior to ~/.agent-crew/commands/run.md.
+name: crew:run
+description: Use when the user explicitly mentions $crew:run or asks to run an agent-crew task workflow in Codex. This is a thin Codex skill wrapper for crew:run and delegates all behavior to ~/.agent-crew/commands/run.md.
 ---
 
-# crew-run
+# crew:run
 
 This Codex skill is an alias for:
 
@@ -14,9 +14,9 @@ crew:run
 ## Execution
 
 1. Load `~/.agent-crew/commands/run.md`.
-2. Treat any user text after `$crew-run` as the task description.
-   A leading `$crew-run 코드리뷰` means "run the `코드리뷰` task"; it does
-   not mean "review the `$crew-run` skill". Only treat the wrapper itself as
+2. Treat any user text after `$crew:run` as the task description.
+   A leading `$crew:run 코드리뷰` means "run the `코드리뷰` task"; it does
+   not mean "review the `$crew:run` skill". Only treat the wrapper itself as
    the review target when the prompt explicitly says the skill, wrapper, file,
    or `SKILL.md` is the object.
 3. Preserve explicitly invoked Codex skill context as task input for
@@ -28,7 +28,7 @@ crew:run
 
 ## Workflow Origin vs Target Scope
 
-`$crew-run`, `crew:run`, and this wrapper are workflow origins by default. They
+`$crew:run`, `crew:run`, and this wrapper are workflow origins by default. They
 become review targets only when the prompt explicitly says the skill, wrapper,
 file, command definition, or `SKILL.md` is the object being reviewed.
 Only treat the wrapper itself as the review target when that explicit target
@@ -58,8 +58,9 @@ system/user skills under `~/.agent-crew/system/skills/`,
 `~/.agent-crew/user/skills/`, `~/.agent-crew/skills/`,
 `~/.agent-crew/system/agents/skills/`, or the active host's agent-crew mirrors
 under paths such as `~/.claude/agent-crew/skills/`,
-`~/.codex/skills/agent-crew/`, and `~/.codex/agent-crew/skills/`. Every selected
-skill name should have matching load coverage (`selected_skill:
+`~/.claude/agent-crew/agents/skills/`, `~/.codex/agent-crew/skills/`, or
+agent-crew host wrapper skills such as `~/.codex/skills/crew:<intent>/`. Every
+selected skill name should have matching load coverage (`selected_skill:
 frontend-typescript-react` maps to `frontend-typescript-react.md`,
 `selected_skill: tdd` maps to `tdd.md`). Do not load unrelated host/plugin
 skills, including plugin cache skills, by description match. If a

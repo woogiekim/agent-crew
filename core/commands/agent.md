@@ -12,16 +12,16 @@ only on that abstraction — it does not hard-code any agent name in its logic.
 
 | Scenario | Command |
 |---|---|
-| Read-only lookup / explanation and you know the right specialist | `crew:agent <name> "task"` |
-| Read-only lookup / explanation — let routing pick the agent | `crew:agent "task"` |
-| Any task that writes files, updates docs, creates issues, commits code, or otherwise mutates state | `crew:run "task"` |
+| Single-agent work and you know the right specialist | `crew:agent <name> "task"` |
+| Single-agent work — let routing pick the agent | `crew:agent "task"` |
 | Any task needing planning + multi-stage review | `crew:run "task"` |
 | Multiple independent tasks | `crew:run "A" \| "B"` |
 | Unknown scope / not sure which agent fits | `crew:run "task"` (supervisor decides) |
 
-Use `crew:agent` only for read-only investigation, explanation, lookup, and
-normalization tasks. If the task could change files, docs, issues, commits, or
-environment state, use `crew:run`.
+`crew:agent` may execute mutating work when the selected agent's own definition
+allows mutation. Read-only guarantees are enforced by each agent definition,
+not by this command. Use `crew:run` when the work needs supervisor planning,
+parallelism, centralized approval, or the automatic reviewer stage.
 
 ## Syntax
 
@@ -88,22 +88,18 @@ For a question/Q-shaped task that matches the session-state rule:
 The visibility line is **mandatory** — it is always emitted before the agent
 is invoked so the user always knows what is running.
 
-### Auto-routing modes — questions are routed too
+### Auto-routing mode — agent selection only
 
-As of the questions-through-agents change, conversational questions
-("explain how X works", "방금 어떤 에이전트?", "what commits are on this
-branch?") are no longer carved out of agent routing. They auto-route the
-same way implementation tasks do:
+When the user explicitly invokes `crew:agent` without an agent name,
+conversational questions and implementation-shaped requests use the same
+agent-selection table. This is agent selection only; it does not choose between
+`crew:agent` and `crew:run`.
 
 - Codebase Q ("explain how X works") → analyst (row 7)
 - Session/git/project-state Q ("어떤 에이전트", "what just ran",
   "what's on this branch") → historian (row 6.5)
 
-The orchestrator may emit inline text only for machine-required control
-surfaces or for relaying a result that has already gone through `crew:agent`.
-It must not use short or obvious answers as a shortcut around direct-agent
-routing. See the global CLAUDE.md "Auto-Execution Triggers" section for the
-canonical wording.
+The top-level hook must not infer this command from ordinary natural language.
 
 ---
 
@@ -184,16 +180,6 @@ Use 'crew:agent --list' to see which agents are available.
 
 ### Step 3 — Validate agent (explicit mode only)
 
-If `TASK_STRING` requests any file/document/issue/work-item creation or update,
-or any commit, merge, deploy, save, publish, or other state mutation, direct
-invocation is not allowed:
-
-```text
-crew:agent: direct invocation is read-only.
-Reason: mutating work must use crew:run.
-Use 'crew:run "{TASK_STRING}"' instead.
-```
-
 Look up `AGENT_NAME` in the **Agent Registry** (`core/rules/agent-routing.md`):
 
 ```text
@@ -217,21 +203,17 @@ information lives exclusively in `core/rules/agent-routing.md`.
 ### Step 4 — Auto-route (auto-routing mode only)
 
 Apply the **Auto-Routing Rules** from `core/rules/agent-routing.md`
-top-to-bottom against the normalized TASK_STRING (case-insensitive):
+top-to-bottom against the normalized TASK_STRING (case-insensitive). Rules
+select an agent only; they do not decide whether the request should have been
+`crew:agent` or `crew:run`:
 
 ```text
 For each rule in priority order:
   If pattern matches TASK_STRING:
-    If rule target is BLOCK:
-      print: "crew:agent: this task requires supervisor orchestration."
-      print: "Reason: ${reason from rule}"
-      print: "Use 'crew:run \"${TASK_STRING}\"' instead."
-      stop.
-    Else (agent assignment):
-      AGENT_NAME  = rule target agent
-      CONFIDENCE  = rule confidence
-      ROUTE_REASON = rule reason text
-      break.
+    AGENT_NAME  = rule target agent
+    CONFIDENCE  = rule confidence
+    ROUTE_REASON = rule reason text
+    break.
 
 If no rule matched (NONE):
   → Execute the Routing Failure Fallback procedure (see below).
@@ -460,14 +442,13 @@ rather than producing independent user-visible output.
 
 A host-native subagent MUST NOT be used when any of the following applies:
 
-- **The task is crew-routable** — implementation, planning, documentation,
-  publishing, or other state-mutating work must go through `crew:run`.
-  Read-only analysis and investigation may use `crew:agent`. Routing through
-  a built-in subagent skips the agent registry, Routing Failure Fallback, and
+- **The task is crew-routable** — use `crew:agent` for direct single-agent work
+  and `crew:run` for supervisor orchestration. Routing through a built-in
+  subagent skips the agent registry, Routing Failure Fallback, and
   routing-misses.log telemetry entirely.
-- **The task involves writing files or committing code** — all file-write and
-  commit operations must be performed by a registered crew agent under the
-  supervisor's oversight.
+- **The task involves writing files or committing code** — file-write and commit
+  operations must be performed by a registered crew agent whose own definition
+  allows mutation, or by `crew:run` when supervisor gates are required.
 - **The task is invoked from the top-level host context** — if there is no
   outer crew-dispatched agent, there is no routing context, and the call is
   a direct bypass of crew routing.
@@ -481,15 +462,15 @@ Forbidden example:
 # WRONG — using a built-in Plan subagent at the top level for a crew-routable task:
 subagent_type="Plan"
 prompt="Design the caching layer for the user-service API"
-# Correct alternative: crew:run "design the caching layer…"
+# Correct alternative: crew:agent planner "design the caching layer…"
 ```
 
 ### Decision table
 
 | Context | Read-only search | Write/commit | Crew-routable task |
 |---|---|---|---|
-| Inside crew-dispatched agent | Permitted | Forbidden — use crew agent | Forbidden — use crew:run |
-| Top-level (no outer crew context) | Forbidden | Forbidden | Forbidden — use crew:agent for read-only tasks, crew:run for mutating tasks |
+| Inside crew-dispatched agent | Permitted | Use selected crew agent rules | Use crew agent or crew:run |
+| Top-level (no outer crew context) | Forbidden | Use crew:agent or crew:run | Use crew:agent or crew:run |
 
 ### Why this matters
 
@@ -562,8 +543,9 @@ You are running in MODE=direct (lightweight invocation via crew:agent).
 PROJECT_ROOT: {PROJECT_ROOT}
 TASK: {TASK}
 
-Work in PROJECT_ROOT. Complete the read-only task and return your result.
-Do not edit files, write docs, commit code, or mutate state.
+Work in PROJECT_ROOT. Complete the task and return your result. You may mutate
+files or state only when the selected agent definition permits it. If the
+selected agent declares a read-only contract, obey that contract strictly.
 
 Do NOT create pipeline.json, progress.log, register.json, or any
 ~/.agent-crew/state/ entries. This is a lightweight, stateless invocation.
@@ -594,7 +576,7 @@ requires `crew:run`).
 | Multi-stage pipeline | Yes | No — single agent call |
 | Supervisor orchestration | Yes | No |
 | Reviewer stage | Yes (automatic) | No |
-| Approval gate for destructive ops | Yes | Not applicable (devops restricted) |
+| Approval gate for destructive ops | Yes | Only when the selected agent implements it |
 | Cost tracking | Yes (capability-gated) | No |
 | Telemetry / progress events | Yes | Routing-gap only (routing-misses.log) |
 

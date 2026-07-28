@@ -89,7 +89,7 @@ assert_exit 2 "${RC}"
 it "route directive validator explains expected STOP action"
 assert_contains "$(cat "${ERR}")" "crew:run" "STOP violation should point to crew:run"
 
-it "route directive validator allows STOP responses with crew-run evidence"
+it "route directive validator allows STOP responses with crew:run evidence"
 ERR="${TMP}/stop-ok.err"
 PAYLOAD="$(make_payload '[agent-crew] STOP — implementation request detected.' 'TASK_ID: 20260528-1\nSTATUS: handoff_ready')"
 RC="$(run_validator_payload "${PAYLOAD}" "${ERR}")"
@@ -104,7 +104,7 @@ assert_exit 2 "${RC}"
 it "route directive validator explains expected ROUTE action"
 assert_contains "$(cat "${ERR}")" "crew:agent" "ROUTE violation should point to crew:agent"
 
-it "route directive validator allows ROUTE responses with crew-agent evidence"
+it "route directive validator allows ROUTE responses with crew:agent evidence"
 ERR="${TMP}/route-ok.err"
 PAYLOAD="$(make_payload '[agent-crew] ROUTE — question detected, routing to analyst.' 'AGENT_REQUEST_ID: agent-1\nSTATUS: handoff_ready')"
 RC="$(run_validator_payload "${PAYLOAD}" "${ERR}")"
@@ -136,20 +136,22 @@ assert_contains "$(cat "${REPO_ROOT}/adapters/codex/setup.sh")" "post-tool-use-d
 it "Codex PostToolUse dispatcher invokes route-directive-guard"
 assert_contains "$(cat "${REPO_ROOT}/core/hooks/post-tool-use-dispatcher.sh")" "route-directive-guard.sh" "Codex dispatcher route guard registration"
 
-it "auto-route STOP directive carries a route lock"
+it "auto-route natural language emits no route lock"
 CTX="$(run_auto_route_ctx "$(make_prompt_payload '수정해줘 파일')")"
-assert_contains "${CTX}" "ROUTE_LOCK: crew-run" "STOP route lock"
+assert_eq "" "${CTX}"
 
-it "auto-route ROUTE directive carries a route lock"
-CTX="$(run_auto_route_ctx "$(make_prompt_payload '코덱스는 백그라운드 팬아웃이 되나요?')")"
-assert_contains "${CTX}" "ROUTE_LOCK: crew-agent" "ROUTE route lock"
+it "auto-route explicit crew:run emits command context without route lock"
+CTX="$(run_auto_route_ctx "$(make_prompt_payload '$crew:run 수정해줘 파일')")"
+assert_contains "${CTX}" "[agent-crew] COMMAND" "explicit command context"
+assert_not_contains "${CTX}" "ROUTE_LOCK: crew:run" "no STOP route lock"
+assert_not_contains "${CTX}" "ROUTE_LOCK: crew:agent" "no ROUTE route lock"
 
-it "auto-route ROUTE directive removes inline-answer escape wording"
+it "auto-route command context removes inline-answer escape wording"
 assert_not_contains "${CTX}" "ONLY permitted inline response" "ROUTE directive should not invite expanded inline exceptions"
 
-it "global auto-execution rule requires agent-crew for substantive responses"
-assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "Every substantive user-facing response must enter an agent-crew route" "global rule requires routing"
-assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "Never use inline output as a shortcut" "global rule forbids inline bypass"
+it "global explicit execution rule forbids hidden natural-language routing"
+assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "Agent Crew never infers execution intent from plain conversation" "global rule forbids hidden routing"
+assert_contains "$(cat "${REPO_ROOT}/core/global-agents.md")" "The user chooses the execution boundary" "global rule requires explicit command"
 
 it "hook-system rule documents route directive compliance"
 assert_contains "$(cat "${REPO_ROOT}/core/rules/capabilities/hook-system.md")" "Route directive compliance" "hook-system docs"
@@ -172,7 +174,7 @@ it "success-case - route-directive-guard.sh call site passes the widened --tool 
 # then: it reads --tool "Agent|multi_agent_v1wait_agent", not the bare --tool Agent
 assert_contains "$(cat "${WRAPPER}")" '--tool "Agent|multi_agent_v1wait_agent"' "AC-003 call site widened"
 
-it "success-case - validator allows multi_agent_v1wait_agent STOP responses with crew-run evidence"
+it "success-case - validator allows multi_agent_v1wait_agent STOP responses with crew:run evidence"
 # given: a multi_agent_v1wait_agent payload with a STOP directive and a compliant response
 # when: the validator is invoked with the widened --tool alias list
 # then: exit code is 0 (compliant path is not blocked)
@@ -306,9 +308,9 @@ it "success-case - check-route-directive-compliance.py module docstring reflects
 assert_contains "$(head -30 "${VALIDATOR}")" "multi_agent_v1wait_agent" "stale PostToolUse[Agent] docstring updated"
 
 it "success-case - hook-system.md Route directive compliance bullet reflects the widened multi_agent_v1wait_agent coverage"
-assert_contains "$(sed -n '31p' "${REPO_ROOT}/core/rules/capabilities/hook-system.md")" "multi_agent_v1wait_agent" "stale PostToolUse[Agent] doc bullet updated"
+assert_contains "$(sed -n '26,36p' "${REPO_ROOT}/core/rules/capabilities/hook-system.md")" "multi_agent_v1wait_agent" "stale PostToolUse[Agent] doc bullet updated"
 
 it "boundary-case - hook-system.md Forbid plain-text approval bullet remains unchanged by the route-directive doc update"
-assert_contains "$(sed -n '24p' "${REPO_ROOT}/core/rules/capabilities/hook-system.md")" "PostToolUse[Agent]" "unrelated bullet must stay untouched"
+assert_contains "$(sed -n '18,25p' "${REPO_ROOT}/core/rules/capabilities/hook-system.md")" "PostToolUse[Agent]" "unrelated bullet must stay untouched"
 
 end_report

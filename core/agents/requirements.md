@@ -43,7 +43,7 @@ associated with this agent; do not select a subset:
 - `INTERACTION_INTENSITY` (optional): `light`, `balanced`, `deep`, or `strict`;
   record it in requirements output when provided.
 - `CODEX_SKILL_CONTEXT_PATH` (optional): path to preserved Codex skill context
-  from the `crew-run` wrapper. If present, record the path in requirements
+  from the `crew:run` wrapper. If present, record the path in requirements
   without erasing or summarizing away the original skill context.
 
 ## Mode Selection

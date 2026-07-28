@@ -80,7 +80,7 @@ of output-language enforcement.
   (no extra configuration). The English-only status keywords still
   flow correctly because they're literal strings inside structured
   output blocks; the surrounding narrative localizes naturally.
-- **codex** — `adapters/codex/skill/agent-crew/SKILL.md` should
+- **codex** — `adapters/codex/skill/crew:<intent>/SKILL.md` files should
   reference this rule. Codex's response language depends on
   configuration; document that the same input/output split applies.
 - **generic** — `adapters/generic/invocation.md` documents both rules

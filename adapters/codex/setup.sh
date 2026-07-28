@@ -227,9 +227,34 @@ install_codex_skills() {
   local skill_src
   local skill_name
   local skill_dest
+  local legacy_name
+
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/adapters/codex/skill" ]; then
+    skill_root="${SOURCE_ROOT}/adapters/codex/skill"
+  fi
 
   [ -d "${skill_root}" ] || return 0
   mkdir -p "${codex_home}/skills"
+
+  for legacy_name in \
+    crew-agent-maker \
+    crew-agent \
+    crew-cost \
+    crew-interact \
+    crew-run \
+    crew-sessions \
+    crew-setup \
+    crew-smm \
+    crew-sync-instructions \
+    crew-status \
+    crew-task \
+    crew-telemetry \
+    crew-update \
+    crew-workflow; do
+    rm -rf "${codex_home}/skills/${legacy_name}"
+  done
+
+  rm -rf "${codex_home}/skills/agent-crew"
 
   for skill_src in "${skill_root}"/*; do
     [ -d "${skill_src}" ] || continue

@@ -41,30 +41,30 @@ def _context(prompt: str) -> str:
 
 
 def test_success_case_leading_crew_run_wrapper_invocation_is_command():
-    """success-case(command-boundary) - leading $crew-run passes trailing text as task args."""
+    """success-case(command-boundary) - leading $crew:run passes trailing text as task args."""
     # given
-    prompt = "$crew-run 코드리뷰"
+    prompt = "$crew:run 코드리뷰"
 
     # when
     ctx = _context(prompt)
 
     # then
     assert "[agent-crew] COMMAND" in ctx
-    assert "explicit $crew-run invocation detected" in ctx
+    assert "explicit $crew:run invocation detected" in ctx
     assert "Execute the workflow defined in ~/.agent-crew/commands/run.md" in ctx
     assert "Command arguments detected: 코드리뷰" in ctx
-    assert "ROUTE_LOCK: crew-agent" not in ctx
+    assert "ROUTE_LOCK: crew:agent" not in ctx
 
 
 def test_success_case_other_leading_crew_wrappers_are_commands():
-    """success-case(command-boundary) - leading $crew-* wrappers use command routing."""
+    """success-case(command-boundary) - leading $crew:* wrappers use command routing."""
     # given
     scenarios = {
-        "$crew-agent analyst \"what changed?\"": "agent.md",
-        "$crew-status": "status.md",
-        "$crew-update": "update.md",
-        "$crew-smm": "smm.md",
-        "$crew-agent-maker routing specialist": "agent-maker.md",
+        "$crew:agent analyst \"what changed?\"": "agent.md",
+        "$crew:status": "status.md",
+        "$crew:update": "update.md",
+        "$crew:smm": "smm.md",
+        "$crew:agent-maker routing specialist": "agent-maker.md",
     }
 
     for prompt, command_file in scenarios.items():
@@ -74,19 +74,17 @@ def test_success_case_other_leading_crew_wrappers_are_commands():
         # then
         assert "[agent-crew] COMMAND" in ctx, prompt
         assert f"Execute the workflow defined in ~/.agent-crew/commands/{command_file}" in ctx
-        assert "ROUTE_LOCK: crew-agent" not in ctx
-        assert "ROUTE_LOCK: crew-run" not in ctx
+        assert "ROUTE_LOCK: crew:agent" not in ctx
+        assert "ROUTE_LOCK: crew:run" not in ctx
 
 
-def test_success_case_backticked_crew_run_skill_review_remains_read_only():
-    """success-case(intent-boundary) - targeting the skill itself remains a read-only review."""
+def test_success_case_backticked_crew_run_skill_review_emits_no_hidden_route():
+    """success-case(intent-boundary) - non-command natural language is not routed by the hook."""
     # given
-    prompt = "`$crew-run` 스킬을 코드리뷰해"
+    prompt = "`$crew:run` 스킬을 코드리뷰해"
 
     # when
-    ctx = _context(prompt)
+    out = _run_hook(prompt)
 
     # then
-    assert "[agent-crew] ROUTE" in ctx
-    assert "TARGET_AGENT: analyst" in ctx
-    assert "[agent-crew] COMMAND" not in ctx
+    assert out == {}

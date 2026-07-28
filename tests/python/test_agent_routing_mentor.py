@@ -179,8 +179,8 @@ def test_mentor_prompt_declares_review_explanation_context_contract() -> None:
     assert "Do not re-review" in text
 
 
-def test_tc004_runtime_mutating_mentor_gerunds_are_not_auto_routed_to_mentor() -> None:
-    """failure-case(regression) - TC-004 blocks Mentor routing for mutating gerunds."""
+def test_tc004_runtime_mutating_mentor_gerunds_can_select_mentor() -> None:
+    """success-case(regression) - TC-004 selects the agent; mutation policy is agent-owned."""
     agents = {
         "mentor": {"safe": "yes"},
         "learning-mentor": {"safe": "yes"},
@@ -195,8 +195,8 @@ def test_tc004_runtime_mutating_mentor_gerunds_are_not_auto_routed_to_mentor() -
         agent_name, reason = crew_runtime.auto_route_agent(task, agents)
 
         assert crew_runtime.looks_mutating(task) is True
-        assert agent_name is None
-        assert "mutating" in reason
+        assert agent_name == "mentor"
+        assert "mentor" in reason
 
 
 def test_tc005_runtime_historians_read_only_running_and_commit_noun_queries() -> None:

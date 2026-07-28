@@ -19,6 +19,15 @@ crew:run "implement order domain API with TDD"
 crew:run "Order API" | "Product API"
 ```
 
+User command exception:
+
+```text
+$parity-check "contract description" /path/to/repo-a /path/to/repo-b
+```
+
+`$parity-check` remains a user command alias for the read-only imported parity
+workflow. It is intentionally not renamed to `$crew:parity-check`.
+
 The Codex adapter installs `.codex/` agent and hook configuration plus
 `AGENTS.md` guidance. Do not rely on custom slash command registration in Codex.
 Slash-style commands are host-specific aliases, and this adapter does not create
@@ -29,13 +38,13 @@ CLI forms, not the prompt workflow notation.
 
 ## crew:agent — Direct Agent Invocation
 
-Use `crew:agent` only for read-only investigation, explanation, lookup, and
-normalization tasks. Any task that would edit files, write docs, create issues,
-commit code, or otherwise mutate state must use `crew:run`.
+Use `crew:agent` for single-agent work. The selected agent may mutate files or
+state when its own definition allows mutation. Agents that are read-only declare
+that rule in their own instructions.
 
 ```text
 crew:agent "task description"        # auto-routing: crew picks the best agent
-crew:agent analyst "task"            # explicit: invoke a read-only analysis agent
+crew:agent analyst "task"            # explicit: invoke analyst
 crew:agent --list                    # list agents available for direct invocation
 crew:agent --routing                 # display the auto-routing rules table
 ```
@@ -43,7 +52,8 @@ crew:agent --routing                 # display the auto-routing rules table
 The routing logic is defined in `core/rules/agent-routing.md`. Auto-routing
 matches your task against keyword patterns and shows which agent was selected
 and why before spawning. The selected agent runs without a supervisor pipeline,
-so the command is intentionally limited to read-only tasks.
+so use `crew:run` instead when you need planning, parallelism, centralized
+approval, or an automatic reviewer stage.
 
 ## Native Codex Subagents
 

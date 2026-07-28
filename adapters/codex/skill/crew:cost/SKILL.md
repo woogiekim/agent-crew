@@ -1,9 +1,9 @@
 ---
-name: crew-cost
-description: Use when the user explicitly mentions $crew-cost or asks for agent-crew cost information in Codex. This is a thin Codex skill wrapper for crew:cost and delegates all behavior to ~/.agent-crew/commands/cost.md.
+name: crew:cost
+description: Use when the user explicitly mentions $crew:cost or asks for agent-crew cost information in Codex. This is a thin Codex skill wrapper for crew:cost and delegates all behavior to ~/.agent-crew/commands/cost.md.
 ---
 
-# crew-cost
+# crew:cost
 
 This Codex skill is an alias for:
 

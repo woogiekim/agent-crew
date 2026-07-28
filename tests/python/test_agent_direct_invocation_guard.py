@@ -1,8 +1,4 @@
-"""Tests for the direct-invocation guard in crew:agent.
-
-The goal is to keep crew:agent read-only. Any task that mutates files, docs,
-issues, commits, or other state must use crew:run.
-"""
+"""Tests for direct-agent invocation and per-agent read-only contracts."""
 from __future__ import annotations
 
 import re
@@ -69,9 +65,10 @@ def test_direct_invocation_remains_available_for_analysis_agents() -> None:
     }
 
 
-def test_mutating_agents_remain_covered_by_the_read_only_guard() -> None:
+def test_mutating_capable_agents_remain_directly_invokable() -> None:
     agent_command = _load(AGENT_COMMAND_PATH)
-    assert "crew:run" in agent_command.lower()
+    assert "may execute mutating work" in agent_command.lower()
+    assert "read-only guarantees are enforced by each agent definition" in agent_command.lower()
 
     for agent_name in ("backend", "frontend", "planner", "designer", "documenter", "issuer"):
         row = _agent_row(agent_name)
@@ -86,14 +83,26 @@ def test_qa_owner_requires_supervisor_context() -> None:
     assert "qa_mode" in row
 
 
-def test_agent_command_and_codex_invocation_are_read_only() -> None:
+def test_agent_command_is_not_globally_read_only() -> None:
     agent_command = _load(AGENT_COMMAND_PATH)
     codex_invocation = _load(CODEX_INVOCATION_PATH)
 
-    assert "read-only" in agent_command.lower()
-    assert "mutating work must use crew:run" in agent_command.lower()
-    assert "complete the read-only task" in agent_command.lower()
+    assert "mutating work must use crew:run" not in agent_command.lower()
+    assert "complete the read-only task" not in agent_command.lower()
+    assert "complete the task" in agent_command.lower()
 
-    assert "read-only investigation" in codex_invocation.lower()
-    assert "any task that would edit files" in codex_invocation.lower()
-    assert "mutate state" in codex_invocation.lower()
+    assert "single-agent work" in codex_invocation.lower()
+    assert "may mutate files or" in codex_invocation.lower()
+    assert "agents that are read-only declare" in codex_invocation.lower()
+
+
+def test_existing_read_only_agents_declare_read_only_in_their_own_rules() -> None:
+    for relative in (
+        "core/agents/analyst.md",
+        "core/agents/historian.md",
+        "core/agents/mentor.md",
+        "core/agents/learning-mentor.md",
+        "core/agents/reviewer.md",
+    ):
+        text = _load(REPO_ROOT / relative).lower()
+        assert "read-only contract" in text, relative

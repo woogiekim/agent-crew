@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -347,13 +348,26 @@ def auto_issue_reporting_probe(asset_root: Path, agent_crew_home: Path, project_
             timeout=10,
             env=env,
         )
-        reported = list((report_root / "reported").glob("*.json"))
-        outbox = list((report_root / "outbox").glob("*.json"))
         if proc.returncode != 0:
             return False, f"hook rc={proc.returncode}"
+        reported, outbox = wait_for_report_records(report_root)
         if not reported or not outbox:
             return False, "hook completed but no native report/outbox record was created"
         return True, "hook smoke created native report and outbox record"
+
+
+def wait_for_report_records(report_root: Path, timeout_seconds: float = 2.0) -> tuple[list[Path], list[Path]]:
+    deadline = time.monotonic() + timeout_seconds
+    reported: list[Path] = []
+    outbox: list[Path] = []
+    while time.monotonic() <= deadline:
+        reported = list((report_root / "reported").glob("*.json"))
+        outbox = list((report_root / "outbox").glob("*.json"))
+        if reported and outbox:
+            return reported, outbox
+        time.sleep(0.05)
+
+    return reported, outbox
 
 
 def host_bridge_blocker_probe(state_dir: Path, min_age_seconds: int) -> tuple[bool, str, int]:
@@ -570,10 +584,9 @@ def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, 
             timeout=10,
             env=env,
         )
-        reported = list((report_root / "reported").glob("*.json"))
-        outbox = list((report_root / "outbox").glob("*.json"))
         if proc.returncode != 0:
             return False, f"hook rc={proc.returncode}"
+        reported, outbox = wait_for_report_records(report_root)
         if not reported or not outbox:
             return False, "hook completed but no native blocker report/outbox record was created"
         return True, "hook smoke created native blocker report and outbox record"

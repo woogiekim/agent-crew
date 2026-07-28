@@ -13,39 +13,29 @@ def read(path: str) -> str:
 
 
 def test_crew_run_wrapper_forbids_unapproved_third_party_skill_autoload():
-    text = read("adapters/codex/skill/crew-run/SKILL.md")
+    text = read("adapters/codex/skill/crew:run/SKILL.md")
 
     assert "Do not load unrelated host/plugin" in text
     assert "external-skill-approval.md" in text
     assert "domain-specific Codex skill context" not in text
     assert "Workflow Origin vs Target Scope" in text
-    assert "A leading `$crew-run 코드리뷰` means" in text
+    assert "A leading `$crew:run 코드리뷰` means" in text
     assert "Only treat the wrapper itself as the review target" in text
 
 
-def test_agent_crew_bootstrap_preserves_only_explicit_skill_context():
-    text = read("adapters/codex/skill/agent-crew/SKILL.md")
+def test_codex_command_wrappers_preserve_prompt_compiler_contract():
+    text = read("adapters/codex/skill/crew:run/SKILL.md")
 
-    assert "preserves explicitly invoked Codex skill context" in text
-    assert "Do not auto-load a non-agent-crew or third-party" in text
-    assert "domain-specific Codex skill context" not in text
-
-
-def test_codex_fallback_preserves_prompt_compiler_contract():
-    text = read("adapters/codex/skill/agent-crew/SKILL.md")
-
-    assert "prompt compiler, not a rejection gate" in text
-    assert "infer intent" in text
-    assert "normalize the task" in text
-    assert "role-specific prompt context" in text
-    assert "Reject only unsafe, impossible, or out-of-scope requests." in text
+    assert "`crew-run` from a natural-language implementation request" not in text
+    assert "Use when the user explicitly mentions $crew:run" in text
 
 
 def test_run_command_current_session_limits_automatic_skill_sources():
     text = read("core/commands/run.md")
+    compact = " ".join(text.split())
 
     assert "Domain-match alone is not approval" in text
-    assert "Do not auto-load unrelated host/plugin" in text
+    assert "Do not auto-load unrelated host/plugin" in compact
     assert "~/.claude/agent-crew/skills/" in text
     assert "context/external-skill-approval.md" in text
     assert "Workflow Origin vs Target Scope" in text

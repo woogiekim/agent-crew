@@ -2038,8 +2038,6 @@ def record_issue_ingestion_evidence(task_dir: Path, raw_task: str) -> list[dict]
 
 def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, str]:
     lowered = task.lower()
-    if looks_mutating_task(task):
-        return None, "mutating task requires crew:run"
 
     historian_tokens = [
         "어떤 에이전트",
@@ -2560,12 +2558,8 @@ def command_agent(args: argparse.Namespace) -> int:
         next_target=intended_agent_name or "direct-agent auto-routing",
     )
 
-    if looks_mutating(task):
-        print("crew agent: direct invocation is read-only. Use crew run for mutating work.", file=sys.stderr)
-        return 2
-
     if agent_name is None:
-        print("crew agent: cannot auto-route this read-only task; specify an agent name or use crew run", file=sys.stderr)
+        print("crew agent: cannot auto-route this task; specify an agent name", file=sys.stderr)
         return 2
 
     info = agents.get(agent_name)

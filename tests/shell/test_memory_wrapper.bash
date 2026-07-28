@@ -8,15 +8,9 @@ source "$(dirname "$0")/_lib.bash"
 set +e
 
 MEMORY="${REPO_ROOT}/core/bin/memory"
-CODEX_SKILL="${REPO_ROOT}/adapters/codex/skill/agent-crew/SKILL.md"
 
 it "crew CLI exists next to memory wrapper"
 assert_file_exists "${REPO_ROOT}/core/bin/crew"
-
-it "Codex skill memory contract uses the bounded memory wrapper"
-SKILL_TEXT=$(cat "${CODEX_SKILL}")
-assert_contains "${SKILL_TEXT}" '.agent-crew/bin/memory'
-assert_contains "${SKILL_TEXT}" 'AGENT_CREW_MNEMOS_TIMEOUT_SECONDS'
 
 TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'

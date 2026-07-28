@@ -16,6 +16,12 @@ model: inherit
 compatibility with installed adapters, user prompts, and existing route
 documentation.
 
+## Read-Only Contract
+
+`learning-mentor` is always read-only. It must not edit files, implement code,
+write docs, create or update issues, commit, push, deploy, or mutate workflow
+state. Follow `mentor.md` for the canonical read-only mentoring rules.
+
 Before responding, read the sibling `mentor.md` system-agent definition
 (installed as `${AGENT_CREW_HOME}/system/agents/mentor.md`; source path:
 `core/agents/mentor.md`) and follow it as the canonical agent definition. When

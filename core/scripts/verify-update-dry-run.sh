@@ -34,6 +34,7 @@ mkdir -p \
   "${AGENT_CREW_HOME}/user/agents" \
   "${AGENT_CREW_HOME}/user/skills" \
   "${CODEX_HOME}/agents" \
+  "${CODEX_HOME}/skills/crew:run" \
   "${CODEX_HOME}/skills/agent-crew" \
   "${CODEX_HOME}/agent-crew/skills" \
   "${CLAUDE_DIR}" \
@@ -129,14 +130,16 @@ assert_exists "${PROJECT_ROOT}/.codex/hooks/auto-route.sh"
 assert_exists "${PROJECT_ROOT}/.codex/agents/supervisor.toml"
 assert_exists "${STATE_DIR}/update-preservation"
 assert_absent "${CODEX_HOME}/agents/task-runner.toml"
+assert_absent "${CODEX_HOME}/skills/agent-crew"
+assert_exists "${CODEX_HOME}/skills/crew:run/SKILL.md"
 assert_absent "${CODEX_HOME}/agent-crew/skills/stale.md"
 assert_absent "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
 assert_contains "${CODEX_HOME}/config.toml" "[mcp_servers.gitlab]"
 assert_contains "${CODEX_HOME}/config.toml" 'args = ["-lc", "gitlab-mcp"]'
 assert_contains "${CODEX_HOME}/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${PROJECT_ROOT}/.codex/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
-assert_contains "${AGENT_CREW_HOME}/hooks/auto-route.sh" 'Invoke Skill("crew-run")'
-assert_contains "${PROJECT_ROOT}/.codex/hooks/auto-route.sh" 'Invoke Skill("crew-run")'
+assert_contains "${AGENT_CREW_HOME}/hooks/auto-route.sh" 'explicit {command} invocation detected'
+assert_contains "${PROJECT_ROOT}/.codex/hooks/auto-route.sh" 'explicit {command} invocation detected'
 if ! find "${STATE_DIR}/update-preservation" \
   -type f -name '*.json' | grep -q .; then
   printf 'verify-update-dry-run: preservation manifest was not written\n' >&2

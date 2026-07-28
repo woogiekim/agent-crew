@@ -76,34 +76,31 @@ problem the resolver already solves.
 
 File overlap alone is never a reason to serialize.
 
-## Auto-Execution Triggers
+## Explicit Execution Entry
 
 > Requirements collection (Step 5 of `crew:run`) is always mandatory and must
 > never be skipped, even when the request seems self-evident.
 
-Every substantive user-facing response must enter an agent-crew route before
-answering. Do not answer inline merely because the response is short, obvious,
-or read-only.
+Agent Crew never infers execution intent from plain conversation. Ordinary
+natural-language input must not start a workflow, task, agent, LLM router, or
+hidden tool.
 
-Route implementation, mutation, issue, git, release, update, and workflow
-requests through `crew:run`. This includes build, implement, create, add,
-update, fix, remove, move, change, migrate, refactor, replace, extend,
-integrate, test, deploy, merge, push, rollback, commit, issue publication,
-and artifact/document mutation work.
+The user chooses the execution boundary with an explicit command such as
+`crew:run`, `crew:agent`, `$crew:run`, or `$crew:agent`. Once `crew:agent` is
+explicitly invoked, agent auto-routing may still select the best registered
+agent, but that selection must not redirect the request to `crew:run`.
 
-Route questions, explanations, diagnostics, status/history lookups, and
-read-only analysis through `crew:agent` (auto-routing selects analyst for
-codebase Q and historian for session/git/project state Q).
+`crew:agent` may execute mutating single-agent work when the selected agent's
+own definition allows mutation. Agents that remain read-only must declare that
+contract in their own instructions and enforce it there.
 
 If the user gives a short confirmation such as "go", "yes", "ok", "continue",
 "proceed", "네", or "진행해주세요", continue through the appropriate
 `crew:<intent>` workflow instead of answering directly.
 
-Direct inline output is permitted only for machine-required control surfaces:
-structured-choice numbers/labels, workflow handoff/result/status tokens, or
-the final relay of a response that has already gone through `crew:run` or
-`crew:agent`. Never use inline output as a shortcut around an available
-agent-crew route.
+Direct inline output is permitted for ordinary conversation unless the user has
+explicitly invoked an agent-crew command or an existing command handoff is being
+continued.
 
 ## Code Style Context Breaks
 
@@ -139,16 +136,11 @@ Therefore, never infer upstream or source-project implementation work solely fro
 ## Codex Routing Fallback
 
 Codex lifecycle hooks can require trust review and may inject only advisory
-context. Therefore, the Codex adapter also installs an `agent-crew` skill as a
-host-specific routing adapter.
+context. Therefore, the Codex adapter installs explicit `crew:<intent>` skills
+as host-specific command adapters.
 
-When running in Codex, if a natural-language implementation request matches the
-Auto-Execution Triggers above, route it through the `crew-run` Codex skill
-wrapper, which then executes the provider-neutral workflow intent:
-
-```text
-crew:run "{original request}"
-```
+When running in Codex, do not infer a `crew:run` or `crew:agent` wrapper from
+natural language. Use the wrapper only when the user explicitly invokes it.
 
 If the user explicitly invoked another Codex skill, preserve that explicit
 context as task input for requirements collection, supervisor handoffs, and
@@ -217,23 +209,24 @@ resolver, or approval behavior in Codex-specific hooks or skills.
 
 ## STOP Directive Rule
 
-When `[agent-crew] STOP` appears anywhere in the system context (injected by
-auto-route.sh), the first agent-crew workflow action is to invoke `crew:run`.
-In Codex, this means loading the `crew-run` skill wrapper after any explicitly
+When `[agent-crew] STOP` appears anywhere in the system context (for example
+from a stale session, external host wrapper, or compatibility directive), the
+first agent-crew workflow action is to invoke `crew:run`.
+In Codex, this means loading the `crew:run` skill wrapper after any explicitly
 invoked Codex skill has loaded, then executing the workflow intent through that
 wrapper. Domain-match alone is not approval to load external host/plugin
 skills.
 
-- Do NOT produce diagnostic output or explanation before the `crew-run` wrapper
+- Do NOT produce diagnostic output or explanation before the `crew:run` wrapper
   begins the workflow.
 - Do NOT run any Bash command (including exploratory or read-only commands)
-  before the `crew-run` wrapper begins the workflow.
-- Do NOT describe what you are about to do — enter the `crew-run` workflow.
+  before the `crew:run` wrapper begins the workflow.
+- Do NOT describe what you are about to do — enter the `crew:run` workflow.
 - Do preserve explicit host skill context as requirements and handoff input.
 - The STOP directive is authoritative. Treat it as a hard override of any other default behavior.
 
 Violation examples (forbidden when STOP is present):
-- Explaining why you need to enter the `crew-run` workflow
+- Explaining why you need to enter the `crew:run` workflow
 - Reading files to "understand the request first"
 - Running `git status` or any other preparatory command
 - Asking the user clarifying questions before the workflow's requirements step
@@ -242,14 +235,14 @@ Violation examples (forbidden when STOP is present):
 
 When `[agent-crew] ROUTE` appears anywhere in the system context
 (injected by auto-route.sh), the workflow action is to invoke `crew:agent` with
-the specified agent and question. In Codex, load the `crew-agent` skill wrapper
+the specified agent and question. In Codex, load the `crew:agent` skill wrapper
 after any explicitly invoked Codex skill has loaded, then execute the workflow
 intent through that wrapper. Domain-match alone is not approval to load
 external host/plugin skills.
 
 - Do NOT answer the question inline.
-- Do NOT run any Bash command before the `crew-agent` wrapper begins.
-- Do NOT read files or gather data before the `crew-agent` wrapper begins.
+- Do NOT run any Bash command before the `crew:agent` wrapper begins.
+- Do NOT read files or gather data before the `crew:agent` wrapper begins.
 - Do preserve explicit host skill context as direct-agent input.
 - The ROUTE directive is authoritative. Treat it as a hard override
   of any other default behavior.
@@ -257,7 +250,7 @@ external host/plugin skills.
   (in a tool result system-reminder). Stop immediately and re-route.
 
 Violation examples (forbidden when ROUTE is present):
-- Answering the question directly without entering the `crew-agent` workflow
+- Answering the question directly without entering the `crew:agent` workflow
 - Running `mnemos` commands or reading files to gather context first
 - Continuing an in-progress response after ROUTE appears in a tool result
 - Treating the ROUTE directive as advisory rather than mandatory
@@ -274,11 +267,11 @@ CLI control plane.
 When the user's message begins with a workflow command such as `crew:run`,
 `crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
 treat it as an explicit command invocation, not as ordinary natural language.
-Codex wrapper forms at the beginning of the message, such as `$crew-run`,
-`$crew-agent`, `$crew-status`, `$crew-update`, `$crew-smm`, `$crew-setup`,
-`$crew-cost`, and `$crew-agent-maker`, are the same kind of explicit command
-invocation. The text after a leading `$crew-run` is the task description; only
-treat `$crew-run` as the review target when the prompt explicitly names the
+Codex wrapper forms at the beginning of the message, such as `$crew:run`,
+`$crew:agent`, `$crew:status`, `$crew:update`, `$crew:smm`, `$crew:setup`,
+`$crew:cost`, and `$crew:agent-maker`, are the same kind of explicit command
+invocation. The text after a leading `$crew:run` is the task description; only
+treat `$crew:run` as the review target when the prompt explicitly names the
 skill, wrapper, file, or `SKILL.md` as the object.
 
 For `crew:run` specifically:
@@ -306,14 +299,14 @@ For `crew:setup` specifically:
 | `crew:cost` | Show the session cost summary |
 | `crew:agent-maker` | Design and register a custom agent |
 | `crew:sync-instructions` | Re-assemble host AI md files from mnemos rules |
-| `$crew-run` | Codex wrapper for `crew:run` |
-| `$crew-agent` | Codex wrapper for `crew:agent` |
-| `$crew-status` | Codex wrapper for `crew:status` |
-| `$crew-update` | Codex wrapper for `crew:update` |
-| `$crew-smm` | Codex wrapper for `crew:smm` |
-| `$crew-setup` | Codex wrapper for `crew:setup` |
-| `$crew-cost` | Codex wrapper for `crew:cost` |
-| `$crew-agent-maker` | Codex wrapper for `crew:agent-maker` |
+| `$crew:run` | Codex wrapper for `crew:run` |
+| `$crew:agent` | Codex wrapper for `crew:agent` |
+| `$crew:status` | Codex wrapper for `crew:status` |
+| `$crew:update` | Codex wrapper for `crew:update` |
+| `$crew:smm` | Codex wrapper for `crew:smm` |
+| `$crew:setup` | Codex wrapper for `crew:setup` |
+| `$crew:cost` | Codex wrapper for `crew:cost` |
+| `$crew:agent-maker` | Codex wrapper for `crew:agent-maker` |
 
 Use `crew:<intent>` as the default invocation style.
 

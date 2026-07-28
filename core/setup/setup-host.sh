@@ -46,7 +46,9 @@ is_installed() {
       [ -d "${CLAUDE_DIR:-${HOME}/.claude}/agent-crew" ]
       ;;
     codex)
-      [ -d "${CODEX_HOME:-${HOME}/.codex}/skills/agent-crew" ]
+      [ -d "${CODEX_HOME:-${HOME}/.codex}/skills/crew:run" ] \
+        || [ -d "${CODEX_HOME:-${HOME}/.codex}/skills/crew:setup" ] \
+        || [ -d "${CODEX_HOME:-${HOME}/.codex}/agent-crew" ]
       ;;
     generic)
       # Generic is always project-local; treat as always eligible.

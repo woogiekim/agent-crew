@@ -50,7 +50,7 @@ provides sufficient uniqueness for human-readable branch names.
 | Add user authentication to the API | `feat/add-user-authentication-api` |
 | Refactor database connection pooling | `refactor/refactor-database-connection-pooling` |
 | Update README with setup instructions | `docs/update-readme-setup-instructions` |
-| Improve branch naming in crew:run workflow | `refactor/improve-branch-naming-crew-run-workflow` |
+| Improve branch naming in crew:run workflow | `refactor/improve-branch-naming-crew:run-workflow` |
 | Add order management API | `feat/add-order-management-api` |
 
 ## Implementation Reference

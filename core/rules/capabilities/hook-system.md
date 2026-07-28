@@ -12,14 +12,12 @@ not the default user experience.
 
 Consumers:
 
-- **Prompt Compiler routing context** (implemented). The `UserPromptSubmit`
-  `auto-route` hook classifies arbitrary user input, emits the STOP/ROUTE
-  workflow lock, and appends a `PROMPT_COMPILER` block with intent,
-  `NORMALIZED_TASK`, context enrichment, project rules, missing-information
-  recovery, risk assessment, success criteria, deliverables, soft-validation
-  policy, and role-specific prompts for planner/developer/tester/reviewer or
-  analyst/historian. Hook wrapper: `core/hooks/auto-route.sh`. Contract:
-  `core/rules/agent-routing.md`.
+- **Explicit command adapter** (implemented). The `UserPromptSubmit`
+  `auto-route` hook adapts only explicit agent-crew command syntax such as
+  `$crew:run`, `$crew:agent`, `crew:run`, and `crew:agent`. It does not
+  classify arbitrary natural-language input as read-only or mutating, and it
+  does not choose `crew:agent` vs `crew:run`. Hook wrapper:
+  `core/hooks/auto-route.sh`. Contract: `core/rules/agent-routing.md`.
 - **Forbid plain-text approval** (Phase G6 — implemented). A
   `PostToolUse[Agent]` validator inspects the agent's response for
   forbidden patterns like "Shall I merge and push?" /
@@ -29,7 +27,7 @@ Consumers:
   `adapters/claude/setup.sh` when `hook_system=true`.
 - **Route directive compliance** (Issue #125 — implemented). A
   `PostToolUse[Agent|multi_agent_v1wait_agent]` validator detects delegated
-  agent responses that received an auto-route `[agent-crew] STOP` or
+  agent responses that received a compatibility `[agent-crew] STOP` or
   `[agent-crew] ROUTE` directive but answered inline instead of entering
   `crew:run` / `crew:agent`. The tool_name filter is a pipe-delimited alias
   list (`Agent|multi_agent_v1wait_agent`) so the gate also fires on the

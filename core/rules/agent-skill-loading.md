@@ -67,8 +67,9 @@ Allowed automatic skill sources are:
   `~/.agent-crew/skills/`, and `~/.agent-crew/system/agents/skills/`.
 - Host mirrors populated from the agent-crew skill layers, such as
   `~/.claude/agent-crew/skills/`, `~/.claude/agent-crew/agents/skills/`,
-  `~/.codex/skills/agent-crew/`, and `~/.codex/agent-crew/skills/`.
-- Agent-crew host wrapper skills, such as Codex `crew-*` wrappers.
+  and `~/.codex/agent-crew/skills/`.
+- Agent-crew host wrapper skills, such as Codex `~/.codex/skills/crew:<intent>/`
+  wrappers.
 
 Do not auto-load non-agent-crew host/plugin skills merely because a host skill
 description appears to match the task. This applies to every host adapter, not only Codex. If a non-agent-crew host/plugin skill is genuinely needed, ask the

@@ -54,7 +54,7 @@ Two of the Three Invariants in
 | Adapter | Wiring mechanism |
 |---|---|
 | claude  | Hook scripts under `core/hooks/*.sh` call these scripts. `adapters/claude/setup.sh` registers the hooks via `settings.json`. |
-| codex   | `adapters/codex/skill/agent-crew/SKILL.md` instructs the model to invoke specific scripts at specific lifecycle moments. |
+| codex   | `adapters/codex/skill/crew:<intent>/SKILL.md` wrappers delegate explicit command invocations to provider-neutral command definitions. |
 | generic | `adapters/generic/invocation.md` documents the same expectations as guidance; the model invokes them best-effort. |
 
 The capability `hook_system` (see `core/rules/capabilities/hook-system.md`)

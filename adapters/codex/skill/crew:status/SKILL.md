@@ -1,9 +1,9 @@
 ---
-name: crew-status
-description: Use when the user explicitly mentions $crew-status or asks for agent-crew status in Codex. This is a thin Codex skill wrapper for crew:status and delegates all behavior to ~/.agent-crew/commands/status.md.
+name: crew:status
+description: Use when the user explicitly mentions $crew:status or asks for agent-crew status in Codex. This is a thin Codex skill wrapper for crew:status and delegates all behavior to ~/.agent-crew/commands/status.md.
 ---
 
-# crew-status
+# crew:status
 
 This Codex skill is an alias for:
 

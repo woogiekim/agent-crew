@@ -1,9 +1,9 @@
 ---
-name: crew-agent
-description: Use when the user explicitly mentions $crew-agent or when agent-crew routes a read-only question to crew:agent in Codex. This is a thin Codex skill wrapper for crew:agent and delegates all behavior to ~/.agent-crew/commands/agent.md.
+name: crew:agent
+description: Use when the user explicitly mentions $crew:agent or invokes crew:agent direct-agent execution in Codex. This is a thin Codex skill wrapper for crew:agent and delegates all behavior to ~/.agent-crew/commands/agent.md.
 ---
 
-# crew-agent
+# crew:agent
 
 This Codex skill is an alias for:
 
@@ -14,15 +14,17 @@ crew:agent
 ## Execution
 
 1. Load `~/.agent-crew/commands/agent.md`.
-2. Treat any user text after `$crew-agent` as the agent invocation arguments.
+2. Treat any user text after `$crew:agent` as the agent invocation arguments.
 3. Preserve explicitly invoked Codex skill context as direct-agent input. Do
    not treat domain-selected third-party host/plugin skills as implicitly
    approved.
 4. Follow the command definition exactly.
 
-Use this skill only for read-only investigation, explanation, lookup, and
-normalization tasks. If the task would mutate files, docs, issues, commits, or
-state, route through `crew:run` instead.
+Use this skill for direct single-agent invocation. The selected agent may mutate
+files or state when its own definition allows mutation. Agents that are
+read-only declare that rule in their own instructions. Use `crew:run` when the
+task needs supervisor planning, parallelism, centralized approval, or the
+automatic reviewer stage.
 
 ## Codex current-session fallback
 

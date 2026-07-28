@@ -255,12 +255,12 @@ def test_agent_crew_codex_wrapper_skill_does_not_require_external_approval(tmp_p
         state_dir,
         task_id,
         task="Run an agent-crew workflow",
-        selected_skill="crew-run",
+        selected_skill="crew:run",
     )
     (task_dir / "context" / "skill-load.md").write_text(
         "SKILL_LOAD: passed\n"
         "Loaded before implementation:\n"
-        "- /Users/wook/.codex/skills/crew-run/SKILL.md\n",
+        "- /Users/wook/.codex/skills/crew:run/SKILL.md\n",
         encoding="utf-8",
     )
 

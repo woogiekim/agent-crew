@@ -1,9 +1,9 @@
 ---
-name: crew-agent-maker
-description: Use when the user explicitly mentions $crew-agent-maker or asks to design/register a custom agent for agent-crew in Codex. This is a thin Codex skill wrapper for crew:agent-maker and delegates all behavior to ~/.agent-crew/commands/agent-maker.md.
+name: crew:agent-maker
+description: Use when the user explicitly mentions $crew:agent-maker or asks to design/register a custom agent for agent-crew in Codex. This is a thin Codex skill wrapper for crew:agent-maker and delegates all behavior to ~/.agent-crew/commands/agent-maker.md.
 ---
 
-# crew-agent-maker
+# crew:agent-maker
 
 This Codex skill is an alias for:
 

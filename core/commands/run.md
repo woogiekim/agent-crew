@@ -105,8 +105,27 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
   cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/system/commands/" 2>/dev/null || true
   # Sync commands: source → compat alias (backward-compatible path)
   cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/commands/" 2>/dev/null || true
-  # Sync commands: source → host discovery path (Claude Code reads from here)
-  cp "${SOURCE_ROOT}/core/commands/"*.md "${CLAUDE_DIR}/commands/" 2>/dev/null || true
+  # Sync commands: source → Claude namespaced slash-command path (/crew:<intent>)
+  mkdir -p "${CLAUDE_DIR}/commands/crew"
+  rm -f \
+    "${CLAUDE_DIR}/commands/agent-maker.md" \
+    "${CLAUDE_DIR}/commands/agent.md" \
+    "${CLAUDE_DIR}/commands/cost.md" \
+    "${CLAUDE_DIR}/commands/interact.md" \
+    "${CLAUDE_DIR}/commands/parity-check.md" \
+    "${CLAUDE_DIR}/commands/relay.md" \
+    "${CLAUDE_DIR}/commands/run.md" \
+    "${CLAUDE_DIR}/commands/sessions.md" \
+    "${CLAUDE_DIR}/commands/setup.md" \
+    "${CLAUDE_DIR}/commands/smm.md" \
+    "${CLAUDE_DIR}/commands/status.md" \
+    "${CLAUDE_DIR}/commands/sync-instructions.md" \
+    "${CLAUDE_DIR}/commands/task.md" \
+    "${CLAUDE_DIR}/commands/telemetry.md" \
+    "${CLAUDE_DIR}/commands/update.md" \
+    "${CLAUDE_DIR}/commands/workflow.md" \
+    2>/dev/null || true
+  cp "${SOURCE_ROOT}/core/commands/"*.md "${CLAUDE_DIR}/commands/crew/" 2>/dev/null || true
 fi
 
 # Also sync rules (session protocol references core/rules/task-injection.md).
@@ -2580,9 +2599,10 @@ use this sequence:
      locations (`~/.agent-crew/system/skills/`, `~/.agent-crew/user/skills/`,
      `~/.agent-crew/skills/`, `~/.agent-crew/system/agents/skills/`) or from the
      active host's agent-crew mirrors (`~/.claude/agent-crew/skills/`,
-     `~/.claude/agent-crew/agents/skills/`, `~/.codex/skills/agent-crew/`,
-     `~/.codex/agent-crew/skills/`). Do not auto-load unrelated host/plugin
-     skills such as plugin cache skills from trigger-description matches. If a
+     `~/.claude/agent-crew/agents/skills/`, `~/.codex/agent-crew/skills/`) or
+     agent-crew host wrapper skills (`~/.codex/skills/crew:<intent>/`). Do not
+     auto-load unrelated host/plugin skills such as plugin cache skills from
+     trigger-description matches. If a
      non-agent-crew skill is needed, ask the user first and record the explicit
      approval in `context/external-skill-approval.md` or `.json`.
      Every selected skill name should have matching load coverage

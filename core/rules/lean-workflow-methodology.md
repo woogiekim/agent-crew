@@ -102,15 +102,15 @@ Minimize token load before adding more process.
 
 ## Workflow Origin vs Target Scope
 
-Workflow notation such as `crew:run`, `$crew-run`, or a host wrapper skill is the
+Workflow notation such as `crew:run`, `$crew:run`, or a host wrapper skill is the
 origin of execution unless the user explicitly makes that command, wrapper,
 file, or `SKILL.md` the review target.
 
 Examples:
 
-- `$crew-run 코드리뷰` means run the code-review task through the crew-run
+- `$crew:run 코드리뷰` means run the code-review task through the crew:run
   workflow.
-- `` `$crew-run` skill을 코드리뷰해 `` means review the wrapper skill itself.
+- `` `$crew:run` skill을 코드리뷰해 `` means review the wrapper skill itself.
 
 If the distinction is ambiguous, use the structured disambiguation rule. Do not
 silently reinterpret the workflow command token as a target artifact.

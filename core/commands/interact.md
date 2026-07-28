@@ -35,7 +35,7 @@ crew interact --to contents-systsem --select 1 --send --copy "hello"
 ## Prompt Command
 
 ```text
-$crew-interact 방금 relay 변경사항 클로드한테 리뷰 받아줘
+$crew:interact 방금 relay 변경사항 클로드한테 리뷰 받아줘
 ```
 
 Host prompt adapters should route this to the same `crew:interact` intent.

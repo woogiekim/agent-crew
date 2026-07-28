@@ -15,7 +15,42 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
   printf 'MODE: update (host=claude)\n'
 fi
 
-copy_dir_contents "${AGENT_CREW_HOME}/commands" "${CLAUDE_DIR}/commands"
+install_claude_namespaced_commands() {
+  local src="${AGENT_CREW_HOME}/commands"
+  local dest="${CLAUDE_DIR}/commands/crew"
+  local legacy_name
+
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
+    src="${SOURCE_ROOT}/core/commands"
+  fi
+
+  [ -d "${src}" ] || return 0
+  mkdir -p "${dest}"
+
+  for legacy_name in \
+    agent-maker \
+    agent \
+    cost \
+    interact \
+    parity-check \
+    relay \
+    run \
+    sessions \
+    setup \
+    smm \
+    status \
+    sync-instructions \
+    task \
+    telemetry \
+    update \
+    workflow; do
+    rm -f "${CLAUDE_DIR}/commands/${legacy_name}.md"
+  done
+
+  sync_dir_contents_prune "${src}" "${dest}"
+}
+
+install_claude_namespaced_commands
 copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${CLAUDE_DIR}/agent-crew/hooks"
 copy_dir_contents "${AGENT_CREW_HOME}/rules" "${CLAUDE_DIR}/agent-crew/rules"
 copy_dir_contents "${AGENT_CREW_HOME}/scripts" "${CLAUDE_DIR}/agent-crew/scripts"

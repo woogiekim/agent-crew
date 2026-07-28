@@ -1,9 +1,9 @@
 ---
-name: crew-interact
-description: Use when the user invokes $crew-interact to start a natural-language interaction with another AI session. This is a thin Codex wrapper for crew:interact.
+name: crew:interact
+description: Use when the user invokes $crew:interact to start a natural-language interaction with another AI session. This is a thin Codex wrapper for crew:interact.
 ---
 
-# crew-interact
+# crew:interact
 
 This Codex skill is an alias for:
 
@@ -13,7 +13,7 @@ crew:interact
 
 ## Execution
 
-1. Treat any user text after `$crew-interact` as a natural-language interaction request.
+1. Treat any user text after `$crew:interact` as a natural-language interaction request.
 2. List friendly AI session candidates before any send step.
 3. Hide opaque relay/session ids unless debugging requires them.
 4. Preserve the selected target and request as input for the relay internals.

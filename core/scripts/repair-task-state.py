@@ -1461,12 +1461,10 @@ def is_agent_crew_owned_skill_path(value: str) -> bool:
         or normalized.startswith("core/rules/")
         or "/.claude/agent-crew/skills/" in normalized
         or "/.claude/agent-crew/agents/skills/" in normalized
-        or "/.codex/skills/agent-crew/" in normalized
-        or "/.codex/skills/crew-" in normalized
+        or "/.codex/skills/crew:" in normalized
         or "/.codex/agent-crew/skills/" in normalized
         or "/adapters/claude/skill/" in normalized
-        or "/adapters/codex/skill/crew-" in normalized
-        or "/adapters/codex/skill/agent-crew/" in normalized
+        or "/adapters/codex/skill/crew:" in normalized
     )
 
 

@@ -93,7 +93,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run; the same helper now reports interaction intensity, ambiguity score, and a default 20% ambiguity threshold for deep/strict workflows
 - **Lean workflow methodology** — command files stay thin while shared rules define `Align -> Plan -> Execute/TDD -> Review`, context diet, workflow-origin vs target-scope handling, bounded reviewer loops, and fake-completion scanning. Standard-risk quality gates report concrete gaps and allow proceed / fix-gaps / strict-100 decisions when coverage is above threshold; high-risk gates remain strict.
 - **Minimal-change decision gate** — analyst/planner output records Need Analyzer answers, ordered Capability Search, `Will Do`, `Will NOT Do`, and a diff budget in existing artifacts. The planning-time gate rejects implementation pipelines when reuse, configuration, deletion, existing APIs, or platform capabilities can satisfy the request first.
-- **Prompt Compiler hook** — `auto-route.sh` treats natural user input as source material, not as something to reject. STOP/ROUTE directives now include a `PROMPT_COMPILER` block with intent, normalized task, project context, architecture rules, risk assessment, success criteria, deliverables, soft-validation policy, and role-specific prompts for downstream agents.
+- **Explicit command adapter hook** — `auto-route.sh` adapts explicit agent-crew commands such as `$crew:run`, `$crew:agent`, `crew:run`, and `crew:agent`. It does not classify ordinary natural language as read-only or mutating, and it does not choose `crew:agent` vs `crew:run`.
 - **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
 - **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
 - **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
@@ -101,9 +101,9 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Parallel-first execution** — tasks are always run in parallel by default; file overlap is never a reason to serialize; the resolver agent handles post-parallel merge conflicts
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
-- **STOP Directive** — `auto-route.sh` injects `[agent-crew] STOP` when a development request is detected; explicitly invoked host skill context is preserved, but non-agent-crew or third-party host/plugin skills must not be auto-loaded by description match; the AI must enter the `crew-run` workflow with no preamble, no file reads, no Bash commands, and no clarifying questions
+- **Explicit execution boundary** — ordinary natural-language input does not start a workflow, task, agent, or hidden router. Users choose the command boundary explicitly with `crew:run`, `crew:agent`, `$crew:run`, `$crew:agent`, or another management command.
 - **Agent-first skill dispatch** — implementation agents discover capability skills through agent-crew's canonical `system/skills` + `user/skills` layers. Skill frontmatter (`loaded_by`, `axis`, `detection`) selects applicable skills; same-name user skills override system defaults; duplicate resolution and unindexed user-skill gaps are reported as framework-computed `decision_context`, not as required proof artifacts.
-- **All-response agent routing** — substantive user-facing answers route through agent-crew first: implementation/mutation/git work enters `crew:run`, while questions, explanations, diagnostics, status, and history lookups enter `crew:agent`
+- **Direct-agent mutation support** — `crew:agent` can run mutating single-agent work when the selected agent definition allows mutation. Agents that must remain read-only declare that contract in their own instructions.
 - **Route directive guard** — when a host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` detects Agent responses that received a STOP/ROUTE route lock but answered inline instead of entering `crew:run` / `crew:agent`
 - **direct-edit-guard hook** — blocks `Edit` and `Write` tool calls to project source files when no active crew task marker exists, enforcing that all implementation goes through the pipeline
 - **Reviewer always last** — every pipeline that produces implementation output ends with the `reviewer` agent, which verifies completeness against the PRD
@@ -882,52 +882,24 @@ If a stage reports `STATUS: BLOCKED`, the supervisor halts the pipeline immediat
 
 ### Agent-Crew Routing Directives (`core/hooks/auto-route.sh`)
 
-`auto-route.sh` is a `UserPromptSubmit` hook. It routes substantive prompts
-through agent-crew before an answer is produced:
+`auto-route.sh` is a `UserPromptSubmit` hook, but it is not a natural-language
+router. It adapts only explicit agent-crew command syntax and otherwise emits no
+STOP/ROUTE directive. This keeps execution intent explicit: the user chooses
+`crew:run` vs `crew:agent` by command.
 
-- implementation, mutation, issue, git, release, update, and artifact/document
-  requests inject `[agent-crew] STOP` and must enter `crew:run`
-- questions, explanations, diagnostics, read-only status, and session/history
-  lookups inject `[agent-crew] ROUTE` and must enter `crew:agent`
-- short workflow continuations such as `go`, `continue`, `네`, or
-  `진행해주세요` route back into the appropriate crew workflow instead of being
-  answered inline
-
-The same hook also acts as a Prompt Compiler. It appends a `PROMPT_COMPILER`
-block to every STOP/ROUTE directive so vague but executable user input is
-normalized and enriched before agents run. The compiled context includes
-intent, goal, `NORMALIZED_TASK`, project rule injection, missing-information
-recovery, risk assessment, deliverables, success criteria, and role-specific
-prompt slices. The hook should ask the user to rewrite only when a request is
-unsafe, impossible, or outside project scope.
-
-Codex `$crew-*` wrapper commands are treated as explicit workflow invocations
-when they appear at the beginning of the prompt. For example, `$crew-run 코드리뷰`
+Codex `$crew:*` wrapper commands are treated as explicit workflow invocations
+when they appear at the beginning of the prompt. For example, `$crew:run 코드리뷰`
 means run the `코드리뷰` task through `crew:run`; it is not a request to review
-the `crew-run` skill. To review the wrapper itself, explicitly target the skill,
-wrapper, file, or `SKILL.md` in the prompt, such as `` `$crew-run` skill review ``.
+the `crew:run` skill. To review the wrapper itself, explicitly target the skill,
+wrapper, file, or `SKILL.md` in the prompt, such as `` `$crew:run` skill review ``.
 
 Machine-control replies used by structured-choice fallbacks, such as a bare
-option number, are the only prompt-level bypass.
+option number, still pass through without starting execution.
 
-When `[agent-crew] STOP` is present, the first agent-crew workflow action is to
-invoke `crew:run`. In Codex, explicitly invoked Codex skills
-may load first; their context must be preserved for requirements collection,
-supervisor handoffs, and generated prompts. All of the following are forbidden
-before the `crew-run` workflow begins:
-
-- Producing any explanatory output
-- Running Bash commands (including read-only or exploratory commands like `git status`, `ls`, `cat`)
-- Reading files to understand the request
-- Asking clarifying questions
-
-When `[agent-crew] ROUTE` is present, the first agent-crew workflow action is to
-invoke `crew:agent` with the selected read-only agent. Inline substantive answers
-are forbidden even when the answer is short or obvious.
-
-These directives are hard workflow locks in `core/global-agents.md`; where a
-host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` also detects
-Agent responses that ignored the route and answered inline.
+`route-directive-guard.sh` remains for compatibility with already-loaded or
+external contexts that contain a `[agent-crew] STOP` or `[agent-crew] ROUTE`
+directive, but the current auto-route hook no longer creates those directives
+from ordinary natural language.
 
 #### Codex current-session update limitation
 
@@ -936,7 +908,7 @@ rules, generated agents, and Codex skill mirrors. It cannot retroactively replac
 system/developer context that is already loaded into an active Codex
 conversation. After changing routing policy, start a new Codex session for the
 new instructions to apply automatically. In the old session, explicitly invoke
-`$crew-run` / `$crew-agent` or follow the visible STOP/ROUTE directive.
+`$crew:run` or `$crew:agent`.
 
 ### Direct-Edit Guard (`core/hooks/direct-edit-guard.sh`)
 

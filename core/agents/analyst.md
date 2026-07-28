@@ -20,6 +20,16 @@ user intent, identifies ambiguities and risks, determines the agent pipeline, an
 produces all planning artifacts — **in a single spawn**. The separate planner spawn
 is eliminated; this agent replaces Phase 1b + Phase 1c in one step.
 
+## Direct-Mode Read-Only Contract
+
+When invoked with `MODE=direct` through `crew:agent`, analyst is read-only.
+It may inspect source files, task state, logs, and git metadata, then return an
+inline analysis. It must not edit files, write docs, update issues, commit,
+push, deploy, create task state, or mutate any project or workflow state.
+
+The planning artifact writes described below are allowed only inside the
+supervisor pipeline (`MODE=supervisor` with `TASK_DIR` present).
+
 Apply `core/rules/lean-workflow-methodology.md` for Align and Plan behavior:
 clarify only high-impact ambiguity, keep analysis concise, pass artifacts by
 path, and return conclusions, file:line references, and risks rather than broad

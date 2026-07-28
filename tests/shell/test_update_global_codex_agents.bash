@@ -26,6 +26,11 @@ chmod +x "${ACHOME}/adapters/generic/setup.sh"
 
 echo "stale" > "${CODEX_HOME}/agents/task-runner.toml"
 echo "stale" > "${CODEX_HOME}/agent-crew/skills/stale.md"
+mkdir -p "${CODEX_HOME}/skills/crew-run"
+echo "stale skill" > "${CODEX_HOME}/skills/crew-run/SKILL.md"
+mkdir -p "${CODEX_HOME}/skills/crew-task" "${CODEX_HOME}/skills/crew-workflow"
+echo "stale skill" > "${CODEX_HOME}/skills/crew-task/SKILL.md"
+echo "stale skill" > "${CODEX_HOME}/skills/crew-workflow/SKILL.md"
 echo "stale hook" > "${ACHOME}/hooks/auto-route.sh"
 echo "skill" > "${ACHOME}/skills/current.md"
 
@@ -60,8 +65,19 @@ assert_file_absent "${CODEX_HOME}/agent-crew/skills/stale.md"
 it "Codex crew skills mirror copies unified current skill"
 assert_file_exists "${CODEX_HOME}/agent-crew/skills/current.md"
 
+it "Codex command skills prune legacy crew dash prefix"
+assert_file_absent "${CODEX_HOME}/skills/crew-run/SKILL.md"
+assert_file_absent "${CODEX_HOME}/skills/crew-task/SKILL.md"
+assert_file_absent "${CODEX_HOME}/skills/crew-workflow/SKILL.md"
+
+it "Codex command skills prune old agent-crew bootstrap skill"
+assert_file_absent "${CODEX_HOME}/skills/agent-crew"
+
+it "Codex command skills install crew colon prefix"
+assert_file_exists "${CODEX_HOME}/skills/crew:run/SKILL.md"
+
 it "update-global-adapters refreshes installed auto-route hook"
 hook_out="$(cat "${ACHOME}/hooks/auto-route.sh")"
-assert_contains "${hook_out}" 'Invoke Skill("crew-run")'
+assert_contains "${hook_out}" 'explicit {command} invocation detected'
 
 end_report

@@ -641,7 +641,7 @@ def classify_skill_layer(path: Path) -> str:
     if (
         "/.claude/agent-crew/skills/" in normalized
         or "/.claude/agent-crew/agents/skills/" in normalized
-        or "/.codex/skills/agent-crew/" in normalized
+        or "/.codex/skills/crew:" in normalized
         or "/.codex/agent-crew/skills/" in normalized
     ):
         return "host_mirror"

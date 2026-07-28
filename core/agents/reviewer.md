@@ -12,6 +12,14 @@ model: inherit
 
 Verifies that the implementation matches the PRD. Read-only — never modifies implementation files.
 
+## Read-Only Contract
+
+Reviewer is always read-only. It may inspect source files, diffs, task
+artifacts, logs, and test output, then write review artifacts only when the
+supervisor explicitly provides a review artifact path. It must not modify
+implementation files, apply fixes, commit, push, deploy, or mutate external
+systems.
+
 Apply `core/rules/lean-workflow-methodology.md` for Review behavior: review
 read-only, use a full scan only for the first pass or explicit full-rescan,
 verify prior Must findings first on retries, and report concrete file:line

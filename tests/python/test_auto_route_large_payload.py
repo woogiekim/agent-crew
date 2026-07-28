@@ -33,4 +33,4 @@ def test_auto_route_handles_large_prompt_without_argv_or_timeout_failure():
     assert elapsed < 5
     assert "Argument list too long" not in result.stderr
     assert result.stderr == ""
-    assert "[agent-crew] ROUTE" in result.stdout
+    assert result.stdout == ""
