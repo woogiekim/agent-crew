@@ -426,6 +426,149 @@ def test_interact_selected_aoe_session_sends_with_aoe_without_env_config(monkeyp
     assert "hi" in send_calls[0][3]
 
 
+def test_interact_to_select_uses_fast_targeted_resolution_without_full_discovery(monkeypatch, tmp_path: Path, capsys):
+    """success-case - targeted send avoids broad Codex/Claude discovery."""
+    _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    list_stdout = (
+        "Profile: main\n\n"
+        "TITLE                GROUP           PATH                                     ID\n"
+        "--------------------------------------------------------------------------------------------\n"
+        f"agent-crew claude    99. ETC         {project}      f59dec8ab2bd\n"
+        "\nTotal: 1 sessions\n"
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setenv("AGENT_CREW_INTERACT_AOE_ENABLED", "1")
+    monkeypatch.setattr(runtime.subprocess, "run", _fake_aoe_run(calls, list_stdout=list_stdout))
+
+    def fail_full_discovery(*_args, **_kwargs):
+        raise AssertionError("full session discovery should not run for targeted --to/--select send")
+
+    monkeypatch.setattr(runtime, "collect_session_candidates", fail_full_discovery)
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="agent-crew claude",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["hi"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "STATUS: sent" in out
+    assert "① Claude · agent-crew · unknown" in out
+
+
+def test_sessions_reuses_fresh_interact_cache_without_provider_scans(monkeypatch, tmp_path: Path, capsys):
+    """success-case - fresh session cache avoids repeated provider filesystem scans."""
+    _, _, _ = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    cache_dir = tmp_path / "home" / "cache"
+    cache_dir.mkdir(parents=True)
+    cache = {
+        "schema_version": 1,
+        "generated_at": "2026-07-28T10:00:00Z",
+        "sources": runtime.interact_cache_source_signature(),
+        "candidates": [
+            {
+                "source": "cache",
+                "session_ref": "claude:c1",
+                "ai_type": "Claude",
+                "project": "agent-crew",
+                "branch": "main",
+                "summary": "cached session",
+                "updated_at": 1002,
+                "status": "idle",
+                "cwd": str(project),
+            }
+        ],
+    }
+    (cache_dir / "interact-sessions.json").write_text(json.dumps(cache), encoding="utf-8")
+
+    monkeypatch.setattr(runtime, "aoe_session_candidates", lambda: (_ for _ in ()).throw(AssertionError("aoe scan")))
+    monkeypatch.setattr(runtime, "codex_session_candidates", lambda _home: (_ for _ in ()).throw(AssertionError("codex scan")))
+    monkeypatch.setattr(runtime, "claude_session_candidates", lambda _home: (_ for _ in ()).throw(AssertionError("claude scan")))
+
+    assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
+
+    out = capsys.readouterr().out
+    assert "① Claude · agent-crew · main" in out
+    assert "cached session" in out
+
+
+def test_sessions_ignores_cached_aoe_rows_and_merges_fresh_aoe(monkeypatch, tmp_path: Path, capsys):
+    """regression-case - AoE sessions stay fresh even when an older cache contains AoE rows."""
+    _, _, _ = _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "agent-crew"
+    project.mkdir()
+    cache_dir = tmp_path / "home" / "cache"
+    cache_dir.mkdir(parents=True)
+    cache = {
+        "schema_version": 1,
+        "generated_at": "2026-07-28T10:00:00Z",
+        "sources": runtime.interact_cache_source_signature(),
+        "candidates": [
+            {
+                "source": "aoe",
+                "session_ref": "aoe:stale",
+                "ai_type": "Claude",
+                "project": "agent-crew",
+                "branch": "unknown",
+                "summary": "stale AoE session",
+                "updated_at": 2000,
+                "status": "aoe",
+                "cwd": str(project),
+            },
+            {
+                "source": "claude",
+                "session_ref": "claude:c1",
+                "ai_type": "Claude",
+                "project": "agent-crew",
+                "branch": "main",
+                "summary": "cached provider session",
+                "updated_at": 1000,
+                "status": "idle",
+                "cwd": str(project),
+            },
+        ],
+    }
+    (cache_dir / "interact-sessions.json").write_text(json.dumps(cache), encoding="utf-8")
+
+    monkeypatch.setenv("AGENT_CREW_INTERACT_AOE_ENABLED", "1")
+    monkeypatch.setattr(
+        runtime,
+        "aoe_session_candidates",
+        lambda: [
+            {
+                "source": "aoe",
+                "session_ref": "aoe:fresh",
+                "ai_type": "Claude",
+                "project": "agent-crew",
+                "branch": "unknown",
+                "summary": "fresh AoE session",
+                "updated_at": 1500,
+                "status": "aoe",
+                "cwd": str(project),
+            }
+        ],
+    )
+    monkeypatch.setattr(runtime, "codex_session_candidates", lambda _home: (_ for _ in ()).throw(AssertionError("codex scan")))
+    monkeypatch.setattr(runtime, "claude_session_candidates", lambda _home: (_ for _ in ()).throw(AssertionError("claude scan")))
+
+    assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
+
+    out = capsys.readouterr().out
+    assert "fresh AoE session" in out
+    assert "cached provider session" in out
+    assert "stale AoE session" not in out
+
+
 def test_interact_select_send_uses_delivery_adapter_success(monkeypatch, tmp_path: Path, capsys):
     """success-case - --send reports sent only when the delivery adapter succeeds."""
     _, _, claude_home = _session_home(monkeypatch, tmp_path)

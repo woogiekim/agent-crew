@@ -600,7 +600,7 @@ def claude_session_candidates(home: Path) -> list[dict]:
 
 
 def aoe_session_candidates() -> list[dict]:
-    if os.environ.get("AGENT_CREW_INTERACT_AOE_ENABLED", "1").strip().lower() in {"0", "false", "no"}:
+    if not interact_aoe_enabled():
         return []
     try:
         completed = subprocess.run(
@@ -649,6 +649,69 @@ def aoe_session_candidates() -> list[dict]:
             }
         )
     return candidates
+
+
+def interact_aoe_enabled() -> bool:
+    return os.environ.get("AGENT_CREW_INTERACT_AOE_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+
+
+def interact_cache_path(agent_crew_home: Path) -> Path:
+    return agent_crew_home / "cache" / "interact-sessions.json"
+
+
+def directory_signature(path: Path) -> dict:
+    if not path.exists():
+        return {"exists": False, "mtime": 0.0}
+    return {
+        "exists": True,
+        "mtime": file_mtime(path),
+    }
+
+
+def interact_cache_source_signature() -> dict:
+    codex = codex_home()
+    claude = claude_home()
+    return {
+        "codex_index": directory_signature(codex / "session_index.jsonl"),
+        "codex_sessions": directory_signature(codex / "sessions"),
+        "claude_sessions": directory_signature(claude / "sessions"),
+        "claude_projects": directory_signature(claude / "projects"),
+    }
+
+
+def read_interact_session_cache(agent_crew_home: Path) -> list[dict] | None:
+    payload = load_json(interact_cache_path(agent_crew_home), {})
+    if payload.get("schema_version") != 1:
+        return None
+    if payload.get("sources") != interact_cache_source_signature():
+        return None
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+    return [
+        dict(candidate)
+        for candidate in candidates
+        if isinstance(candidate, dict) and candidate.get("source") != "aoe"
+    ]
+
+
+def write_interact_session_cache(agent_crew_home: Path, candidates: list[dict]) -> None:
+    cache_candidates: list[dict] = []
+    for candidate in candidates:
+        if candidate.get("source") == "aoe":
+            continue
+        row = dict(candidate)
+        row.pop("index", None)
+        cache_candidates.append(row)
+    write_json(
+        interact_cache_path(agent_crew_home),
+        {
+            "schema_version": 1,
+            "generated_at": utc_now_z(),
+            "sources": interact_cache_source_signature(),
+            "candidates": cache_candidates,
+        },
+    )
 
 
 def task_session_enrichment(state_dir: Path, task_dir: Path) -> dict:
@@ -712,8 +775,20 @@ def enrich_session_candidates(candidates: list[dict], enrichments: list[dict]) -
 
 
 def collect_session_candidates(agent_crew_home: Path, *, limit: int = 20) -> list[dict]:
+    fresh_aoe = aoe_session_candidates() if interact_aoe_enabled() else []
+    cached = read_interact_session_cache(agent_crew_home)
+    if cached is not None:
+        candidates = [
+            *fresh_aoe,
+            *cached,
+        ]
+        candidates.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
+        for index, row in enumerate(candidates[:limit], start=1):
+            row["index"] = index
+        return candidates[:limit]
+
     candidates = [
-        *aoe_session_candidates(),
+        *fresh_aoe,
         *codex_session_candidates(codex_home()),
         *claude_session_candidates(claude_home()),
     ]
@@ -721,9 +796,40 @@ def collect_session_candidates(agent_crew_home: Path, *, limit: int = 20) -> lis
         enrich_session_candidates(candidates, collect_task_enrichments(agent_crew_home))
 
     candidates.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
+    write_interact_session_cache(agent_crew_home, candidates)
     for index, row in enumerate(candidates[:limit], start=1):
         row["index"] = index
     return candidates[:limit]
+
+
+def collect_targeted_session_candidates(agent_crew_home: Path, selector: str, *, limit: int = 20) -> list[dict]:
+    target = str(selector or "").strip().lower()
+    if not target:
+        return []
+
+    targeted: list[dict] = []
+    for candidate in aoe_session_candidates():
+        if session_matches_selector(candidate, target):
+            targeted.append(candidate)
+    if targeted:
+        targeted.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
+        for index, row in enumerate(targeted[:limit], start=1):
+            row["index"] = index
+        return targeted[:limit]
+
+    cached = read_interact_session_cache(agent_crew_home)
+    if cached is not None:
+        targeted = [
+            row
+            for row in cached
+            if session_matches_selector(row, target)
+        ]
+        targeted.sort(key=lambda row: row.get("updated_at", 0), reverse=True)
+        for index, row in enumerate(targeted[:limit], start=1):
+            row["index"] = index
+        return targeted[:limit]
+
+    return []
 
 
 def render_session_candidates(candidates: list[dict], *, grouped_threshold: int = 4) -> str:
@@ -3208,7 +3314,12 @@ def command_interact(args: argparse.Namespace) -> int:
         migrate_legacy=True,
     )
     request = " ".join(args.prompt or []).strip()
-    candidates = collect_session_candidates(agent_crew_home, limit=args.limit)
+    selector = getattr(args, "select", "")
+    candidates: list[dict] = []
+    if args.to and selector and getattr(args, "send", False):
+        candidates = collect_targeted_session_candidates(agent_crew_home, args.to, limit=args.limit)
+    if not candidates:
+        candidates = collect_session_candidates(agent_crew_home, limit=args.limit)
     if args.to:
         target = args.to.lower()
         candidates = [
@@ -3222,7 +3333,6 @@ def command_interact(args: argparse.Namespace) -> int:
     if request:
         print(f"요청: {request}")
         print("")
-    selector = getattr(args, "select", "")
     if selector:
         selected = select_session_candidate(candidates, selector)
         if selected is None:
