@@ -15,6 +15,7 @@ PYTHON_SCRIPTS=(
   "cost-aggregate.py"
   "memory-gc.py"
   "memory-recall-context.py"
+  "memory-feedback.py"
   "validate-memory-usage.py"
   "framework-review-check.py"
   "agent-capability-check.py"

@@ -214,6 +214,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
     "core/scripts/memory-gc.py:${AGENT_CREW_HOME}/scripts/memory-gc.py" \
     "core/scripts/memory-recall-context.py:${AGENT_CREW_HOME}/scripts/memory-recall-context.py" \
+    "core/scripts/memory-feedback.py:${AGENT_CREW_HOME}/scripts/memory-feedback.py" \
     "core/scripts/validate-memory-usage.py:${AGENT_CREW_HOME}/scripts/validate-memory-usage.py" \
     "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
     "core/scripts/agent-capability-check.py:${AGENT_CREW_HOME}/scripts/agent-capability-check.py" \

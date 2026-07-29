@@ -247,6 +247,7 @@ def test_analyst_documents_progressive_learning_recall():
     assert "Progressive Learning" in text
     assert "advisory" in text.lower()
     assert "memory-usage.json" in text
+    assert "memory-feedback.py" in text
     # Pointer back to the rule must exist so the contract is discoverable.
     assert "core/rules/progressive-learning.md" in text
 

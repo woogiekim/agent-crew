@@ -349,6 +349,15 @@ NEEDS_CHANGES` to `action=retry`. `REVIEW: APPROVED` maps to
 `action=approve` only when the reviewer also returns `QUALITY_METRICS:` and
 the referenced quality-metrics artifact exists.
 
+When `REVIEW_ACTION=approve`, run
+`memory-feedback.py --task-dir "${TASK_DIR}" --event validated --review-response "${TASK_DIR}/context/reviewer-response.txt"`
+before advancing to the next stage or Phase 3 close-out. The helper sends
+validated feedback only for already applied memory events, only when
+`AGENT_CREW_MEMORY_FEEDBACK=1`, and only once per deterministic event ID. A
+feedback timeout or provider error records
+`${TASK_DIR}/context/memory-feedback-outbox.jsonl` and must not turn the
+approved task result into a failure.
+
 Re-loop logic (executed by Phase 2's stage loop wrapper around the
 reviewer stage spawn — runs at the same point in the dispatch flow as
 the existing crash-retry path):

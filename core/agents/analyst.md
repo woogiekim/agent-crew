@@ -155,6 +155,10 @@ Use this order for memory-aware analysis:
    records that the affected memory must not receive later feedback and the
    base workflow continues. If `AGENT_CREW_MEMORY_STRICT=1`, schema or invariant
    failures are blocking.
+10. Run `memory-feedback.py --task-dir "${TASK_DIR}" --event applied` after the
+    validator step. The helper honors `AGENT_CREW_MEMORY_FEEDBACK`; when the
+    flag is `0`, no provider call is made. Applied feedback is advisory
+    transport only and must not change the task result.
 
 `memory-usage.json` must include one decision for every selected memory from
 `memory-retrieval.json`. Use `applied` only when a memory changed a concrete

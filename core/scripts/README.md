@@ -119,6 +119,11 @@ invocation in SKILL.md; generic adds guidance).
   single source of truth for recalled memory application, checks concrete
   artifact locators, blocks invalid deterministic use of advisory memory, and
   can write legacy `context/memory-evidence.json` as a compatibility projection.
+- `memory-feedback.py` — sends idempotent Mnemos feedback from validated
+  `memory-usage.json`: `applied` after analyst usage validation and
+  `validated` only after final reviewer approval. It honors
+  `AGENT_CREW_MEMORY_FEEDBACK` and records outbox rows on transport failure
+  without changing the task result.
 - `framework-review-check.py` — static operational readiness gate for
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term
