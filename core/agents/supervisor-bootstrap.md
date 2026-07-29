@@ -763,17 +763,40 @@ TASK_START_HEAD=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo ""
 echo "${TASK_START_HEAD}" > "${TASK_DIR}/context/start-head.txt"
 ```
 
-**Memory preflight (P40.3)**: Before spawning the analyst, run a mnemos
-search using the task description so the analyst can benefit from prior
-decisions and constraints captured in memory. The search result is written
-to `{TASK_DIR}/context/memory.md` and passed as an optional path input to
-the analyst. This is a no-op when the memory binary is absent.
+**Memory preflight (P40.3)**: Before spawning the analyst, run the memory
+wrapper using the task description so the analyst can benefit from prior
+decisions and constraints captured in memory. Legacy and shadow mode write the
+legacy search result to `{TASK_DIR}/context/memory.md` and pass it as an
+optional path input to the analyst. `off` mode skips recall. `v2` mode records
+the provider JSON sidecar only and must not write V2 recall into `memory.md`
+until a later step defines the structured analyst context contract. This is a
+no-op when the memory binary is absent or unavailable.
 
 ```bash
 MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
+MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-legacy}"
+run_task_memory_search() {
+  "${MEMORY}" search "${TASK}" --limit 5
+}
 if command -v "${MEMORY}" >/dev/null 2>&1; then
-  "${MEMORY}" search "${TASK}" --limit 5 \
-    > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+  case "${MEMORY_RECALL_MODE}" in
+    off)
+      : # memory disabled for this task
+      ;;
+    v2)
+      run_task_memory_search \
+        > "${TASK_DIR}/context/memory-recall-v2.json" \
+        2> "${TASK_DIR}/context/memory-recall-v2.err" || true
+      ;;
+    legacy|shadow|"")
+      run_task_memory_search \
+        > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+      ;;
+    *)
+      run_task_memory_search \
+        > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+      ;;
+  esac
 fi
 ```
 

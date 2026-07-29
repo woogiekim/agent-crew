@@ -295,6 +295,186 @@ assert_exit 0 "${rc}" "requirements evidence ranking"
 assert_contains "${OUTPUT}" "req-commercialization-eval-test"
 assert_not_contains "${OUTPUT}" "commercialization-e2e-99-review-20260101"
 
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${MNEMOS_CALL_LOG}"
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"commands":{"recall":{"json":true},"feedback":{"json":true}}}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "recall" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"status":"ok","results":[{"id":"recall-v2-1","content":"full v2 content that must not be truncated by agent-crew wrapper","score":0.87}]}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "feedback" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"status":"ok","feedback_id":"fb-1"}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "search" ]; then
+  printf 'legacy-search-result\n'
+  exit 0
+fi
+echo "unexpected $*"
+exit 9
+SH
+chmod +x "${TMP}/mnemos"
+CALL_LOG="${TMP}/calls.log"
+
+it "memory recall mode off disables search without provider calls"
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_RECALL_MODE=off MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "off mode"
+assert_contains "${OUTPUT}" "status=disabled"
+assert_file_absent "${CALL_LOG}"
+
+it "memory recall mode legacy keeps legacy search output"
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_RECALL_MODE=legacy AGENT_CREW_MEMORY_FAST_SEARCH=0 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "legacy mode"
+assert_contains "${OUTPUT}" "legacy-search-result"
+assert_not_contains "${OUTPUT}" "recall-v2-1"
+
+it "memory recall mode shadow runs recall v2 but returns legacy output"
+rm -f "${CALL_LOG}"
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_RECALL_MODE=shadow AGENT_CREW_MEMORY_FAST_SEARCH=0 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "shadow mode"
+assert_contains "${OUTPUT}" "legacy-search-result"
+assert_not_contains "${OUTPUT}" "recall-v2-1"
+assert_contains "$(cat "${CALL_LOG}")" "recall --json probe --limit 5"
+
+it "memory recall mode v2 preserves recall JSON stdout without legacy fallback"
+rm -f "${CALL_LOG}"
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_RECALL_MODE=v2 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "v2 mode"
+assert_contains "${OUTPUT}" '"status":"ok"'
+assert_contains "${OUTPUT}" "full v2 content that must not be truncated"
+assert_not_contains "${OUTPUT}" "legacy-search-result"
+assert_contains "$(cat "${CALL_LOG}")" "recall --json probe --limit 5"
+
+it "memory feedback is disabled unless the feedback flag is enabled"
+rm -f "${CALL_LOG}"
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_FEEDBACK=0 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" feedback --event used 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "feedback disabled"
+assert_contains "${OUTPUT}" "status=disabled"
+assert_file_absent "${CALL_LOG}"
+
+it "memory feedback forwards JSON when the feedback flag is enabled"
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_FEEDBACK=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" feedback --event used 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "feedback enabled"
+assert_contains "${OUTPUT}" '"feedback_id":"fb-1"'
+assert_contains "$(cat "${CALL_LOG}")" "feedback --json --event used"
+
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"commands":{"search":{"fast":true,"json":true}}}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "search" ]; then
+  printf 'legacy-only-provider\n'
+  exit 0
+fi
+echo "unexpected $*"
+exit 9
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory recall mode v2 reports incompatible provider without legacy fallback"
+OUTPUT=$(AGENT_CREW_MEMORY_RECALL_MODE=v2 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "v2 incompatible non-strict"
+assert_contains "${OUTPUT}" "incompatible_provider"
+assert_not_contains "${OUTPUT}" "legacy-only-provider"
+
+it "memory strict mode makes incompatible provider fail"
+OUTPUT=$(AGENT_CREW_MEMORY_RECALL_MODE=v2 AGENT_CREW_MEMORY_STRICT=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 2 "${rc}" "v2 incompatible strict"
+assert_contains "${OUTPUT}" "incompatible_provider"
+
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capabilities" ]; then
+  printf 'not json\n'
+  exit 0
+fi
+exit 9
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory recall mode v2 reports invalid capabilities json"
+OUTPUT=$(AGENT_CREW_MEMORY_RECALL_MODE=v2 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "v2 invalid json non-strict"
+assert_contains "${OUTPUT}" "invalid_json"
+
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"commands":{"recall":{"json":true}}}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "recall" ]; then
+  printf '{"status":"degraded","results":[],"warning":"backend degraded"}\n'
+  exit 0
+fi
+exit 9
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory recall mode v2 preserves degraded provider json"
+OUTPUT=$(AGENT_CREW_MEMORY_RECALL_MODE=v2 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "v2 degraded"
+assert_contains "${OUTPUT}" '"status":"degraded"'
+assert_contains "${OUTPUT}" "backend degraded"
+
+TMP=$(make_tmp)
+cat > "${TMP}/mnemos" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
+  cat <<'JSON'
+{"commands":{"recall":{"json":true}}}
+JSON
+  exit 0
+fi
+if [ "${1:-}" = "recall" ]; then
+  sleep 5
+fi
+exit 0
+SH
+chmod +x "${TMP}/mnemos"
+
+it "memory recall mode v2 reports timeout distinctly"
+OUTPUT=$(AGENT_CREW_MEMORY_RECALL_MODE=v2 AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "v2 timeout"
+assert_contains "${OUTPUT}" "timeout"
+
+it "memory recall mode v2 reports unavailable when mnemos is missing"
+OUTPUT=$(AGENT_CREW_MEMORY_RECALL_MODE=v2 MNEMOS_BIN="${TMP}/missing-mnemos" bash "${MEMORY}" search "probe" --limit 5 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "v2 unavailable"
+assert_contains "${OUTPUT}" "unavailable"
+
 GC_HOME=$(make_tmp)
 mkdir -p "${GC_HOME}/.mnemos/.agent/state"
 python3 - "${GC_HOME}/.mnemos/.agent/state/fts.db" <<'PY'

@@ -18,6 +18,16 @@ def test_memory_provider_contract_covers_required_surface() -> None:
     for behavior in ("timeout", "no-backend", "partial capture failure", "score"):
         assert behavior in lowered
 
+    for flag in (
+        "AGENT_CREW_MEMORY_RECALL_MODE",
+        "AGENT_CREW_MEMORY_FEEDBACK",
+        "AGENT_CREW_MEMORY_STRICT",
+    ):
+        assert flag in text
+
+    for status in ("disabled", "ok", "no_results", "degraded", "unavailable", "timeout", "invalid_json", "incompatible_provider"):
+        assert status in text
+
 
 def test_compatibility_matrix_documents_mnemos_degradation() -> None:
     text = (REPO_ROOT / "docs" / "compatibility-matrix.md").read_text(encoding="utf-8")

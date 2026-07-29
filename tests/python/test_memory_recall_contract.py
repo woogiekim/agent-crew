@@ -22,6 +22,17 @@ def test_supervisor_owns_single_task_memory_search_before_analyst_spawn():
     assert len(re.findall(r'\$\{MEMORY\}" search', combined)) == 1
     assert '"${MEMORY}" search "${TASK}" --limit 5' in _text(BOOTSTRAP)
     assert '2>/dev/null || true' in _text(BOOTSTRAP)
+    assert 'AGENT_CREW_MEMORY_RECALL_MODE:-legacy' in _text(BOOTSTRAP)
+
+
+def test_supervisor_does_not_write_v2_recall_to_analyst_memory_context():
+    text = _text(BOOTSTRAP)
+
+    assert 'MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-legacy}"' in text
+    assert 'v2)' in text
+    assert '> "${TASK_DIR}/context/memory-recall-v2.json"' in text
+    assert '> "${TASK_DIR}/context/memory.md"' in text
+    assert 'MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md' in text
 
 
 def test_analyst_reads_supervisor_memory_context_without_search_or_overwrite():
