@@ -674,8 +674,10 @@ def evaluate_repo(root: Path) -> dict:
             "memory_evidence_trace",
             "medium",
             exists(root, "core/scripts/memory-evidence-trace.py")
+            and exists(root, "core/scripts/validate-memory-usage.py")
+            and exists(root, "core/schemas/memory-usage.schema.json")
             and "memory_evidence_trace_path" in answer_quality,
-            "Final reports must be able to prove which memory context was reused.",
+            "Final reports must prove memory usage from the memory-usage SSOT and compatibility trace.",
         ),
         control(
             "memory_governance",

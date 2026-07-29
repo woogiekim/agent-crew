@@ -214,6 +214,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/cost-aggregate.py:${AGENT_CREW_HOME}/scripts/cost-aggregate.py" \
     "core/scripts/memory-gc.py:${AGENT_CREW_HOME}/scripts/memory-gc.py" \
     "core/scripts/memory-recall-context.py:${AGENT_CREW_HOME}/scripts/memory-recall-context.py" \
+    "core/scripts/validate-memory-usage.py:${AGENT_CREW_HOME}/scripts/validate-memory-usage.py" \
     "core/scripts/framework-review-check.py:${AGENT_CREW_HOME}/scripts/framework-review-check.py" \
     "core/scripts/agent-capability-check.py:${AGENT_CREW_HOME}/scripts/agent-capability-check.py" \
     "core/scripts/pipeline-capability-check.py:${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
@@ -241,7 +242,8 @@ sync_source_runtime_assets_if_drifted() {
     "core/evaluations/workflow-replay.json:${AGENT_CREW_HOME}/evaluations/workflow-replay.json" \
     "core/evaluations/retry-chaos.json:${AGENT_CREW_HOME}/evaluations/retry-chaos.json" \
     "core/policies/agent-capabilities.json:${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
-    "core/schemas/agent-capabilities.schema.json:${AGENT_CREW_HOME}/schemas/agent-capabilities.schema.json"; do
+    "core/schemas/agent-capabilities.schema.json:${AGENT_CREW_HOME}/schemas/agent-capabilities.schema.json" \
+    "core/schemas/memory-usage.schema.json:${AGENT_CREW_HOME}/schemas/memory-usage.schema.json"; do
     local src_rel="${check%%:*}" dest="${check#*:}"
     if [ -f "${source}/${src_rel}" ] && ! cmp -s "${source}/${src_rel}" "${dest}" 2>/dev/null; then
       drift=1

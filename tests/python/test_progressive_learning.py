@@ -216,11 +216,16 @@ def test_rule_uses_context_break_spacing_as_worked_example():
     assert "core/agents/frontend.md" in text
 
 
-def test_rule_documents_memory_evidence_tracing_format():
+def test_rule_documents_memory_usage_tracing_format():
     text = _rule_text()
 
-    assert "## Memory-Evidence Tracing" in text
+    assert "## Memory-Usage Tracing" in text
+    assert "memory-usage.json" in text
+    assert "memory-evidence.json" in text
     for field in (
+        "decisions",
+        "disposition",
+        "applications",
         "retrieved_ids",
         "accepted_ids",
         "ignored_ids",
@@ -241,6 +246,7 @@ def test_analyst_documents_progressive_learning_recall():
 
     assert "Progressive Learning" in text
     assert "advisory" in text.lower()
+    assert "memory-usage.json" in text
     # Pointer back to the rule must exist so the contract is discoverable.
     assert "core/rules/progressive-learning.md" in text
 
@@ -250,6 +256,7 @@ def test_planner_documents_progressive_learning_recall():
 
     assert "Progressive Learning" in text
     assert "advisory" in text.lower()
+    assert "memory-usage.json" in text
     assert "core/rules/progressive-learning.md" in text
 
 

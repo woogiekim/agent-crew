@@ -154,42 +154,64 @@ Each candidate is materialized as a JSON record conforming to
   is the machine-enforced statement that the candidate cannot become policy
   until it has been promoted into a managed rule file under `core/rules/`.
 
-## Memory-Evidence Tracing
+## Memory-Usage Tracing
 
-Every plan or analysis that consumed a recalled candidate must record an
-evidence trace at `${TASK_DIR}/context/memory-evidence.json`. The trace is the
-machine-readable record of *which* memory IDs influenced the plan and *how*.
+Every plan or analysis that consumed recalled candidates must record actual
+usage at `${TASK_DIR}/context/memory-usage.json`. This file is the single source
+of truth for memory use. It records *which* memory IDs were selected, whether
+they were applied, and the exact artifact location changed by an applied
+memory. Existing `${TASK_DIR}/context/memory-evidence.json` is a compatibility
+projection generated from `memory-usage.json`, not an independent record.
 
 Minimum fields:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": "agent-crew.memory-usage.v2",
+  "retrieval_id": "task-20260621T074006-t184-recall",
   "task_id": "task-20260621T074006-t184",
-  "retrieved_ids": ["mem-abc123", "mem-def456"],
-  "accepted_ids": ["mem-abc123"],
-  "ignored_ids": ["mem-def456"],
-  "superseded_by": {
-    "mem-old789": "mem-abc123"
-  },
-  "applied_at": "phase-1b-analysis",
-  "outcome": "advisory_hint_applied"
+  "decisions": [
+    {
+      "memory_id": "mem-abc123",
+      "disposition": "applied",
+      "reason_code": "matched_prior_aar",
+      "applications": [
+        {
+          "artifact": "pipeline.json",
+          "locator_type": "json_pointer",
+          "locator": "/stages/0/tdd_parallel",
+          "effect": "set_true"
+        }
+      ]
+    },
+    {
+      "memory_id": "mem-def456",
+      "disposition": "ignored",
+      "reason_code": "scope_mismatch",
+      "applications": []
+    }
+  ],
+  "conflicts": [],
+  "generated_by": "analyst",
+  "generated_at_phase": "phase-1b-analysis"
 }
 ```
 
-- `retrieved_ids` — every memory ID returned by the recall query, regardless of
-  whether the agent used it.
-- `accepted_ids` — the subset of `retrieved_ids` whose advisory hint actually
-  shaped the plan or analysis output.
-- `ignored_ids` — the subset that was considered and rejected (e.g. low
-  relevance, contradicted by current-code evidence).
-- `superseded_by` — explicit successor mapping when a newer canonical memory
-  replaces an older one for this task.
-- `applied_at` — the agent-crew phase where the hint was applied
-  (`phase-1b-analysis`, `phase-1c-planning`, etc.).
-- `outcome` — the high-level disposition: `advisory_hint_applied`,
-  `no_hint_applied`, `hint_overridden_by_current_evidence`, or
-  `hint_blocked_by_guardrail`.
+- `decisions` — exactly one decision for every selected memory from
+  `memory-retrieval.json`.
+- `disposition` — one of `applied`, `accepted_not_applied`, `ignored`,
+  `superseded`, `conflict_with_current_requirements`, or
+  `conflict_with_managed_rule`.
+- `applications` — required for `applied`; empty for `ignored`. Each
+  application identifies an artifact plus a `json_pointer` or
+  `markdown_heading` locator.
+- `conflicts` — optional structured details for current-requirement or managed
+  rule conflicts.
+
+The compatibility projection contains the legacy fields `retrieved_ids`,
+`accepted_ids`, `ignored_ids`, `superseded_by`, `applied_at`, and `outcome` so
+older reporting gates can continue to audit memory influence while the SSOT
+remains `memory-usage.json`.
 
 The trace is what makes the loop **auditable**: a reviewer can verify that no
 verification gate was relaxed on the strength of a recalled memory.

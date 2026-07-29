@@ -115,6 +115,10 @@ invocation in SKILL.md; generic adds guidance).
   analyst scope through the memory wrapper, preserves raw provider JSON in
   `context/memory-retrieval.json`, and renders filtered, budgeted context to
   `context/memory.md` without applying feedback.
+- `validate-memory-usage.py` — validates `context/memory-usage.json` as the
+  single source of truth for recalled memory application, checks concrete
+  artifact locators, blocks invalid deterministic use of advisory memory, and
+  can write legacy `context/memory-evidence.json` as a compatibility projection.
 - `framework-review-check.py` — static operational readiness gate for
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term

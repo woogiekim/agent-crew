@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew.local/schemas/memory-usage.schema.json",
+  "title": "Agent Crew Memory Usage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "retrieval_id",
+    "task_id",
+    "decisions",
+    "conflicts",
+    "generated_by",
+    "generated_at_phase"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "agent-crew.memory-usage.v2"
+    },
+    "retrieval_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "memory_id",
+          "disposition",
+          "reason_code",
+          "applications"
+        ],
+        "properties": {
+          "memory_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "accepted_not_applied",
+              "ignored",
+              "superseded",
+              "conflict_with_current_requirements",
+              "conflict_with_managed_rule"
+            ]
+          },
+          "reason_code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "artifact",
+                "locator_type",
+                "locator",
+                "effect"
+              ],
+              "properties": {
+                "artifact": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "locator_type": {
+                  "type": "string",
+                  "enum": [
+                    "json_pointer",
+                    "markdown_heading"
+                  ]
+                },
+                "locator": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "effect": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "generated_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at_phase": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

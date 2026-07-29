@@ -120,14 +120,15 @@ When you fold a recalled candidate into `pipeline.json`:
   records are visible to your judgment but do not auto-modify `pipeline.json`.
 - If the current task's requirements, PRD draft, or codebase reality
   contradicts a recalled candidate, the current-task evidence wins. Record the
-  candidate in the `ignored_ids` list of `memory-evidence.json`.
+  candidate in `memory-usage.json` with
+  `conflict_with_current_requirements`.
 
-Before writing `pipeline.json`, record the memory-evidence trace at
-`${TASK_DIR}/context/memory-evidence.json` following the format documented in
-`core/rules/progressive-learning.md` § Memory-Evidence Tracing. The trace must
-list `retrieved_ids`, `accepted_ids`, and `ignored_ids` so that downstream
-reviewers can audit which memories influenced the pipeline shape and confirm
-that no verification gate was relaxed on the strength of a recalled candidate.
+When planner is used as a standalone legacy agent, mirror the analyst
+memory-usage contract: write `${TASK_DIR}/context/memory-usage.json` only after
+`pipeline.json` exists, record concrete artifact locators for every `applied`
+memory, then run `validate-memory-usage.py --task-dir "${TASK_DIR}" --write-compat`.
+`memory-evidence.json` is generated only as a compatibility projection from the
+usage SSOT.
 
 ## Capability Dispatch (Loaded By Metadata)
 

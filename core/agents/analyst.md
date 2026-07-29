@@ -84,10 +84,11 @@ if [ -s "${MEMORY_CONTEXT_PATH:-}" ]; then
 fi
 ```
 
-The supervisor owns task-scoped memory recall and writes the legacy result file
-at `${TASK_DIR}/context/memory.md` before invoking analyst. Analyst must not run
-`memory search`, must not create or overwrite `memory.md`, and must continue
-normally when `MEMORY_CONTEXT_PATH` is absent or empty.
+The supervisor owns task-scoped memory recall and writes
+`${TASK_DIR}/context/memory-retrieval.json` plus `${TASK_DIR}/context/memory.md`
+before invoking analyst. Analyst must not run `memory search`, must not create
+or overwrite `memory.md`, and must continue normally when
+`MEMORY_CONTEXT_PATH` is absent or empty.
 
 If the memory context file is non-empty, read it and incorporate relevant prior
 decisions before proceeding.
@@ -130,18 +131,39 @@ Treat every recalled candidate as **advisory input only**, never ground truth:
   gate for destructive actions.
 - When the current task's requirements, PRD, or actual code contradict a
   recalled candidate, the current-task evidence wins. Record the candidate in
-  the `ignored_ids` list of `memory-evidence.json` (see below).
+  `memory-usage.json` with `conflict_with_current_requirements`.
 - Only candidates at the `project` or `global` (already-promoted) maturity
   level should auto-shape the plan. `session` and `global_candidate` records
   surface as context for your judgment but do not deterministically alter
   `pipeline.json`.
 
-Before writing `analysis.md`, record the memory-evidence trace at
-`${TASK_DIR}/context/memory-evidence.json` following the format documented in
-`core/rules/progressive-learning.md` § Memory-Evidence Tracing. The trace must
-list `retrieved_ids`, `accepted_ids`, and `ignored_ids` so that downstream
-reviewers can audit which memories influenced the plan and confirm that no
-verification gate was relaxed on the strength of a recalled candidate.
+Use this order for memory-aware analysis:
+
+1. Read requirements.
+2. Read `${TASK_DIR}/context/memory-retrieval.json` and
+   `${TASK_DIR}/context/memory.md`.
+3. Decide conflicts against current requirements, code evidence, and managed
+   rules.
+4. Write `${TASK_DIR}/context/analysis.md`.
+5. Write `${TASK_DIR}/context/prd.md`.
+6. Write `${TASK_DIR}/pipeline.json`.
+7. Write `${TASK_DIR}/handoff.md`.
+8. Write `${TASK_DIR}/context/memory-usage.json` as the single source of truth
+   for memory use. Do not guess `applied` locations before the artifacts exist.
+9. Run `validate-memory-usage.py --task-dir "${TASK_DIR}" --write-compat`
+   after writing `memory-usage.json`. In normal mode, warning exit code `1`
+   records that the affected memory must not receive later feedback and the
+   base workflow continues. If `AGENT_CREW_MEMORY_STRICT=1`, schema or invariant
+   failures are blocking.
+
+`memory-usage.json` must include one decision for every selected memory from
+`memory-retrieval.json`. Use `applied` only when a memory changed a concrete
+artifact location. Use `accepted_not_applied` when it informed judgment but did
+not cause a separate artifact change. Use `ignored`, `superseded`,
+`conflict_with_current_requirements`, or `conflict_with_managed_rule` when the
+memory cannot be used. Existing `memory-evidence.json` is a compatibility
+projection generated from `memory-usage.json`; do not write both files as
+independent sources.
 
 ## Capability Dispatch (Loaded By Metadata)
 

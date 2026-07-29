@@ -14,6 +14,8 @@ PYTHON_SCRIPTS=(
   "telemetry-aggregate.py"
   "cost-aggregate.py"
   "memory-gc.py"
+  "memory-recall-context.py"
+  "validate-memory-usage.py"
   "framework-review-check.py"
   "agent-capability-check.py"
   "pipeline-capability-check.py"
