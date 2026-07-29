@@ -305,13 +305,27 @@ if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
 JSON
   exit 0
 fi
-if [ "${1:-}" = "recall" ] && [ "${2:-}" = "--json" ]; then
+if [ "${1:-}" = "recall" ] && [ "${2:-}" = "--json" ] && [ "${3:-}" = "--request-file" ]; then
+  python3 - "$4" <<'PY' >> "${MNEMOS_CALL_LOG}"
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+PY
   cat <<'JSON'
 {"status":"ok","results":[{"id":"recall-v2-1","content":"full v2 content that must not be truncated by agent-crew wrapper","score":0.87}]}
 JSON
   exit 0
 fi
-if [ "${1:-}" = "feedback" ] && [ "${2:-}" = "--json" ]; then
+if [ "${1:-}" = "feedback" ] && [ "${2:-}" = "--json" ] && [ "${3:-}" = "--request-file" ]; then
+  python3 - "$4" <<'PY' >> "${MNEMOS_CALL_LOG}"
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+PY
   cat <<'JSON'
 {"status":"ok","feedback_id":"fb-1"}
 JSON
@@ -348,7 +362,9 @@ rc=$?
 assert_exit 0 "${rc}" "shadow mode"
 assert_contains "${OUTPUT}" "legacy-search-result"
 assert_not_contains "${OUTPUT}" "recall-v2-1"
-assert_contains "$(cat "${CALL_LOG}")" "recall --json probe --limit 5"
+assert_contains "$(cat "${CALL_LOG}")" "recall --json --request-file"
+assert_contains "$(cat "${CALL_LOG}")" '"read_only": true'
+assert_contains "$(cat "${CALL_LOG}")" '"text": "probe"'
 
 it "memory recall mode v2 preserves recall JSON stdout without legacy fallback"
 rm -f "${CALL_LOG}"
@@ -358,7 +374,8 @@ assert_exit 0 "${rc}" "v2 mode"
 assert_contains "${OUTPUT}" '"status":"ok"'
 assert_contains "${OUTPUT}" "full v2 content that must not be truncated"
 assert_not_contains "${OUTPUT}" "legacy-search-result"
-assert_contains "$(cat "${CALL_LOG}")" "recall --json probe --limit 5"
+assert_contains "$(cat "${CALL_LOG}")" "recall --json --request-file"
+assert_contains "$(cat "${CALL_LOG}")" '"selected_limit": 5'
 
 it "memory feedback is disabled unless the feedback flag is enabled"
 rm -f "${CALL_LOG}"
@@ -369,11 +386,12 @@ assert_contains "${OUTPUT}" "status=disabled"
 assert_file_absent "${CALL_LOG}"
 
 it "memory feedback forwards JSON when the feedback flag is enabled"
-OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_FEEDBACK=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" feedback --event used 2>&1)
+OUTPUT=$(MNEMOS_CALL_LOG="${CALL_LOG}" AGENT_CREW_MEMORY_FEEDBACK=1 MNEMOS_BIN="${TMP}/mnemos" bash "${MEMORY}" feedback --request-json '{"schema_version":"mnemos.feedback.request.v1","event_id":"event-1","event":"applied","memory_id":"mem-1","task_id":"task-1"}' 2>&1)
 rc=$?
 assert_exit 0 "${rc}" "feedback enabled"
 assert_contains "${OUTPUT}" '"feedback_id":"fb-1"'
-assert_contains "$(cat "${CALL_LOG}")" "feedback --json --event used"
+assert_contains "$(cat "${CALL_LOG}")" "feedback --json --request-file"
+assert_contains "$(cat "${CALL_LOG}")" '"event_id": "event-1"'
 
 TMP=$(make_tmp)
 cat > "${TMP}/mnemos" <<'SH'

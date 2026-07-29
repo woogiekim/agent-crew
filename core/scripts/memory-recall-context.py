@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -336,6 +337,96 @@ def run_memory(
     return result.returncode, result.stdout, result.stderr
 
 
+def run_memory_timed(**kwargs: Any) -> tuple[int, str, str, int]:
+    started = time.perf_counter()
+    rc, stdout, stderr = run_memory(**kwargs)
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    return rc, stdout, stderr, elapsed_ms
+
+
+def result_ids(rows: list[dict[str, Any]]) -> list[str]:
+    ids: list[str] = []
+    for row in rows:
+        memory_id = str(row.get("memory_id") or row.get("id") or "").strip()
+        if memory_id:
+            ids.append(memory_id)
+    return ids
+
+
+def selected_ids(provider_response: dict[str, Any], rows: list[dict[str, Any]]) -> list[str]:
+    provider_selected = provider_response.get("selected_ids")
+    if isinstance(provider_selected, list):
+        return [str(memory_id) for memory_id in provider_selected if str(memory_id or "").strip()]
+    return [
+        memory_id
+        for row in rows
+        for memory_id in [str(row.get("memory_id") or row.get("id") or "").strip()]
+        if memory_id and row.get("selected") is True
+    ]
+
+
+def legacy_result_ids(output: str) -> list[str]:
+    ids: list[str] = []
+    for line in output.splitlines():
+        match = re.search(r"\]\s+([^:\s]+)\s*:", line)
+        if match:
+            ids.append(match.group(1))
+    return ids
+
+
+def shadow_comparison_payload(
+    *,
+    status: str,
+    provider_response: dict[str, Any],
+    legacy_stdout: str,
+    legacy_rc: int,
+    legacy_stderr: str,
+    project_id: str,
+    project_root_hash: str,
+    v2_latency_ms: int,
+    legacy_latency_ms: int,
+) -> dict[str, Any]:
+    rows = extract_results(provider_response)
+    v2_ids = result_ids(rows)
+    legacy_ids = legacy_result_ids(legacy_stdout)
+    common = sorted(set(v2_ids) & set(legacy_ids))
+    selected = set(selected_ids(provider_response, rows))
+    return {
+        "schema_version": 1,
+        "v2_status": status,
+        "legacy_status": "captured" if legacy_rc == 0 else "unavailable",
+        "legacy_exit_code": legacy_rc,
+        "legacy_stderr": legacy_stderr,
+        "v2_result_count": len(rows),
+        "legacy_ids": legacy_ids,
+        "v2_ids": v2_ids,
+        "common_ids": common,
+        "legacy_only": sorted(set(legacy_ids) - set(v2_ids)),
+        "v2_only": sorted(set(v2_ids) - set(legacy_ids)),
+        "wrong_project_ids": [
+            memory_id
+            for row in rows
+            for memory_id in [str(row.get("memory_id") or row.get("id") or "").strip()]
+            if memory_id
+            and str(row.get("layer") or "") == "project"
+            and (
+                str(row.get("project_id") or "") != project_id
+                or (row.get("project_root_hash") and str(row.get("project_root_hash")) != project_root_hash)
+            )
+        ],
+        "superseded_selected_ids": [
+            memory_id
+            for row in rows
+            for memory_id in [str(row.get("memory_id") or row.get("id") or "").strip()]
+            if memory_id in selected and truthy_sequence(row.get("superseded_by"))
+        ],
+        "latency_ms": {
+            "legacy": legacy_latency_ms,
+            "v2": v2_latency_ms,
+        },
+    }
+
+
 def write_retrieval_artifacts(
     *,
     context_dir: Path,
@@ -385,7 +476,7 @@ def execute(args: argparse.Namespace) -> int:
         exit_code = 0
         stderr = ""
     elif args.mode == "legacy":
-        exit_code, stdout, stderr = run_memory(
+        exit_code, stdout, stderr, _elapsed_ms = run_memory_timed(
             memory_bin=memory_bin,
             task=args.task,
             request=request,
@@ -396,7 +487,7 @@ def execute(args: argparse.Namespace) -> int:
         provider_response = {"status": "legacy", "legacy_output": stdout}
         status = "legacy" if exit_code == 0 else "unavailable"
     else:
-        exit_code, stdout, stderr = run_memory(
+        exit_code, stdout, stderr, v2_latency_ms = run_memory_timed(
             memory_bin=memory_bin,
             task=args.task,
             request=request,
@@ -406,7 +497,7 @@ def execute(args: argparse.Namespace) -> int:
         status, provider_response = parse_provider_response(stdout, exit_code)
         if args.mode == "shadow":
             write_json(context_dir / "memory-retrieval-v2.json", provider_response)
-            legacy_rc, legacy_stdout, legacy_stderr = run_memory(
+            legacy_rc, legacy_stdout, legacy_stderr, legacy_latency_ms = run_memory_timed(
                 memory_bin=memory_bin,
                 task=args.task,
                 request=request,
@@ -416,14 +507,17 @@ def execute(args: argparse.Namespace) -> int:
             (context_dir / "memory-retrieval-legacy.txt").write_text(legacy_stdout, encoding="utf-8")
             write_json(
                 context_dir / "memory-shadow-comparison.json",
-                {
-                    "schema_version": 1,
-                    "v2_status": status,
-                    "legacy_status": "captured" if legacy_rc == 0 else "unavailable",
-                    "legacy_exit_code": legacy_rc,
-                    "legacy_stderr": legacy_stderr,
-                    "v2_result_count": len(extract_results(provider_response)),
-                },
+                shadow_comparison_payload(
+                    status=status,
+                    provider_response=provider_response,
+                    legacy_stdout=legacy_stdout,
+                    legacy_rc=legacy_rc,
+                    legacy_stderr=legacy_stderr,
+                    project_id=request["scope"]["project_id"],
+                    project_root_hash=request["scope"]["project_root_hash"],
+                    v2_latency_ms=v2_latency_ms,
+                    legacy_latency_ms=legacy_latency_ms,
+                ),
             )
 
     retrieval_payload = write_retrieval_artifacts(

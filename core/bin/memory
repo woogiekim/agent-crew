@@ -429,6 +429,7 @@ if isinstance(command, dict) and command.get("json") is True:
 
 names = [
     f"{command_name}_json",
+    f"{command_name}_v1",
     command_name,
 ]
 for name in names:
@@ -439,6 +440,103 @@ for name in names:
 
 sys.exit(1)
 PY
+}
+
+with_temp_request_file() {
+  local command_name="$1"
+  shift
+
+  local request_file
+  request_file="$(mktemp "${TMPDIR:-/tmp}/agent-crew-memory-${command_name}.XXXXXX")" || return 1
+  python3 - "${command_name}" "${request_file}" "$@" <<'PY'
+import json
+import sys
+
+command_name = sys.argv[1]
+request_file = sys.argv[2]
+args = sys.argv[3:]
+
+
+def option_value(name):
+    for index, arg in enumerate(args):
+        if arg == name and index + 1 < len(args):
+            return args[index + 1]
+    return None
+
+
+def int_option(name, default):
+    value = option_value(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+if command_name == "feedback":
+    request_json = option_value("--request-json")
+    if request_json is None:
+        raise SystemExit("missing --request-json for feedback provider request")
+    payload = json.loads(request_json)
+elif command_name == "recall":
+    query = ""
+    for arg in args:
+        if arg.startswith("--"):
+            break
+        if arg:
+            query = arg
+            break
+
+    queries_json = option_value("--queries-json")
+    if queries_json:
+        raw_queries = json.loads(queries_json)
+        queries = []
+        for item in raw_queries if isinstance(raw_queries, list) else []:
+            if isinstance(item, dict):
+                text = item.get("query") or item.get("text") or ""
+                kind = item.get("kind") or item.get("type") or "literal"
+                if text:
+                    queries.append({"type": kind, "text": text})
+            elif isinstance(item, str) and item:
+                queries.append({"type": "literal", "text": item})
+    else:
+        queries = [{"type": "literal", "text": query}]
+
+    scope_json = option_value("--scope-json")
+    scope = json.loads(scope_json) if scope_json else {}
+    payload = {
+        "schema_version": "mnemos.recall.request.v1",
+        "request_id": scope.get("task_id") or "agent-crew-recall",
+        "read_only": True,
+        "queries": queries,
+        "scope": scope,
+        "filters": {
+            "layers": ["project", "global", "session", "global_candidate"],
+            "semantic_statuses": ["active"],
+        },
+        "budget": {
+            "candidate_limit": int_option("--limit", 20),
+            "selected_limit": int_option("--limit", 6),
+            "max_selected_chars": 3600,
+        },
+    }
+else:
+    raise SystemExit(f"unsupported provider request command: {command_name}")
+
+with open(request_file, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+PY
+  local build_rc=$?
+  if [ "${build_rc}" -ne 0 ]; then
+    rm -f "${request_file}"
+    return "${build_rc}"
+  fi
+
+  run_provider "${command_name}" --json --request-file "${request_file}"
+  local provider_rc=$?
+  rm -f "${request_file}"
+  return "${provider_rc}"
 }
 
 provider_json_command() {
@@ -474,7 +572,7 @@ provider_json_command() {
   fi
 
   local output rc
-  output="$(run_provider "${command_name}" --json "$@" 2>&1)"
+  output="$(with_temp_request_file "${command_name}" "$@" 2>&1)"
   rc=$?
   if [ "${rc}" -eq 124 ]; then
     status_json "timeout" "${command_name}_timeout"
