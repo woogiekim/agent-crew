@@ -13,19 +13,19 @@ The provider surface is:
 | `memory capture` | yes | Stores support memory when a backend is available. Adds `--no-classify` by default for agent-crew support captures. |
 | `memory search` | yes | Executes the configured recall mode. Legacy mode returns best-effort text results; V2 mode preserves provider JSON. |
 | `memory read` | yes | Reads one memory item by id. Defaults to the local support backend unless `MNEMOS_BACKEND` is set. |
-| `memory gc` | yes | Runs agent-crew's local memory garbage-collection helper. |
+| `memory gc` | yes | Delegates garbage collection to the configured Mnemos provider. |
 | `memory convention` | yes | Manages local per-installed-user coding convention cache and task snapshots without requiring mnemos. |
 | `memory feedback` | no | Forwards provider feedback JSON only when `AGENT_CREW_MEMORY_FEEDBACK=1`. |
 
 ## Recall Modes
 
-`AGENT_CREW_MEMORY_RECALL_MODE` controls `memory search`:
+`AGENT_CREW_MEMORY_RECALL_MODE` controls `memory search`. The default is `v2`:
 
 | Mode | Behavior |
 |---|---|
 | `off` | Skips recall and exits `0` with `status=disabled` on stderr. |
-| `legacy` | Uses the existing text search contract. The supervisor remains the single owner of task recall and writes the legacy result to `context/memory.md`. |
-| `shadow` | Runs Recall V2 read-only, discards its output for planning, then returns the legacy text result. |
+| `legacy` | Opt-in compatibility mode that delegates to provider `mnemos search` and preserves the text result contract. It does not read provider storage directly. |
+| `shadow` | Diagnostic mode that runs Recall V2 read-only, discards its output for planning, then returns the provider legacy text result. |
 | `v2` | Calls `mnemos recall --json` and preserves stdout JSON. It does not read mnemos SQLite/FTS internals, truncate result bodies, synthesize scores, or fall back to state-changing legacy search when recall is unavailable. |
 
 `AGENT_CREW_MEMORY_STRICT=1` makes wrapper-level provider incompatibility,
@@ -56,53 +56,30 @@ Task snapshots are frozen by default. If the local cache changes during an
 active task, the active task sees the update only after an explicit
 `memory convention snapshot --refresh`; new tasks use the latest cache.
 
-## Search Output
+## Recall V2 Contract
 
-Human-readable search output remains line-oriented for agent prompts:
+The default memory path requires `mnemos capabilities --json` to advertise JSON
+recall and feedback support:
 
-```text
-  [mnemos-fast score=0.91] memory-id: preview text
-[mnemos] Retrieved 1 memories
+```json
+{"commands":{"recall":{"json":true},"feedback":{"json":true}}}
 ```
 
-Required result fields from a structured backend are:
+Equivalent capability status fields such as `recall_v1=supported` and
+`feedback_v1=supported` are accepted. The wrapper passes Recall V2 requests
+through as JSON and preserves provider stdout JSON, including status values such
+as `ok`, `no_results`, and `degraded`.
+
+Required result fields from a structured Recall V2 backend are:
 
 | Field | Required | Notes |
 |---|---:|---|
 | `id`, `item_id`, or `memory_id` | yes | Stable item identifier. |
 | `content`, `text`, `preview`, or `snippet` | yes | Displayable text. |
-| `score` | no | Optional `0..1` relevance score. Omitted when unsupported. |
+| `retrieval_score`, `context_score` | no | Provider-owned scores. Agent Crew does not synthesize replacement relevance scores. |
 
-Backends may return either a JSON list or a JSON object with `results` or
-`items`. agent-crew ignores unknown fields.
-
-## Fast Search Capability
-
-The preferred mnemos capability is:
-
-```bash
-mnemos capabilities --json
-mnemos search --fast --json --limit 5 "query"
-```
-
-`capabilities --json` must advertise fast JSON search with one of:
-
-```json
-{"commands":{"search":{"fast":true,"json":true}}}
-```
-
-or an equivalent `search_fast` / `fast_search` boolean in the top-level object
-or `features` object.
-
-The deprecated compatibility fallback can still read the legacy local FTS
-database when `AGENT_CREW_MEMORY_LEGACY_FTS_FALLBACK=1`, but this is not part of
-the contract and may be removed after supported mnemos versions provide stable
-fast JSON search.
-
-Recall V2 requires `mnemos capabilities --json` to advertise JSON recall with
-`{"commands":{"recall":{"json":true}}}` or an equivalent supported capability
-status. Feedback forwarding uses the same pattern for
-`{"commands":{"feedback":{"json":true}}}`.
+Legacy human-readable search output remains available only when
+`AGENT_CREW_MEMORY_RECALL_MODE=legacy` or `shadow` is explicitly selected.
 
 ## Failure Semantics
 
@@ -111,14 +88,13 @@ Wrapper-observable recall states are `disabled`, `ok`, `no_results`,
 `incompatible_provider`.
 
 - Missing backend / no-backend mode: print a warning to stderr and exit `0`.
-- Search timeout: bounded wrapper returns the timeout status for search so the
-  caller can decide whether to proceed without recall.
+- Recall timeout: bounded wrapper emits `status=timeout` JSON for the default
+  V2 path so the caller can proceed without memory.
 - Capture timeout: warn and exit `0`; support-memory writes must not block a
   workflow.
 - Partial capture failure after local id creation: warn, report the local id
   when detectable, and exit `0`.
 - Non-sync capture errors: preserve the backend exit code.
-- Invalid fast-search JSON: fall back to the next available search path.
 - V2 incompatible provider: emit `status=incompatible_provider` JSON and do
   not fall back to legacy search.
 - V2 timeout: emit `status=timeout` JSON and continue unless strict mode is

@@ -370,17 +370,17 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    > `settings.json` rewrite is needed — removing the script alone is
    > sufficient.
 
-3.8. **Issue #26 — Rebuild mnemos FTS index after mnemos update**
+3.8. **Issue #26 — Refresh mnemos provider indexes after mnemos update**
 
    `mnemos search` was returning raw YAML frontmatter blocks and `MEMORY.md`
    index entries as search hits (Issue #26).  The fix shipped in mnemos
    (`core/fts.py` — strip frontmatter before FTS indexing; `agents/scanner.py`
    — exclude `MEMORY.md` from `discover_memory_files`).
 
-   Because the FTS database (`~/.mnemos/.agent/state/fts.db`) was populated
-   before the fix, existing entries still contain the stale frontmatter-polluted
-   content.  The database is rebuilt correctly on the next `mnemos ingest-claude-md`
-   run — this step triggers that rebuild automatically as part of `crew:update`.
+   Because provider indexes may have been populated before the fix, existing
+   entries can still contain stale frontmatter-polluted content.  The provider
+   rebuilds its own indexes on the next `mnemos ingest-claude-md` run — this
+   step triggers that rebuild automatically as part of `crew:update`.
 
    The block is idempotent and safe to re-run: `ingest-claude-md` uses
    content-hash deduplication so repeated runs are no-ops on unchanged files.

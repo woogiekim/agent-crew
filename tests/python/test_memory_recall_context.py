@@ -208,6 +208,46 @@ JSON
     assert "전체 원문 기억 본문입니다." in memory_md
 
 
+def test_cli_default_mode_is_v2(tmp_path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    calls = tmp_path / "calls.txt"
+    memory_bin = tmp_path / "memory"
+    memory_bin.write_text(
+        f"""#!/usr/bin/env bash
+printf '%s\\n' "${{AGENT_CREW_MEMORY_RECALL_MODE:-}}" >> "{calls}"
+echo '{{"status":"ok","results":[]}}'
+""",
+        encoding="utf-8",
+    )
+    memory_bin.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--task",
+            "TASK",
+            "--task-dir",
+            str(task_dir),
+            "--project-root",
+            str(REPO_ROOT),
+            "--memory-bin",
+            str(memory_bin),
+            "--project-id",
+            "agent-crew-dummy",
+            "--project-root-hash",
+            "dummy",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").strip() == "v2"
+
+
 def test_shadow_mode_writes_comparison_files_and_keeps_v2_to_one_call(tmp_path):
     task_dir = tmp_path / "task"
     task_dir.mkdir()

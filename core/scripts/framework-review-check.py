@@ -682,19 +682,19 @@ def evaluate_repo(root: Path) -> dict:
         ),
         control(
             "memory_governance",
-            "memory_gc_eviction_command",
+            "memory_gc_provider_boundary",
             "high",
             exists(root, "core/scripts/memory-gc.py")
-            and has_all(memory_gc, ["capture -> classify -> summarize -> score -> archive -> evict", "evicted-ids.txt"])
-            and has_all(memory_wrapper, ["memory-gc.py", "AGENT_CREW_MEMORY_GC_EVICTED"]),
-            "Memory lifecycle must be operationalized by a dry-run-first GC and retrieval eviction command.",
+            and has_all(memory_gc, ["mnemos gc", "does not read provider FTS indexes"])
+            and "sqlite3" not in memory_gc
+            and "fts.db" not in memory_gc,
+            "Memory lifecycle maintenance must stay behind the Mnemos provider boundary.",
         ),
         control(
             "memory_governance",
             "retrieval_scoring_contract",
             "high",
             has_all(memory_rule, ["relevance", "recency", "trust", "task", "similarity"])
-            and has_all(memory_gc, ["trust_score", "score", "duplicate", "low_score"])
             and has_all(memory_fixture, ["accepted_successor_memory_ids", "noise_budget_count", "latency_budget_ms"])
             and has_all(runtime_governance_rule, ["Retrieval Scoring", "recall", "precision", "freshness", "performance"]),
             "Retrieval must score by relevance/recency/trust/task similarity and test recall, precision, freshness, and latency budgets.",

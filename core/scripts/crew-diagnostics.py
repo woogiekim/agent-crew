@@ -50,23 +50,22 @@ def provider_capability_supported(value: Any) -> bool:
     return value is True or (isinstance(value, str) and value.lower() == "supported")
 
 
-def provider_payload_supports_fast_search(payload: dict[str, Any]) -> bool:
+def provider_payload_supports_recall_v2(payload: dict[str, Any]) -> bool:
     features = payload.get("features") if isinstance(payload.get("features"), dict) else {}
     commands = payload.get("commands") if isinstance(payload.get("commands"), dict) else {}
     capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
     capability_status = payload.get("capability_status") if isinstance(payload.get("capability_status"), dict) else {}
-    search = commands.get("search") if isinstance(commands.get("search"), dict) else {}
+    recall = commands.get("recall") if isinstance(commands.get("recall"), dict) else {}
 
     capability_maps = (payload, features, capabilities, capability_status)
     return bool(
         any(
             provider_capability_supported(mapping.get(name))
             for mapping in capability_maps
-            for name in ("search_fast", "fast_search")
+            for name in ("recall_v1", "recall_read_only", "recall_json")
         )
         or (
-            provider_capability_supported(search.get("fast"))
-            and provider_capability_supported(search.get("json"))
+            provider_capability_supported(recall.get("json"))
         )
     )
 
@@ -142,7 +141,7 @@ def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
                 "path": configured,
                 "version": "unavailable",
                 "status": "missing",
-                "stable_fast_search": False,
+                "recall_v2": False,
                 "detail": "mnemos CLI not found; memory provider will degrade to no-backend mode",
             }
 
@@ -164,7 +163,7 @@ def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
         rc, version_out = run_cmd([str(path), "--version"], env=probe_env)
         version = version_out.splitlines()[0] if rc == 0 and version_out else "unknown"
 
-    stable_fast_search = False
+    recall_v2 = False
     caps_status = "unknown"
     caps_detail = ""
     caps_rc, caps_out = run_cmd([str(path), "capabilities", "--json"], env=probe_env)
@@ -172,19 +171,19 @@ def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
         try:
             caps = json.loads(caps_out)
             caps = caps if isinstance(caps, dict) else {}
-            stable_fast_search = provider_payload_supports_fast_search(caps)
-            caps_status = "supported" if stable_fast_search else "partial"
-            caps_detail = "stable fast JSON search advertised" if stable_fast_search else "capabilities detected without stable fast JSON search"
+            recall_v2 = provider_payload_supports_recall_v2(caps)
+            caps_status = "supported" if recall_v2 else "partial"
+            caps_detail = "Recall V2 advertised" if recall_v2 else "capabilities detected without Recall V2"
         except Exception:
             caps_status = "unknown"
             caps_detail = "capabilities output was not valid JSON"
     elif version_payload:
-        stable_fast_search = provider_payload_supports_fast_search(version_payload)
-        caps_status = "supported" if stable_fast_search else "partial"
-        caps_detail = "stable fast JSON search advertised" if stable_fast_search else "version metadata detected without stable fast JSON search"
+        recall_v2 = provider_payload_supports_recall_v2(version_payload)
+        caps_status = "supported" if recall_v2 else "partial"
+        caps_detail = "Recall V2 advertised" if recall_v2 else "version metadata detected without Recall V2"
     else:
         caps_status = "legacy"
-        caps_detail = "capabilities --json unavailable; regular search and deprecated fallback may be used"
+        caps_detail = "capabilities --json unavailable; default Recall V2 will report incompatible_provider"
 
     if version == "unknown":
         status = "unknown"
@@ -204,7 +203,7 @@ def mnemos_status(env: dict[str, str] | None = None) -> dict[str, Any]:
         "path": str(path),
         "version": version,
         "status": status,
-        "stable_fast_search": stable_fast_search,
+        "recall_v2": recall_v2,
         "detail": detail,
     }
 

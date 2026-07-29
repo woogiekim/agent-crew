@@ -160,8 +160,8 @@ Every plan or analysis that consumed recalled candidates must record actual
 usage at `${TASK_DIR}/context/memory-usage.json`. This file is the single source
 of truth for memory use. It records *which* memory IDs were selected, whether
 they were applied, and the exact artifact location changed by an applied
-memory. Existing `${TASK_DIR}/context/memory-evidence.json` is a compatibility
-projection generated from `memory-usage.json`, not an independent record.
+memory. Do not independently write `${TASK_DIR}/context/memory-evidence.json`;
+legacy evidence reports must be derived from `memory-usage.json` when needed.
 
 Minimum fields:
 
@@ -287,9 +287,10 @@ how a candidate could *reach* that promoted state:
 3. **summarize / promote.** A second independent run reproduces the same
    reviewer finding. Combined evidence (two `evidence_refs`, two approved
    fixes) moves the candidate from `session` to `project` maturity.
-4. **recall.** On a third similar task, the planner's `mnemos search` returns
-   the project-layer candidate. The recall is recorded in
-   `${TASK_DIR}/context/memory-evidence.json` under `accepted_ids`.
+4. **recall.** On a third similar task, the supervisor's single Recall V2 call
+   returns the project-layer candidate. The raw response is recorded in
+   `${TASK_DIR}/context/memory-retrieval.json`, and the analyst records its
+   disposition in `${TASK_DIR}/context/memory-usage.json`.
 5. **apply.** The planner widens the test coverage in `pipeline.json` to
    include a context-break spacing check on the changed files. The reviewer
    stage is **not** dropped, the quality loop is **not** shortened, and TDD

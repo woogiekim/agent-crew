@@ -545,7 +545,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--agent-crew-home", default=os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
     parser.add_argument("--memory-bin")
-    parser.add_argument("--mode", choices=("off", "legacy", "shadow", "v2"), default=os.environ.get("AGENT_CREW_MEMORY_RECALL_MODE", "legacy"))
+    parser.add_argument("--mode", choices=("off", "legacy", "shadow", "v2"), default=os.environ.get("AGENT_CREW_MEMORY_RECALL_MODE", "v2"))
     parser.add_argument("--tier", choices=tuple(CONTEXT_BUDGETS), default=os.environ.get("AGENT_CREW_MEMORY_CONTEXT_TIER", "balanced"))
     parser.add_argument("--agent-role", default="analyst")
     parser.add_argument("--requirements-title")

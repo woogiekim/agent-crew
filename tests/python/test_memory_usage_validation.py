@@ -1,4 +1,4 @@
-"""Tests for memory-usage SSOT validation and compatibility projection."""
+"""Tests for memory-usage SSOT validation."""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ def test_memory_usage_schema_accepts_all_dispositions():
     jsonschema.validate(instance=usage, schema=schema)
 
 
-def test_applied_json_pointer_validates_and_writes_compatibility_projection(tmp_path: Path):
+def test_applied_json_pointer_validates_without_compatibility_projection(tmp_path: Path):
     usage = _usage([
         _decision(
             "mem-project",
@@ -113,16 +113,22 @@ def test_applied_json_pointer_validates_and_writes_compatibility_projection(tmp_
     ])
     task_dir = _write_task(tmp_path, usage)
 
-    result = _run_validator(task_dir, "--write-compat")
+    result = _run_validator(task_dir)
 
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
-    compat = json.loads((task_dir / "context" / "memory-evidence.json").read_text(encoding="utf-8"))
-    assert compat["source"] == "memory-usage.json"
-    assert compat["retrieved_ids"] == ["mem-project"]
-    assert compat["accepted_ids"] == ["mem-project"]
-    assert compat["ignored_ids"] == []
+    assert not (task_dir / "context" / "memory-evidence.json").exists()
+
+
+def test_validator_rejects_legacy_write_compat_option(tmp_path: Path):
+    usage = _usage([_decision("mem-project", "accepted_not_applied")])
+    task_dir = _write_task(tmp_path, usage)
+
+    result = _run_validator(task_dir, "--write-compat")
+
+    assert result.returncode == 2
+    assert "unrecognized arguments" in result.stderr
 
 
 def test_validator_covers_invalid_disposition_locator_and_selected_memory_cases(tmp_path: Path):

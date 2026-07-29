@@ -221,19 +221,17 @@ def test_rule_documents_memory_usage_tracing_format():
 
     assert "## Memory-Usage Tracing" in text
     assert "memory-usage.json" in text
-    assert "memory-evidence.json" in text
+    assert "Do not independently write" in text
     for field in (
         "decisions",
         "disposition",
         "applications",
-        "retrieved_ids",
-        "accepted_ids",
-        "ignored_ids",
-        "superseded_by",
-        "applied_at",
-        "outcome",
+        "artifact",
+        "locator_type",
+        "locator",
+        "effect",
     ):
-        assert field in text, f"memory-evidence trace must document field: {field}"
+        assert field in text, f"memory-usage trace must document field: {field}"
 
 
 # ---------------------------------------------------------------------------

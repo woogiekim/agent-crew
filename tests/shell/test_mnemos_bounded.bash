@@ -10,27 +10,27 @@ set +e
 SCRIPT="${SCRIPTS_DIR}/mnemos-bounded.sh"
 TMP=$(make_tmp)
 
-cat > "${TMP}/mnemos-fast" <<'SH'
+cat > "${TMP}/mnemos-probe" <<'SH'
 #!/usr/bin/env bash
-printf 'mnemos-fast %s\n' "$*"
+printf 'mnemos-probe %s\n' "$*"
 exit 0
 SH
-chmod +x "${TMP}/mnemos-fast"
+chmod +x "${TMP}/mnemos-probe"
 
 it "mnemos-bounded forwards stdout and exit code"
-OUT=$(MNEMOS_BIN="${TMP}/mnemos-fast" bash "${SCRIPT}" search agent-crew 2>&1)
+OUT=$(MNEMOS_BIN="${TMP}/mnemos-probe" bash "${SCRIPT}" search agent-crew 2>&1)
 rc=$?
 assert_exit 0 "${rc}" "fast command"
 
 it "mnemos-bounded forwards command arguments"
-assert_contains "${OUT}" "mnemos-fast search agent-crew" "argument forwarding"
+assert_contains "${OUT}" "mnemos-probe search agent-crew" "argument forwarding"
 
 it "mnemos-bounded does not timeout a completed command while polling"
-OUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS=2 MNEMOS_BIN="${TMP}/mnemos-fast" \
+OUT=$(AGENT_CREW_MNEMOS_TIMEOUT_SECONDS=1 AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS=2 MNEMOS_BIN="${TMP}/mnemos-probe" \
   bash "${SCRIPT}" search quick 2>&1)
 rc=$?
 assert_exit 0 "${rc}" "completed command should not be treated as timed out"
-assert_contains "${OUT}" "mnemos-fast search quick"
+assert_contains "${OUT}" "mnemos-probe search quick"
 
 cat > "${TMP}/mnemos-slow" <<'SH'
 #!/usr/bin/env bash
@@ -55,7 +55,7 @@ rc=$?
 assert_exit 0 "${rc}" "help"
 
 it "mnemos-bounded rejects invalid poll interval"
-OUT=$(AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS=bad MNEMOS_BIN="${TMP}/mnemos-fast" \
+OUT=$(AGENT_CREW_MNEMOS_POLL_INTERVAL_SECONDS=bad MNEMOS_BIN="${TMP}/mnemos-probe" \
   bash "${SCRIPT}" search agent-crew 2>&1)
 rc=$?
 assert_exit 2 "${rc}" "invalid poll interval"

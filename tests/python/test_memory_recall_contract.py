@@ -22,13 +22,13 @@ def test_supervisor_owns_single_task_memory_search_before_analyst_spawn():
     assert len(re.findall(r'\$\{MEMORY\}" search', combined)) == 0
     assert 'memory-recall-context.py' in _text(BOOTSTRAP)
     assert 'python3 "${MEMORY_CONTEXT_HELPER}"' in _text(BOOTSTRAP)
-    assert 'AGENT_CREW_MEMORY_RECALL_MODE:-legacy' in _text(BOOTSTRAP)
+    assert 'AGENT_CREW_MEMORY_RECALL_MODE:-v2' in _text(BOOTSTRAP)
 
 
 def test_supervisor_writes_structured_raw_and_bounded_memory_context():
     text = _text(BOOTSTRAP)
 
-    assert 'MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-legacy}"' in text
+    assert 'MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-v2}"' in text
     assert '`{TASK_DIR}/context/memory-retrieval.json`' in text
     assert '`{TASK_DIR}/context/memory.md`' in text
     assert '--agent-role analyst' in text

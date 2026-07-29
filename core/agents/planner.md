@@ -126,9 +126,9 @@ When you fold a recalled candidate into `pipeline.json`:
 When planner is used as a standalone legacy agent, mirror the analyst
 memory-usage contract: write `${TASK_DIR}/context/memory-usage.json` only after
 `pipeline.json` exists, record concrete artifact locators for every `applied`
-memory, then run `validate-memory-usage.py --task-dir "${TASK_DIR}" --write-compat`.
-`memory-evidence.json` is generated only as a compatibility projection from the
-usage SSOT.
+memory, then run `validate-memory-usage.py --task-dir "${TASK_DIR}"`.
+`memory-usage.json` is the usage SSOT; do not independently write
+`memory-evidence.json`.
 
 ## Capability Dispatch (Loaded By Metadata)
 

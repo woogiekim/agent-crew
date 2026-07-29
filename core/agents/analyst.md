@@ -150,7 +150,7 @@ Use this order for memory-aware analysis:
 7. Write `${TASK_DIR}/handoff.md`.
 8. Write `${TASK_DIR}/context/memory-usage.json` as the single source of truth
    for memory use. Do not guess `applied` locations before the artifacts exist.
-9. Run `validate-memory-usage.py --task-dir "${TASK_DIR}" --write-compat`
+9. Run `validate-memory-usage.py --task-dir "${TASK_DIR}"`
    after writing `memory-usage.json`. In normal mode, warning exit code `1`
    records that the affected memory must not receive later feedback and the
    base workflow continues. If `AGENT_CREW_MEMORY_STRICT=1`, schema or invariant
@@ -165,9 +165,8 @@ Use this order for memory-aware analysis:
 artifact location. Use `accepted_not_applied` when it informed judgment but did
 not cause a separate artifact change. Use `ignored`, `superseded`,
 `conflict_with_current_requirements`, or `conflict_with_managed_rule` when the
-memory cannot be used. Existing `memory-evidence.json` is a compatibility
-projection generated from `memory-usage.json`; do not write both files as
-independent sources.
+memory cannot be used. `memory-usage.json` is the single source of truth; do
+not independently write `memory-evidence.json`.
 
 ## Capability Dispatch (Loaded By Metadata)
 

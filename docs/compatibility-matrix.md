@@ -6,8 +6,8 @@ must not depend on mnemos repository paths or internal database schemas.
 
 | agent-crew | mnemos | Required features | Optional features | Notes |
 |---|---|---|---|---|
-| current `main` | mnemos with `capture`, `search`, `read`, and `capabilities --json` | `capture`, `search`, `read`, bounded CLI execution, graceful no-backend behavior | `search --fast --json`, `recall --json`, `feedback --json`, scored retrieval, `gc` support | Preferred pairing. Fast search uses the stable JSON API; Recall V2 is gated by `AGENT_CREW_MEMORY_RECALL_MODE`. |
-| current `main` | older mnemos without `capabilities --json` | `capture`, `search`, `read` | legacy local FTS fallback when enabled | Supported with degradation. Direct FTS fallback is deprecated. |
+| current `main` | mnemos with `capture`, `search`, `read`, `capabilities --json`, `recall --json`, and `feedback --json` | `capture`, `read`, bounded CLI execution, Recall V2, Feedback V1, graceful no-backend behavior | provider `search` for explicit legacy/shadow diagnostics, provider `gc` support | Preferred pairing. Recall V2 is the default memory path. |
+| current `main` | older mnemos without Recall V2 capabilities | `capture`, `search`, `read` | explicit `AGENT_CREW_MEMORY_RECALL_MODE=legacy` compatibility | Default V2 reports `incompatible_provider` and continues without memory. Agent Crew no longer reads Mnemos storage directly. |
 | current `main` | no mnemos installed | none | none | Supported. Memory operations become no-op or best-effort warnings. |
 | current `main` | unknown or partially broken mnemos | any working subset | none | Supported with warnings from `crew doctor` / `crew config dump --effective`. |
 
@@ -17,34 +17,26 @@ mnemos should provide these stable commands:
 
 ```bash
 mnemos capabilities --json
-mnemos capture ...
-mnemos search ...
 mnemos read <id>
+mnemos capture ...
+mnemos recall --json --request-file <file>
+mnemos feedback --json --request-file <file>
 ```
 
-For fast search, mnemos should additionally support:
+For explicit legacy/shadow diagnostics, mnemos may additionally support:
 
 ```bash
-mnemos search --fast --json --limit 5 "query"
+mnemos search ...
 ```
 
-For Recall V2 and feedback experiments, mnemos should additionally support:
-
-```bash
-mnemos recall --json ...
-mnemos feedback --json ...
-```
-
-The JSON output can be either a list of results or an object containing
-`results` or `items`. Each result must expose an id field and a text field; a
-`score` field is optional.
+Recall V2 JSON must be an object containing provider status and result rows.
+Agent Crew preserves provider scoring fields and does not synthesize fallback
+relevance scores.
 
 ## Optional Capabilities
 
-- Scored retrieval with `score` in `0..1`.
-- Fast JSON search advertised by `mnemos capabilities --json`.
 - JSON recall and feedback advertised by `mnemos capabilities --json`.
-- Local memory garbage collection through agent-crew's `memory gc` helper.
+- Local memory garbage collection through provider `mnemos gc`.
 - Instruction sync commands used by `crew:sync-instructions`.
 
 ## Graceful Degradation
@@ -52,9 +44,9 @@ The JSON output can be either a list of results or an object containing
 | Condition | Behavior |
 |---|---|
 | mnemos missing | `core/bin/memory` exits successfully after a warning for non-critical paths. |
-| mnemos too old to advertise capabilities | Wrapper falls back to regular `mnemos search`; legacy FTS fallback remains available but deprecated. |
-| fast JSON search fails or returns invalid JSON | Wrapper falls back to legacy FTS or regular search. |
-| Recall V2 capability missing | `AGENT_CREW_MEMORY_RECALL_MODE=v2` reports `incompatible_provider` and proceeds without memory unless strict mode is enabled. |
+| mnemos too old to advertise Recall V2 capabilities | Default V2 reports `incompatible_provider` and proceeds without memory unless strict mode is enabled. Use explicit `AGENT_CREW_MEMORY_RECALL_MODE=legacy` for temporary text-search compatibility. |
+| Recall V2 returns invalid JSON | Default V2 reports `invalid_json` and proceeds without memory unless strict mode is enabled. |
+| Recall V2 capability missing | Default V2 reports `incompatible_provider` and proceeds without memory unless strict mode is enabled. |
 | Recall disabled | `AGENT_CREW_MEMORY_RECALL_MODE=off` performs no provider call. |
 | capture times out | Workflow continues after warning. |
 | capture succeeds locally but vault sync fails | Workflow continues and reports the local id when available. |
@@ -63,8 +55,8 @@ The JSON output can be either a list of results or an object containing
 ## Diagnostics
 
 `crew doctor` and `crew config dump --effective` report mnemos command
-availability, version detectability, and whether stable fast JSON search is
-advertised. Unknown versions are warnings, not blockers, because agent-crew
+availability, version detectability, and whether Recall V2 is advertised.
+Unknown versions are warnings, not blockers, because agent-crew
 supports no-backend and partial-backend operation.
 
 `crew update` keeps this compatibility boundary by installing the current

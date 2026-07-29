@@ -34,7 +34,9 @@ def test_compatibility_matrix_documents_mnemos_degradation() -> None:
 
     assert "agent-crew" in text
     assert "mnemos" in text
-    assert "search --fast --json" in text
+    assert "recall --json --request-file" in text
+    assert "feedback --json --request-file" in text
+    assert "incompatible_provider" in text
     assert "Graceful Degradation" in text
     assert "crew doctor" in text
 

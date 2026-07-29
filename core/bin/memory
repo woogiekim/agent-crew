@@ -20,327 +20,6 @@ if [ -z "${MNEMOS_BIN_EXPLICIT}" ] && [ ! -x "${MNEMOS_BIN}" ]; then
   fi
 fi
 
-stable_fast_search() {
-  [ "${AGENT_CREW_MEMORY_FAST_SEARCH:-1}" = "1" ] || return 1
-  [ "${1:-}" = "search" ] || return 1
-  [ -x "${MNEMOS_BIN}" ] || return 1
-
-  local caps
-  caps="$("${MNEMOS_BIN}" capabilities --json 2>/dev/null)" || return 1
-  printf '%s' "${caps}" | python3 -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(1)
-
-features = data.get("features") or {}
-commands = data.get("commands") or {}
-search = commands.get("search") if isinstance(commands, dict) else {}
-ok = (
-    data.get("search_fast") is True
-    or data.get("fast_search") is True
-    or features.get("search_fast") is True
-    or features.get("fast_search") is True
-    or (isinstance(search, dict) and search.get("fast") is True and search.get("json") is True)
-)
-sys.exit(0 if ok else 1)
-' || return 1
-
-  local output rc
-  output="$("${MNEMOS_BIN}" search --fast --json "${@:2}" 2>/dev/null)"
-  rc=$?
-  [ "${rc}" -eq 0 ] || return 1
-
-  python3 -c '
-import json
-import sys
-
-payload_text = sys.argv[1]
-args = sys.argv[2:]
-width = 80
-full = False
-i = 1
-while i < len(args):
-    arg = args[i]
-    if arg == "--width" and i + 1 < len(args):
-        try:
-            width = int(args[i + 1])
-        except ValueError:
-            width = 80
-        i += 2
-    elif arg == "--full":
-        full = True
-        i += 1
-    else:
-        i += 1
-
-try:
-    payload = json.loads(payload_text)
-except Exception:
-    sys.exit(1)
-
-if isinstance(payload, list):
-    rows = payload
-elif isinstance(payload, dict):
-    rows = payload.get("results") or payload.get("items") or []
-else:
-    rows = []
-
-if not isinstance(rows, list):
-    rows = []
-
-rendered = []
-for row in rows:
-    if not isinstance(row, dict):
-        continue
-    item_id = row.get("item_id") or row.get("id") or row.get("memory_id") or ""
-    content = row.get("content") or row.get("text") or row.get("preview") or row.get("snippet") or ""
-    score = row.get("score")
-    item_id = str(item_id)
-    content = str(content)
-    preview = content if full or len(content) <= width else content[:width] + "..."
-    if score is None:
-        rendered.append(f"  [mnemos-fast] {item_id}: {preview}")
-    else:
-        try:
-            score_text = f"{float(score):.2f}"
-        except Exception:
-            score_text = str(score)
-        rendered.append(f"  [mnemos-fast score={score_text}] {item_id}: {preview}")
-
-if not rendered:
-    print("no results found")
-else:
-    print("\n".join(rendered))
-print(f"[mnemos] Retrieved {len(rendered)} memories")
-' "${output}" "$@"
-}
-
-fast_search() {
-  [ "${AGENT_CREW_MEMORY_FAST_SEARCH:-1}" = "1" ] || return 1
-  [ "${AGENT_CREW_MEMORY_LEGACY_FTS_FALLBACK:-1}" = "1" ] || return 1
-  [ "${1:-}" = "search" ] || return 1
-
-  local mnemos_root="${MNEMOS_REPO_ROOT:-${HOME}/.mnemos}"
-  local fts_db="${mnemos_root}/.agent/state/fts.db"
-  [ -f "${fts_db}" ] || return 1
-
-  local evicted_path="${AGENT_CREW_MEMORY_GC_EVICTED:-${HOME}/.agent-crew/memory-gc/evicted-ids.txt}"
-  printf '[memory] warning: legacy direct FTS fallback is deprecated; upgrade mnemos for `mnemos search --fast --json`\n' >&2
-  python3 - "$fts_db" "$evicted_path" "$@" <<'PY'
-import json
-import os
-import re
-import sqlite3
-import sys
-
-db_path = sys.argv[1]
-evicted_path = sys.argv[2]
-args = sys.argv[3:]
-
-query = ""
-limit = 20
-width = 80
-full = False
-layers = None
-tags = []
-
-i = 1
-if len(args) > 1 and not args[1].startswith("-"):
-    query = args[1]
-    i = 2
-while i < len(args):
-    arg = args[i]
-    if arg in ("--limit",) and i + 1 < len(args):
-        try:
-            limit = int(args[i + 1])
-        except ValueError:
-            limit = 20
-        i += 2
-    elif arg in ("--width",) and i + 1 < len(args):
-        try:
-            width = int(args[i + 1])
-        except ValueError:
-            width = 80
-        i += 2
-    elif arg in ("--layers", "--layer") and i + 1 < len(args):
-        layers = {v.strip() for v in args[i + 1].split(",") if v.strip()}
-        i += 2
-    elif arg == "--tag" and i + 1 < len(args):
-        tags.append(args[i + 1])
-        i += 2
-    elif arg == "--full":
-        full = True
-        i += 1
-    else:
-        i += 1
-
-if not query or tags:
-    sys.exit(2)
-
-special_re = re.compile(r'[-+*^":()\[\]{}|&!]')
-
-def normalise_compounds(value):
-    return re.sub(r"[:\-]", " ", value)
-
-def sanitise(value):
-    tokens = value.split()
-    out = []
-    for token in tokens:
-        if special_re.search(token):
-            out.append('"' + token.replace('"', '""') + '"')
-        else:
-            out.append(token)
-    return " ".join(out)
-
-variants = []
-seen_variants = set()
-for candidate in (query, normalise_compounds(query)):
-    candidate = " ".join(candidate.split())
-    if candidate and candidate not in seen_variants:
-        variants.append(candidate)
-        seen_variants.add(candidate)
-
-def search_rows(conn, match_expr, row_limit):
-    try:
-        return conn.execute(
-            """
-            SELECT item_id, content, metadata, rank
-            FROM items_fts
-            WHERE items_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-            """,
-            (match_expr, row_limit),
-        ).fetchall()
-    except sqlite3.Error:
-        return []
-
-def relaxed_match(value):
-    tokens = []
-    seen = set()
-    for token in re.findall(r"[^\s]+", normalise_compounds(value)):
-        token = token.strip()
-        if not token:
-            continue
-        folded = token.lower()
-        if folded in seen:
-            continue
-        seen.add(folded)
-        tokens.append(sanitise(token))
-    return " OR ".join(tokens)
-
-query_terms = []
-seen_terms = set()
-for token in re.findall(r"[A-Za-z0-9_:-]+", normalise_compounds(query.lower())):
-    if token in seen_terms:
-        continue
-    seen_terms.add(token)
-    query_terms.append(token)
-
-def row_score(row):
-    item_id = (row["item_id"] or "").lower()
-    content = (row["content"] or "")
-    folded = content.lower()
-    score = sum(10 for token in query_terms if token in folded)
-    if item_id.startswith("req-"):
-        score += 14
-    if re.match(r"commercialization-e2e-\d+-(review|guardrails|remediation|risk-remediation)-\d{8}", item_id):
-        score -= 8
-    if folded.startswith("requirements collected"):
-        score += 20
-    if folded.startswith("implemented "):
-        score += 6
-    if folded.startswith("completed "):
-        score += 5
-    if " task " in folded:
-        score += 2
-    if " round " in folded:
-        score += 2
-    if "report-quality" in folded or "report quality" in folded:
-        score += 4
-    if "retrieval evaluation" in folded:
-        score += 4
-    if "deterministic memory retrieval evaluation fixtures" in folded:
-        score += 10
-    if "report-quality fail-closed" in folded or "report quality fail closed" in folded:
-        score += 8
-    if "phase runtime telemetry" in folded:
-        score += 8
-    if "compact canonical context" in folded:
-        score += 6
-    if "telemetry" in folded:
-        score += 2
-    if folded.startswith("merged and pushed"):
-        score -= 10
-    if "probe" in folded:
-        score -= 4
-    return score
-
-results = []
-seen_ids = set()
-evicted_ids = set()
-try:
-    with open(os.path.expanduser(evicted_path), encoding="utf-8") as handle:
-        evicted_ids = {line.strip() for line in handle if line.strip()}
-except Exception:
-    evicted_ids = set()
-
-try:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-
-    match_variants = [sanitise(variant) for variant in variants]
-    relaxed_variants = [relaxed_match(variant) for variant in variants]
-    candidate_rows = []
-
-    for match_expr in [m for m in match_variants + relaxed_variants if m]:
-        rows = search_rows(conn, match_expr, max(limit * 8, limit))
-        for row in rows:
-            item_id = row["item_id"]
-            if item_id in evicted_ids:
-                continue
-            if item_id in seen_ids:
-                continue
-            metadata = {}
-            try:
-                metadata = json.loads(row["metadata"] or "{}")
-            except Exception:
-                metadata = {}
-            if layers is not None and metadata.get("layer") not in layers:
-                continue
-            seen_ids.add(item_id)
-            candidate_rows.append({
-                "item_id": item_id,
-                "content": row["content"] or "",
-                "rank": row["rank"],
-                "score": min(1.0, row_score(row) / 100.0),
-            })
-
-    results = sorted(
-        candidate_rows,
-        key=lambda row: (-row["score"], row["rank"], row["item_id"]),
-    )[:limit]
-except Exception:
-    sys.exit(1)
-
-if not results:
-    print("no results found")
-else:
-    for result in results:
-        content = result["content"]
-        preview = content if full or len(content) <= width else content[:width] + "..."
-        print(f"  [fts score={result['score']:.2f}] {result['item_id']}: {preview}")
-print(f"[mnemos] Retrieved {len(results)} memories")
-PY
-}
-
-if [ "${1:-}" = "gc" ]; then
-  shift
-  exec python3 "${AGENT_CREW_HOME}/scripts/memory-gc.py" "$@"
-fi
-
 if [ "${1:-}" = "convention" ]; then
   shift
   CONVENTION_SCRIPT=""
@@ -594,7 +273,7 @@ provider_json_command() {
 }
 
 if [ "${1:-}" = "search" ]; then
-  RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-legacy}"
+  RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-v2}"
   case "${RECALL_MODE}" in
     off)
       printf '[memory] status=disabled recall_mode=off\n' >&2
@@ -612,18 +291,11 @@ if [ "${1:-}" = "search" ]; then
     legacy|"")
       ;;
     *)
-      printf '[memory] warning: unknown recall mode %s; using legacy\n' "${RECALL_MODE}" >&2
+      printf '[memory] warning: unknown recall mode %s; using v2\n' "${RECALL_MODE}" >&2
+      shift
+      provider_json_command recall "$@"
       ;;
   esac
-
-  if [ "${RECALL_MODE}" != "v2" ] && [ "${RECALL_MODE}" != "off" ]; then
-    if stable_fast_search "$@"; then
-      exit 0
-    fi
-    if fast_search "$@"; then
-      exit 0
-    fi
-  fi
 fi
 
 if [ "${1:-}" = "feedback" ]; then
@@ -667,6 +339,11 @@ run_mnemos() {
     env "${MNEMOS_BIN}" "$@"
   fi
 }
+
+if [ "${1:-}" = "gc" ]; then
+  run_mnemos "$@"
+  exit $?
+fi
 
 if [ "${1:-}" != "capture" ]; then
   if [ "${1:-}" = "search" ] && [ "${AGENT_CREW_MEMORY_REPORT_SCORE_SUPPORT:-0}" = "1" ]; then

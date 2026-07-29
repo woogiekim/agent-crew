@@ -31,9 +31,9 @@ in the same way Claude can. The supported Codex path is:
    ~/.agent-crew/bin/memory search "<task keywords>" --limit 5
    ```
 
-   The wrapper first uses the local mnemos FTS index read-only. It falls back
-   to the bounded mnemos CLI only when the fast path is unavailable or disabled
-   with `AGENT_CREW_MEMORY_FAST_SEARCH=0`.
+   The wrapper defaults to Recall V2 through the bounded Mnemos provider. It
+   does not read local Mnemos indexes directly; use explicit `legacy` mode only
+   for temporary provider text-search compatibility.
 
 2. Treat exit `124` as a visible memory backend timeout, not a workflow blocker.
 3. Continue from local repo context if recall fails.

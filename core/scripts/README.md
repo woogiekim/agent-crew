@@ -106,10 +106,9 @@ invocation in SKILL.md; generic adds guidance).
   median/p95/max aggregation, and an isolated `AGENT_CREW_HOME` mode for
   status/telemetry measurements that should not depend on the operator's live
   task state.
-- `memory-gc.py` — dry-run-first memory lifecycle GC. It reads the mnemos FTS
-  index, classifies duplicate/stale/low-value candidates, scores trust, archives
-  selected metadata, and writes an agent-crew eviction list used by fast memory
-  search without deleting the underlying vault.
+- `memory-gc.py` — compatibility shim that delegates memory garbage collection
+  to provider `mnemos gc`. Agent Crew does not read provider FTS indexes or own
+  retention scoring.
 - `memory-recall-context.py` — task-scoped Memory Recall V2 context builder. It
   creates at most three deterministic queries, passes project identity and
   analyst scope through the memory wrapper, preserves raw provider JSON in
@@ -117,8 +116,7 @@ invocation in SKILL.md; generic adds guidance).
   `context/memory.md` without applying feedback.
 - `validate-memory-usage.py` — validates `context/memory-usage.json` as the
   single source of truth for recalled memory application, checks concrete
-  artifact locators, blocks invalid deterministic use of advisory memory, and
-  can write legacy `context/memory-evidence.json` as a compatibility projection.
+  artifact locators, and blocks invalid deterministic use of advisory memory.
 - `memory-feedback.py` — sends idempotent Mnemos feedback from validated
   `memory-usage.json`: `applied` after analyst usage validation and
   `validated` only after final reviewer approval. It honors

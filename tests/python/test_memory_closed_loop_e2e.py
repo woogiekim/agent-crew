@@ -118,7 +118,6 @@ def _mnemos_env(repo_root: Path, mnemos_bin: Path, extra: dict[str, str] | None 
             "MNEMOS_REPO_ROOT": str(repo_root),
             "MNEMOS_VECTOR_BACKEND": "none",
             "MNEMOS_BIN": str(mnemos_bin),
-            "AGENT_CREW_MEMORY_FAST_SEARCH": "0",
             "AGENT_CREW_MNEMOS_TIMEOUT_SECONDS": "20",
         }
     )

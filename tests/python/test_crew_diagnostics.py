@@ -224,7 +224,7 @@ def test_mnemos_status_reports_missing_backend(monkeypatch, tmp_path: Path):
     assert status["available"] is False
 
 
-def test_mnemos_status_detects_stable_fast_json_search(tmp_path: Path):
+def test_mnemos_status_detects_recall_v2(tmp_path: Path):
     mnemos = tmp_path / "mnemos"
     mnemos.write_text(
         """#!/usr/bin/env bash
@@ -233,7 +233,7 @@ if [ "${1:-}" = "--version" ]; then
   exit 0
 fi
 if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
-  echo '{"commands":{"search":{"fast":true,"json":true}}}'
+  echo '{"commands":{"recall":{"json":true}}}'
   exit 0
 fi
 exit 1
@@ -245,7 +245,7 @@ exit 1
     status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
 
     assert status["status"] == "supported"
-    assert status["stable_fast_search"] is True
+    assert status["recall_v2"] is True
     assert status["version"] == "mnemos 1.2.3"
 
 
@@ -258,11 +258,11 @@ if [ "${1:-}" = "--version" ]; then
   exit 2
 fi
 if [ "${1:-}" = "version" ] && [ "${2:-}" = "--json" ]; then
-  echo '{"provider":"mnemos","version":"0.1.0","provider_contract_version":"1.0","capabilities":{"fast_search":true},"capability_status":{"fast_search":"supported"}}'
+  echo '{"provider":"mnemos","version":"0.1.0","provider_contract_version":"1.0","capabilities":{"recall_v1":true},"capability_status":{"recall_v1":"supported"}}'
   exit 0
 fi
 if [ "${1:-}" = "capabilities" ] && [ "${2:-}" = "--json" ]; then
-  echo '{"provider":"mnemos","capabilities":{"fast_search":true},"capability_status":{"fast_search":"supported"}}'
+  echo '{"provider":"mnemos","capabilities":{"recall_v1":true},"capability_status":{"recall_v1":"supported"}}'
   exit 0
 fi
 exit 1
@@ -274,9 +274,9 @@ exit 1
     status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
 
     assert status["status"] == "supported"
-    assert status["stable_fast_search"] is True
+    assert status["recall_v2"] is True
     assert status["version"] == "0.1.0"
-    assert status["detail"] == "0.1.0; stable fast JSON search advertised"
+    assert status["detail"] == "0.1.0; Recall V2 advertised"
 
 
 def test_mnemos_status_uses_version_payload_when_capabilities_command_is_missing(tmp_path: Path):
@@ -284,7 +284,7 @@ def test_mnemos_status_uses_version_payload_when_capabilities_command_is_missing
     mnemos.write_text(
         """#!/usr/bin/env bash
 if [ "${1:-}" = "version" ] && [ "${2:-}" = "--json" ]; then
-  echo '{"version":"0.2.0","capabilities":{"fast_search":true}}'
+  echo '{"version":"0.2.0","capabilities":{"recall_v1":true}}'
   exit 0
 fi
 exit 1
@@ -296,7 +296,7 @@ exit 1
     status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
 
     assert status["status"] == "supported"
-    assert status["stable_fast_search"] is True
+    assert status["recall_v2"] is True
     assert status["version"] == "0.2.0"
 
 
@@ -473,7 +473,7 @@ exit 1
     status = diagnostics.mnemos_status(env={"MNEMOS_BIN": str(mnemos)})
 
     assert status["status"] == "partial"
-    assert "capabilities detected without stable fast JSON search" in status["detail"]
+    assert "capabilities detected without Recall V2" in status["detail"]
 
 
 def test_effective_config_reports_runtime_enforced_capabilities(monkeypatch, tmp_path: Path):

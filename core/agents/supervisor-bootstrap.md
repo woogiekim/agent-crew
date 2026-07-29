@@ -774,7 +774,7 @@ Provider absence, timeout, incompatible capabilities, invalid JSON, or no
 results must not stop the task.
 
 ```bash
-MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-legacy}"
+MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-v2}"
 MEMORY_CONTEXT_TIER="${AGENT_CREW_MEMORY_CONTEXT_TIER:-balanced}"
 MEMORY_CONTEXT_HELPER="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/memory-recall-context.py"
 if [ -f "${MEMORY_CONTEXT_HELPER}" ]; then

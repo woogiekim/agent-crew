@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Validate task memory-usage.json and optionally project memory-evidence.json.
+"""Validate task memory-usage.json.
 
 Inputs: `--task-dir DIR` containing `context/memory-retrieval.json`,
 `context/memory-usage.json`, and referenced artifacts.
-Outputs: JSON or text findings; `--write-compat` writes
-`context/memory-evidence.json` as a projection from memory-usage.json.
+Outputs: JSON or text findings.
 Exit codes: 0 valid, 1 non-strict invariant warnings, 2 strict/schema failure,
 3 invalid local arguments or unreadable required files.
 Example:
-  validate-memory-usage.py --task-dir "$TASK_DIR" --write-compat
+  validate-memory-usage.py --task-dir "$TASK_DIR"
 """
 
 from __future__ import annotations
@@ -242,7 +241,6 @@ def result_payload(task_dir: Path, findings: list[dict[str, Any]], *, usage: dic
         "error_count": error_count,
         "warning_count": warning_count,
         "memory_feedback_allowed_ids": feedback_allowed_ids(usage, findings),
-        "compatibility_projection": "context/memory-evidence.json",
     }
 
 
@@ -256,55 +254,6 @@ def feedback_allowed_ids(usage: dict[str, Any], findings: list[dict[str, Any]]) 
         if mid and mid not in blocked:
             allowed.append(mid)
     return sorted(set(allowed))
-
-
-def write_compatibility_projection(task_dir: Path, validation: dict[str, Any]) -> None:
-    context_dir = task_dir / "context"
-    usage, _ = read_json(context_dir / "memory-usage.json")
-    retrieval, _ = read_json(context_dir / "memory-retrieval.json")
-    usage = usage if isinstance(usage, dict) else {}
-    retrieval = retrieval if isinstance(retrieval, dict) else {}
-    decisions = usage.get("decisions") if isinstance(usage.get("decisions"), list) else []
-    retrieved_ids = [memory_id(row) for row in retrieval_results(retrieval) if memory_id(row)]
-    accepted_ids = [
-        str(decision.get("memory_id"))
-        for decision in decisions
-        if isinstance(decision, dict)
-        and decision.get("disposition") in {"applied", "accepted_not_applied"}
-        and decision.get("memory_id")
-    ]
-    ignored_ids = [
-        str(decision.get("memory_id"))
-        for decision in decisions
-        if isinstance(decision, dict)
-        and decision.get("disposition") in {"ignored", "conflict_with_current_requirements", "conflict_with_managed_rule", "superseded"}
-        and decision.get("memory_id")
-    ]
-    superseded_by = {
-        str(decision.get("memory_id")): "superseded"
-        for decision in decisions
-        if isinstance(decision, dict) and decision.get("disposition") == "superseded" and decision.get("memory_id")
-    }
-    projection = {
-        "schema_version": 1,
-        "source": "memory-usage.json",
-        "created_at": utc_now_z(),
-        "task_id": usage.get("task_id"),
-        "retrieved_ids": sorted(set(retrieved_ids)),
-        "accepted_ids": sorted(set(accepted_ids)),
-        "ignored_ids": sorted(set(ignored_ids)),
-        "superseded_by": superseded_by,
-        "applied_at": usage.get("generated_at_phase"),
-        "outcome": "advisory_hint_applied" if accepted_ids else "no_hint_applied",
-        "memory_ids": sorted(set(accepted_ids)),
-        "retrieved_memory_ids": sorted(set(retrieved_ids)),
-        "accepted_context_memory_ids": sorted(set(accepted_ids)),
-        "memory_usage_validation": {
-            "passed": validation["passed"],
-            "finding_codes": [item["code"] for item in validation["findings"]],
-        },
-    }
-    (context_dir / "memory-evidence.json").write_text(json.dumps(projection, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def text_output(payload: dict[str, Any]) -> str:
@@ -328,7 +277,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--strict", action="store_true", default=os.environ.get("AGENT_CREW_MEMORY_STRICT") == "1")
-    parser.add_argument("--write-compat", action="store_true")
     parser.add_argument("--format", choices=("json", "text"), default="text")
     return parser
 
@@ -338,8 +286,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     task_dir = Path(args.task_dir).expanduser().resolve()
     payload = validate_usage(task_dir, strict=args.strict)
-    if args.write_compat:
-        write_compatibility_projection(task_dir, payload)
     if args.format == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     else:
