@@ -75,16 +75,22 @@ fi
 - `PROJECT_ROOT`: project root (pass as path only)
 - `REQUIREMENTS`: structured requirements block from the requirements agent
 
-## Before Work — Recall from Memory
+## Before Work — Read Supervisor Memory Context
 
 ```bash
-MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
-if command -v "${MEMORY}" >/dev/null 2>&1; then
-  "${MEMORY}" search "${TASK}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+MEMORY_CONTEXT_PATH="${MEMORY_CONTEXT_PATH:-${TASK_DIR}/context/memory.md}"
+if [ -s "${MEMORY_CONTEXT_PATH:-}" ]; then
+  cat "${MEMORY_CONTEXT_PATH}"
 fi
 ```
 
-If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
+The supervisor owns task-scoped memory recall and writes the legacy result file
+at `${TASK_DIR}/context/memory.md` before invoking analyst. Analyst must not run
+`memory search`, must not create or overwrite `memory.md`, and must continue
+normally when `MEMORY_CONTEXT_PATH` is absent or empty.
+
+If the memory context file is non-empty, read it and incorporate relevant prior
+decisions before proceeding.
 
 ### Consume a recalled AAR memo as a plan-shaping hint
 

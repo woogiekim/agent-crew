@@ -297,28 +297,25 @@ When the Stage Retry Rule triggers a retry (agent crash, no STATUS line), emit:
 echo "$(date -u +%Y-%m-%dT%H:%M:%S) | RETRY | attempt {n} — {reason}" >> "${TASK_DIR}/progress.log"
 ```
 
-#### Per-stage mnemos prefetch (P44.3)
+#### Per-stage memory context reuse (P44.3)
 
-Before composing the agent prompt, the supervisor runs a mnemos memory search
-so each stage agent receives relevant prior context without needing to run the
-search itself. This is complementary to the agent-level recall sections: the
-supervisor pre-populates `context/memory.md`; the agent reads it at startup.
+Before composing the agent prompt, the supervisor reuses the task-scoped mnemos
+recall file created during Phase 1b bootstrap. This keeps the legacy
+`context/memory.md` result format intact while avoiding additional per-agent
+searches or overwrites of the shared memory context file.
 
 ```bash
 MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
-MEM_CONTEXT=""
-if command -v "${MEMORY}" >/dev/null 2>&1; then
-  MEM_CONTEXT=$("${MEMORY}" search "${STAGE_AGENT} ${TASK}" --limit 3 2>/dev/null || true)
-fi
-# Write to the shared memory context file so the stage agent can read it.
-if [ -n "${MEM_CONTEXT}" ]; then
-  echo "${MEM_CONTEXT}" > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+MEMORY_CONTEXT_PATH=""
+if [ -s "${TASK_DIR}/context/memory.md" ]; then
+  MEMORY_CONTEXT_PATH="${TASK_DIR}/context/memory.md"
 fi
 ```
 
-When `MEM_CONTEXT` is non-empty, also append `MEMORY_CONTEXT_PATH:` to the
+When `MEMORY_CONTEXT_PATH` is non-empty, append `MEMORY_CONTEXT_PATH:` to the
 agent prompt (see the prompt format below) so the agent knows a pre-populated
-memory file is available.
+memory file is available. Mnemos absence or Phase 1b search failure leaves this
+path empty and stage execution continues unchanged.
 
 #### Task-scoped user convention snapshot (Issue #191)
 
@@ -369,7 +366,7 @@ PROJECT_ROOT: {PROJECT_ROOT}
 HANDOFF_PATH: {TASK_DIR}/handoff.md
 QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
 {CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md  ← include only when file exists}
-{MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  ← include only when MEM_CONTEXT non-empty}
+{MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  ← include only when MEMORY_CONTEXT_PATH non-empty}
 {USER_CONVENTIONS_PATH: {CONVENTION_CONTEXT_PATH}  ← include only when CONVENTION_CONTEXT_PATH non-empty}
 
 Read the handoff content directly from HANDOFF_PATH.
