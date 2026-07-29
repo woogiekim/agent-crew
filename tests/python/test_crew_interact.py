@@ -464,6 +464,46 @@ def test_interact_to_select_uses_fast_targeted_resolution_without_full_discovery
     assert "① Claude · agent-crew · unknown" in out
 
 
+def test_interact_to_branch_title_aoe_session_sends_without_packaged_fallback(monkeypatch, tmp_path: Path, capsys):
+    """failure-case(regression) - AoE branch-title targets are directly deliverable."""
+    _session_home(monkeypatch, tmp_path)
+    project = tmp_path / "feature-enrtc-878"
+    project.mkdir()
+    list_stdout = (
+        "Profile: main\n\n"
+        "TITLE                GROUP           PATH                                     ID\n"
+        "--------------------------------------------------------------------------------------------\n"
+        f"feature/ENRTC-878    2. Phase2/└─... {project} f59dec8ab2bd\n"
+        "\nTotal: 1 sessions\n"
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setenv("AGENT_CREW_INTERACT_AOE_ENABLED", "1")
+    monkeypatch.setattr(runtime.subprocess, "run", _fake_aoe_run(calls, list_stdout=list_stdout))
+
+    def fail_full_discovery(*_args, **_kwargs):
+        raise AssertionError("branch-title AoE target should not require packaged fallback discovery")
+
+    monkeypatch.setattr(runtime, "collect_session_candidates", fail_full_discovery)
+
+    assert runtime.command_interact(
+        argparse.Namespace(
+            project_root=str(project),
+            to="feature/ENRTC-878",
+            select="1",
+            limit=10,
+            send=True,
+            copy=False,
+            prompt=["ping"],
+        )
+    ) == 0
+
+    out = capsys.readouterr().out
+    assert "STATUS: sent" in out
+    assert "STATUS: packaged" not in out
+    send_calls = [call for call in calls if call[:3] == ["aoe", "send", "feature/ENRTC-878"]]
+    assert len(send_calls) == 1
+
+
 def test_sessions_reuses_fresh_interact_cache_without_provider_scans(monkeypatch, tmp_path: Path, capsys):
     """success-case - fresh session cache avoids repeated provider filesystem scans."""
     _, _, _ = _session_home(monkeypatch, tmp_path)

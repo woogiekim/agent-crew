@@ -599,6 +599,20 @@ def claude_session_candidates(home: Path) -> list[dict]:
     return candidates
 
 
+def parse_aoe_session_line(line: str) -> dict | None:
+    match = re.match(r"^(?P<title>.+?)\s{2,}(?P<group>.+?)\s+(?P<cwd>/\S+)\s+(?P<session_id>\S+)\s*$", line.strip())
+    if not match:
+        return None
+    title = match.group("title").strip()
+    if title.upper() == "TITLE":
+        return None
+    return {
+        "title": title,
+        "cwd": match.group("cwd").strip(),
+        "session_id": match.group("session_id").strip(),
+    }
+
+
 def aoe_session_candidates() -> list[dict]:
     if not interact_aoe_enabled():
         return []
@@ -617,12 +631,12 @@ def aoe_session_candidates() -> list[dict]:
 
     candidates: list[dict] = []
     for line in (completed.stdout or "").splitlines():
-        parts = re.split(r"\s{2,}", line.strip())
-        if len(parts) < 4:
+        parsed = parse_aoe_session_line(line)
+        if not parsed:
             continue
-        title, _group, cwd, session_id = parts[0], parts[1], parts[2], parts[3]
-        if title.upper() == "TITLE" or not cwd.startswith("/"):
-            continue
+        title = parsed["title"]
+        cwd = parsed["cwd"]
+        session_id = parsed["session_id"]
         title_lower = title.lower()
         if "claude" in title_lower:
             ai_type = "Claude"
@@ -631,7 +645,7 @@ def aoe_session_candidates() -> list[dict]:
         elif "opencode" in title_lower:
             ai_type = "OpenCode"
         else:
-            continue
+            ai_type = "AoE"
 
         candidates.append(
             {
