@@ -763,40 +763,30 @@ TASK_START_HEAD=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo ""
 echo "${TASK_START_HEAD}" > "${TASK_DIR}/context/start-head.txt"
 ```
 
-**Memory preflight (P40.3)**: Before spawning the analyst, run the memory
-wrapper using the task description so the analyst can benefit from prior
-decisions and constraints captured in memory. Legacy and shadow mode write the
-legacy search result to `{TASK_DIR}/context/memory.md` and pass it as an
-optional path input to the analyst. `off` mode skips recall. `v2` mode records
-the provider JSON sidecar only and must not write V2 recall into `memory.md`
-until a later step defines the structured analyst context contract. This is a
-no-op when the memory binary is absent or unavailable.
+**Memory preflight (P40.4)**: Before spawning the analyst, run the structured
+memory context helper once using the immutable task description. The helper
+builds the bounded Recall V2 request, preserves the raw provider response in
+`{TASK_DIR}/context/memory-retrieval.json`, and renders the eligible advisory
+context to `{TASK_DIR}/context/memory.md`. Shadow mode may also write
+`memory-retrieval-legacy.txt`, `memory-retrieval-v2.json`, and
+`memory-shadow-comparison.json`. `off` mode records disabled memory context.
+Provider absence, timeout, incompatible capabilities, invalid JSON, or no
+results must not stop the task.
 
 ```bash
-MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
 MEMORY_RECALL_MODE="${AGENT_CREW_MEMORY_RECALL_MODE:-legacy}"
-run_task_memory_search() {
-  "${MEMORY}" search "${TASK}" --limit 5
-}
-if command -v "${MEMORY}" >/dev/null 2>&1; then
-  case "${MEMORY_RECALL_MODE}" in
-    off)
-      : # memory disabled for this task
-      ;;
-    v2)
-      run_task_memory_search \
-        > "${TASK_DIR}/context/memory-recall-v2.json" \
-        2> "${TASK_DIR}/context/memory-recall-v2.err" || true
-      ;;
-    legacy|shadow|"")
-      run_task_memory_search \
-        > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
-      ;;
-    *)
-      run_task_memory_search \
-        > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
-      ;;
-  esac
+MEMORY_CONTEXT_TIER="${AGENT_CREW_MEMORY_CONTEXT_TIER:-balanced}"
+MEMORY_CONTEXT_HELPER="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/memory-recall-context.py"
+if [ -f "${MEMORY_CONTEXT_HELPER}" ]; then
+  python3 "${MEMORY_CONTEXT_HELPER}" \
+    --task "${TASK}" \
+    --task-dir "${TASK_DIR}" \
+    --project-root "${PROJECT_ROOT}" \
+    --agent-crew-home "${AGENT_CREW_HOME:-${HOME}/.agent-crew}" \
+    --mode "${MEMORY_RECALL_MODE}" \
+    --tier "${MEMORY_CONTEXT_TIER}" \
+    --agent-role analyst \
+    2> "${TASK_DIR}/context/memory-recall.err" || true
 fi
 ```
 

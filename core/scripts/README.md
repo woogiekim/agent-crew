@@ -110,6 +110,11 @@ invocation in SKILL.md; generic adds guidance).
   index, classifies duplicate/stale/low-value candidates, scores trust, archives
   selected metadata, and writes an agent-crew eviction list used by fast memory
   search without deleting the underlying vault.
+- `memory-recall-context.py` — task-scoped Memory Recall V2 context builder. It
+  creates at most three deterministic queries, passes project identity and
+  analyst scope through the memory wrapper, preserves raw provider JSON in
+  `context/memory-retrieval.json`, and renders filtered, budgeted context to
+  `context/memory.md` without applying feedback.
 - `framework-review-check.py` — static operational readiness gate for
   architecture, performance, quality, reliability, memory governance, security,
   observability, cost efficiency, developer experience, and long-term
