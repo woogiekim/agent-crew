@@ -2230,9 +2230,11 @@ fi
 ```
 
 If `${TASK_DIR}/context/evolution-report.md` exists, include a compact
-Learning Report excerpt after the commits block. Use the sidecar report as
-read-only evidence; do not infer generated assets from it. If the file is
-absent, omit this section entirely.
+Learning Summary after the commits block. Use the sidecar report as read-only
+evidence; do not infer generated assets from it. The summary must surface
+operator-visible status instead of only printing artifact paths: `captured`,
+`captured_events`, `repeated_pattern`, `proposal`, `evidence`, `reason`, and
+`next_action`. If the file is absent, omit this section entirely.
 
 If `${TASK_DIR}/context/evolution-proposals-summary.txt` exists, include a
 compact Self-Evolution Proposals block immediately after the Learning Report.
@@ -2257,8 +2259,14 @@ Diff:
 Commits ({N}):
   {git log --oneline, up to 5 lines}
 
-Learning Report:
-  {context/evolution-report.md summary lines, when present}
+Learning Summary:
+  captured: yes|no
+  captured_events: {N}
+  repeated_pattern: yes|no
+  proposal: none|approval_required|approved|applied
+  evidence: {context/evolution-report.md and learning/events.jsonl when present}
+  reason: {why a proposal exists or why it does not}
+  next_action: {approval or more evidence}
 
 Self-Evolution Proposals:
   {context/evolution-proposals-summary.txt lines, when present}

@@ -37,7 +37,7 @@ def _write_task(state_dir: Path, task_id: str, *, task: str = "Inspect project s
     return task_dir
 
 
-def _write_skill_depth_report(task_dir: Path, candidate_name: str = "skill-content-hardening") -> None:
+def _write_mistake_correction_report(task_dir: Path) -> None:
     (task_dir / "context" / "evolution-report.json").write_text(
         json.dumps({
             "schema_version": 1,
@@ -45,16 +45,17 @@ def _write_skill_depth_report(task_dir: Path, candidate_name: str = "skill-conte
             "generation_mode": "report_only",
             "meaningful": True,
             "observed_patterns": [{
-                "kind": "skill_content_depth",
-                "summary": "Skill content audit found shallow skill material.",
-                "evidence_refs": ["context/skill-content-audit.json"],
+                "kind": "mistake_correction",
+                "surface": "routing",
+                "mistake_type": "routing_false_positive",
+                "pattern_key": "readonly_review_scope_noun",
+                "summary": "Routing false positive was corrected.",
+                "corrected_decision": "crew:agent",
+                "target_assets": ["core/scripts/quality_loop_lib.py"],
+                "evidence_refs": ["context/review.md"],
             }],
             "asset_candidates": [],
-            "rejected_candidates": [{
-                "asset_type": "skill",
-                "name": candidate_name,
-                "rejection_reason": "insufficient_repeated_evidence",
-            }],
+            "rejected_candidates": [],
         }) + "\n",
         encoding="utf-8",
     )
@@ -137,17 +138,11 @@ def _write_structured_quality_correction(
 def test_completed_repair_runs_evolution_closeout_and_surfaces_pending_proposals(tmp_path: Path):
     state_dir = tmp_path / "state"
     previous = _write_task(state_dir, "20260101-120000-0")
-    _write_skill_depth_report(previous)
+    _write_mistake_correction_report(previous)
 
     task_id = "20260102-120000-0"
     task_dir = _write_task(state_dir, task_id)
-    (task_dir / "context" / "skill-content-audit.json").write_text(
-        json.dumps({
-            "shallow_findings": [{"skill": "example", "reason": "thin"}],
-            "effective_followups": [],
-        }) + "\n",
-        encoding="utf-8",
-    )
+    _write_fixed_review_finding(task_dir, pattern_key="readonly_review_scope_noun")
 
     result = subprocess.run(
         [
@@ -165,13 +160,20 @@ def test_completed_repair_runs_evolution_closeout_and_surfaces_pending_proposals
     assert result.returncode == 0, result.stdout + result.stderr
     assert (task_dir / "context" / "evolution-report.json").is_file()
     assert (task_dir / "context" / "evolution-report.md").is_file()
+    assert (state_dir / "learning" / "events.jsonl").is_file()
     summary = task_dir / "context" / "evolution-proposals-summary.txt"
     assert summary.is_file()
     assert "SELF_EVOLUTION_PROPOSALS: 1 pending" in summary.read_text(encoding="utf-8")
-    assert "Self-Evolution Proposals" in (task_dir / "result.md").read_text(encoding="utf-8")
+    result_text = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "Learning Summary" in result_text
+    assert "captured: yes" in result_text
+    assert "repeated_pattern: yes" in result_text
+    assert "proposal: approval_required" in result_text
+    assert "Self-Evolution Proposals" in result_text
 
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["evolution_closeout"]["analyzer"] == "completed"
+    assert repair["evolution_closeout"]["learning_events"]["status"] == "ok"
     assert repair["evolution_closeout"]["pending_proposals"] == 1
 
 

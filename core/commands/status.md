@@ -478,8 +478,11 @@ fi
 ```
 
 If `${TASK_DIR}/context/evolution-report.md` exists, include a compact
-Learning Report excerpt after the commits block. The report is a read-only
-closeout artifact; it is not proof that any generated asset was created.
+Learning Summary after the commits block. The report is a read-only closeout
+artifact; it is not proof that any generated asset was created. The summary
+must surface `captured`, `captured_events`, `repeated_pattern`, `proposal`,
+`evidence`, `reason`, and `next_action` so the operator can see whether the
+run contributed to growth.
 
 If `${TASK_DIR}/context/evolution-proposals-summary.txt` exists, include a
 compact Self-Evolution Proposals excerpt after the Learning Report so operators
@@ -503,8 +506,14 @@ Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == 
   Commits ({N}):
     {git log --oneline, up to 5 lines}
 
-  Learning Report:
-    {context/evolution-report.md summary lines, when present}
+  Learning Summary:
+    captured: yes|no
+    captured_events: {N}
+    repeated_pattern: yes|no
+    proposal: none|approval_required|approved|applied
+    evidence: {context/evolution-report.md and learning/events.jsonl when present}
+    reason: {why a proposal exists or why it does not}
+    next_action: {approval or more evidence}
 
   Self-Evolution Proposals:
     {context/evolution-proposals-summary.txt lines, when present}

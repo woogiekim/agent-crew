@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SUPERVISOR_RETRY = REPO_ROOT / "core" / "agents" / "supervisor-retry.md"
 EVOLUTION_ANALYZER = REPO_ROOT / "core" / "scripts" / "evolution-analyzer.py"
 MISTAKE_EVENTS = REPO_ROOT / "core" / "scripts" / "mistake-events.py"
+EVOLUTION_LEARNING_EVENTS = REPO_ROOT / "core" / "scripts" / "evolution-learning-events.py"
 
 
 def _load_evolution_analyzer():
@@ -40,7 +41,9 @@ evolution_analyzer = _load_evolution_analyzer()
 
 def _write_register(task_dir: Path, *, task_id: str,
                     task: str = "implement evolution report",
-                    modified_files: list[str] | None = None) -> None:
+                    modified_files: list[str] | None = None,
+                    project_root: str = "/tmp/project",
+                    repository: str | None = None) -> None:
     session_id = task_id.rsplit("-", 1)[0]
     payload = {
         "schema_version": 1,
@@ -48,13 +51,15 @@ def _write_register(task_dir: Path, *, task_id: str,
         "session_id": session_id,
         "task": task,
         "branch": "crew/evolution-report-analyzer",
-        "project_root": "/tmp/project",
+        "project_root": project_root,
         "task_dir": str(task_dir),
         "execution_mode": "single",
         "current_phase": "completed",
         "approval_status": "not_required",
         "verification_status": "passed",
     }
+    if repository is not None:
+        payload["repository"] = repository
     if modified_files is not None:
         payload["modified_files"] = modified_files
     (task_dir / "register.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -111,6 +116,46 @@ def _seed_task(state_dir: Path, task_id: str = "20260101-120000-0") -> Path:
         encoding="utf-8",
     )
     return task_dir
+
+
+def _write_mistake_report(
+    task_dir: Path,
+    *,
+    pattern_key: str = "readonly_review_scope_noun",
+    target_assets: list[str] | None = None,
+) -> None:
+    (task_dir / "context" / "evolution-report.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "task_id": task_dir.name,
+            "task": "fix routing correction",
+            "generation_mode": "report_only",
+            "meaningful": True,
+            "signals": {
+                "mistake_corrections": [{
+                    "surface": "routing",
+                    "mistake_type": "routing_false_positive",
+                    "pattern_key": pattern_key,
+                    "corrected_decision": "crew:agent",
+                    "evidence_refs": ["context/review.md"],
+                    "target_assets": target_assets or ["core/scripts/quality_loop_lib.py"],
+                }],
+            },
+            "observed_patterns": [{
+                "kind": "mistake_correction",
+                "surface": "routing",
+                "mistake_type": "routing_false_positive",
+                "pattern_key": pattern_key,
+                "summary": "Routing false positive was corrected.",
+                "corrected_decision": "crew:agent",
+                "target_assets": target_assets or ["core/scripts/quality_loop_lib.py"],
+                "evidence_refs": ["context/review.md"],
+            }],
+            "asset_candidates": [],
+            "rejected_candidates": [],
+        }),
+        encoding="utf-8",
+    )
 
 
 def test_clean_task_writes_report_only_json_and_markdown(
@@ -848,6 +893,124 @@ def test_proposal_aggregator_promotes_repeated_mistake_corrections(
     assert proposal["source"] == "user_feedback"
     assert proposal["target_assets"] == ["core/scripts/quality_loop_lib.py"]
     assert "corrected mistake pattern" in proposal["promotion_reason"]
+
+
+def test_learning_events_are_materialized_idempotently_from_reports(
+    script_runner, env_with_home, state_dir
+):
+    """RED: repeated learning needs a durable event SSOT outside task-local reports."""
+    task_dir = _seed_task(state_dir, "20260101-120000-0")
+    _write_register(
+        task_dir,
+        task_id=task_dir.name,
+        project_root="/tmp/agent-crew-worktree-a",
+        repository="git@github.com:woogiekim/agent-crew.git",
+    )
+    _write_mistake_report(task_dir)
+
+    output = state_dir / "learning" / "events.jsonl"
+    first = script_runner(
+        "evolution-learning-events.py",
+        "--state-dir", str(state_dir),
+        "--task-dir", str(task_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+    second = script_runner(
+        "evolution-learning-events.py",
+        "--state-dir", str(state_dir),
+        "--task-dir", str(task_dir),
+        "--output", str(output),
+        env=env_with_home,
+    )
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["repository"] == "git@github.com:woogiekim/agent-crew.git"
+    assert rows[0]["repository_key"] == "github.com/woogiekim/agent-crew"
+    assert rows[0]["failure_signature"] == "mistake_correction:readonly_review_scope_noun"
+    assert rows[0]["evidence_ref"] == "tasks/20260101-120000-0/context/evolution-report.json"
+    assert rows[0]["reviewer_status"] == "corrected"
+
+
+def test_proposal_aggregator_prefers_learning_events_and_groups_worktrees(
+    script_runner, env_with_home, state_dir
+):
+    """RED: worktree-local task paths should not be the repeat-detection boundary."""
+    output = state_dir / "learning" / "events.jsonl"
+    for task_id, root in (
+        ("20260101-120000-0", "/tmp/agent-crew-worktree-a"),
+        ("20260102-120000-0", "/tmp/agent-crew-worktree-b"),
+    ):
+        task_dir = _seed_task(state_dir, task_id)
+        _write_register(
+            task_dir,
+            task_id=task_id,
+            project_root=root,
+            repository="https://github.com/woogiekim/agent-crew.git",
+        )
+        _write_mistake_report(task_dir)
+        result = script_runner(
+            "evolution-learning-events.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            "--output", str(output),
+            env=env_with_home,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(proposals),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    proposal = json.loads(proposals.read_text(encoding="utf-8"))["proposals"][0]
+    assert proposal["target_asset"] == "mistake_correction:readonly_review_scope_noun"
+    assert proposal["occurrence_count"] == 2
+    assert proposal["evidence_refs"] == [
+        "tasks/20260101-120000-0/context/evolution-report.json",
+        "tasks/20260102-120000-0/context/evolution-report.json",
+    ]
+    assert proposal["repository_key"] == "github.com/woogiekim/agent-crew"
+
+
+def test_proposal_aggregator_does_not_group_other_repository_events(
+    script_runner, env_with_home, state_dir
+):
+    """RED: similar failures from another repository must not create a project proposal."""
+    output = state_dir / "learning" / "events.jsonl"
+    for task_id, repository in (
+        ("20260101-120000-0", "https://github.com/woogiekim/agent-crew.git"),
+        ("20260102-120000-0", "https://github.com/woogiekim/other-project.git"),
+    ):
+        task_dir = _seed_task(state_dir, task_id)
+        _write_register(task_dir, task_id=task_id, repository=repository)
+        _write_mistake_report(task_dir)
+        result = script_runner(
+            "evolution-learning-events.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            "--output", str(output),
+            env=env_with_home,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    result = script_runner(
+        "evolution-proposal-aggregate.py",
+        "--state-dir", str(state_dir),
+        "--output", str(proposals),
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(proposals.read_text(encoding="utf-8"))["proposals"] == []
 
 
 def test_proposal_aggregator_unions_mistake_correction_targets_across_reports(

@@ -220,6 +220,10 @@ def pending_proposal_count(proposals_path: Path) -> int:
     )
 
 
+def learning_event_count(events_path: Path) -> int:
+    return len(load_jsonl(events_path))
+
+
 def slug(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip().lower()).strip(".-")
 
@@ -540,10 +544,12 @@ def run_evolution_closeout(
 
     context_dir = task_dir / "context"
     analyzer = scripts_dir() / "evolution-analyzer.py"
+    event_materializer = scripts_dir() / "evolution-learning-events.py"
     aggregate = scripts_dir() / "evolution-proposal-aggregate.py"
     summary = scripts_dir() / "evolution-proposal-summary.py"
     report_json = context_dir / "evolution-report.json"
     report_md = context_dir / "evolution-report.md"
+    events_jsonl = state_dir / "learning" / "events.jsonl"
     proposals_json = state_dir / "learning-candidates" / "proposals.json"
     proposals_summary = context_dir / "evolution-proposals-summary.txt"
 
@@ -577,6 +583,39 @@ def run_evolution_closeout(
                 "EVOLUTION_ANALYZER",
                 "mode=repair artifacts=context/evolution-report.json,context/evolution-report.md",
             )
+            if event_materializer.is_file():
+                before_count = learning_event_count(events_jsonl)
+                event_results = []
+                for candidate_report in sorted((state_dir / "tasks").glob("*/context/evolution-report.json")):
+                    candidate_task_dir = candidate_report.parents[1]
+                    event_results.append(run_python_script(
+                        event_materializer,
+                        "--state-dir", str(state_dir),
+                        "--task-dir", str(candidate_task_dir),
+                        "--report", str(candidate_report),
+                        "--output", str(events_jsonl),
+                    ))
+                after_count = learning_event_count(events_jsonl)
+                failed_events = [result for result in event_results if result.returncode != 0]
+                event_status = {
+                    "status": "ok" if not failed_events else "failed",
+                    "path": "learning/events.jsonl",
+                    "recorded": max(after_count - before_count, 0),
+                    "total": after_count,
+                }
+                status["learning_events"] = event_status
+                if not failed_events:
+                    status["artifacts"].append("learning/events.jsonl")
+                    append_progress_log(
+                        task_dir,
+                        "EVOLUTION_LEARNING_EVENTS",
+                        f"recorded={event_status['recorded']} output=learning/events.jsonl",
+                    )
+                else:
+                    status["errors"].append("learning_event_materialization_failed")
+                    append_progress_log(task_dir, "EVOLUTION_LEARNING_EVENTS_FAILED", "non_blocking=true")
+            else:
+                status["learning_events"] = {"status": "skipped", "reason": "script_missing"}
         else:
             status["analyzer"] = "failed"
             status["errors"].append("evolution_analyzer_failed")
@@ -2510,6 +2549,20 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
 
 
 def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
+    learning_events = status.get("learning_events") if isinstance(status.get("learning_events"), dict) else {}
+    event_recorded = int(learning_events.get("recorded") or 0)
+    pending_proposals = int(status.get("pending_proposals") or 0)
+    analyzer_completed = status.get("analyzer") == "completed"
+    proposal_status = status.get("proposals", "skipped")
+    captured = "yes" if analyzer_completed and learning_events.get("status") == "ok" else "no"
+    repeated_pattern = "yes" if pending_proposals > 0 else "no"
+    proposal_label = "approval_required" if pending_proposals > 0 else "none"
+    reason = "pending proposal found" if pending_proposals > 0 else "no repeated evidence"
+    if not analyzer_completed:
+        reason = "learning analyzer unavailable"
+    elif captured == "no":
+        reason = str(learning_events.get("reason") or learning_events.get("status") or "learning event capture unavailable")
+
     lines = [
         "",
         "## Learning Report",
@@ -2521,10 +2574,30 @@ def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
 
     lines.extend([
         "",
+        "## Learning Summary",
+        "",
+        f"- captured: {captured}",
+        f"- captured_events: {event_recorded}",
+        f"- repeated_pattern: {repeated_pattern}",
+        f"- proposal: {proposal_label}",
+        "- evidence: "
+        + (
+            "context/evolution-report.md, learning/events.jsonl"
+            if captured == "yes"
+            else "context/evolution-report.md"
+        ),
+        f"- reason: {reason}",
+        "- next_action: "
+        + (
+            "review approval-gated proposal before applying any asset change"
+            if pending_proposals > 0
+            else "collect more independent corrected evidence"
+        ),
+        "",
         "## Self-Evolution Proposals",
         "",
-        f"EVOLUTION_PROPOSALS: {status.get('proposals', 'skipped')}",
-        f"PENDING_PROPOSALS: {int(status.get('pending_proposals') or 0)}",
+        f"EVOLUTION_PROPOSALS: {proposal_status}",
+        f"PENDING_PROPOSALS: {pending_proposals}",
     ])
 
     summary_path = task_dir / "context" / "evolution-proposals-summary.txt"

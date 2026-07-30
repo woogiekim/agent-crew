@@ -23,8 +23,8 @@ work -> review -> capture -> summarize/promote -> recall -> apply -> verify
 |---|---|---|
 | **work** | Stage agent (backend, frontend, designer, devops, …) executes the requested task. | Code, docs, test fixtures, diffs. |
 | **review** | Reviewer stage executes tests and audits the diff against the PRD. | `REVIEW: APPROVED` or `REVIEW: NEEDS_CHANGES` with findings. |
-| **capture** | Phase 3 close-out (or any agent post-completion) records *meaningful* signals only — see Guardrail-1 in memory-governance.md. | A **learning candidate** record (schema below) at the `session` layer, or an AAR memo at the `project` layer. |
-| **summarize / promote** | Repeated, verified candidates are compacted into a canonical summary and promoted to a higher maturity level. | Memory entry at `project` (or, rarely, `global`) layer. |
+| **capture** | Phase 3 close-out (or any agent post-completion) records *meaningful* signals only — see Guardrail-1 in memory-governance.md. | Task-local evolution evidence plus durable learning events under `{STATE_DIR}/learning/events.jsonl`. |
+| **summarize / promote** | Repeated, verified candidates are compacted into a canonical summary and promoted to a higher maturity level. | Approval-gated proposal from learning events, then Memory entry at `project` (or, rarely, `global`) layer. |
 | **recall** | Analyst and planner run `mnemos search` into `${TASK_DIR}/context/memory.md` at planning preflight. | Recalled candidates surface as **advisory hints**. |
 | **apply** | Analyst/planner shape the plan or risk table using the hint — never the gates. | An adjusted `pipeline.json` or risk entry. |
 | **verify** | Reviewer + quality-loop + TDD gates run **exactly as if no memory had been recalled**. | Verified output, regardless of how the plan was shaped. |
@@ -55,10 +55,16 @@ See `core/rules/state-files/evolution-report-json.md` and
 Repeated report-only signals may be aggregated by
 `core/scripts/evolution-proposal-aggregate.py` into approval-gated learning
 candidate proposals. The aggregator is intentionally separate from
-`evolution-analyzer.py`: it reads completed report sidecars across tasks, writes
-proposal records only after repeated evidence, and never writes generated
-assets or `pipeline.needs_creation`. A proposal can become an asset change only
-through a later approved `crew:run` / supervisor path.
+`evolution-analyzer.py`: it prefers the durable event SSOT at
+`{STATE_DIR}/learning/events.jsonl`, keeps task-local reports as evidence
+references, writes proposal records only after repeated evidence, and never
+writes generated assets or `pipeline.needs_creation`. A proposal can become an
+asset change only through a later approved `crew:run` / supervisor path.
+
+`crew:run` and `crew:status` must expose a compact Learning Summary in closeout:
+`captured`, `captured_events`, `repeated_pattern`, `proposal`, `evidence`,
+`reason`, and `next_action`. Artifact paths alone are not sufficient
+operator-facing evidence that the run contributed to the growth loop.
 
 Approved `patch_existing_skill` proposals may be applied by
 `core/scripts/evolution-proposal-apply.py`. The apply step is deliberately

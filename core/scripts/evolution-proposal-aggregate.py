@@ -32,6 +32,29 @@ def report_paths(state_dir: Path) -> list[Path]:
     return sorted((state_dir / "tasks").glob("*/context/evolution-report.json"))
 
 
+def learning_event_path(state_dir: Path) -> Path:
+    return state_dir / "learning" / "events.jsonl"
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
 def proposal_keys(report: dict[str, Any]) -> list[str]:
     patterns = report.get("observed_patterns") or []
     keys: list[str] = []
@@ -216,6 +239,11 @@ def build_proposals(
     minimum_occurrences: int,
     existing: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    events_path = learning_event_path(state_dir)
+    event_proposals = build_event_proposals(state_dir, minimum_occurrences, existing)
+    if events_path.is_file():
+        return event_proposals
+
     existing = existing or {}
     groups: dict[str, list[Path]] = defaultdict(list)
     for path in report_paths(state_dir):
@@ -264,6 +292,100 @@ def build_proposals(
         }
         proposal.update(review_principle_metadata(first_report, key))
         proposal.update(mistake_correction_metadata(reports, key))
+        preserve_decision_fields(proposal, preserved)
+        proposals.append(proposal)
+    return proposals
+
+
+def event_is_feedback_backed(event: dict[str, Any]) -> bool:
+    reviewer_status = str(event.get("reviewer_status") or "").lower()
+    outcome = str(event.get("outcome") or "").lower()
+    return reviewer_status in {"approved", "corrected"} or outcome in {"corrected", "reviewer_approved"}
+
+
+def event_group_key(event: dict[str, Any]) -> str:
+    repository_key = str(event.get("repository_key") or "").strip()
+    signature = str(event.get("failure_signature") or event.get("pattern_key") or "").strip()
+    if not (repository_key and signature):
+        return ""
+    return f"{repository_key}\x1f{signature}"
+
+
+def build_event_proposals(
+    state_dir: Path,
+    minimum_occurrences: int,
+    existing: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    events = read_jsonl(learning_event_path(state_dir))
+    if not events:
+        return []
+
+    existing = existing or {}
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        if str(event.get("schema_version") or "") != "agent-crew.learning-event.v1":
+            continue
+        if not event_is_feedback_backed(event):
+            continue
+        key = event_group_key(event)
+        if key:
+            groups[key].append(event)
+
+    proposals: list[dict[str, Any]] = []
+    for group_key, group_events in sorted(groups.items()):
+        unique_task_ids = sorted({
+            str(event.get("task_id") or "")
+            for event in group_events
+            if str(event.get("task_id") or "").strip()
+        })
+        if len(unique_task_ids) < minimum_occurrences:
+            continue
+
+        repository_key, signature = group_key.split("\x1f", 1)
+        ordered_events = sorted(group_events, key=lambda item: str(item.get("evidence_ref") or ""))
+        evidence_refs = []
+        for event in ordered_events:
+            evidence_ref = str(event.get("evidence_ref") or "").strip()
+            if evidence_ref and evidence_ref not in evidence_refs:
+                evidence_refs.append(evidence_ref)
+
+        target_assets: list[str] = []
+        seen_assets: set[str] = set()
+        for event in ordered_events:
+            for asset in event.get("target_assets") or []:
+                value = str(asset).strip()
+                if value and value not in seen_assets:
+                    seen_assets.add(value)
+                    target_assets.append(value)
+
+        preserved = existing_proposal_for_key(existing, signature)
+        is_skill_patch_signal = (
+            signature.startswith("review_principle:")
+            or signature in {"existing-skill-patch-suggestion", "skill_content_depth"}
+        )
+        proposal_type = "patch_existing_skill" if is_skill_patch_signal else "investigate_reusable_asset"
+        candidate_id = str(preserved.get("candidate_id") or f"{slug(signature)}-{len(unique_task_ids)}x")
+        proposal = {
+            "schema_version": 1,
+            "candidate_id": candidate_id,
+            "source": "learning_event",
+            "memory_layer": "project",
+            "repository_key": repository_key,
+            "evidence_refs": evidence_refs,
+            "promotion_reason": (
+                f"{len(unique_task_ids)} independent learning events recorded the same "
+                f"{proposal_reason_label(signature)}: {signature}."
+            ),
+            "trust_boundary": "advisory_until_rule_promotion",
+            "proposal_type": proposal_type,
+            "status": "approval_required",
+            "target_asset": signature,
+            "occurrence_count": len(unique_task_ids),
+            "approval_gate": "crew:run_or_supervisor_approval_required",
+            "guardrail": "proposal_only_no_needs_creation_write",
+        }
+        if target_assets:
+            proposal["target_assets"] = target_assets
         preserve_decision_fields(proposal, preserved)
         proposals.append(proposal)
     return proposals
