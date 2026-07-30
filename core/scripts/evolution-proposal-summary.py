@@ -57,6 +57,8 @@ def build_summary(proposals_path: Path, limit: int) -> dict[str, Any]:
                 "proposal_type": str(item.get("proposal_type") or ""),
                 "status": str(item.get("status") or ""),
                 "target_asset": str(item.get("target_asset") or item.get("target_skill") or ""),
+                "asset_name": str(item.get("asset_name") or ""),
+                "asset_purpose": str(item.get("asset_purpose") or ""),
                 "target_assets": [
                     str(asset)
                     for asset in item.get("target_assets", [])
@@ -88,7 +90,7 @@ def render_text(summary: dict[str, Any]) -> str:
             "  status: approval_required",
         ])
         target_assets = proposal.get("target_assets") or []
-        target_asset = proposal.get("target_asset") or ""
+        target_asset = proposal.get("target_asset") or proposal.get("asset_name") or ""
         if target_assets:
             lines.append(f"  target: {', '.join(target_assets)}")
         elif target_asset:
@@ -102,7 +104,10 @@ def render_text(summary: dict[str, Any]) -> str:
         if reason:
             lines.append(f"  reason: {reason}")
 
-        lines.append("  next: review and approve before apply")
+        if str(proposal_type).startswith("create_"):
+            lines.append("  next: review and approve; approved creation proposals are handed to crew:agent-maker")
+        else:
+            lines.append("  next: review and approve before apply")
     return "\n".join(lines) + "\n"
 
 

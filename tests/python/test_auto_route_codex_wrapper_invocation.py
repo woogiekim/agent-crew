@@ -65,6 +65,7 @@ def test_success_case_other_leading_crew_wrappers_are_commands():
         "$crew:update": "update.md",
         "$crew:smm": "smm.md",
         "$crew:agent-maker routing specialist": "agent-maker.md",
+        "$crew:evolve status": "evolve.md",
     }
 
     for prompt, command_file in scenarios.items():

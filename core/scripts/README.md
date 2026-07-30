@@ -187,8 +187,14 @@ invocation in SKILL.md; generic adds guidance).
   report-only evolution signals. It writes approval-gated learning proposals
   only after repeated evidence and never writes assets or `pipeline.needs_creation`.
 - `evolution-proposal-apply.py` — applies approved self-evolution proposals
-  only when they patch an existing skill. It never creates agents, creates new
-  skills, or writes `pipeline.needs_creation`, and records an audit JSON.
+  when they patch an existing skill, and turns approved skill/agent/command
+  creation proposals into `crew:agent-maker` request artifacts. It never
+  directly creates agents, directly creates new skills, or writes
+  `pipeline.needs_creation`, and records an audit JSON.
+- `evolution-proposal-lifecycle.py` — backs the explicit `crew evolve`
+  lifecycle command. `status` only reads existing proposals, `approve` records
+  an operator decision, and `apply` delegates to the approved proposal apply
+  guardrails.
 - `evolution-proposal-summary.py` — read-only compact renderer for pending
   approval-gated proposals. It is used by close-out/status surfaces to show
   when repeated evidence has produced proposals without applying them.

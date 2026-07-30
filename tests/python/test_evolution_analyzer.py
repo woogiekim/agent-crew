@@ -1153,7 +1153,7 @@ def test_proposal_apply_requires_approved_patch_existing_skill(
     assert audit["skipped"][0]["reason"] == "not_approved"
 
 
-def test_proposal_apply_appends_approved_patch_to_existing_skill_only(
+def test_proposal_apply_appends_skill_patch_and_creates_agent_maker_requests(
     script_runner, env_with_home, state_dir, tmp_path: Path
 ):
     skill_dir = tmp_path / "skills"
@@ -1178,8 +1178,28 @@ def test_proposal_apply_appends_approved_patch_to_existing_skill_only(
                     "candidate_id": "new-agent-2x",
                     "proposal_type": "create_agent",
                     "status": "approved",
-                    "target_skill": "new-agent.md",
-                    "patch_body": "must not be written\n",
+                    "asset_name": "review-fix-verifier",
+                    "asset_purpose": "Verify repeated review-fix evidence before closeout.",
+                    "evidence_refs": ["tasks/one/context/evolution-report.json"],
+                    "promotion_reason": "Repeated review-fix mistakes need a specialist verifier.",
+                },
+                {
+                    "candidate_id": "new-skill-2x",
+                    "proposal_type": "create_skill",
+                    "status": "approved",
+                    "asset_name": "review-fix-discipline",
+                    "asset_purpose": "Reusable review-fix verification guidance.",
+                    "evidence_refs": ["tasks/two/context/evolution-report.json"],
+                    "promotion_reason": "Repeated review-fix mistakes need a reusable skill.",
+                },
+                {
+                    "candidate_id": "new-command-2x",
+                    "proposal_type": "create_command",
+                    "status": "approved",
+                    "asset_name": "review-fix-audit",
+                    "asset_purpose": "Run a repeatable review-fix audit workflow.",
+                    "evidence_refs": ["tasks/three/context/evolution-report.json"],
+                    "promotion_reason": "Repeated review-fix mistakes need a reusable command.",
                 },
             ],
         }),
@@ -1199,11 +1219,31 @@ def test_proposal_apply_appends_approved_patch_to_existing_skill_only(
     assert "<!-- agent-crew-evolution:example-2x:start -->" in text
     assert "Use repeated evidence only." in text
     assert not (skill_dir / "new-agent.md").exists()
+    request_dir = state_dir / "learning-candidates" / "agent-maker-requests"
+    requests = sorted(path.name for path in request_dir.glob("*.md"))
+    assert requests == [
+        "new-agent-2x.md",
+        "new-command-2x.md",
+        "new-skill-2x.md",
+    ]
+    request_text = (request_dir / "new-agent-2x.md").read_text(encoding="utf-8")
+    assert "crew:agent-maker" in request_text
+    assert "ASSET_TYPE: agent" in request_text
+    assert "Verify repeated review-fix evidence before closeout." in request_text
+
     audit = json.loads((state_dir / "learning-candidates" / "apply-audit.json").read_text(encoding="utf-8"))
-    assert audit["guardrails"]["asset_creation"] == "disabled"
+    assert audit["guardrails"]["asset_creation"] == "agent_maker_only"
     assert audit["guardrails"]["needs_creation_writes"] == "disabled"
     assert audit["applied"][0]["candidate_id"] == "example-2x"
-    assert audit["skipped"][0]["reason"] == "unsupported_proposal_type"
+    assert {
+        (item["candidate_id"], item["status"])
+        for item in audit["applied"]
+    } == {
+        ("example-2x", "applied"),
+        ("new-agent-2x", "agent_maker_request_created"),
+        ("new-skill-2x", "agent_maker_request_created"),
+        ("new-command-2x", "agent_maker_request_created"),
+    }
 
 
 def test_proposal_summary_reports_pending_items(script_runner, env_with_home, state_dir):
@@ -1247,6 +1287,39 @@ def test_proposal_summary_reports_pending_items(script_runner, env_with_home, st
     assert "type: patch_existing_skill" in result.stdout
     assert "evidence: 2 tasks" in result.stdout
     assert "already-approved-2x" not in result.stdout
+
+
+def test_proposal_summary_points_creation_proposals_to_agent_maker(
+    script_runner, env_with_home, state_dir
+):
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [{
+                "candidate_id": "review-fix-verifier-2x",
+                "proposal_type": "create_agent",
+                "status": "approval_required",
+                "asset_name": "review-fix-verifier",
+                "asset_purpose": "Verify repeated review-fix evidence before closeout.",
+                "occurrence_count": 2,
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-proposal-summary.py",
+        "--proposals", str(proposals),
+        "--format", "text",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "type: create_agent" in result.stdout
+    assert "target: review-fix-verifier" in result.stdout
+    assert "next: review and approve; approved creation proposals are handed to crew:agent-maker" in result.stdout
 
 
 def test_proposal_summary_surfaces_target_principle_and_reason(

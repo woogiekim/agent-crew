@@ -54,7 +54,7 @@ if not prompt.strip():
 COMMAND_PAT = (
     r"^\s*(?:[-*]\s*)?(?P<command>\$?(?:crew|ac):(?P<intent>"
     r"setup|run|crew|task|status|cost|agent-maker|agent|smm|sessions|interact|"
-    r"sync-instructions|telemetry|update|parity-check|relay"
+    r"sync-instructions|telemetry|update|evolve|parity-check|relay"
     r"))(?:\s+(?P<args>.*))?$"
 )
 command_match = re.match(COMMAND_PAT, prompt, re.IGNORECASE | re.DOTALL)
@@ -78,6 +78,7 @@ if command_match:
         "sync-instructions": "sync-instructions.md",
         "telemetry": "telemetry.md",
         "update": "update.md",
+        "evolve": "evolve.md",
         "parity-check": "parity-check.md",
         "relay": "relay.md",
     }

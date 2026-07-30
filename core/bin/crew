@@ -64,6 +64,7 @@ Commands:
   update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]
                                     Refresh installed assets
   run "task"                       Write state and host handoff for a task
+  evolve status|approve|apply      Inspect and operate on approved learning proposals
   relay [args]                     Package a prompt for another AI session
   sessions [args]                  List recent AI session candidates
   interact [args]                  Start natural-language cross-AI interaction
@@ -238,6 +239,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/evolution-proposal-aggregate.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-aggregate.py" \
     "core/scripts/evolution-proposal-apply.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-apply.py" \
+    "core/scripts/evolution-proposal-lifecycle.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-lifecycle.py" \
     "core/scripts/evolution-proposal-summary.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-summary.py" \
     "core/scripts/e2e-slo-check.py:${AGENT_CREW_HOME}/scripts/e2e-slo-check.py" \
     "core/scripts/update-slo-benchmark.py:${AGENT_CREW_HOME}/scripts/update-slo-benchmark.py" \
@@ -1292,6 +1294,29 @@ EOF
   python3 "${runtime}" run --project-root "${PROJECT_ROOT}" "$@"
 }
 
+cmd_evolve() {
+  if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'EOF'
+usage: crew evolve status
+       crew evolve approve CANDIDATE_ID [--approved-by USER] [--reason TEXT]
+       crew evolve apply CANDIDATE_ID
+
+Explicit lifecycle command for self-evolution proposals. status is read-only
+and only reports already materialized proposals. approve records an operator
+decision for one exact proposal id. apply requires prior approval; creation
+proposals are handed to crew:agent-maker as request artifacts instead of
+creating agents, skills, or commands directly.
+EOF
+    return 0
+  fi
+
+  sync_source_runtime_assets_if_drifted
+  require_file "${ASSET_ROOT}/commands/evolve.md" "evolve command definition"
+  local lifecycle="${ASSET_ROOT}/scripts/evolution-proposal-lifecycle.py"
+  require_file "${lifecycle}" "evolution proposal lifecycle script"
+  python3 "${lifecycle}" --state-dir "${STATE_DIR}" "$@"
+}
+
 cmd_repair() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
@@ -1470,6 +1495,7 @@ main() {
     resume) cmd_resume "$@" ;;
     update) cmd_update "$@" ;;
     run) cmd_run "$@" ;;
+    evolve) cmd_evolve "$@" ;;
     relay) cmd_relay "$@" ;;
     sessions) cmd_sessions "$@" ;;
     interact) cmd_interact "$@" ;;

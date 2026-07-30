@@ -67,8 +67,8 @@
     },
     "proposal_type": {
       "type": "string",
-      "enum": ["patch_existing_skill", "investigate_reusable_asset"],
-      "description": "Optional approval-gated proposal action. Proposal records are advisory and do not write assets or pipeline needs_creation."
+      "enum": ["patch_existing_skill", "investigate_reusable_asset", "create_skill", "create_agent", "create_command"],
+      "description": "Optional approval-gated proposal action. Proposal records are advisory and do not write assets or pipeline needs_creation. Creation proposals are handed to crew:agent-maker after approval."
     },
     "status": {
       "type": "string",
@@ -91,6 +91,16 @@
         "minLength": 1
       },
       "description": "Optional proposed target assets for review-principle or multi-skill proposals."
+    },
+    "asset_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional proposed asset name for create_skill, create_agent, or create_command proposals. The apply step writes an agent-maker request, not the asset itself."
+    },
+    "asset_purpose": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional proposed asset purpose for create_skill, create_agent, or create_command proposals."
     },
     "review_principle": {
       "type": "string",

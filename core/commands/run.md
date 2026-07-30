@@ -121,6 +121,7 @@ if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
     "${CLAUDE_DIR}/commands/agent-maker.md" \
     "${CLAUDE_DIR}/commands/agent.md" \
     "${CLAUDE_DIR}/commands/cost.md" \
+    "${CLAUDE_DIR}/commands/evolve.md" \
     "${CLAUDE_DIR}/commands/interact.md" \
     "${CLAUDE_DIR}/commands/relay.md" \
     "${CLAUDE_DIR}/commands/run.md" \

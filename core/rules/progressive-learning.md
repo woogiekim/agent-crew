@@ -67,11 +67,13 @@ asset change only through a later approved `crew:run` / supervisor path.
 operator-facing evidence that the run contributed to the growth loop.
 
 Approved `patch_existing_skill` proposals may be applied by
-`core/scripts/evolution-proposal-apply.py`. The apply step is deliberately
-narrow: it appends a marked block to an existing skill file only when the
-proposal status is `approved`; it skips unapproved proposals, unsupported
-proposal types, missing targets, and any request that would create an agent,
-create a new skill, or write `pipeline.needs_creation`.
+`core/scripts/evolution-proposal-apply.py`. Approved `create_skill`,
+`create_agent`, and `create_command` proposals are not written directly by the
+apply script; they are materialized as `crew:agent-maker` request artifacts so
+the existing provider-neutral asset designer owns creation, validation, and
+host deployment. The apply step skips unapproved proposals, unsupported
+proposal types, missing targets, and any request that would write
+`pipeline.needs_creation`.
 
 ## Maturity Levels
 
