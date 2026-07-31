@@ -35,6 +35,7 @@ merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/system/agents" \
   "${AGENT_CREW_HOME}/user/agents" \
   "${PROJECT_ROOT}/.agent-crew/agents"
+copy_dir_contents "${PROJECT_ROOT}/.agent-crew/project/agents" "${PROJECT_ROOT}/.agent-crew/agents"
 
 # Note: reasoning_tier is not materialized on the generic adapter.
 # Generic targets single-model environments; the abstract tier is

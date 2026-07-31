@@ -192,7 +192,7 @@ copy_file_if_changed() {
 }
 
 link_or_copy_shared_dir() {
-  local src="$1" dest="$2" label="${3:-shared-dir}"
+  local src="$1" dest="$2" label="${3:-shared-dir}" fallback_mode="${4:-copy}"
   [ -d "${src}" ] || return 0
   mkdir -p "$(dirname "${dest}")"
 
@@ -205,8 +205,13 @@ link_or_copy_shared_dir() {
     fi
     rm -f "${dest}"
   elif [ -d "${dest}" ]; then
-    printf 'asset_ref: %s status=fallback=copy reason=project_owned_existing_dir path=%s target=%s\n' "${label}" "${dest}" "${src}"
-    copy_dir_contents "${src}" "${dest}"
+    if [ "${fallback_mode}" = "prune" ]; then
+      printf 'asset_ref: %s status=fallback=prune reason=managed_existing_dir path=%s target=%s\n' "${label}" "${dest}" "${src}"
+      sync_dir_contents_prune "${src}" "${dest}"
+    else
+      printf 'asset_ref: %s status=fallback=copy reason=project_owned_existing_dir path=%s target=%s\n' "${label}" "${dest}" "${src}"
+      copy_dir_contents "${src}" "${dest}"
+    fi
     return 0
   elif [ -e "${dest}" ]; then
     printf 'asset_ref: %s status=skipped reason=project_owned_existing_path path=%s target=%s\n' "${label}" "${dest}" "${src}"
@@ -218,8 +223,13 @@ link_or_copy_shared_dir() {
     return 0
   fi
 
-  printf 'asset_ref: %s status=fallback=copy reason=symlink_unavailable path=%s target=%s\n' "${label}" "${dest}" "${src}"
-  copy_dir_contents "${src}" "${dest}"
+  if [ "${fallback_mode}" = "prune" ]; then
+    printf 'asset_ref: %s status=fallback=prune reason=symlink_unavailable path=%s target=%s\n' "${label}" "${dest}" "${src}"
+    sync_dir_contents_prune "${src}" "${dest}"
+  else
+    printf 'asset_ref: %s status=fallback=copy reason=symlink_unavailable path=%s target=%s\n' "${label}" "${dest}" "${src}"
+    copy_dir_contents "${src}" "${dest}"
+  fi
 }
 
 sync_dir_contents_prune() {

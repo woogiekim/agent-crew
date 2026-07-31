@@ -94,6 +94,125 @@ AGENT_CREW_DISABLE_SYMLINKS=1 link_or_copy_shared_dir "${SRC}" "${DISABLED}" "di
     subprocess.run(["bash", "-c", script], check=True, env=env)
 
 
+def test_link_helper_prunes_stale_files_for_managed_existing_dirs(tmp_path):
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    env = os.environ | {"COMMON": str(COMMON), "SRC": str(src), "DEST": str(dest)}
+
+    src.mkdir()
+    dest.mkdir()
+    (src / "new.sh").write_text("new\n", encoding="utf-8")
+    (dest / "old.sh").write_text("old\n", encoding="utf-8")
+    script = r'''
+set -euo pipefail
+. "${COMMON}"
+link_or_copy_shared_dir "${SRC}" "${DEST}" "managed-case" prune >/dev/null
+[ ! -L "${DEST}" ]
+[ -f "${DEST}/new.sh" ]
+[ ! -e "${DEST}/old.sh" ]
+'''
+
+    subprocess.run(["bash", "-c", script], check=True, env=env)
+
+
+def test_generic_project_local_only_does_not_scaffold_global_user_skill_files(tmp_path):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    agent_crew_home = home / ".agent-crew"
+    project.mkdir()
+    (agent_crew_home / "setup").mkdir(parents=True)
+    (agent_crew_home / "commands").mkdir()
+    (agent_crew_home / "hooks").mkdir()
+    (agent_crew_home / "skills").mkdir()
+    (agent_crew_home / "system" / "agents").mkdir(parents=True)
+    (agent_crew_home / "user" / "agents").mkdir(parents=True)
+    (agent_crew_home / "adapters" / "generic").mkdir(parents=True)
+    (agent_crew_home / "AGENTS.md").write_text(
+        "<!-- agent-crew-start -->\nmanaged\n<!-- agent-crew-end -->\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "adapters" / "generic" / "invocation.md").write_text(
+        "invoke\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "setup" / "common.sh").symlink_to(COMMON)
+    env = os.environ | {
+        "AGENT_CREW_HOME": str(agent_crew_home),
+        "AGENT_CREW_MODE": "update",
+        "AGENT_CREW_PROJECT_LOCAL_ONLY": "1",
+        "AGENT_CREW_DISABLE_SYMLINKS": "1",
+    }
+
+    subprocess.run(
+        ["bash", str(GENERIC_SETUP), str(project)],
+        check=True,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert not (agent_crew_home / "user" / "skills" / "README.md").exists()
+    assert (project / ".agent-crew" / "project" / "commands").is_dir()
+    assert not (project / ".agent-crew" / "project" / "commands").is_symlink()
+
+
+def test_generic_project_overrides_win_over_user_and_system_agents(tmp_path):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    agent_crew_home = home / ".agent-crew"
+    project.mkdir()
+    (agent_crew_home / "setup").mkdir(parents=True)
+    (agent_crew_home / "commands").mkdir()
+    (agent_crew_home / "hooks").mkdir()
+    (agent_crew_home / "skills").mkdir()
+    (agent_crew_home / "system" / "agents").mkdir(parents=True)
+    (agent_crew_home / "user" / "agents").mkdir(parents=True)
+    (agent_crew_home / "adapters" / "generic").mkdir(parents=True)
+    (agent_crew_home / "AGENTS.md").write_text(
+        "<!-- agent-crew-start -->\nmanaged\n<!-- agent-crew-end -->\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "adapters" / "generic" / "invocation.md").write_text(
+        "invoke\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "setup" / "common.sh").symlink_to(COMMON)
+    (agent_crew_home / "system" / "agents" / "same.md").write_text("system\n", encoding="utf-8")
+    (agent_crew_home / "user" / "agents" / "same.md").write_text("user\n", encoding="utf-8")
+    (agent_crew_home / "user" / "agents" / "user-only.md").write_text("user-only\n", encoding="utf-8")
+    (project / ".agent-crew" / "project" / "agents").mkdir(parents=True)
+    (project / ".agent-crew" / "project" / "agents" / "same.md").write_text("project\n", encoding="utf-8")
+    env = os.environ | {
+        "AGENT_CREW_HOME": str(agent_crew_home),
+        "AGENT_CREW_MODE": "update",
+        "AGENT_CREW_PROJECT_LOCAL_ONLY": "1",
+        "AGENT_CREW_DISABLE_SYMLINKS": "1",
+    }
+
+    subprocess.run(
+        ["bash", str(GENERIC_SETUP), str(project)],
+        check=True,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert (
+        project / ".agent-crew" / "agents" / "same.md"
+    ).read_text(encoding="utf-8") == "project\n"
+    assert (
+        project / ".agent-crew" / "agents" / "user-only.md"
+    ).read_text(encoding="utf-8") == "user-only\n"
+
+
+def test_project_local_only_uses_prune_fallback_for_codex_hooks():
+    text = read(CODEX_SETUP)
+
+    assert 'link_or_copy_shared_dir "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks" "codex-hooks" prune' in text
+
+
 def test_update_docs_define_provider_neutral_layered_reference_policy():
     text = read(UPDATE_DOC)
 
@@ -101,5 +220,8 @@ def test_update_docs_define_provider_neutral_layered_reference_policy():
     assert "AGENT_CREW_PROJECT_LOCAL_ONLY=1" in text
     assert "provider-neutral asset reference" in text
     assert "symlink fallback" in text
+    assert "Managed mirror paths such as `.codex/hooks` use" in text
+    assert "prune fallback semantics" in text
+    assert "reserved override surfaces" in text
     assert "AGENTS.md" in text
     assert "must not be symlinked" in text

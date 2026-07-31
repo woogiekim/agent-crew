@@ -551,7 +551,7 @@ else
     chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/"*.py 2>/dev/null || true
     chmod +x "${AGENT_CREW_HOME}/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.py 2>/dev/null || true
   fi
-  link_or_copy_shared_dir "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks" "codex-hooks"
+  link_or_copy_shared_dir "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks" "codex-hooks" prune
 fi
 
 # Detect old flat layout and safely clean managed duplicates.
