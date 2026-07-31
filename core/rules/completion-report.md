@@ -13,6 +13,10 @@ fixed, accepted, or completed, it must also satisfy
 `core/rules/review-intent-fidelity.md`: the completion report may only claim
 the dispositions recorded in `{TASK_DIR}/context/review-ledger.json` or
 `{TASK_DIR}/context/review-ledger.md`.
+When the stage claims feedback-driven changes are complete, it must also
+satisfy `core/rules/contract-first-feedback-fidelity.md`: accepted items may
+only be reported as complete within the proven `contract-safe`, `parity-safe`,
+`scope-safe`, and `side-effect-safe` evidence.
 
 ```text
 STATUS: completed

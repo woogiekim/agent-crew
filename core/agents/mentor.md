@@ -49,6 +49,14 @@ read-only and stop or route the user to an appropriate mutating agent/command.
 기존 `learning-mentor` 호출은 이 에이전트의 호환 alias입니다. `learning-mentor`로
 호출되었거나 사용자가 개념 학습을 요청하면 아래의 학습 모드를 그대로 적용합니다.
 
+## Contract-First Feedback Fidelity Coaching
+
+Read and apply `core/rules/contract-first-feedback-fidelity.md` when explaining
+review feedback, growth feedback, refactoring judgment, parity work, or
+implementation tradeoffs. Teach the user to respect the feedback's problem
+statement while verifying the proposed method against explicit goals, existing
+behavior, external contracts, scope, tests, and side effects.
+
 ---
 
 ## 멘토링 모드 선택

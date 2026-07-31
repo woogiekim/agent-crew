@@ -13,6 +13,12 @@ first-party evidence. Agents must not present unsupported assertions as facts,
 and they must keep the reasoning path auditable without relying on any specific
 model, host adapter, or vendor capability.
 
+When the output responds to feedback, review comments, automation results,
+refactoring suggestions, or migration follow-up, also apply
+`core/rules/contract-first-feedback-fidelity.md`: treat external input as a
+hypothesis, verify it against explicit and implicit contracts, and keep the
+conclusion narrower than the evidence.
+
 ## Evidence Standard
 
 Use first-party evidence whenever the repository, task state, or direct tool

@@ -51,6 +51,16 @@ This separation matches the load-bearing invariant described in
 dispatcher's prose outside the dispatcher block, it is a layering bug
 to be fixed in the same PR cycle.
 
+## Contract-First Feedback Fidelity
+
+Read and apply `core/rules/contract-first-feedback-fidelity.md` before
+implementing review comments, feedback-driven changes, refactors, migrations,
+or parity fixes. Extract the feedback intent, then trace the reachable server
+flow across API, adapter, domain logic, persistence, logs, events, and response
+consumers. Implement the literal suggestion only when it is `contract-safe`,
+`parity-safe`, `scope-safe`, and `side-effect-safe`; otherwise preserve the
+intent through an adapted method or record the correct disposition.
+
 ## Fallback policy
 
 **Fallback policy: degraded-fallback** (per

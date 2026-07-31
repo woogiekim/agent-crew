@@ -44,6 +44,17 @@ evidence matches the disposition. `implemented` items require semantic
 verification of the requested state, value, side effect, or behavior, not only
 proof that a call exists.
 
+## Contract-First Feedback Fidelity
+
+Read and apply `core/rules/contract-first-feedback-fidelity.md` when a task is
+driven by feedback, review comments, automation results, parity differences,
+refactoring suggestions, or migration follow-up. Before closeout, ensure the
+task artifacts do not claim feedback completion beyond evidence-proven
+`contract-safe`, `parity-safe`, `scope-safe`, and `side-effect-safe` labels.
+If a feedback item is accepted with adaptation, method-only rejected, deferred,
+or rejected, the final status must say so instead of reporting blanket
+acceptance.
+
 This agent's instruction body is split across three sibling files for
 working-set efficiency. Read this index in full at spawn time, then
 Read the sub-module that matches the current phase. See **Phase

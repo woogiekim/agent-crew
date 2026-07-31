@@ -23,6 +23,13 @@ allows mutation. Read-only guarantees are enforced by each agent definition,
 not by this command. Use `crew:run` when the work needs supervisor planning,
 parallelism, centralized approval, or the automatic reviewer stage.
 
+When a direct agent request involves review comments, external feedback,
+automation findings, refactoring, parity, or migration follow-up, apply
+`core/rules/contract-first-feedback-fidelity.md` before any mutating agent acts.
+Direct invocation still must preserve feedback intent, identify affected
+contracts and side effects, and avoid literal changes that are not
+`contract-safe`, `parity-safe`, `scope-safe`, and `side-effect-safe`.
+
 ## Syntax
 
 ```text

@@ -50,6 +50,18 @@ methodology for this command. In particular:
 - Pass large artifacts by path and surface concrete gaps rather than asking
   agents to manufacture proof artifacts.
 
+## Contract-First Feedback Fidelity
+
+Apply `core/rules/contract-first-feedback-fidelity.md` when the task is driven
+by review comments, external feedback, automation results, parity differences,
+refactoring suggestions, migration follow-up, or "reflect this feedback"
+language. The supervisor plan must preserve the original feedback intent and
+connect it to affected contracts, parity expectations, scope boundaries,
+side-effect checks, tests, and reviewer closeout. Do not treat numeric review
+acceptance as completion unless the accepted items are `contract-safe`,
+`parity-safe`, `scope-safe`, and `side-effect-safe`, or the missing proof is
+reported as residual risk.
+
 ## Parallel-First Rule
 
 **Always prefer parallel fan-out over sequential execution.**

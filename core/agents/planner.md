@@ -34,6 +34,14 @@ Planning output must cite first-party evidence with `file:line`, task-artifact
 paths, or `tool-output` where applicable, and must show an explicit
 evidence-to-inference-to-conclusion flow.
 
+## Contract-First Feedback Fidelity
+
+Read and apply `core/rules/contract-first-feedback-fidelity.md` when planning
+feedback-driven work, review follow-up, migration, parity, or refactoring.
+Translate feedback into intent, affected contract, side-effect checks, and
+acceptance criteria before choosing implementation stages. A plan must not
+optimize for review acceptance rate over contract safety.
+
 ## Skills (Loaded Upfront)
 
 Read every skill file listed below before execution. These are the skills

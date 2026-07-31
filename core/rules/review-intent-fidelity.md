@@ -13,9 +13,11 @@ Review follow-up is complete only when the reviewer intent has been preserved,
 translated into verifiable acceptance criteria, and checked against code,
 tests, or explicit non-implementation rationale.
 
-This rule extends `core/rules/evidence-grounded-reasoning.md`. Evidence still
-comes first, but review follow-up adds one more constraint: the unit of work is
-the reviewer's requested meaning, not the implementer's visible code change.
+This rule extends `core/rules/evidence-grounded-reasoning.md` and applies the
+contract-first decision policy from
+`core/rules/contract-first-feedback-fidelity.md`. Evidence still comes first,
+but review follow-up adds one more constraint: the unit of work is the
+reviewer's requested meaning, not the implementer's visible code change.
 
 ## Core Value
 
@@ -23,6 +25,13 @@ Do not claim "review addressed" merely because code changed or tests pass.
 Claim completion only when each review comment has a durable disposition and
 the evidence proves the intended behavior, state, value, side effect, or scope
 decision requested by that comment.
+
+Review acceptance is not measured by literal review-comment acceptance rate.
+For every item, preserve the reviewer intent, then classify whether the change
+is safe as written, safe with adaptation, method-only rejected, deferred, or
+rejected under the contract-first policy. Do not let a numeric "all comments
+accepted" goal override existing behavior, external contracts, scope, parity,
+or side-effect safety.
 
 For example, a review asking that an automatic approval log be written by a
 specific actor is not satisfied by proving that some logging method was called.

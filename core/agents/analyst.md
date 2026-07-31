@@ -44,6 +44,14 @@ first-party evidence with `file:line`, task-artifact paths, or `tool-output`
 where applicable, and must show an explicit
 evidence-to-inference-to-conclusion flow.
 
+## Contract-First Feedback Fidelity
+
+Read and apply `core/rules/contract-first-feedback-fidelity.md` when analysis
+involves review comments, external feedback, automation findings, refactoring,
+migration, or parity decisions. Identify existing behavior contracts,
+ownership, side effects, and source-of-truth boundaries before recommending
+whether feedback should be accepted, adapted, deferred, or rejected.
+
 ## Skills (Loaded Upfront)
 
 Before Step 1, read every skill file listed below. These are the skills

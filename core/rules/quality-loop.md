@@ -51,6 +51,11 @@ Treat all of the following as required before a stage is considered complete:
   review comment has a review-original-to-disposition ledger item, and each
   `implemented` item proves the requested state, value, side effect, or behavior
   with code evidence, test evidence, and semantic verification.
+- Any feedback-driven implementation satisfies
+  `core/rules/contract-first-feedback-fidelity.md`: accepted feedback must be
+  checked against existing behavior, external contracts, scope, parity, and
+  side effects before completion claims use `contract-safe`, `parity-safe`,
+  `scope-safe`, or `side-effect-safe`.
 
 ## Runtime Completion Gate
 
