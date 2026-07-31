@@ -451,6 +451,7 @@ def codex_agent_name(name):
 converted = 0
 skipped   = []
 system_names = set()
+managed_user_marker = "# This is a Codex adapter bootstrap for an agent-crew user agent."
 
 if os.path.isdir(system_agents_dir):
     for system_fname in sorted(os.listdir(system_agents_dir)):
@@ -499,6 +500,7 @@ for fname in sorted(os.listdir(user_agents_dir)):
     desc_escaped = description.replace('\\', '\\\\').replace('"', '\\"')
 
     lines = [
+        managed_user_marker,
         f'name = "{toml_name}"',
         f'description = "{desc_escaped}"',
     ]
@@ -531,6 +533,7 @@ for fname in sorted(os.listdir(user_agents_dir)):
             lines.append(f'nickname_candidates = [{encoded}]')
     lines.append(f'developer_instructions = """\n{body_escaped}\n"""')
     toml_content = '\n'.join(lines) + '\n'
+    legacy_toml_content = '\n'.join(lines[1:]) + '\n'
 
     try:
         current = ''
@@ -538,6 +541,9 @@ for fname in sorted(os.listdir(user_agents_dir)):
             with open(dest_path, encoding='utf-8') as f:
                 current = f.read()
         if current != toml_content:
+            if current and managed_user_marker not in current and current != legacy_toml_content:
+                skipped.append(f'{fname}: {toml_name}.toml exists in project .codex/agents and generated user agents; not auto-selected')
+                continue
             with open(dest_path, 'w', encoding='utf-8') as f:
                 f.write(toml_content)
         converted += 1
@@ -547,7 +553,7 @@ for fname in sorted(os.listdir(user_agents_dir)):
 print(f'[install_user_agents_codex] {converted} agent(s) converted to TOML in {dest_dir}')
 if skipped:
     for s in skipped:
-        print(f'[install_user_agents_codex] SKIP: {s}')
+        print(f'[install_user_agents_codex] SKIP: {s}', file=sys.stderr)
 PYEOF
 }
 
