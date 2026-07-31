@@ -358,8 +358,18 @@ for dest_path in sorted(dest_dir.glob("*.toml")):
 
 for src_path in sorted(tmp_agents.glob("*.toml")):
     dest_path = dest_dir / src_path.name
-    if dest_path.exists() and dest_path.read_text(encoding="utf-8", errors="replace") == src_path.read_text(encoding="utf-8"):
-        continue
+    src_text = src_path.read_text(encoding="utf-8", errors="replace")
+    if dest_path.exists():
+        dest_text = dest_path.read_text(encoding="utf-8", errors="replace")
+        if dest_text == src_text:
+            continue
+        is_managed_bootstrap = system_marker in dest_text or "Agent-crew system agent:" in dest_text
+        if not is_managed_bootstrap:
+            print(
+                f"[install_system_agents_codex] WARNING: {dest_path.name} exists in project .codex/agents and generated system agents; not auto-selected.",
+                file=sys.stderr,
+            )
+            continue
     shutil.copyfile(src_path, dest_path)
 PYEOF
   rm -rf "${tmp_agents}"
