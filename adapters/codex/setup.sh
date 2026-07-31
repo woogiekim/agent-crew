@@ -391,8 +391,10 @@ PYEOF
 #   name                   = "<agent name>"
 #
 # Output path: ${PROJECT_ROOT}/.codex/agents/<name>.toml
-# Idempotent: existing TOML files are overwritten on each setup/update run so
-# user/agents/ changes are always reflected after crew:setup or crew:update.
+# Idempotent for generated TOML: managed user-agent TOMLs are refreshed on each
+# setup/update run, and legacy generated TOMLs are upgraded to managed format.
+# Project-owned same-name TOMLs are preserved and reported as skipped instead
+# of being silently overwritten.
 install_user_agents_codex() {
   local user_agents_dir="${AGENT_CREW_HOME}/user/agents"
   local dest_dir="${PROJECT_ROOT}/.codex/agents"
@@ -447,6 +449,9 @@ def parse_agent_name(path):
 
 def codex_agent_name(name):
     return re.sub(r'[^\w-]', '-', name.lower()).strip('-') or 'unknown'
+
+def is_managed_user_toml(current, managed_marker, legacy_content):
+    return current.startswith(managed_marker + '\n') or current == legacy_content
 
 converted = 0
 skipped   = []
@@ -541,7 +546,7 @@ for fname in sorted(os.listdir(user_agents_dir)):
             with open(dest_path, encoding='utf-8') as f:
                 current = f.read()
         if current != toml_content:
-            if current and managed_user_marker not in current and current != legacy_toml_content:
+            if current and not is_managed_user_toml(current, managed_user_marker, legacy_toml_content):
                 skipped.append(f'{fname}: {toml_name}.toml exists in project .codex/agents and generated user agents; not auto-selected')
                 continue
             with open(dest_path, 'w', encoding='utf-8') as f:

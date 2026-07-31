@@ -328,6 +328,127 @@ def test_codex_setup_preserves_project_owned_same_name_user_agent_toml(tmp_path:
     assert "custom.toml exists in project .codex/agents and generated user agents" in result.stderr
 
 
+def test_codex_setup_preserves_project_owned_user_agent_toml_with_marker_in_body(tmp_path: Path):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    agent_crew_home = home / ".agent-crew"
+    project_agent = project / ".codex" / "agents" / "custom.toml"
+    project.mkdir()
+    (agent_crew_home / "setup").mkdir(parents=True)
+    (agent_crew_home / "commands").mkdir()
+    (agent_crew_home / "hooks").mkdir()
+    (agent_crew_home / "skills").mkdir()
+    (agent_crew_home / "system" / "agents").mkdir(parents=True)
+    (agent_crew_home / "system" / "scripts").mkdir(parents=True)
+    (agent_crew_home / "user" / "agents").mkdir(parents=True)
+    (agent_crew_home / "adapters" / "codex").mkdir(parents=True)
+    (agent_crew_home / "AGENTS.md").write_text(
+        "<!-- agent-crew-start -->\nmanaged\n<!-- agent-crew-end -->\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "adapters" / "codex" / "invocation.md").write_text(
+        "invoke\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "setup" / "common.sh").symlink_to(COMMON)
+    (agent_crew_home / "system" / "scripts" / "generate-codex-system-agents.py").write_text(
+        (REPO_ROOT / "core" / "scripts" / "generate-codex-system-agents.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (agent_crew_home / "user" / "agents" / "custom.md").write_text(
+        "---\nname: custom\ndescription: user custom\n---\n# User Custom\n",
+        encoding="utf-8",
+    )
+    project_agent.parent.mkdir(parents=True)
+    project_content = (
+        'name = "custom"\n'
+        'developer_instructions = """\n'
+        '# This is a Codex adapter bootstrap for an agent-crew user agent.\n'
+        'project native custom\n'
+        '"""\n'
+    )
+    project_agent.write_text(project_content, encoding="utf-8")
+    env = os.environ | {
+        "AGENT_CREW_HOME": str(agent_crew_home),
+        "AGENT_CREW_MODE": "update",
+        "AGENT_CREW_PROJECT_LOCAL_ONLY": "1",
+        "AGENT_CREW_DISABLE_SYMLINKS": "1",
+    }
+
+    result = subprocess.run(
+        ["bash", str(CODEX_SETUP), str(project)],
+        check=True,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert project_agent.read_text(encoding="utf-8") == project_content
+    assert "custom.toml exists in project .codex/agents and generated user agents" in result.stderr
+
+
+def test_codex_setup_upgrades_legacy_generated_user_agent_toml_to_marker_format(tmp_path: Path):
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    agent_crew_home = home / ".agent-crew"
+    project_agent = project / ".codex" / "agents" / "custom.toml"
+    project.mkdir()
+    (agent_crew_home / "setup").mkdir(parents=True)
+    (agent_crew_home / "commands").mkdir()
+    (agent_crew_home / "hooks").mkdir()
+    (agent_crew_home / "skills").mkdir()
+    (agent_crew_home / "system" / "agents").mkdir(parents=True)
+    (agent_crew_home / "system" / "scripts").mkdir(parents=True)
+    (agent_crew_home / "user" / "agents").mkdir(parents=True)
+    (agent_crew_home / "adapters" / "codex").mkdir(parents=True)
+    (agent_crew_home / "AGENTS.md").write_text(
+        "<!-- agent-crew-start -->\nmanaged\n<!-- agent-crew-end -->\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "adapters" / "codex" / "invocation.md").write_text(
+        "invoke\n",
+        encoding="utf-8",
+    )
+    (agent_crew_home / "setup" / "common.sh").symlink_to(COMMON)
+    (agent_crew_home / "system" / "scripts" / "generate-codex-system-agents.py").write_text(
+        (REPO_ROOT / "core" / "scripts" / "generate-codex-system-agents.py").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (agent_crew_home / "user" / "agents" / "custom.md").write_text(
+        "---\nname: custom\ndescription: user custom\n---\n# User Custom\n",
+        encoding="utf-8",
+    )
+    project_agent.parent.mkdir(parents=True)
+    project_agent.write_text(
+        'name = "custom"\n'
+        'description = "user custom"\n'
+        'developer_instructions = """\n'
+        '# User Custom\n'
+        '"""\n',
+        encoding="utf-8",
+    )
+    env = os.environ | {
+        "AGENT_CREW_HOME": str(agent_crew_home),
+        "AGENT_CREW_MODE": "update",
+        "AGENT_CREW_PROJECT_LOCAL_ONLY": "1",
+        "AGENT_CREW_DISABLE_SYMLINKS": "1",
+    }
+
+    subprocess.run(
+        ["bash", str(CODEX_SETUP), str(project)],
+        check=True,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert project_agent.read_text(encoding="utf-8").startswith(
+        "# This is a Codex adapter bootstrap for an agent-crew user agent.\n"
+    )
+
+
 def test_project_local_only_uses_prune_fallback_for_codex_hooks():
     text = read(CODEX_SETUP)
 
