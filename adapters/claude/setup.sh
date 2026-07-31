@@ -8,11 +8,19 @@ CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 # and never resets state; the copy operations below are idempotent in both
 # modes (cp -R overwrites but does not delete extraneous files).
 AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
+AGENT_CREW_PROJECT_LOCAL_ONLY="${AGENT_CREW_PROJECT_LOCAL_ONLY:-0}"
 
 . "${AGENT_CREW_HOME}/setup/common.sh"
 
 if [ "${AGENT_CREW_MODE}" = "update" ]; then
   printf 'MODE: update (host=claude)\n'
+fi
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "1" ]; then
+  printf 'MODE: update project-local-only (host=claude)\n'
+  register_local_git_excludes "${PROJECT_ROOT}" ".claude/" "CLAUDE.md" ".claude/settings.local.json" ".claude/CLAUDE.local.md"
+  printf 'HOST: claude\n'
+  printf 'INSTALLED: %s\n' "${CLAUDE_DIR}/agent-crew"
+  exit 0
 fi
 
 install_claude_namespaced_commands() {

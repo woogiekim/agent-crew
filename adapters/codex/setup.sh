@@ -8,6 +8,7 @@ CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 # and never resets state; the copy operations below are idempotent in both
 # modes (cp -R overwrites but does not delete extraneous files).
 AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
+AGENT_CREW_PROJECT_LOCAL_ONLY="${AGENT_CREW_PROJECT_LOCAL_ONLY:-0}"
 
 . "${AGENT_CREW_HOME}/setup/common.sh"
 
@@ -518,10 +519,14 @@ if skipped:
 PYEOF
 }
 
-sync_codex_template_static
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  sync_codex_template_static
+fi
 
-chmod +x "${AGENT_CREW_HOME}/adapters/codex/bin/"* 2>/dev/null || true
-chmod +x "${AGENT_CREW_HOME}/system/adapters/codex/bin/"* 2>/dev/null || true
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  chmod +x "${AGENT_CREW_HOME}/adapters/codex/bin/"* 2>/dev/null || true
+  chmod +x "${AGENT_CREW_HOME}/system/adapters/codex/bin/"* 2>/dev/null || true
+fi
 
 # Note: reasoning_tier is an agent-crew abstraction. Codex system agents map it
 # to official per-agent `model` and `model_reasoning_effort` keys while user
@@ -535,22 +540,22 @@ if [ "${PROJECT_CODEX_DIR}" = "${GLOBAL_CODEX_DIR}" ]; then
   CODEX_GLOBAL_HOME_COLLISION=1
   printf 'codex_project_hooks: skipped reason=codex_global_home_collision project=%s\n' "${PROJECT_ROOT}"
 else
-  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
+  if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
     diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
     diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks"
     chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
   fi
-  if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
+  if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
     diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
     diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/scripts"
     chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/"*.py 2>/dev/null || true
     chmod +x "${AGENT_CREW_HOME}/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.py 2>/dev/null || true
   fi
-  sync_dir_contents_prune "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks"
+  link_or_copy_shared_dir "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks" "codex-hooks"
 fi
 
 # Detect old flat layout and safely clean managed duplicates.
-if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
   _LEGACY_SOURCE_AGENTS="${AGENT_CREW_HOME}/system/agents"
   if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents" ]; then
     _LEGACY_SOURCE_AGENTS="${SOURCE_ROOT}/core/agents"
@@ -567,20 +572,24 @@ if [ "${CODEX_GLOBAL_HOME_COLLISION}" = "0" ]; then
   copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md"
   write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
 fi
-prune_codex_global_hooks_json
-install_codex_skills
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  prune_codex_global_hooks_json
+  install_codex_skills
+fi
 install_system_agents_codex
 install_user_agents_codex
 
 # Scaffold skill directories (idempotent)
-mkdir -p "${AGENT_CREW_HOME}/system/skills"
-mkdir -p "${AGENT_CREW_HOME}/user/skills"
-mkdir -p "${AGENT_CREW_HOME}/skills"
-mkdir -p "${CODEX_HOME}/agent-crew/skills"
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  mkdir -p "${AGENT_CREW_HOME}/system/skills"
+  mkdir -p "${AGENT_CREW_HOME}/user/skills"
+  mkdir -p "${AGENT_CREW_HOME}/skills"
+  mkdir -p "${CODEX_HOME}/agent-crew/skills"
+fi
 
 # Write user/skills README placeholder before merging/copying so generated
 # discovery mirrors are stable within the same setup/update run.
-if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
   cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
 # User Skills
 
@@ -590,20 +599,24 @@ UEOF
 fi
 
 # Sync system skills from source repo when SOURCE_ROOT is available
-if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
   sync_system_skills \
     "${SOURCE_ROOT}/core/agents/skills" \
     "${AGENT_CREW_HOME}/system/skills"
 fi
 
 # Merge system + user skills into unified discovery path
-merge_skills_to_discovery \
-  "${AGENT_CREW_HOME}/system/skills" \
-  "${AGENT_CREW_HOME}/user/skills" \
-  "${AGENT_CREW_HOME}/skills"
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  merge_skills_to_discovery \
+    "${AGENT_CREW_HOME}/system/skills" \
+    "${AGENT_CREW_HOME}/user/skills" \
+    "${AGENT_CREW_HOME}/skills"
+fi
 
 # Copy unified skills to Codex host discovery path
-sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${CODEX_HOME}/agent-crew/skills"
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${CODEX_HOME}/agent-crew/skills"
+fi
 
 merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
 register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"

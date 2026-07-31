@@ -7,6 +7,7 @@ PROJECT_ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 # and never resets state; cp -R overwrites but does not delete extraneous
 # files, so the copy operations below are idempotent in both modes.
 AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
+AGENT_CREW_PROJECT_LOCAL_ONLY="${AGENT_CREW_PROJECT_LOCAL_ONLY:-0}"
 
 . "${AGENT_CREW_HOME}/setup/common.sh"
 
@@ -15,8 +16,15 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
 fi
 
 mkdir -p "${PROJECT_ROOT}/.agent-crew"
-copy_dir_contents "${AGENT_CREW_HOME}/commands" "${PROJECT_ROOT}/.agent-crew/commands"
-copy_dir_contents "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.agent-crew/hooks"
+mkdir -p \
+  "${PROJECT_ROOT}/.agent-crew/project/commands" \
+  "${PROJECT_ROOT}/.agent-crew/project/agents" \
+  "${PROJECT_ROOT}/.agent-crew/project/skills" \
+  "${PROJECT_ROOT}/.agent-crew/links"
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.agent-crew/hooks" "generic-hooks"
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/user/commands" "${PROJECT_ROOT}/.agent-crew/links/user-commands" "generic-user-commands"
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/system/commands" "${PROJECT_ROOT}/.agent-crew/links/system-commands" "generic-system-commands"
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/commands" "${PROJECT_ROOT}/.agent-crew/commands" "generic-commands"
 
 # Merge system agents + user agents into the project discovery path.
 # System agents are always included. User agents are layered on top with
@@ -46,11 +54,13 @@ if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; t
     "mcp-manager.md"
 fi
 # Scaffold skill directories and populate unified discovery
-mkdir -p "${AGENT_CREW_HOME}/system/skills"
-mkdir -p "${AGENT_CREW_HOME}/user/skills"
-mkdir -p "${AGENT_CREW_HOME}/skills"
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  mkdir -p "${AGENT_CREW_HOME}/system/skills"
+  mkdir -p "${AGENT_CREW_HOME}/user/skills"
+  mkdir -p "${AGENT_CREW_HOME}/skills"
+fi
 
-if [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ ! -f "${AGENT_CREW_HOME}/user/skills/README.md" ]; then
   cat > "${AGENT_CREW_HOME}/user/skills/README.md" << 'UEOF'
 # User Skills
 
@@ -60,21 +70,24 @@ UEOF
 fi
 
 # Sync system skills from source repo when SOURCE_ROOT is available
-if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/agents/skills" ]; then
   sync_system_skills \
     "${SOURCE_ROOT}/core/agents/skills" \
     "${AGENT_CREW_HOME}/system/skills"
 fi
 
 # Merge system + user skills into unified discovery path
-merge_skills_to_discovery \
-  "${AGENT_CREW_HOME}/system/skills" \
-  "${AGENT_CREW_HOME}/user/skills" \
-  "${AGENT_CREW_HOME}/skills"
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
+  merge_skills_to_discovery \
+    "${AGENT_CREW_HOME}/system/skills" \
+    "${AGENT_CREW_HOME}/user/skills" \
+    "${AGENT_CREW_HOME}/skills"
+fi
 
-# Copy skills to project-local discovery path
-mkdir -p "${PROJECT_ROOT}/.agent-crew/skills"
-copy_dir_contents "${AGENT_CREW_HOME}/skills" "${PROJECT_ROOT}/.agent-crew/skills"
+# Refresh skills in the project-local discovery path.
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/user/skills" "${PROJECT_ROOT}/.agent-crew/links/user-skills" "generic-user-skills"
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/system/skills" "${PROJECT_ROOT}/.agent-crew/links/system-skills" "generic-system-skills"
+link_or_copy_shared_dir "${AGENT_CREW_HOME}/skills" "${PROJECT_ROOT}/.agent-crew/skills" "generic-skills"
 
 cp "${AGENT_CREW_HOME}/adapters/generic/invocation.md" "${PROJECT_ROOT}/.agent-crew/invocation.md" 2>/dev/null || true
 chmod +x "${PROJECT_ROOT}/.agent-crew/hooks/"*.sh 2>/dev/null || true

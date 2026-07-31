@@ -530,7 +530,7 @@ update_registered_projects() {
     fi
 
     printf 'update_scope: project=%s status=refreshing\n' "${project_resolved}"
-    SOURCE_ROOT="${source}" AGENT_CREW_MODE=update \
+    SOURCE_ROOT="${source}" AGENT_CREW_MODE=update AGENT_CREW_PROJECT_LOCAL_ONLY=1 \
       bash "${setup_script}" "${project_resolved}"
     python3 "${registry}" \
       --agent-crew-home "${AGENT_CREW_HOME}" \

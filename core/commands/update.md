@@ -468,12 +468,32 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
     global install and current project have been refreshed, enumerate registered
     project roots from `${UPDATE_REGISTRY}` plus task-state `project-root.txt`
     fallbacks. For each existing project root other than the already-refreshed
-    current project, run:
+    current project, run the adapter in project-local-only mode:
 
    ```bash
-   SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
+   SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update AGENT_CREW_PROJECT_LOCAL_ONLY=1 \
      bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${REGISTERED_PROJECT_ROOT}"
    ```
+
+   This is the provider-neutral asset reference policy for registered-project
+   fan-out. The global/user installation under `~/.agent-crew/**` is refreshed
+   once before fan-out. Each registered project then receives only the minimum
+   project-local adapter refresh needed for that host.
+
+   Precedence is always `project > user > system`:
+
+   - Project-owned directories such as `.agent-crew/project/commands`,
+     `.agent-crew/project/agents`, and `.agent-crew/project/skills` are created
+     as local override layers and are never replaced with symlinks.
+   - Shared read-mostly asset directories may use symlinks or reference links
+     into `~/.agent-crew/**` when the target does not already exist.
+   - If symlink creation is unavailable, or if the target is already a
+     project-owned directory, the adapter uses symlink fallback copy semantics:
+     copy current shared contents into the directory without replacing the
+     directory object.
+   - `AGENTS.md`, `CLAUDE.md`, provider settings files, and other marker-merged
+     instruction/configuration files must not be symlinked because project-local
+     content and managed blocks need to coexist in one file.
 
    Missing paths are skipped and reported. The summary uses deterministic
    `update_scope:` lines, for example:

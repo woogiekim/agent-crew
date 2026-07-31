@@ -191,6 +191,37 @@ copy_file_if_changed() {
   cp -f "${src}" "${dest}"
 }
 
+link_or_copy_shared_dir() {
+  local src="$1" dest="$2" label="${3:-shared-dir}"
+  [ -d "${src}" ] || return 0
+  mkdir -p "$(dirname "${dest}")"
+
+  if [ -L "${dest}" ]; then
+    local current
+    current="$(readlink "${dest}" 2>/dev/null || true)"
+    if [ "${current}" = "${src}" ]; then
+      printf 'asset_ref: %s status=linked path=%s target=%s\n' "${label}" "${dest}" "${src}"
+      return 0
+    fi
+    rm -f "${dest}"
+  elif [ -d "${dest}" ]; then
+    printf 'asset_ref: %s status=fallback=copy reason=project_owned_existing_dir path=%s target=%s\n' "${label}" "${dest}" "${src}"
+    copy_dir_contents "${src}" "${dest}"
+    return 0
+  elif [ -e "${dest}" ]; then
+    printf 'asset_ref: %s status=skipped reason=project_owned_existing_path path=%s target=%s\n' "${label}" "${dest}" "${src}"
+    return 0
+  fi
+
+  if [ "${AGENT_CREW_DISABLE_SYMLINKS:-0}" != "1" ] && ln -s "${src}" "${dest}" 2>/dev/null; then
+    printf 'asset_ref: %s status=linked path=%s target=%s\n' "${label}" "${dest}" "${src}"
+    return 0
+  fi
+
+  printf 'asset_ref: %s status=fallback=copy reason=symlink_unavailable path=%s target=%s\n' "${label}" "${dest}" "${src}"
+  copy_dir_contents "${src}" "${dest}"
+}
+
 sync_dir_contents_prune() {
   local src="$1" dest="$2"
   [ -d "${src}" ] || return 0
