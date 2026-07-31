@@ -157,7 +157,7 @@ def test_generic_project_local_only_does_not_scaffold_global_user_skill_files(tm
     assert not (project / ".agent-crew" / "project" / "commands").is_symlink()
 
 
-def test_generic_project_overrides_win_over_user_and_system_agents(tmp_path):
+def test_generic_same_name_agents_are_not_silently_overwritten(tmp_path):
     home = tmp_path / "home"
     project = tmp_path / "project"
     agent_crew_home = home / ".agent-crew"
@@ -183,6 +183,7 @@ def test_generic_project_overrides_win_over_user_and_system_agents(tmp_path):
     (agent_crew_home / "user" / "agents" / "user-only.md").write_text("user-only\n", encoding="utf-8")
     (project / ".agent-crew" / "project" / "agents").mkdir(parents=True)
     (project / ".agent-crew" / "project" / "agents" / "same.md").write_text("project\n", encoding="utf-8")
+    (project / ".agent-crew" / "project" / "agents" / "project-only.md").write_text("project-only\n", encoding="utf-8")
     env = os.environ | {
         "AGENT_CREW_HOME": str(agent_crew_home),
         "AGENT_CREW_MODE": "update",
@@ -190,7 +191,7 @@ def test_generic_project_overrides_win_over_user_and_system_agents(tmp_path):
         "AGENT_CREW_DISABLE_SYMLINKS": "1",
     }
 
-    subprocess.run(
+    result = subprocess.run(
         ["bash", str(GENERIC_SETUP), str(project)],
         check=True,
         env=env,
@@ -201,10 +202,14 @@ def test_generic_project_overrides_win_over_user_and_system_agents(tmp_path):
 
     assert (
         project / ".agent-crew" / "agents" / "same.md"
-    ).read_text(encoding="utf-8") == "project\n"
+    ).read_text(encoding="utf-8") == "system\n"
     assert (
         project / ".agent-crew" / "agents" / "user-only.md"
     ).read_text(encoding="utf-8") == "user-only\n"
+    assert (
+        project / ".agent-crew" / "agents" / "project-only.md"
+    ).read_text(encoding="utf-8") == "project-only\n"
+    assert "same.md exists in project/agents and an earlier agent layer" in result.stderr
 
 
 def test_project_local_only_uses_prune_fallback_for_codex_hooks():
@@ -216,7 +221,7 @@ def test_project_local_only_uses_prune_fallback_for_codex_hooks():
 def test_update_docs_define_provider_neutral_layered_reference_policy():
     text = read(UPDATE_DOC)
 
-    assert "project > user > system" in text
+    assert "same-name agent files are not auto-selected" in text
     assert "AGENT_CREW_PROJECT_LOCAL_ONLY=1" in text
     assert "provider-neutral asset reference" in text
     assert "symlink fallback" in text

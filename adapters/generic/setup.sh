@@ -35,7 +35,18 @@ merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/system/agents" \
   "${AGENT_CREW_HOME}/user/agents" \
   "${PROJECT_ROOT}/.agent-crew/agents"
-copy_dir_contents "${PROJECT_ROOT}/.agent-crew/project/agents" "${PROJECT_ROOT}/.agent-crew/agents"
+if [ -d "${PROJECT_ROOT}/.agent-crew/project/agents" ]; then
+  mkdir -p "${PROJECT_ROOT}/.agent-crew/agents"
+  while IFS= read -r -d '' project_agent; do
+    basename_file="$(basename "${project_agent}")"
+    [ "${basename_file}" = "README.md" ] && continue
+    if [ -f "${PROJECT_ROOT}/.agent-crew/agents/${basename_file}" ]; then
+      printf '[agent-crew] WARNING: %s exists in project/agents and an earlier agent layer; not auto-selected. Use crew agent --agent-layer project or --save-agent-layer project.\n' "${basename_file}" >&2
+      continue
+    fi
+    diff_copy "${project_agent}" "${PROJECT_ROOT}/.agent-crew/agents/${basename_file}"
+  done < <(find "${PROJECT_ROOT}/.agent-crew/project/agents" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+fi
 
 # Note: reasoning_tier is not materialized on the generic adapter.
 # Generic targets single-model environments; the abstract tier is

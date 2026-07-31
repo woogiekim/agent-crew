@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -53,6 +54,17 @@ AMBIGUOUS_TASKS = {
     "do the thing from before",
 }
 GIT_BRANCH_CACHE: dict[str, str] = {}
+
+AGENT_LAYER_LABELS = {
+    "project": "현재 프로젝트 전용",
+    "user": "내 개인 기본",
+    "system": "agent-crew 기본",
+}
+AGENT_LAYER_SCOPES = {
+    "project": "이 저장소에서만 사용",
+    "user": "모든 프로젝트에서 기본 후보로 사용",
+    "system": "agent-crew가 제공하는 기본값",
+}
 
 
 def utc_now_z() -> str:
@@ -2236,6 +2248,201 @@ def auto_route_agent(task: str, agents: dict[str, dict]) -> tuple[str | None, st
     return None, "no direct-agent routing rule matched"
 
 
+def agent_resolution_manifest_path(project_root: Path) -> Path:
+    return project_root / ".agent-crew" / "agent-resolution.json"
+
+
+def agent_layer_paths(project_root: Path, agent_crew_home: Path) -> list[tuple[str, Path]]:
+    return [
+        ("project", project_root / ".agent-crew" / "project" / "agents"),
+        ("user", agent_crew_home / "user" / "agents"),
+        ("system", agent_crew_home / "system" / "agents"),
+    ]
+
+
+def _parse_agent_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)", text, re.DOTALL)
+    if not match:
+        return {}, text
+    data: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        item = re.match(r"^(\w[\w_-]*):\s*(.*)", line)
+        if item:
+            data[item.group(1)] = item.group(2).strip().strip("\"'")
+    return data, match.group(2)
+
+
+def _agent_description(frontmatter: dict[str, str], body: str) -> str:
+    description = frontmatter.get("description", "").strip()
+    if description:
+        return re.sub(r"\s+", " ", description.lstrip("> ").strip())
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            stripped = stripped.lstrip("#").strip()
+        if stripped:
+            return re.sub(r"\s+", " ", stripped)[:180]
+    return "No description available"
+
+
+def _agent_file_fingerprint(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
+def discover_agent_candidates(agent_name: str, project_root: Path, agent_crew_home: Path) -> list[dict]:
+    candidates: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for layer, base in agent_layer_paths(project_root, agent_crew_home):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.glob("*.md")):
+            if path.name.lower() == "readme.md":
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            frontmatter, body = _parse_agent_frontmatter(text)
+            declared_name = (frontmatter.get("name") or path.stem).strip()
+            if agent_name not in {path.stem, declared_name}:
+                continue
+            key = (layer, str(path.resolve()))
+            if key in seen:
+                continue
+            seen.add(key)
+            stat = path.stat()
+            candidates.append(
+                {
+                    "agent_name": agent_name,
+                    "declared_name": declared_name,
+                    "layer": layer,
+                    "friendly_label": f"{AGENT_LAYER_LABELS[layer]} {agent_name}",
+                    "scope": AGENT_LAYER_SCOPES[layer],
+                    "path": str(path.resolve()),
+                    "description": _agent_description(frontmatter, body),
+                    "mtime": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                    "fingerprint": _agent_file_fingerprint(path),
+                }
+            )
+    return candidates
+
+
+def load_agent_resolution_manifest(project_root: Path) -> dict:
+    path = agent_resolution_manifest_path(project_root)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_agent_resolution_manifest(project_root: Path, candidate: dict) -> None:
+    path = agent_resolution_manifest_path(project_root)
+    payload = load_agent_resolution_manifest(project_root)
+    decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
+    decisions = [item for item in decisions if isinstance(item, dict)]
+    decisions = [
+        item for item in decisions
+        if item.get("agent_name") != candidate["agent_name"]
+    ]
+    decisions.append(
+        {
+            "agent_name": candidate["agent_name"],
+            "layer": candidate["layer"],
+            "path": candidate["path"],
+            "fingerprint": candidate["fingerprint"],
+            "decided_at": utc_now_z(),
+        }
+    )
+    write_json(
+        path,
+        {
+            "schema_version": "agent-crew.agent-resolution.v1",
+            "decisions": sorted(decisions, key=lambda item: str(item.get("agent_name", ""))),
+        },
+    )
+
+
+def _candidate_by_layer(candidates: list[dict], layer: str | None) -> dict | None:
+    if not layer:
+        return None
+    matches = [candidate for candidate in candidates if candidate["layer"] == layer]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _candidate_from_manifest(agent_name: str, candidates: list[dict], project_root: Path) -> tuple[dict | None, str]:
+    payload = load_agent_resolution_manifest(project_root)
+    decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
+    for item in decisions:
+        if not isinstance(item, dict) or item.get("agent_name") != agent_name:
+            continue
+        for candidate in candidates:
+            if candidate["path"] == item.get("path") and candidate["fingerprint"] == item.get("fingerprint"):
+                return candidate, "saved"
+        return None, "stale"
+    return None, ""
+
+
+def render_agent_candidate_selection(agent_name: str, candidates: list[dict], reason: str = "") -> str:
+    status = "AGENT_DECISION_STALE" if reason == "stale" else "selection_required"
+    lines = [
+        f"STATUS: {status}",
+        f"AGENT: {agent_name}",
+        "AGENT_CONFLICT: same-name agent definitions require an explicit choice.",
+        "Choose one candidate for this run with --agent-layer <project|user|system>, "
+        "or save a project decision with --save-agent-layer <project|user|system>.",
+        "",
+        "Candidates:",
+    ]
+    for index, candidate in enumerate(candidates, start=1):
+        lines.extend(
+            [
+                f"{index}. {candidate['friendly_label']}",
+                f"   layer: {candidate['layer']}",
+                f"   path: {candidate['path']}",
+                f"   scope: {candidate['scope']}",
+                f"   description: {candidate['description']}",
+                f"   mtime: {candidate['mtime']}",
+                f"   fingerprint: {candidate['fingerprint']}",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def resolve_agent_definition_choice(
+    agent_name: str,
+    project_root: Path,
+    agent_crew_home: Path,
+    *,
+    agent_layer: str | None = None,
+    save_agent_layer: str | None = None,
+) -> tuple[str, dict | None, str]:
+    candidates = discover_agent_candidates(agent_name, project_root, agent_crew_home)
+    selected_layer = save_agent_layer or agent_layer
+    if selected_layer:
+        candidate = _candidate_by_layer(candidates, selected_layer)
+        if not candidate:
+            return "selection_required", None, render_agent_candidate_selection(agent_name, candidates)
+        if save_agent_layer:
+            save_agent_resolution_manifest(project_root, candidate)
+            return "saved", candidate, ""
+        return "one_shot", candidate, ""
+    if len(candidates) <= 1:
+        return "single" if candidates else "registry_only", candidates[0] if candidates else None, ""
+    candidate, manifest_status = _candidate_from_manifest(agent_name, candidates, project_root)
+    if candidate:
+        return manifest_status, candidate, ""
+    return (
+        "stale" if manifest_status == "stale" else "selection_required",
+        None,
+        render_agent_candidate_selection(agent_name, candidates, reason=manifest_status),
+    )
+
+
 def command_run(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
@@ -2663,6 +2870,17 @@ def command_agent(args: argparse.Namespace) -> int:
 
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
+    resolution_status, selected_agent, selection_message = resolve_agent_definition_choice(
+        agent_name,
+        project_root,
+        agent_crew_home,
+        agent_layer=getattr(args, "agent_layer", None),
+        save_agent_layer=getattr(args, "save_agent_layer", None),
+    )
+    if selected_agent is None and resolution_status in {"selection_required", "stale"}:
+        print(selection_message, end="")
+        return 2
+
     state_info = resolve_project_state(
         home=agent_crew_home,
         project_root=project_root,
@@ -2695,6 +2913,10 @@ def command_agent(args: argparse.Namespace) -> int:
         "project_state_key": state_info["project_state_key"],
         "state_dir": str(state_dir),
         "request_dir": str(request_dir),
+        "agent_resolution": {
+            "status": resolution_status,
+            "selected_agent": selected_agent,
+        },
         "status": "handoff_ready",
         "host_bridge_status": "pending" if bridge_command else "not_invoked",
         "created_at": now.isoformat(),
@@ -2705,12 +2927,23 @@ def command_agent(args: argparse.Namespace) -> int:
         f"# Direct Agent Handoff\n\n"
         f"REQUEST_ID: {request_id}\n"
         f"AGENT: {agent_name}\n"
+        f"AGENT_RESOLUTION: {resolution_status}\n"
         f"TASK: {task}\n"
         f"PROJECT_ROOT: {project_root}\n"
         f"MODE: host-prompt-bridge\n"
         f"STATUS: handoff_ready\n"
         f"NEXT: Invoke crew:agent {agent_name!r} with this task inside the host prompt runtime.\n"
     )
+    if selected_agent:
+        handoff += (
+            "\n## Selected Agent Definition\n\n"
+            f"- layer: {selected_agent['layer']}\n"
+            f"- label: {selected_agent['friendly_label']}\n"
+            f"- path: {selected_agent['path']}\n"
+            f"- scope: {selected_agent['scope']}\n"
+            f"- description: {selected_agent['description']}\n"
+            f"- fingerprint: {selected_agent['fingerprint']}\n"
+        )
 
     write_json(request_dir / "request.json", request)
     (request_dir / "handoff.md").write_text(handoff, encoding="utf-8")
@@ -2734,6 +2967,10 @@ def command_agent(args: argparse.Namespace) -> int:
 
     print(f"AGENT_REQUEST_ID: {request_id}")
     print(f"AGENT: {agent_name}")
+    print(f"AGENT_RESOLUTION: {resolution_status}")
+    if selected_agent:
+        print(f"AGENT_LAYER: {selected_agent['layer']}")
+        print(f"AGENT_PATH: {selected_agent['path']}")
     print(f"REQUEST_DIR: {request_dir}")
 
     bridge_invocation_path = request_dir / "context" / "host-bridge-invocation.json"
@@ -2749,6 +2986,8 @@ def command_agent(args: argparse.Namespace) -> int:
                 "AGENT_CREW_AGENT_NAME": agent_name,
                 "AGENT_CREW_AGENT_REQUEST_ID": request_id,
                 "AGENT_CREW_REQUEST_DIR": str(request_dir),
+                "AGENT_CREW_SELECTED_AGENT_PATH": str(selected_agent.get("path", "")) if selected_agent else "",
+                "AGENT_CREW_SELECTED_AGENT_LAYER": str(selected_agent.get("layer", "")) if selected_agent else "",
             },
         )
         write_json(bridge_invocation_path, bridge_record)
@@ -3416,6 +3655,8 @@ def build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--project-root")
     agent.add_argument("--asset-root")
     agent.add_argument("--host-bridge-command", default=None)
+    agent.add_argument("--agent-layer", choices=["project", "user", "system"], default=None)
+    agent.add_argument("--save-agent-layer", choices=["project", "user", "system"], default=None)
     agent.add_argument("--list", action="store_true")
     agent.add_argument("--routing", action="store_true")
     agent.add_argument("agent_args", nargs=argparse.REMAINDER)

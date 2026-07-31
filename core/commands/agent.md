@@ -26,10 +26,11 @@ parallelism, centralized approval, or the automatic reviewer stage.
 ## Syntax
 
 ```text
-crew:agent [--host-bridge-command CMD] <agent-name> "task description"   # explicit mode
-crew:agent [--host-bridge-command CMD] "task description"                # auto-routing mode
-crew:agent --list                                                       # list available agents (from agent-routing.md)
-crew:agent --routing                                                    # show auto-routing rules table
+crew:agent [--host-bridge-command CMD] [--agent-layer project|user|system] <agent-name> "task description"   # explicit mode
+crew:agent [--host-bridge-command CMD] [--save-agent-layer project|user|system] <agent-name> "task description"
+crew:agent [--host-bridge-command CMD] "task description"                                                    # auto-routing mode
+crew:agent --list                                                                                           # list available agents (from agent-routing.md)
+crew:agent --routing                                                                                        # show auto-routing rules table
 ```
 
 ### Examples
@@ -45,6 +46,22 @@ crew:agent learning-mentor "explain dependency injection"   # legacy alias
 crew:agent "explain the current domain model"
 crew:agent "what ran in this session?"
 crew:agent "why did the router choose historian?"
+
+# Same-name agent conflict
+crew:agent analyst "분석해줘"
+# STATUS: selection_required
+# 1. 현재 프로젝트 전용 analyst
+#    path: /repo/.agent-crew/project/agents/analyst.md
+#    scope: 이 저장소에서만 사용
+# 2. 내 개인 기본 analyst
+#    path: ~/.agent-crew/user/agents/analyst.md
+#    scope: 모든 프로젝트에서 기본 후보로 사용
+# 3. agent-crew 기본 analyst
+#    path: ~/.agent-crew/system/agents/analyst.md
+#    scope: agent-crew가 제공하는 기본값
+
+crew:agent --agent-layer project analyst "분석해줘"       # 이번 한 번만 project agent 사용
+crew:agent --save-agent-layer user analyst "분석해줘"     # 이 프로젝트에서 user agent를 계속 사용
 ```
 
 ## Agent visibility — always shown before spawning
@@ -194,11 +211,22 @@ Look up `AGENT_NAME` in the **Agent Registry** (`core/rules/agent-routing.md`):
      print: "Use 'crew:run \"${TASK_STRING}\"' instead."
      stop.
 
-3. If found and safe: continue to Step 4.
+3. If found and safe: resolve same-name agent definitions before Step 4.
 ```
 
 Do not hard-code a restricted-agent list in this command. The restriction
 information lives exclusively in `core/rules/agent-routing.md`.
+
+When the same logical agent name exists in more than one layer, `crew:agent`
+must not pick by fixed `project > user > system` precedence. It must show each
+candidate with a friendly label, actual file path, scope meaning, description,
+mtime, and short fingerprint, then stop with `STATUS: selection_required`.
+
+`--agent-layer project|user|system` chooses one candidate for only the current
+invocation. `--save-agent-layer project|user|system` writes
+`.agent-crew/agent-resolution.json` in the project and continues. Saved
+decisions are valid only while the selected file fingerprint still matches; a
+changed file returns `AGENT_DECISION_STALE` and requires reconfirmation.
 
 ### Step 4 — Auto-route (auto-routing mode only)
 
@@ -610,7 +638,8 @@ To retry with full pipeline support: crew:run "{task description}"
 To make a new agent available via `crew:agent`:
 
 1. Create the agent file under `~/.agent-crew/system/agents/` or
-   `~/.agent-crew/user/agents/`.
+   `~/.agent-crew/user/agents/`, or under the project-local
+   `.agent-crew/project/agents/` layer.
 2. Add a row to the **Agent Registry** in `core/rules/agent-routing.md`.
 3. If auto-routing should reach it, add a row to the **Auto-Routing Rules**
    table in `core/rules/agent-routing.md`.

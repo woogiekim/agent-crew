@@ -480,14 +480,15 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    once before fan-out. Each registered project then receives only the minimum
    project-local adapter refresh needed for that host.
 
-   Precedence is `project > user > system` only for discovery surfaces that
-   the active adapter materializes at runtime. Generic agent discovery applies
-   this order by copying `.agent-crew/project/agents` after user/system agent
-   discovery has been refreshed.
+   same-name agent files are not auto-selected by fixed
+   `project > user > system` precedence. Discovery mirrors preserve the already-materialized
+   candidate and warn on project/user/system name conflicts; `crew agent`
+   presents candidate labels, paths, scopes, descriptions, mtimes, and
+   fingerprints so the user can choose a one-shot or saved project decision.
 
    - Project-owned directories such as `.agent-crew/project/commands`,
      `.agent-crew/project/agents`, and `.agent-crew/project/skills` are created
-     as local override layers and are never replaced with symlinks. Command and
+     as local candidate layers and are never replaced with symlinks. Command and
      skill project directories are reserved override surfaces until an adapter
      explicitly wires them into its runtime discovery.
    - Shared read-mostly asset directories may use symlinks or reference links

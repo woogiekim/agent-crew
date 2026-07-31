@@ -1456,7 +1456,7 @@ cmd_cleanup_state() {
 cmd_agent() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
-usage: crew agent [--host-bridge-command CMD] [agent-name] [question]
+usage: crew agent [--host-bridge-command CMD] [--agent-layer project|user|system] [--save-agent-layer project|user|system] [agent-name] [question]
 
 Validates the direct-agent request and writes deterministic host handoff state.
 The host prompt runtime still performs the actual read-only analysis.
@@ -1465,6 +1465,8 @@ to execute a configured adapter bridge command after handoff creation. The
 command is parsed into argv without an implicit shell; use bash -c '...' when
 shell features are required.
 If the bridge returns zero, command output is marked auto-completed.
+If same-name project/user/system agent definitions exist, choose one with
+--agent-layer for this run or --save-agent-layer to persist the project choice.
 EOF
     return 0
   fi

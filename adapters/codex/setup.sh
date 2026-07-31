@@ -390,13 +390,14 @@ install_user_agents_codex() {
   [ -d "${user_agents_dir}" ] || return 0
   mkdir -p "${dest_dir}"
 
-  python3 - "${user_agents_dir}" "${dest_dir}" <<'PYEOF'
+  python3 - "${user_agents_dir}" "${dest_dir}" "${AGENT_CREW_HOME}/system/agents" <<'PYEOF'
 import os
 import re
 import sys
 
 user_agents_dir = sys.argv[1]
 dest_dir        = sys.argv[2]
+system_agents_dir = sys.argv[3]
 
 def parse_frontmatter(text):
     """Return (frontmatter_dict, body_text). Tolerates missing frontmatter."""
@@ -426,8 +427,26 @@ def toml_escape(s):
     s = s.replace('"""', '""\\"')
     return s
 
+def parse_agent_name(path):
+    try:
+        text = open(path, encoding='utf-8').read()
+    except OSError:
+        return os.path.splitext(os.path.basename(path))[0]
+    fm, _body = parse_frontmatter(text)
+    return fm.get('name', '') or os.path.splitext(os.path.basename(path))[0]
+
+def codex_agent_name(name):
+    return re.sub(r'[^\w-]', '-', name.lower()).strip('-') or 'unknown'
+
 converted = 0
 skipped   = []
+system_names = set()
+
+if os.path.isdir(system_agents_dir):
+    for system_fname in sorted(os.listdir(system_agents_dir)):
+        if not system_fname.endswith('.md') or system_fname.lower() == 'readme.md':
+            continue
+        system_names.add(codex_agent_name(parse_agent_name(os.path.join(system_agents_dir, system_fname))))
 
 for fname in sorted(os.listdir(user_agents_dir)):
     if not fname.endswith('.md'):
@@ -459,7 +478,10 @@ for fname in sorted(os.listdir(user_agents_dir)):
     # Strip multi-line YAML value indicators from description if present
     description = description.lstrip('> ').strip()
 
-    toml_name = re.sub(r'[^\w-]', '-', name.lower()).strip('-') or 'unknown'
+    toml_name = codex_agent_name(name)
+    if toml_name in system_names:
+        skipped.append(f'{fname}: name conflicts with system agent; use crew agent --agent-layer user or --save-agent-layer user')
+        continue
     dest_path = os.path.join(dest_dir, toml_name + '.toml')
 
     body_escaped = toml_escape(body.rstrip())

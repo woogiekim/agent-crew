@@ -35,7 +35,14 @@ def _register(task_id: str = "20260101-120000-0") -> dict:
     return {"task_id": task_id, "session_id": "20260101-120000", "task": "runtime task", "branch": "crew/runtime"}
 
 
-def _agent_args(root: Path, *agent_args: str, list_: bool = False, routing: bool = False) -> argparse.Namespace:
+def _agent_args(
+    root: Path,
+    *agent_args: str,
+    list_: bool = False,
+    routing: bool = False,
+    agent_layer: str | None = None,
+    save_agent_layer: str | None = None,
+) -> argparse.Namespace:
     return argparse.Namespace(
         asset_root=str(root),
         agent_args=list(agent_args),
@@ -43,6 +50,8 @@ def _agent_args(root: Path, *agent_args: str, list_: bool = False, routing: bool
         routing=routing,
         project_root=str(root / "project"),
         host_bridge_command=None,
+        agent_layer=agent_layer,
+        save_agent_layer=save_agent_layer,
     )
 
 
@@ -1045,6 +1054,118 @@ def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
     for task in read_only_variants:
         assert runtime.command_agent(_agent_args(root, "analyst", task)) == 0
         assert "STATUS: handoff_ready" in capsys.readouterr().out
+
+
+def test_command_agent_requires_explicit_choice_for_same_name_agent_conflict(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    (project / ".agent-crew" / "project" / "agents").mkdir(parents=True)
+    (home / "system" / "agents").mkdir(parents=True)
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    (home / "system" / "agents" / "analyst.md").write_text(
+        "---\nname: analyst\ndescription: system analyst\n---\n# System Analyst\n",
+        encoding="utf-8",
+    )
+    (home / "user" / "agents" / "analyst.md").write_text(
+        "---\nname: analyst\ndescription: personal analyst\n---\n# User Analyst\n",
+        encoding="utf-8",
+    )
+    (project / ".agent-crew" / "project" / "agents" / "analyst.md").write_text(
+        "---\nname: analyst\ndescription: project analyst\n---\n# Project Analyst\n",
+        encoding="utf-8",
+    )
+
+    assert runtime.command_agent(_agent_args(root, "analyst", "분석해줘")) == 2
+    output = capsys.readouterr()
+
+    assert "STATUS: selection_required" in output.out
+    assert "현재 프로젝트 전용 analyst" in output.out
+    assert "내 개인 기본 analyst" in output.out
+    assert "agent-crew 기본 analyst" in output.out
+    assert str(project / ".agent-crew" / "project" / "agents" / "analyst.md") in output.out
+    assert not (home / "state").exists()
+
+
+def test_command_agent_uses_one_shot_agent_layer_without_saving(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    (project / ".agent-crew" / "project" / "agents").mkdir(parents=True)
+    (home / "system" / "agents").mkdir(parents=True)
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    for layer, base in (
+        ("system", home / "system" / "agents"),
+        ("user", home / "user" / "agents"),
+        ("project", project / ".agent-crew" / "project" / "agents"),
+    ):
+        (base / "analyst.md").write_text(f"---\nname: analyst\n---\n{layer}\n", encoding="utf-8")
+
+    assert runtime.command_agent(
+        _agent_args(root, "analyst", "분석해줘", agent_layer="user")
+    ) == 0
+    out = capsys.readouterr().out
+
+    assert "STATUS: handoff_ready" in out
+    assert "AGENT_LAYER: user" in out
+    assert not (project / ".agent-crew" / "agent-resolution.json").exists()
+
+
+def test_command_agent_saves_and_reuses_agent_resolution_manifest(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    (home / "system" / "agents").mkdir(parents=True)
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    (home / "system" / "agents" / "analyst.md").write_text("system\n", encoding="utf-8")
+    (home / "user" / "agents" / "analyst.md").write_text("user\n", encoding="utf-8")
+
+    assert runtime.command_agent(
+        _agent_args(root, "analyst", "분석해줘", save_agent_layer="user")
+    ) == 0
+    assert "AGENT_LAYER: user" in capsys.readouterr().out
+    manifest = json.loads((project / ".agent-crew" / "agent-resolution.json").read_text(encoding="utf-8"))
+    assert manifest["decisions"][0]["agent_name"] == "analyst"
+    assert manifest["decisions"][0]["layer"] == "user"
+
+    assert runtime.command_agent(_agent_args(root, "analyst", "다시 분석해줘")) == 0
+    assert "AGENT_RESOLUTION: saved" in capsys.readouterr().out
+
+
+def test_command_agent_reconfirms_stale_saved_agent_resolution(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    (home / "system" / "agents").mkdir(parents=True)
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    (home / "system" / "agents" / "analyst.md").write_text("system\n", encoding="utf-8")
+    user_agent = home / "user" / "agents" / "analyst.md"
+    user_agent.write_text("user\n", encoding="utf-8")
+
+    assert runtime.command_agent(
+        _agent_args(root, "analyst", "분석해줘", save_agent_layer="user")
+    ) == 0
+    capsys.readouterr()
+    user_agent.write_text("user changed\n", encoding="utf-8")
+
+    assert runtime.command_agent(_agent_args(root, "analyst", "다시 분석해줘")) == 2
+    assert "AGENT_DECISION_STALE" in capsys.readouterr().out
 
 
 def test_command_agent_accepts_korean_self_evolution_complaint(
