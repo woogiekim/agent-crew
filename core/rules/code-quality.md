@@ -74,6 +74,15 @@ interface, module, component, GraphQL type, input type, or field type.
 - Name methods, variables, fields, inputs, and operations by their local
   responsibility. Avoid duplicating context already provided by the class,
   interface, module, component, enclosing schema type, or field type.
+- Prefer domain concepts over raw-value comparisons. Convert external input,
+  persisted values, and API response values into a meaningful type, value
+  object, enum, or named concept before a policy decision whenever the value
+  carries business or workflow meaning. Do not compare raw strings, numbers,
+  booleans, or nulls when the comparison hides the policy concept being judged.
+- Model failure, absence, and valid presence as distinct states. Failure is not
+  an empty result, and an empty result is not a valid result. Before converting
+  failures into empty results, verify that the fallback does not change a
+  policy outcome, contract, audit trail, or caller-visible behavior.
 
 ## Language Notes
 

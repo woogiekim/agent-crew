@@ -178,6 +178,11 @@ Flag any hit as `CRITICAL`.
 - [ ] KISS, YAGNI, and DRY are checked from `core/rules/code-quality.md`.
       Flag needless complexity, speculative future behavior, and meaningful
       duplicated knowledge or behavior.
+- [ ] Refactoring guidance from `refactoring-catalog.md` is applied when a diff
+      claims cleanup, simplification, review follow-up, or structural
+      improvement. Flag refactors that merely shorten code while hiding domain
+      intent, collapse failure/absence/presence states, preserve stale
+      comments, or create avoidable format churn.
 - [ ] DRY Naming is checked. Flag method, field, GraphQL input/type, fixture,
       and helper names that repeat context already supplied by the class,
       interface, module, component, enclosing schema type, or field type unless

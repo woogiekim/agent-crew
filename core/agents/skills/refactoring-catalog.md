@@ -184,6 +184,35 @@ Commit whenever the suite is green and one coherent structural or behavioral
 move is complete. Small, frequent, single-purpose commits make bisection and
 revert cheap and keep review focused.
 
+### Rule 14: Reveal intent instead of merely shortening code
+
+Refactoring should reveal intent, not merely shorten code. A shorter expression
+is worse when it hides parsing, validation, transformation, absence handling,
+failure handling, or a policy decision. Prefer names and structure that let a
+reviewer see the domain concept being judged.
+
+### Rule 15: Keep transformation and decision phases distinct
+
+Use functional pipelines only when they separate transformation from decision.
+A pipeline should make data flow easier to read: parse or normalize input,
+map it into meaningful concepts, then evaluate the policy. Do not collapse
+lookup, fallback, mutation, and policy judgment into one expression just to
+avoid a loop.
+
+### Rule 16: Keep comments aligned with the current contract
+
+Remove comments that no longer match the current contract. A useful comment
+explains intent, invariant, compatibility reason, or operational constraint
+that the code cannot express directly. Do not preserve stale comments, comments
+that merely narrate the old implementation, or comments used to justify code
+that should be renamed or extracted.
+
+### Rule 17: Keep the diff reviewable
+
+Keep diffs reviewable by limiting them to the smallest meaningful change. Avoid
+format churn, broad whitespace rewrites, unrelated line wrapping, and mechanical
+movement that obscures the behavioral or structural change under review.
+
 ## Anti-Patterns
 - Mixing a rename/move with a behavior change in one commit or one edit.
 - Refactoring while a test is red, or with no tests at all.
@@ -195,6 +224,10 @@ revert cheap and keep review focused.
   function.
 - Treating a large redesign as the only option when a small tidying would
   unblock the next change.
+- Replacing a readable loop with a pipeline that hides fallback, failure, or
+  policy judgment.
+- Preserving comments that disagree with the code's current contract.
+- Expanding a focused cleanup into format churn that makes review harder.
 
 ## Interaction with Other Skills
 - Works alongside `tdd.md` — the REFACTOR step of Red→Green→Refactor is the
