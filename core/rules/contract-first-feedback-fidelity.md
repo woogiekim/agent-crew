@@ -116,6 +116,14 @@ If a label cannot be proven, do not claim it. Report the missing evidence under
   default.
 - 테스트 통과를 계약 동등성의 충분조건으로 오해하지 않는다. Tests are
   evidence, not exhaustive proof, unless they cover the contract surface.
+- Tests that only lock the new implementation shape are insufficient when they
+  do not prove the original behavior contract. Negative interaction assertions
+  such as "this dependency was not called" must not freeze the removal of an
+  existing side-effect contract unless that contract change is explicit and
+  approved. In short, tests only lock the new implementation when they fail to
+  exercise the behavior contract that existed before the feedback response;
+  negative interaction assertions need side-effect contract proof before they
+  can justify removing a reachable operation.
 - If the feedback cannot be verified safely, separate `Unknown`,
   `Assumption`, `Risk`, and `Owner` instead of presenting speculation as
   implementation truth.
@@ -176,6 +184,8 @@ These snippets are safe to embed in skills, commands, and agents:
 - Who owns the affected scope?
 - What code evidence identifies the reachable flow?
 - What test or runtime evidence proves the intended behavior and side effects?
+- Does the test prove the original behavior contract, or does it only freeze
+  the implementation shape introduced by the patch?
 - Is the chosen disposition `ACCEPT`, `ACCEPT_WITH_ADAPTATION`,
   `REJECT_METHOD_ONLY`, `DEFER`, or `REJECT`?
 - Are `contract-safe`, `parity-safe`, `scope-safe`, and `side-effect-safe`
@@ -186,6 +196,7 @@ These snippets are safe to embed in skills, commands, and agents:
 
 - "리뷰어가 말했으니 그대로 적용한다."
 - "테스트가 통과하니 계약도 보장된다."
+- "새 구현 모양을 고정한 테스트가 통과하니 리뷰 의도도 보장된다."
 - "깨끗한 코드가 항상 안전한 코드다."
 - "레거시는 낡았으니 제거해도 된다."
 - "리뷰 수용률을 높이기 위해 의미가 다른 변경을 완료로 표시한다."

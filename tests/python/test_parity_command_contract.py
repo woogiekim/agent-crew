@@ -69,7 +69,7 @@ def test_parity_check_keeps_mutating_calls_outside_its_execution_boundary() -> N
     command = read_command("parity-check")
 
     assert "approval gate `crew:run`" not in command
-    assert "explicit `crew:task` or `crew:workflow`" in command
+    assert "explicit `crew:run` request" in command
 
 
 def test_parity_implement_requires_complete_deep_parity_evidence() -> None:
@@ -98,8 +98,9 @@ def test_parity_implement_preserves_execution_boundaries() -> None:
 
     assert command_path.is_file()
     command = read_command("parity-implement")
-    assert "MUST NOT execute" in command
-    assert "crew:task" in command
-    assert "crew:workflow" in command
+    assert "MUST NOT silently execute" in command
+    assert "Continue with crew:run" in command
+    assert "Send to another AI session" in command
     assert "crew:run" in command
-    assert "candidate-only" in command
+    assert "How would you like to proceed" in command
+    assert "APPROVAL_GATE" not in command

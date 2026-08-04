@@ -86,6 +86,18 @@ def test_contract_first_feedback_fidelity_rule_defines_safety_labels_and_behavio
         assert required in text
 
 
+def test_contract_first_feedback_fidelity_rejects_shape_only_test_evidence() -> None:
+    text = read(RULE_PATH)
+
+    for required in [
+        "implementation shape",
+        "tests only lock the new implementation",
+        "negative interaction assertions",
+        "existing side-effect contract",
+    ]:
+        assert required in text
+
+
 def test_contract_first_feedback_fidelity_rule_exposes_agent_and_command_snippets() -> None:
     text = read(RULE_PATH)
 

@@ -104,15 +104,43 @@ Build a dependency DAG from the verified call graph:
 - Truly independent units may share a parallel group even when files overlap.
 - A dependency is semantic, not inferred solely from repository ordering or file overlap.
 
-One independent linear unit may produce a `crew:task` raw-input candidate. Multiple independent
-units may produce a `crew:workflow` candidate only when the candidate includes at least one real
-parallel group of two or more Task Invocations, an explicit barrier, and a result policy.
+One independent linear unit may produce a single-task `crew:run` raw-input candidate. Multiple
+independent units may produce a multi-task `crew:run` raw-input candidate only when the candidate
+includes at least one real parallel group of two or more task entries, an explicit barrier, and a
+result policy.
 
-This command MUST NOT execute, select, approve, or create a Task or Workflow definition. It only
-returns candidate raw inputs. The user must continue with a separate explicit `crew:task` or
-`crew:workflow` command, where Registry resolution, Candidate Selection, plan freezing, and
-Execution Approval occur. `crew:run` remains a deprecated candidate-only compatibility alias and
-is never an execution path.
+This command MUST NOT silently execute, self-approve, or create a Task or Workflow definition.
+It produces candidate raw inputs, then asks the user what to do next. Any
+selected execution continues through the explicit `crew:run` entry point (`$crew:run` in Codex,
+`/crew:run` in Claude Code, or native `crew run`), where Registry resolution, Candidate Selection,
+plan freezing, and Execution Approval occur.
+
+## Post-Plan Next Step
+
+After producing the implementation units, dependency plan, and raw-input candidates, ask the
+user what to do next before stopping. This choice is part of the command's output contract; do
+not leave the user with only a static plan unless the evidence gate failed or the user cancels.
+
+```text
+How would you like to proceed with this parity implementation plan?
+
+1. Continue with `crew:run`
+   - Use the selected `crew:run` raw input from this output.
+   - Continue through `crew:run` registry resolution, plan freeze, and Execution Approval.
+   - Do not mutate files directly from `parity-implement`.
+2. Send to another AI session
+   - Send the plan, evidence scope, raw-input candidates, and residual gaps to the chosen session.
+   - Do not execute the plan in the current session.
+3. Revise the plan
+   - Ask for the requested changes, revise only the plan/candidates, then show these choices again.
+   - Repeat until the user chooses execute, send, cancel, or no-op.
+4. Stop here
+   - Stop without execution, external handoff, file edits, issue changes, or remote mutation.
+```
+
+If the user selects option 3, preserve the original parity evidence and repository scope while
+applying only the requested plan edits. If the requested revision would expand scope, require
+new parity evidence or return to `parity-check`; do not silently widen the implementation plan.
 
 ## Output
 
@@ -132,10 +160,14 @@ IMPLEMENTATION_UNITS:
   TESTS: <focused Red, Green, Refactor, and regression targets>
   ACCEPTANCE: <observable completion criteria>
 DEPENDENCIES: <DAG and ordering rationale>
-TASK_CANDIDATES: <raw inputs or none>
-WORKFLOW_CANDIDATES: <raw inputs or none>
+CREW_RUN_CANDIDATES: <single-task or multi-task raw inputs, or none>
 RESIDUAL_GAPS: <owner, reason, and follow-up, or none>
-NEXT_EXPLICIT_COMMAND: crew:task | crew:workflow | none
+NEXT_EXPLICIT_COMMAND: crew:run | crew:interact | none
+NEXT_STEP:
+- 1 Continue with crew:run
+- 2 Send to another AI session
+- 3 Revise the plan and show this gate again
+- 4 Stop here
 ARTIFACTS: none
 ```
 
@@ -147,4 +179,6 @@ ARTIFACTS: none
 - Generated artifacts are excluded unless the user explicitly requests generated output.
 - Implementation completion criteria always include focused verification and a follow-up
   same-scope parity check, or an explicitly accepted residual gap.
-- Never present `crew:run` as an execution command.
+- Use `crew:run` as the only execution entry point.
+- Do not end a successful plan with output only; ask the user what to do next.
+- If the user chooses revision, show the same choices again after the revised plan.

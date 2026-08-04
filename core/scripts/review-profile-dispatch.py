@@ -282,7 +282,7 @@ def is_review_profile(metadata: dict[str, str]) -> bool:
 
 
 def normalize_text(text: str) -> str:
-    return " ".join(re.findall(r"[A-Za-z0-9]+", text.lower()))
+    return " ".join(re.findall(r"[^\W_]+", text.lower(), flags=re.UNICODE))
 
 
 PROJECT_CONTEXT_FILE_TOKENS = {normalize_text(path) for path in PROJECT_CONTEXT_FILES}

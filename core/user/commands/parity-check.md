@@ -121,7 +121,7 @@ all supplied (or discovered) at invocation time.
      as `UNVERIFIABLE`; live response parity does not prove implementation-graph parity.
    - **Never perform a mutating/destructive call.** If verification would require one, stop and
      return the proposed action, scope, and risk. The user may continue only through a separate,
-     explicit `crew:task` or `crew:workflow` request governed by the centralized Approval
+     explicit `crew:run` request governed by the centralized Approval
      Service; this read-only command cannot cross that execution boundary.
 
 6. **Synthesize the parity report**

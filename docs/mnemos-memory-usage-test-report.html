@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Crew × Mnemos 실제 기억 활용 테스트 결과</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #17202f;
+      --muted: #5f6b7a;
+      --line: #d9dfe8;
+      --ok: #147a4f;
+      --warn: #9a5b00;
+      --blue: #1f5cc4;
+      --soft-ok: #e8f6ef;
+      --soft-blue: #eaf1ff;
+      --soft-warn: #fff3dc;
+      --code: #111827;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    header {
+      padding: 28px 0 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    section {
+      margin-top: 22px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .subtitle {
+      max-width: 880px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .pass {
+      padding: 14px 16px;
+      border: 1px solid #9ed8bb;
+      border-radius: 8px;
+      background: var(--soft-ok);
+    }
+
+    .note {
+      padding: 14px 16px;
+      border: 1px solid #f1c36c;
+      border-radius: 8px;
+      background: var(--soft-warn);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      min-height: 118px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .step {
+      min-height: 130px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft-blue);
+    }
+
+    .num {
+      display: inline-flex;
+      width: 26px;
+      height: 26px;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: #f3f5f8;
+    }
+
+    code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 14px;
+      overflow: auto;
+      border-radius: 8px;
+      background: var(--code);
+      color: #e5e7eb;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .ok {
+      color: var(--ok);
+      font-weight: 700;
+    }
+
+    .warn {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .grid,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      main {
+        width: min(100% - 20px, 1180px);
+        padding-top: 18px;
+      }
+
+      section {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Agent Crew × Mnemos 실제 기억 활용 테스트 결과</h1>
+      <p class="subtitle">
+        이 문서는 정적 설명이 아니라, 임시 Mnemos vault와 agent-crew memory scripts로 실제 실행한
+        “기억 생성 → 다음 작업 Recall → 산출물 적용 → Feedback → 다음 Recall ranking” 시나리오 결과다.
+      </p>
+      <div class="meta">
+        <span class="pill">실행일: 2026-07-30</span>
+        <span class="pill">저장소: /Users/wook/Developments/agent-crew</span>
+        <span class="pill">HEAD: e98f876204949306187189bdd4b5422ebcfc3a91</span>
+        <span class="pill">테스트 vault: 임시 디렉터리</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>결론</h2>
+      <div class="pass">
+        실제 시나리오 테스트는 <strong>PASS</strong>다. 작업 A에서 남긴 project memory가 작업 B에서 Recall되어
+        <code>memory.md</code>에 들어갔고, 그 기억이 <code>pipeline.json</code>의
+        <code>/stages/0/tdd_parallel</code> 변경으로 추적됐다. 이후 <code>applied</code> feedback이 전송됐고,
+        Reviewer <code>NEEDS_CHANGES</code>에서는 <code>validated</code>가 차단되며, 최종
+        <code>APPROVED</code> 후 <code>validated</code>가 1회 전송됐다.
+      </div>
+    </section>
+
+    <section>
+      <h2>실행 흐름</h2>
+      <div class="flow">
+        <div class="step">
+          <div class="num">1</div>
+          <h3>작업 A</h3>
+          <p>중요 AAR를 <code>mem-project-aar</code> project memory로 seed했다.</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>작업 B Recall</h3>
+          <p>Supervisor 경로로 Recall을 실행하고 <code>memory.md</code>를 생성했다.</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>산출물 적용</h3>
+          <p><code>pipeline.json</code>에 <code>tdd_parallel=true</code>를 반영했다.</p>
+        </div>
+        <div class="step">
+          <div class="num">4</div>
+          <h3>Usage 기록</h3>
+          <p><code>memory-usage.json</code>에 적용 memory와 locator를 기록했다.</p>
+        </div>
+        <div class="step">
+          <div class="num">5</div>
+          <h3>Feedback</h3>
+          <p><code>applied</code> 후 최종 승인 시 <code>validated</code>를 전송했다.</p>
+        </div>
+        <div class="step">
+          <div class="num">6</div>
+          <h3>다음 Recall</h3>
+          <p>다음 검색에서 적용/검증 카운트가 ranking signal로 반영됐다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>핵심 결과</h2>
+      <div class="grid">
+        <div class="card">
+          <strong class="ok">Selected</strong>
+          <p><code>mem-project-aar</code></p>
+          <p><code>mem-session-advisory</code></p>
+        </div>
+        <div class="card">
+          <strong class="ok">Applied</strong>
+          <p><code>mem-project-aar</code>가 <code>pipeline.json</code>에 적용됐다.</p>
+          <p class="small">locator: <code>/stages/0/tdd_parallel</code></p>
+        </div>
+        <div class="card">
+          <strong class="ok">Feedback</strong>
+          <p><code>applied</code>, <code>validated</code> 두 이벤트가 기록됐다.</p>
+          <p class="small">중복 validated는 추가 기록되지 않았다.</p>
+        </div>
+        <div class="card">
+          <strong class="ok">Ranking</strong>
+          <p><code>applied_count=1</code></p>
+          <p><code>validated_use_count=1</code></p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>PASS 체크</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>검증 항목</th>
+            <th>결과</th>
+            <th>의미</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>작업 B Recall 성공</td>
+            <td class="ok">PASS</td>
+            <td><code>task_b_recall_exit_0=true</code></td>
+          </tr>
+          <tr>
+            <td>현재 project memory 선택</td>
+            <td class="ok">PASS</td>
+            <td><code>task_b_selected_project_memory=true</code></td>
+          </tr>
+          <tr>
+            <td>Wrong project 제외</td>
+            <td class="ok">PASS</td>
+            <td><code>wrong_project_excluded=true</code></td>
+          </tr>
+          <tr>
+            <td>Superseded 제외</td>
+            <td class="ok">PASS</td>
+            <td><code>superseded_excluded=true</code></td>
+          </tr>
+          <tr>
+            <td>Session memory 미적용</td>
+            <td class="ok">PASS</td>
+            <td><code>session_memory_ignored_not_applied=true</code></td>
+          </tr>
+          <tr>
+            <td>실제 artifact locator 기록</td>
+            <td class="ok">PASS</td>
+            <td><code>usage_records_real_artifact_locator=true</code></td>
+          </tr>
+          <tr>
+            <td>Usage validator 통과</td>
+            <td class="ok">PASS</td>
+            <td><code>usage_validator_passed=true</code></td>
+          </tr>
+          <tr>
+            <td>Applied feedback 전송</td>
+            <td class="ok">PASS</td>
+            <td><code>applied_feedback_sent=true</code></td>
+          </tr>
+          <tr>
+            <td>NEEDS_CHANGES에서 validated 차단</td>
+            <td class="ok">PASS</td>
+            <td><code>needs_changes_blocks_validated=true</code></td>
+          </tr>
+          <tr>
+            <td>APPROVED 후 validated 1회</td>
+            <td class="ok">PASS</td>
+            <td><code>approved_sends_validated_once=true</code></td>
+          </tr>
+          <tr>
+            <td>다음 Recall applied ranking</td>
+            <td class="ok">PASS</td>
+            <td><code>ranking_applied_count=true</code></td>
+          </tr>
+          <tr>
+            <td>다음 Recall validated ranking</td>
+            <td class="ok">PASS</td>
+            <td><code>ranking_validated_use_count=true</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Feedback Events</h2>
+      <pre>[
+  {
+    "event": "applied",
+    "event_id": "memfb-ad81588533e262cd01b42f8d",
+    "memory_id": "mem-project-aar",
+    "artifact": "pipeline.json",
+    "locator": "/stages/0/tdd_parallel",
+    "reason_code": "matched_prior_aar"
+  },
+  {
+    "event": "validated",
+    "event_id": "memfb-dde18456997381416bbb9566",
+    "memory_id": "mem-project-aar",
+    "artifact": "pipeline.json",
+    "locator": "/stages/0/tdd_parallel",
+    "reason_code": "matched_prior_aar"
+  }
+]</pre>
+    </section>
+
+    <section>
+      <h2>다음 Recall Ranking Signal</h2>
+      <pre>{
+  "applied_count": 1,
+  "validated_use_count": 1,
+  "distinct_validated_task_count": 1,
+  "validated_usage": 0.4,
+  "historical": 0.4,
+  "quality": 0.8,
+  "semantic": 1.0
+}</pre>
+      <p class="small">
+        이 값은 “검색된 기억을 실제 산출물에 적용했고 Reviewer가 최종 승인했다”는 신호가 다음 Recall에 돌아갔다는 증거다.
+      </p>
+    </section>
+
+    <section>
+      <h2>산출물 경로</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>산출물</th>
+            <th>경로</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>요약 JSON</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/demo-summary.json</code></td>
+          </tr>
+          <tr>
+            <td>작업 B memory retrieval</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/task-b-recall-and-apply/context/memory-retrieval.json</code></td>
+          </tr>
+          <tr>
+            <td>작업 B memory context</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/task-b-recall-and-apply/context/memory.md</code></td>
+          </tr>
+          <tr>
+            <td>작업 B pipeline</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/task-b-recall-and-apply/pipeline.json</code></td>
+          </tr>
+          <tr>
+            <td>작업 B memory usage</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/task-b-recall-and-apply/context/memory-usage.json</code></td>
+          </tr>
+          <tr>
+            <td>Mnemos feedback ledger</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/mnemos-repo/.agent/feedback/events.jsonl</code></td>
+          </tr>
+          <tr>
+            <td>작업 C next recall</td>
+            <td><code>/var/folders/fd/8v2v291d6j307wx9fr4gmslm0000gn/T/agent-crew-mnemos-demo-yc_9kyi6/task-c-next-recall/context/memory-retrieval.json</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>회귀 테스트</h2>
+      <pre>python3 -m pytest -q tests/python/test_memory_closed_loop_e2e.py
+
+결과: 4 passed in 7.16s</pre>
+      <div class="note" style="margin-top: 14px;">
+        이 HTML은 테스트 결과 보고서다. 실제 시나리오는 이미 임시 Mnemos vault에서 실행됐고,
+        위 경로의 JSON/Markdown/feedback ledger로 확인할 수 있다.
+      </div>
+    </section>
+  </main>
+</body>
+</html>

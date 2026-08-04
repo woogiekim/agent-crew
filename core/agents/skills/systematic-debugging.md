@@ -1,4 +1,20 @@
+---
+name: systematic-debugging
+description: Diagnose bugs, failing tests, integration mismatches, incidents, and repeated fix failures from first-party evidence before proposing causes or fixes.
+loaded_by: backend,frontend,devops,analyst,planner,reviewer
+axis: evidence-diagnosis
+profile_type: review-policy
+detection: bug OR exception OR stack trace OR failing test OR build failure OR integration failure OR flaky OR incident OR root cause OR diagnose OR mismatch OR error OR 오류 OR 장애 OR 실패 OR 원인 OR 불일치 OR 분석
+---
+
 # Skill: systematic-debugging
+
+## Purpose
+
+Diagnose bugs, failed checks, integration mismatches, and repeated fix failures
+from first-party evidence before proposing root causes or implementation
+changes. The skill keeps facts, hypotheses, and fixes separate so agents do not
+guess from symptoms.
 
 ## Source
 
@@ -93,3 +109,11 @@ cause.
 
 - `core/rules/evidence-grounded-reasoning.md`
 - `core/rules/quality-loop.md`
+
+## Checklist
+
+- [ ] Failure signal, command, path, and observed behavior are recorded.
+- [ ] Relevant code path and nearby working path are compared.
+- [ ] Facts and hypotheses are labeled separately.
+- [ ] Proposed fix is the smallest change that can test the hypothesis.
+- [ ] Verification command and result are captured before claiming resolution.

@@ -40,6 +40,24 @@ DOCUMENTATION_IMPACT_SKILL = (
 DGS_GRAPHQL_CONTRACT_SKILL = (
     REPO_ROOT / "core" / "agents" / "skills" / "dgs-graphql-contract.md"
 )
+VERIFICATION_BEFORE_CLAIM_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "verification-before-claim.md"
+)
+SYSTEMATIC_DEBUGGING_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "systematic-debugging.md"
+)
+SCOPE_BOUNDARY_CONTROL_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "scope-boundary-control.md"
+)
+REVIEW_FOLLOWUP_DISCIPLINE_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "review-followup-discipline.md"
+)
+CONTRACT_PARITY_CHECKING_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "contract-parity-checking.md"
+)
+HANDOFF_CONTEXT_PRESERVATION_SKILL = (
+    REPO_ROOT / "core" / "agents" / "skills" / "handoff-context-preservation.md"
+)
 BACKEND_KOTLIN_TEMPLATE = (
     REPO_ROOT / "core" / "agents" / "skills" / "templates" / "backend-kotlin-spring.md"
 )
@@ -203,6 +221,100 @@ def test_dgs_graphql_contract_skill_ships_with_dispatchable_frontmatter() -> Non
     assert "axis: graphql-dgs-contract" in text
     assert "profile_type: review-policy" in text
     assert "detection: DGS OR GraphQL resolver" in text
+
+
+def test_verification_before_claim_skill_ships_with_dispatchable_frontmatter() -> None:
+    assert VERIFICATION_BEFORE_CLAIM_SKILL.is_file()
+    text = VERIFICATION_BEFORE_CLAIM_SKILL.read_text(encoding="utf-8")
+
+    assert text.startswith("---\n")
+    assert "loaded_by: backend,frontend,devops,documenter,analyst,planner,reviewer" in text
+    assert "axis: verification-discipline" in text
+    assert "profile_type: review-policy" in text
+    assert "detection: completed OR done OR fixed" in text
+    assert "## Purpose" in text
+    assert "## When to Apply" in text
+    assert "## Checklist" in text
+    assert "Testing Computer Software" in text
+    assert "완료" in text
+
+
+@pytest.mark.parametrize(
+    ("skill_path", "loaded_by", "axis", "detection_sample", "reference_sample"),
+    [
+        (
+            SYSTEMATIC_DEBUGGING_SKILL,
+            "backend,frontend,devops,analyst,planner,reviewer",
+            "evidence-diagnosis",
+            "root cause",
+            "evidence-grounded-reasoning",
+        ),
+        (
+            SCOPE_BOUNDARY_CONTROL_SKILL,
+            "backend,frontend,devops,documenter,analyst,planner,reviewer",
+            "scope-boundary",
+            "scope OR boundary",
+            "Parnas",
+        ),
+        (
+            REVIEW_FOLLOWUP_DISCIPLINE_SKILL,
+            "backend,frontend,devops,documenter,analyst,planner,reviewer",
+            "review-followup",
+            "review OR comment",
+            "review-intent-fidelity",
+        ),
+        (
+            CONTRACT_PARITY_CHECKING_SKILL,
+            "backend,frontend,analyst,planner,reviewer",
+            "contract-parity",
+            "parity OR migration",
+            "Consumer-Driven Contracts",
+        ),
+        (
+            HANDOFF_CONTEXT_PRESERVATION_SKILL,
+            "backend,frontend,devops,documenter,analyst,planner,reviewer",
+            "context-handoff",
+            "handoff OR resume",
+            "host-bridge-handoff-sop",
+        ),
+    ],
+)
+def test_knowhow_system_skills_ship_with_dispatchable_frontmatter(
+    skill_path: Path,
+    loaded_by: str,
+    axis: str,
+    detection_sample: str,
+    reference_sample: str,
+) -> None:
+    assert skill_path.is_file()
+    text = skill_path.read_text(encoding="utf-8")
+
+    assert text.startswith("---\n")
+    assert f"loaded_by: {loaded_by}" in text
+    assert f"axis: {axis}" in text
+    assert "description:" in text
+    assert "detection:" in text
+    assert detection_sample in text
+    assert "## Purpose" in text
+    assert "## References" in text
+    assert "## When to Apply" in text
+    assert "## Checklist" in text
+    assert reference_sample in text
+
+
+def test_review_followup_discipline_requires_contract_and_test_evidence() -> None:
+    text = REVIEW_FOLLOWUP_DISCIPLINE_SKILL.read_text(encoding="utf-8")
+
+    for required in [
+        "contract-safe",
+        "parity-safe",
+        "scope-safe",
+        "side-effect-safe",
+        "test proves the original behavior contract",
+        "tests only freeze the implementation shape",
+        "negative interaction assertions",
+    ]:
+        assert required in text
 
 
 def test_system_contract_skills_dispatch_for_backend_and_reviewer() -> None:
@@ -1418,6 +1530,119 @@ plugins {
     )
 
     assert payload["matched"] == []
+
+
+def test_detection_matches_korean_task_terms(tmp_path: Path) -> None:
+    """regression: detection can match Korean task text, not only ASCII tokens."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    _write_skill(
+        skills_dir / "explain-with-heuristics-diagrams.md",
+        loaded_by="backend",
+        axis="explanation-quality",
+        detection="설명 OR 동작원리 OR 비즈니스로직 OR 도메인로직 OR 개념 OR 도식화",
+    )
+
+    project_root = tmp_path / "work" / "service"
+    project_root.mkdir(parents=True)
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "기능 비즈니스로직 도메인로직 동작원리 개념을 휴리스틱과 아스키도식화로 설명해줘",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == [
+        "explain-with-heuristics-diagrams"
+    ]
+
+
+def test_system_verification_before_claim_detection_matches_completion_claim(
+    tmp_path: Path,
+) -> None:
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(
+        VERIFICATION_BEFORE_CLAIM_SKILL,
+        skills_dir / "verification-before-claim.md",
+    )
+
+    project_root = tmp_path / "work" / "service"
+    project_root.mkdir(parents=True)
+
+    payload = _run_cli(
+        "--agent", "backend",
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", "수정 완료했고 테스트 통과했다고 보고해줘",
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == [
+        "verification-before-claim"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("skill_path", "skill_name", "agent", "task"),
+    [
+        (
+            SYSTEMATIC_DEBUGGING_SKILL,
+            "systematic-debugging",
+            "backend",
+            "failing test root cause diagnose 오류 원인을 분석해줘",
+        ),
+        (
+            SCOPE_BOUNDARY_CONTROL_SKILL,
+            "scope-boundary-control",
+            "planner",
+            "작업 범위와 원격 승인 경계를 먼저 확인해줘",
+        ),
+        (
+            REVIEW_FOLLOWUP_DISCIPLINE_SKILL,
+            "review-followup-discipline",
+            "reviewer",
+            "리뷰 코멘트 반영 상태와 정책대기 항목을 note로 정리해줘",
+        ),
+        (
+            CONTRACT_PARITY_CHECKING_SKILL,
+            "contract-parity-checking",
+            "analyst",
+            "producer consumer endpoint contract parity migration 확인",
+        ),
+        (
+            HANDOFF_CONTEXT_PRESERVATION_SKILL,
+            "handoff-context-preservation",
+            "planner",
+            "current_session_required handoff context blocker next action 정리",
+        ),
+    ],
+)
+def test_knowhow_system_skills_dispatch_for_representative_tasks(
+    tmp_path: Path,
+    skill_path: Path,
+    skill_name: str,
+    agent: str,
+    task: str,
+) -> None:
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    shutil.copy(skill_path, skills_dir / f"{skill_name}.md")
+
+    project_root = tmp_path / "work" / "service"
+    project_root.mkdir(parents=True)
+
+    payload = _run_cli(
+        "--agent", agent,
+        "--skills-dir", str(skills_dir),
+        "--project-root", str(project_root),
+        "--task", task,
+        "--format", "json",
+    )
+
+    assert [m["name"] for m in payload["matched"]] == [skill_name]
 
 
 @pytest.mark.parametrize(
