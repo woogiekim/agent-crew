@@ -261,11 +261,8 @@ def display_host(value: str) -> str:
     return known.get(host.lower(), host[:1].upper() + host[1:])
 
 
-def circled_number(index: int) -> str:
-    values = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
-    if 1 <= index <= len(values):
-        return values[index - 1]
-    return f"[{index}]"
+def choice_number(index: int) -> str:
+    return f"{index}."
 
 
 def relative_time_label(epoch: float, *, now: float | None = None) -> str:
@@ -867,7 +864,7 @@ def render_session_candidates(candidates: list[dict], *, grouped_threshold: int 
     lines.extend(
         [
             "추천:",
-            f"{circled_number(1)} {first['ai_type']} · {first['project']} · {first['branch']}",
+            f"{choice_number(1)} {first['ai_type']} · {first['project']} · {first['branch']}",
             f"   {first['summary']} · {relative_time_label(first['updated_at'])}",
         ]
     )
@@ -883,7 +880,7 @@ def render_session_candidates(candidates: list[dict], *, grouped_threshold: int 
                     lines.extend(["", current_project])
                 lines.extend(
                     [
-                        f"{circled_number(row['index'])} {row['ai_type']} · {row['branch']}",
+                        f"{choice_number(row['index'])} {row['ai_type']} · {row['branch']}",
                         f"   {row['summary']} · {relative_time_label(row['updated_at'])}",
                     ]
                 )
@@ -892,7 +889,7 @@ def render_session_candidates(candidates: list[dict], *, grouped_threshold: int 
             for row in others:
                 lines.extend(
                     [
-                        f"{circled_number(row['index'])} {row['ai_type']} · {row['project']} · {row['branch']}",
+                        f"{choice_number(row['index'])} {row['ai_type']} · {row['project']} · {row['branch']}",
                         f"   {row['summary']} · {relative_time_label(row['updated_at'])}",
                     ]
                 )
@@ -952,7 +949,7 @@ def render_selected_session(candidate: dict) -> str:
     index = int(candidate.get("index") or 1)
     lines = [
         "선택한 세션:",
-        f"{circled_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
+        f"{choice_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
         f"   {candidate['summary']} · {relative_time_label(candidate['updated_at'])}",
         "",
         "STATUS: selected",
@@ -3508,7 +3505,7 @@ def render_selected_session_target(candidate: dict) -> str:
     index = int(candidate.get("index") or 1)
     lines = [
         "선택한 세션:",
-        f"{circled_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
+        f"{choice_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
         f"   {candidate['summary']} · {relative_time_label(candidate['updated_at'])}",
         "",
     ]

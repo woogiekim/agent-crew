@@ -48,11 +48,11 @@ The command lists candidates like:
 전송할 AI 세션 후보를 찾았습니다.
 
 추천:
-① Claude · agent-crew · main
+1. Claude · agent-crew · main
    relay 명령 구현 리뷰 · 8분 전
 
 agent-crew
-② Codex · docs/rename...
+2. Codex · docs/rename...
    stager rename/E2E 테스트 · 34분 전
 
 번호나 설명으로 선택하세요.

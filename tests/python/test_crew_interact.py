@@ -219,7 +219,7 @@ def test_sessions_render_recommended_card_without_internal_ids(monkeypatch, tmp_
 
     out = capsys.readouterr().out
     assert "추천:" in out
-    assert "① Claude · project · main" in out
+    assert "1. Claude · project · main" in out
     assert "relay 명령 구현 리뷰" in out
     assert "번호나 설명으로 선택하세요" in out
     assert "claude-1" not in out
@@ -284,8 +284,8 @@ def test_sessions_group_by_project_when_many_candidates(monkeypatch, tmp_path: P
     out = capsys.readouterr().out
     assert "agent-crew" in out
     assert "contents-systsem" in out
-    assert "② Codex · feature-a" in out
-    assert "④ Codex · feature-c" in out
+    assert "2. Codex · feature-a" in out
+    assert "4. Codex · feature-c" in out
 
 
 def test_interact_shows_candidates_for_natural_language_request(monkeypatch, tmp_path: Path, capsys):
@@ -312,7 +312,7 @@ def test_interact_shows_candidates_for_natural_language_request(monkeypatch, tmp
     assert "전송할 AI 세션 후보를 찾았습니다." in out
     assert "요청:" in out
     assert "방금 relay 변경사항 클로드한테 리뷰 받아줘" in out
-    assert "① Claude · agent-crew · main" in out
+    assert "1. Claude · agent-crew · main" in out
     assert "그대로 보낼까요? 아니면 번호를 선택하세요." in out
 
 
@@ -346,7 +346,7 @@ def test_interact_select_one_sends_to_recommended_candidate_by_default(monkeypat
 
     out = capsys.readouterr().out
     assert "선택한 세션:" in out
-    assert "① Claude · agent-crew · main" in out
+    assert "1. Claude · agent-crew · main" in out
     assert "STATUS: packaged" in out
     assert "PROMPT:" in out
     assert "session c1" not in out
@@ -382,7 +382,7 @@ def test_interact_no_send_selects_without_delivery(monkeypatch, tmp_path: Path, 
 
     out = capsys.readouterr().out
     assert "선택한 세션:" in out
-    assert "① Claude · agent-crew · main" in out
+    assert "1. Claude · agent-crew · main" in out
     assert "STATUS: selected" in out
     assert "STATUS: packaged" not in out
     assert "PROMPT:" not in out
@@ -461,7 +461,7 @@ def test_interact_to_select_uses_fast_targeted_resolution_without_full_discovery
 
     out = capsys.readouterr().out
     assert "STATUS: sent" in out
-    assert "① Claude · agent-crew · unknown" in out
+    assert "1. Claude · agent-crew · unknown" in out
 
 
 def test_interact_to_branch_title_aoe_session_sends_without_packaged_fallback(monkeypatch, tmp_path: Path, capsys):
@@ -538,7 +538,7 @@ def test_sessions_reuses_fresh_interact_cache_without_provider_scans(monkeypatch
     assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
 
     out = capsys.readouterr().out
-    assert "① Claude · agent-crew · main" in out
+    assert "1. Claude · agent-crew · main" in out
     assert "cached session" in out
 
 
@@ -639,7 +639,7 @@ def test_interact_select_send_uses_delivery_adapter_success(monkeypatch, tmp_pat
 
     out = capsys.readouterr().out
     assert "STATUS: sent" in out
-    assert "① Claude · agent-crew · main" in out
+    assert "1. Claude · agent-crew · main" in out
     assert "STATUS: packaged" not in out
     assert "copy_fallback" not in out
     assert len(deliveries) == 1
@@ -759,7 +759,7 @@ def test_interact_select_send_packages_when_delivery_is_unsupported(monkeypatch,
     assert "STATUS: sent" not in out
     assert "copy_fallback" not in out
     assert "COPY:" not in out
-    assert "① Claude · agent-crew · main" in out
+    assert "1. Claude · agent-crew · main" in out
     assert "리뷰 부탁" in prompt
     assert manifest["target_host"] == "claude"
     assert manifest["auto_execute"] is False
@@ -859,7 +859,7 @@ def test_sessions_include_recent_codex_rollout_worktree_candidates(monkeypatch, 
     assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
 
     out = capsys.readouterr().out
-    assert "① Codex · feature-enrtc-878 · feature/enrtc-878" in out
+    assert "1. Codex · feature-enrtc-878 · feature/enrtc-878" in out
     assert "회원명 조회 서비스 커밋 완료" in out
     assert "rollout-878" not in out
 
@@ -914,7 +914,7 @@ def test_interact_to_matches_multiple_natural_tokens(monkeypatch, tmp_path: Path
     ) == 0
 
     out = capsys.readouterr().out
-    assert "① Codex · feature-enrtc-878 · feature/enrtc-878" in out
+    assert "1. Codex · feature-enrtc-878 · feature/enrtc-878" in out
     assert "contents-systsem worktree 작업" in out
 
 
@@ -975,5 +975,5 @@ def test_e2e_case_crew_bin_interact_lists_friendly_candidates(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "요청: 방금 relay 변경사항 클로드한테 리뷰 받아줘" in result.stdout
     assert "추천:" in result.stdout
-    assert "① Claude · agent-crew · main" in result.stdout
+    assert "1. Claude · agent-crew · main" in result.stdout
     assert "그대로 보낼까요? 아니면 번호를 선택하세요." in result.stdout
