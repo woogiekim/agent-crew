@@ -86,6 +86,21 @@ real contract source. Record that source in the checklist reason, test-case
 mapping, test name/docstring, or nearby task evidence so reviewers can
 distinguish valid regression coverage from short-lived repair evidence.
 
+## Behavior Contract Before Implementation Detail
+
+Do not write tests that justify an accidental implementation detail. A test
+should pin a policy, contract, side effect, or regression that matters outside
+the implementation shape. If a patch sets a field to null, adds a null
+assignment, extracts a helper, skips a branch, or calls a new method, the
+durable test should prove the
+observable behavior that required that choice, not the mechanical detail
+itself.
+
+When responsibility moves into a domain object, consider a focused unit test
+for that domain behavior instead of relying only on a broad service test that
+passes by accident. Service tests remain useful for orchestration and external
+side effects; domain behavior tests make the owned decision explicit.
+
 ```kotlin
 // RED — test that does not compile yet
 @Test

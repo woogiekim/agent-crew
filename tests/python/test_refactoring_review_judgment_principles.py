@@ -10,6 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CODE_QUALITY = REPO_ROOT / "core" / "rules" / "code-quality.md"
 REFACTORING_CATALOG = REPO_ROOT / "core" / "agents" / "skills" / "refactoring-catalog.md"
 CODE_REVIEW = REPO_ROOT / "core" / "agents" / "skills" / "code-review.md"
+SCOPE_BOUNDARY = REPO_ROOT / "core" / "agents" / "skills" / "scope-boundary-control.md"
+TDD = REPO_ROOT / "core" / "agents" / "skills" / "tdd.md"
 
 PROJECT_SPECIFIC_TOKENS = (
     "ENRTC",
@@ -54,6 +56,37 @@ def test_code_quality_separates_failure_absence_and_presence() -> None:
         assert required in text
 
 
+def test_code_quality_names_domain_actions_and_preserves_tell_dont_ask() -> None:
+    text = compact(CODE_QUALITY)
+
+    for required in (
+        "Name behavior by domain action, not implementation mechanics",
+        "good call site reads like a domain sentence",
+        "earn(income)",
+        "addIncomedMoney(income)",
+        "Tell, Don't Ask",
+        "asking with isX/getX",
+        "leaks responsibility",
+        "send an imperative message",
+    ):
+        assert required in text
+
+
+def test_code_quality_requires_contract_evidence_for_null_update_semantics() -> None:
+    text = compact(CODE_QUALITY)
+
+    for required in (
+        "Do not assign null as policy machinery without contract evidence",
+        "update exclusion",
+        "existing-value preservation",
+        "persistence mapper",
+        "serializer",
+        "API contract",
+        "observable policy result",
+    ):
+        assert required in text
+
+
 def test_refactoring_catalog_defines_intent_preserving_refactor_hygiene() -> None:
     text = read(REFACTORING_CATALOG)
 
@@ -67,6 +100,31 @@ def test_refactoring_catalog_defines_intent_preserving_refactor_hygiene() -> Non
         assert required in text
 
 
+def test_tdd_guidance_rejects_tests_that_freeze_implementation_details() -> None:
+    text = compact(TDD)
+
+    for required in (
+        "Do not write tests that justify an accidental implementation detail",
+        "policy, contract, side effect, or regression",
+        "null assignment",
+        "domain behavior",
+        "focused unit test",
+    ):
+        assert required in text
+
+
+def test_scope_boundary_distinguishes_new_problems_from_legacy_cleanup() -> None:
+    text = compact(SCOPE_BOUNDARY)
+
+    for required in (
+        "Fix problems introduced by the current change",
+        "Do not leave a new problem",
+        "Do not expand into repository-wide legacy cleanup",
+        "follow-up",
+    ):
+        assert required in text
+
+
 def test_code_review_reaches_refactoring_principles_through_existing_wiring() -> None:
     text = read(CODE_REVIEW)
 
@@ -75,7 +133,7 @@ def test_code_review_reaches_refactoring_principles_through_existing_wiring() ->
 
 
 def test_refactoring_principles_are_not_project_specific() -> None:
-    combined = "\n".join([read(CODE_QUALITY), read(REFACTORING_CATALOG)])
+    combined = "\n".join([read(CODE_QUALITY), read(REFACTORING_CATALOG), read(TDD), read(SCOPE_BOUNDARY)])
 
     for token in PROJECT_SPECIFIC_TOKENS:
         assert token not in combined

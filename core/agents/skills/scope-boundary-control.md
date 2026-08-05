@@ -50,10 +50,18 @@ MATCH behavior closed unless the request explicitly reopens them. If scope
 remains ambiguous after checking evidence, stop before mutation and ask for a
 specific boundary decision.
 
+Fix problems introduced by the current change inside the current scope. Do not
+leave a new problem because similar legacy code already exists nearby. Do not
+expand into repository-wide legacy cleanup because the same smell exists in
+older code. Clean the code you touched, and split broad legacy cleanup into a
+separate follow-up with its own scope and evidence.
+
 ## Checklist
 
 - [ ] Root input and requested target are preserved before planning.
 - [ ] Owner, module, repository, and external side effects are named.
 - [ ] Out-of-scope paths and systems are listed when they are nearby.
+- [ ] Current-change issues are fixed without widening into unrelated legacy
+      cleanup.
 - [ ] Approval status is separated from technical feasibility.
 - [ ] Final report distinguishes local work from remote or operational action.

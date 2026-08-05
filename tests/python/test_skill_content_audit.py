@@ -50,6 +50,23 @@ def test_effective_java_covers_known_review_gap() -> None:
         assert term in text, f"effective-java.md must cover {term}"
 
 
+def test_effective_java_discourages_unnecessary_type_witnesses() -> None:
+    text = EFFECTIVE_JAVA.read_text(encoding="utf-8")
+
+    required_terms = [
+        "type witness",
+        "Collections.<OrderItem>emptyList()",
+        "Collections.emptyList()",
+        "target type",
+        "Java 8",
+        "compiler inference failure",
+        "smallest scope",
+    ]
+
+    for term in required_terms:
+        assert term in text, f"effective-java.md must cover {term}"
+
+
 def test_skill_content_audit_reports_inventory_and_effective_followups() -> None:
     assert AUDIT_SCRIPT.is_file(), f"missing audit script: {AUDIT_SCRIPT}"
 

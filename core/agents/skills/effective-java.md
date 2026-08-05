@@ -229,7 +229,28 @@ return new HashMap<Long, String>();
 return Collections.emptyMap();
 ```
 
-### Rule 12: Use checked exceptions only for recoverable conditions
+### Rule 12: Avoid unnecessary generic type witnesses
+> Source: Bloch, Items 26–31 "Generics"; Java 8 target typing
+
+Do not add an explicit type witness when Java 8 or later can infer the generic
+type from the target type, argument, assignment, or method parameter. Extra
+type witnesses make code noisier and falsely signal a compiler inference
+failure.
+
+```java
+// BAD — target type already tells the compiler the element type
+List<OrderItem> items = Collections.<OrderItem>emptyList();
+
+// GOOD — the target type supplies the generic type
+List<OrderItem> items = Collections.emptyList();
+```
+
+Apply the same rule to `Collections.emptyMap()`,
+`Collections.singletonList(...)`, and similar generic factories. If a real
+compiler inference failure exists, use the type witness only at the smallest scope
+that fixes that call site, and keep the surrounding code idiomatic.
+
+### Rule 13: Use checked exceptions only for recoverable conditions
 > Source: Bloch, Item 70 "Use checked exceptions for recoverable conditions and runtime exceptions for programming errors"
 
 - Checked exceptions: conditions the caller can reasonably recover from (e.g., `IOException`)
@@ -247,7 +268,7 @@ public void placeOrder(Order order) {
 }
 ```
 
-### Rule 13: Favour composition over inheritance
+### Rule 14: Favour composition over inheritance
 > Source: Bloch, Item 18 "Favour composition over inheritance"; Martin, Ch. 10
 
 Inheritance breaks encapsulation. Extend only when the relationship is a genuine
@@ -279,6 +300,9 @@ class InstrumentedSet<E> implements Set<E> {
 - Fresh mutable empty fallback collections (`new HashMap<>()`,
   `new ArrayList<>()`) when a canonical immutable empty value communicates the
   read-only contract
+- Unnecessary generic type witness syntax such as
+  `Collections.<OrderItem>emptyList()` when the target type already infers
+  `Collections.emptyList()`
 - Exposing caller-owned or internal mutable collections without defensive copies
 - `instanceof` chains — use polymorphism or pattern matching (Java 16+)
 - `synchronized` at method level when finer-grained locking suffices

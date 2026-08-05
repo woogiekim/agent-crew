@@ -74,6 +74,17 @@ interface, module, component, GraphQL type, input type, or field type.
 - Name methods, variables, fields, inputs, and operations by their local
   responsibility. Avoid duplicating context already provided by the class,
   interface, module, component, enclosing schema type, or field type.
+- Name behavior by domain action, not implementation mechanics. A method name
+  that says what it excludes, applies, nulls, copies, or branches on is often
+  describing the implementation instead of the business action. A good call
+  site reads like a domain sentence, such as `account.earn(income)`, not
+  `account.addIncomedMoney(income)`, when earning is the domain behavior.
+- Apply Tell, Don't Ask at responsibility boundaries. This includes asking with
+  isX/getX and then branching or mutating elsewhere when the object owning the
+  state can make the decision itself; that leaks responsibility out of the
+  object that owns the relevant invariant. This does not ban getters for data
+  transfer or rendering. Prefer to send an imperative message to that object
+  and let it decide from its own state.
 - Prefer domain concepts over raw-value comparisons. Convert external input,
   persisted values, and API response values into a meaningful type, value
   object, enum, or named concept before a policy decision whenever the value
@@ -83,6 +94,12 @@ interface, module, component, GraphQL type, input type, or field type.
   an empty result, and an empty result is not a valid result. Before converting
   failures into empty results, verify that the fallback does not change a
   policy outcome, contract, audit trail, or caller-visible behavior.
+- Do not assign null as policy machinery without contract evidence. When null
+  means update exclusion, existing-value preservation, fallback, unspecified,
+  or "leave this alone", verify the persistence mapper, serializer, API
+  contract, protocol, or comparable source-of-truth first. If null is allowed,
+  tests should verify the observable policy result or side effect, not merely
+  that a field was set to null inside the implementation.
 
 ## Language Notes
 
