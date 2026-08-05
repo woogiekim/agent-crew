@@ -36,6 +36,16 @@ def test_parity_wrappers_and_commands_ship_together():
     assert not (COMMAND_ROOT / "parity-implement.md").exists()
 
 
+def test_review_synthesis_wrapper_uses_effective_command_path():
+    wrapper = (SKILL_ROOT / "review-synthesis" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "~/.agent-crew/commands/review-synthesis.md" in wrapper
+    assert "~/.agent-crew/user/commands/review-synthesis.md" not in wrapper
+    assert (USER_COMMAND_ROOT / "review-synthesis.md").is_file()
+
+
 def test_parity_check_preserves_explicit_repository_and_mode_resolution():
     command = (USER_COMMAND_ROOT / "parity-check.md").read_text(encoding="utf-8")
 

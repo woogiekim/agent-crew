@@ -1,3 +1,20 @@
+---
+name: parity-check
+kind: review-lens
+loaded_by: review-synthesis
+lens_id: parity-check
+provider: agent-crew
+surface: command
+read_only: true
+mutates: false
+requires_mr: none
+requires_remote_read: none
+requires_supervisor_context: false
+default_enabled: true
+timeout_seconds: 180
+duplicate_group: parity
+---
+
 # /parity-check — Cross-repo contract parity verification
 
 ## Purpose
