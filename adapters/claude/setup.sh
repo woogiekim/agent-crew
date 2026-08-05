@@ -637,7 +637,7 @@ PYEOF
 
 # Issue #180: tracker-mutation-guard.sh blocks direct Plane MCP mutation
 # fallback unless generic issuer tracker-adapter validation evidence is present.
-python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/tracker-mutation-guard.sh" "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item" "PreToolUse" <<'PYEOF'
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/tracker-mutation-guard.sh" "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane__create_label|mcp__plane__create_work_item_comment|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item|mcp__plane.create_label|mcp__plane.create_work_item_comment" "PreToolUse" <<'PYEOF'
 import sys, json, os
 dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 10}

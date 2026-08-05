@@ -11,11 +11,13 @@
 INPUT=$(cat)
 
 python3 - "$INPUT" <<'PYEOF'
+import hashlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
 
@@ -24,14 +26,22 @@ MUTATING_PLANE_TOOLS = {
     "mcp__plane__update_work_item",
     "mcp__plane__delete_work_item",
     "mcp__plane__create_intake_work_item",
+    "mcp__plane__create_label",
+    "mcp__plane__create_work_item_comment",
     "mcp__plane.create_work_item",
     "mcp__plane.update_work_item",
     "mcp__plane.delete_work_item",
     "mcp__plane.create_intake_work_item",
+    "mcp__plane.create_label",
+    "mcp__plane.create_work_item_comment",
 }
 VALIDATION_FILES = (
     "tracker-fallback-validation.json",
     "issuer-fallback-validation.json",
+)
+APPROVAL_FILES = (
+    "tracker-mutation-approval.json",
+    "issuer-tracker-mutation-approval.json",
 )
 
 
@@ -147,6 +157,158 @@ def bool_field(payload: dict[str, Any], name: str) -> bool:
     return payload.get(name) is True
 
 
+def canonical_tool_input(tool_input: dict[str, Any]) -> str:
+    return json.dumps(
+        tool_input,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def tool_input_sha256(tool_input: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_tool_input(tool_input).encode("utf-8")).hexdigest()
+
+
+def mutation_action(tool_name: str) -> str:
+    return tool_name.replace("mcp__plane__", "").replace("mcp__plane.", "")
+
+
+def payload_summary(tool_input: dict[str, Any]) -> str:
+    safe_keys = (
+        "workspace_slug",
+        "project_id",
+        "project_identifier",
+        "work_item_id",
+        "issue_identifier",
+        "title",
+        "state_id",
+        "priority",
+    )
+    summary = {
+        key: tool_input.get(key)
+        for key in safe_keys
+        if key in tool_input and tool_input.get(key) not in (None, "")
+    }
+    if not summary:
+        summary = {"payload_keys": sorted(tool_input.keys())}
+    return json.dumps(summary, ensure_ascii=False, sort_keys=True)
+
+
+def approval_request_reason(
+    *,
+    tool_name: str,
+    tool_input: dict[str, Any],
+    missing_evidence: str,
+) -> str:
+    digest = tool_input_sha256(tool_input)
+    approval_path = "${TASK_DIR}/context/tracker-mutation-approval.json"
+    return (
+        "[agent-crew] Plane tracker mutation approval_required.\n\n"
+        f"blocked_tool: {tool_name}\n"
+        f"mutation_action: {mutation_action(tool_name)}\n"
+        f"mutation_payload_summary: {payload_summary(tool_input)}\n"
+        f"missing_evidence: {missing_evidence}\n"
+        "external_side_effect: Plane work item, label, comment, or intake mutation can change an external tracker.\n"
+        "approval_scope: single exact tool call only; tool_name and canonical tool_input_sha256 must match this blocked call.\n"
+        f"tool_input_sha256: {digest}\n"
+        f"approval_record: write {approval_path} with schema_version=agent-crew.tracker-mutation-approval.v1, "
+        "approved=true, tool_name, tool_input_sha256, scope=single_tool_payload, approved_by=user, expires_at.\n"
+        "approve: create that task/request-context approval record, then retry the same MCP call.\n"
+        "reject: do not create approval evidence; no Plane mutation will be executed.\n"
+        "note: the guard prevents automatic external mutation; it is not a final user-approval denial."
+    )
+
+
+def tracker_approval(context_dir: Path):
+    for name in APPROVAL_FILES:
+        path = context_dir / name
+        payload = load_json(path)
+        if isinstance(payload, dict):
+            return name, path, payload
+    return "", None, None
+
+
+def consumed_approval_path(path: Path) -> Path:
+    if path.name.endswith(".json"):
+        return path.with_name(path.name[:-5] + ".consumed.json")
+    return path.with_name(path.name + ".consumed")
+
+
+def parse_expiry(value: Any):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def validate_tracker_approval(
+    task_dir: Path,
+    *,
+    tool_name: str,
+    tool_input: dict[str, Any],
+) -> tuple[bool, str, Optional[Path]]:
+    context_dir = task_dir / "context"
+    approval_name, approval_path, approval = tracker_approval(context_dir)
+    if approval is None:
+        return False, "missing tracker mutation user approval evidence", None
+
+    if approval.get("schema_version") != "agent-crew.tracker-mutation-approval.v1":
+        return False, f"approval schema mismatch in {approval_name}", None
+
+    if approval.get("approved") is not True:
+        return False, f"approval_not_true in {approval_name}", None
+
+    if str(approval.get("scope") or "") != "single_tool_payload":
+        return False, f"approval scope mismatch in {approval_name}", None
+
+    approved_tool = str(approval.get("tool_name") or "").strip()
+    if approved_tool != tool_name:
+        return False, f"approval tool mismatch in {approval_name}", None
+
+    expected_hash = tool_input_sha256(tool_input)
+    approved_hash = str(approval.get("tool_input_sha256") or "").strip()
+    if approved_hash != expected_hash:
+        return False, f"approval payload mismatch in {approval_name}", None
+
+    expiry = parse_expiry(approval.get("expires_at"))
+    if expiry is None:
+        return False, f"approval missing or invalid expiry in {approval_name}", None
+    if expiry <= datetime.now(timezone.utc):
+        return False, f"approval expired in {approval_name}", None
+
+    approver = str(approval.get("approved_by") or "").strip().lower()
+    if approver not in {"user", "operator"}:
+        return False, f"approval must be user/operator-owned in {approval_name}", None
+
+    return True, "", approval_path
+
+
+def consume_tracker_approval(approval_path: Path) -> tuple[bool, str]:
+    consumed_path = consumed_approval_path(approval_path)
+    try:
+        os.replace(approval_path, consumed_path)
+    except Exception as exc:
+        return False, f"approval consume failed: {exc}"
+
+    payload = load_json(consumed_path)
+    if isinstance(payload, dict):
+        payload["consumed_at"] = datetime.now(timezone.utc).isoformat()
+        payload["approval_consumed"] = True
+        try:
+            consumed_path.write_text(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    return True, ""
+
+
 def has_tracker_fallback_contract(task_dir: Path) -> tuple[bool, str]:
     context_dir = task_dir / "context"
     if not context_dir.is_dir():
@@ -191,27 +353,61 @@ if os.environ.get("AGENT_CREW_TRACKER_MUTATION_GUARD_DISABLED", "").strip() == "
     sys.exit(0)
 
 contract_result = None
+contract_task_dir = None
 for candidate in task_dir_candidates(tool_input):
     candidate_result = has_tracker_fallback_contract(candidate)
     if candidate_result[0]:
         contract_result = candidate_result
+        contract_task_dir = candidate
         break
     if contract_result is None:
         contract_result = candidate_result
+        contract_task_dir = candidate
 
 if contract_result is None:
     block_with_reason(
-        "[agent-crew] Plane tracker mutation blocked - missing tracker fallback contract. "
-        "Use crew:run issuer workflow or provide AGENT_CREW_TASK_DIR with issuer specialist "
-        "dispatch evidence and tracker fallback validation before calling Plane MCP mutation tools."
+        approval_request_reason(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            missing_evidence=(
+                "missing tracker fallback contract and task/request context. "
+                "No AGENT_CREW_TASK_DIR/TASK_DIR or matching active task context was found."
+            ),
+        )
     )
 
 contract_ok, contract_reason = contract_result
 if not contract_ok:
     block_with_reason(
-        "[agent-crew] Plane tracker mutation blocked - tracker fallback contract is incomplete: "
-        f"{contract_reason}. Use crew:run issuer workflow or complete the current-session "
-        "tracker fallback validation evidence first."
+        approval_request_reason(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            missing_evidence=f"tracker fallback contract is incomplete: {contract_reason}",
+        )
+    )
+
+approval_ok, approval_reason, approval_path = validate_tracker_approval(
+    contract_task_dir,
+    tool_name=tool_name,
+    tool_input=tool_input,
+)
+if not approval_ok:
+    block_with_reason(
+        approval_request_reason(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            missing_evidence=approval_reason,
+        )
+    )
+
+consume_ok, consume_reason = consume_tracker_approval(approval_path)
+if not consume_ok:
+    block_with_reason(
+        approval_request_reason(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            missing_evidence=consume_reason,
+        )
     )
 
 sys.exit(0)

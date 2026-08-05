@@ -488,7 +488,7 @@ confirmation gate.
 
 ---
 
-### Step 1.5 — Tracker Fallback Guard Evidence
+### Step 1.5 — Tracker Mutation Safety Evidence
 
 **This step runs after Step 1's Proceed / Abort logic has already resolved**
 (Approve, `DRY_RUN=true`, or `AGENT_CREW_ISSUER_AUTO_CONFIRM=1`) **and
@@ -496,14 +496,22 @@ strictly before Step 0.5 point 7 ("Dispatch by operation") executes any
 `create` / `transition` / `update` branch that can reach a Plane-mutating MCP
 call.**
 
-`core/hooks/tracker-mutation-guard.sh` (a PreToolUse hook) blocks every
+`core/hooks/tracker-mutation-guard.sh` (a PreToolUse hook) treats every
 Plane-mutating MCP tool call (`create_work_item`, `update_work_item`,
-`delete_work_item`, `create_intake_work_item`) unless
-`{TASK_DIR}/context/specialist-dispatch.md` and
-`{TASK_DIR}/context/tracker-fallback-validation.json` already exist and match
-its parsing contract. This step produces both files so the dispatcher's own
-legitimate mutation path is not self-blocked. It applies to every adapter,
-not only Plane, and does not branch on `BACKEND_ADAPTER`.
+`delete_work_item`, `create_intake_work_item`) as an external tracker mutation.
+The guard is an automatic-execution prevention device, not a final approval
+denial. It blocks mutation until the current task/request context contains:
+
+- issuer dispatch evidence;
+- adapter contract and payload validation evidence;
+- a user-owned approval record bound to the exact tool and canonical payload.
+
+If the hook cannot see `TASK_DIR` / `AGENT_CREW_TASK_DIR`, it may still find a
+matching active task for the current project. If no usable context exists, the
+hook blocks the MCP call with `approval_required` remediation instructions:
+which tool was blocked, the intended mutation action, what evidence is
+missing, the external side effect, the exact approval scope, and the fact that
+rejecting the approval means no tracker mutation occurs.
 
 At this point in the flow, `adapter_contract_loaded: true` and
 `payload_validated: true` are honest values: the adapter skill was already
@@ -513,8 +521,8 @@ outgoing payload's target coordinates have already been validated by the
 user (or by an explicit `DRY_RUN` / auto-confirm bypass) before this step
 runs.
 
-Gated on `TASK_DIR` being set — no-op when absent (do not fabricate evidence
-for a non-existent task context):
+Gated on `TASK_DIR` being set — no-op when absent (do not fabricate validation
+or approval evidence for a non-existent task context):
 
 ```bash
 if [ -n "${TASK_DIR:-}" ]; then
@@ -536,6 +544,33 @@ EOF
 EOF
 fi
 ```
+
+Before each Plane-mutating MCP call, request a structured user decision for the
+specific operation and payload. If approved, write a one-shot task-context
+record to `${TASK_DIR}/context/tracker-mutation-approval.json`. The guard
+consumes this record by moving it to
+`${TASK_DIR}/context/tracker-mutation-approval.consumed.json` before allowing
+the matching MCP call. If the consume step fails, the mutation remains blocked.
+
+```json
+{
+  "schema_version": "agent-crew.tracker-mutation-approval.v1",
+  "approved": true,
+  "tool_name": "mcp__plane__create_work_item",
+  "tool_input_sha256": "{sha256 of canonical JSON tool_input}",
+  "scope": "single_tool_payload",
+  "external_side_effect": "Plane work item mutation",
+  "approved_by": "user",
+  "expires_at": "YYYY-MM-DDTHH:MM:SSZ"
+}
+```
+
+The approval scope is deliberately narrow. A broad approval, a different
+Plane tool, a changed payload, an expired approval, or an approval written by
+the agent itself must not pass the guard. If the user rejects the decision,
+do not write the approval file and do not call the Plane-mutating MCP tool. A
+consumed approval record must not be reused for another MCP call; request a new
+user decision for each additional external tracker mutation.
 
 ---
 

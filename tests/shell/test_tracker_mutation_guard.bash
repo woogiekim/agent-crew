@@ -60,6 +60,36 @@ EOF
 EOF
 }
 
+make_task_approval() {
+  local task_dir="$1"
+  local tool_name="$2"
+  local tool_input_json="$3"
+  local expires_at="${4:-2099-01-01T00:00:00Z}"
+  mkdir -p "${task_dir}/context"
+  python3 - "${task_dir}/context/tracker-mutation-approval.json" "${tool_name}" "${tool_input_json}" "${expires_at}" <<'PY'
+import hashlib
+import json
+import sys
+
+path, tool_name, tool_input_raw, expires_at = sys.argv[1:5]
+tool_input = json.loads(tool_input_raw)
+canonical = json.dumps(tool_input, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+payload = {
+    "schema_version": "agent-crew.tracker-mutation-approval.v1",
+    "approved": True,
+    "tool_name": tool_name,
+    "tool_input_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    "scope": "single_tool_payload",
+    "external_side_effect": "Plane work item mutation",
+    "approved_by": "user",
+    "expires_at": expires_at,
+}
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(payload, f, ensure_ascii=False, sort_keys=True)
+    f.write("\n")
+PY
+}
+
 make_blocked_issuer_context() {
   local task_dir="$1"
   mkdir -p "${task_dir}/context"
@@ -93,11 +123,30 @@ plain_tracker_payload='{
   "label_ids": []
 }'
 
+label_payload='{
+  "workspace_slug": "workspace",
+  "project_id": "project",
+  "name": "review-followup",
+  "color": "#6366f1"
+}'
+
+comment_payload='{
+  "workspace_slug": "workspace",
+  "project_id": "project",
+  "work_item_id": "work-item",
+  "comment_html": "<p>status note</p>"
+}'
+
 it "direct Plane create without tracker fallback evidence is blocked"
 out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")")
 rc=$?
 assert_exit 2 "${rc}" "missing fallback evidence must block"
 assert_contains "${out}" "tracker fallback contract" "block reason names generic contract"
+assert_contains "${out}" "approval_required" "block reason escalates to user approval"
+assert_contains "${out}" "mcp__plane__create_work_item" "block reason names blocked tool"
+assert_contains "${out}" "external_side_effect" "block reason names side effect"
+assert_contains "${out}" "approval_scope" "block reason explains approved retry scope"
+assert_contains "${out}" "reject" "block reason explains rejection leaves mutation unrun"
 
 it "block reason is written to stderr"
 STDOUT_FILE="$(make_tmp)/stdout"
@@ -149,13 +198,79 @@ rc=$?
 assert_exit 2 "${rc}" "missing payload validation must block"
 assert_contains "${out}" "payload validation" "reason names payload validation"
 
-it "Plane mutation with generic fallback contract evidence is allowed"
+it "Plane mutation with generic fallback contract evidence but no user approval is blocked"
 TASK_DIR="$(make_tmp)/task"
 make_task_contract "${TASK_DIR}" "passed"
 out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
 rc=$?
-assert_exit 0 "${rc}" "valid fallback payload should pass"
+assert_exit 2 "${rc}" "valid fallback payload still requires user approval"
+assert_contains "${out}" "approval_required" "block reason asks for user approval"
+
+it "Plane mutation with fallback contract and matching user approval is allowed"
+TASK_DIR="$(make_tmp)/task"
+make_task_contract "${TASK_DIR}" "passed"
+make_task_approval "${TASK_DIR}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 0 "${rc}" "matching user-approved payload should pass"
 assert_eq "" "${out}" "allowed call emits no output"
+assert_file_absent "${TASK_DIR}/context/tracker-mutation-approval.json" "approval is consumed after allow"
+assert_file_exists "${TASK_DIR}/context/tracker-mutation-approval.consumed.json" "consumed approval record is retained"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}" "same approval must not allow the same mutation twice"
+assert_contains "${out}" "approval_required" "replay requires a new user approval"
+
+it "Plane mutation approval is bound to exact tool and payload"
+TASK_DIR="$(make_tmp)/task"
+make_task_contract "${TASK_DIR}" "passed"
+make_task_approval "${TASK_DIR}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+out=$(run_hook "$(payload_for "mcp__plane__update_work_item" "${plain_tracker_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}" "approval for create must not allow update"
+assert_contains "${out}" "approval tool mismatch" "block reason names tool mismatch"
+
+changed_payload='{
+  "project_identifier": "TRACKER",
+  "title": "Changed follow-up work item",
+  "description_html": "<p>runtime adapter owns project-specific body validation</p>",
+  "label_ids": []
+}'
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${changed_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}" "approval for one payload must not allow another payload"
+assert_contains "${out}" "approval payload mismatch" "block reason names payload mismatch"
+
+it "additional Plane mutating tools require approval"
+TASK_DIR="$(make_tmp)/task"
+make_task_contract "${TASK_DIR}" "passed"
+out=$(run_hook "$(payload_for "mcp__plane__create_label" "${label_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}" "create_label must not bypass tracker mutation approval"
+assert_contains "${out}" "approval_required" "create_label asks for user approval"
+
+TASK_DIR="$(make_tmp)/task"
+make_task_contract "${TASK_DIR}" "passed"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item_comment" "${comment_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}" "create_work_item_comment must not bypass tracker mutation approval"
+assert_contains "${out}" "approval_required" "create_work_item_comment asks for user approval"
+
+it "additional Plane mutating tools with matching approval are allowed once"
+TASK_DIR="$(make_tmp)/task"
+make_task_contract "${TASK_DIR}" "passed"
+make_task_approval "${TASK_DIR}" "mcp__plane__create_label" "${label_payload}"
+out=$(run_hook "$(payload_for "mcp__plane__create_label" "${label_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 0 "${rc}" "approved create_label should pass"
+
+TASK_DIR="$(make_tmp)/task"
+make_task_contract "${TASK_DIR}" "passed"
+make_task_approval "${TASK_DIR}" "mcp__plane__create_work_item_comment" "${comment_payload}"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item_comment" "${comment_payload}")" "AGENT_CREW_TASK_DIR=${TASK_DIR}")
+rc=$?
+assert_exit 0 "${rc}" "approved create_work_item_comment should pass"
 
 it "non-mutating Plane reads are ignored"
 out=$(run_hook "$(payload_for "mcp__plane__retrieve_work_item" '{"project_identifier":"TRACKER"}')")
@@ -169,8 +284,12 @@ claude_setup=$(cat "${REPO_ROOT}/adapters/claude/setup.sh")
 assert_contains "${codex_setup}" "tracker-mutation-guard.sh" "Codex setup must register the guard"
 assert_contains "${codex_setup}" "mcp__plane__create_work_item" "Codex matcher includes create"
 assert_contains "${codex_setup}" "mcp__plane__update_work_item" "Codex matcher includes update"
+assert_contains "${codex_setup}" "mcp__plane__create_label" "Codex matcher includes create_label"
+assert_contains "${codex_setup}" "mcp__plane__create_work_item_comment" "Codex matcher includes create_work_item_comment"
 assert_contains "${claude_setup}" "tracker-mutation-guard.sh" "Claude setup must register the guard"
 assert_contains "${claude_setup}" "mcp__plane__delete_work_item" "Claude matcher includes delete"
+assert_contains "${claude_setup}" "mcp__plane__create_label" "Claude matcher includes create_label"
+assert_contains "${claude_setup}" "mcp__plane__create_work_item_comment" "Claude matcher includes create_work_item_comment"
 
 it "tracked guard changes do not encode user skill or project-template specifics"
 guard_source="$(cat "${HOOK}")"

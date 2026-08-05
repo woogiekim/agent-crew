@@ -1,11 +1,12 @@
-"""Regression tests for issuer.md's Step 1.5 tracker-fallback-guard evidence
+"""Regression tests for issuer.md's Step 1.5 tracker mutation safety evidence
 producer.
 
 Issue: core/hooks/tracker-mutation-guard.sh blocks every Plane-mutating MCP
 call unless {TASK_DIR}/context/specialist-dispatch.md and
 {TASK_DIR}/context/tracker-fallback-validation.json already exist with
-specific fields, but no step in core/agents/issuer.md wrote either file --
-self-blocking issuer's own legitimate Plane mutation path.
+specific fields and a user-owned approval record matches the exact tool and
+payload. issuer.md must describe both validation evidence and the approval
+evidence needed for a legitimate Plane mutation retry.
 
 Spec sources: handoff.md ("Key Technical Decision" / positioning),
 context/prd.md (AC-001..AC-005), context/analysis.md ("Evidence-Grounded
@@ -73,8 +74,8 @@ def _step_1_5_section(text: str) -> str:
     the parsing contract)."""
     match = re.search(r"(?m)^#{2,4}\s.*Step 1\.5.*$", text)
     assert match, "no heading containing 'Step 1.5' found in core/agents/issuer.md"
-    assert "Tracker Fallback Guard Evidence" in match.group(0), (
-        "Step 1.5 heading does not contain 'Tracker Fallback Guard Evidence': "
+    assert "Tracker Mutation Safety Evidence" in match.group(0), (
+        "Step 1.5 heading does not contain 'Tracker Mutation Safety Evidence': "
         f"{match.group(0)!r}"
     )
     return _section_text(text, "Step 1.5")
@@ -172,6 +173,36 @@ def test_success_case_tracker_fallback_validation_write_has_required_fields():
     assert re.search(r'"payload_validated"\s*:\s*true\b', validation_block), (
         "payload_validated must be present as a literal JSON boolean"
     )
+
+
+def test_success_case_tracker_mutation_approval_schema_is_documented():
+    text = _load_issuer_text()
+    section = _step_1_5_section(text)
+
+    assert "tracker-mutation-approval.json" in section
+    assert "agent-crew.tracker-mutation-approval.v1" in section
+    assert '"approved": true' in section
+    assert '"tool_name": "mcp__plane__create_work_item"' in section
+    assert '"tool_input_sha256"' in section
+    assert '"scope": "single_tool_payload"' in section
+    assert '"approved_by": "user"' in section
+    assert '"expires_at"' in section
+
+
+def test_boundary_case_tracker_mutation_approval_is_exact_and_user_owned():
+    text = _load_issuer_text()
+    section = _step_1_5_section(text)
+
+    for phrase in (
+        "broad approval",
+        "different\nPlane tool",
+        "changed payload",
+        "expired approval",
+        "agent itself",
+        "do not write the approval file",
+        "do not call the Plane-mutating MCP tool",
+    ):
+        assert phrase in section
 
 
 # Spec: prd.md AC-002 -- "using literal JSON booleans (true), not the
