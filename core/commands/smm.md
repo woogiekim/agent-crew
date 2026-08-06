@@ -73,6 +73,16 @@ task matches, so interleaved N>1 runs read cleanly):
                `(handoff not produced yet)` token when absent
 - `Recent`   — last up to 5 events from `progress.buffer.jsonl`
                (falling back to `progress.log`)
+- `Orchestration` — compact operator-facing summary of:
+  - `Memory` — recall status, selected memory count, applied/ignored usage
+    decisions, and sent/failed feedback counts from `context/memory-*`
+    artifacts.
+  - `DAG` — stage count, current stage agents, fan-out units, TDD-parallel
+    stages, and streaming-review stages from `pipeline.json`.
+  - `Inbox` — structured progress event count, terminal/fan-out events, and
+    delegation rows from `progress.buffer.jsonl` and `delegation.jsonl`.
+  - `Evolution` — task-local evolution report presence, observed pattern count,
+    and proposal status from `context/evolution-report.json`.
 
 `--format json` prints `{"state_dir": str, "tasks": [<smm dict>, ...]}` where
 each task dict carries every field above plus a `sources_present` map.

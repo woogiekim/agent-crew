@@ -223,6 +223,103 @@ def test_build_smm_all_sources(tmp_path: Path):
     }
 
 
+def test_build_smm_includes_orchestration_summary(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = _make_task(state_dir, "20260529-100102-0", completed_stages=0)
+    context_dir = task_dir / "context"
+
+    (task_dir / "pipeline.json").write_text(json.dumps({
+        "task": "example task description",
+        "stages": [
+            {
+                "agents": ["backend"],
+                "tdd_parallel": True,
+                "parallelizable_units": [
+                    {"id": "orders", "files": ["src/orders/**"], "brief": "orders"},
+                    {"id": "carts", "files": ["src/carts/**"], "brief": "carts"},
+                ],
+            },
+            ["reviewer"],
+        ],
+        "completed_stages": 0,
+    }), encoding="utf-8")
+    (context_dir / "memory-retrieval.json").write_text(json.dumps({
+        "status": "ok",
+        "results": [
+            {"memory_id": "mem-1", "layer": "project"},
+            {"memory_id": "mem-2", "layer": "session"},
+        ],
+    }), encoding="utf-8")
+    (context_dir / "memory-usage.json").write_text(json.dumps({
+        "schema_version": "agent-crew.memory-usage.v2",
+        "decisions": [
+            {
+                "memory_id": "mem-1",
+                "disposition": "applied",
+                "applications": [
+                    {
+                        "artifact": "pipeline.json",
+                        "locator_type": "json_pointer",
+                        "locator": "/stages/0/tdd_parallel",
+                        "effect": "set_true",
+                    }
+                ],
+            },
+            {"memory_id": "mem-2", "disposition": "ignored", "applications": []},
+        ],
+    }), encoding="utf-8")
+    (context_dir / "memory-feedback.json").write_text(json.dumps({
+        "sent_events": [{"event": "applied", "memory_id": "mem-1"}],
+        "failed_events": [],
+    }), encoding="utf-8")
+    (context_dir / "evolution-report.json").write_text(json.dumps({
+        "observed_patterns": [{"kind": "retry"}],
+        "proposal": {"status": "approval_required"},
+    }), encoding="utf-8")
+    (task_dir / "delegation.jsonl").write_text(
+        json.dumps({"agent_role": "backend", "unit_id": "orders"}) + "\n",
+        encoding="utf-8",
+    )
+    with (task_dir / "progress.buffer.jsonl").open("a", encoding="utf-8") as f:
+        for event in ("STAGE_FANOUT_STARTED", "STAGE_FANOUT_UNIT_DONE",
+                      "STAGE_FANOUT_DONE"):
+            f.write(json.dumps({
+                "ts": "2026-05-29T09:40:00Z",
+                "trace_id": f"t.{event}",
+                "task_id": "20260529-100102-0",
+                "session_id": "20260529-100102",
+                "event": event,
+                "stage": 1,
+                "agent": "backend",
+                "attempt": 1,
+                "status": "completed",
+                "detail": event,
+                "files": [],
+            }) + "\n")
+
+    sut = smm.build_smm(state_dir, task_dir)
+    orchestration = sut["orchestration"]
+
+    assert orchestration["memory"] == {
+        "retrieval_status": "ok",
+        "retrieved": 2,
+        "applied": 1,
+        "ignored": 1,
+        "feedback_sent": 1,
+        "feedback_failed": 0,
+    }
+    assert orchestration["dag"]["parallel_units"] == 2
+    assert orchestration["dag"]["current_stage_agents"] == ["backend"]
+    assert orchestration["dag"]["tdd_parallel_stages"] == 1
+    assert orchestration["inbox"]["delegations"] == 1
+    assert orchestration["inbox"]["fanout_events"] == 3
+    assert orchestration["evolution"] == {
+        "report_present": True,
+        "observed_patterns": 1,
+        "proposal": "approval_required",
+    }
+
+
 def test_build_smm_stage_markers_pending(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_dir = _make_task(state_dir, "20260529-100101-0", completed_stages=0)
@@ -306,6 +403,26 @@ def test_render_text_multi_task_session_header_and_blocks(tmp_path: Path):
     assert "Phase" in out
     assert "Handoff" in out
     assert ("[x]" in out or "[>]" in out or "[ ]" in out)
+
+
+def test_render_text_includes_orchestration_summary(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    td = _make_task(state_dir, "20260529-100302-0")
+    (td / "context" / "memory-retrieval.json").write_text(
+        json.dumps({"status": "no_results", "results": []}),
+        encoding="utf-8",
+    )
+    (td / "context" / "evolution-report.json").write_text(
+        json.dumps({"observed_patterns": [{"kind": "retry"}]}),
+        encoding="utf-8",
+    )
+    out = smm.render_text([smm.build_smm(state_dir, td)])
+
+    assert "Orchestration:" in out
+    assert "Memory:" in out
+    assert "DAG:" in out
+    assert "Inbox:" in out
+    assert "Evolution:" in out
 
 
 def test_render_text_absent_handoff_token(tmp_path: Path):

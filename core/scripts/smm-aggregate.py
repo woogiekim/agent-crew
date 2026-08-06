@@ -52,6 +52,7 @@ import argparse
 import importlib.util
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -140,6 +141,13 @@ def _stage_agents(stage):
     return []
 
 
+def _stage_parallelizable_units(stage):
+    if not isinstance(stage, dict):
+        return []
+    units = stage.get("parallelizable_units") or []
+    return [unit for unit in units if isinstance(unit, dict)]
+
+
 def _read_pipeline(task_dir):
     """Return (stages_total, stages_completed, stage_list, present)."""
     path = Path(task_dir) / "pipeline.json"
@@ -164,9 +172,143 @@ def _read_pipeline(task_dir):
             "index": index,
             "agents": _stage_agents(stage),
             "marker": marker,
+            "tdd_parallel": bool(stage.get("tdd_parallel")) if isinstance(stage, dict) else False,
+            "streaming_review": bool(stage.get("streaming_review")) if isinstance(stage, dict) else False,
+            "qa_mode": str(stage.get("qa_mode") or "") if isinstance(stage, dict) else "",
+            "parallelizable_units": [
+                {
+                    "id": str(unit.get("id") or ""),
+                    "files": list(unit.get("files") or []),
+                    "brief": str(unit.get("brief") or ""),
+                }
+                for unit in _stage_parallelizable_units(stage)
+            ],
         })
 
     return len(stages), completed, stage_list, True
+
+
+# --------------------------------------------------------------------------- #
+# Orchestration summary — Memory / DAG / Inbox / Evolution                   #
+# --------------------------------------------------------------------------- #
+
+def _read_json_file(path):
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_jsonl_file(path):
+    rows = []
+    try:
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
+def _retrieval_rows(retrieval):
+    rows = retrieval.get("results")
+    if isinstance(rows, list):
+        return [row for row in rows if isinstance(row, dict)]
+    provider = retrieval.get("provider_response")
+    if isinstance(provider, dict):
+        rows = provider.get("results")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+def _read_memory_orchestration(task_dir):
+    context_dir = Path(task_dir) / "context"
+    retrieval = _read_json_file(context_dir / "memory-retrieval.json")
+    usage = _read_json_file(context_dir / "memory-usage.json")
+    feedback = _read_json_file(context_dir / "memory-feedback.json")
+
+    decisions = [
+        row for row in usage.get("decisions", [])
+        if isinstance(row, dict)
+    ]
+    dispositions = Counter(str(row.get("disposition") or "") for row in decisions)
+
+    return {
+        "retrieval_status": str(retrieval.get("status") or "not_present"),
+        "retrieved": len(_retrieval_rows(retrieval)),
+        "applied": int(dispositions.get("applied", 0)),
+        "ignored": int(dispositions.get("ignored", 0)),
+        "feedback_sent": len(feedback.get("sent_events") or [])
+        if isinstance(feedback.get("sent_events"), list) else 0,
+        "feedback_failed": len(feedback.get("failed_events") or [])
+        if isinstance(feedback.get("failed_events"), list) else 0,
+    }
+
+
+def _read_dag_orchestration(stage_list):
+    current = next((stage for stage in stage_list if stage["marker"] == "current"), {})
+    return {
+        "stages": len(stage_list),
+        "current_stage": current.get("index", 0) if current else 0,
+        "current_stage_agents": list(current.get("agents") or []),
+        "parallel_units": sum(len(stage.get("parallelizable_units") or []) for stage in stage_list),
+        "tdd_parallel_stages": sum(1 for stage in stage_list if stage.get("tdd_parallel")),
+        "streaming_review_stages": sum(1 for stage in stage_list if stage.get("streaming_review")),
+    }
+
+
+def _read_inbox_orchestration(task_dir):
+    events = telemetry.read_progress_buffer(Path(task_dir))
+    delegations = _read_jsonl_file(Path(task_dir) / "delegation.jsonl")
+    event_names = Counter(str(row.get("event") or "") for row in events)
+    terminal_events = sum(
+        event_names.get(name, 0)
+        for name in ("STAGE_DONE", "STAGE_FANOUT_UNIT_DONE", "STAGE_FANOUT_DONE", "COMPLETED", "BLOCKED")
+    )
+    fanout_events = sum(
+        count for event, count in event_names.items()
+        if event.startswith("STAGE_FANOUT")
+    )
+    return {
+        "events": len(events),
+        "terminal_events": terminal_events,
+        "fanout_events": fanout_events,
+        "delegations": len(delegations),
+    }
+
+
+def _read_evolution_orchestration(task_dir):
+    report = _read_json_file(Path(task_dir) / "context" / "evolution-report.json")
+    proposal = report.get("proposal")
+    proposal_status = "none"
+    if isinstance(proposal, dict):
+        proposal_status = str(proposal.get("status") or "unknown")
+    elif report:
+        proposal_status = str(report.get("proposal") or "none")
+    patterns = report.get("observed_patterns")
+    return {
+        "report_present": bool(report),
+        "observed_patterns": len(patterns) if isinstance(patterns, list) else 0,
+        "proposal": proposal_status,
+    }
+
+
+def _build_orchestration_summary(task_dir, stage_list):
+    return {
+        "memory": _read_memory_orchestration(task_dir),
+        "dag": _read_dag_orchestration(stage_list),
+        "inbox": _read_inbox_orchestration(task_dir),
+        "evolution": _read_evolution_orchestration(task_dir),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -266,6 +408,7 @@ def build_smm(state_dir, task_dir):
             "register": register_present,
             "handoff": handoff["present"],
         },
+        "orchestration": _build_orchestration_summary(task_dir, stage_list),
     }
 
 
@@ -319,6 +462,42 @@ def _render_block(smm):
             if len(detail) > 60:
                 detail = detail[:57].rstrip() + "..."
             lines.append(f"  {ev.get('ts', '')} | {ev.get('event', '')} | {detail}")
+
+    orchestration = smm.get("orchestration") or {}
+    memory = orchestration.get("memory") or {}
+    dag = orchestration.get("dag") or {}
+    inbox = orchestration.get("inbox") or {}
+    evolution = orchestration.get("evolution") or {}
+    lines.append("Orchestration:")
+    lines.append(
+        "  Memory: "
+        f"status={memory.get('retrieval_status', 'not_present')} "
+        f"retrieved={memory.get('retrieved', 0)} "
+        f"applied={memory.get('applied', 0)} "
+        f"ignored={memory.get('ignored', 0)} "
+        f"feedback_sent={memory.get('feedback_sent', 0)}"
+    )
+    lines.append(
+        "  DAG: "
+        f"stages={dag.get('stages', 0)} "
+        f"current={dag.get('current_stage', 0)} "
+        f"agents={','.join(dag.get('current_stage_agents') or []) or 'none'} "
+        f"parallel_units={dag.get('parallel_units', 0)} "
+        f"tdd_parallel={dag.get('tdd_parallel_stages', 0)}"
+    )
+    lines.append(
+        "  Inbox: "
+        f"events={inbox.get('events', 0)} "
+        f"terminal={inbox.get('terminal_events', 0)} "
+        f"fanout={inbox.get('fanout_events', 0)} "
+        f"delegations={inbox.get('delegations', 0)}"
+    )
+    lines.append(
+        "  Evolution: "
+        f"report={'present' if evolution.get('report_present') else 'none'} "
+        f"patterns={evolution.get('observed_patterns', 0)} "
+        f"proposal={evolution.get('proposal', 'none')}"
+    )
 
     return "\n".join(lines)
 
