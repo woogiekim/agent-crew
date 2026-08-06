@@ -76,13 +76,21 @@ task matches, so interleaved N>1 runs read cleanly):
 - `Orchestration` — compact operator-facing summary of:
   - `Memory` — recall status, selected memory count, applied/ignored usage
     decisions, and sent/failed feedback counts from `context/memory-*`
-    artifacts.
+    artifacts, plus task-local artifact pointers and a deterministic
+    `next_action`.
   - `DAG` — stage count, current stage agents, fan-out units, TDD-parallel
-    stages, and streaming-review stages from `pipeline.json`.
+    stages, and streaming-review stages from `pipeline.json`, plus the
+    pipeline artifact pointer and a deterministic `next_action`.
   - `Inbox` — structured progress event count, terminal/fan-out events, and
-    delegation rows from `progress.buffer.jsonl` and `delegation.jsonl`.
+    delegation rows from `progress.buffer.jsonl` and `delegation.jsonl`,
+    plus task-local artifact pointers and a deterministic `next_action`.
   - `Evolution` — task-local evolution report presence, observed pattern count,
-    and proposal status from `context/evolution-report.json`.
+    proposal status, artifact pointers, and a deterministic `next_action`.
+
+The `Orchestration` `next_action` values are operator guidance only. `crew:smm`
+does not execute, repair, send memory feedback, approve evolution proposals, or
+mutate task state. To act on a displayed next action, the user must invoke the
+corresponding command explicitly.
 
 `--format json` prints `{"state_dir": str, "tasks": [<smm dict>, ...]}` where
 each task dict carries every field above plus a `sources_present` map.

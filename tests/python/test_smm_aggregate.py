@@ -274,8 +274,24 @@ def test_build_smm_includes_orchestration_summary(tmp_path: Path):
     }), encoding="utf-8")
     (context_dir / "evolution-report.json").write_text(json.dumps({
         "observed_patterns": [{"kind": "retry"}],
-        "proposal": {"status": "approval_required"},
+        "asset_candidates": [],
     }), encoding="utf-8")
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(json.dumps({
+        "schema_version": 1,
+        "proposals": [{
+            "candidate_id": "review-fix-verifier-2x",
+            "proposal_type": "create_agent",
+            "status": "approval_required",
+            "asset_name": "review-fix-verifier",
+            "occurrence_count": 2,
+        }],
+    }), encoding="utf-8")
+    (context_dir / "evolution-proposals-summary.txt").write_text(
+        "SELF_EVOLUTION_PROPOSALS: 1 pending\n",
+        encoding="utf-8",
+    )
     (task_dir / "delegation.jsonl").write_text(
         json.dumps({"agent_role": "backend", "unit_id": "orders"}) + "\n",
         encoding="utf-8",
@@ -307,17 +323,114 @@ def test_build_smm_includes_orchestration_summary(tmp_path: Path):
         "ignored": 1,
         "feedback_sent": 1,
         "feedback_failed": 0,
+        "artifacts": [
+            "context/memory-retrieval.json",
+            "context/memory-usage.json",
+            "context/memory-feedback.json",
+        ],
+        "next_action": "memory_context_available",
     }
     assert orchestration["dag"]["parallel_units"] == 2
     assert orchestration["dag"]["current_stage_agents"] == ["backend"]
     assert orchestration["dag"]["tdd_parallel_stages"] == 1
+    assert orchestration["dag"]["artifacts"] == ["pipeline.json"]
+    assert orchestration["dag"]["next_action"] == "continue_current_stage"
     assert orchestration["inbox"]["delegations"] == 1
     assert orchestration["inbox"]["fanout_events"] == 3
+    assert orchestration["inbox"]["artifacts"] == [
+        "progress.buffer.jsonl",
+        "delegation.jsonl",
+    ]
+    assert orchestration["inbox"]["next_action"] == "review_delegations"
     assert orchestration["evolution"] == {
         "report_present": True,
         "observed_patterns": 1,
         "proposal": "approval_required",
+        "artifacts": [
+            "context/evolution-report.json",
+            "context/evolution-proposals-summary.txt",
+            "learning-candidates/proposals.json",
+        ],
+        "next_action": "review_evolution_proposal",
     }
+
+
+def test_build_smm_orchestration_distinguishes_memory_next_actions(tmp_path: Path):
+    state_dir = tmp_path / "state"
+
+    no_results = _make_task(state_dir, "20260529-100103-0")
+    (no_results / "context" / "memory-retrieval.json").write_text(
+        json.dumps({"status": "ok", "results": []}),
+        encoding="utf-8",
+    )
+
+    unavailable = _make_task(state_dir, "20260529-100103-1")
+    (unavailable / "context" / "memory-retrieval.json").write_text(
+        json.dumps({"status": "unavailable", "results": []}),
+        encoding="utf-8",
+    )
+
+    disabled = _make_task(state_dir, "20260529-100103-2")
+    (disabled / "context" / "memory-retrieval.json").write_text(
+        json.dumps({"status": "disabled", "results": []}),
+        encoding="utf-8",
+    )
+
+    invalid = _make_task(state_dir, "20260529-100103-3")
+    (invalid / "context" / "memory-retrieval.json").write_text(
+        "{broken",
+        encoding="utf-8",
+    )
+
+    invalid_usage = _make_task(state_dir, "20260529-100103-4")
+    (invalid_usage / "context" / "memory-retrieval.json").write_text(
+        json.dumps({
+            "status": "ok",
+            "results": [{"memory_id": "mem-1"}],
+        }),
+        encoding="utf-8",
+    )
+    (invalid_usage / "context" / "memory-usage.json").write_text(
+        "{broken",
+        encoding="utf-8",
+    )
+
+    assert smm.build_smm(state_dir, no_results)["orchestration"]["memory"][
+        "next_action"
+    ] == "no_memory_results"
+    assert smm.build_smm(state_dir, unavailable)["orchestration"]["memory"][
+        "next_action"
+    ] == "continue_without_memory"
+    assert smm.build_smm(state_dir, disabled)["orchestration"]["memory"][
+        "next_action"
+    ] == "memory_disabled"
+    assert smm.build_smm(state_dir, invalid)["orchestration"]["memory"][
+        "next_action"
+    ] == "inspect_memory_retrieval"
+    assert smm.build_smm(state_dir, invalid_usage)["orchestration"]["memory"][
+        "next_action"
+    ] == "inspect_memory_usage"
+
+
+def test_build_smm_orchestration_distinguishes_dag_next_actions(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    missing = _make_task(
+        state_dir,
+        "20260529-100104-0",
+        with_pipeline=False,
+    )
+    complete = _make_task(
+        state_dir,
+        "20260529-100104-1",
+        completed_stages=2,
+    )
+
+    assert smm.build_smm(state_dir, missing)["orchestration"]["dag"][
+        "next_action"
+    ] == "inspect_pipeline"
+    assert smm.build_smm(state_dir, complete)["orchestration"]["dag"][
+        "next_action"
+    ] == "pipeline_complete"
 
 
 def test_build_smm_stage_markers_pending(tmp_path: Path):
@@ -423,6 +536,44 @@ def test_render_text_includes_orchestration_summary(tmp_path: Path):
     assert "DAG:" in out
     assert "Inbox:" in out
     assert "Evolution:" in out
+    assert "artifacts=" in out
+    assert "next=" in out
+
+
+def test_render_text_includes_actionable_evolution_next_action(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    td = _make_task(state_dir, "20260529-100303-0")
+    (td / "context" / "evolution-report.json").write_text(
+        json.dumps({
+            "observed_patterns": [{"kind": "retry"}],
+            "asset_candidates": [],
+        }),
+        encoding="utf-8",
+    )
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "proposals": [{
+                "candidate_id": "review-fix-verifier-2x",
+                "proposal_type": "create_agent",
+                "status": "approval_required",
+                "asset_name": "review-fix-verifier",
+                "occurrence_count": 2,
+            }],
+        }),
+        encoding="utf-8",
+    )
+    (td / "context" / "evolution-proposals-summary.txt").write_text(
+        "SELF_EVOLUTION_PROPOSALS: 1 pending\n",
+        encoding="utf-8",
+    )
+    out = smm.render_text([smm.build_smm(state_dir, td)])
+
+    assert "next=review_evolution_proposal" in out
+    assert "context/evolution-proposals-summary.txt" in out
+    assert "learning-candidates/proposals.json" in out
 
 
 def test_render_text_absent_handoff_token(tmp_path: Path):

@@ -192,12 +192,24 @@ def _read_pipeline(task_dir):
 # Orchestration summary — Memory / DAG / Inbox / Evolution                   #
 # --------------------------------------------------------------------------- #
 
-def _read_json_file(path):
+def _read_json_document(path):
+    path = Path(path)
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}, False, False
     except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return {}, path.exists(), False
+    return payload if isinstance(payload, dict) else {}, True, isinstance(payload, dict)
+
+
+def _existing_artifacts(task_dir, rel_paths):
+    task_dir = Path(task_dir)
+    return [rel for rel in rel_paths if (task_dir / rel).is_file()]
+
+
+def _state_artifact_present(state_dir, rel_path):
+    return (Path(state_dir) / rel_path).is_file()
 
 
 def _read_jsonl_file(path):
@@ -232,37 +244,90 @@ def _retrieval_rows(retrieval):
 
 def _read_memory_orchestration(task_dir):
     context_dir = Path(task_dir) / "context"
-    retrieval = _read_json_file(context_dir / "memory-retrieval.json")
-    usage = _read_json_file(context_dir / "memory-usage.json")
-    feedback = _read_json_file(context_dir / "memory-feedback.json")
+    retrieval, retrieval_present, retrieval_valid = _read_json_document(
+        context_dir / "memory-retrieval.json"
+    )
+    usage, usage_present, usage_valid = _read_json_document(
+        context_dir / "memory-usage.json"
+    )
+    feedback, _, _ = _read_json_document(context_dir / "memory-feedback.json")
 
     decisions = [
         row for row in usage.get("decisions", [])
         if isinstance(row, dict)
     ]
     dispositions = Counter(str(row.get("disposition") or "") for row in decisions)
+    retrieved = len(_retrieval_rows(retrieval))
+    applied = int(dispositions.get("applied", 0))
+    ignored = int(dispositions.get("ignored", 0))
+    feedback_sent = len(feedback.get("sent_events") or []) \
+        if isinstance(feedback.get("sent_events"), list) else 0
+    feedback_failed = len(feedback.get("failed_events") or []) \
+        if isinstance(feedback.get("failed_events"), list) else 0
+    retrieval_status = str(retrieval.get("status") or "not_present")
+
+    if retrieval_present and not retrieval_valid:
+        next_action = "inspect_memory_retrieval"
+    elif retrieval_status == "disabled":
+        next_action = "memory_disabled"
+    elif retrieval_status in ("unavailable", "timeout", "invalid_json",
+                              "incompatible_provider", "degraded"):
+        next_action = "continue_without_memory"
+    elif retrieval_status == "no_results":
+        next_action = "no_memory_results"
+    elif not retrieval_present:
+        next_action = "no_memory_context"
+    elif usage_present and not usage_valid:
+        next_action = "inspect_memory_usage"
+    elif retrieval_status == "ok" and retrieved == 0:
+        next_action = "no_memory_results"
+    elif retrieved > 0 and not usage_present:
+        next_action = "review_memory_usage"
+    elif feedback_failed > 0:
+        next_action = "review_memory_feedback_failure"
+    elif applied > 0 and feedback_sent == 0:
+        next_action = "review_memory_feedback"
+    else:
+        next_action = "memory_context_available"
 
     return {
-        "retrieval_status": str(retrieval.get("status") or "not_present"),
-        "retrieved": len(_retrieval_rows(retrieval)),
-        "applied": int(dispositions.get("applied", 0)),
-        "ignored": int(dispositions.get("ignored", 0)),
-        "feedback_sent": len(feedback.get("sent_events") or [])
-        if isinstance(feedback.get("sent_events"), list) else 0,
-        "feedback_failed": len(feedback.get("failed_events") or [])
-        if isinstance(feedback.get("failed_events"), list) else 0,
+        "retrieval_status": retrieval_status,
+        "retrieved": retrieved,
+        "applied": applied,
+        "ignored": ignored,
+        "feedback_sent": feedback_sent,
+        "feedback_failed": feedback_failed,
+        "artifacts": _existing_artifacts(task_dir, [
+            "context/memory-retrieval.json",
+            "context/memory-usage.json",
+            "context/memory-feedback.json",
+        ]),
+        "next_action": next_action,
     }
 
 
-def _read_dag_orchestration(stage_list):
+def _read_dag_orchestration(task_dir, stage_list, pipeline_present):
     current = next((stage for stage in stage_list if stage["marker"] == "current"), {})
+    parallel_units = sum(len(stage.get("parallelizable_units") or []) for stage in stage_list)
+    if not pipeline_present:
+        next_action = "inspect_pipeline"
+    elif stage_list and not current:
+        next_action = "pipeline_complete"
+    elif current:
+        next_action = "continue_current_stage"
+    elif parallel_units:
+        next_action = "review_parallel_units"
+    else:
+        next_action = "inspect_pipeline"
     return {
         "stages": len(stage_list),
         "current_stage": current.get("index", 0) if current else 0,
         "current_stage_agents": list(current.get("agents") or []),
-        "parallel_units": sum(len(stage.get("parallelizable_units") or []) for stage in stage_list),
+        "parallel_units": parallel_units,
         "tdd_parallel_stages": sum(1 for stage in stage_list if stage.get("tdd_parallel")),
         "streaming_review_stages": sum(1 for stage in stage_list if stage.get("streaming_review")),
+        "artifacts": _existing_artifacts(task_dir, ["pipeline.json"]),
+        "next_action": next_action,
     }
 
 
@@ -278,36 +343,90 @@ def _read_inbox_orchestration(task_dir):
         count for event, count in event_names.items()
         if event.startswith("STAGE_FANOUT")
     )
+    if delegations:
+        next_action = "review_delegations"
+    elif fanout_events:
+        next_action = "review_fanout_events"
+    elif events:
+        next_action = "review_progress_events"
+    else:
+        next_action = "no_inbox_events"
     return {
         "events": len(events),
         "terminal_events": terminal_events,
         "fanout_events": fanout_events,
         "delegations": len(delegations),
+        "artifacts": _existing_artifacts(task_dir, [
+            "progress.buffer.jsonl",
+            "delegation.jsonl",
+        ]),
+        "next_action": next_action,
     }
 
 
-def _read_evolution_orchestration(task_dir):
-    report = _read_json_file(Path(task_dir) / "context" / "evolution-report.json")
+def _pending_evolution_proposals(proposals):
+    return [
+        item for item in proposals.get("proposals", [])
+        if isinstance(item, dict) and item.get("status") == "approval_required"
+    ] if isinstance(proposals.get("proposals"), list) else []
+
+
+def _read_evolution_orchestration(task_dir, state_dir):
+    report, report_present, report_valid = _read_json_document(
+        Path(task_dir) / "context" / "evolution-report.json"
+    )
+    proposals, proposals_present, proposals_valid = _read_json_document(
+        Path(state_dir) / "learning-candidates" / "proposals.json"
+    )
+    pending_proposals = _pending_evolution_proposals(proposals)
     proposal = report.get("proposal")
     proposal_status = "none"
+    if pending_proposals:
+        proposal_status = "approval_required"
+    elif proposals_present and not proposals_valid:
+        proposal_status = "unknown"
     if isinstance(proposal, dict):
         proposal_status = str(proposal.get("status") or "unknown")
-    elif report:
+    elif report and proposal_status == "none":
         proposal_status = str(report.get("proposal") or "none")
     patterns = report.get("observed_patterns")
+    observed_patterns = len(patterns) if isinstance(patterns, list) else 0
+    if report_present and not report_valid:
+        next_action = "inspect_evolution_report"
+    elif proposals_present and not proposals_valid:
+        next_action = "inspect_evolution_proposals"
+    elif pending_proposals:
+        next_action = "review_evolution_proposal"
+    elif not report_present:
+        next_action = "no_evolution_report"
+    elif proposal_status == "approval_required":
+        next_action = "review_evolution_proposal"
+    elif observed_patterns > 0 and proposal_status == "none":
+        next_action = "review_evolution_patterns"
+    else:
+        next_action = "evolution_report_available"
+    artifacts = _existing_artifacts(task_dir, [
+        "context/evolution-report.json",
+        "context/evolution-report.md",
+        "context/evolution-proposals-summary.txt",
+    ])
+    if _state_artifact_present(state_dir, "learning-candidates/proposals.json"):
+        artifacts.append("learning-candidates/proposals.json")
     return {
         "report_present": bool(report),
-        "observed_patterns": len(patterns) if isinstance(patterns, list) else 0,
+        "observed_patterns": observed_patterns,
         "proposal": proposal_status,
+        "artifacts": artifacts,
+        "next_action": next_action,
     }
 
 
-def _build_orchestration_summary(task_dir, stage_list):
+def _build_orchestration_summary(state_dir, task_dir, stage_list, pipeline_present):
     return {
         "memory": _read_memory_orchestration(task_dir),
-        "dag": _read_dag_orchestration(stage_list),
+        "dag": _read_dag_orchestration(task_dir, stage_list, pipeline_present),
         "inbox": _read_inbox_orchestration(task_dir),
-        "evolution": _read_evolution_orchestration(task_dir),
+        "evolution": _read_evolution_orchestration(task_dir, state_dir),
     }
 
 
@@ -408,7 +527,12 @@ def build_smm(state_dir, task_dir):
             "register": register_present,
             "handoff": handoff["present"],
         },
-        "orchestration": _build_orchestration_summary(task_dir, stage_list),
+        "orchestration": _build_orchestration_summary(
+            state_dir,
+            task_dir,
+            stage_list,
+            pipeline_present,
+        ),
     }
 
 
@@ -475,7 +599,9 @@ def _render_block(smm):
         f"retrieved={memory.get('retrieved', 0)} "
         f"applied={memory.get('applied', 0)} "
         f"ignored={memory.get('ignored', 0)} "
-        f"feedback_sent={memory.get('feedback_sent', 0)}"
+        f"feedback_sent={memory.get('feedback_sent', 0)} "
+        f"artifacts={','.join(memory.get('artifacts') or []) or 'none'} "
+        f"next={memory.get('next_action', 'none')}"
     )
     lines.append(
         "  DAG: "
@@ -483,20 +609,26 @@ def _render_block(smm):
         f"current={dag.get('current_stage', 0)} "
         f"agents={','.join(dag.get('current_stage_agents') or []) or 'none'} "
         f"parallel_units={dag.get('parallel_units', 0)} "
-        f"tdd_parallel={dag.get('tdd_parallel_stages', 0)}"
+        f"tdd_parallel={dag.get('tdd_parallel_stages', 0)} "
+        f"artifacts={','.join(dag.get('artifacts') or []) or 'none'} "
+        f"next={dag.get('next_action', 'none')}"
     )
     lines.append(
         "  Inbox: "
         f"events={inbox.get('events', 0)} "
         f"terminal={inbox.get('terminal_events', 0)} "
         f"fanout={inbox.get('fanout_events', 0)} "
-        f"delegations={inbox.get('delegations', 0)}"
+        f"delegations={inbox.get('delegations', 0)} "
+        f"artifacts={','.join(inbox.get('artifacts') or []) or 'none'} "
+        f"next={inbox.get('next_action', 'none')}"
     )
     lines.append(
         "  Evolution: "
         f"report={'present' if evolution.get('report_present') else 'none'} "
         f"patterns={evolution.get('observed_patterns', 0)} "
-        f"proposal={evolution.get('proposal', 'none')}"
+        f"proposal={evolution.get('proposal', 'none')} "
+        f"artifacts={','.join(evolution.get('artifacts') or []) or 'none'} "
+        f"next={evolution.get('next_action', 'none')}"
     )
 
     return "\n".join(lines)
