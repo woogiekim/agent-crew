@@ -56,11 +56,20 @@ expand into repository-wide legacy cleanup because the same smell exists in
 older code. Clean the code you touched, and split broad legacy cleanup into a
 separate follow-up with its own scope and evidence.
 
+Before crossing or changing a boundary, trace the bounded caller graph for the
+approved scope. Include entrypoints, scheduled jobs, callbacks, adapters,
+external consumers, producer paths, persistence or API contracts, and
+configuration wiring that can observe the change. If the graph is incomplete,
+call it a partial graph and keep the plan or review conclusion limited to the
+paths actually checked.
+
 ## Checklist
 
 - [ ] Root input and requested target are preserved before planning.
 - [ ] Owner, module, repository, and external side effects are named.
 - [ ] Out-of-scope paths and systems are listed when they are nearby.
+- [ ] Boundary changes include caller graph coverage, or explicitly mark the
+      coverage as partial with `Unknown` paths.
 - [ ] Current-change issues are fixed without widening into unrelated legacy
       cleanup.
 - [ ] Approval status is separated from technical feasibility.

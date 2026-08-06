@@ -41,6 +41,19 @@ The artifact must be a JSON object with these fields:
       "evidence": "path/to/file.ext:42"
     }
   ],
+  "caller_graph": {
+    "scope": "approved module, public API, command, route, or target symbol",
+    "entrypoints": [],
+    "direct_callers": [],
+    "indirect_callers": [],
+    "callees": [],
+    "consumers": [],
+    "producers": [],
+    "configuration_or_registration_paths": [],
+    "tests": [],
+    "coverage": "exhaustive_within_scope | partial | not_applicable",
+    "unknowns": []
+  },
   "diagnostics_before": [],
   "diagnostics_after": [],
   "unsupported_capabilities": [],
@@ -77,6 +90,16 @@ Before modifying production code, implementation agents should query evidence
 for the specific symbols, APIs, fields, imports, and call sites they intend to
 touch. For low-risk docs-only changes this artifact is not required.
 
+For a shared module, public API, route, command, persistence mapper,
+serializer, schema, hook, adapter, or other cross-boundary change, include a
+bounded caller graph inventory before implementation. Capture the reachable
+entrypoints, direct and indirect callers, callees, consumers, producers,
+configuration or registration paths, and tests that define observable behavior.
+If static or semantic tooling cannot prove a path because of dynamic wiring,
+generated code, reflection, external runtime state, or missing provider
+capabilities, mark the graph `partial` and list the unknowns instead of
+claiming exhaustive coverage.
+
 For code changes, do not invent:
 
 - imports or module paths without repository evidence;
@@ -109,6 +132,10 @@ still apply.
 - `core/rules/evidence-grounded-reasoning.md` governs analysis, planning, and
   review claims. This rule applies the same first-party evidence discipline to
   code-change decisions.
+- `core/rules/evidence-grounded-reasoning.md` also defines the
+  Exhaustive Caller Graph Discipline. This rule records the implementation-side
+  evidence for that discipline when code changes cross caller, contract, or
+  side-effect boundaries.
 - `core/rules/agent-tool-dispatch.md` governs how agents select provider
   adapters without leaking provider-specific behavior into generic agents.
 - `core/agents/skills/tdd.md` remains mandatory for testable production-code

@@ -166,6 +166,45 @@ Forbidden patterns (must be flagged as a contract violation):
 The Evidence Standard (§ Evidence Standard above) and the Completion Gate
 (below) enforce this discipline.
 
+## Exhaustive Caller Graph Discipline
+
+For analysis, exploration, implementation planning, review follow-up,
+refactoring, debugging, parity, or migration work that can affect a reachable
+behavior path, use a bounded exhaustive strategy before concluding impact or
+safety. The boundary is the explicit request, approved scope, repository,
+module, target symbol, public contract, or source-of-truth artifact currently
+under review; it is not an unbounded whole-world program analysis.
+
+Within that boundary, inspect the reachable graph in both directions when the
+repository gives first-party evidence:
+
+- direct callers and indirect callers;
+- callees, dependencies, and delegated side-effect paths;
+- public entrypoints such as commands, routes, handlers, jobs, callbacks, or
+  adapters;
+- producer and consumer contracts, including schemas, persistence mappings,
+  serializers, configuration, dependency injection, and registration paths;
+- tests and fixtures that already exercise or document the path.
+
+Use deterministic repository evidence first: static search, language semantic
+references when available, structured route/config/schema parsers, build or
+test metadata, and direct tool output. Do not equate a single-file inspection,
+a single search pattern, or one test result with graph coverage.
+
+Classify the graph claim explicitly:
+
+- `Exhaustive within scope`: all reachable paths in the declared boundary were
+  checked with stated methods.
+- `Partial caller graph`: some paths were checked, but tooling, dynamic wiring,
+  generated code, runtime-only registration, external systems, or scope limits
+  leave gaps.
+- `No references found`: a named search method found no references; this does
+  not by itself prove the symbol or behavior is unused.
+- `Unknown`: the path could not be verified with current first-party evidence.
+
+When graph coverage is partial, keep the conclusion narrower than the checked
+paths and report the residual risk instead of presenting the change as safe.
+
 ## Completion Gate
 
 A stage that produces analysis, judgment, review, or planning output is not

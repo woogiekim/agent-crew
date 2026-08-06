@@ -44,6 +44,15 @@ caller/UI/job/callback
   -> downstream schema/API/state
 ```
 
+Exhaustive caller graph within the approved parity scope is required before a
+parity or migration completion claim. Do not claim parity from matching names,
+similar endpoint labels, sibling file structure, or current diff shape alone.
+Trace at least one consumer-visible entrypoint through the producer state or
+contract it observes, then expand to the other reachable callers inside the
+approved boundary. If a dynamic path, external system, generated artifact, or
+runtime-only registration cannot be checked, classify that path as `UNKNOWN`
+instead of treating it as matched.
+
 Classify each compared path:
 
 - `MATCH`: behavior already agrees; preserve it.
