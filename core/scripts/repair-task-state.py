@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from quality_loop_lib import check_quality_loop, looks_mutating_task as shared_looks_mutating_task
+from skill_coverage_lib import build_skill_coverage, parse_selected_skill_names_from_text
 from task_capability_lib import required_capabilities_for_task
 
 
@@ -1383,6 +1384,15 @@ def specialist_fields_from_text(text: str) -> dict[str, list[str] | str]:
         values = existing if isinstance(existing, list) else []
         values.extend(split_specialist_values(value))
         fields[canonical] = values
+    selected_skills = parse_selected_skill_names_from_text(text)
+    if selected_skills:
+        existing = fields.get("selected_skill", [])
+        values = existing if isinstance(existing, list) else []
+        for skill in selected_skills:
+            raw = skill[:-3] if skill.endswith(".md") else skill
+            if raw not in values:
+                values.append(raw)
+        fields["selected_skill"] = values
     return apply_legacy_agent_translation(fields)
 
 
@@ -2350,7 +2360,8 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   commit_specialist_gate: dict | None = None,
                   skill_load_gate: dict | None = None,
                   skill_use_gate: dict | None = None,
-                  skill_understanding_gate: dict | None = None) -> str:
+                  skill_understanding_gate: dict | None = None,
+                  skill_coverage: dict | None = None) -> str:
     lines = [
         f"# {task or task_id}",
         "",
@@ -2513,6 +2524,16 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
         incomplete_skills = skill_use_gate.get("incomplete_skills", {})
         for skill, fields in sorted(incomplete_skills.items()):
             lines.append(f"INCOMPLETE_SKILL_USE: {skill}: {', '.join(fields)}")
+    if skill_coverage:
+        lines.append(
+            "SKILL_COVERAGE: "
+            f"selected={skill_coverage.get('selected', 0)} "
+            f"loaded={skill_coverage.get('loaded', 0)} "
+            f"used_observed={skill_coverage.get('used_observed', 0)} "
+            "unknown_or_not_observed="
+            f"{len(skill_coverage.get('unknown_or_not_observed_skills') or [])} "
+            f"advisory_gap={'yes' if skill_coverage.get('advisory_gap') else 'no'}"
+        )
     if skill_understanding_gate and skill_understanding_gate.get("required"):
         if skill_understanding_gate.get("passed"):
             lines.append("SKILL_UNDERSTANDING: passed")
@@ -2632,6 +2653,11 @@ def repair(args: argparse.Namespace) -> dict:
     skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
     skill_use_gate = enforce_skill_use_gate(args, task_dir, register, skill_load_gate)
     skill_understanding_gate = enforce_skill_understanding_gate(args, task_dir, register, skill_use_gate)
+    skill_coverage = build_skill_coverage(task_dir)
+    skill_coverage_record = dict(skill_coverage)
+    skill_coverage_record["unknown_or_not_observed"] = len(
+        skill_coverage.get("unknown_or_not_observed_skills") or []
+    )
     previous = {
         "status": register.get("current_phase"),
         "blocked_by": register.get("blocked_by", []),
@@ -2682,6 +2708,7 @@ def repair(args: argparse.Namespace) -> dict:
         "skill_load_gate": skill_load_gate,
         "skill_use_gate": skill_use_gate,
         "skill_understanding_gate": skill_understanding_gate,
+        "skill_coverage": skill_coverage_record,
         "previous": previous,
         "repaired_at": now,
     }
@@ -2708,6 +2735,7 @@ def repair(args: argparse.Namespace) -> dict:
             skill_load_gate,
             skill_use_gate,
             skill_understanding_gate,
+            skill_coverage,
         ),
         encoding="utf-8",
     )

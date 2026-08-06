@@ -56,6 +56,9 @@ from collections import Counter
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from skill_coverage_lib import build_skill_coverage
 
 
 def _load_telemetry():
@@ -445,12 +448,33 @@ def _read_evolution_orchestration(task_dir, state_dir):
     }
 
 
+def _read_skill_orchestration(task_dir):
+    summary = build_skill_coverage(task_dir)
+    if summary.get("advisory_gap"):
+        next_action = "review_skill_coverage"
+    elif summary.get("selected") or summary.get("loaded") or summary.get("used_observed"):
+        next_action = "skill_coverage_available"
+    else:
+        next_action = "no_skill_coverage"
+    return {
+        "selected": summary.get("selected", 0),
+        "loaded": summary.get("loaded", 0),
+        "used_observed": summary.get("used_observed", 0),
+        "unknown_or_not_observed": len(summary.get("unknown_or_not_observed_skills") or []),
+        "advisory_gap": bool(summary.get("advisory_gap")),
+        "selected_source": summary.get("selected_source", "unknown"),
+        "artifacts": summary.get("generated_from", []),
+        "next_action": next_action,
+    }
+
+
 def _build_orchestration_summary(state_dir, task_dir, stage_list, pipeline_present):
     return {
         "memory": _read_memory_orchestration(task_dir),
         "dag": _read_dag_orchestration(task_dir, stage_list, pipeline_present),
         "inbox": _read_inbox_orchestration(task_dir),
         "evolution": _read_evolution_orchestration(task_dir, state_dir),
+        "skills": _read_skill_orchestration(task_dir),
     }
 
 
@@ -616,6 +640,7 @@ def _render_block(smm):
     dag = orchestration.get("dag") or {}
     inbox = orchestration.get("inbox") or {}
     evolution = orchestration.get("evolution") or {}
+    skills = orchestration.get("skills") or {}
     lines.append("Orchestration:")
     lines.append(
         "  Memory: "
@@ -653,6 +678,16 @@ def _render_block(smm):
         f"proposal={evolution.get('proposal', 'none')} "
         f"artifacts={','.join(evolution.get('artifacts') or []) or 'none'} "
         f"next={evolution.get('next_action', 'none')}"
+    )
+    lines.append(
+        "  Skills: "
+        f"selected={skills.get('selected', 0)} "
+        f"loaded={skills.get('loaded', 0)} "
+        f"used_observed={skills.get('used_observed', 0)} "
+        f"unknown_or_not_observed={skills.get('unknown_or_not_observed', 0)} "
+        f"advisory_gap={'yes' if skills.get('advisory_gap') else 'no'} "
+        f"artifacts={','.join(skills.get('artifacts') or []) or 'none'} "
+        f"next={skills.get('next_action', 'none')}"
     )
 
     return "\n".join(lines)

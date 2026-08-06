@@ -185,6 +185,11 @@ pipeline/progress state, reviewer quality metrics, and tool events. Phase notes
 may improve auditability, but missing or incomplete notes must be reported as
 advisory gaps for standard-risk work, not completion blockers.
 
+Do not create separate skill-use notes just to satisfy repair or closeout.
+Skill coverage summaries must be derived from observed selected/load/use signals
+where possible; if usage is not deterministically observed, report
+`unknown_or_not_observed` instead of claiming that the skill was used or unused.
+
 Optional operational understanding notes may be recorded in
 `{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
 linked from `rule_evidence` in `context/skill-use.json`, but these notes are

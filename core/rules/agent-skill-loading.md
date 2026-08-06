@@ -100,6 +100,19 @@ This is the Open/Closed guarantee: skill creation is additive only.
 
 ## Audit / Verification
 
+### Diagnostic Coverage Without Make-Work Proof
+
+Skill coverage is diagnostic state, not a separate proof workload. Completion
+and repair checks may derive `selected`, `loaded`, `used_observed`, and
+`unknown_or_not_observed` from existing dispatch records, skill-load records,
+tool events, task artifacts, tests, diffs, reviews, and progress state. They
+must not require agents to create after-the-fact skill-use notes solely to pass
+repair.
+
+If a loaded or selected skill has no deterministic usage signal, report it as
+`unknown_or_not_observed`. Do not infer either "used" or "unused" from missing
+usage evidence, and do not ask the agent to fill a template from memory.
+
 ### Content-Depth Audit
 
 File existence and section shape are necessary but not sufficient. A skill that
