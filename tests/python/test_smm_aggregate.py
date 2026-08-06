@@ -286,6 +286,9 @@ def test_build_smm_includes_orchestration_summary(tmp_path: Path):
             "status": "approval_required",
             "asset_name": "review-fix-verifier",
             "occurrence_count": 2,
+            "evidence_refs": [
+                "tasks/20260529-100102-0/context/evolution-report.json",
+            ],
         }],
     }), encoding="utf-8")
     (context_dir / "evolution-proposals-summary.txt").write_text(
@@ -353,6 +356,45 @@ def test_build_smm_includes_orchestration_summary(tmp_path: Path):
         ],
         "next_action": "review_evolution_proposal",
     }
+
+
+def test_build_smm_scopes_evolution_proposals_to_current_task(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    current = _make_task(state_dir, "20260529-100103-5")
+    other = _make_task(state_dir, "20260529-100103-6")
+    for task_dir in (current, other):
+        (task_dir / "context" / "evolution-report.json").write_text(
+            json.dumps({
+                "observed_patterns": [{"kind": "retry"}],
+                "asset_candidates": [],
+            }),
+            encoding="utf-8",
+        )
+    proposals = state_dir / "learning-candidates" / "proposals.json"
+    proposals.parent.mkdir(parents=True)
+    proposals.write_text(json.dumps({
+        "schema_version": 1,
+        "proposals": [{
+            "candidate_id": "review-fix-verifier-2x",
+            "proposal_type": "create_agent",
+            "status": "approval_required",
+            "asset_name": "review-fix-verifier",
+            "occurrence_count": 2,
+            "evidence_refs": [
+                "tasks/20260529-100103-6/context/evolution-report.json",
+            ],
+        }],
+    }), encoding="utf-8")
+
+    current_evolution = smm.build_smm(state_dir, current)["orchestration"]["evolution"]
+    other_evolution = smm.build_smm(state_dir, other)["orchestration"]["evolution"]
+
+    assert current_evolution["proposal"] == "none"
+    assert current_evolution["next_action"] == "review_evolution_patterns"
+    assert "learning-candidates/proposals.json" not in current_evolution["artifacts"]
+    assert other_evolution["proposal"] == "approval_required"
+    assert other_evolution["next_action"] == "review_evolution_proposal"
+    assert "learning-candidates/proposals.json" in other_evolution["artifacts"]
 
 
 def test_build_smm_orchestration_distinguishes_memory_next_actions(tmp_path: Path):
@@ -561,6 +603,9 @@ def test_render_text_includes_actionable_evolution_next_action(tmp_path: Path):
                 "status": "approval_required",
                 "asset_name": "review-fix-verifier",
                 "occurrence_count": 2,
+                "evidence_refs": [
+                    "tasks/20260529-100303-0/context/evolution-report.json",
+                ],
             }],
         }),
         encoding="utf-8",

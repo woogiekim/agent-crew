@@ -364,10 +364,34 @@ def _read_inbox_orchestration(task_dir):
     }
 
 
-def _pending_evolution_proposals(proposals):
+def _proposal_refs_task(proposal, task_dir):
+    evidence_refs = proposal.get("evidence_refs")
+    if not isinstance(evidence_refs, list):
+        return False
+
+    task_id = Path(task_dir).name
+    task_context_prefix = f"tasks/{task_id}/context/"
+    for ref in evidence_refs:
+        if not isinstance(ref, str):
+            continue
+        normalized = ref.replace("\\", "/")
+        if normalized.startswith(task_context_prefix):
+            return True
+        if normalized.endswith(f"/{task_context_prefix}"):
+            return True
+        if f"/{task_context_prefix}" in normalized:
+            return True
+    return False
+
+
+def _pending_evolution_proposals(proposals, task_dir):
     return [
         item for item in proposals.get("proposals", [])
-        if isinstance(item, dict) and item.get("status") == "approval_required"
+        if (
+            isinstance(item, dict)
+            and item.get("status") == "approval_required"
+            and _proposal_refs_task(item, task_dir)
+        )
     ] if isinstance(proposals.get("proposals"), list) else []
 
 
@@ -378,7 +402,7 @@ def _read_evolution_orchestration(task_dir, state_dir):
     proposals, proposals_present, proposals_valid = _read_json_document(
         Path(state_dir) / "learning-candidates" / "proposals.json"
     )
-    pending_proposals = _pending_evolution_proposals(proposals)
+    pending_proposals = _pending_evolution_proposals(proposals, task_dir)
     proposal = report.get("proposal")
     proposal_status = "none"
     if pending_proposals:
@@ -410,7 +434,7 @@ def _read_evolution_orchestration(task_dir, state_dir):
         "context/evolution-report.md",
         "context/evolution-proposals-summary.txt",
     ])
-    if _state_artifact_present(state_dir, "learning-candidates/proposals.json"):
+    if pending_proposals or (proposals_present and not proposals_valid):
         artifacts.append("learning-candidates/proposals.json")
     return {
         "report_present": bool(report),
