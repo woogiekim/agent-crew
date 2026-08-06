@@ -121,6 +121,79 @@ def test_skill_coverage_derives_used_only_from_observed_signals(tmp_path: Path):
     assert summary["advisory_gap"] is True
 
 
+def test_skill_coverage_uses_complete_markdown_skill_use_evidence(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = _write_task(state_dir)
+    (task_dir / "context" / "tdd_log.md").unlink()
+    (task_dir / "context" / "skill-use.md").write_text(
+        "SKILL_USE: diagnostic\n\n"
+        "- skill_path: /Users/wook/.agent-crew/system/skills/effective-java.md\n"
+        "- applied_rules: review finding semantic parity\n"
+        "- evidence_refs: core/scripts/skill_coverage_lib.py\n"
+        "- output_files: core/scripts/skill_coverage_lib.py\n"
+        "- verification: python3 -m pytest --no-cov tests/python/test_skill_coverage_summary.py -q\n",
+        encoding="utf-8",
+    )
+    coverage = _load_module(COVERAGE, "skill_coverage_markdown_skill_use")
+
+    summary = coverage.build_skill_coverage(task_dir)
+
+    assert summary["used_skills"] == [{
+        "name": "effective-java.md",
+        "source": "context/skill-use.md",
+        "confidence": "derived",
+    }]
+    assert summary["unknown_or_not_observed"] == [{
+        "name": "tdd.md",
+        "reason": "selected_or_loaded_but_no_deterministic_usage_signal",
+    }]
+
+
+def test_skill_coverage_does_not_use_incomplete_markdown_skill_use_evidence(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = _write_task(state_dir)
+    (task_dir / "context" / "tdd_log.md").unlink()
+    (task_dir / "context" / "skill-use.md").write_text(
+        "SKILL_USE: diagnostic\n\n"
+        "- skill_path: /Users/wook/.agent-crew/system/skills/effective-java.md\n"
+        "- applied_rules: review finding semantic parity\n",
+        encoding="utf-8",
+    )
+    coverage = _load_module(COVERAGE, "skill_coverage_incomplete_markdown_skill_use")
+
+    summary = coverage.build_skill_coverage(task_dir)
+
+    assert summary["used_skills"] == []
+    assert [row["name"] for row in summary["unknown_or_not_observed"]] == [
+        "effective-java.md",
+        "tdd.md",
+    ]
+
+
+def test_smm_renders_markdown_skill_use_evidence_as_observed(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = _write_task(state_dir)
+    (task_dir / "context" / "tdd_log.md").unlink()
+    (task_dir / "context" / "skill-use.md").write_text(
+        "SKILL_USE: diagnostic\n\n"
+        "- skill_path: /Users/wook/.agent-crew/system/agents/skills/tdd.md\n"
+        "- applied_rules: Red Green Refactor\n"
+        "- evidence_refs: context/tdd_log.md\n"
+        "- output_files: tests/python/test_skill_coverage_summary.py\n"
+        "- verification: python3 -m pytest --no-cov tests/python/test_skill_coverage_summary.py -q\n",
+        encoding="utf-8",
+    )
+    smm = _load_module(SMM, "smm_aggregate_markdown_skill_use")
+
+    payload = smm.build_smm(state_dir, task_dir)
+    skills = payload["orchestration"]["skills"]
+    out = smm.render_text([payload])
+
+    assert skills["used_observed"] == 1
+    assert skills["unknown_or_not_observed"] == 1
+    assert "Skills: selected=2 loaded=2 used_observed=1 unknown_or_not_observed=1" in out
+
+
 def test_repair_record_preserves_markdown_selected_skills_and_adds_coverage(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_id = "20260806-000000-0"
@@ -172,4 +245,3 @@ def test_skill_coverage_reports_unknown_selected_set_without_inventing_candidate
     assert summary["selected"] == 0
     assert summary["loaded"] == 2
     assert summary["advisory_gap"] is True
-

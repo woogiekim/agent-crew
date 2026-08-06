@@ -149,6 +149,38 @@ def _skill_use_entries_from_json(text: str) -> list[dict]:
     return [entry for entry in entries if isinstance(entry, dict)]
 
 
+def _skill_use_entries_from_markdown(text: str) -> list[dict]:
+    if not re.search(
+        r"\b(skill[-_ ]?use|applied_rules|evidence_refs|output_files|verification)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return []
+
+    entries: list[dict] = []
+    current: dict[str, object] = {}
+    for line in text.splitlines():
+        match = re.match(
+            r"\s*[-*]?\s*"
+            r"(skill_path|applied_rules|evidence_refs|output_files|verification)"
+            r"\s*:\s*(.+)",
+            line,
+        )
+        if not match:
+            continue
+
+        field, value = match.group(1), match.group(2).strip()
+        if field == "skill_path":
+            if current:
+                entries.append(current)
+            current = {"skill_path": value}
+        elif current:
+            current[field] = value
+    if current:
+        entries.append(current)
+    return entries
+
+
 def _field_present(value: object) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
@@ -162,12 +194,15 @@ def _field_present(value: object) -> bool:
 def _complete_skill_use_names(path: Path) -> list[str]:
     if not path.is_file():
         return []
-    if path.suffix.lower() != ".json":
-        return []
 
     text = path.read_text(encoding="utf-8", errors="replace")
+    entries = (
+        _skill_use_entries_from_json(text)
+        if path.suffix.lower() == ".json"
+        else _skill_use_entries_from_markdown(text)
+    )
     names: list[str] = []
-    for entry in _skill_use_entries_from_json(text):
+    for entry in entries:
         skill_name = normalize_skill_name(str(entry.get("skill_path") or ""))
         if not skill_name:
             continue
@@ -215,7 +250,7 @@ def build_skill_coverage(task_dir: Path | str) -> dict:
 
     loaded_names = {normalize_skill_name(path) for path in loaded_paths if normalize_skill_name(path)}
 
-    for path in _standard_context_paths(task_dir, ["skill-use.json"]):
+    for path in _standard_context_paths(task_dir, ["skill-use.json", "skill-use.md"]):
         if not path.is_file():
             continue
         generated_from.append(_evidence_name(task_dir, path))
