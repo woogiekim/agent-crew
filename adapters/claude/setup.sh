@@ -58,16 +58,21 @@ install_claude_namespaced_commands() {
 }
 
 install_claude_user_commands() {
-  local src="${AGENT_CREW_HOME}/user/commands"
+  local source_user_commands=""
+  local installed_user_commands="${AGENT_CREW_HOME}/user/commands"
   local dest="${CLAUDE_DIR}/commands"
 
   if [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/user/commands" ]; then
-    src="${SOURCE_ROOT}/core/user/commands"
+    source_user_commands="${SOURCE_ROOT}/core/user/commands"
   fi
 
-  [ -d "${src}" ] || return 0
   mkdir -p "${dest}"
-  diff_install "${src}" "${dest}"
+  if [ -n "${source_user_commands}" ] && [ -d "${source_user_commands}" ]; then
+    diff_install "${source_user_commands}" "${dest}"
+  fi
+  if [ -d "${installed_user_commands}" ]; then
+    diff_install "${installed_user_commands}" "${dest}"
+  fi
 }
 
 install_claude_namespaced_commands

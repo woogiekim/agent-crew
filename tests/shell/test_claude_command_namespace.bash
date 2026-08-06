@@ -21,6 +21,7 @@ mkdir -p \
   "${ACHOME}/system/agents" \
   "${ACHOME}/system/skills" \
   "${ACHOME}/user/agents" \
+  "${ACHOME}/user/commands" \
   "${ACHOME}/user/skills" \
   "${CLAUDE_DIR_T}/commands" \
   "${CLAUDE_DIR_T}/agent-crew" \
@@ -29,6 +30,8 @@ mkdir -p \
 cp "${SETUP_DIR}/common.sh" "${ACHOME}/setup/common.sh"
 cp "${REPO_ROOT}/core/commands/run.md" "${ACHOME}/commands/run.md"
 cp "${REPO_ROOT}/core/commands/agent.md" "${ACHOME}/commands/agent.md"
+printf '# /stager\n\nuser-owned command\n' > "${ACHOME}/user/commands/stager.md"
+printf '# /post-audit\n\nuser-owned command\n' > "${ACHOME}/user/commands/post-audit.md"
 printf 'legacy flat run\n' > "${CLAUDE_DIR_T}/commands/run.md"
 printf 'legacy flat agent\n' > "${CLAUDE_DIR_T}/commands/agent.md"
 
@@ -53,6 +56,10 @@ assert_file_exists "${CLAUDE_DIR_T}/commands/parity-check.md"
 
 it "claude setup installs parity-implement as a flat user command"
 assert_file_exists "${CLAUDE_DIR_T}/commands/parity-implement.md"
+
+it "claude setup installs installed user commands as flat user commands"
+assert_file_exists "${CLAUDE_DIR_T}/commands/stager.md"
+assert_file_exists "${CLAUDE_DIR_T}/commands/post-audit.md"
 
 it "claude setup does not install parity commands in crew namespace"
 assert_file_absent "${CLAUDE_DIR_T}/commands/crew/parity-check.md"
