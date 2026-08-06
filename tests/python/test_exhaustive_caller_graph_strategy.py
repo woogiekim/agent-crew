@@ -61,6 +61,18 @@ def test_code_intelligence_requires_graph_inventory_before_shared_code_edits() -
         assert required in text
 
 
+def test_code_intelligence_can_record_no_references_found_without_unused_claim() -> None:
+    text = compact(CODE_INTELLIGENCE)
+
+    for required in (
+        "no_references_found",
+        "No references found",
+        "stated search or semantic-reference method found no references",
+        "does not prove the behavior is unused outside the declared search scope",
+    ):
+        assert required in text
+
+
 def test_scope_boundary_links_cross_boundary_work_to_caller_graph() -> None:
     text = compact(SCOPE_BOUNDARY)
 

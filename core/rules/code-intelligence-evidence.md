@@ -51,7 +51,7 @@ The artifact must be a JSON object with these fields:
     "producers": [],
     "configuration_or_registration_paths": [],
     "tests": [],
-    "coverage": "exhaustive_within_scope | partial | not_applicable",
+    "coverage": "exhaustive_within_scope | partial | no_references_found | not_applicable",
     "unknowns": []
   },
   "diagnostics_before": [],
@@ -99,6 +99,11 @@ If static or semantic tooling cannot prove a path because of dynamic wiring,
 generated code, reflection, external runtime state, or missing provider
 capabilities, mark the graph `partial` and list the unknowns instead of
 claiming exhaustive coverage.
+
+Use `no_references_found` for the `No references found` claim state defined in
+`core/rules/evidence-grounded-reasoning.md`: the stated search or
+semantic-reference method found no references. It does not prove the behavior
+is unused outside the declared search scope.
 
 For code changes, do not invent:
 
