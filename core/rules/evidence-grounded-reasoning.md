@@ -182,9 +182,13 @@ inventory to discover the surface broadly, then apply selective DFS deep dive
 only where the risk profile requires end-to-end tracing. Do not force a
 DFS-only or BFS-only interpretation.
 
-BFS inventory should collect the first reachable layer of:
+BFS inventory expands breadth-first through the approved boundary. It should
+continue across in-scope caller and callee layers until the approved boundary is
+reached, evidence becomes unavailable, or the path is explicitly marked partial
+or `Unknown`. It includes:
 
 - direct callers and indirect callers;
+- in-scope indirect callers beyond the first direct edge;
 - callees, dependencies, and delegated side-effect paths;
 - public entrypoints such as commands, routes, handlers, jobs, callbacks, or
   adapters;

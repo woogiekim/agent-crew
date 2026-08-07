@@ -68,6 +68,23 @@ def test_evidence_rule_defines_hybrid_traversal_strategy() -> None:
         assert required in text
 
 
+def test_bfs_inventory_expands_through_approved_boundary() -> None:
+    text = compact(EVIDENCE_RULE)
+
+    assert "first reachable layer" not in text
+
+    for required in (
+        "BFS inventory expands breadth-first through the approved boundary",
+        "direct callers",
+        "in-scope indirect callers",
+        "until the approved boundary is reached",
+        "partial or `Unknown`",
+        "selective DFS deep dive",
+        "risk-bearing paths",
+    ):
+        assert required in text
+
+
 def test_code_intelligence_requires_graph_inventory_before_shared_code_edits() -> None:
     text = compact(CODE_INTELLIGENCE)
 
