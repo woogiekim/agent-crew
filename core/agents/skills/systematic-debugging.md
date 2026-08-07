@@ -56,6 +56,14 @@ failure is isolated, repeated across a boundary, or caused by a shared
 contract such as path resolution, state shape, schema, routing, or lifecycle
 ordering.
 
+Use caller graph traversal to keep the comparison bounded and complete enough
+for the claim. Start with BFS inventory from the observed symptom to collect
+entrypoints, callers, callees, producers, consumers, configuration, and
+registration paths. Then run selective DFS deep dive along the suspected
+failure path where a value, state transition, side effect, or external contract
+can change. If the graph remains partial, keep the root-cause claim partial or
+unknown.
+
 ### Phase 3 — Hypothesis
 
 State one narrow hypothesis that explains the evidence. Name the file,
@@ -114,6 +122,8 @@ cause.
 
 - [ ] Failure signal, command, path, and observed behavior are recorded.
 - [ ] Relevant code path and nearby working path are compared.
+- [ ] Caller graph status is recorded for the failing path: BFS inventory,
+      selective DFS deep dive, partial graph, or not applicable.
 - [ ] Facts and hypotheses are labeled separately.
 - [ ] Proposed fix is the smallest change that can test the hypothesis.
 - [ ] Verification command and result are captured before claiming resolution.

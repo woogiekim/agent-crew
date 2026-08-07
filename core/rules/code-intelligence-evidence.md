@@ -95,6 +95,10 @@ serializer, schema, hook, adapter, or other cross-boundary change, include a
 bounded caller graph inventory before implementation. Capture the reachable
 entrypoints, direct and indirect callers, callees, consumers, producers,
 configuration or registration paths, and tests that define observable behavior.
+Use the bounded bidirectional worklist traversal from
+`core/rules/evidence-grounded-reasoning.md`: BFS inventory first, then
+selective DFS deep dive for contract, side-effect, shared-boundary, public, or
+runtime-risk paths. Do not force DFS-only or BFS-only evidence.
 If static or semantic tooling cannot prove a path because of dynamic wiring,
 generated code, reflection, external runtime state, or missing provider
 capabilities, mark the graph `partial` and list the unknowns instead of

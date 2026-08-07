@@ -159,14 +159,19 @@ These snippets are safe to embed in skills, commands, and agents:
 - `$review`: "Report not only findings but whether proposed fixes are
   contract-safe, parity-safe, scope-safe, and side-effect-safe."
 - `$mr-review-rate`: "Do not reduce review reflection to numeric acceptance.
-  Include the disposition table and safety labels for each item."
+  Include the disposition table, safety labels, and caller graph status for
+  each behavior-affecting item. Use BFS inventory before selective DFS deep
+  dives on contract-risk paths."
 - `$parity-check`: "Compare behavior contracts before recommending any
-  feedback-driven change; label divergence as intentional only with evidence."
+  feedback-driven change; label divergence as intentional only with evidence
+  from the bounded caller graph."
 - `$parity-implement`: "Plan adaptations that satisfy the feedback intent
   while preserving producer/consumer parity unless a contract change is
-  explicitly approved."
+  explicitly approved. Do not plan from stale, partial, or endpoint-only graph
+  evidence."
 - `$prompt`: "Preserve the original feedback, ask the target AI to extract
-  intent, list contracts and side effects, and require disposition plus
+  intent, list contracts and side effects, run BFS inventory plus selective DFS
+  deep dive when reachable behavior may change, and require disposition plus
   evidence-limited closeout."
 - `crew:agent`: "Direct agent execution still applies contract-first feedback
   fidelity before mutation when the selected agent is allowed to mutate."

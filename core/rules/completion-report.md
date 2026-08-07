@@ -17,6 +17,11 @@ When the stage claims feedback-driven changes are complete, it must also
 satisfy `core/rules/contract-first-feedback-fidelity.md`: accepted items may
 only be reported as complete within the proven `contract-safe`, `parity-safe`,
 `scope-safe`, and `side-effect-safe` evidence.
+When the stage claims reachable behavior, side effects, parity, root cause, or
+unused code status, it must also state the caller graph evidence level:
+completed BFS inventory plus any needed selective DFS deep dive, partial graph,
+`No references found`, not applicable, or unknown. A completion report must not
+upgrade partial graph evidence into a stronger semantic claim.
 
 ```text
 STATUS: completed

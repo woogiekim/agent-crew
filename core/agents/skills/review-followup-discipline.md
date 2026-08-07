@@ -56,6 +56,14 @@ For every item reported as reflected, record whether the accepted response is
 label cannot be proven, keep the item as `PARTIAL`, `UNKNOWN`, or
 `POLICY_WAITING` instead of summarizing it as complete.
 
+For any review item that can affect behavior, persistence, events, logs,
+network calls, generated output, UI state, or another external side effect,
+include caller graph status before claiming the item is reflected. Use BFS
+inventory to identify the reachable surface and selective DFS deep dive for the
+risk-bearing path. If the graph is partial or the search only proves
+`No references found` inside a bounded scope, keep the related safety label
+unknown rather than upgrading the item to complete.
+
 Focused verification must explain what contract it proves. The test proves the
 original behavior contract only when it checks the behavior, value, state, or
 side effect that the review item was concerned about. In reviewer-facing
@@ -92,6 +100,8 @@ Prefer this order for review follow-up notes:
 - [ ] Evidence names the changed path, test, command, or contract.
 - [ ] Reflected items include contract-safe, parity-safe, scope-safe, and
       side-effect-safe evidence or an explicit unknown/residual risk.
+- [ ] Behavior-affecting review items include caller graph status from BFS
+      inventory and any needed selective DFS deep dive, or an explicit unknown.
 - [ ] Tests prove the original behavior contract, not merely the new
       implementation shape.
 - [ ] Negative interaction assertions do not hide a removed side-effect

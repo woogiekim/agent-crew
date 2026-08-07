@@ -83,6 +83,12 @@ Use fresh evidence from the current run whenever the claim is about:
 - runtime behavior, logs, DB state, API response, or UI state;
 - review feedback being reflected.
 
+When the claim is about reachable behavior, side effects, parity, root cause,
+or unused code, include caller graph status. A completed BFS inventory plus any
+needed selective DFS deep dive can support a bounded graph claim. A partial
+graph, stale graph, or `No references found` result must narrow the claim
+instead of becoming blanket proof.
+
 ### Rule 3: Separate transport success from semantic success
 
 A command, bridge, workflow, API call, or script returning success only proves
@@ -197,6 +203,8 @@ specific missing evidence.
 - [ ] The final answer identifies each strong claim being made.
 - [ ] Each strong claim has current-run evidence or is downgraded.
 - [ ] Local, remote, runtime, and policy states are not mixed together.
+- [ ] Caller graph status supports any behavior, side-effect, parity,
+      root-cause, or unused-code completion claim.
 - [ ] Tool/process success is not presented as semantic success.
 - [ ] Missing evidence is named under `Unknown` or `Blocked`.
 - [ ] The final wording is no stronger than the evidence.

@@ -49,6 +49,13 @@ quality-gate decisions, check that the report follows
 - [ ] Conclusion is narrower than the evidence and does not prescribe code
       changes that are still only hypothetical.
 
+When a finding or approval depends on reachable behavior, side effects,
+producer/consumer parity, or deleted/unused code, require caller graph status.
+Use BFS inventory to identify affected entrypoints and neighboring callers,
+then selective DFS deep dive on the risky value, state, or side-effect path.
+Treat `No references found` as a bounded search result, not as proof that the
+behavior is globally unused.
+
 ## PRD Coverage Matrix
 
 For each item in the PRD's Core Features list, verify whether it is present in the implementation:
@@ -348,6 +355,8 @@ terminal-status contract.
 ## Checklist
 - [ ] `{TASK_DIR}/context/prd.md` read before starting review
 - [ ] Git diff analyzed from merge-base or task commit range
+- [ ] Caller graph status checked for behavior, side-effect, parity, or
+      unused-code claims, or explicitly marked unknown/not applicable
 - [ ] PRD coverage matrix completed for all Core Features
 - [ ] OWASP Top 10 risks checked for applicable items
 - [ ] Non-functional requirements checked (security, performance, maintainability)

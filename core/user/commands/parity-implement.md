@@ -38,6 +38,10 @@ Before reading implementation files or generating units, validate all of the fol
 2. `IN_SCOPE_OPERATIONS` lists every reachable operation with source evidence.
 3. `DEPENDENCY_GRAPH` contains repository, `file:line`, symbol or method, and call direction for
    every in-scope node and edge.
+   It must show bounded bidirectional graph evidence: BFS inventory for the
+   reachable surface, selective DFS deep dive for contract-risk paths, and
+   explicit `No references found` states where the declared search returned no
+   references.
 4. `UI_COVERAGE` is `completed`, or it is `not_applicable` with evidence identifying the
    relevant non-UI entrypoints. `incomplete` fails the gate.
 5. `COVERAGE_GAPS` is explicitly `none`, or every remaining gap has explicit user acceptance
@@ -70,6 +74,10 @@ After the evidence gate passes, inspect every target repository before proposing
 1. Resolve and record each repository's current root, branch or detached state, revision, and
    working-tree status.
 2. Trace the report's in-scope graph against current production source and focused tests.
+   Use the same bounded bidirectional strategy: BFS inventory first to confirm
+   the current reachable surface, then selective DFS deep dive on any value,
+   state, side-effect, or external-contract path that could make the report
+   stale or incomplete.
 3. Inventory every existing partial implementation, including already migrated routes, methods,
    transformations, error mappings, feature flags, tests, and generated boundaries.
 4. Pin every still-valid `MATCH` as a preserve constraint. A proposed unit must not replace,

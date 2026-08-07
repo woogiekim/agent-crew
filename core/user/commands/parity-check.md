@@ -78,6 +78,13 @@ all supplied (or discovered) at invocation time.
      starting points, not an upper bound on reachable scope. Freeze the declared work scope before
      following connections so discovery is exhaustive inside that boundary rather than an
      unbounded scan of every repository.
+   - Use bounded bidirectional caller graph traversal for discovery. Start with
+     BFS inventory across entrypoints, direct callers, callees, producers,
+     consumers, configuration, and registration paths so the reachable surface is
+     visible. Then use selective DFS deep dive only on contract-risk paths where
+     a value, state, side effect, or external contract crosses a boundary.
+     Record `No references found` when the declared search returns no edges; do
+     not turn that into an unused-behavior claim outside the searched scope.
    - Discover every in-scope entrypoint that can reach the contract:
      - UI/client entrypoints such as JavaScript, TypeScript, JSX/TSX, JSP, PHP, HTML or other
        server templates, Vue or Svelte components, mobile clients, and GraphQL operations.
@@ -162,6 +169,7 @@ SCOPE: <CONTRACT>
 REPOS: <list of repo paths actually compared>
 MODE: static | api | both | <custom>
 TARGET_DISCOVERY: completed | incomplete | blocked
+CALLER_GRAPH_STRATEGY: BFS inventory + selective DFS deep dive | not_applicable
 ENTRYPOINTS_READ: <repo, path, entrypoint symbol, or "none with reason">
 IN_SCOPE_OPERATIONS: <reachable operations with file:line evidence>
 OUT_OF_SCOPE_OPERATIONS: <excluded operations with boundary reasons>

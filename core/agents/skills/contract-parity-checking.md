@@ -53,6 +53,11 @@ approved boundary. If a dynamic path, external system, generated artifact, or
 runtime-only registration cannot be checked, classify that path as `UNKNOWN`
 instead of treating it as matched.
 
+Use BFS inventory to find the reachable parity surface first: consumer-visible
+entrypoints, producer state, adapters, schemas, tests, and configuration. Then
+use selective DFS deep dive for each contract-risk path where the behavior must
+be proven end-to-end.
+
 Classify each compared path:
 
 - `MATCH`: behavior already agrees; preserve it.

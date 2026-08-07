@@ -32,6 +32,14 @@ could be referenced by. Public API symbols MUST also be checked
 against downstream callers (other repos, generated clients,
 documentation) when applicable.
 
+For behavior, public API, generated, reflective, scheduled, configured, or
+cross-repository symbols, use caller graph evidence rather than a single grep
+hit. Start with BFS inventory over entrypoints, callers, callees, config, and
+registration paths, then use selective DFS deep dive on any path that can
+produce an observable side effect. `No references found` means only that the
+declared search found no references; it is not by itself a global unused-code
+proof.
+
 ```bash
 # Search across source AND tests
 grep -rn "symbolName" --include="*.ts" --include="*.kt" --include="*.py"
@@ -85,6 +93,8 @@ the dynamic / string-referenced ones.
 ## Anti-Patterns
 - Commenting out instead of deleting.
 - Deleting public symbols without searching downstream consumers.
+- Treating `No references found` in one bounded caller graph search as proof
+  that a symbol is globally unused.
 - Bundling dead-code removal into a behavior-change commit.
 - Skipping the full test suite because "no behavior changed".
 - Removing test fixtures that look unused without confirming no

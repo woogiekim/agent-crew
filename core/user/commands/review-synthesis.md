@@ -50,3 +50,9 @@ The synthesis report must list every discovered or configured lens with one of:
 `eligible`, `completed`, `not-run`, `suggested`, `blocked`, `degraded`, or
 `duplicate-suppressed`. Every finding must preserve its source lens label, and
 local implementation status must stay separate from remote MR completion.
+
+When a lens reports caller graph coverage, preserve it in the synthesis instead
+of flattening it into a generic finding. Surface BFS inventory, selective DFS
+deep dive, `No references found`, partial graph, and unknown graph status with
+the source lens. Missing graph coverage must narrow completion guidance rather
+than becoming a stronger review or parity claim.

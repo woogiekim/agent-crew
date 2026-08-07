@@ -175,8 +175,14 @@ safety. The boundary is the explicit request, approved scope, repository,
 module, target symbol, public contract, or source-of-truth artifact currently
 under review; it is not an unbounded whole-world program analysis.
 
-Within that boundary, inspect the reachable graph in both directions when the
-repository gives first-party evidence:
+Within that boundary, inspect the reachable graph with a bounded
+bidirectional worklist traversal. This is a documentation-level investigation
+strategy, not a requirement to implement a graph algorithm. Start with BFS
+inventory to discover the surface broadly, then apply selective DFS deep dive
+only where the risk profile requires end-to-end tracing. Do not force a
+DFS-only or BFS-only interpretation.
+
+BFS inventory should collect the first reachable layer of:
 
 - direct callers and indirect callers;
 - callees, dependencies, and delegated side-effect paths;
@@ -185,6 +191,21 @@ repository gives first-party evidence:
 - producer and consumer contracts, including schemas, persistence mappings,
   serializers, configuration, dependency injection, and registration paths;
 - tests and fixtures that already exercise or document the path.
+
+BFS inventory answers who can call the target, what the target calls, where the
+behavior is exposed, who observes the result, and which tests or configuration
+pin the path.
+
+Use DFS only for risk-bearing paths that require deeper proof: public
+entrypoints, shared modules, persistence read/write boundaries, external APIs,
+schemas, protocols, serializers, side effects, scheduler or batch paths,
+runtime-only wiring, migration or parity paths, security boundaries, and
+review-finding behavior, value, state, or side-effect concerns.
+
+The traversal is bidirectional: follow both caller and callee directions, and
+for contract work follow producer and consumer paths. Stop at the approved
+scope boundary and mark unreachable external or runtime-only surfaces as
+partial or `Unknown`.
 
 Use deterministic repository evidence first: static search, language semantic
 references when available, structured route/config/schema parsers, build or
