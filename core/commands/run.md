@@ -62,6 +62,15 @@ acceptance as completion unless the accepted items are `contract-safe`,
 `parity-safe`, `scope-safe`, and `side-effect-safe`, or the missing proof is
 reported as residual risk.
 
+## Workflow Preset Contract
+
+Apply `core/rules/workflow-presets.md` before normal state initialization. The
+workflow preset classifier is a deterministic preflight that helps short inputs
+choose a suitable execution shape, but it must still delegate execution to `supervisor`.
+Presets may add intake checks, review loop guidance, and closeout rules; they
+must not replace the supervisor, create hidden agents, mutate external trackers,
+or choose branch names.
+
 ## Parallel-First Rule
 
 **Always prefer parallel fan-out over sequential execution.**
@@ -216,7 +225,8 @@ registered project-local adapter files.
 ### 1. Collect Tasks
 
 Use provided arguments as task descriptions. If none are provided, ask through
-the host AI tool's structured input UI.
+the host AI tool's structured input UI. For empty input, use the workflow-aware
+menu from `core/rules/workflow-presets.md` instead of a plain free-text retry.
 
 Accept:
 
@@ -249,6 +259,91 @@ The native helper is:
 ```bash
 crew issue-ingest ISSUE_NUMBER --task-id TASK_ID --repo OWNER/REPO
 ```
+
+### 1.2. Workflow Preset Classification
+
+> **This step runs after Step 1 input collection and before Step 1.5 injection
+> detection.** It classifies short task text into a workflow preset using
+> `core/scripts/workflow-preset-classifier.py` and
+> `core/rules/workflow-presets.md`.
+
+Run the helper against the verbatim task text:
+
+```bash
+WORKFLOW_PRESET_JSON=$(python3 "${AGENT_CREW_HOME}/scripts/workflow-preset-classifier.py" \
+  --task "${TASK}" \
+  --format json)
+```
+
+The helper returns:
+
+```json
+{
+  "recommended": "ticket-resolve",
+  "confidence": "high",
+  "auto_select": true,
+  "selection_required": false,
+  "conflicts": [],
+  "signals": [],
+  "reason": "...",
+  "caution": "..."
+}
+```
+
+#### Empty input
+
+When no task text was provided, present the workflow-aware menu through the
+host's structured choice capability:
+
+```text
+무엇을 실행할까요?
+
+1. Tracker issue id 입력
+2. 최근 prompt 실행
+3. 현재 작업 브랜치 기준으로 이어서 실행
+4. 직접 작업 내용 입력
+5. 취소
+```
+
+Do not show parser labels such as `APPROVAL_GATE`, and do not use circled
+number symbols. If the user chooses a task source, collect that task text and
+rerun this step. If the user cancels, stop without creating task state.
+
+#### Selection gate
+
+If `selection_required=true`, route the decision through the host's structured
+choice capability. Show the recommendation, reason, caution, and options in
+friendly user-facing text. The selected workflow is cached once the task state
+exists.
+
+If `auto_select=true`, continue without a user prompt. This is allowed only for
+one high-confidence preset with no conflict.
+
+#### Context record
+
+Once `TASK_DIR` exists, persist the selected preset:
+
+```json
+{
+  "selected_workflow_preset": "ticket-resolve",
+  "selection_source": "auto|user",
+  "reason": "...",
+  "signals": []
+}
+```
+
+Store it at `{TASK_DIR}/context/workflow-preset.json` and include the same
+selected preset in supervisor handoff context. The preset wraps
+preflight/postflight only; normal implementation still runs through the
+supervisor. `ticket-resolve` must carry the analysis adequacy states documented
+in `core/rules/workflow-presets.md`: `READY`, `NEEDS_ANALYSIS`,
+`NEEDS_USER_INPUT`, and `BLOCKED`.
+
+`review-synthesis` stays read-only when used by a preset-driven review loop.
+Provider-native review is consumed only through declared review-lens metadata or
+host capability metadata, never by hardcoded host command names. Plane, GitLab,
+GitHub, or any other external tracker write remains a preview + exact approval
+operation and is not performed by preset selection.
 
 ### 1.5. Injection Detection
 
