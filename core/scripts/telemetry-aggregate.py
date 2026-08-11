@@ -421,6 +421,179 @@ def read_text_file(path):
         return ""
 
 
+REVIEW_LOOP_MARKERS = (
+    "reviewer_rejected",
+    "needs_changes",
+    "review_needs_changes",
+    "review: needs_changes",
+)
+
+
+def review_loop_events(task_dir, events):
+    """Return review/fix retry events from existing task state only."""
+    sources = []
+    rows = list(events or [])
+    if rows:
+        sources.append("progress.buffer.jsonl")
+    else:
+        rows = read_progress_log(task_dir)
+        if rows:
+            sources.append("progress.log")
+
+    loop_events = []
+    for event in rows:
+        if event.get("event") != "RETRY":
+            continue
+        detail = str(event.get("detail") or "").lower()
+        agent = str(event.get("agent") or "").lower()
+        if agent == "reviewer" or any(marker in detail for marker in REVIEW_LOOP_MARKERS):
+            loop_events.append(event)
+
+    return loop_events, sources
+
+
+def read_review_ledger_json(path):
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        items = (
+            payload.get("items")
+            or payload.get("findings")
+            or payload.get("comments")
+            or payload.get("ledger")
+            or []
+        )
+    else:
+        return []
+
+    return [item for item in items if isinstance(item, dict)]
+
+
+def review_ledger_items(task_dir):
+    context = task_dir / "context"
+    json_path = context / "review-ledger.json"
+    if json_path.is_file():
+        return read_review_ledger_json(json_path), "context/review-ledger.json"
+
+    md_path = context / "review-ledger.md"
+    if not md_path.is_file():
+        return [], ""
+
+    text = read_text_file(md_path)
+    items = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(("-", "*", "|")):
+            continue
+        lowered = stripped.lower()
+        if "finding" not in lowered and "review" not in lowered and "implemented" not in lowered:
+            continue
+        items.append({"finding": stripped, "disposition": "Unknown"})
+
+    return items, "context/review-ledger.md"
+
+
+def first_non_empty(*values):
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def ledger_finding(item):
+    return first_non_empty(
+        item.get("finding"),
+        item.get("title"),
+        item.get("summary"),
+        item.get("comment"),
+        item.get("original"),
+        item.get("review"),
+    ) or "Unknown"
+
+
+def ledger_fix(item):
+    disposition = first_non_empty(
+        item.get("disposition"),
+        item.get("status"),
+        item.get("decision"),
+    )
+    evidence = first_non_empty(
+        item.get("evidence"),
+        item.get("fix"),
+        item.get("resolution"),
+        item.get("changed_path"),
+    )
+    if disposition and evidence:
+        return f"{disposition}: {evidence}"
+    if evidence:
+        return evidence
+    if disposition:
+        return disposition
+    return "Unknown"
+
+
+def ledger_verification(item):
+    verification = first_non_empty(
+        item.get("verification"),
+        item.get("test"),
+        item.get("tests"),
+        item.get("verified_by"),
+    )
+    if verification:
+        return verification
+
+    evidence_paths = item.get("evidence_paths")
+    if isinstance(evidence_paths, list):
+        joined = ", ".join(str(path) for path in evidence_paths if str(path).strip())
+        if joined:
+            return joined
+
+    return "Unknown"
+
+
+def review_label_for_event(event):
+    agent = first_non_empty(event.get("agent"), "reviewer")
+    detail = str(event.get("detail") or "")
+    if "NEEDS_CHANGES" in detail or "needs_changes" in detail.lower() or "reviewer_rejected" in detail.lower():
+        return f"{agent}, REVIEW: NEEDS_CHANGES"
+    return f"{agent}, REVIEW: Unknown"
+
+
+def build_review_fix_loop_summary(task_dir, events):
+    """Summarize review/fix loops without requiring new proof artifacts."""
+    loop_events, sources = review_loop_events(task_dir, events)
+    items, ledger_source = review_ledger_items(task_dir)
+    notes = []
+    if ledger_source:
+        sources.append(ledger_source)
+    elif loop_events:
+        notes.append("review ledger: not found")
+
+    cycles = []
+    for index, event in enumerate(loop_events, start=1):
+        item = items[index - 1] if index - 1 < len(items) else {}
+        cycles.append({
+            "cycle": index,
+            "review": review_label_for_event(event),
+            "finding": ledger_finding(item) if item else "Unknown",
+            "fix": ledger_fix(item) if item else "Unknown",
+            "verification": ledger_verification(item) if item else "Unknown",
+        })
+
+    return {
+        "total_cycles": len(cycles),
+        "cycles": cycles,
+        "sources": list(dict.fromkeys(sources)),
+        "notes": notes,
+    }
+
+
 def supervisor_boot_timeout_seconds():
     raw = os.environ.get("AGENT_CREW_SUPERVISOR_BOOT_TIMEOUT_SECONDS", "30")
     try:
@@ -578,6 +751,7 @@ def aggregate_task(state_dir, task_dir):
     quality_metrics = read_quality_metrics(task_dir)
     cost = read_cost_file(state_dir, task_id)
     result = read_result_md(task_dir)
+    review_fix_loop_summary = build_review_fix_loop_summary(task_dir, events)
     missing_boot = missing_supervisor_boot_state(
         task_dir,
         has_register=bool(reg),
@@ -734,6 +908,7 @@ def aggregate_task(state_dir, task_dir):
         "health":            health,
         "last_update_age_seconds": latest_event_age_seconds,
         "latest_progress":   latest_event,
+        "review_fix_loop_summary": review_fix_loop_summary,
         "stale_blocker":     stale_host_bridge,
         "started":           started.get("ts") if started else None,
         "stages_total":      stages_total,
@@ -1061,6 +1236,30 @@ def format_progress_event(row):
     return f"{event} stage={stage} age={age_text} | {detail}"
 
 
+def render_review_fix_loop_summary(rows):
+    loop_rows = [
+        row for row in rows
+        if (row.get("review_fix_loop_summary") or {}).get("total_cycles", 0) > 0
+    ]
+    if not loop_rows:
+        return
+
+    print()
+    print("Review / Fix Loop Summary:")
+    for row in loop_rows:
+        loop = row.get("review_fix_loop_summary") or {}
+        print(f"  {row['task_id']}: 총 loop: {loop.get('total_cycles', 0)} cycles")
+        for cycle in loop.get("cycles", []):
+            print(f"    Cycle {cycle.get('cycle', '?')}")
+            print(f"      리뷰: {cycle.get('review') or 'Unknown'}")
+            print(f"      주요 finding: {cycle.get('finding') or 'Unknown'}")
+            print(f"      반영: {cycle.get('fix') or 'Unknown'}")
+            print(f"      검증: {cycle.get('verification') or 'Unknown'}")
+        notes = loop.get("notes") or []
+        if notes:
+            print(f"      notes: {'; '.join(notes)}")
+
+
 def render_text(rows, summary):
     if not rows:
         print("(no tasks matched)")
@@ -1092,6 +1291,7 @@ def render_text(rows, summary):
     print("Latest progress:")
     for r in rows:
         print(f"  {r['task_id']}: {format_progress_event(r)}")
+    render_review_fix_loop_summary(rows)
     print()
     print(f"Tasks: {summary['tasks_total']} total | "
           f"{summary['tasks_completed']} completed | "

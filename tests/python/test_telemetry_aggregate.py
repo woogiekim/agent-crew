@@ -355,6 +355,167 @@ def test_direct_formatters_and_rich_text_render(capsys):
     assert "Guidance:" in out
 
 
+def test_review_fix_loop_summary_reports_no_loop_without_invention(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120600-0"
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    _write_progress_jsonl(task_dir, [
+        {"ts": "2026-01-01T12:06:00Z", "event": "STARTED", "detail": "clean run"},
+        {"ts": "2026-01-01T12:06:10Z", "event": "COMPLETED"},
+    ])
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    row = telemetry.aggregate_task(state_dir, task_dir)
+
+    assert row["review_fix_loop_summary"]["total_cycles"] == 0
+    assert row["review_fix_loop_summary"]["cycles"] == []
+    assert row["review_fix_loop_summary"]["sources"] == ["progress.buffer.jsonl"]
+
+
+def test_review_fix_loop_summary_uses_review_ledger_json_and_retry_events(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120601-0"
+    task_dir = state_dir / "tasks" / task_id
+    context = task_dir / "context"
+    context.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    _write_progress_jsonl(task_dir, [
+        {"ts": "2026-01-01T12:06:00Z", "event": "STARTED", "detail": "loop run"},
+        {
+            "ts": "2026-01-01T12:06:20Z",
+            "event": "RETRY",
+            "stage": 2,
+            "agent": "reviewer",
+            "detail": "attempt 2 — reviewer_rejected reason=review_needs_changes",
+        },
+        {
+            "ts": "2026-01-01T12:06:40Z",
+            "event": "STAGE_DONE",
+            "stage": 2,
+            "agent": "backend",
+            "detail": "backend — APPROVED",
+        },
+        {
+            "ts": "2026-01-01T12:06:50Z",
+            "event": "STAGE_DONE",
+            "stage": 3,
+            "agent": "reviewer",
+            "detail": "reviewer — REVIEW: APPROVED",
+        },
+        {"ts": "2026-01-01T12:07:00Z", "event": "COMPLETED"},
+    ])
+    (context / "review-ledger.json").write_text(
+        json.dumps({
+            "items": [
+                {
+                    "source": "reviewer",
+                    "finding": "status output does not explain retry loop",
+                    "disposition": "implemented",
+                    "evidence": "core/scripts/telemetry-aggregate.py",
+                    "verification": "tests/python/test_telemetry_aggregate.py",
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    row = telemetry.aggregate_task(state_dir, task_dir)
+    summary = row["review_fix_loop_summary"]
+
+    assert summary["total_cycles"] == 1
+    assert summary["cycles"][0]["review"] == "reviewer, REVIEW: NEEDS_CHANGES"
+    assert summary["cycles"][0]["finding"] == "status output does not explain retry loop"
+    assert summary["cycles"][0]["fix"] == "implemented: core/scripts/telemetry-aggregate.py"
+    assert summary["cycles"][0]["verification"] == "tests/python/test_telemetry_aggregate.py"
+    assert "context/review-ledger.json" in summary["sources"]
+
+
+def test_review_fix_loop_summary_marks_missing_artifacts_unknown(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120602-0"
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:20Z | RETRY | attempt 2 — reviewer_rejected reason=review_needs_changes\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    row = telemetry.aggregate_task(state_dir, task_dir)
+    cycle = row["review_fix_loop_summary"]["cycles"][0]
+
+    assert cycle["finding"] == "Unknown"
+    assert cycle["fix"] == "Unknown"
+    assert cycle["verification"] == "Unknown"
+    assert "review ledger: not found" in row["review_fix_loop_summary"]["notes"]
+
+
+def test_render_text_includes_compact_review_fix_loop_summary(capsys):
+    row = {
+        "task_id": "20260101-120603-0",
+        "task": "render loop task",
+        "status": "completed",
+        "health": "completed",
+        "current_phase": "completed",
+        "duration_seconds": 10,
+        "stages_completed": None,
+        "stages_total": 0,
+        "retries": 1,
+        "tokens_total": None,
+        "latest_progress": {"event": "COMPLETED", "stage": 0, "detail": ""},
+        "last_update_age_seconds": 0,
+        "guidance": [],
+        "review_fix_loop_summary": {
+            "total_cycles": 1,
+            "cycles": [
+                {
+                    "cycle": 1,
+                    "review": "reviewer, REVIEW: NEEDS_CHANGES",
+                    "finding": "missing loop summary",
+                    "fix": "implemented: telemetry summary",
+                    "verification": "focused pytest",
+                }
+            ],
+            "sources": ["progress.buffer.jsonl", "context/review-ledger.json"],
+            "notes": [],
+        },
+    }
+    summary = {
+        "tasks_total": 1,
+        "tasks_completed": 1,
+        "tasks_cancelled": 0,
+        "tasks_blocked": 0,
+        "tasks_stale_blocked": 0,
+        "tasks_running": 0,
+        "mean_duration_seconds": 10,
+        "median_duration_seconds": 10,
+        "total_retries": 1,
+        "total_tokens": 0,
+        "total_tool_events": 0,
+        "total_tool_failures": 0,
+        "total_tool_unrecovered_failures": 0,
+        "operational_quality": {},
+        "stale_state_counts": {},
+        "by_blocker": {},
+        "by_host_bridge_status": {},
+    }
+
+    telemetry.render_text([row], summary)
+    out = capsys.readouterr().out
+
+    assert "Review / Fix Loop Summary:" in out
+    assert "총 loop: 1 cycles" in out
+    assert "Cycle 1" in out
+    assert "missing loop summary" in out
+
+
 class TestTelemetryAggregate:
     def test_empty_state_dir_emits_no_tasks(
         self, script_runner, env_with_home, state_dir

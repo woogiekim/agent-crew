@@ -245,9 +245,12 @@ def test_sessions_include_aoe_registered_ai_sessions(monkeypatch, tmp_path: Path
     assert runtime.command_sessions(argparse.Namespace(project_root=str(project), limit=10)) == 0
 
     out = capsys.readouterr().out
-    assert "Claude · agent-crew · unknown" in out
-    assert "Codex · agent-crew · unknown" in out
-    assert "AoE registered session" in out
+    assert "Claude via AoE · agent-crew claude" in out
+    assert "Codex via AoE · agent-crew codex" in out
+    assert "cwd:" in out
+    assert "branch: -" in out
+    assert "AoE registered session" not in out
+    assert " · unknown" not in out
     assert "f59dec8ab2bd" not in out
 
 
@@ -284,8 +287,9 @@ def test_sessions_group_by_project_when_many_candidates(monkeypatch, tmp_path: P
     out = capsys.readouterr().out
     assert "agent-crew" in out
     assert "contents-systsem" in out
-    assert "2. Codex · feature-a" in out
-    assert "4. Codex · feature-c" in out
+    assert "2. Codex · agent-crew · feature-a" in out
+    assert "4. Codex · contents-systsem · feature-c" in out
+    assert "cwd:" in out
 
 
 def test_interact_shows_candidates_for_natural_language_request(monkeypatch, tmp_path: Path, capsys):
@@ -461,7 +465,9 @@ def test_interact_to_select_uses_fast_targeted_resolution_without_full_discovery
 
     out = capsys.readouterr().out
     assert "STATUS: sent" in out
-    assert "1. Claude · agent-crew · unknown" in out
+    assert "1. Claude via AoE · agent-crew claude" in out
+    assert "branch: -" in out
+    assert " · unknown" not in out
 
 
 def test_interact_to_branch_title_aoe_session_sends_without_packaged_fallback(monkeypatch, tmp_path: Path, capsys):

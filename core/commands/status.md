@@ -21,6 +21,13 @@ blocked, or resume-style paths should show the minimum useful coordinates
 (session id, task id, status or phase, and monitor/collect command when
 available) and avoid long troubleshooting narration unless explicitly requested.
 
+When recorded reviewer retry loops exist, `crew:status` may include a compact
+`Review / Fix Loop Summary` derived from existing task state. This is a
+read-only view over `progress.buffer.jsonl`, `progress.log`, and
+`context/review-ledger.*`; it must not require agents to create new proof
+artifacts or invent missing finding, fix, or verification details. Missing
+details are rendered as `Unknown`.
+
 ---
 
 ## Execution Steps
@@ -952,6 +959,14 @@ Recent events (from progress.log):
   2026-05-10T14:23:10 | PHASE      | 1c — Planning
   2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
   2026-05-10T14:24:00 | STAGE      | 1/3 — backend
+
+Review / Fix Loop Summary:
+  {TASK_ID}: 총 loop: {N} cycles
+    Cycle 1
+      리뷰: reviewer, REVIEW: NEEDS_CHANGES
+      주요 finding: {review-ledger finding or Unknown}
+      반영: {review-ledger disposition/evidence or Unknown}
+      검증: {review-ledger verification or Unknown}
 
 Pipeline stages:
   [✓] requirements

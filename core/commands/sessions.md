@@ -22,10 +22,17 @@ crew sessions --limit 5
 Each candidate should show:
 
 - AI type
-- project
-- branch
+- session title or another human-readable label when available
+- project or cwd-derived project hint
+- branch, using `branch: -` instead of repeating `unknown`
+- cwd hint, preferably home-relative
 - recent work summary
 - last activity time
 
 Internal session ids, task ids, and relay ids are intentionally hidden from the
-default output. Users select by number or natural-language description.
+default output. Users select by number or natural-language description, so the
+default list must include enough visible information to distinguish candidates
+that share the same project or branch. AoE candidates must show the AoE title
+or cwd hint; `AoE registered session` alone is not a sufficient candidate
+description. If an opaque id is needed to disambiguate otherwise identical
+candidates, expose only a short non-secret suffix, never the full id.

@@ -105,56 +105,212 @@ Input resolution priority for workspace slug:
 
 ---
 
-## Step 0.6 — Reference template (per-project, optional)
+## Step 0.6 — Local issue template (per-project, optional)
 
-Some Plane projects pin a "template issue" (`identifier=1`) whose
-`description_html` is the canonical body format every subsequent issue should
-follow. When such an issue exists, the issuer MUST fetch it before composing
-new issue bodies and reproduce its skeleton (headings, todo lists, check lists,
-section dividers) instead of inventing a free-form description.
+Some Plane projects need a stable issue body structure. The Plane adapter uses
+local templates for those projects instead of depending on a remote template
+issue during publication. This keeps issue creation deterministic when Plane
+lookup, permissions, MCP availability, or network state is degraded.
 
-### Project pin registry
+### Project local-template registry
 
-| `PLANE_PROJECT_IDENTIFIER` | Reference template | Required labels (apply by default) |
+| `PLANE_PROJECT_IDENTIFIER` | Local template | Required labels (apply by default) |
 |---|---|---|
-| `ENRTC` (project_id 70b5c55a-7246-4a33-8996-c037d7620db7) | `ENRTC-1` ("양식") | one of: 플랫폼전환 / 앱개발 / 에누리FE / 에누리BE / 운영 |
+| `ENRTC` (project_id 70b5c55a-7246-4a33-8996-c037d7620db7) | ENRTC default issue template | one of: 플랫폼전환 / 앱개발 / 에누리FE / 에누리BE / 운영 |
 
-Add a new row here when another project starts using a pinned template.
+Add a new row here when another project adopts a local template.
+
+### ENRTC default issue template
+
+For `ENRTC`, use the local canonical ENRTC template below. Do not read
+`ENRTC-1` during normal create or update publication. `ENRTC-1` may be used by
+a separate maintenance or drift-check task, but it is not part of the runtime
+publication path.
+
+Preserve all section headings (🔖 기본 정보, 📋 요청 정보, 📌 요청 내용,
+✅ TODO List, ✔ Check List, 📝 진행 내역, 🚨 이슈 트래킹) and their bullet
+structure. Replace placeholder values with the per-issue content parsed in
+Step 1; leave sections that have no input as explicit `Unknown` or `MISSING`
+entries instead of deleting entire sections or inventing details.
+
+```markdown
+## 🔖 기본 정보
+
+**업무 구분:** [ ] 운영 [ ] 신규 개발 [ ] 개선 [ ] 인프라 [ ] 데이터
+**우선순위:** P1 / P2 / P3
+**예상 M/D:** Unknown
+
+---
+
+## 📋 요청 정보
+
+- **요청자:** Unknown
+- **기획자:** Unknown
+- **관련 시스템:** Unknown
+- **목적:** MISSING
+- **구현 범위:** MISSING
+- **테스트 기준:** MISSING
+- **브랜치 유형:** MISSING
+- **권장 브랜치:** MISSING
+
+### 📌 요청 내용
+
+#### 요약
+
+- 사용자가 원하는 결과와 이유를 짧게 작성한다.
+
+#### Background
+
+- 배경, 문제 상황, 관련 리뷰/이슈/요청을 작성한다.
+
+#### Current Behavior
+
+- 현재 동작 또는 현재 제약을 작성한다.
+
+#### Target Behavior
+
+- 변경 후 기대 동작을 작성한다.
+
+#### Scope
+
+- 포함 범위, repository, module, endpoint, service, 주요 파일을 작성한다.
+
+#### Out of Scope
+
+- 이번 이슈에서 하지 않을 일을 작성한다.
+
+#### Implementation Notes
+
+- 구현 메모(개발자용): 코드 식별자, dependency, migration note, 운영상 주의점을 작성한다.
+
+#### Branch / Commit Convention
+
+- branch type은 git/conventional commit 의도에 맞춰 선택한다.
+- 기본 branch name 형식은 `{type}/{issue-key}-{short-slug}`로 작성한다.
+- `feat`: 새로운 사용자-facing 기능, 제품 동작, capability 추가.
+- `fix`: 버그, 회귀, 잘못된 동작, 장애 원인 수정.
+- `refactor`: 외부 동작 변화 없는 내부 구조 개선.
+- `docs`: 문서만 변경.
+- `test`: 테스트만 추가하거나 수정.
+- `chore`: tooling, build, config, maintenance 등 제품 동작과 직접 무관한 작업.
+- 필요하면 `perf`는 성능 개선, `ci`는 CI/CD workflow 변경에 사용한다.
+- 여러 성격이 섞이면 주된 변경 목적을 branch type으로 선택하고 보조 범위는
+  Implementation Notes에 남긴다.
+- 판단 근거가 부족하면 branch type 또는 branch name을 `MISSING`으로 남기고
+  임의로 만들지 않는다.
+
+#### Contract / Parity
+
+- producer/consumer 관계, API, DB, schema, DTO, parity 확인 필요 여부를 작성한다.
+
+#### Test Plan
+
+- 단위 테스트, 통합 테스트, 수동 확인, offline 우선 여부를 작성한다.
+
+#### Rollout / Rollback
+
+- 배포 영향, 롤백 가능성, 모니터링 포인트를 작성한다.
+
+#### Open Questions
+
+- Unknown, MISSING, blocker, 정책 결정 대기 항목을 작성한다.
+
+---
+
+# ✅ TODO List
+
+[ ] **문제 정의 및 분석**
+
+- Background와 Current Behavior를 확인한다.
+
+[ ] **설계 정리**
+
+- Scope, Out of Scope, Contract / Parity를 정리한다.
+
+[ ] **코드 수정 / 개발**
+
+- Implementation Notes 기준으로 변경한다.
+
+[ ] **개발 테스트**
+
+- Test Plan 기준으로 검증한다.
+
+[ ] **운영 배포**
+
+- Rollout / Rollback 기준으로 확인한다.
+
+---
+
+# ✔ Check List
+
+[ ] 목적이 명확함
+[ ] 구현 범위가 명확함
+[ ] 브랜치 유형과 권장 브랜치명이 명확함
+[ ] 기대 동작이 명확함
+[ ] 테스트 기준이 명확함
+[ ] Unknown, MISSING, blocker, 정책 결정 대기 항목이 있으면 명시됨
+[ ] 운영 영향도 확인 (Kafka / DB / 외부 API 등)
+[ ] 트래픽 영향 여부 검토
+[ ] 롤백 시나리오 확보
+[ ] 모니터링 포인트 정의
+[ ] 관련 팀 공유 완료
+
+---
+
+# 📝 진행 내역
+
+### 📅 YYYY/MM/DD
+
+- 작업 내용 기록
+- 이슈 발생 시 내용 정리
+
+---
+
+# 🚨 이슈 트래킹
+
+- 발생 이슈:
+- 원인:
+- 조치 내용:
+- 재발 방지 대책:
+```
 
 ### How to apply
 
 1. After Step 0 authentication, check the table above for the current
-   `PLANE_PROJECT_IDENTIFIER`. If present, fetch the template:
+   `PLANE_PROJECT_IDENTIFIER`.
 
-   ```text
-   mcp__plane__retrieve_work_item_by_identifier(
-     project_identifier=PLANE_PROJECT_IDENTIFIER,
-     issue_identifier=1
-   )
-   ```
+2. If the current project has a local template row, compose
+   `description_html` from that local template. Do not collapse the body to raw
+   `<p>{text}</p>`.
 
-2. Cache the template's `description_html` for the run. Treat it as the
-   skeleton — preserve all section headings (🔖 기본 정보, 📋 요청 정보,
-   📌 요청 내용, ✅ TODO List, ✔ Check List, 📝 진행 내역, 🚨 이슈 트래킹) and
-   their bullet structure. Replace placeholder values with the per-issue content
-   parsed in Step 1; leave sections that have no input as the template's
-   empty/placeholder form (do not delete entire sections).
+3. Insert Step 1 content with this deterministic mapping:
+   - `Description` / issue summary / spec text → `📌 요청 내용` → `요약`
+   - `Background` → `📌 요청 내용` → `Background`
+   - `Current Behavior` → `📌 요청 내용` → `Current Behavior`
+   - `Target Behavior` → `📌 요청 내용` → `Target Behavior`
+   - `Scope` → `📌 요청 내용` → `Scope`
+   - `Out of Scope` → `📌 요청 내용` → `Out of Scope`
+   - `Implementation Notes` → `📌 요청 내용` → `Implementation Notes`
+   - `BranchType` / `Branch Type` → `📋 요청 정보` → `브랜치 유형`
+   - `BranchName` / `Branch Name` / `Recommended Branch` → `📋 요청 정보` → `권장 브랜치`
+   - `Branch / Commit Convention` / `Branch Naming` → `📌 요청 내용` →
+     `Branch / Commit Convention`
+   - `Contract / Parity` → `📌 요청 내용` → `Contract / Parity`
+   - `Test Plan` → `📌 요청 내용` → `Test Plan`
+   - `Rollout / Rollback` → `📌 요청 내용` → `Rollout / Rollback`
+   - `Open Questions` → `📌 요청 내용` → `Open Questions`
+   - `Acceptance Criteria` → `✅ TODO List` as additional unchecked items
 
-3. The Step 1 markdown parse still produces the per-issue **title** and the
-   **content** that should populate the body. Insertion rules:
-   - Issue summary / spec text → placed under `📌 요청 내용`
-   - Acceptance criteria / steps → placed under `✅ TODO List` (as additional
-     unchecked items below the template defaults)
-   - Backend / dependency notes → placed under `🚨 이슈 트래킹` → `발생 이슈`
-     (or a clearly-named subsection)
+4. Missing implementation-critical fields stay visible as `Unknown` or
+   `MISSING`. Do not manufacture project names, files, tests, owner decisions,
+   runtime evidence, or rollout details just to fill the template.
 
-4. In Step 4's `mcp__plane__create_work_item` (and any `update_work_item`),
-   the `description_html` field MUST be the merged template body, not raw
-   `<p>{text}</p>`. The fallback "if `description_html` not accepted, send
-   markdown plaintext" rule still applies, but the markdown must be the
-   rendered equivalent of the template skeleton.
+5. In Step 4's `mcp__plane__create_work_item` (and any `update_work_item`), the
+   `description_html` field MUST be the rendered local-template body. If
+   `description_html` is not accepted, send markdown plaintext that preserves
+   the same local-template sections.
 
-5. For projects NOT in the pin registry, Step 4 behaves as before
+6. For projects NOT in the local-template registry, Step 4 behaves as before
    (free-form `<p>{full_description}</p>`).
 
 ### Required-label rule (when template specifies labels)
@@ -183,10 +339,10 @@ unless explicitly told otherwise by the user prompt.
 ## Supplementary Writing Guideline — Plain Lead + Developer Details
 
 This guideline mirrors the core `issuer` dispatcher and is supplementary. The
-Plane adapter's pinned template skeleton, field mappings, preview table,
-mutation gates, lifecycle summaries, and summary table format remain
-authoritative. Apply the rule below inside issue body prose and body excerpts
-without changing the adapter's required structure.
+Plane adapter's local issue templates, field mappings, preview table, mutation
+gates, lifecycle summaries, and summary table format remain authoritative.
+Apply the rule below inside issue body prose and body excerpts without changing
+the adapter's required structure.
 
 1. **Plain-language summary first.** Start issue descriptions with short,
    outcome-focused sentences that any non-technical reader can understand
@@ -236,8 +392,30 @@ This change makes the requested work clear to readers who need the outcome.
      end of segment.
    - `acceptance_criteria`: all text under `### Acceptance Criteria` up to the
      next `###` or end of segment.
+   - `background`: all text under `### Background`.
+   - `current_behavior`: all text under `### Current Behavior`.
+   - `target_behavior`: all text under `### Target Behavior`.
+   - `scope`: all text under `### Scope`.
+   - `out_of_scope`: all text under `### Out of Scope`.
+   - `implementation_notes`: all text under `### Implementation Notes`.
+   - `branch_type`: value from the `**BranchType:**`, `**Branch Type:**`, or
+     `**브랜치 유형:**` line. Default: `MISSING`.
+   - `branch_name`: value from the `**BranchName:**`, `**Branch Name:**`,
+     `**Recommended Branch:**`, or `**권장 브랜치:**` line. Default: `MISSING`.
+   - `branch_commit_convention`: all text under
+     `### Branch / Commit Convention` or `### Branch Naming`.
+   - `contract_parity`: all text under `### Contract / Parity`.
+   - `test_plan`: all text under `### Test Plan`.
+   - `rollout_rollback`: all text under `### Rollout / Rollback`.
+   - `open_questions`: all text under `### Open Questions`.
    - `full_description`: concatenation of `description` and (if non-empty)
-     a `## Acceptance Criteria` section appended from `acceptance_criteria`.
+     each recognized implementation-ready section, followed by an `##
+     Acceptance Criteria` section appended from `acceptance_criteria` when
+     present.
+
+   These implementation-ready sections are optional in input, but the ENRTC
+   local template keeps their destination headings visible. Missing values are
+   represented as `Unknown` or `MISSING`; do not invent details.
 
 4. Skip segments with an empty title and log a warning:
    `WARN: Skipping segment with no title (content preview: {first 80 chars})`.
@@ -255,6 +433,18 @@ This change makes the requested work clear to readers who need the outcome.
 | `StartDate` | `start_date` | ISO date YYYY-MM-DD |
 | `DueDate` | `target_date` | ISO date YYYY-MM-DD |
 | `Estimate` | `estimate_point` | Integer point value |
+| `Background` | `description_html` section | Background, problem context, related review or issue |
+| `Current Behavior` | `description_html` section | Current behavior or constraint |
+| `Target Behavior` | `description_html` section | Expected behavior after change |
+| `Scope` | `description_html` section | Included repositories, modules, files, endpoints, services |
+| `Out of Scope` | `description_html` section | Explicit exclusions |
+| `Implementation Notes` | `description_html` section | Developer details, dependencies, migration notes |
+| `BranchType` | `description_html` section | Conventional commit type for the recommended branch |
+| `BranchName` | `description_html` section | Recommended branch name, normally `{type}/{issue-key}-{short-slug}` |
+| `Contract / Parity` | `description_html` section | Producer/consumer, API, DB, schema, DTO, parity needs |
+| `Test Plan` | `description_html` section | Unit/integration/manual checks and offline preference |
+| `Rollout / Rollback` | `description_html` section | Deployment impact, rollback, monitoring |
+| `Open Questions` | `description_html` section | Unknowns, blockers, policy decisions |
 
 ---
 
@@ -314,6 +504,24 @@ This change makes the requested work clear to readers who need the outcome.
 ## Step 3.5 — Preview resolved issues
 
 1. Build a preview table from the resolved issue set after Steps 1-3 complete.
+   For template-backed projects, also build an implementation readiness warning
+   summary. The readiness check is informational and must not invent evidence.
+
+   Implementation readiness checks:
+   - `purpose` — description or summary states the desired outcome.
+   - `implementation scope` — `Scope` or equivalent body text identifies the
+     included surface.
+   - `expected behavior` — `Target Behavior` or equivalent body text states the
+     expected behavior.
+   - `branch convention` — branch type and recommended branch name are present,
+     or explicit `MISSING` markers remain visible.
+   - `test plan` — `Test Plan` or acceptance criteria define verification.
+   - `unknowns/blockers` — `Open Questions` or explicit `Unknown` / `MISSING`
+     entries are visible when information is unavailable.
+
+   Missing checks are preview warnings, not automatic blockers. The user may
+   still approve publication, but the body must retain `Unknown` or `MISSING`
+   markers rather than hiding gaps.
 
 2. Print a concise preview before any create call:
    ```
@@ -328,6 +536,13 @@ This change makes the requested work clear to readers who need the outcome.
    | 1 | {title} | {priority} | {state_name} | {labels} | {assignees} | {start_date} | {due_date} | {estimate} | {body_excerpt} |
    ...
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Implementation readiness:
+   - purpose: <ok|MISSING>
+   - implementation scope: <ok|MISSING>
+   - expected behavior: <ok|MISSING>
+   - branch convention: <ok|MISSING>
+   - test plan: <ok|MISSING>
+   - unknowns/blockers: <ok|MISSING|none-declared>
    ```
    Use a short body excerpt (for example the first 120 characters) so the
    preview stays readable.
@@ -391,7 +606,7 @@ For each non-duplicate issue, call `mcp__plane__create_work_item` with:
     "workspace_slug": "{PLANE_WORKSPACE_SLUG}",
     "project_id": "{PLANE_PROJECT_ID}",
     "name": "{title}",
-    "description_html": "<p>{full_description rendered as HTML}</p>",
+    "description_html": "<local-template or full_description rendered as HTML>",
     "priority": "{priority}",
     "state": "{state_id}",
     "label_ids": ["{label_id}", "..."],
@@ -401,9 +616,9 @@ For each non-duplicate issue, call `mcp__plane__create_work_item` with:
     "estimate_point": "{estimate or null}"
   }
   ```
-  > Note: if `description_html` is not accepted, fall back to sending
-  > `description` as plain markdown text. Omit null fields entirely rather
-  > than sending them as null.
+  > Note: if `description_html` is not accepted, send `description` as plain
+  > markdown text while preserving the same local-template sections. Omit null
+  > fields entirely rather than sending them as null.
 - On success: store `{ sequence_id, id, name }` in `CREATED`.
 - On error: log `ERROR [N/{total}] "{title}": {error message}` and continue
   (do not abort the batch).

@@ -49,11 +49,11 @@ The command lists candidates like:
 
 추천:
 1. Claude · agent-crew · main
-   relay 명령 구현 리뷰 · 8분 전
+   cwd: ~/Developments/agent-crew · branch: main · relay 명령 구현 리뷰 · 8분 전
 
 agent-crew
-2. Codex · docs/rename...
-   stager rename/E2E 테스트 · 34분 전
+2. Codex via AoE · agent-crew codex
+   cwd: ~/Developments/agent-crew · branch: - · 34분 전
 
 번호나 설명으로 선택하세요.
 예: 1, Claude agent-crew, main 브랜치
@@ -65,6 +65,14 @@ agent-crew
 - Put the recommended candidate first.
 - Treat user input `1` as choosing the recommended first candidate.
 - Group many candidates by project while keeping global numbering.
+- Keep each candidate distinguishable by showing a human-readable label, cwd
+  hint, branch display, recent summary when available, and last activity time.
+- Do not repeat `unknown` as a primary selection label. Use `branch: -` or a
+  cwd-derived fallback when branch or project metadata is unavailable.
+- AoE candidates must show their AoE title or cwd hint. The generic phrase
+  `AoE registered session` is not sufficient by itself.
+- If otherwise identical candidates need an id hint, expose only a short
+  non-secret suffix and never the full opaque session id.
 - Match `--to` as natural tokens across AI type, project, branch, summary, and
   session cwd.
 - Keep `relay` as the internal package/state protocol.

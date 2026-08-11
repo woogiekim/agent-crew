@@ -363,6 +363,78 @@ def project_name_from_worktree_cwd(cwd: object) -> str:
     return name or "unknown"
 
 
+def display_branch(value: object) -> str:
+    branch = str(value or "").strip()
+    if not branch or branch.lower() == "unknown":
+        return "-"
+    return branch
+
+
+def cwd_hint(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return "-"
+    try:
+        path = Path(raw).expanduser()
+        home = Path.home()
+        try:
+            return "~/" + str(path.relative_to(home))
+        except ValueError:
+            return str(path)
+    except Exception:
+        return raw
+
+
+def candidate_source_label(candidate: dict) -> str:
+    ai_type = str(candidate.get("ai_type") or "AI").strip() or "AI"
+    if str(candidate.get("source") or "").lower() == "aoe" and ai_type != "AoE":
+        return f"{ai_type} via AoE"
+    return ai_type
+
+
+def candidate_primary_label(candidate: dict) -> str:
+    source_label = candidate_source_label(candidate)
+    if str(candidate.get("source") or "").lower() == "aoe":
+        title = str(candidate.get("aoe_title") or "").strip()
+        if title:
+            return f"{source_label} · {title}"
+
+    project = str(candidate.get("project") or "").strip()
+    if not project or project.lower() == "unknown":
+        project = cwd_hint(candidate.get("cwd"))
+    parts = [source_label, project]
+    branch = display_branch(candidate.get("branch"))
+    if branch != "-":
+        parts.append(branch)
+    return " · ".join(part for part in parts if part and part != "-")
+
+
+def useful_candidate_summary(candidate: dict) -> str:
+    summary = str(candidate.get("summary") or "").strip()
+    if summary in {"", "unknown", "AoE registered session", "최근 작업 요약 없음"}:
+        return ""
+    if summary == str(candidate.get("aoe_title") or "").strip():
+        return ""
+    return summary
+
+
+def render_candidate_line(candidate: dict) -> str:
+    index = int(candidate.get("index") or 1)
+    return f"{choice_number(index)} {candidate_primary_label(candidate)}"
+
+
+def render_candidate_detail(candidate: dict) -> str:
+    fields = [
+        f"cwd: {cwd_hint(candidate.get('cwd'))}",
+        f"branch: {display_branch(candidate.get('branch'))}",
+    ]
+    summary = useful_candidate_summary(candidate)
+    if summary:
+        fields.append(summary)
+    fields.append(relative_time_label(candidate["updated_at"]))
+    return "   " + " · ".join(fields)
+
+
 def text_from_value(value: object) -> str:
     if isinstance(value, str):
         return value
@@ -603,6 +675,7 @@ def claude_session_candidates(home: Path) -> list[dict]:
                 "summary": first_summary_line(summary, str(row.get("name") or "")),
                 "updated_at": epoch_from_millis(row.get("updatedAt")) or file_mtime(path),
                 "status": str(row.get("status") or row.get("kind") or "최근 세션"),
+                "cwd": str(cwd or ""),
             }
         )
     return candidates
@@ -663,7 +736,7 @@ def aoe_session_candidates() -> list[dict]:
                 "ai_type": ai_type,
                 "project": project_name_from_cwd(cwd),
                 "branch": branch_from_session({}, cwd),
-                "summary": "AoE registered session",
+                "summary": first_summary_line(title, project_name_from_cwd(cwd)),
                 "updated_at": time.time(),
                 "status": "aoe",
                 "cwd": cwd,
@@ -864,8 +937,8 @@ def render_session_candidates(candidates: list[dict], *, grouped_threshold: int 
     lines.extend(
         [
             "추천:",
-            f"{choice_number(1)} {first['ai_type']} · {first['project']} · {first['branch']}",
-            f"   {first['summary']} · {relative_time_label(first['updated_at'])}",
+            render_candidate_line(first),
+            render_candidate_detail(first),
         ]
     )
 
@@ -880,8 +953,8 @@ def render_session_candidates(candidates: list[dict], *, grouped_threshold: int 
                     lines.extend(["", current_project])
                 lines.extend(
                     [
-                        f"{choice_number(row['index'])} {row['ai_type']} · {row['branch']}",
-                        f"   {row['summary']} · {relative_time_label(row['updated_at'])}",
+                        render_candidate_line(row),
+                        render_candidate_detail(row),
                     ]
                 )
         else:
@@ -889,8 +962,8 @@ def render_session_candidates(candidates: list[dict], *, grouped_threshold: int 
             for row in others:
                 lines.extend(
                     [
-                        f"{choice_number(row['index'])} {row['ai_type']} · {row['project']} · {row['branch']}",
-                        f"   {row['summary']} · {relative_time_label(row['updated_at'])}",
+                        render_candidate_line(row),
+                        render_candidate_detail(row),
                     ]
                 )
 
@@ -3505,8 +3578,8 @@ def render_selected_session_target(candidate: dict) -> str:
     index = int(candidate.get("index") or 1)
     lines = [
         "선택한 세션:",
-        f"{choice_number(index)} {candidate['ai_type']} · {candidate['project']} · {candidate['branch']}",
-        f"   {candidate['summary']} · {relative_time_label(candidate['updated_at'])}",
+        render_candidate_line({**candidate, "index": index}),
+        render_candidate_detail(candidate),
         "",
     ]
     return "\n".join(lines)
