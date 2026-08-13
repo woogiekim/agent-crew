@@ -6,7 +6,11 @@
 #   0 — allow
 #   2 — block; host should cancel the tool call and surface the reason
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+# AOE/Codex can keep hook stdin open after writing the JSON payload. Use the
+# bounded reader so PreToolUse returns before the host timeout.
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 
 python3 - "$INPUT" <<'PYEOF'
 import json

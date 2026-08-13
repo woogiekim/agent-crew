@@ -2,7 +2,9 @@
 # Advisory hook wrapper for automatic agent-crew bug/error reporting.
 # Never blocks the user's prompt/tool flow; failures are intentionally ignored.
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 CREW_BIN="${AGENT_CREW_HOME}/bin/crew"
 SCRIPT="${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py"

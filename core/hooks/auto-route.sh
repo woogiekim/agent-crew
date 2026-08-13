@@ -3,7 +3,9 @@
 
 PAYLOAD_FILE="$(mktemp "${TMPDIR:-/tmp}/agent-crew-auto-route.XXXXXX")"
 trap 'rm -f "${PAYLOAD_FILE}"' EXIT
-cat >"${PAYLOAD_FILE}"
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+read_agent_crew_hook_input >"${PAYLOAD_FILE}" || true
 
 python3 - "$PAYLOAD_FILE" <<'PYEOF'
 import json

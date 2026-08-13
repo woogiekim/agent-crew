@@ -6,7 +6,9 @@
 # nested tool_input.file_path / tool_input.new_path shape is kept as a
 # defensive fallback only, in case a caller ever sends the old shape.
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 CHANGED_FILE=$(python3 -c "
 import json, sys
 

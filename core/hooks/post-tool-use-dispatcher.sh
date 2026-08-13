@@ -15,7 +15,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cat > "${TMP_PAYLOAD}"
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+AGENT_CREW_HOOK_INPUT_MAX_BYTES="${AGENT_CREW_HOOK_INPUT_MAX_BYTES:-67108864}" \
+  read_agent_crew_hook_input > "${TMP_PAYLOAD}" || true
 
 SCRIPT="${AGENT_CREW_HOME}/scripts/post-tool-use-dispatcher.py"
 if [ ! -f "${SCRIPT}" ]; then

@@ -11,7 +11,9 @@
 # stderr message to the model (claude PostToolUse exit 2 → message
 # fed back).
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 
 # Resolve the validator path. Prefer ${AGENT_CREW_HOME}/scripts/ over
 # system/scripts/ (compat-alias parity with cost-tracker.sh / direct-edit-guard.sh).

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+from typing import Optional
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +34,73 @@ def load_approval_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def run_hook_with_open_stdin(script: Path, payload: dict, *, env: Optional[dict] = None) -> subprocess.CompletedProcess:
+    proc = subprocess.Popen(
+        ["bash", str(script)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env or os.environ.copy(),
+    )
+    assert proc.stdin is not None
+    proc.stdin.write(json.dumps(payload))
+    proc.stdin.flush()
+
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate(timeout=1)
+        raise AssertionError(f"{script.name} waited for stdin EOF; stdout={stdout!r} stderr={stderr!r}")
+    finally:
+        proc.stdin.close()
+
+    stdout = proc.stdout.read() if proc.stdout is not None else ""
+    stderr = proc.stderr.read() if proc.stderr is not None else ""
+
+    return subprocess.CompletedProcess(
+        args=["bash", str(script)],
+        returncode=proc.returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def test_guard_dangerous_commands_does_not_wait_for_stdin_eof() -> None:
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "sed -n '1,230p' core/audit.py"},
+    }
+
+    result = run_hook_with_open_stdin(REPO_ROOT / "core/hooks/guard-dangerous-commands.sh", payload)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_post_tool_use_dispatcher_does_not_wait_for_stdin_eof(tmp_path) -> None:
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"cwd": str(tmp_path), "command": "pwd"},
+        "tool_response": {"returncode": 0, "stdout": str(tmp_path)},
+    }
+    env = os.environ.copy()
+    env["AGENT_CREW_HOME"] = str(REPO_ROOT / "core")
+    payload_root = tmp_path / "payloads"
+    env["AGENT_CREW_HOOK_PAYLOAD_DIR"] = str(payload_root)
+
+    result = run_hook_with_open_stdin(
+        REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh",
+        payload,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert list(payload_root.glob("*/posttooluse-*.json"))
 
 
 def test_mixed_language_korean_approval_prompt_is_rejected():

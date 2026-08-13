@@ -3,7 +3,9 @@
 # auto-route directives (Issue #125 follow-up widens coverage beyond the
 # bare "Agent" tool_name to also catch the aliased Codex subagent call).
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 
 case "${INPUT}" in
   *\"agent_crew_hook_envelope\"*)

@@ -19,8 +19,9 @@
 #   Claude never enforced the block decision. Fixed by using sys.exit(2)
 #   on the block path. See GitHub issue #17.
 
-INPUT=$(cat)
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 
 python3 - "$INPUT" "$HOOK_DIR" <<'PYEOF'
 import importlib.util

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Warn when delegated-agent prompts appear to inline large file contents.
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 
 python3 - "$INPUT" <<'PYEOF'
 import json
