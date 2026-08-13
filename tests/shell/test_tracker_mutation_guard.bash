@@ -116,6 +116,30 @@ EOF
   : >"${home_dir}/state/${state_key}/tasks/active.${task_id}"
 }
 
+mark_task_completed() {
+  local task_dir="$1"
+  mkdir -p "${task_dir}"
+  cat >"${task_dir}/result.md" <<'EOF'
+STATUS: completed
+EOF
+}
+
+mark_task_completed_legacy() {
+  local task_dir="$1"
+  mkdir -p "${task_dir}"
+  cat >"${task_dir}/result.md" <<'EOF'
+**Status:** completed
+EOF
+}
+
+mark_task_blocked() {
+  local task_dir="$1"
+  mkdir -p "${task_dir}"
+  cat >"${task_dir}/result.md" <<'EOF'
+STATUS: blocked
+EOF
+}
+
 plain_tracker_payload='{
   "project_identifier": "TRACKER",
   "title": "Follow-up work item",
@@ -148,6 +172,16 @@ assert_contains "${out}" "external_side_effect" "block reason names side effect"
 assert_contains "${out}" "approval_scope" "block reason explains approved retry scope"
 assert_contains "${out}" "reject" "block reason explains rejection leaves mutation unrun"
 
+it "block reason lists searched tracker task candidates"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "state-one" "task-one" "${CURRENT_PROJECT}"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 2 "${rc}" "missing approval must still block"
+assert_contains "${out}" "candidate_task_dirs" "block reason should list searched candidates"
+assert_contains "${out}" "task-one" "candidate list should include the searched task"
+
 it "block reason is written to stderr"
 STDOUT_FILE="$(make_tmp)/stdout"
 STDERR_FILE="$(make_tmp)/stderr"
@@ -174,6 +208,144 @@ out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_pa
 rc=$?
 assert_exit 2 "${rc}" "cross-project active fallback evidence must not allow mutation"
 assert_contains "${out}" "tracker fallback contract" "cross-project active evidence is ignored"
+
+it "completed ancestor active marker does not shadow current worktree approval"
+TMP_HOME="$(make_tmp)/home"
+PARENT_PROJECT="$(make_tmp)/repo"
+CURRENT_PROJECT="${PARENT_PROJECT}/.worktrees/fix"
+mkdir -p "${CURRENT_PROJECT}"
+
+make_active_task_contract "${TMP_HOME}" "aaa-parent" "old-task" "${PARENT_PROJECT}"
+PARENT_TASK="${TMP_HOME}/state/aaa-parent/tasks/old-task"
+mark_task_completed "${PARENT_TASK}"
+
+make_active_task_contract "${TMP_HOME}" "zzz-worktree" "current-task" "${CURRENT_PROJECT}"
+CURRENT_TASK="${TMP_HOME}/state/zzz-worktree/tasks/current-task"
+make_task_approval "${CURRENT_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "current worktree approval should pass even when completed ancestor marker exists"
+assert_eq "" "${out}" "allowed call emits no output"
+assert_file_exists "${PARENT_TASK}/context/tracker-fallback-validation.json" "ancestor task context remains unchanged"
+assert_file_absent "${PARENT_TASK}/context/tracker-mutation-approval.consumed.json" "ancestor task approval is not consumed or created"
+assert_file_exists "${CURRENT_TASK}/context/tracker-mutation-approval.consumed.json" "current task approval is consumed"
+
+it "ancestor active marker does not shadow closest worktree project match"
+TMP_HOME="$(make_tmp)/home"
+PARENT_PROJECT="$(make_tmp)/repo"
+CURRENT_PROJECT="${PARENT_PROJECT}/.worktrees/fix"
+mkdir -p "${CURRENT_PROJECT}"
+
+make_active_task_contract "${TMP_HOME}" "aaa-parent" "parent-task" "${PARENT_PROJECT}"
+PARENT_TASK="${TMP_HOME}/state/aaa-parent/tasks/parent-task"
+
+make_active_task_contract "${TMP_HOME}" "zzz-worktree" "worktree-task" "${CURRENT_PROJECT}"
+WORKTREE_TASK="${TMP_HOME}/state/zzz-worktree/tasks/worktree-task"
+make_task_approval "${WORKTREE_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "closest worktree project approval should pass"
+assert_file_absent "${PARENT_TASK}/context/tracker-mutation-approval.consumed.json" "less-specific ancestor task is not consumed"
+assert_file_exists "${WORKTREE_TASK}/context/tracker-mutation-approval.consumed.json" "closest worktree task approval is consumed"
+
+it "old non-terminal active marker with matching approval remains searchable"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "state" "old-task" "${CURRENT_PROJECT}"
+OLD_TASK="${TMP_HOME}/state/state/tasks/old-task"
+make_task_approval "${OLD_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+touch -t 200001010000 "${TMP_HOME}/state/state/tasks/active.old-task"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "non-terminal active task approval should remain reachable even when marker is old"
+assert_eq "" "${out}" "allowed call emits no output"
+assert_file_exists "${OLD_TASK}/context/tracker-mutation-approval.consumed.json" "old non-terminal task approval is consumed"
+
+it "legacy completed result marker with matching approval is ignored"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "state" "legacy-task" "${CURRENT_PROJECT}"
+LEGACY_TASK="${TMP_HOME}/state/state/tasks/legacy-task"
+make_task_approval "${LEGACY_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+mark_task_completed_legacy "${LEGACY_TASK}"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 2 "${rc}" "legacy completed result should make the marker ineligible"
+assert_contains "${out}" "candidate_task_dirs: []" "legacy completed task is absent from searched candidates"
+assert_file_exists "${LEGACY_TASK}/context/tracker-mutation-approval.json" "legacy completed task approval is not consumed"
+
+it "blocked active task with matching approval remains searchable for retry"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "state" "blocked-task" "${CURRENT_PROJECT}"
+BLOCKED_TASK="${TMP_HOME}/state/state/tasks/blocked-task"
+make_task_approval "${BLOCKED_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+mark_task_blocked "${BLOCKED_TASK}"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "blocked task approval should remain reachable for approved retry"
+assert_eq "" "${out}" "allowed call emits no output"
+assert_file_exists "${BLOCKED_TASK}/context/tracker-mutation-approval.consumed.json" "blocked task approval is consumed"
+
+it "expired approval in one candidate does not hide valid approval in another"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "aaa-expired" "expired-task" "${CURRENT_PROJECT}"
+EXPIRED_TASK="${TMP_HOME}/state/aaa-expired/tasks/expired-task"
+make_task_approval "${EXPIRED_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}" "2000-01-01T00:00:00Z"
+
+make_active_task_contract "${TMP_HOME}" "zzz-valid" "valid-task" "${CURRENT_PROJECT}"
+VALID_TASK="${TMP_HOME}/state/zzz-valid/tasks/valid-task"
+make_task_approval "${VALID_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "valid approval in later candidate should pass"
+assert_file_exists "${EXPIRED_TASK}/context/tracker-mutation-approval.json" "expired approval is not consumed"
+assert_file_exists "${VALID_TASK}/context/tracker-mutation-approval.consumed.json" "valid approval is consumed"
+
+it "different-hash approval is preserved when no candidate has matching approval"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "state" "task" "${CURRENT_PROJECT}"
+TASK_DIR="${TMP_HOME}/state/state/tasks/task"
+make_task_approval "${TASK_DIR}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+
+changed_payload='{
+  "project_identifier": "TRACKER",
+  "title": "Changed follow-up work item",
+  "description_html": "<p>runtime adapter owns project-specific body validation</p>",
+  "label_ids": []
+}'
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${changed_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 2 "${rc}" "different-hash approval must block"
+assert_file_exists "${TASK_DIR}/context/tracker-mutation-approval.json" "mismatched approval is preserved"
+assert_file_absent "${TASK_DIR}/context/tracker-mutation-approval.consumed.json" "mismatched approval is not consumed"
+
+it "same-hash approvals in multiple candidates consume only one"
+TMP_HOME="$(make_tmp)/home"
+CURRENT_PROJECT="$(make_tmp)/project"
+make_active_task_contract "${TMP_HOME}" "aaa-first" "first-task" "${CURRENT_PROJECT}"
+FIRST_TASK="${TMP_HOME}/state/aaa-first/tasks/first-task"
+make_task_approval "${FIRST_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+
+make_active_task_contract "${TMP_HOME}" "zzz-second" "second-task" "${CURRENT_PROJECT}"
+SECOND_TASK="${TMP_HOME}/state/zzz-second/tasks/second-task"
+make_task_approval "${SECOND_TASK}" "mcp__plane__create_work_item" "${plain_tracker_payload}"
+
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" "AGENT_CREW_HOME=${TMP_HOME}" "PROJECT_ROOT=${CURRENT_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "one matching approval should authorize the mutation"
+consumed_count=0
+[ -f "${FIRST_TASK}/context/tracker-mutation-approval.consumed.json" ] && consumed_count=$((consumed_count + 1))
+[ -f "${SECOND_TASK}/context/tracker-mutation-approval.consumed.json" ] && consumed_count=$((consumed_count + 1))
+assert_eq "1" "${consumed_count}" "only one approval is consumed"
 
 it "failed tracker fallback validation evidence still blocks"
 TASK_DIR="$(make_tmp)/task"

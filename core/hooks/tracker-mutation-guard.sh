@@ -8,12 +8,15 @@
 # outgoing payload before mutation. Project-specific tracker rules belong in
 # runtime adapter evidence, not in this framework hook.
 
-INPUT=$(cat)
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${HOOK_DIR}/read-hook-input.sh"
+INPUT="$(read_agent_crew_hook_input || true)"
 
 python3 - "$INPUT" <<'PYEOF'
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +45,10 @@ VALIDATION_FILES = (
 APPROVAL_FILES = (
     "tracker-mutation-approval.json",
     "issuer-tracker-mutation-approval.json",
+)
+FINISHED_RESULT_RE = re.compile(
+    r"^(?:\*\*)?status:\*{0,2}\s+\*{0,2}(completed|cancelled)\*{0,2}\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -82,22 +89,45 @@ def is_same_or_child(path: Path, parent: Path) -> bool:
         return str(path) == str(parent)
 
 
-def active_marker_matches_current_project(task_dir: Path) -> bool:
+def task_is_finished(task_dir: Path) -> bool:
+    result = read_text(task_dir / "result.md")
+    for line in result.splitlines():
+        if FINISHED_RESULT_RE.match(line.strip()):
+            return True
+    return False
+
+
+def marker_is_live(marker: Path, task_dir: Path) -> bool:
+    if task_is_finished(task_dir):
+        return False
+    return marker.is_file()
+
+
+def active_marker_project_root(task_dir: Path) -> Optional[Path]:
     register = load_json(task_dir / "register.json")
     if not isinstance(register, dict):
-        return False
+        return None
 
     raw_project_root = str(register.get("project_root") or "").strip()
     if not raw_project_root:
-        return False
+        return None
 
     try:
-        project_root = Path(raw_project_root).expanduser().resolve()
+        return Path(raw_project_root).expanduser().resolve()
     except Exception:
-        project_root = Path(raw_project_root).expanduser()
+        return Path(raw_project_root).expanduser()
+
+
+def active_marker_match_depth(task_dir: Path) -> int:
+    project_root = active_marker_project_root(task_dir)
+    if project_root is None:
+        return -1
 
     current_path = current_project_path()
-    return current_path == project_root or is_same_or_child(current_path, project_root)
+    if current_path != project_root and not is_same_or_child(current_path, project_root):
+        return -1
+
+    return len(project_root.parts)
 
 
 def task_dir_candidates(tool_input: dict[str, Any]) -> list[Path]:
@@ -114,10 +144,21 @@ def task_dir_candidates(tool_input: dict[str, Any]) -> list[Path]:
     home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))).expanduser()
     state_root = home / "state"
     if state_root.is_dir():
+        active_matches: list[tuple[int, Path]] = []
         for marker in state_root.glob("*/tasks/active.*"):
             task_id = marker.name.removeprefix("active.")
             task_dir = marker.parent / task_id if task_id else None
-            if task_dir and active_marker_matches_current_project(task_dir):
+            if not task_dir or not marker_is_live(marker, task_dir):
+                continue
+            depth = active_marker_match_depth(task_dir)
+            if depth >= 0:
+                active_matches.append((depth, task_dir))
+        if active_matches:
+            closest_depth = max(depth for depth, _ in active_matches)
+            for _, task_dir in sorted(
+                (item for item in active_matches if item[0] == closest_depth),
+                key=lambda item: str(item[1]),
+            ):
                 candidates.append(task_dir)
 
     seen: set[str] = set()
@@ -200,15 +241,21 @@ def approval_request_reason(
     tool_name: str,
     tool_input: dict[str, Any],
     missing_evidence: str,
+    candidate_task_dirs: list[Path],
 ) -> str:
     digest = tool_input_sha256(tool_input)
     approval_path = "${TASK_DIR}/context/tracker-mutation-approval.json"
+    candidate_summary = json.dumps(
+        [str(candidate) for candidate in candidate_task_dirs],
+        ensure_ascii=False,
+    )
     return (
         "[agent-crew] Plane tracker mutation approval_required.\n\n"
         f"blocked_tool: {tool_name}\n"
         f"mutation_action: {mutation_action(tool_name)}\n"
         f"mutation_payload_summary: {payload_summary(tool_input)}\n"
         f"missing_evidence: {missing_evidence}\n"
+        f"candidate_task_dirs: {candidate_summary}\n"
         "external_side_effect: Plane work item, label, comment, or intake mutation can change an external tracker.\n"
         "approval_scope: single exact tool call only; tool_name and canonical tool_input_sha256 must match this blocked call.\n"
         f"tool_input_sha256: {digest}\n"
@@ -352,63 +399,56 @@ if tool_name not in MUTATING_PLANE_TOOLS:
 if os.environ.get("AGENT_CREW_TRACKER_MUTATION_GUARD_DISABLED", "").strip() == "1":
     sys.exit(0)
 
-contract_result = None
-contract_task_dir = None
-for candidate in task_dir_candidates(tool_input):
+candidate_dirs = task_dir_candidates(tool_input)
+contract_failures: list[str] = []
+approval_failures: list[str] = []
+
+for candidate in candidate_dirs:
     candidate_result = has_tracker_fallback_contract(candidate)
-    if candidate_result[0]:
-        contract_result = candidate_result
-        contract_task_dir = candidate
-        break
-    if contract_result is None:
-        contract_result = candidate_result
-        contract_task_dir = candidate
+    contract_ok, contract_reason = candidate_result
+    if not contract_ok:
+        contract_failures.append(f"{candidate}: {contract_reason}")
+        continue
 
-if contract_result is None:
-    block_with_reason(
-        approval_request_reason(
-            tool_name=tool_name,
-            tool_input=tool_input,
-            missing_evidence=(
-                "missing tracker fallback contract and task/request context. "
-                "No AGENT_CREW_TASK_DIR/TASK_DIR or matching active task context was found."
-            ),
-        )
+    approval_ok, approval_reason, approval_path = validate_tracker_approval(
+        candidate,
+        tool_name=tool_name,
+        tool_input=tool_input,
     )
+    if not approval_ok:
+        approval_failures.append(f"{candidate}: {approval_reason}")
+        continue
 
-contract_ok, contract_reason = contract_result
-if not contract_ok:
-    block_with_reason(
-        approval_request_reason(
-            tool_name=tool_name,
-            tool_input=tool_input,
-            missing_evidence=f"tracker fallback contract is incomplete: {contract_reason}",
+    consume_ok, consume_reason = consume_tracker_approval(approval_path)
+    if not consume_ok:
+        block_with_reason(
+            approval_request_reason(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                missing_evidence=consume_reason,
+                candidate_task_dirs=candidate_dirs,
+            )
         )
-    )
 
-approval_ok, approval_reason, approval_path = validate_tracker_approval(
-    contract_task_dir,
-    tool_name=tool_name,
-    tool_input=tool_input,
+    sys.exit(0)
+
+if not candidate_dirs:
+    missing_evidence = (
+        "missing tracker fallback contract and task/request context. "
+        "No AGENT_CREW_TASK_DIR/TASK_DIR or matching active task context was found."
+    )
+elif approval_failures:
+    missing_evidence = "no candidate has matching tracker mutation user approval evidence: " + "; ".join(approval_failures)
+else:
+    missing_evidence = "tracker fallback contract is incomplete for all candidates: " + "; ".join(contract_failures)
+
+block_with_reason(
+    approval_request_reason(
+        tool_name=tool_name,
+        tool_input=tool_input,
+        missing_evidence=missing_evidence,
+        candidate_task_dirs=candidate_dirs,
+    )
 )
-if not approval_ok:
-    block_with_reason(
-        approval_request_reason(
-            tool_name=tool_name,
-            tool_input=tool_input,
-            missing_evidence=approval_reason,
-        )
-    )
 
-consume_ok, consume_reason = consume_tracker_approval(approval_path)
-if not consume_ok:
-    block_with_reason(
-        approval_request_reason(
-            tool_name=tool_name,
-            tool_input=tool_input,
-            missing_evidence=consume_reason,
-        )
-    )
-
-sys.exit(0)
 PYEOF
