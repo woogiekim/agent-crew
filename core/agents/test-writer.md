@@ -303,7 +303,11 @@ Each test must:
   `경계케이스`, and `실패케이스` are valid when the project naturally uses
   Korean. If the framework only accepts identifier-style test names, encode the
   prefix in the identifier and keep the canonical string in a docstring,
-  comment, subtest name, or display-name annotation.
+  subtest name, table-case label, or display-name annotation.
+- Do not add Given/When/Then phase-marker comments to generated or changed test
+  bodies unless a project-local convention explicitly requires them. Prefer
+  behavior names, helper names, local variable names, blank lines, and clear
+  arrange/act/assert ordering over comments that only label obvious phases.
 - Exercise the documented contract — not the (yet-to-exist)
   implementation internals.
 - Name the primary test target variable `sut` by default when the test creates

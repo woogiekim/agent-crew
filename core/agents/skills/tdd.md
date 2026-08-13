@@ -217,14 +217,11 @@ class OrderServiceTest {
 
     @Test
     fun `should publish domain event after saving order`() {
-        // given
         val order = Order.create(OrderItems(listOf(Item(Money(1000)))))
         every { orderRepository.save(any()) } returns order
 
-        // when
         sut.placeOrder(order)
 
-        // then
         verify(exactly = 1) { orderRepository.save(order) }
     }
 }
@@ -327,7 +324,14 @@ the human-facing test name.
 Use the canonical display string when the framework supports free-form test
 names. When the framework requires identifier names, encode the same structure
 in the identifier and keep the canonical display string in a docstring,
-comment, subtest name, or closest equivalent.
+subtest name, table-case label, display-name annotation, or closest equivalent.
+
+Do not write Given/When/Then phase-marker comments in generated or changed test
+bodies unless a project-local convention explicitly requires them. Prefer the
+test name, display name, helper names, local variable names, blank lines, and
+clear arrange/act/assert ordering to communicate structure. Reviewers should
+treat low-signal phase-marker comments such as `given`, `when`, or `then` as
+review noise when the code is already readable without them.
 
 Positive examples across supported test families:
 
@@ -389,7 +393,9 @@ Reviewer guidance: flag changed tests whose test name, display name, subtest
 name, or documented equivalent lacks a nature prefix as
 `missing_test_nature_prefix`.
 
-`given / when / then` comments are mandatory in every test body.
+Reviewer guidance: flag changed tests that add unnecessary Given/When/Then
+phase-marker comments as `test_phase_marker_comment_noise` unless a
+project-local convention explicitly requires those comments.
 
 ## Test Target Variable Naming
 

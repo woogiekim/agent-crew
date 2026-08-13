@@ -848,8 +848,13 @@ Accept `success-case`, `boundary-case`, and `failure-case`, plus
 project-localized equivalents such as `성공케이스`, `경계케이스`, and
 `실패케이스`. If the test framework requires
 identifier-style names, the equivalent prefix may appear in the identifier,
-display-name annotation, docstring, comment immediately adjacent to the test,
-subtest name, or table-case label.
+display-name annotation, docstring, subtest name, or table-case label.
+
+Reject unnecessary Given/When/Then phase-marker comments in generated or
+changed test bodies as `test_phase_marker_comment_noise` unless a narrow
+project-local convention explicitly requires them. Prefer test names, helper
+names, local variable names, blank lines, and clear arrange/act/assert ordering
+over comments that only label obvious phases.
 
 Do not reject a changed test only for absence of `TC-001`, `TC-002`, or another
 opaque checklist identifier in the human-facing name. TC-ID traceability belongs

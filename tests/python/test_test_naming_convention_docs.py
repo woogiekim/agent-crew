@@ -98,6 +98,19 @@ def test_reviewer_flags_tests_missing_nature_prefix() -> None:
     assert "`<nature-prefix>[(<qualifier>)] - <behavior>`" in reviewer
 
 
+def test_test_guidance_forbids_given_when_then_phase_marker_comments() -> None:
+    tdd = read("core/agents/skills/tdd.md")
+    test_writer = read("core/agents/test-writer.md")
+    backend = read("core/agents/backend.md")
+    reviewer = read("core/agents/reviewer.md")
+
+    for text in (tdd, test_writer, backend, reviewer):
+        assert "Given/When/Then phase-marker comments" in text
+
+    for marker in ("// given", "// when", "// then", "# given", "# when", "# then"):
+        assert marker not in tdd
+
+
 def test_tc_ids_are_mapping_traceability_not_required_test_name_tokens() -> None:
     tdd = read("core/agents/skills/tdd.md")
     test_writer = read("core/agents/test-writer.md")

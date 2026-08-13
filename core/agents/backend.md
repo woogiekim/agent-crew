@@ -416,7 +416,11 @@ REFACTOR → Remove duplication, improve design → {runner} → confirm still p
   `경계케이스`, and `실패케이스` are valid when the project naturally uses
   Korean. If the framework only accepts identifier-style test names, encode the
   prefix in the identifier and keep the canonical string in a docstring,
-  comment, subtest name, or display-name annotation.
+  subtest name, table-case label, or display-name annotation.
+- Do not add Given/When/Then phase-marker comments to generated or changed test
+  bodies unless a project-local convention explicitly requires them. Communicate
+  test structure through the behavior name, helpers, local variable names,
+  blank lines, and clear arrange/act/assert ordering instead.
 - Test target naming convention: default the class, service, function wrapper,
   repository adapter, or other primary system under test variable to `sut`.
   Keep collaborators, inputs, expected values, and results domain-specific.
