@@ -22,6 +22,9 @@
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "${HOOK_DIR}/read-hook-input.sh"
 INPUT="$(read_agent_crew_hook_input || true)"
+. "${HOOK_DIR}/hook-timing.sh"
+agent_crew_hook_timing_start "direct-edit-guard"
+trap 'agent_crew_hook_timing_finish "$?"' EXIT
 
 python3 - "$INPUT" "$HOOK_DIR" <<'PYEOF'
 import importlib.util

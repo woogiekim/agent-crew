@@ -81,6 +81,32 @@ def test_guard_dangerous_commands_does_not_wait_for_stdin_eof() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_guard_dangerous_commands_records_timing_events_with_open_stdin(tmp_path) -> None:
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "sed -n '1,230p' core/audit.py"},
+    }
+    timing_log = tmp_path / "hook-timings.jsonl"
+    env = os.environ.copy()
+    env["AGENT_CREW_HOOK_TIMING_LOG"] = str(timing_log)
+
+    result = run_hook_with_open_stdin(
+        REPO_ROOT / "core/hooks/guard-dangerous-commands.sh",
+        payload,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = [
+        json.loads(line)
+        for line in timing_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["event"] for row in rows] == ["start", "finish"]
+    assert {row["hook"] for row in rows} == {"guard-dangerous-commands"}
+    assert rows[1]["elapsed_seconds"] >= 0
+
+
 def test_post_tool_use_dispatcher_does_not_wait_for_stdin_eof(tmp_path) -> None:
     payload = {
         "hook_event_name": "PostToolUse",
@@ -101,6 +127,36 @@ def test_post_tool_use_dispatcher_does_not_wait_for_stdin_eof(tmp_path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert list(payload_root.glob("*/posttooluse-*.json"))
+
+
+def test_post_tool_use_dispatcher_records_timing_events_with_open_stdin(tmp_path) -> None:
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"cwd": str(tmp_path), "command": "pwd"},
+        "tool_response": {"returncode": 0, "stdout": str(tmp_path)},
+    }
+    env = os.environ.copy()
+    env["AGENT_CREW_HOME"] = str(REPO_ROOT / "core")
+    payload_root = tmp_path / "payloads"
+    env["AGENT_CREW_HOOK_PAYLOAD_DIR"] = str(payload_root)
+    timing_log = tmp_path / "hook-timings.jsonl"
+    env["AGENT_CREW_HOOK_TIMING_LOG"] = str(timing_log)
+
+    result = run_hook_with_open_stdin(
+        REPO_ROOT / "core/hooks/post-tool-use-dispatcher.sh",
+        payload,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = [
+        json.loads(line)
+        for line in timing_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["event"] for row in rows] == ["start", "finish"]
+    assert {row["hook"] for row in rows} == {"post-tool-use-dispatcher"}
+    assert rows[1]["elapsed_seconds"] >= 0
 
 
 def test_mixed_language_korean_approval_prompt_is_rejected():

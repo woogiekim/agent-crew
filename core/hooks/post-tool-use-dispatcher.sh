@@ -19,6 +19,15 @@ HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "${HOOK_DIR}/read-hook-input.sh"
 AGENT_CREW_HOOK_INPUT_MAX_BYTES="${AGENT_CREW_HOOK_INPUT_MAX_BYTES:-67108864}" \
   read_agent_crew_hook_input > "${TMP_PAYLOAD}" || true
+. "${HOOK_DIR}/hook-timing.sh"
+agent_crew_hook_timing_start "post-tool-use-dispatcher"
+
+finish_and_exit() {
+    local rc="$1"
+
+    agent_crew_hook_timing_finish "${rc}"
+    exit "${rc}"
+}
 
 SCRIPT="${AGENT_CREW_HOME}/scripts/post-tool-use-dispatcher.py"
 if [ ! -f "${SCRIPT}" ]; then
@@ -32,10 +41,10 @@ set -e
 trap - EXIT
 
 if [ "${PY_STATUS}" -eq 2 ]; then
-    exit 2
+    finish_and_exit 2
 fi
 if [ "${PY_STATUS}" -ne 0 ]; then
-    exit 0
+    finish_and_exit 0
 fi
 
 TOOL_NAME="$(printf '%s' "${ENVELOPE}" | sed -nE 's/.*"tool_name":"([^"]*)".*/\1/p')"
@@ -134,4 +143,4 @@ while IFS= read -r child; do
     fi
 done <<< "${CHILDREN}"
 
-exit "${STATUS}"
+finish_and_exit "${STATUS}"
