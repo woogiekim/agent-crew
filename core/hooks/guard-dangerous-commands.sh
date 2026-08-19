@@ -7,15 +7,11 @@
 #   2 — block; host should cancel the tool call and surface the reason
 
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
-# AOE/Codex can keep hook stdin open after writing the JSON payload. Use the
-# bounded reader so PreToolUse returns before the host timeout.
-. "${HOOK_DIR}/read-hook-input.sh"
-INPUT="$(read_agent_crew_hook_input || true)"
 . "${HOOK_DIR}/hook-timing.sh"
 agent_crew_hook_timing_start "guard-dangerous-commands"
 trap 'agent_crew_hook_timing_finish "$?"' EXIT
 
-python3 - "$INPUT" <<'PYEOF'
+python3 -S - "${HOOK_DIR}/../scripts" 3<&0 <<'PYEOF'
 import json
 import os
 import re
@@ -23,7 +19,18 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+sys.path.insert(0, sys.argv[1])
+from hook_input import MAX_BYTES, read_available_fd
+
+try:
+    max_bytes = int(os.environ.get("AGENT_CREW_HOOK_INPUT_MAX_BYTES", str(MAX_BYTES)))
+except ValueError:
+    max_bytes = MAX_BYTES
+if max_bytes <= 0:
+    max_bytes = MAX_BYTES
+
+# stdin carries this Python program; fd 3 preserves the host hook payload.
+raw_input = read_available_fd(3, max_bytes=max_bytes).decode("utf-8", errors="replace")
 
 try:
     data = json.loads(raw_input)

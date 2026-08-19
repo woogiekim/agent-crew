@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import shutil
@@ -542,6 +544,95 @@ def codex_hook_config_probe(project_root: Path, codex_home: Path | None = None) 
     }
 
 
+def _codex_default_shell_path() -> Path | None:
+    if os.name == "nt":
+        return None
+
+    try:
+        import pwd
+
+        shell = pwd.getpwuid(os.getuid()).pw_shell
+    except (ImportError, KeyError, OSError):
+        return None
+
+    return Path(shell) if shell else None
+
+
+def _run_shell_startup(shell_path: Path, timeout_seconds: float) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(
+            [str(shell_path), "-c", "exit 0"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+    except OSError as exc:
+        return False, str(exc)
+
+    return proc.returncode == 0, f"rc={proc.returncode}"
+
+
+def codex_shell_startup_probe(
+    *,
+    shell_path: Path | None = None,
+    parallelism: int = 7,
+    budget_seconds: float = 2.0,
+    runner: Callable[[Path, float], tuple[bool, str]] | None = None,
+    clock: Callable[[], float] | None = None,
+) -> dict[str, Any]:
+    shell_path = shell_path or _codex_default_shell_path()
+    if shell_path is None or not shell_path.is_file():
+        return {
+            "status": "info",
+            "shell": str(shell_path or "unknown"),
+            "parallelism": parallelism,
+            "elapsed_seconds": None,
+            "detail": f"shell={shell_path or 'unknown'}; startup probe unavailable",
+        }
+
+    run_shell = runner or _run_shell_startup
+    monotonic = clock or time.monotonic
+    process_timeout = max(1.0, min(5.0, budget_seconds * 2))
+    started = monotonic()
+    with ThreadPoolExecutor(max_workers=parallelism) as pool:
+        futures = [
+            pool.submit(run_shell, shell_path, process_timeout)
+            for _ in range(parallelism)
+        ]
+        results: list[tuple[bool, str]] = []
+        for future in futures:
+            try:
+                results.append(future.result())
+            except Exception as exc:
+                results.append((False, str(exc)))
+    elapsed_seconds = monotonic() - started
+
+    failures = [detail for ok, detail in results if not ok]
+    status = "warn" if failures or elapsed_seconds > budget_seconds else "pass"
+    detail = (
+        f"shell={shell_path} parallel={parallelism} "
+        f"elapsed={elapsed_seconds:.3f}s budget={budget_seconds:.3f}s"
+    )
+    if failures:
+        detail += f" failures={len(failures)} first={failures[0]}"
+    if status == "warn":
+        detail += "; shell startup can consume Codex hook timeout before hook body"
+        if shell_path.name == "zsh":
+            detail += "; keep ~/.zshenv lightweight and initialize NVM/pyenv/rbenv in ~/.zshrc"
+
+    return {
+        "status": status,
+        "shell": str(shell_path),
+        "parallelism": parallelism,
+        "elapsed_seconds": elapsed_seconds,
+        "detail": detail,
+    }
+
+
 def auto_issue_reporting_blocker_probe(asset_root: Path, agent_crew_home: Path, project_root: Path) -> tuple[bool, str]:
     hook = asset_root / "hooks" / "auto-issue-report.sh"
     if not hook.is_file():
@@ -756,6 +847,13 @@ def doctor_host(args: argparse.Namespace) -> list[dict[str, Any]]:
         codex_hooks["detail"],
         emit=args.format == "text",
     ))
+    shell_startup = codex_shell_startup_probe()
+    findings.append(print_finding(
+        "codex parallel shell startup",
+        shell_startup["status"],
+        shell_startup["detail"],
+        emit=args.format == "text",
+    ))
     codex_invocation = adapter_doc_path(
         Path(args.asset_root),
         Path(args.agent_crew_home).expanduser(),
@@ -796,6 +894,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_shell_startup(args: argparse.Namespace) -> int:
+    report = codex_shell_startup_probe()
+    if args.format == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print_finding(
+            "codex parallel shell startup",
+            report["status"],
+            report["detail"],
+        )
+
+    return 2 if report["status"] == "warn" else 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     cfg = effective_config(args)
     if args.subcommand == "dump":
@@ -829,6 +941,9 @@ def main() -> int:
     doctor.add_argument("--mode", choices=("all", "static", "runtime", "host"), default="all")
     doctor.add_argument("--format", choices=("text", "json"), default="text")
     doctor.set_defaults(func=cmd_doctor)
+    shell_startup = sub.add_parser("shell-startup")
+    shell_startup.add_argument("--format", choices=("text", "json"), default="text")
+    shell_startup.set_defaults(func=cmd_shell_startup)
     config = sub.add_parser("config")
     config_sub = config.add_subparsers(dest="subcommand", required=True)
     config_doctor = config_sub.add_parser("doctor")

@@ -26,12 +26,23 @@ def _hook_entry(script_name: str) -> str:
 
 
 def test_codex_pretooluse_bash_guard_has_explicit_timeout() -> None:
-    assert '"timeout": 5' in _hook_entry("guard-dangerous-commands.sh")
+    assert '"timeout": 10' in _hook_entry("guard-dangerous-commands.sh")
 
 
 def test_codex_pretooluse_tracker_guard_has_explicit_timeout() -> None:
-    assert '"timeout": 5' in _hook_entry("tracker-mutation-guard.sh")
+    assert '"timeout": 10' in _hook_entry("tracker-mutation-guard.sh")
+
+
+def test_codex_pretooluse_context_guard_has_explicit_timeout() -> None:
+    assert '"timeout": 10' in _hook_entry("context-guard.sh")
 
 
 def test_codex_pretooluse_direct_edit_guard_has_explicit_timeout() -> None:
-    assert '"timeout": 5' in _hook_entry("direct-edit-guard.sh")
+    assert '"timeout": 10' in _hook_entry("direct-edit-guard.sh")
+
+
+def test_codex_setup_runs_parallel_shell_startup_preflight() -> None:
+    text = _setup_text()
+
+    assert "crew-diagnostics.py" in text
+    assert "shell-startup --format text" in text

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 from typing import Optional
 
@@ -105,6 +106,46 @@ def test_guard_dangerous_commands_records_timing_events_with_open_stdin(tmp_path
     assert [row["event"] for row in rows] == ["start", "finish"]
     assert {row["hook"] for row in rows} == {"guard-dangerous-commands"}
     assert rows[1]["elapsed_seconds"] >= 0
+
+
+def test_guard_starts_timing_before_its_single_python_process(tmp_path) -> None:
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "sed -n '1,230p' core/audit.py"},
+    }
+    timing_log = tmp_path / "hook-timings.jsonl"
+    startup_log = tmp_path / "python-startup.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    python_wrapper = bin_dir / "python3"
+    python_wrapper.write_text(
+        "#!/bin/bash\n"
+        "if [ -s \"${AGENT_CREW_HOOK_TIMING_LOG}\" ]; then\n"
+        "  printf 'timing-started\\n' >> \"${PYTHON_STARTUP_LOG}\"\n"
+        "else\n"
+        "  printf 'timing-missing\\n' >> \"${PYTHON_STARTUP_LOG}\"\n"
+        "fi\n"
+        "exec \"${REAL_PYTHON}\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    python_wrapper.chmod(0o755)
+    env = os.environ.copy()
+    env["AGENT_CREW_HOOK_TIMING_LOG"] = str(timing_log)
+    env["PYTHON_STARTUP_LOG"] = str(startup_log)
+    env["REAL_PYTHON"] = sys.executable
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+
+    result = run_hook_with_open_stdin(
+        REPO_ROOT / "core/hooks/guard-dangerous-commands.sh",
+        payload,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert startup_log.read_text(encoding="utf-8").splitlines() == [
+        "timing-started"
+    ]
 
 
 def test_post_tool_use_dispatcher_does_not_wait_for_stdin_eof(tmp_path) -> None:

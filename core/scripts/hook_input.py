@@ -24,15 +24,15 @@ def is_complete_json(payload: bytearray) -> bool:
     return True
 
 
-def read_available_stdin(
+def read_available_fd(
+    fd: int,
     idle_seconds: float = DEFAULT_IDLE_SECONDS,
     max_bytes: int = MAX_BYTES,
 ) -> bytes:
-    """Read delivered pipe data without requiring the writer to close stdin."""
+    """Read delivered pipe data from a descriptor without requiring EOF."""
     try:
-        fd = sys.stdin.fileno()
         mode = os.fstat(fd).st_mode
-    except (AttributeError, OSError, ValueError):
+    except (OSError, ValueError):
         return b""
 
     if not (stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)):
@@ -71,6 +71,19 @@ def read_available_stdin(
         idle_until = time.monotonic() + idle_seconds
 
     return bytes(payload)
+
+
+def read_available_stdin(
+    idle_seconds: float = DEFAULT_IDLE_SECONDS,
+    max_bytes: int = MAX_BYTES,
+) -> bytes:
+    """Read delivered pipe data without requiring the writer to close stdin."""
+    try:
+        fd = sys.stdin.fileno()
+    except (AttributeError, OSError, ValueError):
+        return b""
+
+    return read_available_fd(fd, idle_seconds=idle_seconds, max_bytes=max_bytes)
 
 
 def main() -> int:

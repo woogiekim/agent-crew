@@ -25,6 +25,23 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
   printf 'MODE: update (host=codex)\n'
 fi
 
+run_codex_shell_startup_preflight() {
+  local diagnostics="${AGENT_CREW_HOME}/scripts/crew-diagnostics.py"
+  local asset_root="${AGENT_CREW_HOME}"
+
+  if [ ! -f "${diagnostics}" ] && [ -n "${SOURCE_ROOT:-}" ]; then
+    diagnostics="${SOURCE_ROOT}/core/scripts/crew-diagnostics.py"
+    asset_root="${SOURCE_ROOT}/core"
+  fi
+  [ -f "${diagnostics}" ] || return 0
+
+  python3 "${diagnostics}" \
+    --project-root "${PROJECT_ROOT}" \
+    --asset-root "${asset_root}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    shell-startup --format text || true
+}
+
 write_codex_hooks_json() {
   local dest="$1"
   local agent_crew_home="$2"
@@ -45,7 +62,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/guard-dangerous-commands.sh'",
-                        "timeout": 5,
+                        "timeout": 10,
                     }
                 ],
             },
@@ -55,7 +72,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/tracker-mutation-guard.sh'",
-                        "timeout": 5,
+                        "timeout": 10,
                     }
                 ],
             },
@@ -65,7 +82,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/context-guard.sh'",
-                        "timeout": 5,
+                        "timeout": 10,
                     }
                 ],
             },
@@ -75,7 +92,7 @@ settings = {
                     {
                         "type": "command",
                         "command": f"bash '{home}/hooks/direct-edit-guard.sh'",
-                        "timeout": 5,
+                        "timeout": 10,
                     }
                 ],
             },
@@ -708,3 +725,4 @@ fi
 printf 'HOST: codex\n'
 printf 'INSTALLED: %s\n' "${PROJECT_ROOT}/.codex"
 printf 'CAPABILITIES: %s\n' "${CAPABILITIES_FILE}"
+run_codex_shell_startup_preflight
