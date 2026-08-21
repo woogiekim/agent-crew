@@ -169,6 +169,7 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     verify_args=(
       --source-root "${SOURCE_ROOT}"
       --agent-crew-home "${AGENT_CREW_HOME}"
+      --codex-home "${CODEX_HOME:-${HOME}/.codex}"
       --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
       --prune-extra
     )
@@ -336,6 +337,7 @@ fi
 verify_args=(
   --source-root "${SOURCE_ROOT}"
   --agent-crew-home "${AGENT_CREW_HOME}"
+  --codex-home "${CODEX_HOME:-${HOME}/.codex}"
   --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
   --prune-extra
 )

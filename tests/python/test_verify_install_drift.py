@@ -115,3 +115,50 @@ def test_verify_install_drift_text_reports_missing_mismatched_and_extra(tmp_path
     assert "missing: update.md" in result.stdout
     assert "mismatched: update.md" in result.stdout
     assert "extra: extra.md" in result.stdout
+
+
+def test_verify_install_drift_prunes_legacy_codex_dash_skills_only(tmp_path: Path):
+    source_root = tmp_path / "source"
+    skill_src = source_root / "adapters" / "codex" / "skill" / "crew:run"
+    skill_src.mkdir(parents=True)
+    (skill_src / "SKILL.md").write_text("canonical\n", encoding="utf-8")
+
+    home = tmp_path / "home"
+    codex_home = tmp_path / "codex"
+    legacy = codex_home / "skills" / "crew-run"
+    canonical = codex_home / "skills" / "crew:run"
+    unrelated = codex_home / "skills" / "custom-skill"
+    legacy.mkdir(parents=True)
+    canonical.mkdir(parents=True)
+    unrelated.mkdir(parents=True)
+    (legacy / "SKILL.md").write_text("stale\n", encoding="utf-8")
+    (canonical / "SKILL.md").write_text("canonical\n", encoding="utf-8")
+    (unrelated / "SKILL.md").write_text("keep\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--source-root",
+            str(source_root),
+            "--agent-crew-home",
+            str(home),
+            "--codex-home",
+            str(codex_home),
+            "--skip-path-bin",
+            "--prune-extra",
+            "--format",
+            "json",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    codex_check = next(
+        check for check in payload["checks"] if check["destination"] == str(codex_home / "skills")
+    )
+    assert codex_check["extra"] == ["crew-run"]
+    assert not legacy.exists()
+    assert unrelated.is_dir()

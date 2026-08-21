@@ -10,6 +10,24 @@ import os
 from pathlib import Path
 
 
+LEGACY_CODEX_DASH_SKILLS = (
+    "crew-agent-maker",
+    "crew-agent",
+    "crew-cost",
+    "crew-interact",
+    "crew-run",
+    "crew-sessions",
+    "crew-setup",
+    "crew-smm",
+    "crew-sync-instructions",
+    "crew-status",
+    "crew-task",
+    "crew-telemetry",
+    "crew-update",
+    "crew-workflow",
+)
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -95,10 +113,63 @@ def compare_file(src: Path, dest: Path) -> dict:
     }
 
 
+def compare_codex_command_skills(src: Path, dest: Path, *, prune_extra: bool) -> dict:
+    missing = []
+    mismatched = []
+    extra = []
+
+    if not src.is_dir():
+        return {
+            "source": str(src),
+            "destination": str(dest),
+            "missing": missing,
+            "mismatched": mismatched,
+            "extra": extra,
+            "passed": True,
+        }
+
+    for src_skill in sorted(path for path in src.iterdir() if path.is_dir()):
+        rel_root = src_skill.name
+        dest_skill = dest / rel_root
+        src_files = source_files(src_skill)
+
+        for rel, src_path in src_files.items():
+            dest_path = dest_skill / rel
+            display = f"{rel_root}/{rel}"
+            if not dest_path.is_file():
+                missing.append(display)
+                continue
+            if sha256_file(src_path) != sha256_file(dest_path):
+                mismatched.append(display)
+
+    for legacy_name in (*LEGACY_CODEX_DASH_SKILLS, "agent-crew"):
+        legacy_path = dest / legacy_name
+        if not legacy_path.exists():
+            continue
+        extra.append(legacy_name)
+        if prune_extra:
+            for child in sorted(legacy_path.rglob("*"), reverse=True):
+                if child.is_file() or child.is_symlink():
+                    child.unlink()
+                elif child.is_dir():
+                    child.rmdir()
+            legacy_path.rmdir()
+
+    return {
+        "source": str(src),
+        "destination": str(dest),
+        "missing": missing,
+        "mismatched": mismatched,
+        "extra": extra,
+        "passed": not missing and not mismatched and (not extra or prune_extra),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--agent-crew-home", default=os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
+    parser.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
     parser.add_argument("--path-bin", default=os.environ.get("AGENT_CREW_PATH_BIN", str(Path.home() / ".local" / "bin")))
     parser.add_argument("--skip-path-bin", action="store_true")
     parser.add_argument("--prune-extra", action="store_true")
@@ -107,6 +178,7 @@ def main() -> int:
 
     source_root = Path(args.source_root).expanduser().resolve()
     home = Path(args.agent_crew_home).expanduser().resolve()
+    codex_home = Path(args.codex_home).expanduser().resolve()
     path_bin = Path(args.path_bin).expanduser().resolve()
 
     checks = []
@@ -134,6 +206,13 @@ def main() -> int:
     )
 
     checks.append(compare_tree(source_root / "core" / "bin", home / "bin", prune_extra=args.prune_extra))
+    checks.append(
+        compare_codex_command_skills(
+            source_root / "adapters" / "codex" / "skill",
+            codex_home / "skills",
+            prune_extra=args.prune_extra,
+        )
+    )
     if not args.skip_path_bin:
         checks.append(compare_file(source_root / "core" / "bin" / "crew", path_bin / "crew"))
 
@@ -141,6 +220,7 @@ def main() -> int:
         "schema_version": 1,
         "source_root": str(source_root),
         "agent_crew_home": str(home),
+        "codex_home": str(codex_home),
         "passed": all(check["passed"] for check in checks),
         "checks": checks,
     }
