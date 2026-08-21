@@ -58,10 +58,25 @@ Each ledger item records:
 - `review`: the original review comment, preserved without rewriting its
   meaning.
 - `intent`: the acceptance criterion inferred from that comment.
+- `affected_contract`: the observable behavior, value, state, side effect,
+  compatibility promise, or scope boundary that governs the decision.
+- `contract_disposition`: one of `ACCEPT`, `ACCEPT_WITH_ADAPTATION`,
+  `REJECT_METHOD_ONLY`, `DEFER`, or `REJECT` from
+  `core/rules/contract-first-feedback-fidelity.md`.
 - `disposition`: one of `implemented`, `deferred`, `rejected`, or
-  `not-applicable`.
+  `not-applicable`; this is the lifecycle disposition used by the completion
+  gate, not the contract judgment.
+- `code_evidence` and `test_evidence`, or an explicit disposition-specific
+  basis when implementation evidence does not apply.
+- `contract-safe`, `parity-safe`, `scope-safe`, and `side-effect-safe`, each
+  backed by evidence or explicitly marked `unknown`.
 - disposition-specific evidence, described below.
 - `residual_risk`: remaining uncertainty, or `none`.
+
+The lifecycle disposition must not replace `contract_disposition`. Keep both
+axes so a ledger can distinguish, for example, an implemented adaptation from
+literal acceptance and a method-only rejection from rejection of the review
+intent itself.
 
 ## Dispositions
 
@@ -87,10 +102,16 @@ instead of claiming full implementation.
       "id": "RIF-001",
       "review": "로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨",
       "intent": "자동승인 이력을 뉴스봇 ActionLog로 남긴다",
+      "affected_contract": "automatic approval audit actor and persisted action-log values",
+      "contract_disposition": "ACCEPT_WITH_ADAPTATION",
       "disposition": "implemented",
       "code_evidence": ["src/CmsArticleService.java:120"],
       "test_evidence": ["test/CmsArticleServiceNewsBotActorTest.java:42"],
       "semantic_verification": "memberSeq/status/comment/contentSeq/contentType values are asserted",
+      "contract-safe": "yes: requested audit values are preserved",
+      "parity-safe": "yes: existing approval response remains unchanged",
+      "scope-safe": "yes: only the owning audit path changed",
+      "side-effect-safe": "yes: one persisted ActionLog is asserted",
       "residual_risk": "none"
     }
   ]
@@ -100,9 +121,9 @@ instead of claiming full implementation.
 ## Markdown Format
 
 ```markdown
-| Review | Intent | Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |
-|---|---|---|---|---|---|---|
-| 로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨 | 자동승인 이력을 뉴스봇 ActionLog로 남긴다 | implemented | src/CmsArticleService.java:120 | test/CmsArticleServiceNewsBotActorTest.java:42 | memberSeq/status/comment/contentSeq/contentType values are asserted | none |
+| Review | Intent | Affected Contract | Contract Disposition | Disposition | Code Evidence | Test Evidence | Semantic Verification | Contract-safe | Parity-safe | Scope-safe | Side-effect-safe | Residual Risk |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨 | 자동승인 이력을 뉴스봇 ActionLog로 남긴다 | automatic approval audit actor and values | ACCEPT_WITH_ADAPTATION | implemented | src/CmsArticleService.java:120 | test/CmsArticleServiceNewsBotActorTest.java:42 | memberSeq/status/comment/contentSeq/contentType values are asserted | yes | yes | yes | yes | none |
 ```
 
 ## Completion Gate
@@ -115,6 +136,11 @@ validate every item before accepting "review follow-up complete":
   verification are blockers.
 - `deferred`, `rejected`, and `not-applicable` items without their required
   rationale or tracking evidence are blockers.
+- Every behavior-affecting item must preserve `affected_contract`, one valid
+  `contract_disposition`, code/test evidence or an explicit non-implementation
+  basis, all four safety labels, and `residual_risk`. Missing or `unknown`
+  safety proof narrows the closeout claim; it cannot be summarized as fully
+  reflected.
 - A ledger can be absent for non-review-follow-up implementation work, but a
   reviewer or supervisor must require it before declaring that review comments
   were reflected, handled, addressed, fixed, or accepted.

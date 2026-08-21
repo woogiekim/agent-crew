@@ -98,6 +98,53 @@ def test_contract_first_feedback_fidelity_rejects_shape_only_test_evidence() -> 
         assert required in text
 
 
+def test_contract_first_feedback_fidelity_defines_boundary_contract_matrix() -> None:
+    text = read(RULE_PATH)
+
+    for required in [
+        "common boundary",
+        "semantic-empty",
+        "copy input before transforming",
+        "remove values made empty by transformation",
+        "structured key/value evidence",
+        "normal values that merely contain suspicious substrings",
+        "asymmetric optional inputs",
+        "invalid item inside a collection",
+        "all-invalid collection",
+        "sibling producer/consumer path symmetry",
+        "caller input immutability",
+        "headers, pagination, encoding, and existing side effects",
+        "local verification",
+        "runtime verification",
+    ]:
+        assert required in text
+
+
+def test_boundary_contract_matrix_is_referenced_without_role_local_copies() -> None:
+    skill_paths = [
+        REPO_ROOT / "core" / "agents" / "skills" / "code-review.md",
+        REPO_ROOT / "core" / "agents" / "skills" / "tdd.md",
+        REPO_ROOT / "core" / "agents" / "skills" / "contract-parity-checking.md",
+    ]
+
+    duplicated_matrix_terms = [
+        "asymmetric optional inputs",
+        "invalid item inside a collection",
+        "all-invalid collection",
+        "caller input immutability",
+        "headers, pagination, encoding, and existing side effects",
+    ]
+
+    for path in skill_paths:
+        text = read(path)
+        assert "core/rules/contract-first-feedback-fidelity.md" in text
+        assert "BOUNDARY_CONTRACT_REVIEW" in text
+        assert "observable contract" in text
+        assert "role-local copy" in text
+        for duplicated in duplicated_matrix_terms:
+            assert duplicated not in text, f"{path} duplicates {duplicated}"
+
+
 def test_contract_first_feedback_fidelity_rule_exposes_agent_and_command_snippets() -> None:
     text = read(RULE_PATH)
 

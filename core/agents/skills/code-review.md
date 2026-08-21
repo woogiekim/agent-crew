@@ -145,6 +145,21 @@ When reporting a finding, include the narrowest useful file and line reference. 
 
 ---
 
+## Boundary Contract Review
+
+When a change touches normalization, serialization, filtering, external
+boundaries, shared helpers, or producer/consumer transport, review the
+observable contract before approving the implementation shape. Use
+`core/rules/contract-first-feedback-fidelity.md`
+`BOUNDARY_CONTRACT_REVIEW` as the canonical matrix instead of maintaining a
+role-local copy.
+
+Flag a finding when tests only prove that a helper was called, or that a raw
+string does not contain a token, while the observable contract remains
+unverified.
+
+---
+
 ## Security Review — OWASP Top 10 (2021)
 
 (Reference: owasp.org/Top10)

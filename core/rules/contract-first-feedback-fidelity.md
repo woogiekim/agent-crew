@@ -132,6 +132,44 @@ If a label cannot be proven, do not claim it. Report the missing evidence under
 - Do not let "review acceptance 100%" override system consistency, parity, or
   contract safety.
 
+## BOUNDARY_CONTRACT_REVIEW
+
+When feedback touches normalization, serialization, filtering, an external
+boundary, or any shared helper, do not fix one caller first. Find the lowest
+common boundary that all reachable callers share, then evaluate the observable
+contract at that boundary.
+
+Boundary review must treat semantic emptiness and transformation order as part
+of the contract:
+
+```text
+copy input before transforming
+-> remove semantic-empty values
+-> transform collection or structured values
+-> remove values made empty by transformation
+-> serialize or emit the boundary value
+```
+
+Use structured key/value evidence, parsed payloads, schema objects, or other
+structured observations when they exist. Do not rely on substring assertions
+that can confuse intentionally absent fields with normal values that merely
+contain suspicious substrings.
+In other words, normal values that merely contain suspicious substrings must be
+preserved unless the structured contract says they are invalid.
+
+For boundary-affecting feedback, the review or test matrix should cover the
+observable contract rather than the helper method shape:
+
+- exact structured key/value or parsed result evidence;
+- exact absence of the targeted field while preserving unrelated valid fields;
+- null and blank inputs;
+- asymmetric optional inputs, such as start-only and end-only ranges;
+- invalid item inside a collection and an all-invalid collection;
+- sibling producer/consumer path symmetry;
+- caller input immutability;
+- headers, pagination, encoding, and existing side effects;
+- local verification separated from runtime verification.
+
 ## AGENT_CREW_INSTRUCTION_SNIPPETS
 
 These snippets are safe to embed in skills, commands, and agents:

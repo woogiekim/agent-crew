@@ -55,6 +55,7 @@ REVIEW_FOLLOWUP_DISCIPLINE_SKILL = (
 CONTRACT_PARITY_CHECKING_SKILL = (
     REPO_ROOT / "core" / "agents" / "skills" / "contract-parity-checking.md"
 )
+RESOLVER_AGENT = REPO_ROOT / "core" / "agents" / "resolver.md"
 HANDOFF_CONTEXT_PRESERVATION_SKILL = (
     REPO_ROOT / "core" / "agents" / "skills" / "handoff-context-preservation.md"
 )
@@ -265,7 +266,7 @@ def test_verification_before_claim_skill_ships_with_dispatchable_frontmatter() -
         ),
         (
             CONTRACT_PARITY_CHECKING_SKILL,
-            "backend,frontend,analyst,planner,reviewer",
+            "backend,frontend,devops,analyst,planner,qa-owner,reviewer,resolver",
             "contract-parity",
             "parity OR migration",
             "Consumer-Driven Contracts",
@@ -362,6 +363,37 @@ def test_system_contract_skills_dispatch_for_backend_and_reviewer() -> None:
         "dgs-graphql-contract",
         "documentation-impact",
     }.issubset(reviewer_names)
+
+
+@pytest.mark.parametrize("agent", ["devops", "qa-owner", "resolver"])
+def test_contract_parity_skill_dispatches_for_contract_risk_agents(agent: str) -> None:
+    payload = _run_cli(
+        "--skills-dir",
+        str(SKILL_TEMPLATE.parent),
+        "--agent",
+        agent,
+        "--project-root",
+        str(REPO_ROOT),
+        "--task",
+        (
+            "Resolve a merge conflict that may change a producer/consumer "
+            "contract and sibling parity behavior."
+        ),
+        "--format",
+        "json",
+    )
+
+    names = {match["name"] for match in payload["matched"]}
+
+    assert "contract-parity-checking" in names
+
+
+def test_resolver_contract_parity_dispatch_has_load_contract() -> None:
+    text = RESOLVER_AGENT.read_text(encoding="utf-8")
+
+    assert "review-profile-dispatch.py --agent resolver" in text
+    assert "context/capability-skills-resolver.json" in text
+    assert "read each `.matched[].path` before the first execution step" in text
 
 
 def test_skill_template_documents_dispatcher_slots() -> None:

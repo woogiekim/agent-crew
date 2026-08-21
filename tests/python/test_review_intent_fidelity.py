@@ -33,6 +33,31 @@ def test_review_intent_fidelity_rule_defines_provider_neutral_ledger() -> None:
     assert "state, value, side effect, or behavior" in text
 
 
+def test_review_ledger_connects_contract_disposition_and_safety_evidence() -> None:
+    text = read(RULE_PATH)
+
+    for required in [
+        "contract_disposition",
+        "ACCEPT",
+        "ACCEPT_WITH_ADAPTATION",
+        "REJECT_METHOD_ONLY",
+        "DEFER",
+        "REJECT",
+        "affected_contract",
+        "code_evidence",
+        "test_evidence",
+        "contract-safe",
+        "parity-safe",
+        "scope-safe",
+        "side-effect-safe",
+        "residual_risk",
+    ]:
+        assert required in text
+
+    assert "lifecycle disposition" in text
+    assert "must not replace" in text
+
+
 def test_reviewer_requires_review_original_to_disposition_ledger() -> None:
     text = read(REVIEWER_PATH)
     compact = " ".join(text.split())

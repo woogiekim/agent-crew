@@ -101,6 +101,18 @@ for that domain behavior instead of relying only on a broad service test that
 passes by accident. Service tests remain useful for orchestration and external
 side effects; domain behavior tests make the owned decision explicit.
 
+## Boundary Contract Test Matrix
+
+When the behavior under test touches normalization, serialization, filtering,
+external boundaries, shared helpers, or producer/consumer transport, derive
+tests from the observable contract described in
+`core/rules/contract-first-feedback-fidelity.md`
+`BOUNDARY_CONTRACT_REVIEW`. Do not maintain a role-local copy of that matrix;
+use the canonical rule as the source of truth when deriving checklist rows.
+
+Keep helper-call assertions secondary. A durable test must prove the boundary
+contract a consumer can observe, not only that a new helper or guard was used.
+
 ```kotlin
 // RED — test that does not compile yet
 @Test

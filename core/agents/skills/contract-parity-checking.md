@@ -1,7 +1,7 @@
 ---
 name: contract-parity-checking
 description: Compare producer, consumer, and sibling behavior through reachable contracts before claiming parity or migration completeness.
-loaded_by: backend,frontend,analyst,planner,reviewer
+loaded_by: backend,frontend,devops,analyst,planner,qa-owner,reviewer,resolver
 axis: contract-parity
 profile_type: review-policy
 detection: parity OR migration OR contract OR producer OR consumer OR upstream OR downstream OR endpoint OR schema OR route OR screen OR compatibility OR 호환 OR 패리티 OR 이관 OR 계약 OR 생산자 OR 소비자
@@ -67,6 +67,15 @@ Classify each compared path:
 
 Use structured parsers, tests, schemas, or first-party fixtures when available.
 Do not infer parity from current branch diff alone.
+
+When the parity surface includes normalization, serialization, filtering, or
+other boundary transformations, compare the observable contract instead of the
+helper shape. Use `core/rules/contract-first-feedback-fidelity.md`
+`BOUNDARY_CONTRACT_REVIEW` as the canonical matrix instead of maintaining a
+role-local copy.
+
+Report local verification separately from runtime verification; a focused
+local test or fixture does not prove live runtime parity by itself.
 
 ## Checklist
 
