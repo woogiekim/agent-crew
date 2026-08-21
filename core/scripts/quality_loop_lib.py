@@ -698,6 +698,7 @@ def normalize_review_ledger_key(value: str) -> str:
     aliases = {
         "review_comment": "review",
         "reviewer_comment": "review",
+        "review_atom": "review",
         "comment": "review",
         "code_evidence": "code_evidence",
         "code": "code_evidence",

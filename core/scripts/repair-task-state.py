@@ -2593,6 +2593,10 @@ def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
     if status.get("analyzer") == "completed":
         lines.append("EVOLUTION_REPORT: context/evolution-report.md")
 
+    evidence_lines = ["- evidence: context/evolution-report.md"]
+    if captured == "yes":
+        evidence_lines.append("- evidence: learning/events.jsonl")
+
     lines.extend([
         "",
         "## Learning Summary",
@@ -2601,12 +2605,7 @@ def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
         f"- captured_events: {event_recorded}",
         f"- repeated_pattern: {repeated_pattern}",
         f"- proposal: {proposal_label}",
-        "- evidence: "
-        + (
-            "context/evolution-report.md, learning/events.jsonl"
-            if captured == "yes"
-            else "context/evolution-report.md"
-        ),
+        *evidence_lines,
         f"- reason: {reason}",
         "- next_action: "
         + (

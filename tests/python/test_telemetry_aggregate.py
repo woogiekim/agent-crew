@@ -429,9 +429,13 @@ def test_review_fix_loop_summary_uses_review_ledger_json_and_retry_events(tmp_pa
 
     assert summary["total_cycles"] == 1
     assert summary["cycles"][0]["review"] == "reviewer, REVIEW: NEEDS_CHANGES"
-    assert summary["cycles"][0]["finding"] == "status output does not explain retry loop"
-    assert summary["cycles"][0]["fix"] == "implemented: core/scripts/telemetry-aggregate.py"
-    assert summary["cycles"][0]["verification"] == "tests/python/test_telemetry_aggregate.py"
+    assert summary["cycles"][0]["finding"] == "Unknown"
+    assert summary["cycles"][0]["fix"] == "Unknown"
+    assert summary["cycles"][0]["verification"] == "Unknown"
+    assert summary["ledger_items_total"] == 1
+    assert summary["ledger_items"][0]["finding"] == "status output does not explain retry loop"
+    assert summary["ledger_items"][0]["fix"] == "implemented: core/scripts/telemetry-aggregate.py"
+    assert summary["ledger_items"][0]["verification"] == "tests/python/test_telemetry_aggregate.py"
     assert "context/review-ledger.json" in summary["sources"]
 
 
@@ -485,6 +489,15 @@ def test_render_text_includes_compact_review_fix_loop_summary(capsys):
             ],
             "sources": ["progress.buffer.jsonl", "context/review-ledger.json"],
             "notes": [],
+            "ledger_items_total": 1,
+            "ledger_items": [
+                {
+                    "id": "RIF-001",
+                    "finding": "missing loop summary",
+                    "fix": "implemented: telemetry summary",
+                    "verification": "focused pytest",
+                }
+            ],
         },
     }
     summary = {
@@ -514,6 +527,210 @@ def test_render_text_includes_compact_review_fix_loop_summary(capsys):
     assert "총 loop: 1 cycles" in out
     assert "Cycle 1" in out
     assert "missing loop summary" in out
+
+
+def test_mixed_source_progress_merges_log_only_retries_and_dedupes_buffer_duplicates(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120604-0"
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    duplicate_retry = {
+        "ts": "2026-01-01T12:06:20Z",
+        "event": "RETRY",
+        "stage": 2,
+        "agent": "reviewer",
+        "detail": "attempt 2 — reviewer_rejected reason=weak_null_absence_assertion_remaining",
+    }
+    _write_progress_jsonl(task_dir, [
+        {"ts": "2026-01-01T12:06:00Z", "event": "STARTED", "detail": "mixed source"},
+        duplicate_retry,
+        {"ts": "2026-01-01T12:07:00Z", "event": "COMPLETED"},
+    ])
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:20Z | RETRY | attempt 2 — reviewer_rejected reason=weak_null_absence_assertion_remaining\n"
+        "2026-01-01T12:06:40Z | RETRY | attempt 3 — reviewer_rejected reason=end_only_asymmetric_coverage_gap\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    row = telemetry.aggregate_task(state_dir, task_dir)
+    summary = row["review_fix_loop_summary"]
+
+    assert row["retries"] == 2
+    assert telemetry.count_reviewer_loop_backs(telemetry.effective_progress_events(task_dir)) == 2
+    assert summary["total_cycles"] == 2
+    assert summary["sources"] == ["progress.buffer.jsonl", "progress.log"]
+    assert row["progress_event_sources"] == ["progress.buffer.jsonl", "progress.log"]
+
+
+def test_mixed_source_progress_ignores_trailing_raw_log_lines_for_latest_progress(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120607-0"
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    _write_progress_jsonl(task_dir, [
+        {"ts": "2026-01-01T12:06:00Z", "event": "STARTED", "detail": "native task"},
+        {"ts": "2026-01-01T12:07:00Z", "event": "COMPLETED", "detail": "branch=main"},
+    ])
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:00Z | STARTED | native task\n"
+        "TASK: multiline raw prompt\n"
+        "requirements without separators\n"
+        "more raw prompt text\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    row = telemetry.aggregate_task(state_dir, task_dir)
+
+    assert row["latest_progress"]["event"] == "COMPLETED"
+    assert row["latest_progress"]["ts"] == "2026-01-01T12:07:00Z"
+    assert row["latest_progress"]["detail"] == "branch=main"
+
+
+def test_raw_only_progress_log_keeps_legacy_latest_raw_line(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120608-0"
+    task_dir = state_dir / "tasks" / task_id
+    task_dir.mkdir(parents=True)
+
+    (task_dir / "progress.log").write_text(
+        "first raw line\n"
+        "second raw line\n",
+        encoding="utf-8",
+    )
+
+    events = telemetry.effective_progress_events(task_dir)
+    latest = telemetry.latest_progress_event(task_dir, events)
+
+    assert latest["event"] == "LOG"
+    assert latest["ts"] == ""
+    assert latest["detail"] == "second raw line"
+
+
+def test_review_fix_loop_summary_keeps_cycles_independent_from_ledger_atoms(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120605-0"
+    task_dir = state_dir / "tasks" / task_id
+    context = task_dir / "context"
+    context.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:20Z | RETRY | attempt 2 — reviewer_rejected reason=weak_null_absence_assertion_remaining\n"
+        "2026-01-01T12:06:40Z | RETRY | attempt 3 — reviewer_rejected reason=end_only_asymmetric_coverage_gap\n",
+        encoding="utf-8",
+    )
+    (context / "review-ledger.json").write_text(
+        json.dumps({
+            "items": [
+                {
+                    "id": f"RIF-00{index}",
+                    "finding": f"review atom {index}",
+                    "disposition": "implemented",
+                    "evidence": f"core/example_{index}.py",
+                    "verification": f"tests/test_example_{index}.py",
+                }
+                for index in range(1, 7)
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    row = telemetry.aggregate_task(state_dir, task_dir)
+    summary = row["review_fix_loop_summary"]
+
+    assert summary["total_cycles"] == 2
+    assert summary["ledger_items_total"] == 6
+    assert [item["id"] for item in summary["ledger_items"]] == [
+        "RIF-001", "RIF-002", "RIF-003", "RIF-004", "RIF-005", "RIF-006"
+    ]
+    assert summary["cycles"][0]["finding"] == "Unknown"
+    assert summary["cycles"][1]["finding"] == "Unknown"
+
+
+def test_review_fix_loop_summary_links_ledger_only_with_explicit_cycle_metadata(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120606-0"
+    task_dir = state_dir / "tasks" / task_id
+    context = task_dir / "context"
+    context.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:20Z | RETRY | attempt 2 — reviewer_rejected reason=weak_null_absence_assertion_remaining\n"
+        "2026-01-01T12:06:40Z | RETRY | attempt 3 — reviewer_rejected reason=end_only_asymmetric_coverage_gap\n",
+        encoding="utf-8",
+    )
+    (context / "review-ledger.json").write_text(
+        json.dumps({
+            "items": [
+                {
+                    "id": "RIF-004",
+                    "cycle": 2,
+                    "finding": "end-only asymmetric coverage gap",
+                    "disposition": "implemented",
+                    "evidence": "core/scripts/telemetry-aggregate.py",
+                    "verification": "tests/python/test_telemetry_aggregate.py",
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    summary = telemetry.aggregate_task(state_dir, task_dir)["review_fix_loop_summary"]
+
+    assert summary["cycles"][0]["finding"] == "Unknown"
+    assert summary["cycles"][0]["ledger_item_ids"] == []
+    assert summary["cycles"][1]["finding"] == "end-only asymmetric coverage gap"
+    assert summary["cycles"][1]["ledger_item_ids"] == ["RIF-004"]
+
+
+def test_review_fix_loop_summary_uses_canonical_markdown_ledger_parser(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_id = "20260101-120609-0"
+    task_dir = state_dir / "tasks" / task_id
+    context = task_dir / "context"
+    context.mkdir(parents=True)
+
+    _write_register(task_dir, task_id=task_id, current_phase="completed")
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:20Z | RETRY | attempt 2 — reviewer_rejected reason=missing_retry_signal\n"
+        "2026-01-01T12:06:40Z | RETRY | attempt 3 — reviewer_rejected reason=missing_ledger_signal\n",
+        encoding="utf-8",
+    )
+    rows = "\n".join(
+        (
+            f"| R{index} | review atom {index} | preserve intent {index} | implemented | "
+            f"core/scripts/example_{index}.py | tests/python/test_example_{index}.py | "
+            f"verified behavior {index} | none |"
+        )
+        for index in range(1, 7)
+    )
+    (context / "review-ledger.md").write_text(
+        "| ID | Review Atom | Intent | Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        f"{rows}\n"
+        "- Reviewer summary: 6 implemented review atoms, 2 retry cycles.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+
+    summary = telemetry.aggregate_task(state_dir, task_dir)["review_fix_loop_summary"]
+
+    assert summary["total_cycles"] == 2
+    assert summary["ledger_items_total"] == 6
+    assert [item["id"] for item in summary["ledger_items"]] == [
+        "R1", "R2", "R3", "R4", "R5", "R6"
+    ]
+    assert summary["cycles"][0]["finding"] == "Unknown"
+    assert summary["cycles"][1]["finding"] == "Unknown"
 
 
 class TestTelemetryAggregate:

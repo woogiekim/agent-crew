@@ -65,6 +65,10 @@ REVIEW_PRINCIPLE_DETECTORS: tuple[dict[str, Any], ...] = (
         "target_assets": ["backend-kotlin-spring.md", "tdd.md"],
     },
 )
+CODE_PATH_RE = re.compile(
+    r"`?((?:src/(?:main|test)/|tests/|core/scripts/)"
+    r"[A-Za-z0-9_./$-]+\.(?:java|kt|kts|py|js|jsx|ts|tsx|json|md))`?"
+)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -197,6 +201,32 @@ def changed_files_from_events(events: list[dict[str, Any]], register: dict[str, 
     return sorted(files)
 
 
+def changed_files_from_review_artifacts(task_dir: Path) -> list[str]:
+    files: set[str] = set()
+    for relative in (
+        "context/reviewer-report.md",
+        "context/review-ledger.md",
+        "context/review-ledger.json",
+        "context/test-coverage.md",
+        "context/test-case-mapping.md",
+        "context/tdd_log.md",
+    ):
+        path = task_dir / relative
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        files.update(match.group(1) for match in CODE_PATH_RE.finditer(text))
+
+    return sorted(files)
+
+
+def changed_files_signal(task_dir: Path, events: list[dict[str, Any]], register: dict[str, Any]) -> list[str]:
+    files = set(changed_files_from_events(events, register))
+    files.update(changed_files_from_review_artifacts(task_dir))
+    return sorted(files)
+
+
 def skill_content_audit_signal(task_dir: Path) -> dict[str, Any]:
     payload = read_json(task_dir / "context" / "skill-content-audit.json")
     if not payload:
@@ -221,6 +251,9 @@ def read_review_sources(task_dir: Path) -> list[tuple[str, str]]:
         "context/review.md",
         "context/reviewer-response.txt",
         "context/review-result.md",
+        "context/reviewer-report.md",
+        "context/review-ledger.json",
+        "context/review-ledger.md",
         "context/code-review.md",
     ):
         path = task_dir / relative
@@ -302,10 +335,35 @@ def read_mistake_corrections(task_dir: Path) -> list[dict[str, Any]]:
     return corrections
 
 
+def review_feedback_signal(task_dir: Path, row: dict[str, Any]) -> dict[str, Any]:
+    summary = row.get("review_fix_loop_summary") or {}
+    ledger_atom_count = int(summary.get("ledger_items_total") or 0)
+    review_cycle_count = int(summary.get("total_cycles") or 0)
+
+    evidence_refs: list[str] = []
+    for source in summary.get("sources") or []:
+        source_text = str(source or "").strip()
+        if source_text.startswith("context/review-ledger") and source_text not in evidence_refs:
+            evidence_refs.append(source_text)
+
+    reviewer_report = task_dir / "context" / "reviewer-report.md"
+    if reviewer_report.is_file() and "context/reviewer-report.md" not in evidence_refs:
+        evidence_refs.append("context/reviewer-report.md")
+
+    return {
+        "ledger_atom_count": ledger_atom_count,
+        "review_cycle_count": review_cycle_count,
+        "evidence_refs": evidence_refs,
+    }
+
+
 def observed_patterns(row: dict[str, Any], loop_backs: int,
                       skill_audit: dict[str, Any],
                       review_principles: list[dict[str, Any]],
-                      mistake_corrections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                      mistake_corrections: list[dict[str, Any]],
+                      review_feedback: dict[str, Any],
+                      retry_evidence_refs: list[str],
+                      loop_back_evidence_refs: list[str]) -> list[dict[str, Any]]:
     patterns: list[dict[str, Any]] = []
     retries = int(row.get("retries") or 0)
     blockers = list(row.get("blockers") or [])
@@ -314,13 +372,13 @@ def observed_patterns(row: dict[str, Any], loop_backs: int,
         patterns.append({
             "kind": "retry",
             "summary": f"{retries} retry event(s) were recorded during the task.",
-            "evidence_refs": ["progress.buffer.jsonl"],
+            "evidence_refs": retry_evidence_refs or ["progress.buffer.jsonl"],
         })
     if loop_backs > 0:
         patterns.append({
             "kind": "review_loop_back",
             "summary": f"{loop_backs} reviewer NEEDS_CHANGES loop-back(s) were recorded.",
-            "evidence_refs": ["progress.buffer.jsonl"],
+            "evidence_refs": loop_back_evidence_refs or ["progress.buffer.jsonl"],
         })
     if blockers:
         patterns.append({
@@ -333,6 +391,18 @@ def observed_patterns(row: dict[str, Any], loop_backs: int,
             "kind": "skill_content_depth",
             "summary": "Skill content audit found shallow skill material.",
             "evidence_refs": ["context/skill-content-audit.json"],
+        })
+    if int(review_feedback.get("ledger_atom_count") or 0) > 0:
+        patterns.append({
+            "kind": "review_feedback",
+            "summary": (
+                f"{review_feedback['ledger_atom_count']} review ledger atom(s) "
+                f"were recorded across {review_feedback['review_cycle_count']} "
+                "review cycle(s)."
+            ),
+            "ledger_atom_count": review_feedback["ledger_atom_count"],
+            "review_cycle_count": review_feedback["review_cycle_count"],
+            "evidence_refs": review_feedback["evidence_refs"],
         })
     for principle in review_principles:
         patterns.append({
@@ -426,18 +496,29 @@ def learning_summary(meaningful: bool, patterns: list[dict[str, Any]]) -> str:
 
 def build_report(state_dir: Path, task_dir: Path) -> dict[str, Any]:
     row = telemetry.aggregate_task(state_dir, task_dir)
-    events = telemetry.read_progress_buffer(task_dir)
+    events = telemetry.effective_progress_events(task_dir)
     register = telemetry.read_register(task_dir) or {}
     loop_backs = telemetry.count_reviewer_loop_backs(events)
+    retry_events = [event for event in events if event.get("event") == "RETRY"]
+    loop_back_events = [
+        event for event in retry_events
+        if telemetry.count_reviewer_loop_backs([event]) > 0
+    ]
+    retry_evidence_refs = telemetry.event_source_names(retry_events)
+    loop_back_evidence_refs = telemetry.event_source_names(loop_back_events)
     skill_audit = skill_content_audit_signal(task_dir)
     review_principles = review_principle_signals(task_dir)
     mistake_corrections = read_mistake_corrections(task_dir)
+    review_feedback = review_feedback_signal(task_dir, row)
     patterns = observed_patterns(
         row,
         loop_backs,
         skill_audit,
         review_principles,
         mistake_corrections,
+        review_feedback,
+        retry_evidence_refs,
+        loop_back_evidence_refs,
     )
     meaningful = bool(patterns)
 
@@ -451,10 +532,11 @@ def build_report(state_dir: Path, task_dir: Path) -> dict[str, Any]:
             "retries": int(row.get("retries") or 0),
             "reviewer_loop_backs": loop_backs,
             "blockers": list(row.get("blockers") or []),
-            "changed_files": changed_files_from_events(events, register),
+            "changed_files": changed_files_signal(task_dir, events, register),
             "skill_content_audit": skill_audit,
             "review_principles": review_principles,
             "mistake_corrections": mistake_corrections,
+            "review_feedback": review_feedback,
         },
         "reused_assets": pipeline_reused_assets(task_dir),
         "observed_patterns": patterns,
@@ -478,6 +560,7 @@ def markdown_list(items: list[str]) -> str:
 def to_markdown(report: dict[str, Any]) -> str:
     signals = report["signals"]
     skill_audit = signals["skill_content_audit"]
+    review_feedback = signals.get("review_feedback") or {}
     reused = [
         f"{asset['asset_type']}: {asset['name']} ({asset['evidence_ref']})"
         for asset in report["reused_assets"]
@@ -533,6 +616,11 @@ def to_markdown(report: dict[str, Any]) -> str:
         ),
         f"- Review principles: {len(signals.get('review_principles', []))}",
         f"- Mistake corrections: {len(signals.get('mistake_corrections', []))}",
+        (
+            "- Review feedback: "
+            f"ledger_atoms={review_feedback.get('ledger_atom_count', 0)}, "
+            f"cycles={review_feedback.get('review_cycle_count', 0)}"
+        ),
         "",
         "## Reused Assets",
         "",

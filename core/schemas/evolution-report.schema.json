@@ -90,6 +90,32 @@
             }
           }
         },
+        "review_feedback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ledger_atom_count",
+            "review_cycle_count",
+            "evidence_refs"
+          ],
+          "properties": {
+            "ledger_atom_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "review_cycle_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
         "review_principles": {
           "type": "array",
           "items": {
@@ -239,6 +265,14 @@
           },
           "corrected_decision": {
             "type": "string"
+          },
+          "ledger_atom_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "review_cycle_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

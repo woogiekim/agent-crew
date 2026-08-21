@@ -292,6 +292,24 @@ def test_quality_gate_accepts_markdown_review_ledger(tmp_path: Path):
     assert status["review_ledger"]["artifact"] == "context/review-ledger.md"
 
 
+def test_quality_gate_accepts_review_atom_markdown_alias(tmp_path: Path):
+    """regression - Review Atom is a human ledger header for canonical review."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.md").write_text(
+        "| Review Atom | Intent | Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨 | 자동승인 이력을 뉴스봇 ActionLog로 남긴다 | implemented | CmsArticleService.java:120 | CmsArticleServiceNewsBotActorTest.java:42 | memberSeq/status/comment/contentSeq/contentType values are asserted | none |\n",
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert status["review_ledger"]["valid"] is True
+    assert status["review_ledger"]["item_count"] == 1
+
+
 def test_repair_blocks_mutating_task_without_quality_loop_evidence(tmp_path: Path):
     state_dir, task_id, _task_dir = make_task(tmp_path, "Implement a new update gate")
 

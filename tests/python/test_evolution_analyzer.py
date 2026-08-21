@@ -482,6 +482,69 @@ def test_retry_and_reviewer_loopback_are_observed_without_generation(
     assert payload["guardrails"]["generator_invoked"] is False
 
 
+def test_mixed_source_log_retry_events_drive_evolution_report_with_source_provenance(
+    script_runner, env_with_home, state_dir
+):
+    """regression - lifecycle buffer presence must not hide log-only review retries."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:00:30Z | RETRY | attempt 2 — reviewer_rejected reason=weak_null_absence_assertion_remaining\n"
+        "2026-01-01T12:00:40Z | RETRY | attempt 3 — reviewer_rejected reason=end_only_asymmetric_coverage_gap\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["meaningful"] is True
+    assert payload["signals"]["retries"] == 2
+    assert payload["signals"]["reviewer_loop_backs"] == 2
+    retry_pattern = next(
+        item for item in payload["observed_patterns"]
+        if item["kind"] == "retry"
+    )
+    loop_pattern = next(
+        item for item in payload["observed_patterns"]
+        if item["kind"] == "review_loop_back"
+    )
+    assert retry_pattern["evidence_refs"] == ["progress.log"]
+    assert loop_pattern["evidence_refs"] == ["progress.log"]
+    assert payload["asset_candidates"] == []
+    assert payload["guardrails"]["asset_writes"] == "disabled"
+
+
+def test_boundary_case_regression_counts_explicit_review_loop_backs_without_unrelated_retry(
+    script_runner, env_with_home, state_dir
+):
+    """boundary-case(regression) - explicit review loop-backs exclude unrelated retries."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:00:20Z | RETRY | broader suite retry stopped by operator\n"
+        "2026-01-01T12:00:30Z | RETRY | review loop-back latest_progress raw log sorting regression\n"
+        "2026-01-01T12:00:40Z | RETRY | review loop-back 2 - review-ledger signal regression\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["signals"]["retries"] == 3
+    assert payload["signals"]["reviewer_loop_backs"] == 2
+    assert payload["signals"]["review_feedback"]["review_cycle_count"] == 2
+
+
 def test_blocker_signal_is_reported_as_meaningful(script_runner, env_with_home, state_dir):
     task_dir = _seed_task(state_dir)
     register = json.loads((task_dir / "register.json").read_text(encoding="utf-8"))
@@ -584,6 +647,115 @@ def test_analyzer_extracts_review_principle_from_kotlin_test_feedback(
         env=env_with_home,
     )
     assert schema.returncode == 0, schema.stdout + schema.stderr
+
+
+def test_analyzer_reads_reviewer_report_and_review_ledger_as_review_sources(
+    script_runner, env_with_home, state_dir
+):
+    """regression - fallback learning includes review report and ledger sources."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "context" / "reviewer-report.md").write_text(
+        "REVIEW: NEEDS_CHANGES\n"
+        "Kotlin Spring JUnit tests should default to Kotest FunSpec + MockK "
+        "unless the existing harness requires JUnit.\n"
+        "- `src/main/java/com/example/CnasDao.java`\n"
+        "- `src/test/java/com/example/CnasDaoRoutingTest.java`\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "review-ledger.md").write_text(
+        "| Review Atom | Intent | Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| Kotlin Spring JUnit tests should default to Kotest FunSpec + MockK | preserve test stack convention | implemented | core/example.py | tests/example_test.py | convention is explicitly verified | none |\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    principle = payload["signals"]["review_principles"][0]
+    assert principle["principle_key"] == "kotlin_spring_kotest_default"
+    assert principle["evidence_refs"] == [
+        "context/review-ledger.md",
+        "context/reviewer-report.md",
+    ]
+    assert payload["signals"]["changed_files"] == [
+        "src/main/java/com/example/CnasDao.java",
+        "src/test/java/com/example/CnasDaoRoutingTest.java",
+        "tests/example_test.py",
+    ]
+    assert payload["asset_candidates"] == []
+    assert not any(
+        pattern["kind"] == "mistake_correction"
+        for pattern in payload["observed_patterns"]
+    )
+
+
+def test_analyzer_reports_generic_review_feedback_from_review_fix_summary(
+    script_runner, env_with_home, state_dir
+):
+    """regression - generic review ledger/cycle signal is independent from hard-coded detectors."""
+    task_dir = _seed_task(state_dir)
+    (task_dir / "progress.log").write_text(
+        "2026-01-01T12:06:20Z | RETRY | attempt 2 — reviewer_rejected reason=missing_retry_signal\n"
+        "2026-01-01T12:06:40Z | RETRY | attempt 3 — reviewer_rejected reason=missing_ledger_signal\n",
+        encoding="utf-8",
+    )
+    rows = "\n".join(
+        (
+            f"| R{index} | telemetry review atom {index} | preserve signal {index} | implemented | "
+            f"core/scripts/telemetry-aggregate.py | tests/python/test_telemetry_aggregate.py | "
+            f"verified signal {index} | none |"
+        )
+        for index in range(1, 7)
+    )
+    (task_dir / "context" / "review-ledger.md").write_text(
+        "| ID | Review Atom | Intent | Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        f"{rows}\n"
+        "- Reviewer summary: 6 implemented review atoms, 2 retry cycles.\n",
+        encoding="utf-8",
+    )
+    (task_dir / "context" / "reviewer-report.md").write_text(
+        "REVIEW: NEEDS_CHANGES\n"
+        "The telemetry report must preserve retry and review ledger learning signals.\n",
+        encoding="utf-8",
+    )
+
+    result = script_runner(
+        "evolution-analyzer.py",
+        "--task-dir", str(task_dir),
+        "--format", "json",
+        env=env_with_home,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    feedback = payload["signals"]["review_feedback"]
+    assert feedback["ledger_atom_count"] == 6
+    assert feedback["review_cycle_count"] == 2
+    assert "context/review-ledger.md" in feedback["evidence_refs"]
+    assert "context/reviewer-report.md" in feedback["evidence_refs"]
+    feedback_pattern = next(
+        pattern for pattern in payload["observed_patterns"]
+        if pattern["kind"] == "review_feedback"
+    )
+    assert feedback_pattern["ledger_atom_count"] == 6
+    assert feedback_pattern["review_cycle_count"] == 2
+    assert "context/review-ledger.md" in feedback_pattern["evidence_refs"]
+    assert "context/reviewer-report.md" in feedback_pattern["evidence_refs"]
+    assert payload["signals"]["review_principles"] == []
+    assert payload["generation_mode"] == "report_only"
+    assert payload["asset_candidates"] == []
+    assert not any(
+        pattern["kind"] == "mistake_correction"
+        for pattern in payload["observed_patterns"]
+    )
 
 
 def test_analyzer_does_not_extract_review_principle_from_result_summary(

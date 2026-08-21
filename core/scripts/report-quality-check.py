@@ -30,6 +30,7 @@ MEMORY_ID_RE = re.compile(
     r")\b",
     re.I,
 )
+STATE_LOCAL_EVIDENCE_DIRS = {"learning", "learning-candidates"}
 
 
 def load_json(path: Path) -> dict:
@@ -79,6 +80,21 @@ def memory_ids_from_trace(path: Path) -> set[str]:
     return ids
 
 
+def resolve_evidence_path(task_dir: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+
+    task_candidate = task_dir / path
+    if task_candidate.exists():
+        return task_candidate
+
+    if path.parts and path.parts[0] in STATE_LOCAL_EVIDENCE_DIRS:
+        return task_dir.parent.parent / path
+
+    return task_candidate
+
+
 def load_task_text(task_dir: Path, report_text: str) -> str:
     register_path = task_dir / "register.json"
     try:
@@ -100,9 +116,7 @@ def quality_evidence_from(task_dir: Path, paths: list[str]) -> dict:
         task_dir / "context" / "quality-loop.json",
     ]
     for value in paths:
-        path = Path(value)
-        if not path.is_absolute():
-            path = task_dir / value
+        path = resolve_evidence_path(task_dir, value)
         candidates.append(path)
 
     tdd_paths: list[str] = []
@@ -134,9 +148,7 @@ def check_report(report_path: Path, task_dir: Path, fixture: dict) -> dict:
         failures.append("missing_evidence")
     missing_paths = []
     for value in paths:
-        candidate = Path(value)
-        if not candidate.is_absolute():
-            candidate = task_dir / value
+        candidate = resolve_evidence_path(task_dir, value)
         if not candidate.exists():
             missing_paths.append(value)
     if missing_paths:

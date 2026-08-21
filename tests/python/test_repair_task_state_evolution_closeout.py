@@ -169,6 +169,9 @@ def test_completed_repair_runs_evolution_closeout_and_surfaces_pending_proposals
     assert "captured: yes" in result_text
     assert "repeated_pattern: yes" in result_text
     assert "proposal: approval_required" in result_text
+    assert "- evidence: context/evolution-report.md\n" in result_text
+    assert "- evidence: learning/events.jsonl\n" in result_text
+    assert "context/evolution-report.md, learning/events.jsonl" not in result_text
     assert "Self-Evolution Proposals" in result_text
 
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))

@@ -580,6 +580,28 @@ def test_report_quality_flags_invalid_evidence_blocker_and_missing_memory_reuse(
     assert "missing_memory_context_reuse" in payload["failures"]
 
 
+def test_report_quality_resolves_state_local_learning_evidence(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = state_dir / "tasks" / "20260101-120000-0"
+    task_dir.mkdir(parents=True)
+    learning_events = state_dir / "learning" / "events.jsonl"
+    learning_events.parent.mkdir(parents=True)
+    learning_events.write_text('{"kind":"review_feedback"}\n', encoding="utf-8")
+    report = task_dir / "result.md"
+    report.write_text(
+        "STATUS: completed\n"
+        "MEASUREMENTS: 1 test passed while recording learning evidence\n"
+        "EVIDENCE: learning/events.jsonl\n"
+        "UNCERTAINTY: Unknown live runtime state.\n",
+        encoding="utf-8",
+    )
+
+    payload = report_quality.check_report(report, task_dir, {})
+
+    assert payload["passed"] is True
+    assert payload["missing_evidence_paths"] == []
+
+
 def test_report_quality_text_output_lists_failures(tmp_path: Path):
     task_dir = tmp_path / "task"
     task_dir.mkdir()

@@ -73,6 +73,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from core_objective_lib import capability_ceiling, format_ceiling_text
+from quality_loop_lib import review_ledger_markdown_items
 
 
 # --------------------------------------------------------------------------- #
@@ -213,6 +214,70 @@ def read_progress_log(task_dir):
             "files": [],
         })
     return rows
+
+
+def progress_event_key(event):
+    """Stable identity for deduping dual-written progress events."""
+    return (
+        str(event.get("ts") or "").strip(),
+        str(event.get("event") or "").strip(),
+        str(event.get("detail") or "").strip(),
+    )
+
+
+def effective_progress_events(task_dir):
+    """Return source-aware progress events from buffer plus log-only fallback rows."""
+    merged = []
+    index_by_key = {}
+
+    for source, rows in (
+        ("progress.buffer.jsonl", read_progress_buffer(task_dir)),
+        ("progress.log", read_progress_log(task_dir)),
+    ):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            item = dict(row)
+            key = progress_event_key(item)
+            existing_index = index_by_key.get(key)
+            if existing_index is not None:
+                sources = merged[existing_index].setdefault("_sources", [])
+                if source not in sources:
+                    sources.append(source)
+                continue
+
+            item["_sources"] = [source]
+            item["_order"] = len(merged)
+            index_by_key[key] = len(merged)
+            merged.append(item)
+
+    def sort_key(event):
+        parsed = parse_iso_ts(str(event.get("ts") or ""))
+        return (
+            parsed is not None,
+            parsed or datetime.min.replace(tzinfo=timezone.utc),
+            event.get("_order", 0),
+        )
+
+    return sorted(merged, key=sort_key)
+
+
+def event_source_names(events):
+    sources = []
+    for event in events or []:
+        event_sources = event.get("_sources")
+        if isinstance(event_sources, list):
+            for source in event_sources:
+                if source not in sources:
+                    sources.append(source)
+            continue
+
+        if source := event.get("_source"):
+            if source not in sources:
+                sources.append(source)
+
+    return sources
 
 
 def latest_progress_event(task_dir, events):
@@ -426,19 +491,15 @@ REVIEW_LOOP_MARKERS = (
     "needs_changes",
     "review_needs_changes",
     "review: needs_changes",
+    "review loop-back",
 )
 
 
 def review_loop_events(task_dir, events):
     """Return review/fix retry events from existing task state only."""
-    sources = []
     rows = list(events or [])
-    if rows:
-        sources.append("progress.buffer.jsonl")
-    else:
+    if not rows:
         rows = read_progress_log(task_dir)
-        if rows:
-            sources.append("progress.log")
 
     loop_events = []
     for event in rows:
@@ -448,6 +509,10 @@ def review_loop_events(task_dir, events):
         agent = str(event.get("agent") or "").lower()
         if agent == "reviewer" or any(marker in detail for marker in REVIEW_LOOP_MARKERS):
             loop_events.append(event)
+
+    sources = event_source_names(loop_events)
+    if not sources and rows:
+        sources.append("progress.buffer.jsonl")
 
     return loop_events, sources
 
@@ -484,17 +549,7 @@ def review_ledger_items(task_dir):
     if not md_path.is_file():
         return [], ""
 
-    text = read_text_file(md_path)
-    items = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith(("-", "*", "|")):
-            continue
-        lowered = stripped.lower()
-        if "finding" not in lowered and "review" not in lowered and "implemented" not in lowered:
-            continue
-        items.append({"finding": stripped, "disposition": "Unknown"})
-
+    items, _errors = review_ledger_markdown_items(md_path)
     return items, "context/review-ledger.md"
 
 
@@ -517,6 +572,10 @@ def ledger_finding(item):
     ) or "Unknown"
 
 
+def ledger_id(item, fallback):
+    return first_non_empty(item.get("id"), item.get("finding_id"), fallback)
+
+
 def ledger_fix(item):
     disposition = first_non_empty(
         item.get("disposition"),
@@ -528,6 +587,7 @@ def ledger_fix(item):
         item.get("fix"),
         item.get("resolution"),
         item.get("changed_path"),
+        item.get("code_evidence"),
     )
     if disposition and evidence:
         return f"{disposition}: {evidence}"
@@ -544,6 +604,8 @@ def ledger_verification(item):
         item.get("test"),
         item.get("tests"),
         item.get("verified_by"),
+        item.get("test_evidence"),
+        item.get("semantic_verification"),
     )
     if verification:
         return verification
@@ -555,6 +617,37 @@ def ledger_verification(item):
             return joined
 
     return "Unknown"
+
+
+def ledger_retry_reason(item):
+    return first_non_empty(
+        item.get("retry_reason"),
+        item.get("review_retry_reason"),
+        item.get("reason"),
+    )
+
+
+def explicit_cycle_match(item, event, cycle):
+    item_cycle = first_non_empty(item.get("cycle"), item.get("review_cycle"))
+    if item_cycle and str(item_cycle) == str(cycle):
+        return True
+
+    retry_reason = ledger_retry_reason(item)
+    if retry_reason and retry_reason.lower() in str(event.get("detail") or "").lower():
+        return True
+
+    finding_id = first_non_empty(item.get("finding_id"), item.get("id"))
+    detail = str(event.get("detail") or "")
+    return bool(finding_id and finding_id in detail)
+
+
+def summarize_ledger_item(item, fallback_id):
+    return {
+        "id": ledger_id(item, fallback_id),
+        "finding": ledger_finding(item),
+        "fix": ledger_fix(item),
+        "verification": ledger_verification(item),
+    }
 
 
 def review_label_for_event(event):
@@ -577,18 +670,33 @@ def build_review_fix_loop_summary(task_dir, events):
 
     cycles = []
     for index, event in enumerate(loop_events, start=1):
-        item = items[index - 1] if index - 1 < len(items) else {}
+        explicit_items = [
+            item for item in items
+            if explicit_cycle_match(item, event, index)
+        ]
+        item = explicit_items[0] if explicit_items else {}
         cycles.append({
             "cycle": index,
             "review": review_label_for_event(event),
             "finding": ledger_finding(item) if item else "Unknown",
             "fix": ledger_fix(item) if item else "Unknown",
             "verification": ledger_verification(item) if item else "Unknown",
+            "ledger_item_ids": [
+                ledger_id(explicit_item, f"item-{item_index}")
+                for item_index, explicit_item in enumerate(explicit_items, start=1)
+            ],
         })
+
+    ledger_items = [
+        summarize_ledger_item(item, f"item-{index}")
+        for index, item in enumerate(items, start=1)
+    ]
 
     return {
         "total_cycles": len(cycles),
         "cycles": cycles,
+        "ledger_items_total": len(ledger_items),
+        "ledger_items": ledger_items,
         "sources": list(dict.fromkeys(sources)),
         "notes": notes,
     }
@@ -745,7 +853,7 @@ def aggregate_task(state_dir, task_dir):
     """Return a per-task dict with metrics + status. Robust to missing data."""
     task_id = task_dir.name
     reg = read_register(task_dir)
-    events = read_progress_buffer(task_dir)
+    events = effective_progress_events(task_dir)
     latest_event = latest_progress_event(task_dir, events)
     tool_events = read_tool_events(task_dir)
     quality_metrics = read_quality_metrics(task_dir)
@@ -909,6 +1017,7 @@ def aggregate_task(state_dir, task_dir):
         "last_update_age_seconds": latest_event_age_seconds,
         "latest_progress":   latest_event,
         "review_fix_loop_summary": review_fix_loop_summary,
+        "progress_event_sources": event_source_names(events),
         "stale_blocker":     stale_host_bridge,
         "started":           started.get("ts") if started else None,
         "stages_total":      stages_total,
@@ -1255,6 +1364,11 @@ def render_review_fix_loop_summary(rows):
             print(f"      주요 finding: {cycle.get('finding') or 'Unknown'}")
             print(f"      반영: {cycle.get('fix') or 'Unknown'}")
             print(f"      검증: {cycle.get('verification') or 'Unknown'}")
+        ledger_items = loop.get("ledger_items") or []
+        if ledger_items:
+            print(f"    Review ledger atoms: {loop.get('ledger_items_total', len(ledger_items))}")
+            for item in ledger_items[:5]:
+                print(f"      {item.get('id') or '?'}: {item.get('finding') or 'Unknown'}")
         notes = loop.get("notes") or []
         if notes:
             print(f"      notes: {'; '.join(notes)}")
@@ -1368,7 +1482,12 @@ def render_text(rows, summary):
 
 # A RETRY event is classified as a reviewer loop-back when its detail mentions
 # either the loop-decision reason token or the human-readable rejection phrase.
-_LOOP_BACK_MARKERS = ("reviewer_rejected", "needs_changes", "review_needs_changes")
+_LOOP_BACK_MARKERS = (
+    "reviewer_rejected",
+    "needs_changes",
+    "review_needs_changes",
+    "review loop-back",
+)
 
 
 def count_reviewer_loop_backs(events):
