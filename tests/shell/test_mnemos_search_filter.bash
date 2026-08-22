@@ -312,17 +312,17 @@ assert_not_contains "${out}" ": ---"
 it "seed-instruction-rules.sh captures rule:input-language into mock store"
 TMP=$(make_tmp)
 MNEMOS=$(make_mock_mnemos "${TMP}")
-MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply >/dev/null 2>&1
+MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile bootstrap-missing >/dev/null 2>&1
 assert_file_exists "${TMP}/mnemos-store/rule:input-language"
 
 it "seed-instruction-rules.sh: captured rule body contains meaningful content"
 TMP=$(make_tmp)
 MNEMOS=$(make_mock_mnemos "${TMP}")
-MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply >/dev/null 2>&1
+MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile bootstrap-missing >/dev/null 2>&1
 rule_file="${TMP}/mnemos-store/rule:input-language"
 if [ -f "${rule_file}" ]; then
     content=$(cat "${rule_file}")
-    assert_contains "${content}" "Korean"
+    assert_contains "${content}" "immutable Root Input Snapshot"
 else
     _fail "rule:input-language not found in mock store"
 fi

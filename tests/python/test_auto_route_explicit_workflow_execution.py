@@ -112,3 +112,18 @@ def test_read_only_review_and_questions_emit_no_hidden_route(prompt: str):
 
     # then
     assert route == "EMPTY"
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "crew:task demo",
+        "$crew:task demo",
+        "ac:task demo",
+        "crew:crew demo",
+        "$crew:crew demo",
+        "ac:crew demo",
+    ],
+)
+def test_removed_task_alias_emits_no_command_context(prompt: str):
+    assert _run_hook(prompt) == {}

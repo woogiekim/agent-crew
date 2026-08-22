@@ -16,6 +16,7 @@ source "$(dirname "$0")/_lib.bash"
 
 SCRIPT="${SCRIPTS_DIR}/seed-instruction-rules.sh"
 EXPECTED_RULE_COUNT=$(grep -c '^[[:space:]]*capture_rule ' "${SCRIPT}" | tr -d '[:space:]')
+RUNTIME_RULE_COUNT=5
 
 # --------------------------------------------------------------------------- #
 # Mock mnemos stub                                                            #
@@ -114,29 +115,104 @@ out=$(MNEMOS_BIN=/bin/echo bash "${SCRIPT}" --bogus 2>&1)
 rc=$?
 assert_exit 2 "${rc}"
 
+it "unknown seed profile → exit 2"
+out=$(MNEMOS_BIN=/bin/echo bash "${SCRIPT}" --apply --profile unknown-profile 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+
 # --------------------------------------------------------------------------- #
-# --apply on empty store: creates all rules                                   #
+# Runtime command profile: selected repair without unrelated rule drift        #
+# --------------------------------------------------------------------------- #
+
+TMP=$(make_tmp)
+MNEMOS=$(make_mock_mnemos "${TMP}")
+printf '%s' 'newer raw-input policy' > "${TMP}/mnemos-store/rule:input-language"
+printf '%s' 'newer candidate safety policy' > "${TMP}/mnemos-store/rule:parallel-first"
+
+it "default profile reconciles only the runtime command surface"
+out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "profile=runtime-command-surface"
+
+it "default profile preserves unrelated canonical rules"
+assert_eq "newer raw-input policy" "$(cat "${TMP}/mnemos-store/rule:input-language")"
+assert_eq "newer candidate safety policy" "$(cat "${TMP}/mnemos-store/rule:parallel-first")"
+
+it "default profile writes only runtime command rules"
+n=$(find "${TMP}/mnemos-store" -type f | wc -l | tr -d '[:space:]')
+assert_eq $((RUNTIME_RULE_COUNT + 2)) "${n}" "runtime rules plus two sentinels"
+
+TMP=$(make_tmp)
+MNEMOS=$(make_mock_mnemos "${TMP}")
+printf '%s' 'newer raw-input policy' > "${TMP}/mnemos-store/rule:input-language"
+printf '%s' 'newer candidate safety policy' > "${TMP}/mnemos-store/rule:parallel-first"
+
+it "runtime command profile applies successfully"
+out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile runtime-command-surface 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "runtime command profile preserves unrelated rules"
+assert_eq "newer raw-input policy" "$(cat "${TMP}/mnemos-store/rule:input-language")"
+
+it "runtime command profile preserves candidate safety rules"
+assert_eq "newer candidate safety policy" "$(cat "${TMP}/mnemos-store/rule:parallel-first")"
+
+it "explicit runtime command profile writes only its selected rules"
+n=$(find "${TMP}/mnemos-store" -type f | wc -l | tr -d '[:space:]')
+assert_eq $((RUNTIME_RULE_COUNT + 2)) "${n}" "runtime rules plus two unrelated sentinels"
+
+it "runtime command profile restores crew run as canonical"
+workflow_rule="$(cat "${TMP}/mnemos-store/rule:workflow-intents" 2>/dev/null || true)"
+assert_contains "${workflow_rule}" "\`crew run\` is the native CLI execution entry"
+assert_contains "${workflow_rule}" '`$crew:run`'
+assert_not_contains "${workflow_rule}" "candidate-only resolver"
+
+it "runtime command profile rejects unavailable task and workflow commands"
+assert_contains "${workflow_rule}" "does not expose \`crew task\` or \`crew workflow\`"
+
+it "runtime command fallback preserves the pinned execution"
+fallback_rule="$(cat "${TMP}/mnemos-store/rule:current-session-fallback" 2>/dev/null || true)"
+assert_contains "${fallback_rule}" "original Root Input Snapshot"
+assert_contains "${fallback_rule}" "cannot re-resolve candidates"
+
+it "runtime command profile preserves external skill approval"
+codex_rule="$(cat "${TMP}/mnemos-store/rule:codex-routing-fallback" 2>/dev/null || true)"
+assert_contains "${codex_rule}" "Domain-match alone is not approval"
+assert_contains "${codex_rule}" "require explicit user approval"
+
+# --------------------------------------------------------------------------- #
+# Explicit bootstrap on empty store: creates all repository baseline rules     #
 # --------------------------------------------------------------------------- #
 
 TMP=$(make_tmp)
 MNEMOS=$(make_mock_mnemos "${TMP}")
 
-it "--apply on empty store: exit 0"
-out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply 2>&1)
+it "bootstrap-missing on empty store: exit 0"
+out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile bootstrap-missing 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "--apply created all rules"
+it "bootstrap-missing created all repository baseline rules"
 # Count "+ CREATE" lines emitted by capture_rule
 n=$(echo "${out}" | grep -c "+ CREATE")
 assert_eq "${EXPECTED_RULE_COUNT}" "${n}" "rules created"
 
-it "--apply summary shows created count"
+it "bootstrap-missing summary shows created count"
 assert_contains "${out}" "created=${EXPECTED_RULE_COUNT}"
 
-it "--apply persisted at least one rule body (input-language)"
+it "bootstrap-missing persisted raw input rule"
 stored="${TMP}/mnemos-store/rule:input-language"
 assert_file_exists "${stored}"
+input_rule="$(cat "${stored}" 2>/dev/null || true)"
+assert_contains "${input_rule}" "immutable Root Input Snapshot"
+assert_contains "${input_rule}" "must not translate, summarize, normalize"
+
+it "bootstrap source never normalizes input to English"
+output_rule="$(cat "${TMP}/mnemos-store/rule:output-language" 2>/dev/null || true)"
+assert_not_contains "${output_rule}" "input is normalized to English"
+assert_contains "${output_rule}" "Never change the stored Root Input Snapshot"
 
 it "--apply persisted code style context-break rule"
 stored="${TMP}/mnemos-store/rule:code-style-context-breaks"
@@ -148,28 +224,30 @@ assert_contains "$(cat "${stored}" 2>/dev/null || true)" "applies_to: [all]"
 it "code style context-break rule requires breaks on context changes"
 assert_contains "$(cat "${stored}" 2>/dev/null || true)" "break when the implementation context changes"
 
-it "stop directive rule preserves Codex skill loading"
+it "technical hook boundary is seeded"
 stored="${TMP}/mnemos-store/rule:stop-directive"
 assert_file_exists "${stored}"
 stop_rule="$(cat "${stored}" 2>/dev/null || true)"
-assert_contains "${stop_rule}" "loading the \`crew:run\` skill wrapper after any explicitly"
-assert_contains "${stop_rule}" "Do preserve explicit host skill context"
-assert_not_contains "${stop_rule}" "only permitted first action"
+assert_contains "${stop_rule}" "Technical Hook Boundary"
+assert_contains "${stop_rule}" "They must be deterministic, bounded,"
+assert_contains "${stop_rule}" "traceable, and fail in a documented way"
+assert_not_contains "${stop_rule}" "STOP Directive"
 
-it "route directive rule uses crew:agent skill wrapper"
+it "explicit scope boundary is seeded"
 stored="${TMP}/mnemos-store/rule:route-directive"
 assert_file_exists "${stored}"
 route_rule="$(cat "${stored}" 2>/dev/null || true)"
-assert_contains "${route_rule}" "load the \`crew:agent\` skill wrapper"
-assert_contains "${route_rule}" "Do preserve explicit host skill context"
+assert_contains "${route_rule}" "Explicit Scope Boundary"
+assert_contains "${route_rule}" "selects exactly one logical Registry"
+assert_not_contains "${route_rule}" "ROUTE Directive"
 
 it "current-session fallback rule applies to every host"
 stored="${TMP}/mnemos-store/rule:current-session-fallback"
 assert_file_exists "${stored}"
 fallback_rule="$(cat "${stored}" 2>/dev/null || true)"
 assert_contains "${fallback_rule}" "applies_to: [all]"
-assert_contains "${fallback_rule}" "agent/user-agent/subagent"
-assert_contains "${fallback_rule}" "context/specialist-dispatch.md"
+assert_contains "${fallback_rule}" "original Root Input Snapshot"
+assert_contains "${fallback_rule}" "cannot re-resolve candidates"
 assert_contains "${fallback_rule}" "TDD Red → Green → Refactor"
 assert_contains "${fallback_rule}" "phase-note artifacts are coverage gaps"
 
@@ -180,44 +258,63 @@ workflow_rule="$(cat "${stored}" 2>/dev/null || true)"
 assert_contains "${workflow_rule}" "\`crew:<intent>\` is workflow notation"
 assert_contains "${workflow_rule}" "native shell CLI uses space-separated commands"
 
+it "bootstrap baseline forbids hidden routing"
+hidden_routing_rule="$(cat "${TMP}/mnemos-store/rule:auto-execution-triggers" 2>/dev/null || true)"
+assert_contains "${hidden_routing_rule}" "Hidden Routing Prohibition"
+assert_contains "${hidden_routing_rule}" "No lifecycle hook"
+assert_not_contains "${hidden_routing_rule}" "Every substantive user-facing response"
+
+it "bootstrap baseline limits technical hooks"
+hook_rule="$(cat "${TMP}/mnemos-store/rule:stop-directive" 2>/dev/null || true)"
+assert_contains "${hook_rule}" "Technical Hook Boundary"
+assert_not_contains "${hook_rule}" "STOP appears"
+
+it "bootstrap baseline preserves candidate and approval boundaries"
+candidate_rule="$(cat "${TMP}/mnemos-store/rule:parallel-first" 2>/dev/null || true)"
+approval_rule="$(cat "${TMP}/mnemos-store/rule:approval-gate" 2>/dev/null || true)"
+assert_contains "${candidate_rule}" "Candidate And Registry Boundaries"
+assert_not_contains "${candidate_rule}" "Default to parallel execution"
+assert_contains "${approval_rule}" "Candidate Selection and Execution Approval are distinct decisions"
+
 # --------------------------------------------------------------------------- #
 # Re-run --apply with identical content: all skipped                          #
 # --------------------------------------------------------------------------- #
 
-it "--apply re-run with identical store: exit 0"
-out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply 2>&1)
+it "bootstrap-missing re-run with identical store: exit 0"
+out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile bootstrap-missing 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
-it "--apply re-run: summary shows skipped count"
+it "bootstrap-missing re-run: summary shows skipped count"
 assert_contains "${out}" "skipped=${EXPECTED_RULE_COUNT}"
 
-it "--apply re-run: no rules updated"
+it "bootstrap-missing re-run: no rules updated"
 assert_contains "${out}" "updated=0"
 
-it "--apply re-run: no rules created"
+it "bootstrap-missing re-run: no rules created"
 assert_contains "${out}" "created=0"
 
 # --------------------------------------------------------------------------- #
-# --apply with edited body: detects drift → updated count > 0                 #
+# Bootstrap preserves existing canonical drift; runtime profile repairs its IDs #
 # --------------------------------------------------------------------------- #
 
-# Truncate one rule's content to force drift
-echo "drifted" > "${TMP}/mnemos-store/rule:input-language"
+echo "newer canonical raw-input policy" > "${TMP}/mnemos-store/rule:input-language"
 
-it "--apply with drift: exit 0"
-out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply 2>&1)
+it "bootstrap-missing preserves an existing canonical rule"
+out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile bootstrap-missing 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
+assert_eq "newer canonical raw-input policy" "$(cat "${TMP}/mnemos-store/rule:input-language")"
+assert_contains "${out}" "PRESERVE rule:input-language"
 
-it "--apply with drift: updated >= 1"
-# Extract updated=N count
-upd=$(echo "${out}" | grep -oE 'updated=[0-9]+' | tail -1 | sed 's/updated=//')
-if [ -n "${upd}" ] && [ "${upd}" -ge 1 ]; then
-  _pass
-else
-  _fail "expected updated>=1 got '${upd}' (full output below):"$'\n'"${out}"
-fi
+echo "drifted" > "${TMP}/mnemos-store/rule:workflow-intents"
+
+it "runtime profile repairs drift in an owned command rule"
+out=$(MNEMOS_BIN="${MNEMOS}" bash "${SCRIPT}" --apply --profile runtime-command-surface 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "updated=1"
+assert_contains "$(cat "${TMP}/mnemos-store/rule:workflow-intents")" "crew run"
 
 # --------------------------------------------------------------------------- #
 # --dry-run does not call capture/edit (store unchanged)                      #

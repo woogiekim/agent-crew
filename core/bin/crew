@@ -1151,6 +1151,35 @@ cmd_update() {
   local all_projects=0
   local reconcile_skills=0
   local source=""
+  run_instruction_refresh() {
+    local refresh_source="$1"
+    local mnemos_bin="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
+    local seed_script="${refresh_source}/core/scripts/seed-instruction-rules.sh"
+    local instruction_sync_script="${refresh_source}/core/scripts/sync-instructions.sh"
+
+    if [ ! -x "${mnemos_bin}" ]; then
+      printf 'update_instructions: skipped (mnemos CLI not found at %s)\n' "${mnemos_bin}"
+      return 0
+    fi
+    if [ ! -f "${seed_script}" ] || [ ! -f "${instruction_sync_script}" ]; then
+      printf 'update_instructions: skipped (instruction scripts unavailable in %s)\n' \
+        "${refresh_source}" >&2
+      return 0
+    fi
+
+    if ! MNEMOS_BIN="${mnemos_bin}" bash "${seed_script}" \
+      --apply --profile runtime-command-surface; then
+      printf 'update_instructions: command rule reconciliation failed; host instruction sync skipped\n' >&2
+      return 0
+    fi
+    if ! MNEMOS_BIN="${mnemos_bin}" bash "${instruction_sync_script}" \
+      --hosts claude,codex,generic --apply; then
+      printf 'update_instructions: host instruction sync failed; asset refresh will continue\n' >&2
+      return 0
+    fi
+
+    printf 'update_instructions: runtime command rules and host files synchronized\n'
+  }
   run_skill_reconcile() {
     local reconcile_script="${AGENT_CREW_HOME}/setup/reconcile-skill-templates.sh"
     require_file "${reconcile_script}" "skill reconcile script"
@@ -1230,11 +1259,13 @@ EOF
   done
 
   if [ "${use_local}" = "1" ]; then
+      local refresh_source="${source:-${PROJECT_ROOT}}"
+      run_instruction_refresh "${refresh_source}"
       local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
       require_file "${sync_script}" "local sync script"
-      bash "${sync_script}" "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+      bash "${sync_script}" "${refresh_source}" "${PROJECT_ROOT}"
       if [ "${all_projects}" = "1" ]; then
-        update_registered_projects "${source:-${PROJECT_ROOT}}" "${PROJECT_ROOT}"
+        update_registered_projects "${refresh_source}" "${PROJECT_ROOT}"
       fi
       if [ "${reconcile_skills}" = "1" ]; then
         run_skill_reconcile
@@ -1251,6 +1282,7 @@ EOF
   git clone --depth 1 https://github.com/woogiekim/agent-crew "${work_dir}"
   printf 'update_phase: remote_clone=%sms\n' "$(( (SECONDS - update_phase_start) * 1000 ))"
   update_phase_start="${SECONDS}"
+  run_instruction_refresh "${work_dir}"
   local sync_script="${work_dir}/core/scripts/sync-local-install.sh"
   require_file "${sync_script}" "remote local sync script"
   bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"

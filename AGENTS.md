@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-07-27T00:40:29Z from 19 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-08-21T15:07:22Z from 17 mnemos rules (host=generic) -->
 
 # agent-crew - Global Rules
 
@@ -19,37 +19,31 @@ Agents and Tasks consume the original language directly. Translation is allowed
 only when translation is the explicit Task. New executions do not create or
 consume legacy normalization artifacts.
 
-## Output Language
-
-User-facing narrative follows the user's language and defaults to Korean on
-this machine. Parser-required tokens such as `STATUS:`, `PLAN:`, `BLOCKER:`,
-`REVIEW:`, enum values, commands, paths, and code identifiers remain in their
-defined form. Never change the stored Root Input Snapshot to satisfy an output
-language preference.
-
 ## Explicit Execution Entry
 
 Agent Crew never infers execution intent from plain conversation. Ordinary
-natural-language input must not start a Workflow, Task, or Agent. Only an
-explicit logical `crew workflow`, `crew task`, or `crew agent` command may
-cross the execution boundary. Host aliases map to one of those three commands.
+natural-language input must not start an Agent, LLM router, hidden Tool, or
+implementation pipeline.
+
+The user chooses the execution boundary with an explicit command:
+
+- `crew run` / `crew:run` / `$crew:run` for supervised task execution
+- `crew agent` / `crew:agent` / `$crew:agent` for direct Agent execution
+
+The current native runtime does not expose `crew task`, `crew workflow`, or
+`standalone`. Do not advertise, infer, or select those unavailable commands.
 Management commands do not start execution.
 
-`run` is a deprecated candidate-only compatibility alias. It can present
-registered Task and Workflow candidates but cannot choose or execute one.
-`standalone` is a deprecated alias for `task execute`.
+## Run And Agent Boundaries
 
-## Task Workflow Agent Boundaries
+`crew run` is the supervised execution entry. One task creates one supervisor
+handoff; multiple explicit task arguments may create parallel supervisor
+handoffs with the declared barrier and result handling from `run.md`.
 
-- A Task is one independent linear execution with no parallel branch and no
-  more than one simultaneously running Agent.
-- A Workflow invokes registered Tasks and includes at least one real parallel
-  group of at least two Task Invocations, an explicit barrier, and a result
-  policy. A Workflow cannot declare an Agent as an independent node.
-- A direct Agent execution can use only the Agent and declared sequential child
-  graph pinned in the approved plan. Parallel child work requires a Workflow.
-- Invalid definitions are rejected; they are never silently converted or
-  serialized.
+`crew agent` is the direct-Agent entry. It uses the selected Agent and its
+declared sequential child graph. It must not be silently converted into
+`crew run`, and neither entry may invent an unavailable `crew task` or
+`crew workflow` command.
 
 ## Candidate And Registry Boundaries
 
@@ -77,6 +71,11 @@ rendering or return values, error handling, and reporting as context changes.
 Do not reformat unrelated code solely to add spacing; apply this rule to code
 the agent writes or directly touches.
 
+When writing or directly modifying tests, do not add `// given`, `// when`,
+or `// then` section comments. Express setup, execution, and assertion
+transitions with blank lines and clear test or variable names. Do not sweep
+unrelated existing tests solely to remove these comments.
+
 ## Imported Command Scope Rule
 
 Imported command/skill origin is not the work target. For example, an imported cowave command such as `$feat` provides workflow and methodology only; it does not prove that cowave is the repository, module, system, or API to modify.
@@ -98,24 +97,14 @@ Use this priority when signals conflict:
 
 Therefore, never infer upstream or source-project implementation work solely from the imported command/skill origin. If the ticket says a related system is already complete, needs no change, or only needs integration, keep that system closed unless newer explicit evidence reopens it. If scope remains ambiguous after checking the evidence above, stop before editing or mutating external state and ask for clarification.
 
-## Namespaced Command Adapter
-
-The `crew` plugin maps only explicit Codex `$crew:<intent>` and Claude Code
-`/crew:<intent>` invocations to the provider-neutral definitions. It does not
-infer an execution command from natural language or choose a Registry. Preserve
-explicitly approved external skill context, but do not load unrelated
-host/plugin skills by description match. Non-agent-crew host/plugin skills
-require explicit user approval and plan pinning.
-
 ## Current-Session Fallback
 
-When an explicit `crew workflow`, `crew task`, or `crew agent` handoff returns
-`HOST_BRIDGE: current_session_required`
-or the operator continues a host bridge handoff manually in the current host
-session, that session replaces only the nested bridge. It must execute the
-already pinned plan, original Root Input Snapshot, declared Agent/Tool graph,
-permissions, and versions. It cannot re-resolve candidates, add execution
-nodes, widen scope, or bypass approval.
+When an explicit `crew run` or `crew agent` handoff returns
+`HOST_BRIDGE: current_session_required`, or the operator continues that handoff
+manually in the current host session, the session replaces only the nested
+bridge. It must execute the already pinned plan, original Root Input Snapshot,
+declared Agent/Tool graph, permissions, and versions. It cannot re-resolve candidates,
+add execution nodes, widen scope, or bypass approval.
 
 Before acting, load the applicable skill files and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
@@ -124,7 +113,7 @@ path(s) in `{TASK_DIR}/context/skill-load.md` or
 `selected_skill: frontend-typescript-react` maps to
 `frontend-typescript-react.md`, and `selected_skill: tdd` maps to `tdd.md`).
 Automatically loaded skills must come from agent-crew system/user skill
-locations or the active host's agent-crew mirrors. In particular, do not load unrelated
+locations or the active host's agent-crew mirrors. Do not auto-load unrelated
 host/plugin skills by description match. If a non-agent-crew host/plugin skill
 is genuinely needed, ask the user first and record approval in
 `{TASK_DIR}/context/external-skill-approval.md` or `.json`. Completion/repair
@@ -133,7 +122,7 @@ as advisory gaps and still rejects unapproved external skill loads.
 
 Optional skill-use notes may be recorded in
 `{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
-they are diagnostic coverage, not required completion artifacts. TDD and other
+they are diagnostic coverage, not required proof artifacts. TDD and other
 loaded skills are covered first by real task outcomes, tests, diffs, reviews,
 pipeline/progress state, reviewer quality metrics, and tool events. Phase notes
 such as red/green/refactor files may improve auditability, but missing or
@@ -141,9 +130,10 @@ incomplete notes must be reported as advisory gaps for standard-risk work, not
 completion blockers.
 
 Optional operational understanding notes may be recorded in
-`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md`, but
-these notes are diagnostic coverage only. Completion or repair for a mutating
-current-session fallback must not require separate skill-plan artifacts when
+`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
+linked from `rule_evidence` in `context/skill-use.json`, but these notes are
+diagnostic coverage only. Completion/repair for a mutating current-session
+fallback must not require separate skill-plan or rule-evidence artifacts when
 the actual task outcomes, tests, diffs, reviews, or tool events are sufficient;
 missing notes should be surfaced as advisory gaps.
 
@@ -176,49 +166,79 @@ skill origin does not determine the repository, module, endpoint, or contract
 to change. Resolve work scope from explicit request and contract evidence, pin
 it in the Execution Plan, and request a new plan before any scope expansion.
 
+## No Given/When/Then Comments
+
+Across this computer's AI hosts and agent-crew agents, never add standalone BDD section comments such as `// given`, `// when`, `// then`, `# given`, `# when`, `# then`, `/* given */`, `/* when */`, or `/* then */`.
+
+Use descriptive test names and readable setup/action/assertion code structure instead. If a comment is genuinely needed, it must explain a non-obvious domain rule, contract, side effect, or test fixture constraint; it must not be a generic given/when/then marker.
+
+When modifying nearby tests, remove newly introduced or touched generic given/when/then marker comments rather than preserving or adding them.
+
 ## Workflow Intents
 
-`crew:<intent>` is provider-neutral prompt notation. Codex uses
-`$crew:<intent>`, Claude Code uses `/crew:<intent>`, and the native shell CLI
-uses space-separated commands such as `crew workflow`, `crew task`, and
-`crew agent`.
+### Explicit Command Invocation Rule
 
-| Logical command | Provider notation | Codex | Claude Code | Native CLI |
-|---|---|---|---|---|
-| Workflow | `crew:workflow` | `$crew:workflow` | `/crew:workflow` | `crew workflow` |
-| Task | `crew:task` | `$crew:task` | `/crew:task` | `crew task` |
-| Agent | `crew:agent` | `$crew:agent` | `/crew:agent` | `crew agent` |
+`crew:<intent>` is workflow notation used in prompts and host adapter guidance.
+The native shell CLI uses space-separated commands.
+`crew run` is the native CLI execution entry for supervised work, and
+`crew agent` is the native direct-Agent entry. Codex uses `$crew:run` and
+`$crew:agent`; Claude Code uses `/crew:run` and `/crew:agent`.
 
-The text following the explicit command is immutable `rawInput`. Read-only
-`list`, `describe`, and `status` operations do not require Execution Approval.
-Lifecycle `pause`, `resume`, and `cancel` operations validate owner and state.
+The current runtime does not expose `crew task` or `crew workflow`. Do not
+translate `crew:run` into either unavailable command, and do not describe
+`crew:run` as deprecated or as compatibility-only candidate resolution.
 
-Compatibility and management wrappers are explicit but are not additional
-logical execution commands:
+When the user's message begins with a workflow command such as `crew:run`,
+`crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
+treat it as an explicit command invocation, not as ordinary natural language.
+Codex wrapper forms at the beginning of the message, such as `$crew:run`,
+`$crew:agent`, `$crew:status`, `$crew:update`, `$crew:smm`, `$crew:setup`,
+`$crew:cost`, and `$crew:agent-maker`, are the same kind of explicit command
+invocation. The text after a leading `$crew:run` is the task description; only
+treat `$crew:run` as the review target when the prompt explicitly names the
+skill, wrapper, file, or `SKILL.md` as the object.
 
-| Intent | Codex | Claude Code | Meaning |
-|---|---|---|---|
-| `crew:run` | `$crew:run` | `/crew:run` | Deprecated Task/Workflow candidate-only resolver |
-| `crew:setup` | `$crew:setup` | `/crew:setup` | Install or refresh the current host adapter |
-| `crew:status` | `$crew:status` | `/crew:status` | Inspect local execution state |
-| `crew:update` | `$crew:update` | `/crew:update` | Explicitly refresh installed assets |
-| `crew:smm` | `$crew:smm` | `/crew:smm` | Inspect the Shared Mental Model |
-| `crew:cost` | `$crew:cost` | `/crew:cost` | Inspect measured cost records |
-| `crew:agent-maker` | `$crew:agent-maker` | `/crew:agent-maker` | Propose an Agent definition; activation requires approval |
+For `crew:run` specifically:
+
+- Execute the workflow defined in `~/.agent-crew/commands/run.md`.
+- Do not reinterpret bare `crew:run` as "run standard verification", "run CI",
+  "summarize the project", or any other host-default task.
+- If no task argument is provided, follow Step 1 of the command definition and
+  ask for the task description through the host structured input UI.
+- If task arguments are provided, use them as the task descriptions and continue
+  through requirements collection and supervisor delegation.
+
+For `crew:setup` specifically:
+
+- Execute the workflow defined in `~/.agent-crew/commands/setup.md`.
+- Do not reinterpret it as a request to inspect the repository, inspect Gradle or
+  package files, run verification, or infer project setup manually.
+- Run the host adapter setup flow and initialize agent-crew state exactly as the
+  command definition says.
+
+| Intent | Meaning |
+|---|---|
+| `crew:setup` | Install the current host adapter and initialize the project workspace |
+| `crew:run` | Canonical workflow entry point for one or more tasks |
+| `crew:cost` | Show the session cost summary |
+| `crew:agent-maker` | Design and register a custom agent |
+| `crew:sync-instructions` | Re-assemble host AI md files from mnemos rules |
+| `$crew:run` | Codex wrapper for `crew:run` |
+| `$crew:agent` | Codex wrapper for `crew:agent` |
+| `$crew:status` | Codex wrapper for `crew:status` |
+| `$crew:update` | Codex wrapper for `crew:update` |
+| `$crew:smm` | Codex wrapper for `crew:smm` |
+| `$crew:setup` | Codex wrapper for `crew:setup` |
+| `$crew:cost` | Codex wrapper for `crew:cost` |
+| `$crew:agent-maker` | Codex wrapper for `crew:agent-maker` |
+
+Use `crew:<intent>` as the default invocation style.
 
 Project state is stored under:
 
 ```text
 ~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/{TASK_ID}
 ```
-
-## Codex Output Language
-
-Respond in Korean by default when the user writes Korean or when the desired response language is ambiguous.
-
-Keep code, commands, file paths, protocol/status tokens, API names, model names, and quoted source text in their original language.
-
-Use English only when the user explicitly requests English or an external protocol requires it.
 
 ## Korean Output Default
 

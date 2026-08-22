@@ -55,7 +55,7 @@ if not prompt.strip():
 
 COMMAND_PAT = (
     r"^\s*(?:[-*]\s*)?(?P<command>\$?(?:crew|ac):(?P<intent>"
-    r"setup|run|crew|task|status|cost|agent-maker|agent|smm|sessions|interact|"
+    r"setup|run|status|cost|agent-maker|agent|smm|sessions|interact|"
     r"sync-instructions|telemetry|update|evolve|parity-check|relay"
     r"))(?:\s+(?P<args>.*))?$"
 )
@@ -68,8 +68,6 @@ if command_match:
     command_file_by_intent = {
         "setup": "setup.md",
         "run": "run.md",
-        "crew": "run.md",
-        "task": "run.md",
         "status": "status.md",
         "cost": "cost.md",
         "agent-maker": "agent-maker.md",
@@ -86,7 +84,7 @@ if command_match:
     }
     command_file = command_file_by_intent.get(intent, "run.md")
 
-    if intent in ("run", "crew", "task"):
+    if intent == "run":
         args_note = (
             f"Command arguments detected: {args}"
             if args

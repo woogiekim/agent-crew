@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# seed-instruction-rules.sh — Idempotent seeder for the agent-crew instruction
-# SSOT. Captures each rule into the mnemos global layer with id
-# `rule:<slug>` and tag `instruction-rule`. Subsequent runs detect
-# unchanged content and skip writes (no churn).
+# seed-instruction-rules.sh — Reconciles the repository-owned runtime command
+# rules and bootstraps missing instruction rules into the canonical mnemos
+# global layer. Existing non-runtime rules remain owned by mnemos and are never
+# overwritten by bootstrap mode.
 #
 # Usage:
-#   bash core/scripts/seed-instruction-rules.sh            # default: --apply
+#   bash core/scripts/seed-instruction-rules.sh            # runtime rules
 #   bash core/scripts/seed-instruction-rules.sh --dry-run  # report only
+#   bash core/scripts/seed-instruction-rules.sh --apply \
+#     --profile runtime-command-surface                    # selected rules
+#   bash core/scripts/seed-instruction-rules.sh --apply \
+#     --profile bootstrap-missing                          # create only
 #
 # Environment:
 #   MNEMOS_BIN   path to mnemos CLI (default: ~/.local/bin/mnemos)
@@ -19,10 +23,44 @@
 set -u
 
 MNEMOS_BIN="${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
-MODE="${1:---apply}"
-case "${MODE}" in
-  --apply|--dry-run) ;;
-  *) echo "usage: $0 [--apply|--dry-run]" >&2; exit 2 ;;
+MODE="--apply"
+PROFILE="runtime-command-surface"
+
+usage() {
+  echo "usage: $0 [--apply|--dry-run] [--profile runtime-command-surface|bootstrap-missing]" >&2
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --apply|--dry-run)
+      MODE="$1"
+      shift
+      ;;
+    --profile)
+      if [ "$#" -lt 2 ]; then
+        usage
+        exit 2
+      fi
+      PROFILE="$2"
+      shift 2
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+case "${PROFILE}" in
+  runtime-command-surface|bootstrap-missing) ;;
+  all)
+    echo "seed-instruction-rules: profile 'all' is deprecated; using bootstrap-missing" >&2
+    PROFILE="bootstrap-missing"
+    ;;
+  *)
+    echo "seed-instruction-rules: unknown profile: ${PROFILE}" >&2
+    exit 2
+    ;;
 esac
 
 if [ ! -x "${MNEMOS_BIN}" ]; then
@@ -52,8 +90,30 @@ UPDATED=0
 SKIPPED=0
 FAILED=0
 
+rule_selected() {
+  local id="$1"
+
+  if [ "${PROFILE}" = "bootstrap-missing" ]; then
+    return 0
+  fi
+
+  case "${id}" in
+    rule:no-direct-implementation|\
+    rule:agent-routing-criteria|\
+    rule:codex-routing-fallback|\
+    rule:current-session-fallback|\
+    rule:workflow-intents)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 # capture_rule <id> <priority> <body-variable-name>
-#   Compares against current mnemos content; captures or edits only on drift.
+#   Runtime command mode captures missing rules and edits drift. Bootstrap mode
+#   captures missing rules but preserves every existing canonical mnemos item.
 #   The body is passed by name (indirect expansion) so heredoc-defined
 #   variables holding multi-line content with backticks / $() / quotes
 #   round-trip cleanly under bash 3.2 (avoids the "$(cat <<'EOF' ...)"
@@ -61,6 +121,8 @@ FAILED=0
 capture_rule() {
   local id="$1" prio="$2" varname="$3"
   local body="${!varname}"
+
+  rule_selected "${id}" || return 0
 
   local current
   if [ "${MNEMOS_READ_JSON}" = "1" ]; then
@@ -109,6 +171,9 @@ except Exception:
   elif [ "${current}" = "${body}" ]; then
     echo "  = SKIP   ${id} (unchanged)"
     SKIPPED=$((SKIPPED + 1))
+  elif [ "${PROFILE}" = "bootstrap-missing" ]; then
+    echo "  = PRESERVE ${id} (existing canonical rule)"
+    SKIPPED=$((SKIPPED + 1))
   else
     echo "  ~ UPDATE ${id} (content drift detected)"
     if [ "${MODE}" = "--apply" ]; then
@@ -124,7 +189,7 @@ except Exception:
   fi
 }
 
-echo "[seed-instruction-rules] mode=${MODE} mnemos=${MNEMOS_BIN}"
+echo "[seed-instruction-rules] mode=${MODE} profile=${PROFILE} mnemos=${MNEMOS_BIN}"
 echo ""
 
 # --- rule:raw-input-preservation ------------------------------------------
@@ -135,10 +200,15 @@ applies_to: [all]
 priority: 10
 ---
 
-Task descriptions may arrive in Korean or any other language. Preserve the
-exact user text as the canonical TASK and Root Input Snapshot. Do not translate
-or normalize the task to English before passing it to agents or writing it to
-pipeline state.
+Preserve the user's task text as an immutable Root Input Snapshot. The system
+must not translate, summarize, normalize, correct, or rewrite it before
+candidate resolution, planning, handoff, or execution. Deterministic parsing may
+split the explicit command and options, resolve declared aliases, and add
+derived fields such as `language`, but it never replaces `rawInput`.
+
+Agents and Tasks consume the original language directly. Translation is allowed
+only when translation is the explicit Task. New executions do not create or
+consume legacy normalization artifacts.
 RULE_EOF
 capture_rule "rule:input-language" 10 BODY_INPUT_LANGUAGE
 
@@ -150,126 +220,85 @@ applies_to: [claude]
 priority: 20
 ---
 
-User-facing output should appear in the user's input language (Claude
-follows the conversation's language naturally; other adapters mirror
-this where possible). See `core/rules/output-language.md` for the full
-rule, including the **English-only status invariant**: structured
-tokens like `STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`,
-`BLOCKER:` are parsed by regex and MUST be returned in English
-regardless of input language. Narrative around those tokens (the
-explanation, description, report body) follows the user's language.
-
-The two rules are paired: input is normalized to English for
-**internal artifacts** (pipeline.json, register.json, handoff.md,
-agent prompts), while output narrative is **NOT forced into English**
-for the user-facing surface.
+User-facing narrative follows the user's language and defaults to Korean on
+this machine. Parser-required tokens such as `STATUS:`, `PLAN:`, `BLOCKER:`,
+`REVIEW:`, enum values, commands, paths, and code identifiers remain in their
+defined form. Never change the stored Root Input Snapshot to satisfy an output
+language preference.
 RULE_EOF
 capture_rule "rule:output-language" 20 BODY_OUTPUT_LANGUAGE
 
-# --- rule:no-direct-implementation ----------------------------------------
+# --- rule:explicit-execution-entry ----------------------------------------
 read -r -d '' BODY_NO_DIRECT_IMPL <<'RULE_EOF' || true
 ---
-title: No Direct Implementation
+title: Explicit Execution Entry
 applies_to: [all]
 priority: 30
 ---
 
-When a user requests coding, implementation, or development work, do not start
-editing files or generating production code directly.
+Agent Crew never infers execution intent from plain conversation. Ordinary
+natural-language input must not start an Agent, LLM router, hidden Tool, or
+implementation pipeline.
 
-Always follow this sequence:
+The user chooses the execution boundary with an explicit command:
 
-1. Classify the request.
-2. Invoke the appropriate agent, skill, or workflow intent.
-3. Perform implementation only after the required planning or delegated agent step.
+- `crew run` / `crew:run` / `$crew:run` for supervised task execution
+- `crew agent` / `crew:agent` / `$crew:agent` for direct Agent execution
 
-This is a system behavior principle. It is not tied to a specific AI vendor.
-Host adapters may expose different invocation methods, but the workflow intent
-remains provider-neutral.
+The current native runtime does not expose `crew task`, `crew workflow`, or
+`standalone`. Do not advertise, infer, or select those unavailable commands.
+Management commands do not start execution.
 RULE_EOF
 capture_rule "rule:no-direct-implementation" 30 BODY_NO_DIRECT_IMPL
 
-# --- rule:agent-routing-criteria ------------------------------------------
+# --- rule:run-and-agent-boundaries ----------------------------------------
 read -r -d '' BODY_AGENT_ROUTING <<'RULE_EOF' || true
 ---
-title: Agent Routing Criteria
+title: Run And Agent Boundaries
 applies_to: [all]
 priority: 40
 ---
 
-| Request Type | Execution Method |
-|---|---|
-| Backend API, domain logic, database work | `crew:run` → supervisor → backend |
-| UI, full-stack, or implementation workflows | `crew:run` → supervisor → pipeline agents |
-| Multiple independent features | `crew:run` with one supervisor per task |
-| Requirements analysis only | `crew:run` → supervisor → planner (no implementation stages) |
+`crew run` is the supervised execution entry. One task creates one supervisor
+handoff; multiple explicit task arguments may create parallel supervisor
+handoffs with the declared barrier and result handling from `run.md`.
+
+`crew agent` is the direct-Agent entry. It uses the selected Agent and its
+declared sequential child graph. It must not be silently converted into
+`crew run`, and neither entry may invent an unavailable `crew task` or
+`crew workflow` command.
 RULE_EOF
 capture_rule "rule:agent-routing-criteria" 40 BODY_AGENT_ROUTING
 
-# --- rule:parallel-first --------------------------------------------------
+# --- rule:candidate-and-registry-boundaries -------------------------------
 read -r -d '' BODY_PARALLEL_FIRST <<'RULE_EOF' || true
 ---
-title: Parallel-First Execution Rule
+title: Candidate And Registry Boundaries
 applies_to: [all]
 priority: 50
 ---
 
-**Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
-
-When a request contains multiple independent sub-tasks — even if they touch the
-same files — run them as parallel supervisors:
-
-```
-crew:run "Sub-task A" | "Sub-task B" | "Sub-task C"
-```
-
-Merge conflicts that arise after parallel completion are resolved by the
-**resolver agent**. That is its explicit purpose. Choosing sequential execution
-to avoid conflicts is an incorrect optimization that sacrifices throughput for a
-problem the resolver already solves.
-
-**Sequential execution is only correct when:**
-- Task B cannot start until Task A's output exists (true dependency)
-- The tasks are logically a single atomic unit
-
-File overlap alone is never a reason to serialize.
+Candidate search is restricted to the explicitly named Registry. Zero
+candidates never creates a definition. Multiple candidates, fuzzy or
+LLM-recommended candidates, low metadata coverage, and resolver conflicts
+require Candidate Selection. Candidate Selection is separate from Execution
+Approval and must not start work.
 RULE_EOF
 capture_rule "rule:parallel-first" 50 BODY_PARALLEL_FIRST
 
-# --- rule:auto-execution-triggers (commit 011e6be content) ----------------
+# --- rule:hidden-routing-prohibition --------------------------------------
 read -r -d '' BODY_AUTO_EXEC <<'RULE_EOF' || true
 ---
-title: Auto-Execution Triggers
+title: Hidden Routing Prohibition
 applies_to: [all]
 priority: 60
 ---
 
-> Requirements collection (Step 5 of `crew:run`) is always mandatory and must
-> never be skipped, even when the request seems self-evident.
-
-Every substantive user-facing response must enter an agent-crew route before
-answering. Do not answer inline merely because the response is short, obvious,
-or read-only.
-
-Route implementation, mutation, issue, git, release, update, and workflow
-requests through `crew:run`. This includes build, implement, create, add,
-update, fix, remove, move, change, migrate, refactor, replace, extend,
-integrate, test, deploy, merge, push, rollback, commit, issue publication,
-and artifact/document mutation work.
-
-Route questions, explanations, diagnostics, status/history lookups, and
-read-only analysis through `crew:agent` (auto-routing selects analyst for
-codebase Q and historian for session/git/project state Q).
-
-If the user gives a short confirmation such as "go", "yes", "ok", "continue",
-"proceed", "네", or "진행해주세요", continue through the appropriate
-`crew:<intent>` workflow instead of answering directly.
-
-Direct inline output is permitted only for machine-required control surfaces:
-structured-choice numbers/labels, workflow handoff/result/status tokens, or
-the final relay of a response that has already gone through `crew:run` or
-`crew:agent`. Never use inline output as a shortcut around an available
-agent-crew route.
+No lifecycle hook, prompt preprocessor, injected directive, or host wrapper may
+start a Workflow, Task, Agent, LLM router, or hidden Tool. It must not alter
+input meaning, expand scope, create definitions, or persist Agent, Skill, or
+Memory changes. Technical hooks are limited to deterministic dangerous-command
+protection, bounded cost/tool telemetry, and cleanup.
 RULE_EOF
 capture_rule "rule:auto-execution-triggers" 60 BODY_AUTO_EXEC
 
@@ -311,6 +340,7 @@ If the user explicitly invoked another Codex skill, preserve that explicit
 context as task input for requirements collection, supervisor handoffs, and
 generated prompts. Do not auto-load non-agent-crew host/plugin skills merely
 because their descriptions appear to match the task.
+Domain-match alone is not approval to load external host/plugin skills.
 Non-agent-crew host/plugin skills require explicit user approval under the provider-neutral external skill boundary below.
 
 When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
@@ -329,13 +359,12 @@ priority: 75
 section: Auto-Execution Triggers
 ---
 
-When any host `crew:run` handoff returns `HOST_BRIDGE: current_session_required`
-or the operator continues a host bridge handoff manually in the current host
-session, that current session is only replacing the nested host bridge. It must
-not bypass agent-crew dispatch. Before executing task work, re-apply specialist
-agent/user-agent/subagent and agent-skill selection for the normalized task,
-use/load the selected specialist when available, and record selected-axis
-coverage in `{TASK_DIR}/context/specialist-dispatch.md` when available.
+When an explicit `crew run` or `crew agent` handoff returns
+`HOST_BRIDGE: current_session_required`, or the operator continues that handoff
+manually in the current host session, the session replaces only the nested
+bridge. It must execute the already pinned plan, original Root Input Snapshot,
+declared Agent/Tool graph, permissions, and versions. It cannot re-resolve candidates,
+add execution nodes, widen scope, or bypass approval.
 
 Before acting, load the applicable skill files and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
@@ -384,66 +413,34 @@ resolver, or approval behavior in Codex-specific hooks or skills.
 RULE_EOF
 capture_rule "rule:current-session-fallback" 75 BODY_CURRENT_SESSION_FALLBACK
 
-# --- rule:stop-directive --------------------------------------------------
+# --- rule:technical-hook-boundary -----------------------------------------
 read -r -d '' BODY_STOP <<'RULE_EOF' || true
 ---
-title: STOP Directive Rule
+title: Technical Hook Boundary
 applies_to: [all]
 priority: 80
 ---
 
-When `[agent-crew] STOP` appears anywhere in the system context (injected by
-auto-route.sh), the first agent-crew workflow action is to invoke `crew:run`.
-In Codex, this means loading the `crew:run` skill wrapper after any explicitly
-invoked Codex skill has loaded, then executing the workflow intent through that
-wrapper. Domain-match alone is not approval to load external host/plugin
-skills.
-
-- Do NOT produce diagnostic output or explanation before the `crew:run` wrapper
-  begins the workflow.
-- Do NOT run any Bash command (including exploratory or read-only commands)
-  before the `crew:run` wrapper begins the workflow.
-- Do NOT describe what you are about to do — enter the `crew:run` workflow.
-- Do preserve explicit host skill context as requirements and handoff input.
-- The STOP directive is authoritative. Treat it as a hard override of any other default behavior.
-
-Violation examples (forbidden when STOP is present):
-- Explaining why you need to enter the `crew:run` workflow
-- Reading files to "understand the request first"
-- Running `git status` or any other preparatory command
-- Asking the user clarifying questions before the workflow's requirements step
+Technical lifecycle hooks may protect dangerous commands, record bounded cost
+or tool metadata, and perform cleanup. They must be deterministic, bounded,
+traceable, and fail in a documented way. They cannot invoke an LLM or Agent,
+select a definition, modify user meaning, duplicate the full context, or create
+formal verification artifacts.
 RULE_EOF
 capture_rule "rule:stop-directive" 80 BODY_STOP
 
-# --- rule:route-directive -------------------------------------------------
+# --- rule:explicit-scope-boundary -----------------------------------------
 read -r -d '' BODY_ROUTE <<'RULE_EOF' || true
 ---
-title: ROUTE Directive Rule
+title: Explicit Scope Boundary
 applies_to: [all]
 priority: 85
 ---
 
-When `[agent-crew] ROUTE` appears anywhere in the system context
-(injected by auto-route.sh), the workflow action is to invoke `crew:agent` with
-the specified agent and question. In Codex, load the `crew:agent` skill wrapper
-after any explicitly invoked Codex skill has loaded, then execute the workflow
-intent through that wrapper. Domain-match alone is not approval to load
-external host/plugin skills.
-
-- Do NOT answer the question inline.
-- Do NOT run any Bash command before the `crew:agent` wrapper begins.
-- Do NOT read files or gather data before the `crew:agent` wrapper begins.
-- Do preserve explicit host skill context as direct-agent input.
-- The ROUTE directive is authoritative. Treat it as a hard override
-  of any other default behavior.
-- This rule applies even if the ROUTE directive arrives mid-execution
-  (in a tool result system-reminder). Stop immediately and re-route.
-
-Violation examples (forbidden when ROUTE is present):
-- Answering the question directly without entering the `crew:agent` workflow
-- Running `mnemos` commands or reading files to gather context first
-- Continuing an in-progress response after ROUTE appears in a tool result
-- Treating the ROUTE directive as advisory rather than mandatory
+An explicit command selects exactly one logical Registry. Imported command or
+skill origin does not determine the repository, module, endpoint, or contract
+to change. Resolve work scope from explicit request and contract evidence, pin
+it in the Execution Plan, and request a new plan before any scope expansion.
 RULE_EOF
 capture_rule "rule:route-directive" 85 BODY_ROUTE
 
@@ -458,9 +455,14 @@ priority: 90
 ### Explicit Command Invocation Rule
 
 `crew:<intent>` is workflow notation used in prompts and host adapter guidance.
-The native shell CLI uses space-separated commands such as `crew run` and
-`crew agent`; documentation may mention those forms only when describing the
-CLI control plane.
+The native shell CLI uses space-separated commands.
+`crew run` is the native CLI execution entry for supervised work, and
+`crew agent` is the native direct-Agent entry. Codex uses `$crew:run` and
+`$crew:agent`; Claude Code uses `/crew:run` and `/crew:agent`.
+
+The current runtime does not expose `crew task` or `crew workflow`. Do not
+translate `crew:run` into either unavailable command, and do not describe
+`crew:run` as deprecated or as compatibility-only candidate resolution.
 
 When the user's message begins with a workflow command such as `crew:run`,
 `crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
@@ -537,121 +539,38 @@ applies_to: [all]
 priority: 110
 ---
 
-### Centralized Approval Gate
+Candidate Selection and Execution Approval are distinct decisions owned by the
+Approval Service. Exact deterministic single safe Workflow/Task candidates may
+skip approval only after final plan risk assessment. Multiple, fuzzy,
+LLM-recommended, low-coverage, or conflicting candidates require selection.
+Every direct Agent execution requires approval.
 
-All approval decisions for the following actions are owned exclusively by the
-orchestrator (crew:run for N > 1, supervisor for N == 1):
+High-cost, destructive, external-write, deployment, push, merge, release,
+credential, permission, broad-scope, and hard-to-reverse plans always require
+approval. Approval binds definition and Agent versions, Host and installed
+asset fingerprints, Root Input Snapshot, execution graph, permissions, Tools,
+repository revisions, side effects, cost/risk, and canonical Plan Hash. Any
+bound-field change invalidates the decision.
 
-- Merge (git merge)
-- Push to remote (git push)
-- Deployment (any deploy script or command)
-- Destructive operations (delete, reset, overwrite)
-- Branch cleanup (git branch -d / -D)
-
-**Stage agents (devops, and any agent that performs destructive operations) MUST NOT
-issue the host's interactive question mechanism for any of the above actions
-(see `core/rules/capabilities/interactive-question.md`).** Instead, those agents must:
-
-1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
-2. Return a `PLAN:` block to the supervisor with the following fields:
-   ```text
-   PLAN:
-     actions: {list of planned commands}
-     risk: {none | low | medium | high}
-     reversible: {yes | no}
-   STATUS: plan_ready
-   ```
-3. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
-   (up to 60s timeout before reporting BLOCKED)
-4. Execute only after receiving `APPROVED`; halt with STATUS: BLOCKED on
-   `CANCELLED` or timeout
-
-### Orchestrator Approval Gate
-
-The orchestrator (crew:run or supervisor) issues the consolidated structured
-user-choice intent (see `core/rules/capabilities/interactive-question.md`)
-after collecting all PLAN blocks. This ensures:
-- A single approval prompt regardless of how many stage agents need approval
-- A consolidated view of all planned actions across all tasks (for N > 1)
-- No duplicate or out-of-order approval dialogs
-
-All structured user-choice calls (per `core/rules/capabilities/interactive-question.md`)
-for these actions must include at minimum:
-- header: action type (e.g., "Deploy", "Approve All Actions", "Merge", "Push", "Rollback")
-- question: describing the specific action(s) with relevant details
-- options: at minimum "Approve — proceed" and "Cancel — hold"
-
-Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
-are FORBIDDEN at every level of the system. Violating this rule is a workflow
-consistency error.
+Use a structured host decision surface, structured markdown fallback, or a
+strict PREAPPROVED manifest. Headless ambiguity fails immediately instead of
+hanging or defaulting to approval.
 RULE_EOF
 capture_rule "rule:approval-gate" 110 BODY_APPROVAL_GATE
 
 # --- rule:subagent-plan-approval ------------------------------------------
 read -r -d '' BODY_SUBAGENT_PLAN <<'RULE_EOF' || true
 ---
-title: Subagent Plan Approval Rule
+title: Risky Action Execution Rule
 applies_to: [all]
 priority: 120
 ---
 
-Stage agents that perform **destructive operations** (deploy, push, merge, overwrite,
-or branch cleanup) must present a PLAN block for approval before executing. The planner,
-backend, frontend, and designer agents are exempt — they commit code and return STATUS
-directly without a PLAN gate.
-
-**How plans flow depends on the agent type:**
-
-### Destructive-action stage agents (devops, and any agent that deploys or pushes)
-
-These agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
-a `PLAN:` block to the supervisor. They do NOT issue the host's interactive
-question mechanism directly (see `core/rules/capabilities/interactive-question.md`).
-The supervisor (or crew orchestrator for parallel runs) owns the approval gate.
-
-PLAN block format:
-```text
-PLAN:
-  actions:
-    - {action 1}
-    - {action 2}
-  risk: {none | low | medium | high}
-  reversible: {yes | no}
-STATUS: plan_ready
-```
-
-### Orchestrator-level approval (supervisor for N == 1, crew:run for N > 1)
-
-After collecting all PLAN blocks, the orchestrator issues a single structured
-user-choice intent (per `core/rules/capabilities/interactive-question.md`)
-with a consolidated summary of all planned actions.
-
-Standard approval options:
-
-```text
-[A] Approve - proceed as planned
-[B] Request changes - revise the plan and ask again
-[C] Cancel - stop implementation
-[D] Custom input
-```
-
-Standard plan summary (presented by orchestrator, not stage agents):
-
-```text
-[agent-name] Work Plan
-
-Target: {feature name}
-Approach: {pattern or methodology summary}
-Files:
-  - {file path 1} (new or modified)
-  - {file path 2} (new or modified)
-Planned Actions:
-  - {action 1}
-  - {action 2}
-Risk: {none | low | medium | high}
-
-Proceed with this plan?
-```
+An Agent that encounters an unapproved destructive or external-write action
+must stop and return the proposed action, scope, risk, reversibility, and
+compensation needs to the Approval Service. It must not ask a duplicate
+free-form question, poll an unrelated file, self-approve, or execute before the
+recorded decision. A scope or graph change creates a new Execution Plan.
 RULE_EOF
 capture_rule "rule:subagent-plan-approval" 120 BODY_SUBAGENT_PLAN
 

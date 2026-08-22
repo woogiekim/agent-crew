@@ -46,7 +46,7 @@ do not propagate to host files until a manual per-host setup is re-run.
 | Path | Purpose |
 |---|---|
 | `core/rules/instruction-rules-schema.md` | Defines rule body format, IDs, applies_to filter. |
-| `core/scripts/seed-instruction-rules.sh` | One-shot migration: decomposes `core/global-agents.md` into mnemos rule items. Idempotent. |
+| `core/scripts/seed-instruction-rules.sh` | Reconciles the repository-owned runtime command rules; an explicit `bootstrap-missing` profile creates absent baseline items without replacing canonical mnemos content. |
 | `core/scripts/sync-instructions.sh` | Daily-use sync: queries mnemos, assembles per-host content, atomically rewrites between markers. |
 | `core/commands/sync-instructions.md` | Explicit `crew:sync-instructions` command for manual reassembly. |
 | `core/docs/ssot-rule-inventory.md` | Initial decomposition of current rules into rule IDs. |
@@ -98,16 +98,21 @@ crew:sync-instructions --dry-run
 
 ## Migration path
 
-1. **Inspect**: `bash core/scripts/seed-instruction-rules.sh --dry-run`
-   — reports which rule IDs *would* be created vs already exist.
-2. **Seed**: `bash core/scripts/seed-instruction-rules.sh --apply` —
-   captures all decomposed rules into mnemos global layer.
+1. **Inspect**: `bash core/scripts/seed-instruction-rules.sh --dry-run --profile bootstrap-missing`
+   — reports which baseline rule IDs would be created and which existing
+   canonical rules would be preserved.
+2. **Seed**: `bash core/scripts/seed-instruction-rules.sh --apply --profile bootstrap-missing`
+   — creates only missing baseline rules in the mnemos global layer. It never
+   updates existing mnemos content.
 3. **Dry-run sync**: `bash core/scripts/sync-instructions.sh` (default
    is dry-run) — prints unified diffs of every host file change without
    writing.
 4. **Apply sync**: `bash core/scripts/sync-instructions.sh --apply` —
    actually rewrites host files.
 5. **Subsequent edits** use `mnemos capture/edit` + `crew:sync-instructions`.
+   Running the seeder without a profile is reserved for the maintained
+   `runtime-command-surface` compatibility repair and does not reconcile
+   unrelated global policy.
 
 ## Failure modes
 

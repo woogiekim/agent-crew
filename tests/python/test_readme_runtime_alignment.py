@@ -89,6 +89,45 @@ def test_update_command_contract_parses_reconcile_flag_in_any_position():
     assert 'if [ "${1:-}" = "--reconcile-skills" ]; then' not in snippet
 
 
+def test_native_update_reconciles_runtime_command_instructions_before_install():
+    text = (REPO_ROOT / "core" / "bin" / "crew").read_text(encoding="utf-8")
+    update = text[text.index("cmd_update() {") : text.index("cmd_run() {")]
+
+    assert "runtime-command-surface" in update
+    assert "seed-instruction-rules.sh" in update
+    assert "sync-instructions.sh" in update
+    assert update.index("run_instruction_refresh") < update.index('bash "${sync_script}"')
+    assert "crew task" not in update
+
+
+def test_instruction_seeder_has_safe_default_and_non_destructive_bootstrap():
+    seed = (REPO_ROOT / "core" / "scripts" / "seed-instruction-rules.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'PROFILE="runtime-command-surface"' in seed
+    assert "bootstrap-missing" in seed
+    assert "PRESERVE ${id}" in seed
+    assert "input is normalized to English" not in seed
+    assert "Every substantive user-facing response must enter an agent-crew route" not in seed
+    assert "Default to parallel execution" not in seed
+
+
+def test_instruction_docs_require_explicit_bootstrap_profile():
+    sync_command = (REPO_ROOT / "core" / "commands" / "sync-instructions.md").read_text(
+        encoding="utf-8"
+    )
+    design = (REPO_ROOT / "core" / "docs" / "ssot-design.md").read_text(
+        encoding="utf-8"
+    )
+    sync_script = (REPO_ROOT / "core" / "scripts" / "sync-instructions.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (sync_command, design, sync_script):
+        assert "--profile bootstrap-missing" in text
+
+
 def test_readme_documents_agent_crew_skill_dispatch_layers():
     text = readme_text()
 

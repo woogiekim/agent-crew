@@ -186,7 +186,7 @@ PYEOF
 
 if [ -z "${COLLECTED_JSON}" ] || [ "${COLLECTED_JSON}" = "[]" ]; then
   echo "WARN: no instruction-rule items found in mnemos global layer." >&2
-  echo "      Run: bash ${SCRIPT_DIR}/seed-instruction-rules.sh --apply" >&2
+  echo "      Run: bash ${SCRIPT_DIR}/seed-instruction-rules.sh --apply --profile bootstrap-missing" >&2
   exit 1
 fi
 

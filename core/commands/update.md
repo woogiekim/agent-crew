@@ -510,9 +510,11 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    update_scope: all_projects total=2 refreshed=1 skipped=0
    ```
 
-5. **Sync host AI instruction files from mnemos (Phase L17).** After the
-   asset refresh and adapter re-run, materialize the canonical instruction
-   rules stored in mnemos into the host AI md files. This is the
+5. **Sync host AI instruction files from mnemos (Phase L17).** Before the
+   asset refresh and adapter re-run, reconcile the runtime command-surface
+   rules and materialize the canonical instruction rules stored in mnemos into
+   the host AI md files. Running this first lets project adapter setup consume
+   the refreshed generic instruction block. This is the
    companion to `crew:sync-instructions` and keeps Claude / Codex /
    Generic guidance coherent with any rule edits since the last update.
 
@@ -522,8 +524,13 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
    ```bash
    if [ -x "${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}" ]; then
-     bash "${SOURCE_DIR}/scripts/seed-instruction-rules.sh" --apply || true
-     bash "${SOURCE_DIR}/scripts/sync-instructions.sh"     --apply || true
+     if bash "${SOURCE_DIR}/scripts/seed-instruction-rules.sh" \
+       --apply --profile runtime-command-surface; then
+       bash "${SOURCE_DIR}/scripts/sync-instructions.sh" \
+         --hosts claude,codex,generic --apply || true
+     else
+       printf '[crew:update] command rule reconciliation failed; host instruction sync skipped.\n'
+     fi
    else
      printf '[crew:update] mnemos CLI not found at %s — skipping instruction sync.\n' \
        "${MNEMOS_BIN:-${HOME}/.local/bin/mnemos}"
@@ -531,7 +538,9 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    fi
    ```
 
-   `|| true` ensures a mnemos hiccup never fails the broader update.
+   A seeder failure skips host materialization so a partially reconciled store
+   is not published. Either instruction failure remains non-fatal to the broader
+   asset update.
    The dedicated `crew:sync-instructions` command remains available for
    manual re-runs and dry-run inspection. See
    `core/commands/sync-instructions.md` and `core/docs/ssot-design.md`

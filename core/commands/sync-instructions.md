@@ -91,13 +91,18 @@ crew:sync-instructions --apply  # land it
 ## Initial seeding
 
 Before this command can produce useful output, the mnemos global layer
-must contain the rule items. To seed from the current
-`core/global-agents.md`:
+must contain the rule items. On a new store, create the repository baseline
+rules with the explicit non-destructive bootstrap profile:
 
 ```bash
-bash core/scripts/seed-instruction-rules.sh --dry-run    # preview
-bash core/scripts/seed-instruction-rules.sh --apply      # apply
+bash core/scripts/seed-instruction-rules.sh --dry-run --profile bootstrap-missing
+bash core/scripts/seed-instruction-rules.sh --apply --profile bootstrap-missing
 ```
+
+`bootstrap-missing` creates absent rules only. It never replaces an existing
+mnemos rule; subsequent policy edits use `mnemos edit` because mnemos remains
+the canonical source. Without a profile, the seeder reconciles only the
+repository-owned `runtime-command-surface` rules.
 
 See `core/docs/ssot-design.md` for the architecture rationale and
 `core/rules/instruction-rules-schema.md` for the rule item format.

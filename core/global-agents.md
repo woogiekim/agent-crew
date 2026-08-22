@@ -3,104 +3,71 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-06-26T04:48:11Z from 16 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-08-21T15:16:12Z from 20 mnemos rules (host=repo) -->
 
 # agent-crew - Global Rules
 
 ## Raw Input Preservation
 
-Task descriptions may arrive in Korean or any other language. Preserve the
-exact user text as the canonical TASK and Root Input Snapshot. Do not translate
-or normalize the task to English before passing it to agents or writing it to
-pipeline state.
+Preserve the user's task text as an immutable Root Input Snapshot. The system
+must not translate, summarize, normalize, correct, or rewrite it before
+candidate resolution, planning, handoff, or execution. Deterministic parsing may
+split the explicit command and options, resolve declared aliases, and add
+derived fields such as `language`, but it never replaces `rawInput`.
+
+Agents and Tasks consume the original language directly. Translation is allowed
+only when translation is the explicit Task. New executions do not create or
+consume legacy normalization artifacts.
 
 ## Output Language
 
-User-facing output should appear in the user's input language (Claude
-follows the conversation's language naturally; other adapters mirror
-this where possible). See `core/rules/output-language.md` for the full
-rule, including the **English-only status invariant**: structured
-tokens like `STATUS: completed`, `REVIEW: APPROVED`, `PLAN:`,
-`BLOCKER:` are parsed by regex and MUST be returned in English
-regardless of input language. Narrative around those tokens (the
-explanation, description, report body) follows the user's language.
-
-The two rules are paired: input is normalized to English for
-**internal artifacts** (pipeline.json, register.json, handoff.md,
-agent prompts), while output narrative is **NOT forced into English**
-for the user-facing surface.
-
-## No Direct Implementation
-
-When a user requests coding, implementation, or development work, do not start
-editing files or generating production code directly.
-
-Always follow this sequence:
-
-1. Classify the request.
-2. Invoke the appropriate agent, skill, or workflow intent.
-3. Perform implementation only after the required planning or delegated agent step.
-
-This is a system behavior principle. It is not tied to a specific AI vendor.
-Host adapters may expose different invocation methods, but the workflow intent
-remains provider-neutral.
-
-## Agent Routing Criteria
-
-| Request Type | Execution Method |
-|---|---|
-| Backend API, domain logic, database work | `crew:run` → supervisor → backend |
-| UI, full-stack, or implementation workflows | `crew:run` → supervisor → pipeline agents |
-| Multiple independent features | `crew:run` with one supervisor per task |
-| Requirements analysis only | `crew:run` → supervisor → planner (no implementation stages) |
-
-## Parallel-First Execution Rule
-
-**Default to parallel execution. Never serialize tasks to avoid merge conflicts.**
-
-When a request contains multiple independent sub-tasks — even if they touch the
-same files — run them as parallel supervisors:
-
-```
-crew:run "Sub-task A" | "Sub-task B" | "Sub-task C"
-```
-
-Merge conflicts that arise after parallel completion are resolved by the
-**resolver agent**. That is its explicit purpose. Choosing sequential execution
-to avoid conflicts is an incorrect optimization that sacrifices throughput for a
-problem the resolver already solves.
-
-**Sequential execution is only correct when:**
-- Task B cannot start until Task A's output exists (true dependency)
-- The tasks are logically a single atomic unit
-
-File overlap alone is never a reason to serialize.
+User-facing narrative follows the user's language and defaults to Korean on
+this machine. Parser-required tokens such as `STATUS:`, `PLAN:`, `BLOCKER:`,
+`REVIEW:`, enum values, commands, paths, and code identifiers remain in their
+defined form. Never change the stored Root Input Snapshot to satisfy an output
+language preference.
 
 ## Explicit Execution Entry
 
-> Requirements collection (Step 5 of `crew:run`) is always mandatory and must
-> never be skipped, even when the request seems self-evident.
-
 Agent Crew never infers execution intent from plain conversation. Ordinary
-natural-language input must not start a workflow, task, agent, LLM router, or
-hidden tool.
+natural-language input must not start an Agent, LLM router, hidden Tool, or
+implementation pipeline.
 
-The user chooses the execution boundary with an explicit command such as
-`crew:run`, `crew:agent`, `$crew:run`, or `$crew:agent`. Once `crew:agent` is
-explicitly invoked, agent auto-routing may still select the best registered
-agent, but that selection must not redirect the request to `crew:run`.
+The user chooses the execution boundary with an explicit command:
 
-`crew:agent` may execute mutating single-agent work when the selected agent's
-own definition allows mutation. Agents that remain read-only must declare that
-contract in their own instructions and enforce it there.
+- `crew run` / `crew:run` / `$crew:run` for supervised task execution
+- `crew agent` / `crew:agent` / `$crew:agent` for direct Agent execution
 
-If the user gives a short confirmation such as "go", "yes", "ok", "continue",
-"proceed", "네", or "진행해주세요", continue through the appropriate
-`crew:<intent>` workflow instead of answering directly.
+The current native runtime does not expose `crew task`, `crew workflow`, or
+`standalone`. Do not advertise, infer, or select those unavailable commands.
+Management commands do not start execution.
 
-Direct inline output is permitted for ordinary conversation unless the user has
-explicitly invoked an agent-crew command or an existing command handoff is being
-continued.
+## Run And Agent Boundaries
+
+`crew run` is the supervised execution entry. One task creates one supervisor
+handoff; multiple explicit task arguments may create parallel supervisor
+handoffs with the declared barrier and result handling from `run.md`.
+
+`crew agent` is the direct-Agent entry. It uses the selected Agent and its
+declared sequential child graph. It must not be silently converted into
+`crew run`, and neither entry may invent an unavailable `crew task` or
+`crew workflow` command.
+
+## Candidate And Registry Boundaries
+
+Candidate search is restricted to the explicitly named Registry. Zero
+candidates never creates a definition. Multiple candidates, fuzzy or
+LLM-recommended candidates, low metadata coverage, and resolver conflicts
+require Candidate Selection. Candidate Selection is separate from Execution
+Approval and must not start work.
+
+## Hidden Routing Prohibition
+
+No lifecycle hook, prompt preprocessor, injected directive, or host wrapper may
+start a Workflow, Task, Agent, LLM router, or hidden Tool. It must not alter
+input meaning, expand scope, create definitions, or persist Agent, Skill, or
+Memory changes. Technical hooks are limited to deterministic dangerous-command
+protection, bounded cost/tool telemetry, and cleanup.
 
 ## Code Style Context Breaks
 
@@ -111,6 +78,11 @@ Treat transitions between setup, validation, transformation, side effects,
 rendering or return values, error handling, and reporting as context changes.
 Do not reformat unrelated code solely to add spacing; apply this rule to code
 the agent writes or directly touches.
+
+When writing or directly modifying tests, do not add `// given`, `// when`,
+or `// then` section comments. Express setup, execution, and assertion
+transitions with blank lines and clear test or variable names. Do not sweep
+unrelated existing tests solely to remove these comments.
 
 ## Imported Command Scope Rule
 
@@ -146,6 +118,7 @@ If the user explicitly invoked another Codex skill, preserve that explicit
 context as task input for requirements collection, supervisor handoffs, and
 generated prompts. Do not auto-load non-agent-crew host/plugin skills merely
 because their descriptions appear to match the task.
+Domain-match alone is not approval to load external host/plugin skills.
 Non-agent-crew host/plugin skills require explicit user approval under the provider-neutral external skill boundary below.
 
 When a Codex `crew:run` handoff returns `HOST_BRIDGE: current_session_required`,
@@ -155,13 +128,12 @@ subagent, skill, TDD, reviewer, or repair evidence requirements.
 
 ## Current-Session Fallback
 
-When any host `crew:run` handoff returns `HOST_BRIDGE: current_session_required`
-or the operator continues a host bridge handoff manually in the current host
-session, that current session is only replacing the nested host bridge. It must
-not bypass agent-crew dispatch. Before executing task work, re-apply specialist
-agent/user-agent/subagent and agent-skill selection for the normalized task,
-use/load the selected specialist when available, and record selected-axis
-coverage in `{TASK_DIR}/context/specialist-dispatch.md` when available.
+When an explicit `crew run` or `crew agent` handoff returns
+`HOST_BRIDGE: current_session_required`, or the operator continues that handoff
+manually in the current host session, the session replaces only the nested
+bridge. It must execute the already pinned plan, original Root Input Snapshot,
+declared Agent/Tool graph, permissions, and versions. It cannot re-resolve candidates,
+add execution nodes, widen scope, or bypass approval.
 
 Before acting, load the applicable skill files and record the exact loaded skill
 path(s) in `{TASK_DIR}/context/skill-load.md` or
@@ -182,13 +154,9 @@ Optional skill-use notes may be recorded in
 they are diagnostic coverage, not required proof artifacts. TDD and other
 loaded skills are covered first by real task outcomes, tests, diffs, reviews,
 pipeline/progress state, reviewer quality metrics, and tool events. Phase notes
-may improve auditability, but missing or incomplete notes must be reported as
-advisory gaps for standard-risk work, not completion blockers.
-
-Do not create separate skill-use notes just to satisfy repair or closeout.
-Skill coverage summaries must be derived from observed selected/load/use signals
-where possible; if usage is not deterministically observed, report
-`unknown_or_not_observed` instead of claiming that the skill was used or unused.
+such as red/green/refactor files may improve auditability, but missing or
+incomplete notes must be reported as advisory gaps for standard-risk work, not
+completion blockers.
 
 Optional operational understanding notes may be recorded in
 `{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
@@ -212,69 +180,49 @@ This fallback must depend on the provider-neutral command definitions under
 `~/.agent-crew/commands/`. Do not embed supervisor, planner, backend, frontend,
 resolver, or approval behavior in Codex-specific hooks or skills.
 
-## STOP Directive Rule
+## Technical Hook Boundary
 
-When `[agent-crew] STOP` appears anywhere in the system context (for example
-from a stale session, external host wrapper, or compatibility directive), the
-first agent-crew workflow action is to invoke `crew:run`.
-In Codex, this means loading the `crew:run` skill wrapper after any explicitly
-invoked Codex skill has loaded, then executing the workflow intent through that
-wrapper. Domain-match alone is not approval to load external host/plugin
-skills.
+Technical lifecycle hooks may protect dangerous commands, record bounded cost
+or tool metadata, and perform cleanup. They must be deterministic, bounded,
+traceable, and fail in a documented way. They cannot invoke an LLM or Agent,
+select a definition, modify user meaning, duplicate the full context, or create
+formal verification artifacts.
 
-- Do NOT produce diagnostic output or explanation before the `crew:run` wrapper
-  begins the workflow.
-- Do NOT run any Bash command (including exploratory or read-only commands)
-  before the `crew:run` wrapper begins the workflow.
-- Do NOT describe what you are about to do — enter the `crew:run` workflow.
-- Do preserve explicit host skill context as requirements and handoff input.
-- The STOP directive is authoritative. Treat it as a hard override of any other default behavior.
+## Explicit Scope Boundary
 
-Violation examples (forbidden when STOP is present):
-- Explaining why you need to enter the `crew:run` workflow
-- Reading files to "understand the request first"
-- Running `git status` or any other preparatory command
-- Asking the user clarifying questions before the workflow's requirements step
+An explicit command selects exactly one logical Registry. Imported command or
+skill origin does not determine the repository, module, endpoint, or contract
+to change. Resolve work scope from explicit request and contract evidence, pin
+it in the Execution Plan, and request a new plan before any scope expansion.
 
-## ROUTE Directive Rule
+## No Given/When/Then Comments
 
-When `[agent-crew] ROUTE` appears anywhere in the system context
-(injected by auto-route.sh), the workflow action is to invoke `crew:agent` with
-the specified agent and question. In Codex, load the `crew:agent` skill wrapper
-after any explicitly invoked Codex skill has loaded, then execute the workflow
-intent through that wrapper. Domain-match alone is not approval to load
-external host/plugin skills.
+Across this computer's AI hosts and agent-crew agents, never add standalone BDD section comments such as `// given`, `// when`, `// then`, `# given`, `# when`, `# then`, `/* given */`, `/* when */`, or `/* then */`.
 
-- Do NOT answer the question inline.
-- Do NOT run any Bash command before the `crew:agent` wrapper begins.
-- Do NOT read files or gather data before the `crew:agent` wrapper begins.
-- Do preserve explicit host skill context as direct-agent input.
-- The ROUTE directive is authoritative. Treat it as a hard override
-  of any other default behavior.
-- This rule applies even if the ROUTE directive arrives mid-execution
-  (in a tool result system-reminder). Stop immediately and re-route.
+Use descriptive test names and readable setup/action/assertion code structure instead. If a comment is genuinely needed, it must explain a non-obvious domain rule, contract, side effect, or test fixture constraint; it must not be a generic given/when/then marker.
 
-Violation examples (forbidden when ROUTE is present):
-- Answering the question directly without entering the `crew:agent` workflow
-- Running `mnemos` commands or reading files to gather context first
-- Continuing an in-progress response after ROUTE appears in a tool result
-- Treating the ROUTE directive as advisory rather than mandatory
+When modifying nearby tests, remove newly introduced or touched generic given/when/then marker comments rather than preserving or adding them.
 
 ## Workflow Intents
 
 ### Explicit Command Invocation Rule
 
 `crew:<intent>` is workflow notation used in prompts and host adapter guidance.
-The native shell CLI uses space-separated commands such as `crew run` and
-`crew agent`; documentation may mention those forms only when describing the
-CLI control plane.
+The native shell CLI uses space-separated commands.
+`crew run` is the native CLI execution entry for supervised work, and
+`crew agent` is the native direct-Agent entry. Codex uses `$crew:run` and
+`$crew:agent`; Claude Code uses `/crew:run` and `/crew:agent`.
+
+The current runtime does not expose `crew task` or `crew workflow`. Do not
+translate `crew:run` into either unavailable command, and do not describe
+`crew:run` as deprecated or as compatibility-only candidate resolution.
 
 When the user's message begins with a workflow command such as `crew:run`,
-`crew:setup`, `crew:status`, `crew:cost`, `crew:evolve`, or `crew:agent-maker`,
+`crew:setup`, `crew:status`, `crew:cost`, or `crew:agent-maker`,
 treat it as an explicit command invocation, not as ordinary natural language.
 Codex wrapper forms at the beginning of the message, such as `$crew:run`,
 `$crew:agent`, `$crew:status`, `$crew:update`, `$crew:smm`, `$crew:setup`,
-`$crew:cost`, `$crew:evolve`, and `$crew:agent-maker`, are the same kind of explicit command
+`$crew:cost`, and `$crew:agent-maker`, are the same kind of explicit command
 invocation. The text after a leading `$crew:run` is the task description; only
 treat `$crew:run` as the review target when the prompt explicitly names the
 skill, wrapper, file, or `SKILL.md` as the object.
@@ -303,7 +251,6 @@ For `crew:setup` specifically:
 | `crew:run` | Canonical workflow entry point for one or more tasks |
 | `crew:cost` | Show the session cost summary |
 | `crew:agent-maker` | Design and register a custom agent |
-| `crew:evolve` | Inspect, approve, or apply existing self-evolution proposals |
 | `crew:sync-instructions` | Re-assemble host AI md files from mnemos rules |
 | `$crew:run` | Codex wrapper for `crew:run` |
 | `$crew:agent` | Codex wrapper for `crew:agent` |
@@ -313,7 +260,6 @@ For `crew:setup` specifically:
 | `$crew:setup` | Codex wrapper for `crew:setup` |
 | `$crew:cost` | Codex wrapper for `crew:cost` |
 | `$crew:agent-maker` | Codex wrapper for `crew:agent-maker` |
-| `$crew:evolve` | Codex wrapper for `crew:evolve` |
 
 Use `crew:<intent>` as the default invocation style.
 
@@ -323,6 +269,28 @@ Project state is stored under:
 ~/.agent-crew/state/{PROJECT_STATE_KEY}/tasks/{TASK_ID}
 ```
 
+## Codex Output Language
+
+Respond in Korean by default when the user writes Korean or when the desired response language is ambiguous.
+
+Keep code, commands, file paths, protocol/status tokens, API names, model names, and quoted source text in their original language.
+
+Use English only when the user explicitly requests English or an external protocol requires it.
+
+## Korean Output Default
+
+이 PC의 agent-crew 산출물, 작업 메모, 리뷰/검증 요약, 코드 주석, 문서 보강, 사용자-facing workflow 설명은 기본적으로 한국어로 작성한다.
+
+사용자가 명시적으로 영어를 요청한 경우에만 영어로 작성한다.
+
+예외: `STATUS:`, `PLAN:`, `BLOCKER:`, `REVIEW:`, 파일 경로, 명령어, 프로토콜 키워드, API 이름, 코드 식별자처럼 도구나 파서가 요구하는 구조화 토큰과 원문 보존이 필요한 literal은 기존 표기를 유지한다.
+
+## Contents-System Scope Guard
+
+When the active repository or task scope is contents-system / contents-systsem, never modify `apps/proxy/contents/src/main/resources/api-docs/**` or any other `api-docs` generated artifact unless the user explicitly requests API documentation changes.
+
+For sprint-scoped contents-system tasks, Enuri-related logic is out of scope unless the user explicitly reopens Enuri scope. Do not change Enuri channel or legacy behavior merely because nearby Danawa/contents code is being edited.
+
 ## Structured Choice Rules
 
 Use the host AI tool's structured choice UI when confirmation is required.
@@ -330,112 +298,29 @@ Do not add duplicate free-form options if the host UI already provides one.
 
 ## Approval Rule (Framework-Level)
 
-### Centralized Approval Gate
+Candidate Selection and Execution Approval are distinct decisions owned by the
+Approval Service. Exact deterministic single safe Workflow/Task candidates may
+skip approval only after final plan risk assessment. Multiple, fuzzy,
+LLM-recommended, low-coverage, or conflicting candidates require selection.
+Every direct Agent execution requires approval.
 
-All approval decisions for the following actions are owned exclusively by the
-orchestrator (crew:run for N > 1, supervisor for N == 1):
+High-cost, destructive, external-write, deployment, push, merge, release,
+credential, permission, broad-scope, and hard-to-reverse plans always require
+approval. Approval binds definition and Agent versions, Host and installed
+asset fingerprints, Root Input Snapshot, execution graph, permissions, Tools,
+repository revisions, side effects, cost/risk, and canonical Plan Hash. Any
+bound-field change invalidates the decision.
 
-- Merge (git merge)
-- Push to remote (git push)
-- Deployment (any deploy script or command)
-- Destructive operations (delete, reset, overwrite)
-- Branch cleanup (git branch -d / -D)
+Use a structured host decision surface, structured markdown fallback, or a
+strict PREAPPROVED manifest. Headless ambiguity fails immediately instead of
+hanging or defaulting to approval.
 
-**Stage agents (devops, and any agent that performs destructive operations) MUST NOT
-issue the host's interactive question mechanism for any of the above actions
-(see `core/rules/capabilities/interactive-question.md`).** Instead, those agents must:
+## Risky Action Execution Rule
 
-1. Write their planned actions to `{TASK_DIR}/context/action-plan.md`
-2. Return a `PLAN:` block to the supervisor with the following fields:
-   ```text
-   PLAN:
-     actions: {list of planned commands}
-     risk: {none | low | medium | high}
-     reversible: {yes | no}
-   STATUS: plan_ready
-   ```
-3. Poll `{TASK_DIR}/context/approval.md` for `APPROVED` or `CANCELLED`
-   (up to 60s timeout before reporting BLOCKED)
-4. Execute only after receiving `APPROVED`; halt with STATUS: BLOCKED on
-   `CANCELLED` or timeout
-
-### Orchestrator Approval Gate
-
-The orchestrator (crew:run or supervisor) issues the consolidated structured
-user-choice intent (see `core/rules/capabilities/interactive-question.md`)
-after collecting all PLAN blocks. This ensures:
-- A single approval prompt regardless of how many stage agents need approval
-- A consolidated view of all planned actions across all tasks (for N > 1)
-- No duplicate or out-of-order approval dialogs
-
-All structured user-choice calls (per `core/rules/capabilities/interactive-question.md`)
-for these actions must include at minimum:
-- header: action type (e.g., "Deploy", "Approve All Actions", "Merge", "Push", "Rollback")
-- question: describing the specific action(s) with relevant details
-- options: at minimum "Approve — proceed" and "Cancel — hold"
-
-Plain-text approval requests ("Shall I?", "Should I?", "Do you want me to?")
-are FORBIDDEN at every level of the system. Violating this rule is a workflow
-consistency error.
-
-## Subagent Plan Approval Rule
-
-Stage agents that perform **destructive operations** (deploy, push, merge, overwrite,
-or branch cleanup) must present a PLAN block for approval before executing. The planner,
-backend, frontend, and designer agents are exempt — they commit code and return STATUS
-directly without a PLAN gate.
-
-**How plans flow depends on the agent type:**
-
-### Destructive-action stage agents (devops, and any agent that deploys or pushes)
-
-These agents write their plan to `{TASK_DIR}/context/action-plan.md` and return
-a `PLAN:` block to the supervisor. They do NOT issue the host's interactive
-question mechanism directly (see `core/rules/capabilities/interactive-question.md`).
-The supervisor (or crew orchestrator for parallel runs) owns the approval gate.
-
-PLAN block format:
-```text
-PLAN:
-  actions:
-    - {action 1}
-    - {action 2}
-  risk: {none | low | medium | high}
-  reversible: {yes | no}
-STATUS: plan_ready
-```
-
-### Orchestrator-level approval (supervisor for N == 1, crew:run for N > 1)
-
-After collecting all PLAN blocks, the orchestrator issues a single structured
-user-choice intent (per `core/rules/capabilities/interactive-question.md`)
-with a consolidated summary of all planned actions.
-
-Standard approval options:
-
-```text
-[A] Approve - proceed as planned
-[B] Request changes - revise the plan and ask again
-[C] Cancel - stop implementation
-[D] Custom input
-```
-
-Standard plan summary (presented by orchestrator, not stage agents):
-
-```text
-[agent-name] Work Plan
-
-Target: {feature name}
-Approach: {pattern or methodology summary}
-Files:
-  - {file path 1} (new or modified)
-  - {file path 2} (new or modified)
-Planned Actions:
-  - {action 1}
-  - {action 2}
-Risk: {none | low | medium | high}
-
-Proceed with this plan?
-```
+An Agent that encounters an unapproved destructive or external-write action
+must stop and return the proposed action, scope, risk, reversibility, and
+compensation needs to the Approval Service. It must not ask a duplicate
+free-form question, poll an unrelated file, self-approve, or execute before the
+recorded decision. A scope or graph change creates a new Execution Plan.
 
 <!-- agent-crew-end -->
