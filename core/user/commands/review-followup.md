@@ -77,8 +77,10 @@ For every meaningful review item, preserve:
 
 - original reviewer request or faithful paraphrase;
 - inferred intent;
-- disposition: `ACCEPT`, `ACCEPT_WITH_ADAPTATION`, `REJECT_METHOD_ONLY`,
-  `DEFER`, or `REJECT`;
+- candidate or contract disposition: `ACCEPT`, `ACCEPT_WITH_ADAPTATION`,
+  `REJECT_METHOD_ONLY`, `DEFER`, or `REJECT`;
+- lifecycle disposition after implementation work: `implemented`, `deferred`,
+  `rejected`, or `not-applicable`;
 - implementation or non-implementation rationale;
 - code evidence when verified;
 - test or verification evidence when verified;
@@ -89,6 +91,33 @@ For every meaningful review item, preserve:
 Reflection percentages are advisory. A loop cannot claim complete review
 follow-up solely from `LOCAL_REFLECTION_RATE=100%` or `MR_REFLECTION_RATE=100%`
 unless review intent, contract safety, and verification evidence are aligned.
+
+## Feedback Triage Gate
+
+In this workflow, review feedback is a candidate input, not an implementation
+command. The coordinator must preserve the reviewer's problem statement, then
+decide whether the requested method is safe under the current contract,
+parity, scope, and side-effect boundaries.
+
+Disposition must be decided before any item enters an implementation prompt.
+Only `ACCEPT` and `ACCEPT_WITH_ADAPTATION` items may become direct
+implementation work. `REJECT_METHOD_ONLY`, `DEFER`, and `REJECT` items remain
+explicit ledger entries with rationale, residual risk, owner, tracking detail,
+or a safer alternative.
+
+Use `candidate_disposition` for the triage value in synthesis and planning
+reports. When an item is promoted into `review-ledger`, preserve that value as
+`contract_disposition` and use `disposition` only for the lifecycle result.
+For compatibility, human summaries may continue showing `IMPLEMENTED`,
+`LOCAL_DONE`, `PARTIAL`, `POLICY_WAITING`, `DEFERRED`, `NOT_APPLICABLE`, and
+`UNKNOWN`, but those display labels must map to the canonical lifecycle axis
+before reviewer validation.
+
+Do not convert every `review-synthesis` finding into a `crew:run` todo. A
+synthesis finding must first become an atomic review item with preserved source
+lens, intent, affected contract, disposition, safety labels, and evidence
+limit. This keeps valid rejections and adaptations visible instead of treating
+literal reviewer acceptance as the goal.
 
 ## Loop Flow
 
@@ -110,15 +139,18 @@ For remaining or partially reflected items:
 2. Prefer `ACCEPT_WITH_ADAPTATION` or `REJECT_METHOD_ONLY` when the review
    problem is valid but the literal method would break contract, parity, scope,
    or side-effect safety.
-3. Keep deferred and rejected items explicit. Do not hide them to improve the
+3. Send only `ACCEPT` and `ACCEPT_WITH_ADAPTATION` items to implementation.
+4. Keep deferred and rejected items explicit. Do not hide them to improve the
    numerical rate.
-4. Produce the next implementation plan in a form suitable for `prompt`.
+5. Produce the next implementation plan in a form suitable for `prompt`.
 
 ### Phase 3 — Prompt And Approval Checkpoint
 
 1. Use `prompt` composition rules to produce an execution prompt that includes:
-   review atoms, intent, accepted disposition, contracts, side effects,
-   required tests, verification, forbidden actions, and completion criteria.
+   review atoms, intent, accepted `candidate_disposition` /
+   `contract_disposition`, lifecycle disposition expectations, contracts, side
+   effects, required tests, verification, forbidden actions, and completion
+   criteria.
 2. Present an approval checkpoint before mutation.
 3. The coordinator must not auto-execute `crew:run`.
 4. The operator must choose the next action using ordinary numbered choices.
@@ -198,7 +230,8 @@ MR/PR 전체 반영률: <done>/<total> = <percent or Unknown>
 
 남은 항목:
 1. <review item>
-   disposition: <...>
+   candidate_disposition: <ACCEPT|ACCEPT_WITH_ADAPTATION|REJECT_METHOD_ONLY|DEFER|REJECT|Unknown>
+   lifecycle_disposition: <implemented|deferred|rejected|not-applicable|Unknown>
    gap: <...>
    next: <...>
    safety: contract-safe=<yes|no|unknown>, parity-safe=<yes|no|unknown>,

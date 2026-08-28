@@ -401,6 +401,42 @@ TDD_EVENT_RE = re.compile(
 TC_ID_RE = re.compile(r"\bTC-\d{3,}\b", re.I)
 MARKDOWN_TABLE_DELIMITER_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
 REVIEW_LEDGER_DISPOSITIONS = {"implemented", "deferred", "rejected", "not-applicable"}
+REVIEW_LEDGER_DISPOSITION_ALIASES = {
+    "implemented": "implemented",
+    "local_done": "implemented",
+    "localdone": "implemented",
+    "deferred": "deferred",
+    "partial": "deferred",
+    "policy_waiting": "deferred",
+    "policywaiting": "deferred",
+    "unknown": "deferred",
+    "rejected": "rejected",
+    "not_applicable": "not-applicable",
+    "notapplicable": "not-applicable",
+}
+REVIEW_CONTRACT_DISPOSITIONS = {
+    "ACCEPT",
+    "ACCEPT_WITH_ADAPTATION",
+    "REJECT_METHOD_ONLY",
+    "DEFER",
+    "REJECT",
+}
+REVIEW_CONTRACT_DISPOSITION_ALIASES = {
+    "accept": "ACCEPT",
+    "accept_with_adaptation": "ACCEPT_WITH_ADAPTATION",
+    "reject_method_only": "REJECT_METHOD_ONLY",
+    "defer": "DEFER",
+    "deferred": "DEFER",
+    "reject": "REJECT",
+    "rejected": "REJECT",
+}
+REVIEW_CONTRACT_TO_LIFECYCLE = {
+    "ACCEPT": {"implemented", "deferred"},
+    "ACCEPT_WITH_ADAPTATION": {"implemented", "deferred"},
+    "REJECT_METHOD_ONLY": {"rejected"},
+    "DEFER": {"deferred"},
+    "REJECT": {"rejected", "not-applicable"},
+}
 REVIEW_LEDGER_REQUIRED_FIELDS = {
     "implemented": ("review", "intent", "code_evidence", "test_evidence", "semantic_verification"),
     "deferred": ("review", "intent", "tracking_evidence"),
@@ -700,6 +736,9 @@ def normalize_review_ledger_key(value: str) -> str:
         "reviewer_comment": "review",
         "review_atom": "review",
         "comment": "review",
+        "candidate_disposition": "contract_disposition",
+        "triage_disposition": "contract_disposition",
+        "lifecycle_disposition": "disposition",
         "code_evidence": "code_evidence",
         "code": "code_evidence",
         "test_evidence": "test_evidence",
@@ -720,12 +759,28 @@ def normalize_review_ledger_key(value: str) -> str:
     return aliases.get(normalized, normalized)
 
 
+def normalize_review_ledger_disposition(value) -> str:
+    normalized = normalize_table_header(str(value or ""))
+    return REVIEW_LEDGER_DISPOSITION_ALIASES.get(normalized, normalized)
+
+
+def normalize_review_contract_disposition(value) -> str:
+    normalized = normalize_table_header(str(value or ""))
+    return REVIEW_CONTRACT_DISPOSITION_ALIASES.get(normalized, str(value or "").strip())
+
+
 def normalize_review_ledger_item(item: dict, fallback_id: str) -> dict:
     normalized = {
         normalize_review_ledger_key(str(key)): value
         for key, value in item.items()
     }
     normalized.setdefault("id", fallback_id)
+    if "disposition" in normalized:
+        normalized["disposition"] = normalize_review_ledger_disposition(normalized["disposition"])
+    if "contract_disposition" in normalized:
+        normalized["contract_disposition"] = normalize_review_contract_disposition(
+            normalized["contract_disposition"]
+        )
     return normalized
 
 
@@ -774,6 +829,14 @@ def review_ledger_item_errors(item: dict) -> list[str]:
     disposition = str(item.get("disposition") or "").strip().lower()
     if disposition not in REVIEW_LEDGER_DISPOSITIONS:
         return ["invalid_disposition"]
+
+    contract_disposition = str(item.get("contract_disposition") or "").strip()
+    if contract_disposition:
+        if contract_disposition not in REVIEW_CONTRACT_DISPOSITIONS:
+            return ["invalid_contract_disposition"]
+        allowed_lifecycles = REVIEW_CONTRACT_TO_LIFECYCLE[contract_disposition]
+        if disposition not in allowed_lifecycles:
+            return ["invalid_contract_disposition_lifecycle"]
 
     missing = [
         field for field in REVIEW_LEDGER_REQUIRED_FIELDS[disposition]

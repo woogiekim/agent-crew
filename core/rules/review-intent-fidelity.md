@@ -62,7 +62,9 @@ Each ledger item records:
   compatibility promise, or scope boundary that governs the decision.
 - `contract_disposition`: one of `ACCEPT`, `ACCEPT_WITH_ADAPTATION`,
   `REJECT_METHOD_ONLY`, `DEFER`, or `REJECT` from
-  `core/rules/contract-first-feedback-fidelity.md`.
+  `core/rules/contract-first-feedback-fidelity.md`. `candidate_disposition`
+  from `review-synthesis` or `review-followup` intake is a compatibility alias
+  that maps directly to this field when the item enters the ledger.
 - `disposition`: one of `implemented`, `deferred`, `rejected`, or
   `not-applicable`; this is the lifecycle disposition used by the completion
   gate, not the contract judgment.
@@ -77,6 +79,18 @@ The lifecycle disposition must not replace `contract_disposition`. Keep both
 axes so a ledger can distinguish, for example, an implemented adaptation from
 literal acceptance and a method-only rejection from rejection of the review
 intent itself.
+
+Existing user-facing review-followup summaries may still use display labels
+such as `IMPLEMENTED`, `LOCAL_DONE`, `PARTIAL`, `POLICY_WAITING`, `DEFERRED`,
+`NOT_APPLICABLE`, and `UNKNOWN`. Reviewer validation normalizes those labels to
+the lifecycle axis before checking evidence: `IMPLEMENTED` and `LOCAL_DONE`
+mean `implemented`; `PARTIAL`, `POLICY_WAITING`, `DEFERRED`, and `UNKNOWN`
+mean `deferred`; `NOT_APPLICABLE` means `not-applicable`.
+
+Contract and lifecycle axes must remain compatible. `ACCEPT` and
+`ACCEPT_WITH_ADAPTATION` may close as `implemented` or `deferred`;
+`REJECT_METHOD_ONLY` closes as `rejected`; `DEFER` closes as `deferred`; and
+`REJECT` closes as `rejected` or `not-applicable`.
 
 ## Dispositions
 

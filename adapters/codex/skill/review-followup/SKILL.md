@@ -20,9 +20,15 @@ This Codex skill delegates to the provider-neutral user command in
 4. Preserve approval checkpoints. Do not auto-execute `crew:run`, post MR/PR
    notes, update remote descriptions, commit, push, merge, deploy, or mutate
    external systems without a separate explicit user approval.
-5. Preserve review intent and contract safety for every item. Keep
+5. Treat review feedback as candidate input until intent, affected contract,
+   `candidate_disposition` / `contract_disposition`, lifecycle disposition,
+   safety labels, and evidence limits are recorded. Only `ACCEPT` and
+   `ACCEPT_WITH_ADAPTATION` items may become direct implementation work.
+   Preserve existing display labels such as `IMPLEMENTED`, `LOCAL_DONE`, or
+   `POLICY_WAITING` as user-facing lifecycle labels, not contract triage values.
+6. Preserve review intent and contract safety for every item. Keep
    `LOCAL_REFLECTION_RATE` separate from `MR_REFLECTION_RATE`.
-6. Ask follow-up decisions with ordinary numbered choices such as `1.` / `2.`;
+7. Ask follow-up decisions with ordinary numbered choices such as `1.` / `2.`;
    do not use circled digit characters or mechanical approval labels in the
    default output.
 

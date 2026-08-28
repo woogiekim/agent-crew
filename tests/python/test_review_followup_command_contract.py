@@ -63,6 +63,24 @@ def test_review_followup_preserves_review_intent_and_contract_safety() -> None:
         assert marker in command
 
 
+def test_review_followup_triages_review_feedback_before_implementation() -> None:
+    command = " ".join(read_command().split())
+
+    for marker in (
+        "review feedback is a candidate input, not an implementation command",
+        "Disposition must be decided before any item enters an implementation prompt",
+        "Only `ACCEPT` and `ACCEPT_WITH_ADAPTATION` items may become direct implementation work",
+        "`REJECT_METHOD_ONLY`, `DEFER`, and `REJECT` items remain explicit ledger entries",
+        "Use `candidate_disposition` for the triage value",
+        "preserve that value as `contract_disposition`",
+        "`disposition` only for the lifecycle result",
+        "IMPLEMENTED",
+        "LOCAL_DONE",
+        "Do not convert every `review-synthesis` finding into a `crew:run` todo",
+    ):
+        assert marker in command
+
+
 def test_review_followup_codex_wrapper_ships_with_command() -> None:
     wrapper = (CODEX_SKILL_ROOT / "review-followup" / "SKILL.md").read_text(
         encoding="utf-8"
@@ -71,3 +89,7 @@ def test_review_followup_codex_wrapper_ships_with_command() -> None:
     assert "~/.agent-crew/commands/review-followup.md" in wrapper
     assert "$review-followup" in wrapper
     assert "ordinary numbered choices" in wrapper
+    assert "review feedback as candidate input" in wrapper
+    assert "candidate_disposition" in wrapper
+    assert "contract_disposition" in wrapper
+    assert "IMPLEMENTED" in wrapper

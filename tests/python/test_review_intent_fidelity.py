@@ -58,6 +58,20 @@ def test_review_ledger_connects_contract_disposition_and_safety_evidence() -> No
     assert "must not replace" in text
 
 
+def test_review_ledger_maps_candidate_disposition_and_user_facing_lifecycle_labels() -> None:
+    text = " ".join(read(RULE_PATH).split())
+
+    for required in [
+        "`candidate_disposition` from `review-synthesis` or `review-followup` intake",
+        "maps directly to this field",
+        "`IMPLEMENTED` and `LOCAL_DONE` mean `implemented`",
+        "`PARTIAL`, `POLICY_WAITING`, `DEFERRED`, and `UNKNOWN` mean `deferred`",
+        "`NOT_APPLICABLE` means `not-applicable`",
+        "`REJECT_METHOD_ONLY` closes as `rejected`",
+    ]:
+        assert required in text
+
+
 def test_reviewer_requires_review_original_to_disposition_ledger() -> None:
     text = read(REVIEWER_PATH)
     compact = " ".join(text.split())
@@ -68,6 +82,9 @@ def test_reviewer_requires_review_original_to_disposition_ledger() -> None:
     assert "reviewer's intended meaning" in compact
     assert "REVIEW: NEEDS_CHANGES" in text
     assert "proves only call existence" in text
+    assert "candidate_disposition" in text
+    assert "contract_disposition" in text
+    assert "REJECT_METHOD_ONLY" in text
 
 
 def test_supervisor_and_closeout_wire_review_intent_gate() -> None:

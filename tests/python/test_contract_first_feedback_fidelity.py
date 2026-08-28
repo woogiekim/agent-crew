@@ -86,6 +86,35 @@ def test_contract_first_feedback_fidelity_rule_defines_safety_labels_and_behavio
         assert required in text
 
 
+def test_contract_first_feedback_fidelity_blocks_blind_review_resolution() -> None:
+    text = " ".join(read(RULE_PATH).split())
+
+    for required in [
+        "BLIND_REVIEW_FOLLOWUP_GUARD",
+        "Feedback and review findings are candidate inputs, not implementation commands",
+        "Decide disposition before mutation",
+        "Only `ACCEPT` and `ACCEPT_WITH_ADAPTATION` can become direct implementation tasks",
+        "`REJECT_METHOD_ONLY`, `DEFER`, and `REJECT` are valid closeout states",
+        "A synthesis report may recommend triage, but it must not silently convert every finding into work",
+    ]:
+        assert required in text
+
+
+def test_contract_first_feedback_fidelity_defines_review_feedback_schema_mapping() -> None:
+    text = " ".join(read(RULE_PATH).split())
+
+    for required in [
+        "REVIEW_FEEDBACK_SCHEMA",
+        "`candidate_disposition` is the intake and synthesis triage value",
+        "`contract_disposition` is the canonical review-ledger field",
+        "`disposition` is the review-ledger lifecycle field",
+        "`REJECT_METHOD_ONLY` closes as `rejected`",
+        "Reviewer validation normalizes those labels into the lifecycle axis",
+        "`IMPLEMENTED`, `LOCAL_DONE`, `PARTIAL`, `POLICY_WAITING`, `DEFERRED`, `NOT_APPLICABLE`, and `UNKNOWN`",
+    ]:
+        assert required in text
+
+
 def test_contract_first_feedback_fidelity_rejects_shape_only_test_evidence() -> None:
     text = read(RULE_PATH)
 

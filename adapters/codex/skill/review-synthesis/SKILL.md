@@ -19,5 +19,11 @@ This Codex skill delegates to the provider-neutral workflow in
    contract. Do not directly invoke the system `reviewer` agent.
 5. Preserve source labels for every finding and keep local review status
    separate from remote MR completion.
-6. Ask follow-up decisions with ordinary numbered choices such as `1.` / `2.`;
+6. Treat findings as triage candidates, not approved implementation tasks.
+   Include `candidate_disposition` and `implementation_prompt_eligible` when a
+   finding is non-trivial, or explain why they are `Unknown`.
+   `candidate_disposition` maps to `review-ledger.contract_disposition` when a
+   finding enters follow-up; do not use `review-ledger.disposition` for
+   `ACCEPT`-family triage values.
+7. Ask follow-up decisions with ordinary numbered choices such as `1.` / `2.`;
    do not use circled digit characters.

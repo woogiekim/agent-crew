@@ -34,7 +34,14 @@ state so reviewers can see what changed and what is intentionally waiting.
 
 ## Disposition Model
 
-Use one disposition per review item:
+Use two disposition axes per review item:
+
+- `candidate_disposition` / `contract_disposition` records the contract-first
+  triage decision: `ACCEPT`, `ACCEPT_WITH_ADAPTATION`, `REJECT_METHOD_ONLY`,
+  `DEFER`, or `REJECT`.
+- `disposition` records lifecycle status for human closeout and reviewer gates.
+
+Existing user-facing lifecycle labels remain valid:
 
 - `IMPLEMENTED`: code, docs, tests, or config changed and focused verification
   supports the claim.
@@ -45,6 +52,11 @@ Use one disposition per review item:
   operational, or product decision.
 - `NOT_APPLICABLE`: evidence shows the comment does not apply to this scope.
 - `UNKNOWN`: evidence is insufficient; do not claim completion.
+
+Reviewer validation maps `IMPLEMENTED` and `LOCAL_DONE` to the canonical
+ledger lifecycle `implemented`; `PARTIAL`, `POLICY_WAITING`, `DEFERRED`, and
+`UNKNOWN` to `deferred`; and `NOT_APPLICABLE` to `not-applicable`. These labels
+must not replace the contract triage axis.
 
 Do not merge policy waits into implementation summaries. Do not claim remote
 MR, issue, or CI status unless the external mutation or query actually ran.

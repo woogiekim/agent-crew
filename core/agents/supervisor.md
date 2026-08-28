@@ -42,7 +42,9 @@ completion evidence. It must verify that each ledger item has one of
 `implemented`, `deferred`, `rejected`, or `not-applicable`, and that the
 evidence matches the disposition. `implemented` items require semantic
 verification of the requested state, value, side effect, or behavior, not only
-proof that a call exists.
+proof that a call exists. If review-synthesis supplied `candidate_disposition`,
+the supervisor must preserve it as `contract_disposition` and verify that the
+ledger lifecycle `disposition` remains compatible with that contract judgment.
 
 ## Contract-First Feedback Fidelity
 

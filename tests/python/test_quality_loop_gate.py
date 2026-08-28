@@ -274,6 +274,166 @@ def test_quality_gate_accepts_review_ledger_with_semantic_evidence(tmp_path: Pat
     assert status["review_ledger"]["implemented_count"] == 1
 
 
+def test_quality_gate_maps_accepted_candidate_disposition_to_implemented_lifecycle(tmp_path: Path):
+    """success-case(regression) - accepted candidate triage can close as user-facing IMPLEMENTED."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "items": [
+                    {
+                        "review": "로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨",
+                        "intent": "자동승인 이력을 뉴스봇 ActionLog로 남긴다",
+                        "candidate_disposition": "ACCEPT_WITH_ADAPTATION",
+                        "disposition": "IMPLEMENTED",
+                        "code_evidence": ["CmsArticleService.java:120"],
+                        "test_evidence": ["CmsArticleServiceNewsBotActorTest.java:42"],
+                        "semantic_verification": "memberSeq/status/comment/contentSeq/contentType values are asserted",
+                        "residual_risk": "none",
+                    },
+                    {
+                        "review": "MR description also needs a local note",
+                        "intent": "local-only reflection is visible before any remote write",
+                        "candidate_disposition": "ACCEPT",
+                        "disposition": "LOCAL_DONE",
+                        "code_evidence": ["context/review-ledger.md"],
+                        "test_evidence": ["python3 -m pytest tests/python/test_quality_loop_gate.py"],
+                        "semantic_verification": "local evidence exists and remote mutation is not claimed",
+                        "residual_risk": "remote MR body was not updated",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert "incomplete_review_ledger" not in status["failures"]
+    assert status["review_ledger"]["valid"] is True
+    assert status["review_ledger"]["implemented_count"] == 2
+
+
+def test_quality_gate_maps_lifecycle_disposition_alias_to_lifecycle_axis(tmp_path: Path):
+    """success-case(regression) - lifecycle_disposition is accepted as the ledger lifecycle field."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "items": [
+                    {
+                        "review": "로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨",
+                        "intent": "자동승인 이력을 뉴스봇 ActionLog로 남긴다",
+                        "candidate_disposition": "ACCEPT_WITH_ADAPTATION",
+                        "lifecycle_disposition": "IMPLEMENTED",
+                        "code_evidence": ["CmsArticleService.java:120"],
+                        "test_evidence": ["CmsArticleServiceNewsBotActorTest.java:42"],
+                        "semantic_verification": "memberSeq/status/comment/contentSeq/contentType values are asserted",
+                        "residual_risk": "none",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert "incomplete_review_ledger" not in status["failures"]
+    assert status["review_ledger"]["valid"] is True
+    assert status["review_ledger"]["implemented_count"] == 1
+
+
+def test_quality_gate_maps_markdown_lifecycle_disposition_header(tmp_path: Path):
+    """success-case(regression) - markdown Lifecycle Disposition maps to the lifecycle field."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.md").write_text(
+        "| Review | Intent | Candidate Disposition | Lifecycle Disposition | Code Evidence | Test Evidence | Semantic Verification | Residual Risk |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 로그 남기는 것이 맞음. 뉴스봇으로 남기면 됨 | 자동승인 이력을 뉴스봇 ActionLog로 남긴다 | ACCEPT_WITH_ADAPTATION | IMPLEMENTED | CmsArticleService.java:120 | CmsArticleServiceNewsBotActorTest.java:42 | memberSeq/status/comment/contentSeq/contentType values are asserted | none |\n",
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert status["review_ledger"]["valid"] is True
+    assert status["review_ledger"]["implemented_count"] == 1
+
+
+def test_quality_gate_blocks_rejected_candidate_from_lifecycle_disposition_alias(tmp_path: Path):
+    """failure-case(regression) - method-only rejection must not close via lifecycle_disposition."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "items": [
+                    {
+                        "review": "Remove the existing side-effect call",
+                        "intent": "avoid duplicate writes without dropping the side effect contract",
+                        "candidate_disposition": "REJECT_METHOD_ONLY",
+                        "lifecycle_disposition": "IMPLEMENTED",
+                        "code_evidence": ["CmsArticleService.java:120"],
+                        "test_evidence": ["CmsArticleServiceNewsBotActorTest.java:42"],
+                        "semantic_verification": "side effect replacement is asserted",
+                        "residual_risk": "none",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert status["passed"] is False
+    assert "incomplete_review_ledger" in status["hard_failures"]
+    assert status["review_ledger"]["invalid_item_ids"] == ["item-1"]
+
+
+def test_quality_gate_blocks_rejected_candidate_from_implemented_lifecycle(tmp_path: Path):
+    """failure-case(regression) - method-only rejection must not close as IMPLEMENTED."""
+    _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")
+    write_quality_loop_trace(task_dir)
+    (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
+    (task_dir / "context" / "review-ledger.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "items": [
+                    {
+                        "review": "Remove the existing side-effect call",
+                        "intent": "avoid duplicate writes without dropping the side effect contract",
+                        "candidate_disposition": "REJECT_METHOD_ONLY",
+                        "disposition": "IMPLEMENTED",
+                        "code_evidence": ["CmsArticleService.java:120"],
+                        "test_evidence": ["CmsArticleServiceNewsBotActorTest.java:42"],
+                        "semantic_verification": "side effect replacement is asserted",
+                        "residual_risk": "none",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = quality_loop.check_quality_loop(task_dir, target_status="completed")
+
+    assert status["passed"] is False
+    assert "incomplete_review_ledger" in status["hard_failures"]
+    assert status["review_ledger"]["invalid_item_ids"] == ["item-1"]
+
+
 def test_quality_gate_accepts_markdown_review_ledger(tmp_path: Path):
     """success-case - human-readable review ledger tables are accepted when complete."""
     _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement review feedback for auto approval logging")

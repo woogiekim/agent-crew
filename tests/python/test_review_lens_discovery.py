@@ -94,6 +94,27 @@ def test_review_lens_discovery_script_and_rule_are_shipped() -> None:
     assert "`eligible`" in REVIEW_SYNTHESIS_COMMAND.read_text(encoding="utf-8")
 
 
+def test_review_synthesis_reports_findings_as_triage_candidates() -> None:
+    command = REVIEW_SYNTHESIS_COMMAND.read_text(encoding="utf-8")
+
+    for marker in (
+        "core/rules/contract-first-feedback-fidelity.md",
+        "review findings are candidate inputs",
+        "Do not treat a finding as an approved implementation task",
+        "ACCEPT_WITH_ADAPTATION",
+        "REJECT_METHOD_ONLY",
+        "DEFER",
+        "REJECT",
+        "candidate_disposition",
+        "implementation_prompt_eligible",
+        "review-ledger.contract_disposition",
+        "`review-ledger.disposition`",
+        "IMPLEMENTED",
+        "LOCAL_DONE",
+    ):
+        assert marker in command
+
+
 def test_discovery_completes_read_only_lens_and_blocks_supervisor_reviewer(
     tmp_path: Path,
 ) -> None:

@@ -53,6 +53,9 @@ When a task is responding to review comments, require
 `{TASK_DIR}/context/review-ledger.md`. Verify every ledger row against the
 original review text:
 
+- `candidate_disposition` from synthesis or follow-up intake must map to
+  `contract_disposition`; `review-ledger.disposition` remains the lifecycle
+  result and must not contain `ACCEPT`-family triage values.
 - `implemented` rows must cite code evidence, test evidence, and semantic
   verification for the requested state, value, side effect, or behavior.
 - `deferred` rows must cite tracking evidence such as a TODO, issue, decision
@@ -63,7 +66,8 @@ original review text:
 Return `REVIEW: NEEDS_CHANGES` when the ledger is missing for a review
 follow-up, when a row lacks disposition-specific evidence, or when an
 `implemented` row proves only call existence instead of the reviewer's intended
-meaning.
+meaning. Also return `REVIEW: NEEDS_CHANGES` when `REJECT_METHOD_ONLY`,
+`DEFER`, or `REJECT` is closed as an implemented lifecycle state.
 
 ## Code Intelligence Evidence
 

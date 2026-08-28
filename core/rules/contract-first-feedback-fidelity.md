@@ -85,6 +85,58 @@ Review acceptance is not a score-maximization exercise. A closeout may report
 high reflection only when each item has a disposition and the accepted items
 are `contract-safe`, `parity-safe`, `scope-safe`, and `side-effect-safe`.
 
+## BLIND_REVIEW_FOLLOWUP_GUARD
+
+Feedback and review findings are candidate inputs, not implementation commands.
+A reviewer may correctly identify a problem while suggesting a method that
+breaks a higher-priority contract, widens scope, removes an observable side
+effect, or ignores producer/consumer parity.
+
+Decide disposition before mutation. Every review-driven workflow must preserve
+the original item, extract intent, identify the affected contract, and choose a
+disposition before generating an implementation prompt or editing code.
+
+Only `ACCEPT` and `ACCEPT_WITH_ADAPTATION` can become direct implementation
+tasks. `REJECT_METHOD_ONLY`, `DEFER`, and `REJECT` are valid closeout states
+when they are backed by evidence, owner/tracking detail, or a safer
+alternative. They must remain visible in the ledger and report instead of
+being hidden to raise a reflection percentage.
+
+A synthesis report may recommend triage, but it must not silently convert
+every finding into work. Findings from `review-synthesis`, MR notes, provider
+reviewers, static analysis, or review lenses are inputs to the same
+contract-first disposition process.
+
+## REVIEW_FEEDBACK_SCHEMA
+
+Review workflows use two distinct disposition axes:
+
+- `candidate_disposition` is the intake and synthesis triage value. It uses the
+  contract-first values `ACCEPT`, `ACCEPT_WITH_ADAPTATION`,
+  `REJECT_METHOD_ONLY`, `DEFER`, and `REJECT`.
+- `contract_disposition` is the canonical review-ledger field for that same
+  contract judgment. When a synthesis or follow-up item is promoted into
+  `review-ledger`, `candidate_disposition` maps directly to
+  `contract_disposition`.
+- `disposition` is the review-ledger lifecycle field used by reviewer and
+  completion gates. It records what happened to the item: `implemented`,
+  `deferred`, `rejected`, or `not-applicable`.
+
+The lifecycle field must not replace the contract judgment. `ACCEPT` and
+`ACCEPT_WITH_ADAPTATION` can close as `implemented` only when semantic code and
+test evidence prove the reviewer intent. They may remain `deferred` when the
+accepted work is intentionally not executed yet and tracking evidence is
+present. `REJECT_METHOD_ONLY` closes as `rejected`, `DEFER` closes as
+`deferred`, and `REJECT` closes as `rejected` or `not-applicable` depending on
+the evidence.
+
+For user-facing compatibility, reports may continue using existing status
+labels such as `IMPLEMENTED`, `LOCAL_DONE`, `PARTIAL`, `POLICY_WAITING`,
+`DEFERRED`, `NOT_APPLICABLE`, and `UNKNOWN`. Reviewer validation normalizes
+those labels into the lifecycle axis before applying evidence requirements;
+they are display labels, not replacements for `candidate_disposition` or
+`contract_disposition`.
+
 ## SAFETY_LABELS
 
 Any agent or command claiming feedback was reflected should report these labels
