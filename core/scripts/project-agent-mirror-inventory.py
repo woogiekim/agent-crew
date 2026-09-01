@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -27,6 +28,63 @@ SKIP_DIRECTORIES = {
     "out",
     "target",
 }
+QUARANTINE_ACTIONS = {
+    "quarantine_after_global",
+    "quarantine_duplicate",
+    "quarantine_managed",
+    "quarantine_stale_managed",
+}
+
+
+class GitTracker:
+    def __init__(self) -> None:
+        self.directory_roots: dict[Path, Path | None] = {}
+        self.tracked_by_root: dict[Path, set[str] | None] = {}
+
+    def status(self, path: Path) -> bool | None:
+        directory = path.parent
+        if directory not in self.directory_roots:
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                )
+            except OSError:
+                return None
+            self.directory_roots[directory] = (
+                Path(result.stdout.strip()) if result.returncode == 0 else None
+            )
+
+        root = self.directory_roots[directory]
+        if root is None:
+            return False
+        if root not in self.tracked_by_root:
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(root), "ls-files", "-z"],
+                    capture_output=True,
+                    check=False,
+                )
+            except OSError:
+                self.tracked_by_root[root] = None
+            else:
+                if result.returncode != 0:
+                    self.tracked_by_root[root] = None
+                else:
+                    self.tracked_by_root[root] = set(
+                        result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+                    )
+
+        tracked = self.tracked_by_root[root]
+        if tracked is None:
+            return None
+        try:
+            relative = str(path.relative_to(root))
+        except ValueError:
+            return None
+        return relative in tracked
 
 
 def parse_agent_name(path: Path) -> str:
@@ -140,6 +198,7 @@ def scan(
     sources = markdown_sources(agent_crew_home, claude_dir)
     known_system_names = source_codex_names(agent_crew_home / "system" / "agents")
     known_user_names = source_codex_names(agent_crew_home / "user" / "agents")
+    git_tracker = GitTracker()
     entries: list[dict[str, object]] = []
 
     for root in roots:
@@ -174,6 +233,17 @@ def scan(
                     )
                 else:
                     action, reason, replacement = classify_markdown(path, kind, sources)
+                candidate_action = None
+                if action in QUARANTINE_ACTIONS:
+                    tracked = git_tracker.status(path)
+                    if tracked is True:
+                        candidate_action = action
+                        action = "preserve_tracked"
+                        reason = "Git tracked file; cleanup requires a repository-scoped change"
+                    elif tracked is None:
+                        candidate_action = action
+                        action = "preserve_git_unknown"
+                        reason = "Git tracking status could not be verified"
                 entry: dict[str, object] = {
                     "action": action,
                     "kind": kind,
@@ -182,6 +252,8 @@ def scan(
                 }
                 if replacement:
                     entry["replacement"] = replacement
+                if candidate_action:
+                    entry["candidate_action"] = candidate_action
                 entries.append(entry)
 
     return sorted(entries, key=lambda entry: str(entry["path"]))

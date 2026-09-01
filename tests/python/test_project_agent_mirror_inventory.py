@@ -80,6 +80,15 @@ def test_inventory_classifies_managed_duplicates_without_deleting_files(tmp_path
         projects / "alpha" / ".claude" / "agents" / "local-reviewer.md",
         "Project-only Claude agent.\n",
     )
+    tracked_managed = write(
+        projects / "tracked" / ".codex" / "agents" / "backend.toml",
+        f'developer_instructions = """{SYSTEM_MARKER}"""\n',
+    )
+    subprocess.run(["git", "init", "-q", str(projects / "tracked")], check=True)
+    subprocess.run(
+        ["git", "-C", str(projects / "tracked"), "add", "-f", ".codex/agents/backend.toml"],
+        check=True,
+    )
 
     result = subprocess.run(
         [
@@ -114,6 +123,7 @@ def test_inventory_classifies_managed_duplicates_without_deleting_files(tmp_path
     assert actions[str(modified_md)] == "review_modified_or_stale"
     assert actions[str(claude_duplicate)] == "quarantine_after_global"
     assert actions[str(claude_override)] == "preserve_project_override"
+    assert actions[str(tracked_managed)] == "preserve_tracked"
     assert missing_global_user.exists()
 
     for path in (
@@ -126,5 +136,6 @@ def test_inventory_classifies_managed_duplicates_without_deleting_files(tmp_path
         modified_md,
         claude_duplicate,
         claude_override,
+        tracked_managed,
     ):
         assert path.exists()
