@@ -487,9 +487,28 @@ PYEOF
 install_user_agents_codex() {
   local user_agents_dir="${AGENT_CREW_HOME}/user/agents"
   local dest_dir="${CODEX_HOME}/agents"
+  local generator=""
 
   [ -d "${user_agents_dir}" ] || return 0
   mkdir -p "${dest_dir}"
+
+  for candidate in \
+    "${SOURCE_ROOT:-}/core/scripts/generate-codex-user-agents.py" \
+    "${AGENT_CREW_HOME}/scripts/generate-codex-user-agents.py" \
+    "${AGENT_CREW_HOME}/system/scripts/generate-codex-user-agents.py"; do
+    if [ -n "${candidate}" ] && [ -f "${candidate}" ]; then
+      generator="${candidate}"
+      break
+    fi
+  done
+
+  if [ -n "${generator}" ]; then
+    python3 "${generator}" \
+      "${user_agents_dir}" \
+      "${dest_dir}" \
+      --system-agents-dir "${AGENT_CREW_HOME}/system/agents"
+    return 0
+  fi
 
   python3 - "${user_agents_dir}" "${dest_dir}" "${AGENT_CREW_HOME}/system/agents" <<'PYEOF'
 import os

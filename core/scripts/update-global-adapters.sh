@@ -95,6 +95,7 @@ CODEX_NATIVE_SKILLS_DIR="${CODEX_HOME}/skills"
 CODEX_CREW_SKILLS_DIR="${CODEX_HOME}/agent-crew/skills"
 CODEX_AGENTS_DIR="${CODEX_HOME}/agents"
 CODEX_AGENT_GENERATOR="${SOURCE_DIR}/scripts/generate-codex-system-agents.py"
+CODEX_USER_AGENT_GENERATOR="${SOURCE_DIR}/scripts/generate-codex-user-agents.py"
 CODEX_TEMPLATE_DIR="${ADAPTERS_DIR}/codex/template"
 
 prune_and_copy_dir() {
@@ -430,6 +431,7 @@ dest = Path(sys.argv[2])
 
 system_marker = "This is a Codex adapter bootstrap for the agent-crew system agent."
 legacy_marker = "Agent-crew system agent:"
+user_marker = "# This is a Codex adapter bootstrap for an agent-crew user agent."
 src_names = {path.name for path in src.glob("*.toml")}
 
 for dest_path in sorted(dest.glob("*.toml")):
@@ -448,8 +450,12 @@ for src_path in sorted(src.glob("*.toml")):
         dest_text = dest_path.read_text(encoding="utf-8", errors="replace")
         if dest_text == src_text:
             continue
-        managed = system_marker in dest_text or legacy_marker in dest_text
-        if not managed:
+        agent_crew_owned = (
+            system_marker in dest_text
+            or legacy_marker in dest_text
+            or dest_text.startswith(user_marker + "\n")
+        )
+        if not agent_crew_owned:
             print(
                 f"[update-global-adapters] WARNING: {dest_path.name} exists in global Codex agents and generated system agents; not auto-selected.",
                 file=sys.stderr,
@@ -500,6 +506,14 @@ if [ -d "${ADAPTERS_DIR}/codex/template/agents" ]; then
   else
     printf '[update-global-adapters] WARNING: Codex agent generator not found at %s; falling back to static templates.\n' "${CODEX_AGENT_GENERATOR}" >&2
     sync_codex_managed_agents "${ADAPTERS_DIR}/codex/template/agents" "${CODEX_AGENTS_DIR}"
+  fi
+  if [ -f "${CODEX_USER_AGENT_GENERATOR}" ] && [ -d "${AGENT_CREW_HOME}/user/agents" ]; then
+    python3 "${CODEX_USER_AGENT_GENERATOR}" \
+      "${AGENT_CREW_HOME}/user/agents" \
+      "${CODEX_AGENTS_DIR}" \
+      --system-agents-dir "${AGENT_CREW_HOME}/system/agents"
+  else
+    printf '[update-global-adapters] WARNING: Codex user-agent generator or user agent source not found; skipping user agents.\n' >&2
   fi
   printf '[update-global-adapters] Codex global agents refreshed → %s\n' "${CODEX_AGENTS_DIR}"
 else

@@ -12,6 +12,7 @@ ACHOME="${TMP}/agent-crew-home"
 CODEX_HOME="${TMP}/codex-home"
 CLAUDE_DIR="${TMP}/claude-home"
 mkdir -p "${ACHOME}/skills" "${ACHOME}/system/agents/skills" "${ACHOME}/setup" \
+  "${ACHOME}/user/agents" \
   "${ACHOME}/hooks" "${ACHOME}/system/hooks" \
   "${ACHOME}/scripts" "${CODEX_HOME}/skills/agent-crew" "${CODEX_HOME}/agent-crew/skills" \
   "${CODEX_HOME}/agents"
@@ -27,6 +28,26 @@ chmod +x "${ACHOME}/adapters/generic/setup.sh"
 echo 'developer_instructions = """This is a Codex adapter bootstrap for the agent-crew system agent."""' > "${CODEX_HOME}/agents/task-runner.toml"
 echo 'name = "input-normalizer" owner = "user"' > "${CODEX_HOME}/agents/input-normalizer.toml"
 echo 'name = "my-custom"' > "${CODEX_HOME}/agents/my-custom.toml"
+cat > "${ACHOME}/user/agents/scout.md" <<'MD'
+---
+name: scout
+description: User scout agent
+model: inherit
+---
+Use the user-owned scout instructions.
+MD
+cat > "${ACHOME}/user/agents/my-custom.md" <<'MD'
+---
+name: my-custom
+description: User source that collides with an unmarked global TOML
+---
+Do not overwrite an unmarked global collision.
+MD
+cat > "${CODEX_HOME}/agents/old-user.toml" <<'TOML'
+# This is a Codex adapter bootstrap for an agent-crew user agent.
+name = "old-user"
+description = "stale managed user agent"
+TOML
 echo "stale" > "${CODEX_HOME}/agent-crew/skills/stale.md"
 mkdir -p "${CODEX_HOME}/skills/crew-run"
 echo "stale skill" > "${CODEX_HOME}/skills/crew-run/SKILL.md"
@@ -98,6 +119,20 @@ assert_contains "$(cat "${CODEX_HOME}/agents/input-normalizer.toml")" 'owner = "
 it "global Codex agents preserve unknown custom TOMLs"
 assert_file_exists "${CODEX_HOME}/agents/my-custom.toml"
 assert_contains "$(cat "${CODEX_HOME}/agents/my-custom.toml")" 'name = "my-custom"'
+
+it "global Codex agents materialize user agents"
+assert_file_exists "${CODEX_HOME}/agents/scout.toml"
+scout_toml="$(cat "${CODEX_HOME}/agents/scout.toml")"
+assert_contains "${scout_toml}" "Codex adapter bootstrap for an agent-crew user agent"
+assert_contains "${scout_toml}" "Use the user-owned scout instructions."
+assert_not_contains "${scout_toml}" 'model = "inherit"'
+
+it "global Codex agents prune stale managed user agents"
+assert_file_absent "${CODEX_HOME}/agents/old-user.toml"
+
+it "global Codex user agent materialization preserves unmarked collisions"
+assert_contains "$(cat "${CODEX_HOME}/agents/my-custom.toml")" 'name = "my-custom"'
+assert_not_contains "$(cat "${CODEX_HOME}/agents/my-custom.toml")" "agent-crew user agent"
 
 it "Codex global hooks merge preserves user-owned hooks and top-level keys"
 hooks_out="$(cat "${CODEX_HOME}/hooks.json")"

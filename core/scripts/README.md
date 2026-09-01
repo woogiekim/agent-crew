@@ -100,6 +100,13 @@ invocation in SKILL.md; generic adds guidance).
 - `verify-update-dry-run.sh` — non-mutating update verifier that runs the local
   update flow against temporary install homes and a temporary project, then
   checks stale-file pruning, canonical Codex TOMLs, and user asset preservation.
+- `generate-codex-user-agents.py` — materializes canonical user-agent Markdown
+  into ownership-marked global Codex TOMLs, prunes only stale managed user
+  outputs, and preserves unmarked same-name collisions.
+- `project-agent-mirror-inventory.py` — scans legacy project `.agent-crew`,
+  `.codex`, and `.claude` agent mirrors and writes a deletion-free JSON cleanup
+  manifest. It classifies global duplicates, missing-global blockers, modified
+  legacy files, and explicit project overrides without removing anything.
 - `e2e-slo-check.py` — CI-ready latency/noise SLO checker for status,
   telemetry, memory search, retrieval evaluation, and update dry-run budgets.
   It supports sampled latency checks with warmup exclusion, explicit

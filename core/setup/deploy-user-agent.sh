@@ -73,7 +73,22 @@ fi
 CODEX_AGENTS="${CODEX_HOME}/agents"
 if [ -d "${CODEX_AGENTS}" ]; then
   printf '[deploy-user-agent] Deploying to Codex (TOML): %s\n' "${CODEX_AGENTS}"
-  python3 - "${AGENT_PATH}" "${CODEX_AGENTS}" <<'PYEOF'
+  CODEX_USER_GENERATOR=""
+  for candidate in \
+    "${AGENT_CREW_HOME}/scripts/generate-codex-user-agents.py" \
+    "${AGENT_CREW_HOME}/system/scripts/generate-codex-user-agents.py"; do
+    if [ -f "${candidate}" ]; then
+      CODEX_USER_GENERATOR="${candidate}"
+      break
+    fi
+  done
+  if [ -n "${CODEX_USER_GENERATOR}" ]; then
+    python3 "${CODEX_USER_GENERATOR}" \
+      "${USER_AGENTS}" \
+      "${CODEX_AGENTS}" \
+      --system-agents-dir "${SYSTEM_AGENTS}"
+  else
+    python3 - "${AGENT_PATH}" "${CODEX_AGENTS}" <<'PYEOF'
 import os, re, sys
 
 md_path  = sys.argv[1]
@@ -164,6 +179,7 @@ with open(dest_path, 'w', encoding='utf-8') as f:
     f.write(toml_content)
 print(f'[deploy-user-agent] Written: {dest_path}')
 PYEOF
+  fi
   DEPLOYED=$((DEPLOYED + 1))
 fi
 
