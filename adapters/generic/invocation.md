@@ -11,9 +11,10 @@ crew:agent-maker
 crew:agent "task description"
 ```
 
-The generic adapter installs project-local `.agent-crew/` assets and `AGENTS.md`
-so the assistant can follow the workflow from repository guidance.
-Use plain `crew:<intent>` text as the portable form.
+The generic adapter keeps only minimal project invocation guidance. Commands,
+agents, skills, hooks, and adapters are machine-global; project-local files are
+optional user-owned overrides. Use plain `crew:<intent>` text as the portable
+form.
 
 ## crew:agent — Direct Agent Invocation
 

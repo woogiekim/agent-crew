@@ -139,12 +139,10 @@ invocation in SKILL.md; generic adds guidance).
   default bridge is installed because `crew run` records `handoff_ready`
   through the internal fallback. `crew doctor` includes this probe in host
   diagnostics.
-- `prune-codex-global-hooks.py` — removes legacy global Codex agent-crew hook
-  registrations from `~/.codex/hooks.json` once a project-local
-  `.codex/hooks.json` exists. It preserves user hooks and only removes commands
-  pointing at managed `{AGENT_CREW_HOME}/hooks/*.sh` scripts, preventing
-  duplicate `UserPromptSubmit` STOP/ROUTE injection when Codex loads both
-  scopes.
+- `prune-codex-global-hooks.py` — legacy migration helper for removing managed
+  agent-crew hook registrations from Codex `hooks.json` files while preserving
+  user hooks. Normal setup/update now writes the machine-global Codex hook
+  registration directly.
 - `interactive-question-state.py` — stores provider-neutral structured question
   choices under task or project state so native host UI selections, such as
   Codex Plan mode `request_user_input`, are auditable and not re-asked on
@@ -302,9 +300,10 @@ invocation in SKILL.md; generic adds guidance).
 - `update-fingerprint.py` — records source, user, and generated-output hashes so
   repeated no-op local updates can skip expensive adapter refreshes safely, and
   reports changed fingerprint categories when a full refresh is required.
-- `update-project-registry.py` — records global and project-local update
-  markers, lists registered project roots for `crew update --all-projects`, and
-  emits stale project-local adapter warnings for `crew status` / `crew run`.
+- `update-project-registry.py` — records the global update marker and preserves
+  compatibility subcommands for legacy project registry inspection. Normal
+  setup/update no longer writes project-local freshness markers or emits stale
+  project-local adapter warnings.
 - `verify-install-drift.py` — post-update source/install drift verifier for
   source-owned commands, hooks, scripts, evaluations, policies, and binary
   entrypoints.

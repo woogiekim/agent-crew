@@ -14,9 +14,8 @@
 #   claude  — ~/.claude/agents/ directory exists
 #   codex   — ~/.codex/agents/ directory exists
 #
-# The generic adapter installs into <project>/.agent-crew/agents/, but the
-# project root is not known at agent-maker time. It will pick up the new
-# agent on the next crew:setup run for that project.
+# The generic adapter has no global native discovery path, so there is no
+# project-local mirror update at agent-maker time.
 #
 # This script is idempotent: safe to run multiple times for the same agent.
 # Silent on non-installed adapters — no error if a path does not exist.
@@ -24,6 +23,8 @@
 set -euo pipefail
 
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
+CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
+CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 AGENT_FILE="${1:-}"
 
 if [ -z "${AGENT_FILE}" ]; then
@@ -51,12 +52,12 @@ DEPLOYED=0
 
 # ── Claude adapter ────────────────────────────────────────────────────────────
 # Discovery path: ~/.claude/agents/
-CLAUDE_AGENTS="${HOME}/.claude/agents"
+CLAUDE_AGENTS="${CLAUDE_DIR}/agents"
 if [ -d "${CLAUDE_AGENTS}" ]; then
   printf '[deploy-user-agent] Deploying to Claude: %s\n' "${CLAUDE_AGENTS}"
   merge_agents_to_discovery "${SYSTEM_AGENTS}" "${USER_AGENTS}" "${CLAUDE_AGENTS}"
   # Also keep the agent-crew mirror path in sync
-  CLAUDE_CREW_AGENTS="${HOME}/.claude/agent-crew/agents"
+  CLAUDE_CREW_AGENTS="${CLAUDE_DIR}/agent-crew/agents"
   if [ -d "${CLAUDE_CREW_AGENTS}" ]; then
     copy_dir_contents "${SYSTEM_AGENTS}" "${CLAUDE_CREW_AGENTS}"
     cp "${AGENT_PATH}" "${CLAUDE_CREW_AGENTS}/" 2>/dev/null || true
@@ -65,18 +66,14 @@ if [ -d "${CLAUDE_AGENTS}" ]; then
 fi
 
 # ── Codex adapter ─────────────────────────────────────────────────────────────
-# Discovery path: PROJECT_ROOT/.codex/agents/ (project-local TOML stubs).
+# Discovery path: ~/.codex/agents/ (global TOML stubs).
 # The Codex adapter uses TOML format for subagent definitions, so the .md file
-# must be converted. We detect any initialised Codex project under common roots:
-#   1. The current git working tree (git rev-parse --show-toplevel)
-#   2. The current directory ($PWD)
-# If neither has a .codex/agents/ directory the adapter is not installed here
-# and we fall through silently — the next crew:setup will pick it up.
-_CODEX_PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "${PWD}")"
-CODEX_PROJECT_AGENTS="${_CODEX_PROJECT_ROOT}/.codex/agents"
-if [ -d "${CODEX_PROJECT_AGENTS}" ]; then
-  printf '[deploy-user-agent] Deploying to Codex (TOML): %s\n' "${CODEX_PROJECT_AGENTS}"
-  python3 - "${AGENT_PATH}" "${CODEX_PROJECT_AGENTS}" <<'PYEOF'
+# must be converted. Project-local `.codex/agents` is reserved for explicit
+# project-owned overrides and is never refreshed from agent-maker.
+CODEX_AGENTS="${CODEX_HOME}/agents"
+if [ -d "${CODEX_AGENTS}" ]; then
+  printf '[deploy-user-agent] Deploying to Codex (TOML): %s\n' "${CODEX_AGENTS}"
+  python3 - "${AGENT_PATH}" "${CODEX_AGENTS}" <<'PYEOF'
 import os, re, sys
 
 md_path  = sys.argv[1]

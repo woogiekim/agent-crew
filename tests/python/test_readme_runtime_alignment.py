@@ -35,8 +35,8 @@ def test_readme_documents_codex_capability_fallbacks():
     assert "`agent_background`, `task_tools`" in text
     assert "inline execution and markdown/file" in text
     assert "fallbacks instead of claiming native background sessions" in text
-    assert "advisory prompt-workflow guardrails" in text
-    assert "not as enforced `hook_system=true` guarantees" in text
+    assert "machine-global Codex home" in text
+    assert "optional\n  user-owned overrides" in text
 
 
 def test_readme_documents_native_cli_boundary():

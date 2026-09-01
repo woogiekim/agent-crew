@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 # tests/shell/test_setup_host_fan_out.bash
 #
-# Verify that core/setup/setup-host.sh fan-out loop uses is_installed()
-# filesystem checks rather than detect.sh runtime detection, so all installed
-# adapter paths are refreshed from any host environment.
-#
-# Issue #45: crew:update must refresh all installed adapter paths regardless of
-# which host is currently running.
+# Verify that core/setup/setup-host.sh selects one host adapter for the current
+# project and does not run the generic project-local mirror path when a native
+# adapter is available.
 
 set -u  # do NOT set -e — failed assertions must keep running
 
@@ -28,12 +25,6 @@ set +e
 #   <acHome>/adapters/generic/detect.sh   — exits 0 (generic always passes)
 #   <acHome>/adapters/generic/setup.sh    — records invocation in <acHome>/ran
 #
-# Both claude and codex are "installed" by creating their installation dirs:
-#   <acHome>/claude-inst/agent-crew       — stands in for ~/.claude/agent-crew
-#   <acHome>/codex-inst/skills/crew:run — stands in for ~/.codex/skills/crew:run
-#
-# CLAUDE_DIR and CODEX_HOME are exported to point at the fake install roots.
-
 make_acHome() {
   local acHome
   acHome="$(make_tmp)"
@@ -92,9 +83,6 @@ SH
   echo "${acHome}"
 }
 
-# Run setup-host.sh in update mode with a custom AGENT_CREW_HOME.
-# CLAUDE_DIR and CODEX_HOME override the installation-presence paths that
-# is_installed() checks inside setup-host.sh.
 run_setup_host() {
   local acHome="$1"
   local claudeDir="$2"
@@ -103,13 +91,12 @@ run_setup_host() {
   AGENT_CREW_HOME="${acHome}" \
   CLAUDE_DIR="${claudeDir}" \
   CODEX_HOME="${codexHome}" \
-  AGENT_CREW_MODE=update \
+  AGENT_CREW_MODE=install \
     bash "${SETUP_DIR}/setup-host.sh" "$(make_tmp)" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
-# Test: both claude and codex installed — both must be refreshed even when
-#       neither detect.sh succeeds (simulates running from a third host).
+# Test: native claude detected — run claude only, not codex or generic.
 # ---------------------------------------------------------------------------
 
 TMP=$(make_tmp)
@@ -122,66 +109,75 @@ CODEX_INST_DIR="${TMP}/codex-inst"
 mkdir -p "${CLAUDE_INST_DIR}/agent-crew"
 mkdir -p "${CODEX_INST_DIR}/skills/crew:run"
 
+cat >"${ACHOME}/adapters/claude/detect.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "${ACHOME}/adapters/claude/detect.sh"
+
 run_setup_host "${ACHOME}" "${CLAUDE_INST_DIR}" "${CODEX_INST_DIR}"
 
-it "fan-out runs claude adapter when claude is installed (detect.sh exit=1)"
+it "native dispatch runs detected claude adapter"
 RAN_CONTENTS=$(cat "${RAN}" 2>/dev/null || echo "")
 assert_contains "${RAN_CONTENTS}" "claude"
 
-it "fan-out runs codex adapter when codex is installed (detect.sh exit=1)"
-assert_contains "${RAN_CONTENTS}" "codex"
+it "native dispatch skips codex when claude was selected"
+assert_not_contains "${RAN_CONTENTS}" "codex"
 
-it "fan-out always runs generic adapter"
-assert_contains "${RAN_CONTENTS}" "generic"
+it "native dispatch does not run generic after claude"
+assert_not_contains "${RAN_CONTENTS}" "generic"
 
 # ---------------------------------------------------------------------------
-# Test: only claude installed — only claude + generic should run.
+# Test: native codex detected — run codex only, not generic.
 # ---------------------------------------------------------------------------
 
 TMP2=$(make_tmp)
 ACHOME2=$(make_acHome)
 RAN2="${ACHOME2}/ran"
 
-CLAUDE_INST2="${TMP2}/claude-inst"
-mkdir -p "${CLAUDE_INST2}/agent-crew"
-# codex NOT installed (CODEX_HOME points to non-existent dir)
-CODEX_INST2="${TMP2}/codex-inst-absent"
+CLAUDE_INST2="${TMP2}/claude-inst-absent"
+CODEX_INST2="${TMP2}/codex-inst"
+mkdir -p "${CODEX_INST2}/skills/crew:run"
+
+cat >"${ACHOME2}/adapters/codex/detect.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "${ACHOME2}/adapters/codex/detect.sh"
 
 run_setup_host "${ACHOME2}" "${CLAUDE_INST2}" "${CODEX_INST2}"
 
-it "fan-out runs claude adapter when only claude is installed"
+it "native dispatch skips claude when codex was selected"
 RAN2_CONTENTS=$(cat "${RAN2}" 2>/dev/null || echo "")
-assert_contains "${RAN2_CONTENTS}" "claude"
+assert_not_contains "${RAN2_CONTENTS}" "claude"
 
-it "fan-out skips codex adapter when codex is not installed"
-assert_not_contains "${RAN2_CONTENTS}" "codex"
+it "native dispatch runs detected codex adapter"
+assert_contains "${RAN2_CONTENTS}" "codex"
 
-it "fan-out always runs generic adapter (only claude installed case)"
-assert_contains "${RAN2_CONTENTS}" "generic"
+it "native dispatch does not run generic after codex"
+assert_not_contains "${RAN2_CONTENTS}" "generic"
 
 # ---------------------------------------------------------------------------
-# Test: only codex installed — only codex + generic should run.
+# Test: no native adapter detected — generic remains fallback.
 # ---------------------------------------------------------------------------
 
 TMP3=$(make_tmp)
 ACHOME3=$(make_acHome)
 RAN3="${ACHOME3}/ran"
 
-# claude NOT installed
 CLAUDE_INST3="${TMP3}/claude-inst-absent"
-CODEX_INST3="${TMP3}/codex-inst"
-mkdir -p "${CODEX_INST3}/skills/crew:run"
+CODEX_INST3="${TMP3}/codex-inst-absent"
 
 run_setup_host "${ACHOME3}" "${CLAUDE_INST3}" "${CODEX_INST3}"
 
-it "fan-out skips claude adapter when claude is not installed"
+it "fallback dispatch skips claude when no native adapter is detected"
 RAN3_CONTENTS=$(cat "${RAN3}" 2>/dev/null || echo "")
 assert_not_contains "${RAN3_CONTENTS}" "claude"
 
-it "fan-out runs codex adapter when only codex is installed"
-assert_contains "${RAN3_CONTENTS}" "codex"
+it "fallback dispatch skips codex when no native adapter is detected"
+assert_not_contains "${RAN3_CONTENTS}" "codex"
 
-it "fan-out always runs generic adapter (only codex installed case)"
+it "fallback dispatch runs generic when no native adapter is detected"
 assert_contains "${RAN3_CONTENTS}" "generic"
 
 # ---------------------------------------------------------------------------
@@ -197,82 +193,10 @@ CODEX_INST4="${TMP4}/codex-absent"
 
 run_setup_host "${ACHOME4}" "${CLAUDE_INST4}" "${CODEX_INST4}"
 
-it "fan-out skips claude when neither adapter is installed"
+it "explicit HOST=generic runs generic only"
 RAN4_CONTENTS=$(cat "${RAN4}" 2>/dev/null || echo "")
 assert_not_contains "${RAN4_CONTENTS}" "claude"
-
-it "fan-out skips codex when neither adapter is installed"
 assert_not_contains "${RAN4_CONTENTS}" "codex"
-
-it "fan-out runs generic even when no named adapter is installed"
 assert_contains "${RAN4_CONTENTS}" "generic"
-
-# ---------------------------------------------------------------------------
-# Test: explicit HOST=auto does not break fan-out (default path).
-# ---------------------------------------------------------------------------
-
-TMP5=$(make_tmp)
-ACHOME5=$(make_acHome)
-RAN5="${ACHOME5}/ran"
-
-CLAUDE_INST5="${TMP5}/claude-inst"
-CODEX_INST5="${TMP5}/codex-inst"
-mkdir -p "${CLAUDE_INST5}/agent-crew"
-mkdir -p "${CODEX_INST5}/skills/crew:run"
-
-AGENT_CREW_HOME="${ACHOME5}" \
-CLAUDE_DIR="${CLAUDE_INST5}" \
-CODEX_HOME="${CODEX_INST5}" \
-AGENT_CREW_MODE=update \
-AGENT_CREW_HOST=auto \
-  bash "${SETUP_DIR}/setup-host.sh" "$(make_tmp)" 2>/dev/null
-
-RAN5_CONTENTS=$(cat "${RAN5}" 2>/dev/null || echo "")
-it "explicit HOST=auto still refreshes claude adapter"
-assert_contains "${RAN5_CONTENTS}" "claude"
-
-it "explicit HOST=auto still refreshes codex adapter"
-assert_contains "${RAN5_CONTENTS}" "codex"
-
-it "explicit HOST=auto still refreshes generic adapter"
-assert_contains "${RAN5_CONTENTS}" "generic"
-
-# ---------------------------------------------------------------------------
-# Test: update fan-out refreshes installed adapters but writes capabilities
-#       only from the active host adapter.
-# ---------------------------------------------------------------------------
-
-TMP6=$(make_tmp)
-ACHOME6=$(make_acHome)
-RAN6="${ACHOME6}/ran"
-
-CLAUDE_INST6="${TMP6}/claude-inst"
-CODEX_INST6="${TMP6}/codex-inst"
-mkdir -p "${CLAUDE_INST6}/agent-crew"
-mkdir -p "${CODEX_INST6}/skills/crew:run"
-
-cat >"${ACHOME6}/adapters/claude/detect.sh" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-chmod +x "${ACHOME6}/adapters/claude/detect.sh"
-
-AGENT_CREW_HOME="${ACHOME6}" \
-CLAUDE_DIR="${CLAUDE_INST6}" \
-CODEX_HOME="${CODEX_INST6}" \
-AGENT_CREW_MODE=update \
-AGENT_CREW_HOST=auto \
-  bash "${SETUP_DIR}/setup-host.sh" "$(make_tmp)" 2>/dev/null
-
-RAN6_CONTENTS=$(cat "${RAN6}" 2>/dev/null || echo "")
-it "active-host capability test still refreshes claude"
-assert_contains "${RAN6_CONTENTS}" "claude"
-
-it "active-host capability test still refreshes codex"
-assert_contains "${RAN6_CONTENTS}" "codex"
-
-it "update fan-out writes capabilities from active claude only"
-CAP_HOST=$(cat "${ACHOME6}/capabilities-host" 2>/dev/null || echo "")
-assert_eq "claude" "${CAP_HOST}"
 
 end_report

@@ -202,23 +202,13 @@ be current from the last `crew:update` run.
 > does NOT re-run hook registration, agent discovery merge, or any other install side-effect.
 > For a full refresh of all assets, run `crew:update` explicitly.
 
-### 0b. Warn on Project-Local Update Drift
+### 0b. Resolve Lazy Project State
 
-Before creating task state, check whether global installed assets are newer
-than the current project's local adapter files. This warning is advisory and
-must not block task creation.
-
-```bash
-python3 "${AGENT_CREW_HOME}/scripts/update-project-registry.py" \
-  --agent-crew-home "${AGENT_CREW_HOME}" \
-  check-stale \
-  --project-root "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" \
-  --format text || true
-```
-
-If stale, print the compact warning and continue. The operator can run
-`crew update` in the current project or `crew update --all-projects` to refresh
-registered project-local adapter files.
+Project setup is not required before task creation. Resolve the collision-safe
+state key for the current project and create only runtime state under
+`${AGENT_CREW_HOME}/state/{PROJECT_STATE_KEY}` as needed. Do not refresh,
+mirror, or warn about project-local command, agent, skill, hook, or adapter
+assets during `crew run`.
 
 ---
 

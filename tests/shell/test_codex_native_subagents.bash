@@ -5,10 +5,12 @@ source "$(dirname "$0")/_lib.bash"
 
 tmp="$(make_tmp)"
 ac_home="${tmp}/.agent-crew"
+codex_home="${tmp}/home/.codex"
+claude_dir="${tmp}/home/.claude"
 repo="${tmp}/repo"
 setup_repo="${tmp}/setup-repo"
 
-mkdir -p "${ac_home}/setup" "${ac_home}/user/agents" "${repo}/.codex/agents"
+mkdir -p "${ac_home}/setup" "${ac_home}/user/agents" "${codex_home}/agents" "${repo}"
 cp "${REPO_ROOT}/core/setup/common.sh" "${ac_home}/setup/common.sh"
 mkdir -p "${ac_home}/adapters/codex" "${ac_home}/hooks" "${ac_home}/system"
 cp -R "${REPO_ROOT}/adapters/codex/template" "${ac_home}/adapters/codex/template"
@@ -46,12 +48,14 @@ EOF
 (
   cd "${repo}" || exit 2
   git init -q
-  AGENT_CREW_HOME="${ac_home}" bash "${REPO_ROOT}/core/setup/deploy-user-agent.sh" scout.md >/dev/null
-  AGENT_CREW_HOME="${ac_home}" bash "${REPO_ROOT}/core/setup/deploy-user-agent.sh" inherit-model.md >/dev/null
+  AGENT_CREW_HOME="${ac_home}" CODEX_HOME="${codex_home}" CLAUDE_DIR="${claude_dir}" \
+    bash "${REPO_ROOT}/core/setup/deploy-user-agent.sh" scout.md >/dev/null
+  AGENT_CREW_HOME="${ac_home}" CODEX_HOME="${codex_home}" CLAUDE_DIR="${claude_dir}" \
+    bash "${REPO_ROOT}/core/setup/deploy-user-agent.sh" inherit-model.md >/dev/null
 )
 
-toml="${repo}/.codex/agents/scout-agent.toml"
-inherit_toml="${repo}/.codex/agents/inherit-model.toml"
+toml="${codex_home}/agents/scout-agent.toml"
+inherit_toml="${codex_home}/agents/inherit-model.toml"
 
 it "Codex project template defines native subagent concurrency defaults"
 config="$(cat "${REPO_ROOT}/adapters/codex/template/config.toml")"
@@ -92,7 +96,7 @@ printf 'name = "local-custom"\n' > "${setup_repo}/.codex/agents/local-custom.tom
 printf '#!/usr/bin/env bash\nprintf "custom global hook\\n"\n' > "${ac_home}/hooks/custom-local-hook.sh"
 printf '#!/usr/bin/env bash\nprintf "stale hook should be refreshed\\n" >&2\nexit 97\n' > "${ac_home}/hooks/auto-issue-report.sh"
 chmod +x "${ac_home}/hooks/custom-local-hook.sh" "${ac_home}/hooks/auto-issue-report.sh"
-cat > "${setup_repo}/.codex/config.toml" <<'EOF'
+cat > "${codex_home}/config.toml" <<'EOF'
 model = "gpt-test"
 
 [mcp_servers.gitlab]
@@ -108,14 +112,16 @@ EOF
   git init -q
   AGENT_CREW_HOME="${ac_home}" \
   HOME="${tmp}/home" \
+  CODEX_HOME="${codex_home}" \
+  CLAUDE_DIR="${claude_dir}" \
   SOURCE_ROOT="${REPO_ROOT}" \
     bash "${REPO_ROOT}/adapters/codex/setup.sh" "${setup_repo}" >/dev/null
 )
-setup_out="$(cat "${setup_repo}/.codex/agents/scout-agent.toml")"
-setup_inherit_out="$(cat "${setup_repo}/.codex/agents/inherit-model.toml")"
-setup_config_out="$(cat "${setup_repo}/.codex/config.toml")"
-setup_hooks_out="$(cat "${setup_repo}/.codex/hooks.json")"
-setup_auto_issue_hook_out="$(cat "${setup_repo}/.codex/hooks/auto-issue-report.sh")"
+setup_out="$(cat "${codex_home}/agents/scout-agent.toml")"
+setup_inherit_out="$(cat "${codex_home}/agents/inherit-model.toml")"
+setup_config_out="$(cat "${codex_home}/config.toml")"
+setup_hooks_out="$(cat "${codex_home}/hooks.json")"
+setup_auto_issue_hook_out="$(cat "${ac_home}/hooks/auto-issue-report.sh")"
 
 it "Codex setup user-agent conversion omits reasoning_tier"
 assert_not_contains "${setup_out}" 'reasoning_tier ='
@@ -126,7 +132,7 @@ assert_contains "${setup_out}" 'model = "gpt-5.4-mini"'
 it "Codex setup user-agent conversion omits unsupported inherit model sentinel"
 assert_not_contains "${setup_inherit_out}" 'model = "inherit"'
 
-it "Codex setup preserves project-local custom TOML agents"
+it "Codex setup preserves project-local custom TOML agent overrides"
 assert_file_exists "${setup_repo}/.codex/agents/local-custom.toml"
 
 it "Codex setup preserves user-owned MCP server config entries"
@@ -140,13 +146,13 @@ assert_contains "${setup_config_out}" "max_threads = 6"
 assert_contains "${setup_config_out}" "max_depth = 1"
 
 it "Codex setup maps xhigh system agents to xhigh effort"
-assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model_reasoning_effort = "xhigh"'
+assert_contains "$(cat "${codex_home}/agents/analyst.toml")" 'model_reasoning_effort = "xhigh"'
 
 it "Codex setup maps xhigh system agents to Codex frontier model"
-assert_contains "$(cat "${setup_repo}/.codex/agents/analyst.toml")" 'model = "gpt-5.5"'
+assert_contains "$(cat "${codex_home}/agents/analyst.toml")" 'model = "gpt-5.5"'
 
-it "Codex setup installs tool-event-recorder hook file"
-assert_file_exists "${setup_repo}/.codex/hooks/tool-event-recorder.sh"
+it "Codex setup does not install project-local hook files"
+assert_file_absent "${setup_repo}/.codex/hooks/tool-event-recorder.sh"
 
 it "Codex setup installs PostToolUse dispatcher helper"
 assert_file_exists "${ac_home}/scripts/post-tool-use-dispatcher.py"
@@ -156,7 +162,7 @@ assert_contains "${setup_hooks_out}" "post-tool-use-dispatcher.sh" "hooks.json r
 assert_contains "${setup_hooks_out}" '"matcher": "*"' "hooks.json has PostToolUse dispatcher matcher"
 assert_contains "${setup_hooks_out}" '"PostToolUse"' "hooks.json has PostToolUse section"
 
-it "Codex setup refreshes project hooks from source checkout"
+it "Codex setup refreshes global hooks from source checkout"
 assert_not_contains "${setup_auto_issue_hook_out}" "stale hook should be refreshed"
 assert_contains "${setup_auto_issue_hook_out}" "Advisory hook wrapper"
 
@@ -164,13 +170,13 @@ it "Codex setup preserves custom global hooks while refreshing source hooks"
 assert_file_exists "${ac_home}/hooks/custom-local-hook.sh"
 
 it "Codex setup maps deep implementation agents to high effort"
-assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model_reasoning_effort = "high"'
+assert_contains "$(cat "${codex_home}/agents/backend.toml")" 'model_reasoning_effort = "high"'
 
 it "Codex setup maps deep implementation agents to Codex frontier model"
-assert_contains "$(cat "${setup_repo}/.codex/agents/backend.toml")" 'model = "gpt-5.5"'
+assert_contains "$(cat "${codex_home}/agents/backend.toml")" 'model = "gpt-5.5"'
 
 it "Codex setup does not install removed input normalizer agents"
-if [ -e "${setup_repo}/.codex/agents/input-normalizer.toml" ] || [ -e "${setup_repo}/.codex/agents/korean-normalizer.toml" ]; then
+if [ -e "${codex_home}/agents/input-normalizer.toml" ] || [ -e "${codex_home}/agents/korean-normalizer.toml" ]; then
   fail "normalizer agents should not be installed"
 fi
 
@@ -238,7 +244,7 @@ if missing:
 PYEOF
 assert_exit 0 $?
 
-system_toml="${setup_repo}/.codex/agents/supervisor.toml"
+system_toml="${codex_home}/agents/supervisor.toml"
 system_out="$(cat "${system_toml}")"
 
 it "Codex setup supervisor TOML delegates to canonical markdown"

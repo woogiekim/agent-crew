@@ -47,22 +47,13 @@ SESSION_FILE="${STATE_DIR}/session.json"
 CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
 ```
 
-### 1a. Report Project-Local Update Drift
+### 1a. Resolve Lazy Project State
 
-Before rendering the text snapshot, check whether the global installed assets
-were refreshed after this project's local adapter files. JSON output remains
-machine-readable and does not include this text warning.
-
-```bash
-python3 "${AGENT_CREW_HOME}/scripts/update-project-registry.py" \
-  --agent-crew-home "${AGENT_CREW_HOME}" \
-  check-stale \
-  --project-root "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" \
-  --format text || true
-```
-
-When stale, print one compact warning that points to `crew update` for the
-current project or `crew update --all-projects` for registered projects.
+Project setup is not required before status inspection. Resolve the current
+project's collision-safe state key and read runtime state under
+`${AGENT_CREW_HOME}/state/{PROJECT_STATE_KEY}`. Do not report project-local
+asset drift; global `crew update` owns machine-global commands, agents, skills,
+hooks, and adapters.
 
 ### 1b. Probe host capabilities (Layers 1–2 progressive adoption)
 

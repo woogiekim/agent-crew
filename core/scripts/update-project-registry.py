@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Track update scope and project-local freshness for agent-crew installs."""
+"""Track global update scope and legacy project registry entries."""
 
 from __future__ import annotations
 
@@ -133,13 +133,12 @@ def mark_project(args: argparse.Namespace) -> int:
     projects = as_dict(dict_value(registry, "projects", {}))
     timestamp = now_epoch()
     entry = project_entry(home, project_root, source_root, timestamp)
+    entry["mode"] = "legacy-project-marker"
     projects[project_key(project_root)] = entry
     registry["projects"] = projects
     write_json(registry_file, registry)
 
-    state_marker = Path(entry["state_dir"]) / "project-update.json"
-    write_json(state_marker, entry)
-    print(f"update_scope: project={project_root}")
+    print(f"update_scope: project={project_root} status=deprecated-global-only")
     return 0
 
 
@@ -210,28 +209,19 @@ def project_has_local_outputs(project_root: Path) -> bool:
 def stale_payload(agent_crew_home: Path, project_root: Path) -> dict[str, Any]:
     registry = read_json(registry_path(agent_crew_home))
     global_info = as_dict(dict_value(registry, "global", {}))
-    projects = as_dict(dict_value(registry, "projects", {}))
-    entry = as_dict(dict_value(projects, project_key(project_root), {}))
     global_epoch = int_value(global_info, "updated_at_epoch")
-    project_epoch = int_value(entry, "updated_at_epoch")
     status = "current"
-    reason = "project_local_update_current"
+    reason = "project_local_update_registry_deprecated"
     if global_epoch <= 0:
         status = "unknown"
         reason = "global_update_marker_missing"
-    if global_epoch > 0 and project_epoch <= 0 and project_has_local_outputs(project_root):
-        status = "stale"
-        reason = "project_update_marker_missing"
-    if global_epoch > project_epoch and project_epoch > 0:
-        status = "stale"
-        reason = "global_newer_than_project"
     return {
         "schema_version": 1,
         "status": status,
         "reason": reason,
         "project_root": str(project_root),
         "global_updated_at": iso_from_epoch(global_epoch),
-        "project_updated_at": iso_from_epoch(project_epoch),
+        "project_updated_at": "deprecated",
     }
 
 
@@ -242,12 +232,10 @@ def check_stale(args: argparse.Namespace) -> int:
     if args.format == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
-    if payload["status"] == "stale":
+    if payload["status"] == "unknown":
         print(
-            "WARNING: project-local agent-crew files may be stale; "
-            f"global update {payload['global_updated_at']} is newer than "
-            f"project update {payload['project_updated_at']} for {project_root}. "
-            "Run `crew update` in this project or `crew update --all-projects`."
+            "NOTICE: global agent-crew update marker is missing; "
+            "run `crew update` to refresh machine-global assets."
         )
     return 0
 

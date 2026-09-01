@@ -322,16 +322,6 @@ sync_source_hooks_if_drifted() {
         break 2
       fi
     done
-    if [ -d "${PROJECT_ROOT}/.agent-crew/hooks" ] \
-      && ! cmp -s "${hook}" "${PROJECT_ROOT}/.agent-crew/hooks/${base}" 2>/dev/null; then
-      drift=1
-      break
-    fi
-    if [ -d "${PROJECT_ROOT}/.codex/hooks" ] \
-      && ! cmp -s "${hook}" "${PROJECT_ROOT}/.codex/hooks/${base}" 2>/dev/null; then
-      drift=1
-      break
-    fi
   done
   [ "${drift}" = "1" ] || return 0
 
@@ -339,15 +329,6 @@ sync_source_hooks_if_drifted() {
   cp -f "${source_hooks}/"*.sh "${AGENT_CREW_HOME}/system/hooks/" 2>/dev/null || true
   cp -f "${source_hooks}/"*.sh "${AGENT_CREW_HOME}/hooks/" 2>/dev/null || true
   chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
-
-  if [ -d "${PROJECT_ROOT}/.agent-crew/hooks" ]; then
-    cp -f "${source_hooks}/"*.sh "${PROJECT_ROOT}/.agent-crew/hooks/" 2>/dev/null || true
-    chmod +x "${PROJECT_ROOT}/.agent-crew/hooks/"*.sh 2>/dev/null || true
-  fi
-  if [ -d "${PROJECT_ROOT}/.codex/hooks" ]; then
-    cp -f "${source_hooks}/"*.sh "${PROJECT_ROOT}/.codex/hooks/" 2>/dev/null || true
-    chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
-  fi
 
   printf 'crew: refreshed auto-route hooks from source checkout because installed hooks drifted\n' >&2
 }
@@ -435,12 +416,11 @@ cmd_setup() {
     local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
     require_file "${sync_script}" "local sync script"
     bash "${sync_script}" "${SOURCE_ROOT}" "${project}"
-    return
+    setup_script="${install_setup}"
   fi
 
   require_file "${setup_script}" "setup dispatcher"
   bash "${setup_script}" "${project}"
-  record_project_update_scope "${project}" "${SOURCE_ROOT}"
 }
 
 update_registry_script() {
@@ -456,96 +436,8 @@ update_registry_script() {
   return 1
 }
 
-record_project_update_scope() {
-  local project="$1"
-  local source="$2"
-  local registry
-  registry="$(update_registry_script 2>/dev/null || true)"
-  [ -n "${registry}" ] || return 0
-  python3 "${registry}" \
-    --agent-crew-home "${AGENT_CREW_HOME}" \
-    mark-project \
-    --source-root "${source}" \
-    --project-root "${project}" >/dev/null 2>&1 || true
-}
-
 print_update_stale_warning() {
-  local registry
-  registry="$(update_registry_script 2>/dev/null || true)"
-  [ -n "${registry}" ] || return 0
-  python3 "${registry}" \
-    --agent-crew-home "${AGENT_CREW_HOME}" \
-    check-stale \
-    --project-root "${PROJECT_ROOT}" \
-    --format text || true
-}
-
-update_registered_projects() {
-  local source="$1"
-  local current="$2"
-  local registry setup_script roots_file current_resolved project project_resolved
-  local global_codex_dir project_codex_dir
-  local total=0 refreshed=0 skipped=0 current_seen=0
-
-  registry="$(update_registry_script 2>/dev/null || true)"
-  [ -n "${registry}" ] || {
-    printf 'update_scope: all_projects=skipped reason=registry_script_missing\n'
-    return 0
-  }
-
-  setup_script="${AGENT_CREW_HOME}/system/setup/setup-host.sh"
-  [ -x "${setup_script}" ] || setup_script="${AGENT_CREW_HOME}/setup/setup-host.sh"
-  [ -x "${setup_script}" ] || {
-    printf 'update_scope: all_projects=skipped reason=setup_dispatcher_missing\n'
-    return 0
-  }
-
-  roots_file="$(mktemp)"
-  python3 "${registry}" \
-    --agent-crew-home "${AGENT_CREW_HOME}" \
-    list-projects > "${roots_file}" || true
-
-  current_resolved="$(cd "${current}" 2>/dev/null && pwd || printf '%s' "${current}")"
-  global_codex_dir="$(cd "${CODEX_HOME:-${HOME}/.codex}" 2>/dev/null && pwd || printf '%s' "${CODEX_HOME:-${HOME}/.codex}")"
-  while IFS= read -r project; do
-    [ -n "${project}" ] || continue
-    total=$((total + 1))
-    if [ ! -d "${project}" ]; then
-      printf 'update_scope: project=%s status=skipped reason=missing_path\n' "${project}"
-      skipped=$((skipped + 1))
-      continue
-    fi
-
-    project_resolved="$(cd "${project}" 2>/dev/null && pwd || printf '%s' "${project}")"
-    project_codex_dir="$(cd "${project_resolved}/.codex" 2>/dev/null && pwd || printf '%s' "${project_resolved}/.codex")"
-    if [ "${project_codex_dir}" = "${global_codex_dir}" ]; then
-      printf 'update_scope: project=%s status=skipped reason=codex_global_home_collision\n' "${project_resolved}"
-      skipped=$((skipped + 1))
-      continue
-    fi
-    if [ "${project_resolved}" = "${current_resolved}" ]; then
-      printf 'update_scope: project=%s status=already-refreshed\n' "${project_resolved}"
-      current_seen=1
-      continue
-    fi
-
-    printf 'update_scope: project=%s status=refreshing\n' "${project_resolved}"
-    SOURCE_ROOT="${source}" AGENT_CREW_MODE=update AGENT_CREW_PROJECT_LOCAL_ONLY=1 \
-      bash "${setup_script}" "${project_resolved}"
-    python3 "${registry}" \
-      --agent-crew-home "${AGENT_CREW_HOME}" \
-      mark-project \
-      --source-root "${source}" \
-      --project-root "${project_resolved}" >/dev/null 2>&1 || true
-    refreshed=$((refreshed + 1))
-  done < "${roots_file}"
-  rm -f "${roots_file}"
-
-  if [ "${current_seen}" = "0" ]; then
-    printf 'update_scope: project=%s status=already-refreshed\n' "${current_resolved}"
-  fi
-  printf 'update_scope: all_projects total=%s refreshed=%s skipped=%s\n' \
-    "${total}" "${refreshed}" "${skipped}"
+  return 0
 }
 
 cmd_status_json() {
@@ -687,7 +579,7 @@ EOF
   print_update_stale_warning
 
   if [ ! -d "${STATE_DIR}/tasks" ]; then
-    printf 'No tasks found. Run crew setup first, then use crew:run in your host runtime.\n'
+    printf 'No tasks found. Use crew run in your host runtime to create the first task.\n'
     return 0
   fi
 
@@ -718,7 +610,7 @@ EOF
   require_file "${telemetry}" "telemetry aggregator"
 
   if [ ! -d "${STATE_DIR}/tasks" ]; then
-    printf 'No tasks found. Run crew setup first, then use crew run in your host runtime.\n'
+    printf 'No tasks found. Use crew run in your host runtime to create the first task.\n'
     return 0
   fi
 
@@ -1075,7 +967,7 @@ def missing_required_markers(task_dir):
     return [name for name in required if not (task_dir / name).is_file()]
 
 if not tasks_root.is_dir():
-    print("No tasks found. Run crew setup first, then use crew run in your host runtime.")
+    print("No tasks found. Use crew run in your host runtime to create the first task.")
     raise SystemExit(0)
 
 if requested:
@@ -1223,9 +1115,9 @@ Default update mode clones origin/main into a fresh temporary checkout and
 refreshes the install from that source. Use --local to deterministically refresh
 from an existing local checkout.
 
-By default, project-local adapter files are refreshed only for the current
-project. Use --all-projects to refresh registered project-local adapter files
-after the global install has been updated.
+Updates are global-only: installed source assets and host-global adapter paths
+are refreshed once. Project-local mirrors are not refreshed. --all-projects is
+accepted for compatibility and prints a deprecation notice.
 
 Use --reconcile-skills to write advisory diffs for user skill overrides after
 the standard refresh. It never overwrites ~/.agent-crew/user/skills.
@@ -1265,7 +1157,7 @@ EOF
       require_file "${sync_script}" "local sync script"
       bash "${sync_script}" "${refresh_source}" "${PROJECT_ROOT}"
       if [ "${all_projects}" = "1" ]; then
-        update_registered_projects "${refresh_source}" "${PROJECT_ROOT}"
+        printf 'crew update: --all-projects is deprecated; update is global-only and does not refresh project-local mirrors.\n'
       fi
       if [ "${reconcile_skills}" = "1" ]; then
         run_skill_reconcile
@@ -1287,7 +1179,7 @@ EOF
   require_file "${sync_script}" "remote local sync script"
   bash "${sync_script}" "${work_dir}" "${PROJECT_ROOT}"
   if [ "${all_projects}" = "1" ]; then
-    update_registered_projects "${work_dir}" "${PROJECT_ROOT}"
+    printf 'crew update: --all-projects is deprecated; update is global-only and does not refresh project-local mirrors.\n'
   fi
   if [ "${reconcile_skills}" = "1" ]; then
     run_skill_reconcile

@@ -1,11 +1,11 @@
-# crew:update - Refresh installed agent-crew assets from source repo
+# crew:update - Refresh global installed agent-crew assets from source repo
 
 ## Purpose
 
-`crew:update` re-runs the host adapter installation against the current
-source repository to refresh installed agents, hooks, rules, policies, commands,
-skills, and adapter scripts under `~/.agent-crew/` and the host-specific
-location (e.g. `~/.claude/agent-crew/` for the Claude adapter).
+`crew:update` is a global-only refresh. It refreshes installed agents, hooks,
+rules, policies, commands, skills, adapter scripts, and host-global adapter
+outputs under `~/.agent-crew/`, `~/.codex/`, and `~/.claude/` when those host
+locations are available. It does not refresh project-local mirrors.
 
 It complements `crew:setup`:
 
@@ -17,12 +17,15 @@ It complements `crew:setup`:
 Unlike `crew:setup`, this command:
 
 - Never prompts to reset per-project state under `~/.agent-crew/state/`.
-- Never deletes extraneous files at the install destination.
-- Uses `cp -f` (Bash) for all file content updates, guaranteeing byte-for-byte
-  replacement of installed files with source content.
-- Is idempotent: re-running with no source changes produces identical installed
-  files — `cp -f` always overwrites destination with source, so a second run
-  leaves files byte-for-byte identical to their source counterparts.
+- Removes only ownership-known stale managed files at install destinations;
+  unknown/custom files are preserved.
+- Uses ownership-aware copy/merge behavior: plain managed file-copy categories
+  use `cp -f`/`cp -rf`, while user-owned global host files such as Codex
+  `hooks.json`, `config.toml`, and `agents/*.toml` are merged or pruned only
+  with explicit agent-crew ownership evidence.
+- Is idempotent: re-running with no source changes leaves managed copy targets
+  byte-for-byte identical to source and leaves preserved user-owned merge
+  content stable.
 - Does not alter `~/.claude/settings.json` hook configuration beyond what
   the original `install.sh` already does (it reuses the same marker-merge
   logic).
@@ -33,7 +36,7 @@ Unlike `crew:setup`, this command:
 |---|---|---|
 | none | — | `crew:update` always refreshes from the remote source repository. |
 | `--local [SOURCE_ROOT]` | — | Refresh from an existing local checkout instead of a fresh remote clone. |
-| `--all-projects` | off | After the global install and current project refresh, re-run project-local adapter setup for every registered project root. |
+| `--all-projects` | deprecated no-op | Accepted for compatibility. Prints a deprecation notice because update is now global-only and does not refresh project-local mirrors. |
 | `--reconcile-skills` | off | After the standard refresh, write unified diffs for user skill overrides that diverge from the refreshed system skill to `${STATE_DIR}/reconcile/<name>.diff`. NEVER mutates `~/.agent-crew/user/skills/`. The user reads each diff out-of-band and decides whether to hand-merge. |
 
 ## State Paths
@@ -68,14 +71,15 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
 ## Execution
 
-1. For each file category below, use Bash `cp -f` (or `cp -rf`) to copy all
-   source files to the destination. This guarantees byte-for-byte replacement
-   regardless of what was previously installed — the destination always matches
-   the source exactly after the copy.
+1. For plain managed file-copy categories below, use Bash `cp -f` (or
+   `cp -rf`) to copy source files to the destination. These categories are
+   byte-for-byte replaced. Categories that share a user-owned host file use
+   the ownership-aware merge rules called out in their sections instead of
+   replacing the whole destination.
 
    Bash is used for all file operations:
    - `mkdir -p` (create destination directories)
-   - `cp -f` / `cp -rf` (copy files — overwrites destination unconditionally)
+   - `cp -f` / `cp -rf` (copy managed file categories)
    - `chmod +x` (make shell scripts executable)
    - `settings.json` hook registration (python3 merge helpers from `install.sh`)
 
@@ -121,11 +125,10 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    chmod +x "${DEST_DIR}/"*.sh 2>/dev/null || true
    ```
 
-   Do NOT use the Read/Write/Edit tools for file copying. Those tools perform
-   diff-based or content-augmenting operations that can preserve or add
-   destination content not present in the source, breaking idempotency.
-   `cp -f` / `cp -rf` unconditionally replaces the destination with the source
-   byte-for-byte.
+   Do NOT use the Read/Write/Edit tools for plain file copying. Those tools
+   perform diff-based or content-augmenting operations that can preserve or add
+   destination content not present in the source, breaking copy-target
+   idempotency. Use dedicated merge helpers for shared user-owned host files.
 
    **Agent layer enforcement** (use Bash, not Read/Write):
 
@@ -401,7 +404,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    > database is clean and future runs of `ingest-claude-md` are content-hash
    > no-ops for unchanged memory files.
 
-2. Refresh adapter paths in two phases (P5 split):
+2. Refresh global adapter paths:
 
    Before adapter-specific paths are refreshed, `update-global-adapters.sh`
    also copies `core/hooks/*.sh` into both `${AGENT_CREW_HOME}/system/hooks/`
@@ -409,13 +412,16 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    stale `auto-route.sh` copies must not keep emitting old STOP/ROUTE guidance
    after source fixes have landed.
 
-   **(a) Global-scope update** — runs all installed global-scope adapters
-   (Claude `~/.claude/agent-crew/`, Codex `~/.codex/skills/crew:<intent>/` and
-   the internal agent-crew guide mirror at `~/.codex/agent-crew/skills/`)
-   without requiring PROJECT_ROOT context. The mirror is not the native Codex
-   skill directory; native Codex skills live under `~/.codex/skills/`.
-   Only adapters whose installation directory already exists on this machine
-   are updated (installation-presence guard):
+   Global-scope update refreshes installed host-global outputs without
+   materializing project-local mirrors. Ownership-aware pruning removes
+   known stale managed agent-crew files while preserving unknown/custom global
+   Codex TOMLs, hook registrations, top-level hook settings, and config keys.
+   Claude compatibility assets under
+   `~/.claude/agent-crew/`, native Codex skills live under `~/.codex/skills/`,
+   the internal agent-crew guide mirror at `~/.codex/agent-crew/skills/`
+   is not the native Codex skill directory, Codex global agents under
+   `~/.codex/agents/`, and Codex global hooks/config under `~/.codex/` are
+   updated from the refreshed system source:
 
    ```bash
    AGENT_CREW_MODE=update SOURCE_ROOT="${SOURCE_ROOT}" \
@@ -439,76 +445,19 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    Claude adapter and overwriting the current project's active-host
    `capabilities.json`.
 
-4. **Project-local update** — re-runs the detected host adapter for the
-   current project so project-local files are also refreshed. The default
-   project-local scope is intentionally current-project only. This step runs
-   after the global `install.sh` pass so the final
-   `${STATE_DIR}/capabilities.json` belongs to the active project host, not to
-   the Claude compatibility layer. The fan-out loop in `setup-host.sh` runs all
-   detected+installed adapters in sequence instead of stopping at the first
-   match (P1 fix):
-
-   ```bash
-   PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-   AGENT_CREW_MODE=update \
-     bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
-   ```
-
-   The native CLI records scope markers through
-   `core/scripts/update-project-registry.py` and prints explicit scope lines:
+4. **Project-local update removed** — `crew:update` no longer re-runs
+   `setup-host.sh` for the current project or for registered projects. Public
+   command compatibility keeps `--all-projects` as a deprecated no-op so older
+   scripts fail softly, but the command prints:
 
    ```text
-   update_scope: global=/Users/me/.agent-crew source=/tmp/agent-crew
-   update_scope: project=/path/to/current-project
-   update_scope: default_project_scope=current-only
-   update_scope: all_projects_hint=crew update --all-projects
+   crew update: --all-projects is deprecated; update is global-only and does not refresh project-local mirrors.
    ```
 
-4b. **Optional registered-project fan-out (`--all-projects`)** — after the
-    global install and current project have been refreshed, enumerate registered
-    project roots from `${UPDATE_REGISTRY}` plus task-state `project-root.txt`
-    fallbacks. For each existing project root other than the already-refreshed
-    current project, run the adapter in project-local-only mode:
-
-   ```bash
-   SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update AGENT_CREW_PROJECT_LOCAL_ONLY=1 \
-     bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${REGISTERED_PROJECT_ROOT}"
-   ```
-
-   This is the provider-neutral asset reference policy for registered-project
-   fan-out. The global/user installation under `~/.agent-crew/**` is refreshed
-   once before fan-out. Each registered project then receives only the minimum
-   project-local adapter refresh needed for that host.
-
-   same-name agent files are not auto-selected by fixed
-   `project > user > system` precedence. Discovery mirrors preserve the already-materialized
-   candidate and warn on project/user/system name conflicts; `crew agent`
-   presents candidate labels, paths, scopes, descriptions, mtimes, and
-   fingerprints so the user can choose a one-shot or saved project decision.
-
-   - Project-owned directories such as `.agent-crew/project/commands`,
-     `.agent-crew/project/agents`, and `.agent-crew/project/skills` are created
-     as local candidate layers and are never replaced with symlinks. Command and
-     skill project directories are reserved override surfaces until an adapter
-     explicitly wires them into its runtime discovery.
-   - Shared read-mostly asset directories may use symlinks or reference links
-     into `~/.agent-crew/**` when the target does not already exist.
-   - If symlink creation is unavailable, or if the target is already a
-     project-owned directory, the adapter uses symlink fallback copy semantics
-     for project-owned paths. Managed mirror paths such as `.codex/hooks` use
-     prune fallback semantics so removed framework assets do not linger.
-   - `AGENTS.md`, `CLAUDE.md`, provider settings files, and other marker-merged
-     instruction/configuration files must not be symlinked because project-local
-     content and managed blocks need to coexist in one file.
-
-   Missing paths are skipped and reported. The summary uses deterministic
-   `update_scope:` lines, for example:
-
-   ```text
-   update_scope: project=/path/to/project-b status=refreshing
-   update_scope: project=/path/to/project-a status=already-refreshed
-   update_scope: all_projects total=2 refreshed=1 skipped=0
-   ```
+   project overrides remain project-owned files. Existing `.agent-crew/`,
+   `.codex/`, `AGENTS.md`, or `CLAUDE.md` content is not deleted, refreshed, or
+   reclassified during update. A future migration helper may inventory those
+   paths in dry-run mode, but cleanup requires a separate explicit request.
 
 5. **Sync host AI instruction files from mnemos (Phase L17).** Before the
    asset refresh and adapter re-run, reconcile the runtime command-surface
@@ -551,15 +500,16 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 - Existing task state under `${AGENT_CREW_HOME}/state/*/tasks/` is never reset.
   Updates write only additive operational metadata:
   `${AGENT_CREW_HOME}/state/update-registry.json`,
-  `${STATE_DIR}/project-update.json`, preservation manifests, fingerprints, and
-  integrity manifests.
+  preservation manifests, fingerprints, and integrity manifests. Legacy
+  `${STATE_DIR}/project-update.json` files may still be read for migration, but
+  normal update no longer writes project-local freshness markers.
 - The state directory marker file `${STATE_DIR}/tasks/active` (if present
   from an in-flight crew task) is preserved.
-- `cp -f` guarantees byte-for-byte replacement: a second `crew:update` run
-  with no source changes produces installed files that are always identical
-  to source. Unlike Read/Write/Edit tools (which perform diff-based or
-  content-augmenting operations), `cp -f` unconditionally overwrites the
-  destination — installed files can never be larger than source.
+- Plain managed copy targets are byte-for-byte replaced: a second
+  `crew:update` run with no source changes keeps those installed files
+  identical to source. Shared user-owned host files are not whole-file
+  replaced; they use ownership-aware merge/prune helpers that preserve
+  unrelated content and fail closed when ownership or schema is unknown.
 - Any locally-created custom agents at `~/.agent-crew/user/agents/` are
   preserved — `sync_system_agents` and `merge_agents_to_discovery` only
   operate on the `system/agents/` layer.
@@ -1083,13 +1033,15 @@ produce installed agent files larger than the source (observed: `supervisor-retr
 and `supervisor-stages.md` contained fan-out prerequisite content added by a prior
 Edit-based update run).
 
-**Fix.** Step 3 now instructs the AI to use `cp -f` / `cp -rf` (Bash) for all file
-categories. `cp -f` unconditionally replaces the destination with the source byte-for-byte,
-so every `crew:update` run leaves installed files identical to their source counterparts.
-The Read/Write/Edit tools are explicitly forbidden for file-copying operations.
+**Fix.** Step 3 now instructs the AI to use `cp -f` / `cp -rf` (Bash) for plain
+managed file-copy categories. `cp -f` unconditionally replaces those destinations
+with source byte-for-byte, while user-owned host files use dedicated merge
+helpers. The Read/Write/Edit tools are explicitly forbidden for file-copying
+operations.
 
-**Safety Guarantees updated.** The idempotency guarantee in § Safety Guarantees is now
-stated precisely: a second run always produces files byte-for-byte identical to source.
+**Safety Guarantees updated.** The idempotency guarantee in § Safety Guarantees is
+now stated precisely: a second run keeps managed copy targets byte-for-byte
+identical to source and keeps ownership-aware merge results stable.
 
 **No migration code required.** This is a fix to the update procedure itself, not a
 schema or file-structure change. Existing installations that ran the old Edit-based step

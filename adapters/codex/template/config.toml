@@ -1,4 +1,4 @@
-# Codex project-local subagent defaults.
+# Codex machine-global subagent defaults.
 #
 # Official Codex subagent guidance recommends keeping direct-child delegation
 # enabled while avoiding recursive fan-out unless explicitly needed.

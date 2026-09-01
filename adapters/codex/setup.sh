@@ -48,109 +48,172 @@ write_codex_hooks_json() {
 
   python3 - "$dest" "$agent_crew_home" <<'PYEOF'
 import json
+import shlex
 import sys
 from pathlib import Path
 
 dest = Path(sys.argv[1])
 home = Path(sys.argv[2]).expanduser()
-settings = {
-    "hooks": {
+managed_names = {
+    "guard-dangerous-commands.sh",
+    "tracker-mutation-guard.sh",
+    "context-guard.sh",
+    "direct-edit-guard.sh",
+    "post-tool-use-dispatcher.sh",
+    "auto-issue-report.sh",
+    "auto-route.sh",
+}
+managed_paths = {str(home / "hooks" / name) for name in managed_names}
+
+
+def required_hooks():
+    return {
         "PreToolUse": [
             {
                 "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/guard-dangerous-commands.sh'",
-                        "timeout": 10,
-                    }
-                ],
+                "hooks": [{"type": "command", "command": f"bash '{home}/hooks/guard-dangerous-commands.sh'", "timeout": 10}],
             },
             {
                 "matcher": "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane__create_label|mcp__plane__create_work_item_comment|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item|mcp__plane.create_label|mcp__plane.create_work_item_comment",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/tracker-mutation-guard.sh'",
-                        "timeout": 10,
-                    }
-                ],
+                "hooks": [{"type": "command", "command": f"bash '{home}/hooks/tracker-mutation-guard.sh'", "timeout": 10}],
             },
             {
                 "matcher": "Agent",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/context-guard.sh'",
-                        "timeout": 10,
-                    }
-                ],
+                "hooks": [{"type": "command", "command": f"bash '{home}/hooks/context-guard.sh'", "timeout": 10}],
             },
             {
                 "matcher": "Edit|Write|MultiEdit|apply_patch",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/direct-edit-guard.sh'",
-                        "timeout": 10,
-                    }
-                ],
+                "hooks": [{"type": "command", "command": f"bash '{home}/hooks/direct-edit-guard.sh'", "timeout": 10}],
             },
         ],
         "PostToolUse": [
             {
                 "matcher": "*",
-                "hooks": [
-                    {
-                        "type": "command",
-                        # Single-read spool dispatcher. It preserves the exact
-                        # PostToolUse payload on disk, records latency-critical
-                        # evidence inline, and moves heavyweight reporting or
-                        # learning checks off the synchronous response path.
-                        "command": f"bash '{home}/hooks/post-tool-use-dispatcher.sh'",
-                        "timeout": 15,
-                    }
-                ],
+                "hooks": [{"type": "command", "command": f"bash '{home}/hooks/post-tool-use-dispatcher.sh'", "timeout": 15}],
             },
         ],
         "UserPromptSubmit": [
             {
                 "hooks": [
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/auto-issue-report.sh'",
-                        "timeout": 10,
-                    },
-                    {
-                        "type": "command",
-                        "command": f"bash '{home}/hooks/auto-route.sh'",
-                        "timeout": 15,
-                    }
+                    {"type": "command", "command": f"bash '{home}/hooks/auto-issue-report.sh'", "timeout": 10},
+                    {"type": "command", "command": f"bash '{home}/hooks/auto-route.sh'", "timeout": 15},
                 ]
             }
         ],
     }
-}
+
+
+def read_existing():
+    if not dest.exists():
+        return {}
+    try:
+        data = json.loads(dest.read_text(encoding="utf-8"))
+    except Exception:
+        print(
+            f"[codex setup] ERROR: Refusing to overwrite non-object or malformed Codex hooks.json: {dest}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print(
+            f"[codex setup] ERROR: Refusing to overwrite non-object or malformed Codex hooks.json: {dest}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return data
+
+
+def refuse_unsupported_schema(detail):
+    print(
+        f"[codex setup] ERROR: Refusing to overwrite unsupported Codex hooks.json schema: {dest} ({detail})",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def is_managed_hook(hook):
+    if not isinstance(hook, dict):
+        return False
+    command = str(hook.get("command") or "")
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+
+    return any(token in managed_paths for token in tokens)
+
+
+def validate_required_event_schema(data, required):
+    hooks = data.get("hooks")
+    if hooks is None:
+        return
+    if not isinstance(hooks, dict):
+        refuse_unsupported_schema("hooks must be an object")
+
+    for event in required:
+        if event not in hooks:
+            continue
+        blocks = hooks[event]
+        if not isinstance(blocks, list):
+            refuse_unsupported_schema(f"hooks.{event} must be a list")
+        for block_index, block in enumerate(blocks):
+            if not isinstance(block, dict):
+                refuse_unsupported_schema(f"hooks.{event}[{block_index}] must be an object")
+            block_hooks = block.get("hooks")
+            if not isinstance(block_hooks, list):
+                refuse_unsupported_schema(f"hooks.{event}[{block_index}].hooks must be a list")
+            for hook_index, hook in enumerate(block_hooks):
+                if not isinstance(hook, dict):
+                    refuse_unsupported_schema(
+                        f"hooks.{event}[{block_index}].hooks[{hook_index}] must be an object"
+                    )
+
+
+def prune_managed_hooks(data):
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        if hooks is None:
+            data["hooks"] = {}
+            return data
+        refuse_unsupported_schema("hooks must be an object")
+
+    for event, blocks in list(hooks.items()):
+        if not isinstance(blocks, list):
+            continue
+        retained_blocks = []
+        for block in blocks:
+            if not isinstance(block, dict):
+                retained_blocks.append(block)
+                continue
+            block_hooks = block.get("hooks")
+            if not isinstance(block_hooks, list):
+                retained_blocks.append(block)
+                continue
+            next_hooks = [hook for hook in block_hooks if not is_managed_hook(hook)]
+            if next_hooks:
+                next_block = dict(block)
+                next_block["hooks"] = next_hooks
+                retained_blocks.append(next_block)
+        hooks[event] = retained_blocks
+    return data
+
+
+required = required_hooks()
+settings = read_existing()
+validate_required_event_schema(settings, required)
+settings = prune_managed_hooks(settings)
+hooks = settings.setdefault("hooks", {})
+for event, blocks in required.items():
+    current = hooks.setdefault(event, [])
+    if not isinstance(current, list):
+        refuse_unsupported_schema(f"hooks.{event} must be a list")
+    current.extend(blocks)
 dest.parent.mkdir(parents=True, exist_ok=True)
 content = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
 if not dest.exists() or dest.read_text(encoding="utf-8") != content:
     dest.write_text(content, encoding="utf-8")
 PYEOF
-}
-
-prune_codex_global_hooks_json() {
-  local pruner="${AGENT_CREW_HOME}/scripts/prune-codex-global-hooks.py"
-  if [ ! -f "${pruner}" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -f "${SOURCE_ROOT}/core/scripts/prune-codex-global-hooks.py" ]; then
-    pruner="${SOURCE_ROOT}/core/scripts/prune-codex-global-hooks.py"
-  fi
-
-  [ -f "${pruner}" ] || return 0
-
-  python3 "${pruner}" \
-    --global-hooks "${CODEX_HOME}/hooks.json" \
-    --project-hooks "${PROJECT_ROOT}/.codex/hooks.json" \
-    --agent-crew-home "${AGENT_CREW_HOME}" \
-    --format text || true
 }
 
 merge_codex_config_toml() {
@@ -205,8 +268,21 @@ def managed_section(template: str, header: str) -> list[str]:
     return lines[start:end]
 
 
+def assignment_key(line: str):
+    code = line.split("#", 1)[0]
+    if "=" not in code:
+        return None
+    key = code.split("=", 1)[0].strip()
+    return key or None
+
+
 template = src.read_text(encoding="utf-8")
 managed_agents = managed_section(template, "agents")
+managed_assignments = {}
+for line in managed_agents[1:]:
+    key = assignment_key(line)
+    if key:
+        managed_assignments[key] = line
 
 if not dest.exists():
     output = template
@@ -220,7 +296,20 @@ else:
         merged.extend(managed_agents)
     else:
         start, end = bounds
-        merged = existing[:start] + managed_agents + existing[end:]
+        seen = set()
+        section = existing[start:end]
+        merged_section = section[:1]
+        for line in section[1:]:
+            key = assignment_key(line)
+            if key in managed_assignments:
+                merged_section.append(managed_assignments[key])
+                seen.add(key)
+            else:
+                merged_section.append(line)
+        for key, line in managed_assignments.items():
+            if key not in seen:
+                merged_section.append(line)
+        merged = existing[:start] + merged_section + existing[end:]
 
     output = "\n".join(merged).rstrip("\n") + "\n"
 
@@ -231,7 +320,7 @@ PYEOF
 
 sync_codex_template_static() {
   local src="${AGENT_CREW_HOME}/adapters/codex/template"
-  local dest="${PROJECT_ROOT}/.codex"
+  local dest="${CODEX_HOME}"
   [ -d "${src}" ] || return 0
   mkdir -p "${dest}"
 
@@ -286,7 +375,7 @@ install_codex_skills() {
 
 install_system_agents_codex() {
   local system_agents_dir="${AGENT_CREW_HOME}/system/agents"
-  local dest_dir="${PROJECT_ROOT}/.codex/agents"
+  local dest_dir="${CODEX_HOME}/agents"
   local generator=""
 
   [ -d "${system_agents_dir}" ] || return 0
@@ -346,29 +435,12 @@ if user_agents_dir.is_dir():
 
 allowed = system_names | user_names
 system_marker = "This is a Codex adapter bootstrap for the agent-crew system agent."
-legacy_system_names = {
-    "analyst.toml",
-    "backend.toml",
-    "designer.toml",
-    "devops.toml",
-    "documenter.toml",
-    "frontend.toml",
-    "historian.toml",
-    "issuer.toml",
-    "learning-mentor.toml",
-    "mentor.toml",
-    "planner.toml",
-    "requirements.toml",
-    "resolver.toml",
-    "reviewer.toml",
-    "supervisor.toml",
-    "test-writer.toml",
-}
+legacy_system_marker = "Agent-crew system agent:"
 for dest_path in sorted(dest_dir.glob("*.toml")):
     if dest_path.name in allowed:
         continue
     text = dest_path.read_text(encoding="utf-8", errors="replace")
-    is_managed_system_agent = system_marker in text or dest_path.name in legacy_system_names
+    is_managed_system_agent = system_marker in text or legacy_system_marker in text
     if is_managed_system_agent:
         print(f"[install_system_agents_codex] Removing stale Codex agent: {dest_path.name}")
         dest_path.unlink()
@@ -383,7 +455,7 @@ for src_path in sorted(tmp_agents.glob("*.toml")):
         is_managed_bootstrap = system_marker in dest_text or "Agent-crew system agent:" in dest_text
         if not is_managed_bootstrap:
             print(
-                f"[install_system_agents_codex] WARNING: {dest_path.name} exists in project .codex/agents and generated system agents; not auto-selected.",
+                f"[install_system_agents_codex] WARNING: {dest_path.name} exists in global Codex agents and generated system agents; not auto-selected.",
                 file=sys.stderr,
             )
             continue
@@ -407,14 +479,14 @@ PYEOF
 #   developer_instructions = """<full markdown body after frontmatter>"""
 #   name                   = "<agent name>"
 #
-# Output path: ${PROJECT_ROOT}/.codex/agents/<name>.toml
+# Output path: ${CODEX_HOME}/agents/<name>.toml
 # Idempotent for generated TOML: managed user-agent TOMLs are refreshed on each
 # setup/update run, and legacy generated TOMLs are upgraded to managed format.
 # Project-owned same-name TOMLs are preserved and reported as skipped instead
 # of being silently overwritten.
 install_user_agents_codex() {
   local user_agents_dir="${AGENT_CREW_HOME}/user/agents"
-  local dest_dir="${PROJECT_ROOT}/.codex/agents"
+  local dest_dir="${CODEX_HOME}/agents"
 
   [ -d "${user_agents_dir}" ] || return 0
   mkdir -p "${dest_dir}"
@@ -564,7 +636,7 @@ for fname in sorted(os.listdir(user_agents_dir)):
                 current = f.read()
         if current != toml_content:
             if current and not is_managed_user_toml(current, managed_user_marker, legacy_toml_content):
-                skipped.append(f'{fname}: {toml_name}.toml exists in project .codex/agents and generated user agents; not auto-selected')
+                skipped.append(f'{fname}: {toml_name}.toml exists in global Codex agents and generated user agents; not auto-selected')
                 continue
             with open(dest_path, 'w', encoding='utf-8') as f:
                 f.write(toml_content)
@@ -593,25 +665,16 @@ fi
 # agents may still provide explicit `model`, `model_reasoning_effort`, and
 # `sandbox_mode` keys in frontmatter. See core/rules/capabilities/reasoning-tier.md.
 
-PROJECT_CODEX_DIR="$(cd "${PROJECT_ROOT}/.codex" 2>/dev/null && pwd || printf '%s' "${PROJECT_ROOT}/.codex")"
-GLOBAL_CODEX_DIR="$(cd "${CODEX_HOME}" 2>/dev/null && pwd || printf '%s' "${CODEX_HOME}")"
-CODEX_GLOBAL_HOME_COLLISION=0
-if [ "${PROJECT_CODEX_DIR}" = "${GLOBAL_CODEX_DIR}" ]; then
-  CODEX_GLOBAL_HOME_COLLISION=1
-  printf 'codex_project_hooks: skipped reason=codex_global_home_collision project=%s\n' "${PROJECT_ROOT}"
-else
-  if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
-    diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
-    diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks"
-    chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
-  fi
-  if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
-    diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
-    diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/scripts"
-    chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/"*.py 2>/dev/null || true
-    chmod +x "${AGENT_CREW_HOME}/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.py 2>/dev/null || true
-  fi
-  link_or_copy_shared_dir "${AGENT_CREW_HOME}/hooks" "${PROJECT_ROOT}/.codex/hooks" "codex-hooks" prune
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
+  diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
+  diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks"
+  chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
+fi
+if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
+  diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
+  diff_install "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/scripts"
+  chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/"*.py 2>/dev/null || true
+  chmod +x "${AGENT_CREW_HOME}/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.py 2>/dev/null || true
 fi
 
 # Detect old flat layout and safely clean managed duplicates.
@@ -627,13 +690,10 @@ if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -d "${AGENT_CREW_HOME}/agen
     "${AGENT_CREW_HOME}/user/agents" \
     "mcp-manager.md"
 fi
-if [ "${CODEX_GLOBAL_HOME_COLLISION}" = "0" ]; then
-  chmod +x "${PROJECT_ROOT}/.codex/hooks/"*.sh 2>/dev/null || true
-  copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${PROJECT_ROOT}/.codex/invocation.md"
-  write_codex_hooks_json "${PROJECT_ROOT}/.codex/hooks.json" "${AGENT_CREW_HOME}"
-fi
 if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
-  prune_codex_global_hooks_json
+  mkdir -p "${CODEX_HOME}"
+  copy_file_if_changed "${AGENT_CREW_HOME}/adapters/codex/invocation.md" "${CODEX_HOME}/agent-crew/invocation.md"
+  write_codex_hooks_json "${CODEX_HOME}/hooks.json" "${AGENT_CREW_HOME}"
   install_codex_skills
 fi
 install_system_agents_codex
@@ -678,12 +738,9 @@ if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ]; then
   sync_dir_contents_prune "${AGENT_CREW_HOME}/skills" "${CODEX_HOME}/agent-crew/skills"
 fi
 
-merge_agent_crew_section "${AGENT_CREW_HOME}/AGENTS.md" "${PROJECT_ROOT}/AGENTS.md"
-register_local_git_excludes "${PROJECT_ROOT}" ".codex/" "AGENTS.md"
-
 # Write host capability flags so the core pipeline can read them at Phase 0.
-# Codex project setup installs native subagent TOMLs and project-local
-# `.codex/config.toml`, but the runtime capability flags below describe what
+# Codex setup installs native command skills, agents, hooks, and config in the
+# Codex global home. The runtime capability flags below describe what
 # agent-crew can call directly from its provider-neutral workflow. Tool-backed
 # Codex sessions may not expose a callable background subagent or task lifecycle
 # surface to agent-crew, so these flags remain false until that surface is
@@ -723,6 +780,6 @@ CAPS_EOF
 fi
 
 printf 'HOST: codex\n'
-printf 'INSTALLED: %s\n' "${PROJECT_ROOT}/.codex"
+printf 'INSTALLED: %s\n' "${CODEX_HOME}"
 printf 'CAPABILITIES: %s\n' "${CAPABILITIES_FILE}"
 run_codex_shell_startup_preflight

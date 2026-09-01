@@ -121,18 +121,18 @@ path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(registry), encoding="utf-8")
 PYEOF
 
-it "crew status warns when project-local update marker is stale"
+it "crew status ignores legacy project-local update marker drift"
 out=$(AGENT_CREW_HOME="${STALE_HOME}" PROJECT_ROOT="${STALE_PROJECT}" bash "${CREW}" status 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "WARNING: project-local agent-crew files may be stale"
-assert_contains "${out}" "crew update --all-projects"
+assert_not_contains "${out}" "WARNING: project-local agent-crew files may be stale"
+assert_not_contains "${out}" "crew update --all-projects"
 
-it "crew run warns when project-local update marker is stale"
+it "crew run ignores legacy project-local update marker drift"
 out=$(AGENT_CREW_HOME="${STALE_HOME}" PROJECT_ROOT="${STALE_PROJECT}" bash "${CREW}" run "read stale warning" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "WARNING: project-local agent-crew files may be stale"
+assert_not_contains "${out}" "WARNING: project-local agent-crew files may be stale"
 
 it "crew telemetry exits 0 with empty task directory"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" telemetry 2>&1)
@@ -389,18 +389,18 @@ SETUP_CODEX_HOME=$(make_tmp)
 SETUP_CLAUDE_DIR=$(make_tmp)
 
 it "crew setup bootstraps an empty AGENT_CREW_HOME from source checkout"
-out=$(AGENT_CREW_HOME="${SETUP_HOME}" CODEX_HOME="${SETUP_CODEX_HOME}" CLAUDE_DIR="${SETUP_CLAUDE_DIR}" PROJECT_ROOT="${SETUP_PROJECT}" bash "${CREW}" setup "${SETUP_PROJECT}" 2>&1)
+out=$(HOME="${SETUP_HOME}" AGENT_CREW_HOST=codex AGENT_CREW_HOME="${SETUP_HOME}/.agent-crew" CODEX_HOME="${SETUP_CODEX_HOME}" CLAUDE_DIR="${SETUP_CLAUDE_DIR}" PROJECT_ROOT="${SETUP_PROJECT}" bash "${CREW}" setup "${SETUP_PROJECT}" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
 it "crew setup bootstrap installs setup dispatcher"
-assert_file_exists "${SETUP_HOME}/setup/setup-host.sh"
+assert_file_exists "${SETUP_HOME}/.agent-crew/setup/setup-host.sh"
 
 it "crew setup bootstrap installs agent skills"
-assert_file_exists "${SETUP_HOME}/system/agents/skills/tdd.md"
+assert_file_exists "${SETUP_HOME}/.agent-crew/system/agents/skills/tdd.md"
 
 it "crew setup bootstrap initializes project capabilities"
-SETUP_STATE="$(project_state_dir "${SETUP_HOME}" "${SETUP_PROJECT}")"
+SETUP_STATE="$(project_state_dir "${SETUP_HOME}/.agent-crew" "${SETUP_PROJECT}")"
 assert_file_exists "${SETUP_STATE}/capabilities.json"
 assert_contains "$(cat "${SETUP_STATE}/capabilities.json")" '"interactive_question_mode": "codex_plan_mode_conditional"'
 
@@ -436,16 +436,15 @@ assert_contains "${out}" "MISS: update fingerprint"
 it "local sync reports global update scope"
 assert_contains "${out}" "update_scope: global="
 
-it "local sync reports current project update scope"
-assert_contains "${out}" "update_scope: project=${PATH_PROJECT_RESOLVED}"
+it "local sync does not report project-local update scope"
+assert_not_contains "${out}" "update_scope: project=${PATH_PROJECT_RESOLVED}"
+assert_not_contains "${out}" "update_scope: default_project_scope=current-only"
+assert_not_contains "${out}" "update_scope: all_projects_hint=crew update --all-projects"
 
-it "local sync explains default current-project scope"
-assert_contains "${out}" "update_scope: default_project_scope=current-only"
-assert_contains "${out}" "update_scope: all_projects_hint=crew update --all-projects"
-
-it "local sync writes update project registry"
+it "local sync writes global update registry only"
 assert_file_exists "${PATH_INSTALL}/state/update-registry.json"
-assert_contains "$(cat "${PATH_INSTALL}/state/update-registry.json")" "${PATH_PROJECT_RESOLVED}"
+assert_contains "$(cat "${PATH_INSTALL}/state/update-registry.json")" '"global"'
+assert_not_contains "$(cat "${PATH_INSTALL}/state/update-registry.json")" "${PATH_PROJECT_RESOLVED}"
 
 ALL_PROJECT=$(make_tmp)
 mkdir -p "${ALL_PROJECT}"
@@ -456,14 +455,14 @@ python3 "${REPO_ROOT}/core/scripts/update-project-registry.py" \
   --source-root "${REPO_ROOT}" \
   --project-root "${ALL_PROJECT}" >/dev/null
 
-it "crew update --all-projects refreshes a registered project"
+it "crew update --all-projects is deprecated and does not refresh registered projects"
 out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" CLAUDE_DIR="${PATH_HOME}/.claude" CODEX_HOME="${PATH_HOME}/.codex" PROJECT_ROOT="${PATH_PROJECT}" \
   bash "${CREW}" update --local "${REPO_ROOT}" --all-projects 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "update_scope: project=${ALL_PROJECT_RESOLVED} status=refreshing"
-assert_contains "${out}" "update_scope: all_projects"
-assert_file_exists "${ALL_PROJECT}/.agent-crew/invocation.md"
+assert_contains "${out}" "crew update: --all-projects is deprecated"
+assert_not_contains "${out}" "update_scope: project=${ALL_PROJECT_RESOLVED} status=refreshing"
+assert_file_absent "${ALL_PROJECT}/.agent-crew/invocation.md"
 
 it "local sync removes duplicate legacy system agents"
 assert_file_absent "${PATH_INSTALL}/agents/backend.md"
@@ -643,25 +642,25 @@ out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" ba
 rc=$?
 assert_exit 0 "${rc}"
 
-it "crew run reports hook drift repair"
-assert_contains "${out}" "refreshed auto-route hooks"
+it "crew run reports runtime drift repair"
+assert_contains "${out}" "refreshed runtime assets from source checkout"
 
 it "crew run refreshes installed global auto-route hook"
 assert_contains "$(cat "${HOOK_SYNC_HOME}/hooks/auto-route.sh")" 'explicit {command} invocation detected'
 
-it "crew run refreshes project-local Codex auto-route hook"
-assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'explicit {command} invocation detected'
+it "crew run preserves project-local Codex hook overrides"
+assert_eq "stale hook" "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")"
 
 printf 'stale project hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
 
-it "crew run detects project-local hook drift even when global hook is fresh"
+it "crew run ignores project-local hook drift when global hook is fresh"
 out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo project hook sync task" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "refreshed auto-route hooks"
+assert_not_contains "${out}" "refreshed auto-route hooks"
 
-it "crew run refreshes stale project-local hook after global hook is fresh"
-assert_contains "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")" 'explicit {command} invocation detected'
+it "crew run preserves stale project-local hook after global hook is fresh"
+assert_eq "stale project hook" "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")"
 
 it "crew run writes deterministic state then exits handoff_ready"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" run "demo task" 2>&1)
@@ -741,7 +740,7 @@ assert_file_absent "${AMBIGUOUS_RUN_TASK_DIR}/context/input-normalization.json"
 
 it "crew run blocked result avoids verbose fallback narration"
 assert_not_contains "${result}" "If the host bridge is unavailable"
-assert_not_contains "${result}" "so `crew telemetry` no longer reports"
+assert_not_contains "${result}" 'so `crew telemetry` no longer reports'
 
 it "crew status --json reports handoff-ready run state"
 out=$(AGENT_CREW_HOME="${TMP_HOME}" PROJECT_ROOT="${TMP_PROJECT}" bash "${CREW}" status --json 2>&1)

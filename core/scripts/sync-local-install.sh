@@ -3,8 +3,8 @@
 #
 # This is the deterministic local-source counterpart to crew:update's remote
 # fresh-clone flow. Use it after making local changes that should immediately
-# affect the installed ~/.agent-crew, Claude, Codex, and project-local adapter
-# paths without waiting for those changes to exist on origin/main.
+# affect the installed ~/.agent-crew and host-global adapter paths without
+# waiting for those changes to exist on origin/main.
 
 set -euo pipefail
 
@@ -81,19 +81,6 @@ record_global_update_scope() {
     mark-global \
     --source-root "${SOURCE_ROOT}" \
     --mode "${AGENT_CREW_MODE:-update}" || true
-}
-
-record_project_update_scope() {
-  local registry
-  registry="$(update_registry_script 2>/dev/null || true)"
-  [ -n "${registry}" ] || return 0
-  python3 "${registry}" \
-    --agent-crew-home "${AGENT_CREW_HOME}" \
-    mark-project \
-    --source-root "${SOURCE_ROOT}" \
-    --project-root "${PROJECT_ROOT}" || true
-  printf 'update_scope: default_project_scope=current-only\n'
-  printf 'update_scope: all_projects_hint=crew update --all-projects\n'
 }
 
 print_update_phase() {
@@ -179,7 +166,6 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
     print_update_phase "drift_verification"
     record_global_update_scope
-    record_project_update_scope
     write_update_integrity_manifest
     print_update_total
     printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
@@ -293,6 +279,15 @@ sync_system_agents \
   "${AGENT_CREW_HOME}/system/agents" \
   "mcp-manager.md"
 
+if [ -d "${AGENT_CREW_HOME}/agents" ] && [ ! -L "${AGENT_CREW_HOME}/agents" ]; then
+  migrate_legacy_agents \
+    "${AGENT_CREW_HOME}/agents" \
+    "${SOURCE_ROOT}/core/agents" \
+    "${AGENT_CREW_HOME}/system/agents" \
+    "${AGENT_CREW_HOME}/user/agents" \
+    "mcp-manager.md"
+fi
+
 merge_agents_to_discovery \
   "${AGENT_CREW_HOME}/system/agents" \
   "${AGENT_CREW_HOME}/user/agents" \
@@ -319,11 +314,6 @@ merge_skills_to_discovery \
 
 SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/scripts/update-global-adapters.sh"
-
-SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
-  bash "${AGENT_CREW_HOME}/system/setup/setup-host.sh" "${PROJECT_ROOT}"
-print_update_phase "adapter_setup"
-record_project_update_scope
 
 copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
 copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"

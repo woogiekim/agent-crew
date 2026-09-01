@@ -71,7 +71,7 @@ detection: Dobby-style review fixture
 User-owned review-profile skill preserved across update dry-run.
 EOF
 
-printf 'stale\n' > "${CODEX_HOME}/agents/task-runner.toml"
+printf 'developer_instructions = """This is a Codex adapter bootstrap for the agent-crew system agent."""\n' > "${CODEX_HOME}/agents/task-runner.toml"
 printf 'stale\n' > "${CODEX_HOME}/agent-crew/skills/stale.md"
 printf 'stale\n' > "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
 cat > "${CODEX_HOME}/config.toml" <<'EOF'
@@ -125,9 +125,11 @@ assert_exists "${AGENT_CREW_HOME}/user/skills/dobby-review-heuristics.md"
 assert_exists "${AGENT_CREW_HOME}/skills/local-skill.md"
 assert_exists "${AGENT_CREW_HOME}/skills/dobby-review-heuristics.md"
 assert_exists "${CODEX_HOME}/agents/supervisor.toml"
+assert_exists "${CODEX_HOME}/hooks.json"
 assert_exists "${AGENT_CREW_HOME}/hooks/auto-route.sh"
-assert_exists "${PROJECT_ROOT}/.codex/hooks/auto-route.sh"
-assert_exists "${PROJECT_ROOT}/.codex/agents/supervisor.toml"
+assert_absent "${PROJECT_ROOT}/.codex/hooks/auto-route.sh"
+assert_absent "${PROJECT_ROOT}/.codex/agents/supervisor.toml"
+assert_absent "${PROJECT_ROOT}/.agent-crew/commands"
 assert_exists "${STATE_DIR}/update-preservation"
 assert_absent "${CODEX_HOME}/agents/task-runner.toml"
 assert_absent "${CODEX_HOME}/skills/agent-crew"
@@ -137,9 +139,8 @@ assert_absent "${AGENT_CREW_HOME}/scripts/stale-leftover.py"
 assert_contains "${CODEX_HOME}/config.toml" "[mcp_servers.gitlab]"
 assert_contains "${CODEX_HOME}/config.toml" 'args = ["-lc", "gitlab-mcp"]'
 assert_contains "${CODEX_HOME}/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
-assert_contains "${PROJECT_ROOT}/.codex/agents/supervisor.toml" "${AGENT_CREW_HOME}/system/agents/supervisor.md"
 assert_contains "${AGENT_CREW_HOME}/hooks/auto-route.sh" 'explicit {command} invocation detected'
-assert_contains "${PROJECT_ROOT}/.codex/hooks/auto-route.sh" 'explicit {command} invocation detected'
+assert_contains "${CODEX_HOME}/hooks.json" "${AGENT_CREW_HOME}/hooks/auto-route.sh"
 if ! find "${STATE_DIR}/update-preservation" \
   -type f -name '*.json' | grep -q .; then
   printf 'verify-update-dry-run: preservation manifest was not written\n' >&2

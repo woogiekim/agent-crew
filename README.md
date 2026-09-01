@@ -227,10 +227,9 @@ paths depending on the active host adapter:
   adapter maps provider-neutral `askQuestion(prompt, options[])` prompts to the
   native structured input surface and records the selected option with
   `crew question`. Default mode keeps the markdown fallback.
-- Codex may still materialize project-local hook files and `hooks.json` as
-  advisory prompt-workflow guardrails. Treat those as installed compatibility
-  assets, not as enforced `hook_system=true` guarantees unless the active
-  adapter writes that capability flag.
+- Codex installs command skills, agents, config, hooks, and invocation guidance
+  in the machine-global Codex home. Project-local Codex files are optional
+  user-owned overrides, not assets that setup/update refreshes by default.
 - `crew doctor` and `crew config dump --effective` report each capability as
   `runtime-enforced`, `conditional-native`, `policy-only`, or `unavailable`. A
   false capability is not unconditional operational support; it means

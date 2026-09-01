@@ -26,7 +26,7 @@ def load_registry_module():
     return module
 
 
-def test_registry_marks_global_and_project_and_lists_project(tmp_path: Path):
+def test_registry_marks_global_and_legacy_project_and_lists_project(tmp_path: Path):
     home = tmp_path / "home"
     source = tmp_path / "source"
     project = tmp_path / "project"
@@ -53,7 +53,7 @@ def test_registry_marks_global_and_project_and_lists_project(tmp_path: Path):
         str(project),
     )
     assert result.returncode == 0
-    assert f"update_scope: project={project.resolve()}" in result.stdout
+    assert f"update_scope: project={project.resolve()} status=deprecated-global-only" in result.stdout
 
     registry = json.loads((home / "state" / "update-registry.json").read_text())
     assert str(project.resolve()) in registry["projects"]
@@ -61,7 +61,8 @@ def test_registry_marks_global_and_project_and_lists_project(tmp_path: Path):
     assert entry["project_name"] == project.name
     assert entry["project_state_key"].startswith(f"{project.name}-")
     assert Path(entry["state_dir"]).name == entry["project_state_key"]
-    assert (Path(entry["state_dir"]) / "project-update.json").is_file()
+    assert entry["mode"] == "legacy-project-marker"
+    assert not (Path(entry["state_dir"]) / "project-update.json").exists()
 
     result = run_registry(
         "--agent-crew-home",
@@ -72,7 +73,7 @@ def test_registry_marks_global_and_project_and_lists_project(tmp_path: Path):
     assert str(project.resolve()) in result.stdout.splitlines()
 
 
-def test_check_stale_reports_warning_when_global_is_newer(tmp_path: Path):
+def test_check_stale_does_not_warn_for_legacy_project_markers(tmp_path: Path):
     home = tmp_path / "home"
     project = tmp_path / "project"
     project.mkdir()
@@ -104,8 +105,7 @@ def test_check_stale_reports_warning_when_global_is_newer(tmp_path: Path):
         str(project),
     )
     assert result.returncode == 0
-    assert "WARNING: project-local agent-crew files may be stale" in result.stdout
-    assert "crew update --all-projects" in result.stdout
+    assert result.stdout == ""
 
     result = run_registry(
         "--agent-crew-home",
@@ -117,8 +117,8 @@ def test_check_stale_reports_warning_when_global_is_newer(tmp_path: Path):
         "json",
     )
     payload = json.loads(result.stdout)
-    assert payload["status"] == "stale"
-    assert payload["reason"] == "global_newer_than_project"
+    assert payload["status"] == "current"
+    assert payload["reason"] == "project_local_update_registry_deprecated"
 
 
 def test_list_projects_includes_task_state_project_roots(tmp_path: Path):
@@ -223,5 +223,5 @@ def test_check_stale_reports_missing_project_marker_when_local_outputs_exist(tmp
     )
     assert result.returncode == 0
     payload = json.loads(result.stdout)
-    assert payload["status"] == "stale"
-    assert payload["reason"] == "project_update_marker_missing"
+    assert payload["status"] == "current"
+    assert payload["reason"] == "project_local_update_registry_deprecated"
