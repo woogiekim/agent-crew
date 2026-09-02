@@ -244,6 +244,7 @@ install_path_crew_cli() {
   local src="${SOURCE_ROOT}/core/bin/crew"
   local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
   local dest="${dest_dir}/crew"
+  local tmp
   [ -f "${src}" ] || return 0
 
   mkdir -p "${dest_dir}"
@@ -255,8 +256,10 @@ install_path_crew_cli() {
     return 0
   fi
 
-  cp -f "${src}" "${dest}"
-  chmod +x "${dest}"
+  tmp="$(mktemp "${dest}.tmp.XXXXXX")"
+  cp -f "${src}" "${tmp}"
+  chmod 755 "${tmp}"
+  mv -f "${tmp}" "${dest}"
   PATH_CREW_CLI_MANAGED=1
   printf 'sync-local-install: installed native crew CLI at %s\n' "${dest}"
 }

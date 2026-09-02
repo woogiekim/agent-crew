@@ -427,12 +427,18 @@ cat > "${PATH_BIN}/crew" <<'EOF_STALE_CREW'
 exec codex exec "$@"
 EOF_STALE_CREW
 chmod +x "${PATH_BIN}/crew"
+PATH_CREW_INODE_BEFORE=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_ino)' "${PATH_BIN}/crew")
 
 it "local sync replaces stale PATH crew launcher with native CLI"
 out=$(HOME="${PATH_HOME}" AGENT_CREW_HOME="${PATH_INSTALL}" CLAUDE_DIR="${PATH_HOME}/.claude" CODEX_HOME="${PATH_HOME}/.codex" \
   bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${PATH_PROJECT}" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
+
+it "local sync atomically replaces the managed PATH crew launcher"
+PATH_CREW_INODE_AFTER=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_ino)' "${PATH_BIN}/crew")
+test "${PATH_CREW_INODE_BEFORE}" != "${PATH_CREW_INODE_AFTER}"
+assert_true "$?" "managed PATH crew inode changed"
 
 it "local sync reports native PATH crew install"
 assert_contains "${out}" "installed native crew CLI"
