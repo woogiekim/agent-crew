@@ -63,7 +63,7 @@ Commands:
                                     Request or print deterministic resume state
   update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]
                                     Refresh installed assets
-  run "task"                       Write state and host handoff for a task
+  run [--read-only] "task"         Write state and host handoff for a task
   evolve status|approve|apply      Inspect and operate on approved learning proposals
   relay [args]                     Package a prompt for another AI session
   sessions [args]                  List recent AI session candidates
@@ -201,7 +201,10 @@ sync_managed_path_crew_cli() {
 }
 
 sync_source_runtime_assets_if_drifted() {
-  [ "${AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN:-1}" = "1" ] || return 0
+  local mode="${1:-sync}"
+  if [ "${mode}" = "sync" ]; then
+    [ "${AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN:-1}" = "1" ] || return 0
+  fi
 
   local source
   source="$(find_source_checkout 2>/dev/null || true)"
@@ -211,6 +214,7 @@ sync_source_runtime_assets_if_drifted() {
   for check in \
     "core/bin/crew:${AGENT_CREW_HOME}/bin/crew" \
     "core/scripts/crew-runtime.py:${AGENT_CREW_HOME}/scripts/crew-runtime.py" \
+    "core/scripts/mutation_scope.py:${AGENT_CREW_HOME}/scripts/mutation_scope.py" \
     "core/scripts/project_state.py:${AGENT_CREW_HOME}/scripts/project_state.py" \
     "core/scripts/project-state.sh:${AGENT_CREW_HOME}/scripts/project-state.sh" \
     "core/scripts/crew-diagnostics.py:${AGENT_CREW_HOME}/scripts/crew-diagnostics.py" \
@@ -274,6 +278,11 @@ sync_source_runtime_assets_if_drifted() {
   fi
   [ "${drift}" = "1" ] || return 0
 
+  if [ "${mode}" = "warn" ]; then
+    printf 'crew: read-only execution: runtime asset drift detected; auto-sync suppressed\n' >&2
+    return 0
+  fi
+
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
   copy_flat_assets_if_absent "${source}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
@@ -305,7 +314,10 @@ sync_source_runtime_assets_if_drifted() {
 }
 
 sync_source_hooks_if_drifted() {
-  [ "${AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN:-1}" = "1" ] || return 0
+  local mode="${1:-sync}"
+  if [ "${mode}" = "sync" ]; then
+    [ "${AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN:-1}" = "1" ] || return 0
+  fi
 
   local source source_hooks=""
   source="$(find_source_checkout 2>/dev/null || true)"
@@ -324,6 +336,11 @@ sync_source_hooks_if_drifted() {
     done
   done
   [ "${drift}" = "1" ] || return 0
+
+  if [ "${mode}" = "warn" ]; then
+    printf 'crew: read-only execution: hook drift detected; auto-sync suppressed\n' >&2
+    return 0
+  fi
 
   mkdir -p "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks"
   cp -f "${source_hooks}/"*.sh "${AGENT_CREW_HOME}/system/hooks/" 2>/dev/null || true
@@ -1192,7 +1209,8 @@ EOF
 cmd_run() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
-usage: crew run [--fake-host-result completed] [--host-bridge-command CMD] "task"
+usage: crew run [--read-only] [--mutation-scope read_only|workspace_write]
+                [--fake-host-result completed] [--host-bridge-command CMD] "task"
 
 Creates deterministic local task state and a supervisor handoff. If no external
 host bridge is configured, the run ends as STATUS: handoff_ready after writing
@@ -1206,13 +1224,46 @@ bash -c '...' when shell features are required.
 Common path: run this from the host AI session, follow the printed NEXT line,
 then use crew status to monitor or crew repair only if the host handoff had to
 be completed manually.
+
+--read-only is an alias for --mutation-scope read_only. It allows task-local
+state writes but suppresses installed runtime/hook auto-sync and binds a
+no-project/Git/Memory/external-write contract into the supervisor handoff.
 EOF
     return 0
   fi
+
+  local mutation_scope="workspace_write" expect_mutation_scope="0" arg
+  for arg in "$@"; do
+    if [ "${expect_mutation_scope}" = "1" ]; then
+      mutation_scope="${arg}"
+      expect_mutation_scope="0"
+      continue
+    fi
+    case "${arg}" in
+      --) break ;;
+      --read-only) mutation_scope="read_only" ;;
+      --mutation-scope) expect_mutation_scope="1" ;;
+      --mutation-scope=*) mutation_scope="${arg#*=}" ;;
+    esac
+  done
+  [ "${expect_mutation_scope}" = "0" ] || die "--mutation-scope requires a value"
+  case "${mutation_scope}" in
+    read_only|workspace_write) ;;
+    *) die "invalid mutation scope: ${mutation_scope}" ;;
+  esac
+
   print_update_stale_warning
-  sync_source_runtime_assets_if_drifted
+  if [ "${mutation_scope}" = "read_only" ]; then
+    sync_source_runtime_assets_if_drifted warn
+  else
+    sync_source_runtime_assets_if_drifted
+  fi
   require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
-  sync_source_hooks_if_drifted
+  if [ "${mutation_scope}" = "read_only" ]; then
+    sync_source_hooks_if_drifted warn
+  else
+    sync_source_hooks_if_drifted
+  fi
   local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
   require_file "${runtime}" "native runtime helper"
   python3 "${runtime}" run --project-root "${PROJECT_ROOT}" "$@"

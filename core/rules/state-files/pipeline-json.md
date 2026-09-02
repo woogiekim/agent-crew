@@ -368,6 +368,7 @@ and capability-gated fields evolve faster than the schema does.
 |---|---|---|---|---|
 | `schema_version` | integer (const 1) | optional in v1 | analyst (post-F4) | Pre-F4 pipeline.json omits this field; validators tolerate absence. |
 | `task` | string | yes | analyst Step 6 | Original task description (mirror of `register.json.task`). |
+| `mutation_scope` | enum `read_only \| workspace_write` | optional (default `workspace_write`) | runtime + analyst | Explicit plan-bound mutation boundary inherited from `register.json`; never inferred from task prose. Validation fails when this value differs from `register.json`, or when a `read_only` plan contains a mutating Agent. |
 | `stages` | array | yes | analyst Step 6 | 2D array — outer = sequential, inner = parallel-within-stage. Each inner element may be (a) a bare string (legacy single-agent stage), (b) an array of strings (parallel-within-stage), or (c) an object `{ agents: [string,...], tdd_parallel: bool, parallelizable_units: [...], streaming_review: bool, requires_test_execution: bool, qa_mode: string, qa_loop_target: string }` (TDD parallel form and/or sub-task fan-out and/or streaming review and/or reviewer opt-out and/or QA owner mode — see the stage-form sections above). Consumers normalize: strings → `[stage]`, arrays → as-is, objects → `stage["agents"]` plus the supported flags. |
 | `completed_stages` | integer | yes (starts at 0) | analyst Step 6, supervisor-stages | 0-based count of stages whose terminal state was successful completion. Drives the resume logic in Phase 0. |
 | `needs_creation` | array of objects | yes (may be `[]`) | analyst Step 6 / planner Step 3c | Per-entry: `{name, reason, role}`. Drives Phase 1.5 dynamic agent creation. |
@@ -379,7 +380,8 @@ and capability-gated fields evolve faster than the schema does.
 ### Created
 
 Phase 1b+1c — the analyst agent writes the initial pipeline.json with
-`stages`, `needs_creation`, `completed_stages=0`, and `task`. No
+`stages`, `needs_creation`, `completed_stages=0`, `task`, and the inherited
+`mutation_scope`. No
 `stage_agent_status` or `host_task_ids` at this point.
 
 ### Mutated

@@ -1262,12 +1262,14 @@ def render_completed_result(
     completion_path: str,
     note: str,
     bridge_record: dict | None = None,
+    mutation_scope: str = "workspace_write",
 ) -> str:
     lines = [
         f"# {task}",
         "",
         "STATUS: completed",
         f"TASK_ID: {task_id}",
+        f"MUTATION_SCOPE: {mutation_scope}",
         "MEASUREMENTS: host bridge completion recorded 1 automatic completion event",
         f"EVIDENCE: {completion_path}",
         "UNCERTAINTY: Host bridge command success indicates handoff delivery completed; downstream host prompt quality still depends on the active runtime.",
@@ -1285,11 +1287,13 @@ def render_quality_loop_blocked_result(
     task_id: str,
     failures: list[str],
     evidence_path: str,
+    mutation_scope: str = "workspace_write",
 ) -> str:
     return (
         f"# {task}\n\n"
         "STATUS: blocked\n"
         f"TASK_ID: {task_id}\n"
+        f"MUTATION_SCOPE: {mutation_scope}\n"
         "MEASUREMENTS: runtime quality-loop validation ran 1 check, 0 retries\n"
         "BLOCKER: missing_quality_loop_pipeline\n"
         f"EVIDENCE: {evidence_path}\n"
@@ -1358,6 +1362,7 @@ def mark_quality_loop_blocked(
             register.get("task_id", task_dir.name),
             failures,
             evidence_path,
+            str(register.get("mutation_scope") or "workspace_write"),
         ),
         encoding="utf-8",
     )
@@ -1431,6 +1436,7 @@ def mark_auto_completed(task_dir: Path, register: dict, pipeline: dict,
                 "context/host-bridge-completion.json",
                 note,
                 bridge_record,
+                str(register.get("mutation_scope") or "workspace_write"),
             ),
             encoding="utf-8",
         )
@@ -2543,6 +2549,7 @@ def command_run(args: argparse.Namespace) -> int:
     raw_task = args.task
     normalization_metadata = input_normalization_metadata(raw_task, next_target="crew run supervisor")
     task = raw_task
+    mutation_scope = getattr(args, "mutation_scope", "workspace_write")
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
@@ -2588,6 +2595,7 @@ def command_run(args: argparse.Namespace) -> int:
         "state_dir": str(state_dir),
         "task_dir": str(task_dir),
         "execution_mode": "single",
+        "mutation_scope": mutation_scope,
         "current_phase": current_phase,
         "approval_status": "not_required",
         "verification_status": "failed" if fake_quality_blocked else "skipped",
@@ -2604,6 +2612,7 @@ def command_run(args: argparse.Namespace) -> int:
     pipeline = {
         "schema_version": 1,
         "task": task,
+        "mutation_scope": mutation_scope,
         "stages": ["supervisor"],
         "completed_stages": 1 if result_status == "completed" else 0,
         "stage_agent_status": {
@@ -2618,11 +2627,13 @@ def command_run(args: argparse.Namespace) -> int:
         f"TASK_ID: {task_id}\n"
         f"TASK: {task}\n"
         f"PROJECT_ROOT: {project_root}\n"
+        f"MUTATION_SCOPE: {mutation_scope}\n"
         f"MODE: fake-host\n" if args.fake_host_result else
         f"# Supervisor Handoff\n\n"
         f"TASK_ID: {task_id}\n"
         f"TASK: {task}\n"
         f"PROJECT_ROOT: {project_root}\n"
+        f"MUTATION_SCOPE: {mutation_scope}\n"
         f"MODE: native-cli\n"
         f"STATUS: {result_status}\n"
         f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
@@ -2635,6 +2646,7 @@ def command_run(args: argparse.Namespace) -> int:
         f"STATUS: {result_status}\n"
         f"TASK_ID: {task_id}\n"
         f"BRANCH: {register['branch']}\n"
+        f"MUTATION_SCOPE: {mutation_scope}\n"
     )
     if result_status == "handoff_ready":
         result += "HOST_BRIDGE: internal_handoff_ready\n"
@@ -2751,6 +2763,7 @@ def command_run(args: argparse.Namespace) -> int:
                 f"TASK_ID: {task_id}\n"
                 f"TASK: {task}\n"
                 f"PROJECT_ROOT: {project_root}\n"
+                f"MUTATION_SCOPE: {mutation_scope}\n"
                 f"MODE: native-cli\n"
                 f"STATUS: handoff_ready\n"
                 f"HOST_BRIDGE: current_session_required\n"
@@ -2762,6 +2775,7 @@ def command_run(args: argparse.Namespace) -> int:
                 "STATUS: handoff_ready\n"
                 f"TASK_ID: {task_id}\n"
                 f"BRANCH: {register['branch']}\n"
+                f"MUTATION_SCOPE: {mutation_scope}\n"
             )
             result += "HOST_BRIDGE: current_session_required\n"
             result += current_next
@@ -3717,6 +3731,17 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="create deterministic crew run state")
     run.add_argument("task")
     run.add_argument("--project-root")
+    run.add_argument(
+        "--mutation-scope",
+        choices=["read_only", "workspace_write"],
+        default="workspace_write",
+    )
+    run.add_argument(
+        "--read-only",
+        dest="mutation_scope",
+        action="store_const",
+        const="read_only",
+    )
     run.add_argument("--fake-host-result", choices=["completed"], default=None)
     run.add_argument("--host-bridge-command", default=None)
     run.set_defaults(func=command_run)

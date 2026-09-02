@@ -55,7 +55,8 @@ def _make_task(state_dir: Path, task_id: str, *,
                with_log: bool = True,
                current_phase: str = "phase_2",
                completed_stages: int = 1,
-               branch: str = "feat/example") -> Path:
+               branch: str = "feat/example",
+               mutation_scope: str = "workspace_write") -> Path:
     """Create a task directory with the requested subset of the five sources."""
     task_dir = state_dir / "tasks" / task_id
     (task_dir / "context").mkdir(parents=True, exist_ok=True)
@@ -63,6 +64,7 @@ def _make_task(state_dir: Path, task_id: str, *,
     if with_pipeline:
         (task_dir / "pipeline.json").write_text(json.dumps({
             "task": "example task description",
+            "mutation_scope": mutation_scope,
             "stages": [
                 {"agents": ["backend"], "tdd_parallel": True},
                 ["reviewer"],
@@ -81,6 +83,7 @@ def _make_task(state_dir: Path, task_id: str, *,
             "project_root": "/tmp/proj",
             "task_dir": str(task_dir),
             "execution_mode": "single",
+            "mutation_scope": mutation_scope,
             "current_phase": current_phase,
             "approval_status": "approved",
             "verification_status": "running",
@@ -191,6 +194,7 @@ def test_build_smm_all_sources(tmp_path: Path):
     assert sut["branch"] == "feat/smm"
     assert sut["status"] in ("completed", "blocked", "cancelled", "running", "unknown")
     assert sut["current_phase"] == "phase_2"
+    assert sut["mutation_scope"] == "workspace_write"
     assert sut["approval_status"] == "approved"
     assert sut["verification_status"] == "running"
     assert sut["stages_total"] == 2
@@ -556,6 +560,7 @@ def test_render_text_multi_task_session_header_and_blocks(tmp_path: Path):
     # Each block has Status / Phase / Handoff lines and marker-style stage list
     assert "Status" in out
     assert "Phase" in out
+    assert "Mutation: workspace_write" in out
     assert "Handoff" in out
     assert ("[x]" in out or "[>]" in out or "[ ]" in out)
 

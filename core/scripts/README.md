@@ -176,6 +176,10 @@ invocation in SKILL.md; generic adds guidance).
   stage shapes, unknown agents without custom-agent files or `needs_creation`,
   custom capability-profile violations, and custom agents whose names imply
   destructive authority without an explicit approved profile.
+- `mutation_scope.py` — resolves explicit task mutation scope from
+  `register.json` and live per-task markers for Planner and hook enforcement.
+  Missing legacy fields default to `workspace_write`, while malformed explicit
+  values fail closed; task prose is never classified to select a scope.
 - `workflow-replay-check.py` — replays golden workflow fixtures against local
   validators and expected state transitions. It verifies deterministic tool
   flow for schema validation, quality planning, capability preflight, blocked

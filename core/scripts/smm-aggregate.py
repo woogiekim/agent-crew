@@ -557,6 +557,7 @@ def build_smm(state_dir, task_dir):
         "branch": branch,
         "status": status,
         "current_phase": str(register.get("current_phase") or ""),
+        "mutation_scope": str(register.get("mutation_scope") or "workspace_write"),
         "approval_status": str(register.get("approval_status") or "not_required"),
         "verification_status": str(register.get("verification_status")
                                    or "not_started"),
@@ -602,6 +603,7 @@ def _render_block(smm):
     lines.append(f"Branch  : {smm['branch'] or '—'}")
     lines.append(f"Status  : {smm['status']}")
     lines.append(f"Phase   : {smm['current_phase'] or '—'}")
+    lines.append(f"Mutation: {smm.get('mutation_scope') or 'workspace_write'}")
     lines.append(f"Approval: {smm['approval_status']}    "
                  f"Verify: {smm['verification_status']}")
 

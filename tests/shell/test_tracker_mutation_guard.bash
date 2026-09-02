@@ -161,6 +161,62 @@ comment_payload='{
   "comment_html": "<p>status note</p>"
 }'
 
+READ_ONLY_TRACKER_TASK="$(make_tmp)"
+READ_ONLY_TRACKER_HOME="$(make_tmp)"
+make_task_contract "${READ_ONLY_TRACKER_TASK}" "passed"
+make_task_approval \
+  "${READ_ONLY_TRACKER_TASK}" \
+  "mcp__plane__create_work_item" \
+  "${plain_tracker_payload}"
+cat >"${READ_ONLY_TRACKER_TASK}/register.json" <<'EOF'
+{
+  "mutation_scope": "read_only"
+}
+EOF
+
+it "read-only task blocks tracker mutation before consuming exact approval"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" \
+  "AGENT_CREW_HOME=${READ_ONLY_TRACKER_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TRACKER_TASK}")
+rc=$?
+assert_exit 2 "${rc}" "read-only execution cannot widen into an external mutation"
+assert_contains "${out}" "mutation_scope=read_only"
+assert_file_exists "${READ_ONLY_TRACKER_TASK}/context/tracker-mutation-approval.json"
+
+CONCURRENT_TRACKER_HOME="$(make_tmp)"
+CONCURRENT_TRACKER_PROJECT="$(make_tmp)/project"
+CONCURRENT_READ_ONLY_ID="read-only-task"
+CONCURRENT_READ_ONLY_TASK="${CONCURRENT_TRACKER_HOME}/state/project-state/tasks/${CONCURRENT_READ_ONLY_ID}"
+mkdir -p "${CONCURRENT_READ_ONLY_TASK}"
+cat >"${CONCURRENT_READ_ONLY_TASK}/register.json" <<EOF
+{
+  "project_root": "${CONCURRENT_TRACKER_PROJECT}",
+  "mutation_scope": "read_only"
+}
+EOF
+: >"${CONCURRENT_TRACKER_HOME}/state/project-state/tasks/active.${CONCURRENT_READ_ONLY_ID}"
+
+CONCURRENT_WRITABLE_TASK="$(make_tmp)"
+make_task_contract "${CONCURRENT_WRITABLE_TASK}" "passed"
+make_task_approval \
+  "${CONCURRENT_WRITABLE_TASK}" \
+  "mcp__plane__create_work_item" \
+  "${plain_tracker_payload}"
+cat >"${CONCURRENT_WRITABLE_TASK}/register.json" <<'EOF'
+{
+  "mutation_scope": "workspace_write"
+}
+EOF
+
+it "explicit writable tracker task is not narrowed by a concurrent read-only marker"
+out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")" \
+  "AGENT_CREW_HOME=${CONCURRENT_TRACKER_HOME}" \
+  "AGENT_CREW_TASK_DIR=${CONCURRENT_WRITABLE_TASK}" \
+  "PROJECT_ROOT=${CONCURRENT_TRACKER_PROJECT}")
+rc=$?
+assert_exit 0 "${rc}" "the explicit tracker task contract is authoritative"
+assert_eq "" "${out}" "validated writable tracker task remains executable"
+
 it "direct Plane create without tracker fallback evidence is blocked"
 out=$(run_hook "$(payload_for "mcp__plane__create_work_item" "${plain_tracker_payload}")")
 rc=$?

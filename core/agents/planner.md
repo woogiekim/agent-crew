@@ -307,6 +307,17 @@ If all roles are covered by existing agents, set `needs_creation` to an empty ar
 ### Step 4: Pipeline Determination
 Determine the pipeline using the criteria below and save it to `{TASK_DIR}/pipeline.json`.
 
+Copy `MUTATION_SCOPE` from the supervisor input into `pipeline.json` as
+`mutation_scope` without inference or normalization. For `read_only`, only
+read-only roles (`requirements`, `analyst`, `planner`, `debugger`, `historian`,
+`mentor`, `learning-mentor`, `reviewer`) may appear in `stages`; use no stage
+when planning/analysis already produces the requested result. A need for any
+mutating role is a scope blocker, not permission to change the field. The
+planning-time quality gate rejects a read-only pipeline containing a mutating
+Agent or a `mutation_scope` value that differs from `register.json`. The
+runtime's initial `supervisor` bootstrap placeholder is permitted until this
+planned stage graph replaces it.
+
 `stages` is a 2D array:
 - Agents inside the same array are executed **in parallel**
 - Arrays themselves are executed **sequentially**
@@ -342,6 +353,7 @@ to reduce total wall-clock time:
 ```json
 {
   "task": "Original request",
+  "mutation_scope": "read_only|workspace_write",
   "stages": [
     ["designer"],
     { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] },

@@ -15,7 +15,7 @@ INPUT="$(read_agent_crew_hook_input || true)"
 agent_crew_hook_timing_start "tracker-mutation-guard"
 trap 'agent_crew_hook_timing_finish "$?"' EXIT
 
-python3 - "$INPUT" <<'PYEOF'
+python3 - "$INPUT" "${HOOK_DIR}/../scripts" <<'PYEOF'
 import hashlib
 import json
 import os
@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 raw_input = sys.argv[1] if len(sys.argv) > 1 else ""
+sys.path.insert(0, sys.argv[2])
+from mutation_scope import task_mutation_scope
 
 MUTATING_PLANE_TOOLS = {
     "mcp__plane__create_work_item",
@@ -143,6 +145,16 @@ def task_dir_candidates(tool_input: dict[str, Any]) -> list[Path]:
         raw = str(tool_input.get(key) or "").strip()
         if raw:
             candidates.append(Path(raw).expanduser())
+
+    if candidates:
+        seen: set[str] = set()
+        unique: list[Path] = []
+        for candidate in candidates:
+            resolved = str(candidate)
+            if resolved not in seen:
+                seen.add(resolved)
+                unique.append(candidate)
+        return unique
 
     home = Path(os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew"))).expanduser()
     state_root = home / "state"
@@ -399,10 +411,24 @@ tool_input = tool_input_raw if isinstance(tool_input_raw, dict) else {}
 if tool_name not in MUTATING_PLANE_TOOLS:
     sys.exit(0)
 
+candidate_dirs = task_dir_candidates(tool_input)
+read_only_candidates = [
+    candidate
+    for candidate in candidate_dirs
+    if task_mutation_scope(candidate) == "read_only"
+]
+if read_only_candidates:
+    block_with_reason(
+        "[agent-crew] Tracker mutation blocked — mutation_scope=read_only.\n\n"
+        f"Blocked tool: {tool_name}\n"
+        "Task-local state is the only permitted write surface. Existing "
+        "tracker validation or approval evidence cannot widen this execution "
+        "contract; start a new explicitly writable task instead."
+    )
+
 if os.environ.get("AGENT_CREW_TRACKER_MUTATION_GUARD_DISABLED", "").strip() == "1":
     sys.exit(0)
 
-candidate_dirs = task_dir_candidates(tool_input)
 contract_failures: list[str] = []
 approval_failures: list[str] = []
 

@@ -54,6 +54,21 @@ def test_bootstrap_documents_required_fresh_run_sequence():
     assert "reviewer stage completion" in text
 
 
+def test_bootstrap_passes_mutation_scope_to_initial_and_replan_analyst_prompts():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+
+    initial_start = text.index("Delegate to the **analyst agent** (blocking).")
+    initial_end = text.index("Pass only paths in the prompt", initial_start)
+    initial_prompt = text[initial_start:initial_end]
+
+    replan_start = text.index("**If Request changes:**")
+    replan_end = text.index("After the analyst returns", replan_start)
+    replan_prompt = text[replan_start:replan_end]
+
+    assert "MUTATION_SCOPE: {MUTATION_SCOPE}" in initial_prompt
+    assert "MUTATION_SCOPE: {MUTATION_SCOPE}" in replan_prompt
+
+
 def test_bootstrap_blocks_inline_all_layers_completion_pattern():
     text = BOOTSTRAP.read_text(encoding="utf-8")
 

@@ -51,6 +51,216 @@ path.write_text(json.dumps({
 
 TMP_HOME=$(make_tmp)
 
+READ_ONLY_TASK_DIR=$(make_tmp)
+cat > "${READ_ONLY_TASK_DIR}/register.json" <<'EOF'
+{
+  "mutation_scope": "read_only"
+}
+EOF
+
+it "read-only task allows a read-only shell inspection"
+out=$(run_hook "$(payload_for "git status --short")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "read-only inspection should remain available"
+
+it "read-only task allows Git branch tag and stash inspection forms"
+for command in "git branch --show-current" "git tag --list" "git stash list"; do
+  out=$(run_hook "$(payload_for "${command}")" \
+    "AGENT_CREW_HOME=${TMP_HOME}" \
+    "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+  rc=$?
+  if [ "${rc}" -ne 0 ] || [ -n "${out}" ]; then
+    _fail "safe Git inspection was blocked: ${command}"
+  else
+    _pass
+  fi
+done
+
+it "read-only task blocks Git branch creation"
+out=$(run_hook "$(payload_for "git branch feature/read-only-escape")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-git-mutation"
+
+it "read-only task blocks Git state mutation before specialist or approval checks"
+out=$(run_hook "$(payload_for "git add core/bin/crew")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-git-mutation"
+
+it "read-only task blocks Git mutation behind an environment assignment"
+out=$(run_hook "$(payload_for "TRACE=1 git add core/bin/crew")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-git-mutation"
+
+it "read-only task blocks Memory mutation"
+out=$(run_hook "$(payload_for 'mnemos capture --content "decision" --layer session')" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-memory-mutation"
+
+it "read-only task blocks Memory mutation behind env"
+out=$(run_hook "$(payload_for 'env mnemos capture --content "decision" --layer session')" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-memory-mutation"
+
+it "read-only task blocks filesystem redirection"
+out=$(run_hook "$(payload_for "printf changed > core/bin/crew")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-filesystem-mutation"
+
+it "read-only task allows shell writes inside its own task state directory"
+mkdir -p "${READ_ONLY_TASK_DIR}/context"
+out=$(run_hook "$(payload_for "printf evidence > ${READ_ONLY_TASK_DIR}/context/evidence.md")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "task-local evidence writes remain inside the read-only contract"
+
+it "read-only task does not let task-local redirection hide an external file mutation"
+out=$(run_hook "$(payload_for "rm project-file > ${READ_ONLY_TASK_DIR}/context/evidence.md")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-filesystem-mutation"
+
+it "read-only task does not allow moving an external file into task state"
+out=$(run_hook "$(payload_for "mv project-file ${READ_ONLY_TASK_DIR}/context/moved-file")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-filesystem-mutation"
+
+it "read-only task blocks filesystem mutation behind env"
+out=$(run_hook "$(payload_for "env rm project-file")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-filesystem-mutation"
+
+it "read-only task allows its active marker lifecycle paths"
+out=$(run_hook "$(payload_for 'touch "${TASKS_DIR}/active.${TASK_ID}"')" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 0 "${rc}"
+assert_eq "" "${out}" "supervisor marker lifecycle remains task-local state"
+
+it "read-only task rejects task directory traversal into project state"
+out=$(run_hook "$(payload_for 'touch "${TASK_DIR}/../../project-file"')" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-filesystem-mutation"
+
+it "read-only task blocks an external HTTP mutation"
+out=$(run_hook "$(payload_for "curl -X POST https://example.test/items")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-external-mutation"
+
+it "read-only task blocks external HTTP mutation behind env"
+out=$(run_hook "$(payload_for "env curl -X POST https://example.test/items")" \
+  "AGENT_CREW_HOME=${TMP_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "Kind: read-only-external-mutation"
+
+it "read-only task blocks implicit curl upload and API mutation forms"
+for command in \
+  "curl -d name=value https://example.test/items" \
+  "curl -F file=@artifact https://example.test/items" \
+  "curl -T artifact https://example.test/items" \
+  "gh api repos/example/project/issues/1 --method PATCH -f title=changed" \
+  "glab api projects/1/issues/1 -X DELETE"; do
+  out=$(run_hook "$(payload_for "${command}")" \
+    "AGENT_CREW_HOME=${TMP_HOME}" \
+    "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+  rc=$?
+  if [ "${rc}" -ne 2 ] || [[ "${out}" != *"Kind: read-only-external-mutation"* ]]; then
+    _fail "external mutation was not blocked: ${command}"
+  else
+    _pass
+  fi
+done
+
+it "read-only task allows external GET query forms"
+for command in \
+  "curl -G -d name=value https://example.test/items" \
+  "gh api repos/example/project/issues --method GET -f state=open"; do
+  out=$(run_hook "$(payload_for "${command}")" \
+    "AGENT_CREW_HOME=${TMP_HOME}" \
+    "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+  rc=$?
+  if [ "${rc}" -ne 0 ] || [ -n "${out}" ]; then
+    _fail "external read-only request was blocked: ${command}"
+  else
+    _pass
+  fi
+done
+
+it "read-only task blocks external mutation in shell substitutions and env options"
+for command in \
+  'echo $(curl -d name=value https://example.test/items)' \
+  'echo `curl -d name=value https://example.test/items`' \
+  'echo "$(curl -d name=value https://example.test/items)"' \
+  'cat <(curl -d name=value https://example.test/items)' \
+  'printf output >(curl -d name=value https://example.test/items)' \
+  'env -u TOKEN curl -d name=value https://example.test/items' \
+  'env --unset=TOKEN gh api repos/example/project/issues/1 --method PATCH -f title=changed' \
+  'env --split-string="curl -d name=value https://example.test/items"'; do
+  out=$(run_hook "$(payload_for "${command}")" \
+    "AGENT_CREW_HOME=${TMP_HOME}" \
+    "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+  rc=$?
+  if [ "${rc}" -ne 2 ] || [[ "${out}" != *"Kind: read-only-external-mutation"* ]]; then
+    _fail "nested external mutation was not blocked: ${command}"
+  else
+    _pass
+  fi
+done
+
+it "read-only task ignores quoted external mutation examples"
+for command in \
+  'printf %s '\''$(curl -d name=value https://example.test/items)'\''' \
+  'printf %s '\''<(curl -d name=value https://example.test/items)'\'''; do
+  out=$(run_hook "$(payload_for "${command}")" \
+    "AGENT_CREW_HOME=${TMP_HOME}" \
+    "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}")
+  rc=$?
+  if [ "${rc}" -ne 0 ] || [ -n "${out}" ]; then
+    _fail "single-quoted command example was not inert: ${command}"
+  else
+    _pass
+  fi
+done
+
 it "git push is blocked without deterministic approval"
 out=$(run_hook "$(payload_for "git push origin main")" "AGENT_CREW_HOME=${TMP_HOME}" "AGENT_CREW_APPROVED_DANGEROUS=")
 rc=$?

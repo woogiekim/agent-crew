@@ -105,6 +105,126 @@ def test_plan_checker_blocks_bare_implementation_stage(tmp_path: Path):
     assert "implementation_stage_without_tdd_parallel" in payload["failures"]
 
 
+def test_plan_checker_blocks_mutating_stage_in_read_only_execution(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["mutation_scope"] = "read_only"
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "read_only_pipeline_contains_mutating_agent" in payload["failures"]
+
+
+def test_plan_checker_accepts_read_only_agents_in_read_only_execution(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Review the current architecture without changing files",
+            "mutation_scope": "read_only",
+            "stages": [["analyst"], ["reviewer"]],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+
+
+def test_plan_checker_accepts_read_only_supervisor_bootstrap_stage(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Inspect the current architecture without changing files",
+            "mutation_scope": "read_only",
+            "stages": ["supervisor"],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+
+
+def test_plan_checker_rejects_blank_explicit_pipeline_mutation_scope(tmp_path: Path):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Inspect the current architecture without changing files",
+            "mutation_scope": "",
+            "stages": [["analyst"]],
+            "completed_stages": 0,
+        },
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_pipeline_mutation_scope" in payload["failures"]
+
+
+def test_plan_checker_rejects_pipeline_that_widens_register_mutation_scope(
+    tmp_path: Path,
+):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Inspect the current architecture without changing files",
+            "mutation_scope": "workspace_write",
+            "stages": [["analyst"]],
+            "completed_stages": 0,
+        },
+    )
+    (tmp_path / "register.json").write_text(
+        json.dumps({"mutation_scope": "read_only"}),
+        encoding="utf-8",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "mutation_scope_register_mismatch" in payload["failures"]
+    assert payload["register_mutation_scope"] == "read_only"
+
+
+def test_plan_checker_rejects_blank_explicit_register_mutation_scope(
+    tmp_path: Path,
+):
+    path = write_pipeline(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "task": "Inspect the current architecture without changing files",
+            "mutation_scope": "workspace_write",
+            "stages": [["analyst"]],
+            "completed_stages": 0,
+        },
+    )
+    (tmp_path / "register.json").write_text(
+        json.dumps({"mutation_scope": ""}),
+        encoding="utf-8",
+    )
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_register_mutation_scope" in payload["failures"]
+
+
 def test_plan_checker_reports_missing_pipeline_path(tmp_path: Path):
     result = subprocess.run(
         ["python3", str(CHECKER), "--pipeline", str(tmp_path / "missing.json")],

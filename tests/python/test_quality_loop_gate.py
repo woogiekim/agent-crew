@@ -1136,6 +1136,20 @@ def test_repair_helpers_cover_fallback_paths(tmp_path: Path):
     assert "BLOCKER: manual_blocker" in blocked
 
 
+def test_repair_result_preserves_register_mutation_scope(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(tmp_path, "Read current status")
+    register_path = task_dir / "register.json"
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+    register["mutation_scope"] = "read_only"
+    register_path.write_text(json.dumps(register), encoding="utf-8")
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repaired_result = (task_dir / "result.md").read_text(encoding="utf-8")
+    assert "MUTATION_SCOPE: read_only" in repaired_result
+
+
 def test_repair_json_format_outputs_repair_record(tmp_path: Path):
     state_dir, task_id, task_dir = make_task(tmp_path, "Read current status")
 

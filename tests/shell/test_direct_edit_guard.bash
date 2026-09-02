@@ -36,6 +36,17 @@ print(json.dumps({
 " "${file_path}"
 }
 
+make_patch_payload() {
+  local patch_text="$1"
+  python3 -c "
+import json, sys
+print(json.dumps({
+    'tool_name': 'apply_patch',
+    'tool_input': {'patch': sys.argv[1]},
+}))
+" "${patch_text}"
+}
+
 # Run the hook with given stdin JSON payload. Returns stdout+stderr combined.
 run_hook() {
   local payload="$1"
@@ -211,6 +222,128 @@ rc=$(run_hook_env_rc "${PAYLOAD}" \
   "AGENT_CREW_ALLOW_DIRECT_EDIT=")
 assert_exit 0 "${rc}" "hash-keyed STATE_DIR per-task marker allows edit"
 rm -f "${FAKE_KEYED_TASKS_DIR}/active.20260618-093049-0"
+
+READ_ONLY_TASK_ID="20260828-020000-0"
+READ_ONLY_TASK_DIR="${FAKE_KEYED_TASKS_DIR}/${READ_ONLY_TASK_ID}"
+mkdir -p "${READ_ONLY_TASK_DIR}/context"
+python3 - "${READ_ONLY_TASK_DIR}/register.json" "${REPO_ROOT}" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "project_root": sys.argv[2],
+    "mutation_scope": "read_only",
+}) + "\n", encoding="utf-8")
+PYEOF
+touch "${FAKE_KEYED_TASKS_DIR}/active.${READ_ONLY_TASK_ID}"
+
+it "read-only active task blocks project Edit even though an active marker exists"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+out=$(run_hook_env "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+rc=$?
+assert_exit 2 "${rc}" "read-only active marker must not grant project write authority"
+assert_contains "${out}" "mutation_scope=read_only"
+
+it "read-only active task allows writes only inside its own task state directory"
+READ_ONLY_STATE_FILE="${READ_ONLY_TASK_DIR}/context/evidence.md"
+PAYLOAD="$(make_edit_payload "${READ_ONLY_STATE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 0 "${rc}" "read-only task-local state write remains allowed"
+
+it "read-only task blocks patch-only payload targeting a project file"
+PAYLOAD="$(make_patch_payload "*** Begin Patch
+*** Update File: ${PROJECT_CORE_FILE}
+@@
+-old
++new
+*** End Patch")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 2 "${rc}" "patch body targets must be checked without a file_path field"
+
+it "read-only task allows patch-only payload when every target is task-local"
+PAYLOAD="$(make_patch_payload "*** Begin Patch
+*** Update File: ${READ_ONLY_STATE_FILE}
+@@
+-old
++new
+*** End Patch")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 0 "${rc}" "task-local patch evidence remains writable"
+
+it "read-only task blocks a multi-file patch when any target leaves task state"
+PAYLOAD="$(make_patch_payload "*** Begin Patch
+*** Update File: ${READ_ONLY_STATE_FILE}
+@@
+-old
++new
+*** Update File: ${PROJECT_CORE_FILE}
+@@
+-old
++new
+*** End Patch")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_TASK_DIR=${READ_ONLY_TASK_DIR}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 2 "${rc}" "all patch targets must remain inside the task directory"
+
+it "direct-edit escape hatch cannot widen an active read-only task"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=1")
+assert_exit 2 "${rc}" "read-only scope is plan-bound and cannot use the legacy edit escape hatch"
+
+WRITABLE_TASK_ID="20260828-020001-0"
+WRITABLE_TASK_DIR="${FAKE_KEYED_TASKS_DIR}/${WRITABLE_TASK_ID}"
+mkdir -p "${WRITABLE_TASK_DIR}"
+printf '{"mutation_scope":"workspace_write"}\n' > "${WRITABLE_TASK_DIR}/register.json"
+touch "${FAKE_KEYED_TASKS_DIR}/active.${WRITABLE_TASK_ID}"
+
+it "explicit writable task is not narrowed by a concurrent read-only marker"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "AGENT_CREW_TASK_DIR=${WRITABLE_TASK_DIR}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 0 "${rc}" "the explicit task contract is authoritative for concurrent runs"
+
+rm -f "${FAKE_KEYED_TASKS_DIR}/active.${READ_ONLY_TASK_ID}"
+rm -f "${FAKE_KEYED_TASKS_DIR}/active.${WRITABLE_TASK_ID}"
+
+INVALID_SCOPE_TASK_ID="20260828-020002-0"
+INVALID_SCOPE_TASK_DIR="${FAKE_KEYED_TASKS_DIR}/${INVALID_SCOPE_TASK_ID}"
+mkdir -p "${INVALID_SCOPE_TASK_DIR}"
+printf '{"mutation_scope":"readonly"}\n' > "${INVALID_SCOPE_TASK_DIR}/register.json"
+touch "${FAKE_KEYED_TASKS_DIR}/active.${INVALID_SCOPE_TASK_ID}"
+
+it "invalid explicit mutation scope fails closed instead of widening"
+PAYLOAD="$(make_edit_payload "${PROJECT_CORE_FILE}")"
+rc=$(run_hook_env_rc "${PAYLOAD}" \
+  "AGENT_CREW_HOME=${FAKE_AGENT_CREW_HOME}" \
+  "PROJECT_ROOT=${REPO_ROOT}" \
+  "AGENT_CREW_ALLOW_DIRECT_EDIT=")
+assert_exit 2 "${rc}" "invalid scope state must not become workspace_write"
+
+rm -f "${FAKE_KEYED_TASKS_DIR}/active.${INVALID_SCOPE_TASK_ID}"
 
 # --------------------------------------------------------------------------- #
 # AC3: Escape hatch — AGENT_CREW_ALLOW_DIRECT_EDIT=1                         #

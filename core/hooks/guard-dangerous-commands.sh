@@ -15,12 +15,17 @@ python3 -S - "${HOOK_DIR}/../scripts" 3<&0 <<'PYEOF'
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, sys.argv[1])
 from hook_input import MAX_BYTES, read_available_fd
+from mutation_scope import (
+    active_read_only_task_dirs,
+    configured_project_root as mutation_scope_project_root,
+)
 
 try:
     max_bytes = int(os.environ.get("AGENT_CREW_HOOK_INPUT_MAX_BYTES", str(MAX_BYTES)))
@@ -267,6 +272,10 @@ def command_haystack(kind, value):
         "sudo",
         "credential-access",
         "commit-specialist",
+        "read-only-git-mutation",
+        "read-only-memory-mutation",
+        "read-only-filesystem-mutation",
+        "read-only-external-mutation",
     ) and not runs_shell_evaluator(value):
         return mask_quoted_strings(value)
     return value
@@ -308,6 +317,521 @@ def configured_project_root():
         if cwd:
             return Path(cwd).expanduser()
     return Path.cwd()
+
+def is_under_path(path, prefix):
+    try:
+        target = Path(path).expanduser().resolve(strict=False)
+        base = Path(prefix).expanduser().resolve(strict=False)
+        return target == base or base in target.parents
+    except Exception:
+        return False
+
+def task_state_target_allowed(raw_target, read_only_tasks):
+    target = str(raw_target or "").strip().strip("'\"")
+    if not target or target == "/dev/null":
+        return target == "/dev/null"
+
+    candidates = []
+    for task_dir in read_only_tasks:
+        task_path = Path(task_dir).expanduser().resolve(strict=False)
+        expanded = target
+        replacements = {
+            "${AGENT_CREW_TASK_DIR}": str(task_path),
+            "$AGENT_CREW_TASK_DIR": str(task_path),
+            "${TASKS_DIR}": str(task_path.parent),
+            "$TASKS_DIR": str(task_path.parent),
+            "${TASK_DIR}": str(task_path),
+            "$TASK_DIR": str(task_path),
+            "${STATE_DIR}": str(task_path.parent.parent),
+            "$STATE_DIR": str(task_path.parent.parent),
+            "${TASK_ID}": task_path.name,
+            "$TASK_ID": task_path.name,
+        }
+        for token, value in replacements.items():
+            expanded = expanded.replace(token, value)
+        candidates.append((task_path, expanded))
+
+    for task_path, expanded in candidates:
+        if is_under_path(expanded, task_path):
+            return True
+        resolved = Path(expanded).expanduser().resolve(strict=False)
+        if resolved in (
+            task_path.parent / f"active.{task_path.name}",
+            task_path.parent / "active",
+        ):
+            return True
+    return False
+
+def unwrap_command_argv(argv):
+    index = 0
+    assignment = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+    while index < len(argv) and assignment.match(argv[index]):
+        index += 1
+
+    if index < len(argv) and Path(argv[index]).name == "env":
+        index += 1
+        while index < len(argv):
+            value = argv[index]
+            if value == "--":
+                index += 1
+                break
+            if value in {"-u", "--unset", "-C", "--chdir", "-a", "--argv0"}:
+                index += 2
+                continue
+            if value in {"-S", "--split-string"}:
+                if index + 1 >= len(argv):
+                    return []
+                try:
+                    split_values = shlex.split(argv[index + 1])
+                except Exception:
+                    return []
+                return unwrap_command_argv(split_values + argv[index + 2:])
+            if value.startswith("-S") and len(value) > 2:
+                try:
+                    split_values = shlex.split(value[2:])
+                except Exception:
+                    return []
+                return unwrap_command_argv(split_values + argv[index + 1:])
+            if value.startswith("--split-string="):
+                try:
+                    split_values = shlex.split(value.split("=", 1)[1])
+                except Exception:
+                    return []
+                return unwrap_command_argv(split_values + argv[index + 1:])
+            if (
+                value.startswith(("--unset=", "--chdir=", "--argv0="))
+                or value.startswith("-")
+                or assignment.match(value)
+            ):
+                index += 1
+                continue
+            break
+
+    return argv[index:]
+
+def task_local_state_mutation(command_text, read_only_tasks):
+    redirection_pattern = (
+        r"(?<![0-9])>{1,2}\s*(\"[^\"]+\"|'[^']+'|[^\s;&|]+)"
+    )
+    redirection_targets = []
+    for match in re.finditer(redirection_pattern, command_text):
+        redirection_targets.append(match.group(1))
+    if redirection_targets and not all(
+            task_state_target_allowed(target, read_only_tasks)
+            for target in redirection_targets
+    ):
+        return False
+
+    command_without_redirections = re.sub(redirection_pattern, "", command_text)
+    if re.search(r"[;&|]", command_without_redirections):
+        return False
+    try:
+        argv = unwrap_command_argv(shlex.split(command_without_redirections))
+    except Exception:
+        return False
+    if not argv:
+        return bool(redirection_targets)
+
+    command_name = Path(argv[0]).name
+    operands = [value for value in argv[1:] if not value.startswith("-")]
+    if command_name in {"mkdir", "rm", "rmdir", "touch", "truncate"}:
+        return bool(operands) and all(
+            task_state_target_allowed(value, read_only_tasks) for value in operands
+        )
+    if command_name == "mv":
+        return len(operands) >= 2 and all(
+            task_state_target_allowed(value, read_only_tasks) for value in operands
+        )
+    if command_name in {"cp", "install"}:
+        return bool(operands) and task_state_target_allowed(
+            operands[-1], read_only_tasks
+        )
+    return bool(redirection_targets)
+
+def read_only_git_inspection(command_text):
+    if re.search(r"[;&|]", command_text):
+        return False
+    try:
+        argv = unwrap_command_argv(shlex.split(command_text))
+    except Exception:
+        return False
+    if not argv or Path(argv[0]).name != "git":
+        return False
+
+    index = 1
+    while index < len(argv):
+        value = argv[index]
+        if value in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
+            index += 2
+            continue
+        if value.startswith(("--git-dir=", "--work-tree=", "--namespace=")):
+            index += 1
+            continue
+        break
+    if index >= len(argv):
+        return False
+
+    subcommand = argv[index]
+    arguments = argv[index + 1:]
+    if subcommand == "branch":
+        return not arguments or arguments[0] in {
+            "--all",
+            "--contains",
+            "--format",
+            "--list",
+            "--merged",
+            "--no-contains",
+            "--no-merged",
+            "--points-at",
+            "--remotes",
+            "--show-current",
+            "--sort",
+            "-a",
+            "-l",
+            "-r",
+        } or arguments[0].startswith(("--format=", "--sort="))
+    if subcommand == "tag":
+        return not arguments or arguments[0] in {
+            "--contains",
+            "--list",
+            "--no-contains",
+            "--points-at",
+            "-l",
+        }
+    if subcommand == "stash":
+        return bool(arguments) and arguments[0] in {"list", "show"}
+    return False
+
+def shell_command_segments(command_text):
+    try:
+        lexer = shlex.shlex(
+            command_text,
+            posix=True,
+            punctuation_chars=";&|",
+        )
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except Exception:
+        return []
+
+    segments = []
+    current = []
+    for token in tokens:
+        if token and all(character in ";&|" for character in token):
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+def external_command_argv(argv):
+    values = unwrap_command_argv(argv)
+    while values and Path(values[0]).name in {"command", "nohup", "time"}:
+        values = values[1:]
+        while values and values[0].startswith("-"):
+            values = values[1:]
+    return values
+
+def curl_request_mutates(arguments):
+    method = ""
+    sends_data = False
+    uploads_content = False
+    index = 0
+    while index < len(arguments):
+        value = arguments[index]
+        lowered = value.lower()
+
+        if value == "-X" or lowered == "--request":
+            if index + 1 < len(arguments):
+                method = arguments[index + 1].upper()
+                index += 2
+                continue
+        elif value.startswith("-X") and len(value) > 2:
+            method = value[2:].upper()
+        elif lowered.startswith("--request="):
+            method = value.split("=", 1)[1].upper()
+        elif value == "-G" or lowered == "--get":
+            method = "GET"
+        elif value == "-I" or lowered == "--head":
+            method = "HEAD"
+        elif (
+            value == "-d"
+            or (value.startswith("-d") and len(value) > 2)
+            or lowered == "--data"
+            or lowered.startswith("--data=")
+            or lowered.startswith("--data-")
+            or lowered == "--json"
+            or lowered.startswith("--json=")
+        ):
+            sends_data = True
+        elif (
+            value == "-F"
+            or (value.startswith("-F") and len(value) > 2)
+            or value == "-T"
+            or (value.startswith("-T") and len(value) > 2)
+            or lowered == "--form"
+            or lowered.startswith("--form=")
+            or lowered.startswith("--form-")
+            or lowered == "--upload-file"
+            or lowered.startswith("--upload-file=")
+        ):
+            uploads_content = True
+        index += 1
+
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return True
+    if uploads_content:
+        return True
+    return sends_data and method not in {"GET", "HEAD"}
+
+def github_cli_request_mutates(command_name, arguments):
+    action_words = {
+        "approve",
+        "close",
+        "comment",
+        "create",
+        "delete",
+        "edit",
+        "merge",
+        "reopen",
+        "review",
+    }
+    for value in arguments:
+        action = value.lstrip("-").split("=", 1)[0].lower()
+        if action in action_words:
+            return True
+
+    if command_name == "gh":
+        pairs = zip(arguments, arguments[1:])
+        if any(
+            first.lower() == "workflow" and second.lower() == "run"
+            for first, second in pairs
+        ):
+            return True
+
+    try:
+        api_index = next(
+            index for index, value in enumerate(arguments) if value.lower() == "api"
+        )
+    except StopIteration:
+        return False
+
+    method = ""
+    fields = False
+    api_arguments = arguments[api_index + 1:]
+    index = 0
+    while index < len(api_arguments):
+        value = api_arguments[index]
+        lowered = value.lower()
+        if value == "-X" or lowered == "--method":
+            if index + 1 < len(api_arguments):
+                method = api_arguments[index + 1].upper()
+                index += 2
+                continue
+        elif value.startswith("-X") and len(value) > 2:
+            method = value[2:].upper()
+        elif lowered.startswith("--method="):
+            method = value.split("=", 1)[1].upper()
+        elif (
+            value in {"-f", "-F"}
+            or (value.startswith(("-f", "-F")) and len(value) > 2)
+            or lowered in {"--field", "--raw-field", "--input"}
+            or lowered.startswith(("--field=", "--raw-field=", "--input="))
+        ):
+            fields = True
+        index += 1
+
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return True
+    return fields and method not in {"GET", "HEAD"}
+
+def shell_substitution_bodies(command_text):
+    bodies = []
+    quote = ""
+    index = 0
+    while index < len(command_text):
+        character = command_text[index]
+        if quote == "'":
+            if character == "'":
+                quote = ""
+            index += 1
+            continue
+        if character == "\\":
+            index += 2
+            continue
+        if character == "'" and not quote:
+            quote = "'"
+            index += 1
+            continue
+        if character == '"':
+            quote = "" if quote == '"' else '"'
+            index += 1
+            continue
+        if character == "`":
+            end = index + 1
+            while end < len(command_text):
+                if command_text[end] == "\\":
+                    end += 2
+                    continue
+                if command_text[end] == "`":
+                    bodies.append(command_text[index + 1:end])
+                    index = end + 1
+                    break
+                end += 1
+            else:
+                bodies.append(command_text[index + 1:])
+                break
+            continue
+        substitution_prefix = ""
+        if command_text.startswith("$(", index):
+            substitution_prefix = "$("
+        elif not quote and command_text.startswith(("<(", ">("), index):
+            substitution_prefix = command_text[index:index + 2]
+        if substitution_prefix:
+            depth = 1
+            end = index + 2
+            nested_quote = ""
+            while end < len(command_text):
+                nested_character = command_text[end]
+                if nested_quote == "'":
+                    if nested_character == "'":
+                        nested_quote = ""
+                    end += 1
+                    continue
+                if nested_character == "\\":
+                    end += 2
+                    continue
+                if nested_character == "'" and not nested_quote:
+                    nested_quote = "'"
+                    end += 1
+                    continue
+                if nested_character == '"':
+                    nested_quote = "" if nested_quote == '"' else '"'
+                    end += 1
+                    continue
+                if not nested_quote and nested_character == "(":
+                    depth += 1
+                elif not nested_quote and nested_character == ")":
+                    depth -= 1
+                    if depth == 0:
+                        bodies.append(command_text[index + 2:end])
+                        index = end + 1
+                        break
+                end += 1
+            else:
+                bodies.append(command_text[index + 2:])
+                break
+            continue
+        index += 1
+    return bodies
+
+def read_only_external_mutation(command_text, depth=0):
+    if depth > 4:
+        return bool(re.search(r"\b(?:curl|gh|glab)\b", command_text, re.I))
+
+    for nested_command in shell_substitution_bodies(command_text):
+        if read_only_external_mutation(nested_command, depth + 1):
+            return True
+
+    for segment in shell_command_segments(command_text):
+        argv = external_command_argv(segment)
+        if not argv:
+            continue
+
+        command_name = Path(argv[0]).name
+        if command_name in {"bash", "sh", "zsh"}:
+            for index, value in enumerate(argv[1:], start=1):
+                if value.startswith("-") and "c" in value[1:] and index + 1 < len(argv):
+                    if read_only_external_mutation(argv[index + 1], depth + 1):
+                        return True
+                    break
+            continue
+        if command_name == "eval":
+            if read_only_external_mutation(" ".join(argv[1:]), depth + 1):
+                return True
+            continue
+        if command_name == "curl" and curl_request_mutates(argv[1:]):
+            return True
+        if command_name in {"gh", "glab"} and github_cli_request_mutates(
+            command_name,
+            argv[1:],
+        ):
+            return True
+    return False
+
+def enforce_read_only_mutation_scope():
+    task_dir = os.environ.get("AGENT_CREW_TASK_DIR", "").strip()
+    project_root = mutation_scope_project_root(tool_input)
+    read_only_tasks = active_read_only_task_dirs(
+        home,
+        project_root,
+        explicit_task_dir=task_dir or None,
+        script_roots=[Path(sys.argv[1])],
+    )
+    if not read_only_tasks:
+        return
+
+    patterns = [
+        (
+            "read-only-git-mutation",
+            r"\bgit\b[^;&|\n]*\b(?:add|am|apply|bisect|branch|checkout|cherry-pick|clean|clone|commit|fetch|init|merge|mv|pull|push|rebase|reset|restore|revert|rm|stash|submodule|switch|tag|worktree)\b",
+        ),
+        (
+            "read-only-memory-mutation",
+            r"\bmnemos\s+(?:capture|delete|gc)\b",
+        ),
+        (
+            "read-only-external-mutation",
+            r"\b(?:curl|gh|glab)\b",
+        ),
+        (
+            "read-only-filesystem-mutation",
+            r"\b(?:apply_patch|chmod|chown|cp|install|ln|mkdir|mv|patch|rm|rmdir|rsync|sed\s+-[^\s]*i|tee|touch|truncate)\b|(?<![0-9])>{1,2}\s*(?!/dev/null\b)",
+        ),
+    ]
+    for kind, pattern in patterns:
+        if kind == "read-only-external-mutation":
+            if not read_only_external_mutation(command):
+                continue
+        else:
+            haystack = command_haystack(kind, command)
+            if not re.search(pattern, haystack, re.I):
+                continue
+        if kind == "read-only-git-mutation" and read_only_git_inspection(command):
+            continue
+        if kind == "read-only-filesystem-mutation" and task_local_state_mutation(
+            command,
+            read_only_tasks,
+        ):
+            continue
+        audit({
+            "decision": "block",
+            "kind": kind,
+            "pattern": pattern,
+            "command": command,
+            "tool_name": tool_name,
+            "approved": False,
+            "approval_reason": "read_only_execution_contract",
+            "approval_source": "mutation-scope",
+            "approval_file": "",
+        })
+        block_with_reason({
+            "decision": "block",
+            "reason": (
+                "[agent-crew] Read-only execution mutation blocked.\n\n"
+                f"Kind: {kind}\n"
+                f"Command: {command}\n"
+                "Reason: mutation_scope=read_only permits task-local state only; "
+                "an approval marker cannot widen the bound execution scope."
+            ),
+        })
+
+enforce_read_only_mutation_scope()
 
 COMMIT_MESSAGE_CAPABILITY = "vcs.commit.message.compose"
 COMPLETED_CAPABILITY_STATES = {"completed", "succeeded", "success", "passed", "approved", "done"}

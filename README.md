@@ -102,6 +102,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 - **Real-time progress visibility** — every phase and stage boundary emits a `[crew] TASK_ID | EVENT | detail` line and appends a timestamped entry to `{TASK_DIR}/progress.log`; the orchestrator also writes an initial handoff event before supervisor spawn, and `crew:status` surfaces stalled handoffs with remediation guidance
 - **Centralized approval gate** — stage agents (devops) never issue `AskUserQuestion` directly; they write a PLAN block and wait; the supervisor (N == 1) or `crew:run` orchestrator (N > 1) owns the single consolidated approval dialog
 - **Explicit execution boundary** — ordinary natural-language input does not start a workflow, task, agent, or hidden router. Users choose the command boundary explicitly with `crew:run`, `crew:agent`, `$crew:run`, `$crew:agent`, or another management command.
+- **Explicit read-only scope** — `crew run --read-only "task"` binds `mutation_scope=read_only` into state, planning, handoff, SMM, and guards. It permits task-local evidence while suppressing runtime auto-sync and blocking mutating Agents plus recognized project, Git, Memory, and external writes; task prose never selects this mode implicitly.
 - **Agent-first skill dispatch** — implementation agents discover capability skills through agent-crew's canonical `system/skills` + `user/skills` layers. Skill frontmatter (`loaded_by`, `axis`, `detection`) selects applicable skills; same-name user skills override system defaults; duplicate resolution and unindexed user-skill gaps are reported as framework-computed `decision_context`, not as required proof artifacts.
 - **Direct-agent mutation support** — `crew:agent` can run mutating single-agent work when the selected agent definition allows mutation. Agents that must remain read-only declare that contract in their own instructions.
 - **Route directive guard** — when a host exposes Agent `PostToolUse` hooks, `route-directive-guard.sh` detects Agent responses that received a STOP/ROUTE route lock but answered inline instead of entering `crew:run` / `crew:agent`
@@ -160,6 +161,9 @@ crew setup
 
 # 2. Run a single task in the host runtime
 crew:run "implement order domain API with TDD"
+
+# Optional: explicit strict read-only execution (never inferred from prose)
+crew run --read-only "inspect the current API contract"
 
 # 3. Run multiple independent tasks in parallel
 crew:run "implement order API" | "implement product API" | "implement user API"
@@ -981,6 +985,7 @@ Pipelines that do not include a `devops` stage show the summary but skip the app
 | `crew resume [TASK_ID]` | Native shell command: request host-runtime continuation and record `RESUME_REQUESTED`; use `--print` or `--dry-run` for read-only coordinates |
 | `crew update --local [SOURCE]` | Native shell command: sync `~/.agent-crew/` with a source checkout |
 | `crew run "task"` | Native shell command: create deterministic task state and supervisor handoff; currently blocks until a host AI prompt runtime completes the handoff |
+| `crew run --read-only "task"` | Native shell command: create task-local state with `mutation_scope=read_only`, drift warnings instead of runtime auto-sync, and read-only planning/tool guards |
 | `crew agent ...` | Native shell command: validate a read-only direct-agent request and write host handoff state |
 | `crew:setup` | Host prompt alias for setup in adapters that expose it |
 | `crew:run "task"` | Run a single task through the full pipeline |

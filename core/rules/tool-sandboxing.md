@@ -19,6 +19,25 @@ adapter explicitly advertises that capability.
 6. Audit and reporting: guard decisions are written to local audit state and
    infrastructure failure signals can be captured by automatic issue reporting.
 
+## Explicit Mutation Scope
+
+`crew run --read-only` (equivalent to
+`crew run --mutation-scope read_only`) binds `mutation_scope=read_only` into
+`register.json`, `pipeline.json`, and the supervisor handoff. The runtime still
+writes task-local state, but suppresses installed asset and hook auto-sync.
+Planning rejects mutating Agents, direct-edit guarding rejects non-task-state
+file edits, and the dangerous-command guard rejects recognized project, Git,
+Memory, and external mutations before ordinary approval checks. Legacy task
+state with no field defaults to `workspace_write`; natural-language wording
+never selects the scope. A present but invalid scope fails closed instead of
+silently widening to `workspace_write`. The planning-time quality gate also compares
+`pipeline.json.mutation_scope` with `register.json` so a Planner cannot widen
+the execution contract while replacing the bootstrap stage graph.
+
+This is layered deterministic enforcement over registered host Tool surfaces,
+not a claim that agent-crew becomes an operating-system sandbox. Unknown or
+unregistered host mutation surfaces remain subject to the Host Boundary below.
+
 ## Command-Bound Approval
 
 Approvals must bind to the exact command and action kind. A reused, expired,

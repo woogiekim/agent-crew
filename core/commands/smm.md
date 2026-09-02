@@ -64,6 +64,7 @@ task matches, so interleaved N>1 runs read cleanly):
 - `Branch`   — working branch (from `register.json`)
 - `Status`   — `completed | blocked | cancelled | running | unknown`
 - `Phase`    — `register.json.current_phase`
+- `Mutation` — explicit `mutation_scope` (`workspace_write` for legacy state)
 - `Approval` / `Verify` — `approval_status` / `verification_status`
 - `Stages`   — `{completed}/{total}` plus a per-stage list with
                `[x]` (done) / `[>]` (current) / `[ ]` (pending) markers

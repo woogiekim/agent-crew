@@ -74,6 +74,12 @@
       "enum": ["single", "parallel"],
       "description": "Matches the EXECUTION_MODE supervisor input."
     },
+    "mutation_scope": {
+      "type": "string",
+      "enum": ["read_only", "workspace_write"],
+      "default": "workspace_write",
+      "description": "Explicit execution mutation boundary. Missing legacy values default to workspace_write; this value is never inferred from task prose."
+    },
     "current_phase": {
       "type": "string",
       "enum": [

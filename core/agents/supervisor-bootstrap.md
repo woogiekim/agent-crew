@@ -39,6 +39,14 @@ CAPABILITIES_PATH="${STATE_DIR}/capabilities.json"
 # tasks always have TASK_ID = "{session_ts}-{idx}"). Ad-hoc manual invocations
 # with no `-` suffix collapse SESSION_ID to TASK_ID (acceptable fallback).
 SESSION_ID="${SESSION_ID:-${TASK_ID%-*}}"
+MUTATION_SCOPE="${MUTATION_SCOPE:-workspace_write}"
+case "${MUTATION_SCOPE}" in
+  read_only|workspace_write) ;;
+  *)
+    echo "FATAL: invalid MUTATION_SCOPE=${MUTATION_SCOPE}" >&2
+    exit 1
+    ;;
+esac
 
 # Supervisor mode sentinel: crew:run must pass MODE=supervisor to every
 # supervisor spawn. If this variable is absent, the prompt may have inherited
@@ -58,8 +66,19 @@ fi
 ```
 
 These six variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
-`PRD_PATH`, `CAPABILITIES_PATH`, `STATE_DIR`) plus `SESSION_ID` must be
+`PRD_PATH`, `CAPABILITIES_PATH`, `STATE_DIR`) plus `SESSION_ID` and
+`MUTATION_SCOPE` must be
 passed as-is to all sub-agents. Never re-derive them inline.
+
+When `MUTATION_SCOPE=read_only`, task-local state under `TASK_DIR` is the only
+write authority. The supervisor must not dispatch a mutating Agent or Tool,
+change project or Git state, capture/delete Memory, mutate an external system,
+or widen the scope through an approval or legacy escape hatch. If satisfying
+the request requires any such mutation, stop with a structured blocker and
+request a new execution using an explicitly writable scope. Never infer this
+field from the task's natural-language wording. Preserve
+`MUTATION_SCOPE: ${MUTATION_SCOPE}` in every `handoff.md` and `result.md`
+creation or rewrite so terminal and fallback artifacts retain the contract.
 
 **Host capability bootstrap**: Read host capabilities (registry:
 `core/rules/host-capabilities.md`; per-flag detail under
@@ -319,11 +338,12 @@ register_update() {
 
   python3 - "${TASK_DIR}/register.json" "${field}" "${raw_kind}" "${value}" \
            "${TASK_ID}" "${SESSION_ID:-${TASK_ID}}" "${TASK:-}" "${BRANCH:-}" \
-           "${PROJECT_ROOT:-}" "${TASK_DIR}" "${EXECUTION_MODE:-single}" <<'PYEOF' 2>/dev/null || true
+           "${PROJECT_ROOT:-}" "${TASK_DIR}" "${EXECUTION_MODE:-single}" \
+           "${MUTATION_SCOPE:-workspace_write}" <<'PYEOF' 2>/dev/null || true
 import json, os, sys, tempfile
 
 (path, field, kind, raw_value, task_id, session_id, task, branch,
- project_root, task_dir, execution_mode) = sys.argv[1:12]
+ project_root, task_dir, execution_mode, mutation_scope) = sys.argv[1:13]
 
 try:
     with open(path, "r", encoding="utf-8") as f:
@@ -338,6 +358,7 @@ except Exception:
         "project_root":         project_root,
         "task_dir":             task_dir,
         "execution_mode":       execution_mode,
+        "mutation_scope":       mutation_scope,
         "current_phase":        "phase_0",
         "approval_status":      "not_required",
         "verification_status":  "not_started",
@@ -797,6 +818,7 @@ analyst+planner — it produces all planning artifacts in one spawn:
 TASK: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
+MUTATION_SCOPE: {MUTATION_SCOPE}
 REQUIREMENTS: {REQUIREMENTS — always present at this point}
 MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  (read this file if non-empty for prior context)
 
@@ -953,7 +975,7 @@ if [ "${PLAN_CHECK_RC}" -ne 0 ]; then
   cat > "${TASK_DIR}/result.md" <<EOF
 STATUS: BLOCKED
 BLOCKER: pipeline_quality_plan_failed
-DETAIL: pipeline.json contains code implementation stages that are not TDD-capable or are missing a later reviewer/QA verification quality gate.
+DETAIL: pipeline.json violates its register-bound mutation scope or contains implementation stages that are not TDD-capable or are missing a later reviewer/QA verification quality gate.
 
 ${PLAN_CHECK_OUTPUT}
 EOF
@@ -1560,6 +1582,7 @@ Pass only paths — never inline file contents:
 TASK: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
+MUTATION_SCOPE: {MUTATION_SCOPE}
 REQUIREMENTS: {REQUIREMENTS}
 
 CHANGE REQUEST: {user's change description}

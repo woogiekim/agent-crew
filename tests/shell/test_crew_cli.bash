@@ -60,6 +60,13 @@ it "crew help states prompt-workflow control plane"
 out=$(bash "${CREW}" --help 2>&1)
 assert_contains "${out}" "local control plane for AI-host prompt workflows"
 
+it "crew run help documents the explicit read-only execution boundary"
+out=$(bash "${CREW}" run --help 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "--read-only"
+assert_contains "${out}" "--mutation-scope read_only|workspace_write"
+
 TMP_HOME=$(make_tmp)
 TMP_PROJECT=$(make_tmp)
 mkdir -p "${TMP_HOME}/state/$(basename "${TMP_PROJECT}")/tasks"
@@ -569,6 +576,9 @@ assert_contains "$(tail -n 1 "${RUNTIME_SYNC_BIN}/crew")" "stale managed PATH cr
 it "crew run installs missing runtime repair script during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
 
+it "crew run installs mutation scope resolver during auto-refresh"
+assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/mutation_scope.py"
+
 it "crew run installs pipeline quality plan checker during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/pipeline-quality-plan-check.py"
 
@@ -624,6 +634,38 @@ cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_HOME}/bin/crew"
 rc=$?
 assert_exit 0 "${rc}"
 
+printf 'stale runtime retained by read-only run\n' > "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
+
+it "crew run --read-only reports drift without refreshing installed runtime assets"
+out=$(PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  "${RUNTIME_SYNC_BIN}/crew" run --read-only "read-only runtime drift task" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_contains "${out}" "read-only execution: runtime asset drift detected; auto-sync suppressed"
+assert_eq "stale runtime retained by read-only run" "$(cat "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py")"
+
+READ_ONLY_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+read_only_register=$(cat "${READ_ONLY_TASK_DIR}/register.json")
+read_only_pipeline=$(cat "${READ_ONLY_TASK_DIR}/pipeline.json")
+read_only_handoff=$(cat "${READ_ONLY_TASK_DIR}/handoff.md")
+read_only_result=$(cat "${READ_ONLY_TASK_DIR}/result.md")
+
+it "crew run --read-only binds mutation scope into state and handoff"
+assert_contains "${read_only_register}" '"mutation_scope": "read_only"'
+assert_contains "${read_only_pipeline}" '"mutation_scope": "read_only"'
+assert_contains "${read_only_handoff}" "MUTATION_SCOPE: read_only"
+assert_contains "${read_only_result}" "MUTATION_SCOPE: read_only"
+
+it "crew run does not parse a task literal after the option terminator"
+out=$(AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0 AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN=0 \
+  bash "${CREW}" run -- "--mutation-scope" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+terminated_task_dir=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+assert_contains "$(cat "${terminated_task_dir}/register.json")" '"task": "--mutation-scope"'
+assert_contains "$(cat "${terminated_task_dir}/register.json")" '"mutation_scope": "workspace_write"'
+
 HOOK_SYNC_HOME=$(make_tmp)
 HOOK_SYNC_PROJECT=$(make_tmp)
 mkdir -p "${HOOK_SYNC_HOME}/commands" "${HOOK_SYNC_HOME}/scripts" \
@@ -652,6 +694,14 @@ it "crew run preserves project-local Codex hook overrides"
 assert_eq "stale hook" "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")"
 
 printf 'stale project hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
+
+it "crew run --read-only does not treat project-local hook overrides as drift"
+out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" \
+  bash "${CREW}" run --read-only "read-only hook drift task" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_not_contains "${out}" "read-only execution: hook drift detected; auto-sync suppressed"
+assert_eq "stale project hook" "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")"
 
 it "crew run ignores project-local hook drift when global hook is fresh"
 out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo project hook sync task" 2>&1)
@@ -682,6 +732,9 @@ TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 
 it "crew run writes register.json"
 assert_file_exists "${TASK_DIR}/register.json"
+
+it "crew run defaults to workspace-write mutation scope"
+assert_contains "$(cat "${TASK_DIR}/register.json")" '"mutation_scope": "workspace_write"'
 
 it "crew run writes supervisor handoff"
 assert_file_exists "${TASK_DIR}/handoff.md"
@@ -884,7 +937,7 @@ out=$(
   PROJECT_ROOT="${TMP_PROJECT}" \
   AGENT_CREW_BRIDGE_LOG="${BRIDGE_LOG}" \
   AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"\$AGENT_CREW_TASK_ID\" > \"\$AGENT_CREW_BRIDGE_LOG\"'" \
-    bash "${CREW}" run "auto bridge task" 2>&1
+    bash "${CREW}" run --read-only "auto bridge task" 2>&1
 )
 rc=$?
 assert_exit 0 "${rc}"
@@ -895,6 +948,7 @@ AUTO_TASK_ID=$(basename "${AUTO_TASK_DIR}")
 it "crew run host bridge command writes completion evidence"
 assert_file_exists "${AUTO_TASK_DIR}/context/host-bridge-completion.json"
 assert_contains "$(cat "${AUTO_TASK_DIR}/result.md")" "STATUS: completed"
+assert_contains "$(cat "${AUTO_TASK_DIR}/result.md")" "MUTATION_SCOPE: read_only"
 assert_eq "${AUTO_TASK_ID}" "$(cat "${BRIDGE_LOG}")"
 
 it "crew telemetry distinguishes auto host bridge completion"
@@ -908,7 +962,7 @@ out=$(
   AGENT_CREW_HOME="${TMP_HOME}" \
   PROJECT_ROOT="${TMP_PROJECT}" \
   AGENT_CREW_HOST_BRIDGE_COMMAND="bash -c 'printf \"%s\\n\" \"AGENT_CREW_BRIDGE_STATUS: current_session_required\" \"codex-host-bridge: refusing nested Codex exec from an active Codex session\" >&2; exit 2'" \
-    bash "${CREW}" run "current session run handoff" 2>&1
+    bash "${CREW}" run --read-only "current session run handoff" 2>&1
 )
 rc=$?
 assert_exit 0 "${rc}"
@@ -918,15 +972,19 @@ assert_not_contains "${out}" "BLOCKER:"
 CURRENT_SESSION_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 CURRENT_SESSION_RUN_REGISTER=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/register.json")
 CURRENT_SESSION_RUN_INVOCATION=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/context/host-bridge-invocation.json")
+CURRENT_SESSION_RUN_HANDOFF=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/handoff.md")
 CURRENT_SESSION_RUN_RESULT=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/result.md")
 assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"current_phase": "handoff_ready"'
 assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"host_bridge_status": "current_session_required"'
 assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"host_bridge_failure_reason": "nested_codex_current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"mutation_scope": "read_only"'
 assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"blocked_by": []'
 assert_contains "${CURRENT_SESSION_RUN_INVOCATION}" '"failure_class": "current_session_required"'
 assert_contains "${CURRENT_SESSION_RUN_INVOCATION}" '"status": "current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_HANDOFF}" "MUTATION_SCOPE: read_only"
 assert_contains "${CURRENT_SESSION_RUN_RESULT}" "STATUS: handoff_ready"
 assert_contains "${CURRENT_SESSION_RUN_RESULT}" "HOST_BRIDGE: current_session_required"
+assert_contains "${CURRENT_SESSION_RUN_RESULT}" "MUTATION_SCOPE: read_only"
 assert_not_contains "${CURRENT_SESSION_RUN_RESULT}" "host AI bridge has not completed this handoff"
 assert_contains "$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/progress.buffer.jsonl")" "HOST_BRIDGE_CURRENT_SESSION"
 

@@ -2361,12 +2361,14 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
                   skill_load_gate: dict | None = None,
                   skill_use_gate: dict | None = None,
                   skill_understanding_gate: dict | None = None,
-                  skill_coverage: dict | None = None) -> str:
+                  skill_coverage: dict | None = None,
+                  mutation_scope: str = "workspace_write") -> str:
     lines = [
         f"# {task or task_id}",
         "",
         f"STATUS: {status}",
         f"TASK_ID: {task_id}",
+        f"MUTATION_SCOPE: {mutation_scope}",
         "MEASUREMENTS: repaired manual handoff state, 1 repair event recorded, 0 retries",
     ]
     if status in {"blocked", "cancelled"}:
@@ -2735,6 +2737,7 @@ def repair(args: argparse.Namespace) -> dict:
             skill_use_gate,
             skill_understanding_gate,
             skill_coverage,
+            str(register.get("mutation_scope") or "workspace_write"),
         ),
         encoding="utf-8",
     )

@@ -153,6 +153,18 @@ CAPABILITY_SEARCH_ORDER = [
 
 DIFF_BUDGET_CATEGORIES = {"XS", "S", "M", "L", "XL"}
 NEED_ANALYSIS_ANSWERS = {"yes", "no"}
+VALID_MUTATION_SCOPES = {"read_only", "workspace_write"}
+READ_ONLY_PIPELINE_AGENTS = {
+    "analyst",
+    "debugger",
+    "historian",
+    "learning-mentor",
+    "mentor",
+    "planner",
+    "requirements",
+    "reviewer",
+    "supervisor",
+}
 
 _BLOCKQUOTE_RE = re.compile(r"^\s*>")
 _FENCE_RE = re.compile(r"^\s*```")
@@ -406,6 +418,31 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
 
     failures: list[str] = []
     implementation_stage_results: list[dict] = []
+    raw_mutation_scope = pipeline.get("mutation_scope")
+    mutation_scope = (
+        "workspace_write"
+        if raw_mutation_scope is None
+        else str(raw_mutation_scope).strip()
+    )
+    read_only_violations: list[dict] = []
+
+    if mutation_scope not in VALID_MUTATION_SCOPES:
+        failures.append("invalid_pipeline_mutation_scope")
+
+    if mutation_scope == "read_only":
+        for idx, stage in enumerate(stages):
+            disallowed = [
+                agent
+                for agent in stage_agents(stage)
+                if agent not in READ_ONLY_PIPELINE_AGENTS
+            ]
+            if not disallowed:
+                continue
+            read_only_violations.append(
+                {"stage_index": idx, "agents": sorted(set(disallowed))}
+            )
+        if read_only_violations:
+            failures.append("read_only_pipeline_contains_mutating_agent")
 
     if required and not no_code_route:
         if not shape["has_implementation_stage"]:
@@ -449,6 +486,8 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
         "code_task": code_task,
         "failures": sorted(set(failures)),
         "task": task_text,
+        "mutation_scope": mutation_scope,
+        "read_only_violations": read_only_violations,
         "pipeline_shape": shape,
         "implementation_stages": implementation_stage_results,
         "minimal_change_decision": minimal_change,
@@ -513,6 +552,34 @@ def _apply_prd_scan(result: dict, pipeline_path: Path) -> dict:
     return result
 
 
+def _apply_mutation_scope_binding(result: dict, pipeline_path: Path) -> dict:
+    register_path = pipeline_path.parent / "register.json"
+    result["register_path"] = str(register_path)
+    result["mutation_scope_binding_checked"] = register_path.is_file()
+    result["register_mutation_scope"] = ""
+    if not register_path.is_file():
+        return result
+
+    register = load_json(register_path)
+    raw_register_scope = register.get("mutation_scope")
+    register_scope = (
+        "workspace_write"
+        if raw_register_scope is None
+        else str(raw_register_scope).strip()
+    )
+    result["register_mutation_scope"] = register_scope
+
+    failures = set(result.get("failures") or [])
+    if register_scope not in VALID_MUTATION_SCOPES:
+        failures.add("invalid_register_mutation_scope")
+    if register_scope != str(result.get("mutation_scope") or "workspace_write"):
+        failures.add("mutation_scope_register_mismatch")
+
+    result["failures"] = sorted(failures)
+    result["passed"] = not failures
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pipeline", required=True)
@@ -527,6 +594,7 @@ def main() -> int:
 
     pipeline = load_json(pipeline_path)
     result = validate_pipeline_quality_plan(pipeline, task=args.task)
+    _apply_mutation_scope_binding(result, pipeline_path)
     _apply_prd_scan(result, pipeline_path)
 
     if args.format == "json":

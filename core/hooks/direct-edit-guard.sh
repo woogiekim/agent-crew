@@ -30,6 +30,7 @@ python3 - "$INPUT" "$HOOK_DIR" <<'PYEOF'
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -52,15 +53,51 @@ tool_input = data.get("tool_input", {})
 if tool_name not in ("Edit", "Write", "MultiEdit", "apply_patch"):
     sys.exit(0)
 
-file_path = ""
+file_paths = []
 if isinstance(tool_input, dict):
-    file_path = tool_input.get("file_path") or tool_input.get("path") or ""
-if not file_path:
-    sys.exit(0)
+    direct_path = tool_input.get("file_path") or tool_input.get("path") or ""
+    if direct_path:
+        file_paths.append(str(direct_path))
+    patch_text = str(tool_input.get("patch") or tool_input.get("input") or "")
+elif isinstance(tool_input, str):
+    patch_text = tool_input
+else:
+    patch_text = ""
 
-# Escape hatch 1: AGENT_CREW_ALLOW_DIRECT_EDIT env var
-if os.environ.get("AGENT_CREW_ALLOW_DIRECT_EDIT", "").strip() == "1":
-    sys.exit(0)
+if tool_name == "apply_patch" and patch_text:
+    for match in re.finditer(
+        r"^\*\*\* (?:(?:Update|Add|Delete) File:|Move to:)\s*(.+?)\s*$",
+        patch_text,
+        re.MULTILINE,
+    ):
+        target = match.group(1).strip()
+        if target and target not in file_paths:
+            file_paths.append(target)
+
+def load_mutation_scope_module():
+    agent_crew_home = Path(
+        os.environ.get("AGENT_CREW_HOME", os.path.expanduser("~/.agent-crew"))
+    )
+    candidates = [
+        agent_crew_home / "scripts" / "mutation_scope.py",
+        agent_crew_home / "system" / "scripts" / "mutation_scope.py",
+        Path(hook_dir).parent / "scripts" / "mutation_scope.py",
+    ]
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "agent_crew_mutation_scope", candidate
+            )
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        except Exception:
+            continue
+    return None
 
 def is_under(path, prefix):
     if not prefix:
@@ -80,14 +117,59 @@ def is_under(path, prefix):
 
 agent_crew_home = os.environ.get("AGENT_CREW_HOME", os.path.expanduser("~/.agent-crew"))
 
+mutation_scope_module = load_mutation_scope_module()
+read_only_task_dirs = []
+if mutation_scope_module is not None:
+    try:
+        scope_project_root = mutation_scope_module.configured_project_root(tool_input)
+        read_only_task_dirs = mutation_scope_module.active_read_only_task_dirs(
+            agent_crew_home,
+            scope_project_root,
+            explicit_task_dir=os.environ.get("AGENT_CREW_TASK_DIR", "").strip() or None,
+            script_roots=[Path(hook_dir).parent / "scripts"],
+        )
+    except Exception:
+        read_only_task_dirs = []
+
+if read_only_task_dirs:
+    if file_paths and all(
+        any(is_under(file_path, task_dir) for task_dir in read_only_task_dirs)
+        for file_path in file_paths
+    ):
+        sys.exit(0)
+    block_with_reason(
+        "[agent-crew] Direct edit blocked — mutation_scope=read_only.\n\n"
+        "Task-local state writes remain allowed, but project, Git, Memory, "
+        "installed asset, and external state writes are outside this execution contract."
+    )
+
+if not file_paths:
+    sys.exit(0)
+
+file_path = file_paths[0]
+
+# Escape hatch 1: AGENT_CREW_ALLOW_DIRECT_EDIT env var. It is intentionally
+# evaluated after the plan-bound read-only scope so it cannot widen that scope.
+if os.environ.get("AGENT_CREW_ALLOW_DIRECT_EDIT", "").strip() == "1":
+    sys.exit(0)
+
 # Allow edits to crew state, agent definitions, and harness config itself before
 # any git lookup. State writes are common hook side effects and must stay cheap.
 allowed_prefixes = [
     agent_crew_home,
     os.path.expanduser("~/.claude"),
 ]
-if any(is_under(file_path, prefix) for prefix in allowed_prefixes):
+if all(
+    any(is_under(candidate, prefix) for prefix in allowed_prefixes)
+    for candidate in file_paths
+):
     sys.exit(0)
+
+file_path = next(
+    candidate
+    for candidate in file_paths
+    if not any(is_under(candidate, prefix) for prefix in allowed_prefixes)
+)
 
 # Resolve project root
 try:

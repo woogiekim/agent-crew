@@ -90,6 +90,11 @@ export AGENT_CREW_ALLOW_DIRECT_EDIT=1
 unset AGENT_CREW_ALLOW_DIRECT_EDIT
 ```
 
+This escape hatch does not widen an active task whose register declares
+`mutation_scope=read_only`. Such a task may write only inside its own
+task-state directory; start a new explicitly writable execution if project
+mutation is required.
+
 Use cases:
 - Quick typo fix in documentation that does not warrant a full pipeline
 - Editing `~/.claude/settings.json` or agent-crew config files directly
@@ -97,11 +102,12 @@ Use cases:
 
 ### 2. Allowed path prefixes (automatic)
 
-The hook automatically allows edits to:
+When no active read-only task overrides them, the hook automatically allows edits to:
 - `~/.agent-crew/` — crew state, agent definitions, harness config
 - `~/.claude/` — Claude host config
 
-These paths are never blocked regardless of marker state.
+These paths remain available to legacy and `workspace_write` tasks. A
+`read_only` task is limited to its own task-state directory.
 
 ## Files touched by this feature
 

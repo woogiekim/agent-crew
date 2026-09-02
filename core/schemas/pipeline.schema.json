@@ -17,6 +17,12 @@
       "minLength": 1,
       "description": "Original task description (mirror of register.json.task; analyst writes this from its TASK input)."
     },
+    "mutation_scope": {
+      "type": "string",
+      "enum": ["read_only", "workspace_write"],
+      "default": "workspace_write",
+      "description": "Plan-bound mutation boundary inherited from register.json and the supervisor handoff. Planner output must preserve it verbatim."
+    },
     "stages": {
       "type": "array",
       "description": "2D array. Each outer element is a sequential stage. Inner elements may be: (1) a bare string (legacy single-agent stage), (2) an array of strings (parallel-within-stage), or (3) an object {agents, tdd_parallel, acceptance_criteria, parallelizable_units, streaming_review, qa_mode, qa_loop_target} (TDD parallel form, PRD AC ownership, sub-task fan-out, streaming review, and/or QA planning/verification — see core/rules/state-files/pipeline-json.md for the per-flag semantics). Consumers normalize the three shapes. New mutating code implementation stages must use the object form with tdd_parallel=true; legacy bare code stages are schema-compatible but fail the planning-time quality gate.",

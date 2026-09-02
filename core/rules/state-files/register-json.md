@@ -46,6 +46,7 @@ Canonical shape:
   "state_dir":           "/path/to/state/project-1234abcd56",
   "task_dir":            "/path/to/state/.../tasks/20260516-012345-0",
   "execution_mode":      "single",
+  "mutation_scope":      "workspace_write",
   "current_phase":       "phase_2",
   "approval_status":     "pending",
   "verification_status": "not_started",
@@ -81,6 +82,7 @@ JSON Schema: `${AGENT_CREW_HOME}/schemas/register.schema.json`.
 | `state_dir` | string (absolute path) | optional | resolved `${AGENT_CREW_HOME}/state/${PROJECT_STATE_KEY}` path |
 | `task_dir` | string (absolute path) | yes | self-referential; useful for tooling that received only register.json |
 | `execution_mode` | enum `single \| parallel` | yes | matches the `EXECUTION_MODE` supervisor input |
+| `mutation_scope` | enum `read_only \| workspace_write` | optional (default `workspace_write`) | explicit execution boundary; never inferred from task prose; legacy registers remain writable by default |
 | `current_phase` | enum (see below) | yes | updated at each phase boundary |
 | `approval_status` | enum `not_required \| pending \| approved \| cancelled` | yes | bumped by Phase 1d and Phase 2.5 gates |
 | `verification_status` | enum `not_started \| running \| passed \| failed \| skipped` | yes | bumped by reviewer stage entry/exit |

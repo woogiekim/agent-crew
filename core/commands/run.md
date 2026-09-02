@@ -101,6 +101,12 @@ crew:run "Fix bug B"
 > definitions (the root cause of injection detection failures when source commands
 > are updated but installed copies are not refreshed).
 
+Explicit `--read-only` / `--mutation-scope read_only` executions are the
+exception: perform the same drift comparisons but emit an advisory warning and
+do not copy command, rule, script, hook, Agent, Skill, policy, schema, or CLI
+assets. Task-local state creation remains allowed. The scope is selected only
+by the explicit option; never infer it from natural-language task text.
+
 Resolve the source repository once:
 
 ```bash
@@ -223,6 +229,7 @@ Accept:
 - One task: `crew:run "implement order API"`
 - Multiple tasks: `crew:run "Order API" | "Product API" | "User API"`
 - Injecting into a live run: `crew:run --inject "new task"` (see Step 1.5)
+- Strict read-only task: `crew:run --read-only "inspect the current contract"`
 
 Preserve each input task verbatim with cardinality `N >= 1`. Do not translate
 Korean or other non-English task text to English before planning, handoff, or
@@ -1875,6 +1882,7 @@ PROJECT_ROOT: {execution root for this task}
 BRANCH: {BRANCH}
 MODE: supervisor
 EXECUTION_MODE: single or parallel
+MUTATION_SCOPE: read_only or workspace_write
 SESSION_ID: {SESSION_ID}
 CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md
   (include only when the file exists)
