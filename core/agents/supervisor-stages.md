@@ -685,7 +685,7 @@ When `STAGE_TDD_PARALLEL == 1`:
    ```bash
    TDD_IMPLEMENTER_COUNT=$(python3 -c "
 import json
-non_impl = {'analyst','devops','designer','documenter','historian','issuer','planner','qa-owner','requirements','resolver','reviewer','scribe','supervisor','test-writer'}
+non_impl = {'analyst','devops','designer','documenter','historian','issuer','planner','qa-owner','requirements','resolver','reviewer','supervisor','test-writer'}
 p = json.load(open('${PIPELINE_PATH}'))
 stage = p['stages'][${i} - 1]
 agents = stage.get('agents', []) if isinstance(stage, dict) else []

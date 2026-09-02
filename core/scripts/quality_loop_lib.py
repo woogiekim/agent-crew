@@ -545,7 +545,6 @@ NON_IMPLEMENTER_AGENTS = {
     "requirements",
     "resolver",
     "reviewer",
-    "scribe",
     "supervisor",
     "test-writer",
 }

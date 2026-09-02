@@ -2901,6 +2901,8 @@ def command_agent(args: argparse.Namespace) -> int:
     root = asset_root(args.asset_root)
     agents = read_agent_registry(root)
     raw_args = list(args.agent_args or [])
+    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
 
     if not raw_args and not args.list and not args.routing:
         print("usage: crew-runtime.py agent [--list|--routing|agent-name task|task]")
@@ -2921,8 +2923,13 @@ def command_agent(args: argparse.Namespace) -> int:
         print(text[start:end].rstrip() if start >= 0 and end > start else text)
         return 0
 
-    if raw_args[0] in agents:
-        agent_name = raw_args[0]
+    first_arg = raw_args[0]
+    explicit_dynamic_candidates = []
+    if first_arg not in agents:
+        explicit_dynamic_candidates = discover_agent_candidates(first_arg, project_root, agent_crew_home)
+
+    if first_arg in agents or explicit_dynamic_candidates:
+        agent_name = first_arg
         task = " ".join(raw_args[1:]).strip()
         route_reason = "explicit direct-agent request"
     else:
@@ -2944,16 +2951,14 @@ def command_agent(args: argparse.Namespace) -> int:
         return 2
 
     info = agents.get(agent_name)
-    if not info:
+    if not info and not explicit_dynamic_candidates:
         print(f"crew agent: unknown agent '{agent_name}'", file=sys.stderr)
         return 2
-    if not info["safe"]:
+    if info and not info["safe"]:
         reason = info["reason"] or "agent requires supervisor context"
         print(f"crew agent: '{agent_name}' cannot be invoked directly. Reason: {reason}", file=sys.stderr)
         return 2
 
-    project_root = Path(args.project_root).resolve() if args.project_root else git_root()
-    agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
     resolution_status, selected_agent, selection_message = resolve_agent_definition_choice(
         agent_name,
         project_root,

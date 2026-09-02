@@ -1,9 +1,9 @@
 # Agent Routing Rules — Declarative Abstraction
 
-This file is the **single source of truth** for agent capability definitions
-and auto-routing rules. High-level commands (crew:agent, crew:run supervisor)
-depend on this abstraction and must not hard-code agent names in their dispatch
-logic.
+This file is the **single source of truth** for provider-neutral system agent
+capability definitions and auto-routing rules. High-level commands (crew:agent,
+crew:run supervisor) depend on this abstraction and must not hard-code
+user-specific agent names in their dispatch logic.
 
 ## Design Note (DIP)
 
@@ -15,18 +15,20 @@ Abstraction:  core/rules/agent-routing.md  (routing rules as data — this file)
 Low level:    individual agents            (backend, frontend, planner, …)
 ```
 
-Adding a new agent: add a row to the Agent Registry and, if auto-routing
-should reach it, add a row to the Auto-Routing Rules table. No changes to
-crew:agent or any orchestrator are required.
+Adding a new provider-neutral system agent: add a row to the Agent Registry and,
+if auto-routing should reach it, add a row to the Auto-Routing Rules table. User
+and project agents are discovered dynamically from their installed layer files
+for explicit-name direct invocation; they are not added to this static registry
+merely because they exist locally.
 
 ---
 
 ## Agent Registry
 
-Defines every agent known to the system, its scope, discovery keywords, and
-whether it is safe for direct invocation via `crew:agent`. Direct invocation
-does not imply read-only; read-only guarantees must be declared in the selected
-agent's own instructions.
+Defines every provider-neutral system agent known to the core runtime, its
+scope, discovery keywords, and whether it is safe for direct invocation via
+`crew:agent`. Direct invocation does not imply read-only; read-only guarantees
+must be declared in the selected agent's own instructions.
 
 | Agent | Scope | Keywords | Safe for direct invocation | Reason if restricted |
 |---|---|---|---|---|
@@ -55,8 +57,13 @@ agent's own instructions.
 
 ## Auto-Routing Rules
 
-Used by `crew:agent` when invoked **without** an explicit agent name.
-Rules are evaluated **top-to-bottom; first match wins**.
+Used by `crew:agent` when invoked **without** an explicit agent name. Rules are
+evaluated **top-to-bottom; first match wins**.
+
+User and project agents do not participate in auto-routing through this table
+unless a separate user-owned opt-in routing overlay is explicitly implemented
+and loaded by the runtime. A user agent's file presence alone is not an
+auto-routing signal.
 
 Each rule specifies: a pattern (keywords or phrases to match against the task
 string, case-insensitive), a target agent (or a block directive), a confidence
@@ -124,9 +131,11 @@ above.
 
 ## How orchestrators must use this file
 
-1. **Agent name validation** — look up the agent name in the Agent Registry.
-   If not found: error "unknown agent". If found but `Safe for direct
-   invocation = no`: error with the `Reason if restricted` text.
+1. **Agent name validation** — look up provider-neutral system agents in the
+   Agent Registry and look up user/project agents through the installed agent
+   layer discovery paths. If neither source has a candidate: error "unknown
+   agent". If the static registry marks the name as `Safe for direct invocation
+   = no`: error with the `Reason if restricted` text.
 
 2. **Auto-routing** — apply Auto-Routing Rules top-to-bottom against the
    normalized task string. Return the matched agent or none result. Auto-routing
@@ -135,5 +144,6 @@ above.
 3. **Visibility** — always emit the `[crew:agent] →` line before spawning,
    including the agent name, confidence (if auto-routed), and reason text.
 
-4. **No hard-coding** — orchestrators must read agent names exclusively from
-   this file. Embedding agent names in command logic is a DIP violation.
+4. **No hard-coding** — orchestrators must read provider-neutral system agent
+   names from this file and user/project agent names from layer discovery.
+   Embedding user-specific agent names in command logic is a DIP violation.

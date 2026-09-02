@@ -4,9 +4,11 @@ Invoke a named agent directly — without the full crew:run → supervisor →
 pipeline orchestration overhead. No worktree, no pipeline.json, no TASK_DIR
 state. The result is displayed inline and returned to the caller.
 
-Agent capability definitions and routing rules live in
-**`core/rules/agent-routing.md`** (the DIP abstraction). This command depends
-only on that abstraction — it does not hard-code any agent name in its logic.
+Provider-neutral system agent capability definitions and auto-routing rules
+live in **`core/rules/agent-routing.md`** (the DIP abstraction). User and
+project agent definitions are discovered dynamically from their installed layer
+files for explicit-name invocation. This command depends only on those
+abstractions — it does not hard-code any user-specific agent name in its logic.
 
 ## When to use crew:agent vs crew:run
 
@@ -36,7 +38,7 @@ contracts and side effects, and avoid literal changes that are not
 crew:agent [--host-bridge-command CMD] [--agent-layer project|user|system] <agent-name> "task description"   # explicit mode
 crew:agent [--host-bridge-command CMD] [--save-agent-layer project|user|system] <agent-name> "task description"
 crew:agent [--host-bridge-command CMD] "task description"                                                    # auto-routing mode
-crew:agent --list                                                                                           # list available agents (from agent-routing.md)
+crew:agent --list                                                                                           # list static system registry agents
 crew:agent --routing                                                                                        # show auto-routing rules table
 ```
 
@@ -139,8 +141,9 @@ Special subcommands (check first):
   --routing  → jump to Step 2b (routing rules mode)
 
 Otherwise:
-  Consult the Agent Registry in core/rules/agent-routing.md.
-  Does RAW_ARGS[0] match a known agent name in the registry?
+  Consult the Agent Registry in core/rules/agent-routing.md and the installed
+  project/user/system agent layer discovery paths.
+  Does RAW_ARGS[0] match a static registry name or installed layer candidate?
     YES → EXPLICIT MODE:  AGENT_NAME = RAW_ARGS[0], TASK_STRING = RAW_ARGS[1]
     NO  → AUTO-ROUTING MODE: TASK_STRING = RAW_ARGS[0]
 
@@ -149,9 +152,11 @@ Otherwise:
 
 ### Step 2a — List mode (--list)
 
-When the user runs `crew:agent --list`, read the **Agent Registry** from
-`core/rules/agent-routing.md` and enumerate agents grouped by invocation
-safety.
+When the user runs `crew:agent --list`, read the static provider-neutral system
+**Agent Registry** from `core/rules/agent-routing.md` and enumerate agents
+grouped by invocation safety. User and project agent layer discovery is used for
+explicit-name invocation and conflict resolution; it is not merged into this
+static system registry listing.
 
 Output format:
 ```
@@ -204,25 +209,28 @@ Use 'crew:agent --list' to see which agents are available.
 
 ### Step 3 — Validate agent (explicit mode only)
 
-Look up `AGENT_NAME` in the **Agent Registry** (`core/rules/agent-routing.md`):
+Look up `AGENT_NAME` in the static **Agent Registry**
+(`core/rules/agent-routing.md`) and in the installed project/user/system agent
+layer discovery paths:
 
 ```text
-1. If AGENT_NAME not found in registry:
+1. If AGENT_NAME not found in either static registry or layer candidates:
      print: "crew:agent: unknown agent '${AGENT_NAME}'"
      print: "Run 'crew:agent --list' to see available agents."
      stop.
 
-2. If found but Safe-for-direct-invocation = no:
+2. If found in static registry but Safe-for-direct-invocation = no:
      print: "crew:agent: '${AGENT_NAME}' cannot be invoked directly."
      print: "Reason: ${Reason-if-restricted from registry}"
      print: "Use 'crew:run \"${TASK_STRING}\"' instead."
      stop.
 
-3. If found and safe: resolve same-name agent definitions before Step 4.
+3. If found and safe, or found only as an installed layer candidate: resolve
+   same-name agent definitions before Step 4.
 ```
 
-Do not hard-code a restricted-agent list in this command. The restriction
-information lives exclusively in `core/rules/agent-routing.md`.
+Do not hard-code a restricted-agent list in this command. Static system-agent
+restriction information lives exclusively in `core/rules/agent-routing.md`.
 
 When the same logical agent name exists in more than one layer, `crew:agent`
 must not pick by fixed `project > user > system` precedence. It must show each
@@ -644,10 +652,17 @@ To retry with full pipeline support: crew:run "{task description}"
 
 To make a new agent available via `crew:agent`:
 
-1. Create the agent file under `~/.agent-crew/system/agents/` or
-   `~/.agent-crew/user/agents/`, or under the project-local
-   `.agent-crew/project/agents/` layer.
-2. Add a row to the **Agent Registry** in `core/rules/agent-routing.md`.
-3. If auto-routing should reach it, add a row to the **Auto-Routing Rules**
+1. For a provider-neutral system agent, create the agent file under
+   `~/.agent-crew/system/agents/` and add a row to the **Agent Registry** in
+   `core/rules/agent-routing.md`.
+2. If that system agent should be auto-routable, add a row to the **Auto-Routing Rules**
    table in `core/rules/agent-routing.md`.
-4. No changes to this file (`core/commands/agent.md`) are required.
+3. For a user or project agent, create the agent file under
+   `~/.agent-crew/user/agents/` or `.agent-crew/project/agents/` and invoke it
+   explicitly with `crew:agent <name> "task"`.
+4. If the same logical name exists in multiple layers, use
+   `--agent-layer project|user|system` for a one-shot selection or
+   `--save-agent-layer project|user|system` to store the project decision.
+5. Do not add user-specific names to the static core registry merely to make
+   explicit-name invocation work.
+6. No changes to this file (`core/commands/agent.md`) are required.

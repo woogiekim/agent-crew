@@ -1168,6 +1168,80 @@ def test_command_agent_reconfirms_stale_saved_agent_resolution(
     assert "AGENT_DECISION_STALE" in capsys.readouterr().out
 
 
+def test_command_agent_discovers_explicit_user_agent_without_static_registry(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    project.mkdir()
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    (home / "user" / "agents" / "field-notes.md").write_text(
+        "---\nname: field-notes\ndescription: user-owned note agent\n---\n# Field Notes\n",
+        encoding="utf-8",
+    )
+
+    assert runtime.command_agent(_agent_args(root, "field-notes", "정리해줘")) == 0
+    out = capsys.readouterr().out
+
+    assert "STATUS: handoff_ready" in out
+    assert "AGENT: field-notes" in out
+    assert "AGENT_RESOLUTION: single" in out
+    assert "AGENT_LAYER: user" in out
+
+
+def test_command_agent_does_not_auto_route_unregistered_user_agent_without_opt_in(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    project.mkdir()
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    (home / "user" / "agents" / "field-notes.md").write_text(
+        "---\nname: field-notes\ndescription: user-owned note agent\n---\n# Field Notes\n",
+        encoding="utf-8",
+    )
+
+    assert runtime.command_agent(_agent_args(root, "field notes draft")) == 2
+    err = capsys.readouterr().err
+
+    assert "cannot auto-route" in err
+
+
+def test_command_agent_requires_choice_for_same_name_custom_agent_conflict(
+    monkeypatch, tmp_path: Path, capsys
+):
+    root = tmp_path / "runtime-root"
+    project = root / "project"
+    home = tmp_path / "home"
+    _write_registry(root)
+    project.mkdir()
+    (project / ".agent-crew" / "project" / "agents").mkdir(parents=True)
+    (home / "user" / "agents").mkdir(parents=True)
+    monkeypatch.setenv("AGENT_CREW_HOME", str(home))
+    (project / ".agent-crew" / "project" / "agents" / "field-notes.md").write_text(
+        "---\nname: field-notes\ndescription: project notes\n---\n# Project Notes\n",
+        encoding="utf-8",
+    )
+    (home / "user" / "agents" / "field-notes.md").write_text(
+        "---\nname: field-notes\ndescription: user notes\n---\n# User Notes\n",
+        encoding="utf-8",
+    )
+
+    assert runtime.command_agent(_agent_args(root, "field-notes", "정리해줘")) == 2
+    out = capsys.readouterr().out
+
+    assert "STATUS: selection_required" in out
+    assert "현재 프로젝트 전용 field-notes" in out
+    assert "내 개인 기본 field-notes" in out
+    assert not (home / "state").exists()
+
+
 def test_command_agent_accepts_korean_self_evolution_complaint(
     monkeypatch, tmp_path: Path, capsys
 ):
