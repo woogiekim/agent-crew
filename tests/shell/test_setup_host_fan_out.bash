@@ -80,6 +80,20 @@ echo "generic" >> "${ran}"
 SH
   chmod +x "${acHome}/adapters/generic/setup.sh"
 
+  mkdir -p "${acHome}/system/scripts"
+  cat >"${acHome}/system/scripts/project-local-asset-migration.py" <<PY
+#!/usr/bin/env python3
+import pathlib
+import sys
+
+pathlib.Path(r"""${acHome}""", "migration-ran").write_text(
+    "\n".join(sys.argv[1:]) + "\n",
+    encoding="utf-8",
+)
+PY
+  printf '{"version":1,"paths":{}}\n' \
+    >"${acHome}/system/scripts/project-local-asset-fingerprints.json"
+
   echo "${acHome}"
 }
 
@@ -87,12 +101,13 @@ run_setup_host() {
   local acHome="$1"
   local claudeDir="$2"
   local codexHome="$3"
+  local projectRoot="${4:-$(make_tmp)}"
 
   AGENT_CREW_HOME="${acHome}" \
   CLAUDE_DIR="${claudeDir}" \
   CODEX_HOME="${codexHome}" \
   AGENT_CREW_MODE=install \
-    bash "${SETUP_DIR}/setup-host.sh" "$(make_tmp)" 2>/dev/null
+    bash "${SETUP_DIR}/setup-host.sh" "${projectRoot}" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -198,5 +213,32 @@ RAN4_CONTENTS=$(cat "${RAN4}" 2>/dev/null || echo "")
 assert_not_contains "${RAN4_CONTENTS}" "claude"
 assert_not_contains "${RAN4_CONTENTS}" "codex"
 assert_contains "${RAN4_CONTENTS}" "generic"
+
+# ---------------------------------------------------------------------------
+# Test: setup invokes the internal project-local asset migration after adapter.
+# ---------------------------------------------------------------------------
+
+TMP5=$(make_tmp)
+ACHOME5=$(make_acHome)
+PROJECT5="${TMP5}/project"
+mkdir -p "${PROJECT5}"
+git -C "${PROJECT5}" init -q
+
+run_setup_host \
+  "${ACHOME5}" \
+  "${TMP5}/claude-inst-absent" \
+  "${TMP5}/codex-inst-absent" \
+  "${PROJECT5}"
+
+it "setup invokes internal project asset migration"
+assert_file_exists "${ACHOME5}/migration-ran"
+
+MIGRATION_ARGS=$(cat "${ACHOME5}/migration-ran" 2>/dev/null || echo "")
+
+it "setup migration is bound to the current project"
+assert_contains "${MIGRATION_ARGS}" "${PROJECT5}"
+
+it "setup migration records setup mode"
+assert_contains "${MIGRATION_ARGS}" "setup"
 
 end_report

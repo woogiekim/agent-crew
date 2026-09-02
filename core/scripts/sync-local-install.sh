@@ -97,6 +97,31 @@ print_update_total() {
   printf 'update_phase: total=%sms\n' "${elapsed_ms}"
 }
 
+run_project_asset_migration() {
+  local migration_script=""
+  local candidate
+
+  for candidate in \
+    "${AGENT_CREW_HOME}/system/scripts/project-local-asset-migration.py" \
+    "${AGENT_CREW_HOME}/scripts/project-local-asset-migration.py"; do
+    if [ -f "${candidate}" ]; then
+      migration_script="${candidate}"
+      break
+    fi
+  done
+
+  [ -n "${migration_script}" ] || return 0
+
+  python3 "${migration_script}" \
+    --project-root "${PROJECT_ROOT}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --codex-home "${CODEX_HOME:-${HOME}/.codex}" \
+    --claude-dir "${CLAUDE_DIR}" \
+    --fingerprints "$(dirname "${migration_script}")/project-local-asset-fingerprints.json" \
+    --mode update
+  print_update_phase "project_asset_migration"
+}
+
 write_update_integrity_manifest() {
   local integrity_dir="${STATE_DIR}/integrity"
 
@@ -166,6 +191,7 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
     print_update_phase "drift_verification"
     record_global_update_scope
+    run_project_asset_migration
     write_update_integrity_manifest
     print_update_total
     printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
@@ -317,6 +343,7 @@ SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
 
 copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
 copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+run_project_asset_migration
 
 if [ -n "${PRESERVATION_MANIFEST}" ]; then
   python3 "${AGENT_CREW_HOME}/system/scripts/update-preservation-manifest.py" finish \

@@ -7,6 +7,15 @@ rules, policies, commands, skills, adapter scripts, and host-global adapter
 outputs under `~/.agent-crew/`, `~/.codex/`, and `~/.claude/` when those host
 locations are available. It does not refresh project-local mirrors.
 
+After the global refresh succeeds, it scans only the current project for
+ownership-proven legacy assets left by older agent-crew versions. Proven files
+and symlinks are moved individually to a recoverable backup under
+`~/.agent-crew/backups/project-assets/{PROJECT_STATE_KEY}/`; mixed directories,
+Git-tracked paths, changed files, unknown files, and project overrides remain in
+place. If Git ownership status cannot be verified, migration is skipped. This
+cleanup is internal to `crew:setup` and `crew:update`; there is no separate
+migration command and neither command recreates project-local mirrors.
+
 It complements `crew:setup`:
 
 | Command       | Purpose                                          | State reset prompt |

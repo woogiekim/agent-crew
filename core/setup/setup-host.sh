@@ -16,16 +16,53 @@ if [ "${AGENT_CREW_MODE}" = "update" ]; then
   printf 'MODE: update\n'
 fi
 
+run_project_asset_migration() {
+  local migration_script=""
+  local migration_mode="setup"
+  local candidate
+
+  for candidate in \
+    "${AGENT_CREW_HOME}/system/scripts/project-local-asset-migration.py" \
+    "${AGENT_CREW_HOME}/scripts/project-local-asset-migration.py"; do
+    if [ -f "${candidate}" ]; then
+      migration_script="${candidate}"
+      break
+    fi
+  done
+
+  [ -n "${migration_script}" ] || return 0
+
+  if [ "${AGENT_CREW_MODE}" = "update" ]; then
+    migration_mode="update"
+  fi
+
+  python3 "${migration_script}" \
+    --project-root "${PROJECT_ROOT}" \
+    --agent-crew-home "${AGENT_CREW_HOME}" \
+    --codex-home "${CODEX_HOME:-${HOME}/.codex}" \
+    --claude-dir "${CLAUDE_DIR:-${HOME}/.claude}" \
+    --fingerprints "$(dirname "${migration_script}")/project-local-asset-fingerprints.json" \
+    --mode "${migration_mode}"
+}
+
 run_adapter() {
   local host="$1"
   local adapter="${AGENT_CREW_HOME}/adapters/${host}/setup.sh"
+  local adapter_status=0
 
   if [ ! -x "${adapter}" ]; then
     printf 'Unsupported host adapter: %s\n' "${host}" >&2
     return 1
   fi
 
-  bash "${adapter}" "${PROJECT_ROOT}" || true
+  bash "${adapter}" "${PROJECT_ROOT}" || adapter_status=$?
+  if [ "${adapter_status}" -ne 0 ]; then
+    printf 'project_asset_migration: skipped=adapter_failed host=%s status=%s\n' \
+      "${host}" "${adapter_status}" >&2
+    return 0
+  fi
+
+  run_project_asset_migration
 }
 
 detect_active_host() {

@@ -333,6 +333,9 @@ def test_sync_local_install_does_not_refresh_project_adapter_files(tmp_path: Pat
     path_bin = home / ".local" / "bin"
     project.mkdir()
     subprocess.run(["git", "-C", str(project), "init", "-q"], check=True)
+    legacy_skill = project / ".agent-crew" / "agents" / "skills" / "tdd.md"
+    legacy_skill.parent.mkdir(parents=True)
+    legacy_skill.write_bytes((REPO_ROOT / "core" / "agents" / "skills" / "tdd.md").read_bytes())
 
     env = os.environ | {
         "HOME": str(home),
@@ -355,9 +358,41 @@ def test_sync_local_install_does_not_refresh_project_adapter_files(tmp_path: Pat
 
     assert (agent_crew_home / "system" / "agents" / "supervisor.md").is_file()
     assert (codex_home / "agents" / "supervisor.toml").is_file()
-    assert not (project / ".agent-crew").exists()
+    assert not legacy_skill.exists()
     assert not (project / ".codex").exists()
     assert not (project / "AGENTS.md").exists()
+    backup_roots = list(
+        (agent_crew_home / "backups" / "project-assets").glob("project-*/*")
+    )
+    assert len(backup_roots) == 1
+    result = json.loads(
+        (backup_roots[0] / "result.json").read_text(encoding="utf-8")
+    )
+    assert result["status"] == "completed"
+    assert result["moved_count"] == 1
+
+    fast_path_skill = project / ".agent-crew/agents/skills/code-review.md"
+    fast_path_skill.parent.mkdir(parents=True)
+    fast_path_skill.write_bytes(
+        (REPO_ROOT / "core/agents/skills/code-review.md").read_bytes()
+    )
+    fast_env = dict(env)
+    fast_env.pop("AGENT_CREW_DISABLE_FAST_NOOP_UPDATE")
+    fast_result = subprocess.run(
+        ["bash", str(SYNC_LOCAL_INSTALL), str(REPO_ROOT), str(project)],
+        check=True,
+        env=fast_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert "no source/user/output drift detected" in fast_result.stdout
+    assert "project_asset_migration: moved=1 preserved=0" in fast_result.stdout
+    assert not fast_path_skill.exists()
+    assert len(
+        list((agent_crew_home / "backups/project-assets").glob("project-*/*"))
+    ) == 2
 
 
 def test_update_docs_define_global_only_refresh_policy():
@@ -367,3 +402,5 @@ def test_update_docs_define_global_only_refresh_policy():
     assert "--all-projects is deprecated" in text
     assert "does not refresh project-local mirrors" in text
     assert "project overrides" in text
+    assert "ownership-proven legacy assets" in text
+    assert "recoverable backup" in text

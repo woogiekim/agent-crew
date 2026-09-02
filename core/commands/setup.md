@@ -47,6 +47,14 @@ eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
    bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
    ```
 
+   After the selected adapter has installed its global assets, the dispatcher
+   scans only the current project for ownership-proven legacy assets from older
+   project-local installations. It moves proven paths individually to a
+   recoverable backup under
+   `~/.agent-crew/backups/project-assets/{PROJECT_STATE_KEY}/` and preserves
+   Git-tracked, changed, unknown, or explicit project-owned paths. If Git status
+   cannot be verified, it performs no migration.
+
 4. Initialize the state directory:
 
    ```bash
