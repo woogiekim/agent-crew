@@ -48,6 +48,7 @@ assert_contains "${out}" "resume [--print|--dry-run] TASK_ID"
 assert_contains "${out}" "report auto|publish"
 assert_contains "${out}" "issue-ingest ISSUE"
 assert_contains "${out}" "cancel [--note TEXT] TASK_ID"
+assert_contains "${out}" "variants collect|select|apply"
 
 it "crew update help documents skill reconcile"
 out=$(bash "${CREW}" update --help 2>&1)
@@ -717,6 +718,120 @@ PYEOF
 assert_contains "$(cat "${first_variant_dir}/register.json")" '"execution_mode": "variant"'
 assert_contains "$(cat "${first_variant_dir}/register.json")" '"task": "implement candidate mode"'
 assert_contains "$(cat "${first_variant_dir}/handoff.md")" "VARIANT_STRATEGY: minimal"
+
+VARIANT_GIT_HOME=$(make_tmp)
+VARIANT_GIT_PROJECT=$(make_tmp)
+mkdir -p "${VARIANT_GIT_HOME}/commands" "${VARIANT_GIT_HOME}/scripts"
+cp -R "${REPO_ROOT}/core/commands/." "${VARIANT_GIT_HOME}/commands/"
+cp -R "${REPO_ROOT}/core/scripts/." "${VARIANT_GIT_HOME}/scripts/"
+git -C "${VARIANT_GIT_PROJECT}" init >/dev/null 2>&1
+printf '%s\n' '.crew-worktrees/' > "${VARIANT_GIT_PROJECT}/.gitignore"
+printf '%s\n' 'seed' > "${VARIANT_GIT_PROJECT}/README.md"
+git -C "${VARIANT_GIT_PROJECT}" add .gitignore README.md
+git -C "${VARIANT_GIT_PROJECT}" -c user.name='Agent Crew Test' -c user.email='agent-crew@example.invalid' \
+  commit -m 'test: seed variants worktree repo' >/dev/null 2>&1
+
+it "crew run --variants creates isolated git worktrees for each candidate"
+out=$(AGENT_CREW_HOME="${VARIANT_GIT_HOME}" PROJECT_ROOT="${VARIANT_GIT_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0 AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN=0 \
+  bash "${CREW}" run --variants 3 "implement isolated candidates" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "git variants run"
+VARIANT_GIT_STATE="$(project_state_dir "${VARIANT_GIT_HOME}" "${VARIANT_GIT_PROJECT}")"
+VARIANT_GIT_SESSION="${VARIANT_GIT_STATE}/session.json"
+variant_worktree_summary=$(python3 - "${VARIANT_GIT_SESSION}" "${VARIANT_GIT_PROJECT}" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+session = json.load(open(sys.argv[1]))
+project = Path(sys.argv[2]).resolve()
+roots = [Path(task.get("project_root", "")).resolve() for task in session.get("tasks", [])]
+print(len(roots))
+print(len(set(map(str, roots))))
+print(all(project.joinpath(".crew-worktrees") in root.parents for root in roots))
+print(all(root.exists() for root in roots))
+PYEOF
+)
+assert_eq $'3\n3\nTrue\nTrue' "${variant_worktree_summary}" "variant git worktrees"
+assert_contains "$(git -C "${VARIANT_GIT_PROJECT}" worktree list --porcelain)" "${VARIANT_GIT_PROJECT}/.crew-worktrees/"
+
+it "crew variants collect summarizes completed variants without selecting or merging"
+python3 - "${VARIANT_SESSION}" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+session_path = Path(sys.argv[1])
+session = json.loads(session_path.read_text())
+for task in session["tasks"]:
+    task_dir = Path(task["task_dir"])
+    task_dir.joinpath("result.md").write_text(
+        "\n".join([
+            f"# {task['variant_strategy']} candidate",
+            "",
+            "STATUS: completed",
+            f"TASK_ID: {task['task_id']}",
+            f"BRANCH: {task['branch']}",
+            "SUMMARY: candidate implementation completed",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+PYEOF
+out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
+  bash "${CREW}" variants collect 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "variant collect"
+assert_contains "${out}" "Candidate Variants"
+assert_contains "${out}" "selection_status: pending"
+assert_contains "${out}" "Do not merge all completed branches"
+assert_file_exists "${VARIANT_STATE}/variant-summary.md"
+assert_contains "$(cat "${VARIANT_STATE}/variant-summary.md")" "Candidate Variants"
+assert_contains "$(cat "${VARIANT_SESSION}")" '"status": "completed"'
+assert_contains "$(cat "${VARIANT_SESSION}")" '"selection_status": "pending"'
+
+it "crew variants select records the chosen candidate without applying it"
+selected_variant_task=$(python3 - "${VARIANT_SESSION}" <<'PYEOF'
+import json, sys
+
+session = json.load(open(sys.argv[1]))
+print(session["tasks"][1]["task_id"])
+PYEOF
+)
+out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
+  bash "${CREW}" variants select "${selected_variant_task}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "variant select"
+assert_contains "${out}" "selection_status: selected"
+assert_contains "${out}" "selected_task_id: ${selected_variant_task}"
+variant_selection=$(python3 - "${VARIANT_SESSION}" <<'PYEOF'
+import json, sys
+
+session = json.load(open(sys.argv[1]))
+selected = next(task for task in session["tasks"] if task["task_id"] == session["selected_task_id"])
+print(session["selection_status"])
+print(session["selected_task_id"])
+print(selected["variant_strategy"])
+PYEOF
+)
+assert_eq "selected
+${selected_variant_task}
+balanced" "${variant_selection}" "variant selection state"
+
+it "crew variants apply prints a gated apply plan for the selected candidate"
+out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
+  bash "${CREW}" variants apply 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "variant apply plan"
+assert_contains "${out}" "Variant apply plan"
+assert_contains "${out}" "selected_task_id: ${selected_variant_task}"
+assert_contains "${out}" "No branch mutation was performed"
+
+it "crew status --collect is removed from the native CLI"
+out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
+  bash "${CREW}" status --collect 2>&1)
+rc=$?
+assert_exit 2 "${rc}" "status collect removed"
+assert_contains "${out}" "unknown status argument: --collect"
 
 HOOK_SYNC_HOME=$(make_tmp)
 HOOK_SYNC_PROJECT=$(make_tmp)

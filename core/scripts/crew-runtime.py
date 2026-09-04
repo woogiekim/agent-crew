@@ -194,6 +194,78 @@ def current_git_head(project_root: Path) -> str:
         return ""
 
 
+def git_common_dir(project_root: Path) -> Path | None:
+    try:
+        value = subprocess.check_output(
+            ["git", "-C", str(project_root), "rev-parse", "--git-common-dir"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+    if not value:
+        return None
+
+    path = Path(value)
+    if not path.is_absolute():
+        path = project_root / path
+    return path.resolve()
+
+
+def git_branch_exists(project_root: Path, branch: str) -> bool:
+    try:
+        subprocess.check_call(
+            ["git", "-C", str(project_root), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def variant_branch_name(project_root: Path, task: str, variant_index: int, task_id: str) -> str:
+    base = f"crew/{slug(task)}-v{variant_index}"
+    if not git_branch_exists(project_root, base):
+        return base
+    return f"{base}-{task_id}"
+
+
+def ensure_crew_worktrees_ignored(project_root: Path) -> None:
+    try:
+        subprocess.check_call(
+            ["git", "-C", str(project_root), "check-ignore", "-q", ".crew-worktrees"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    except Exception:
+        pass
+
+    common_dir = git_common_dir(project_root)
+    if common_dir is None:
+        return
+
+    exclude = common_dir / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude.read_text(encoding="utf-8", errors="replace") if exclude.is_file() else ""
+    if ".crew-worktrees/" not in existing.splitlines():
+        with exclude.open("a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write(".crew-worktrees/\n")
+
+
+def create_variant_worktree(project_root: Path, branch: str, task_id: str) -> Path:
+    ensure_crew_worktrees_ignored(project_root)
+    worktree_path = project_root / ".crew-worktrees" / task_id
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.check_call(
+        ["git", "-C", str(project_root), "worktree", "add", "-b", branch, str(worktree_path), "HEAD"]
+    )
+    return worktree_path.resolve()
+
+
 def append_jsonl(path: Path, event: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
@@ -2552,6 +2624,7 @@ def command_run_variants(
     task = raw_task
     mutation_scope = getattr(args, "mutation_scope", "workspace_write")
     pre_run_head = current_git_head(project_root)
+    git_backed = bool(pre_run_head)
     task_hash = re.sub(r"[.,;:!?]+$", "", re.sub(r"\s+", " ", task).strip().lower())
     task_entries = []
     task_index = 0
@@ -2569,7 +2642,18 @@ def command_run_variants(
 
         variant_strategy_name = variant_strategy(variant_index)
         variant_id = variant_strategy_name
-        branch = f"crew/{slug(task)}-v{variant_index}"
+        branch = variant_branch_name(project_root, task, variant_index, task_id) if git_backed else f"crew/{slug(task)}-v{variant_index}"
+        variant_project_root = project_root
+        if git_backed:
+            try:
+                variant_project_root = create_variant_worktree(project_root, branch, task_id)
+            except subprocess.CalledProcessError as exc:
+                print(
+                    f"error: failed to create isolated variant worktree for {task_id}: {exc}",
+                    file=sys.stderr,
+                )
+                return 3
+
         repair_command = f"crew repair {task_id} --status completed --note \"<summary>\""
         normalization_metadata = input_normalization_metadata(
             raw_task,
@@ -2583,7 +2667,8 @@ def command_run_variants(
             "session_type": "variants",
             "task": task,
             "branch": branch,
-            "project_root": str(project_root),
+            "project_root": str(variant_project_root),
+            "base_project_root": str(project_root),
             "project_name": project_name,
             "project_state_key": state_info["project_state_key"],
             "state_dir": str(state_dir),
@@ -2628,7 +2713,8 @@ def command_run_variants(
             "# Supervisor Handoff\n\n"
             f"TASK_ID: {task_id}\n"
             f"TASK: {task}\n"
-            f"PROJECT_ROOT: {project_root}\n"
+            f"PROJECT_ROOT: {variant_project_root}\n"
+            f"BASE_PROJECT_ROOT: {project_root}\n"
             f"MUTATION_SCOPE: {mutation_scope}\n"
             "MODE: native-cli\n"
             "SESSION_TYPE: variants\n"
@@ -2717,6 +2803,8 @@ def command_run_variants(
                 "task_dir": str(task_dir),
                 "branch": branch,
                 "task": task,
+                "project_root": str(variant_project_root),
+                "base_project_root": str(project_root),
                 "task_hash": task_hash,
                 "status": "running",
                 "injected": False,

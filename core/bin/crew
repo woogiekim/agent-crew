@@ -49,6 +49,7 @@ Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json|--summary] [--recent N]
                                     Show deterministic local task state
+  variants collect|select|apply     Collect, choose, or apply run variants
   telemetry [args]                 Show timing, retry, blocker, and token metrics
   trace [args]                     Show per-task progress trace events
   cost [args]                      Show token/cost aggregate metrics
@@ -241,6 +242,7 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/workflow-replay-check.py:${AGENT_CREW_HOME}/scripts/workflow-replay-check.py" \
     "core/scripts/retry-chaos-check.py:${AGENT_CREW_HOME}/scripts/retry-chaos-check.py" \
     "core/scripts/telemetry-taxonomy-check.py:${AGENT_CREW_HOME}/scripts/telemetry-taxonomy-check.py" \
+    "core/scripts/variant-session-collect.py:${AGENT_CREW_HOME}/scripts/variant-session-collect.py" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/evolution-proposal-aggregate.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-aggregate.py" \
     "core/scripts/evolution-proposal-apply.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-apply.py" \
@@ -552,6 +554,64 @@ print(f"Detail : crew status --recent {recent}")
 print(f"JSON   : crew status --json --recent {recent}")
 PYEOF
   rm -f "${tmp}"
+}
+
+cmd_variants_collect() {
+  local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
+  require_file "${collector}" "variant session collector"
+  python3 "${collector}" collect --state-dir "${STATE_DIR}"
+}
+
+cmd_variants_select() {
+  local task_id="${1:-}"
+  [ -n "${task_id}" ] || die "variants select requires TASK_ID"
+  shift || true
+  [ "$#" -eq 0 ] || die "variants select takes exactly one TASK_ID"
+
+  local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
+  require_file "${collector}" "variant session collector"
+  python3 "${collector}" select --state-dir "${STATE_DIR}" --task-id "${task_id}"
+}
+
+cmd_variants_apply() {
+  local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
+  require_file "${collector}" "variant session collector"
+  python3 "${collector}" apply --state-dir "${STATE_DIR}"
+}
+
+cmd_variants() {
+  local action="${1:-}"
+
+  case "${action}" in
+    ""|-h|--help)
+      cat <<'EOF'
+usage: crew variants collect
+       crew variants select TASK_ID
+       crew variants apply
+
+Manages a crew run variants session. collect summarizes candidate outputs
+without selecting or merging. select/apply are the next selection-gate steps.
+EOF
+      return 0
+      ;;
+    collect)
+      shift
+      [ "$#" -eq 0 ] || die "variants collect takes no arguments"
+      cmd_variants_collect
+      ;;
+    select)
+      shift
+      cmd_variants_select "$@"
+      ;;
+    apply)
+      shift
+      [ "$#" -eq 0 ] || die "variants apply takes no arguments"
+      cmd_variants_apply
+      ;;
+    *)
+      die "unknown variants action: ${action}"
+      ;;
+  esac
 }
 
 cmd_status() {
@@ -1467,6 +1527,7 @@ main() {
   case "${command}" in
     setup) cmd_setup "$@" ;;
     status) cmd_status "$@" ;;
+    variants) cmd_variants "$@" ;;
     telemetry) cmd_telemetry "$@" ;;
     trace) cmd_trace "$@" ;;
     cost) cmd_cost "$@" ;;

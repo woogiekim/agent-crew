@@ -61,13 +61,23 @@
           "task_dir": { "type": "string", "minLength": 1 },
           "branch": { "type": "string", "minLength": 1 },
           "task": { "type": "string", "minLength": 1 },
+          "project_root": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Task execution root. Variants sessions use isolated worktree roots when the base project is a git repository."
+          },
+          "base_project_root": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Original checkout root when project_root points at an isolated variant worktree."
+          },
           "task_hash": {
             "type": "string",
             "description": "Phase B0 — normalized form of task. Pre-B0 entries omit this field; consumers treat missing as 'cannot dedupe'."
           },
           "status": {
             "type": "string",
-            "enum": ["running", "completed", "blocked"]
+            "enum": ["running", "completed", "blocked", "cancelled"]
           },
           "injected": {
             "type": "boolean",

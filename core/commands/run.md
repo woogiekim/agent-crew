@@ -574,18 +574,20 @@ prompt, or the N>1 prompt):
 
 5. Print the injection summary and **RETURN immediately** (end the turn).
    Do NOT enter any poll loop. The background supervisor(s) will run
-   autonomously; use `crew:status` to monitor progress or
-   `crew:status --collect` to wait for results.
+   autonomously; use `crew:status` to monitor progress. Variants sessions are
+   collected with `crew:variants collect`.
 
    ```
    [crew] INJECT | session={SESSION_ID} | {N} task(s) spawned as background agent(s)
    Task(s) registered: {TASK_ID_1}, {TASK_ID_2}, ...
    Monitor with: crew:status
-   Collect when done: crew:status --collect
+   Collect variants: crew:variants collect
    ```
 
 6. **Do not start a new orchestrator.** The injected tasks run as independent
-   background agents and are collected by `crew:status --collect`.
+   background agents. Variants sessions are collected by `crew:variants collect`;
+   non-variant background finalization requires a separate explicit finalizer
+   command before any wait/merge/apply behavior is restored.
 
 #### Injection guard
 
@@ -1567,6 +1569,12 @@ the immutable base requirement and fan it out into N candidate task handoffs.
 This uses the same top-level session fan-out model as multi-task execution,
 not `parallelizable_units`.
 
+If the base project is a git repository, every variant candidate must receive
+its own isolated worktree under `.crew-worktrees/{TASK_ID}`. The per-task
+`project_root`, `register.json` `project_root`, and handoff `PROJECT_ROOT`
+must point at that candidate worktree, while `base_project_root` preserves the
+original checkout. Do not let multiple variants share the same checkout.
+
 Each candidate entry must preserve the same `task` text and include:
 
 ```json
@@ -1584,7 +1592,7 @@ session_type: "variants"
 selection_status: "pending"
 ```
 
-Variant collection is a comparison gate. `crew:status --collect` may summarize
+Variant collection is a comparison gate. `crew:variants collect` may summarize
 candidate variants, but must not merge every completed branch until the user
 selects one implementation.
 
@@ -1860,7 +1868,7 @@ Tasks   : {N} supervisor(s) spawned as background agents
 > Background agents are running.
 > - Check pipeline state: `crew:status`
 > - Inject another task: `crew:run "new task"`
-> - Collect final results: `crew:status --collect`
+> - Collect variant candidates: `crew:variants collect`
 
 Next step suggestion: run `crew:status` shortly to see the live phase /
 stage progression. The orchestrator turn has ended; this terminal is
@@ -1868,8 +1876,8 @@ free for additional `crew:run` or `crew:status` invocations.
 ```
 
 **Do NOT proceed to Steps 7–11 on the P4 path.** Those steps (result
-collection, merge, summary, deploy) are delegated to `crew:status --collect`,
-which the user invokes at any time after the background session finishes.
+collection, merge, summary, deploy) require a separate explicit finalizer
+command; they are not handled by `crew:status`.
 Returning early here is what enables true mid-run task injection: because the
 orchestrator's turn has ended, the user can immediately run
 `crew:run "new task"` to inject into the live session.
@@ -1940,7 +1948,8 @@ Write the completion report to {TASK_DIR}/result.md.
 > already returned at the end of the spawn block above. This health check
 > and the result collection loop below apply only to the **inline path**
 > (`HAS_AGENT_BACKGROUND == 0`). Background-path crash classification and
-> retries are performed by `crew:status --collect`.
+> retries require the explicit background finalizer; they are not performed by
+> `crew:status`.
 
 After each supervisor returns (inline path), the orchestrator must verify its output:
 
@@ -1983,7 +1992,8 @@ Wait for all supervisors to finish (including any crash-retry cycles).
 > **P4 path skip**: On the background fan-out path (`HAS_AGENT_BACKGROUND == 1`),
 > the orchestrator has already returned early after spawning. This collection
 > loop is only used by the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
-> For the P4 path, result collection is performed by `crew:status --collect`.
+> For the P4 path, result collection requires the explicit background
+> finalizer; it is not performed by `crew:status`.
 
 When a session file exists, the orchestrator's result collection loop MUST
 monitor `session.json` continuously rather than operating on a fixed task list.
@@ -2063,8 +2073,8 @@ invocations do not treat it as a live session.
 > false live session and offer the injection prompt incorrectly.
 >
 > The script is idempotent: calling it on an already-completed session is safe.
-> The P4 background path must NOT call this script — its finalization is
-> handled by `crew:status --collect` (Step 4S).
+> The P4 background path must NOT call this script; its finalization requires
+> a separate explicit background finalizer.
 
 ```bash
 # MANDATORY inline-path finalization — run unconditionally after all supervisors finish.
@@ -2231,8 +2241,8 @@ faster wakeup; it never removes the file contract.
 
 > **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator
 > already returned early at the end of Step 6. Steps 7–11 are **not
-> executed on the P4 path** — they are performed by `crew:status --collect`
-> when the user is ready to finalize the session. Steps 7–11 below apply
+> executed on the P4 path**. Background finalization requires a separate
+> explicit finalizer when the user is ready to finalize the session. Steps 7–11 below apply
 > only to the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
 
 #### Session-Aware Task List
@@ -2430,8 +2440,8 @@ Report the blocker and stop.
 
 ### 8. Merge Branches (inline path, N > 1 only)
 
-> **P4 path skip**: On the background fan-out path, this step is performed by
-> `crew:status --collect`, not here. See Step 7 header.
+> **P4 path skip**: On the background fan-out path, this step belongs to the
+> explicit background finalizer, not `crew:status`. See Step 7 header.
 
 > **Skip this step entirely when N == 1.** For single-task runs, proceed directly
 > to Step 9. The feature branch will be pushed as-is in Step 10.
@@ -2474,8 +2484,8 @@ git log --oneline HEAD ^origin/main | head -10
 
 ### 9. Implementation Summary
 
-> **Inline path only.** On the P4 background fan-out path, this step is performed
-> by `crew:status --collect`. See Step 7 header.
+> **Inline path only.** On the P4 background fan-out path, this step belongs to
+> the explicit background finalizer. See Step 7 header.
 
 Always display the implementation summary for every completed run, regardless of
 whether a devops stage was included in the pipeline:
@@ -2684,11 +2694,11 @@ crew:run "resolve merge conflicts"
   orchestrator returns immediately after spawning all background supervisors
   (including single-task runs). Steps 7–11 are NOT executed in this turn. To
   wait for results and finalize the session (merge branches, show summary,
-  deploy), run `crew:status --collect`.
+  deploy), use a separate explicit background finalizer.
 - **Mid-run task injection**: Because the P4 path returns early, the user may
   immediately run `crew:run "new task"` to inject tasks into the live session.
-  The injected tasks join the same `session.json` and are collected together by
-  `crew:status --collect`.
+  The injected tasks join the same `session.json` and require the same explicit
+  background finalizer.
 - **Fast-path (Step 1.7)**: Trivial operational intents (merge, push, deploy,
   tag, rollback, status, commit-only) are dispatched inline by the orchestrator
   without spawning a supervisor. They still honor the centralized

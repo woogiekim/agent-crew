@@ -4,14 +4,13 @@ Print a real-time snapshot of the active pipeline state.
 
 ```text
 crew:status           # snapshot — show current state and exit
-crew:status --collect # wait for background session to finish, then finalize
+crew:variants collect # collect a variants session candidate summary
 ```
 
 When a background session is running (`session.json` exists with `status:
-running`), `crew:status` displays a live session table. Without `--collect`,
-it exits immediately after the snapshot. With `--collect`, it waits for all
-tasks to finish and then runs the equivalent of Steps 7–11 from `crew:run`
-(Run Summary, merge, Implementation Summary, Deploy approval).
+running`), `crew:status` displays a live session table and exits immediately
+after the snapshot. Variants collection belongs to `crew:variants collect`, not
+status.
 
 When no background session exists (or `session.json` is absent / completed),
 `crew:status` falls back to the existing single-task snapshot behavior.
@@ -137,8 +136,7 @@ except Exception:
 - `live` — `session.json` exists, `status == running`, and the file is less
   than 24 hours old. Use **Session-Aware Mode** (Steps 2S–7S below).
 - `session` — `session.json` exists but the session has already completed or
-  the file is older than 24h. Display as completed session (Steps 2S–3S only,
-  no --collect action).
+  the file is older than 24h. Display as completed session (Steps 2S–3S only).
 - `none` — no session file. Use **Single-Task Mode** (Steps 2–7 below).
 
 ---
@@ -257,7 +255,7 @@ Last event per task:
 
   "(inj)" marks tasks injected after session start.
 
-To wait for all tasks and finalize: crew:status --collect
+Variant candidates are collected with `crew:variants collect`.
 ```
 
 **If `SESSION_MODE == "session"` (completed session):** append a note:
@@ -266,9 +264,8 @@ To wait for all tasks and finalize: crew:status --collect
 Session completed. To see full results, read result.md for each task above.
 ```
 
-**If `--collect` was NOT passed** (snapshot mode): print the table, then run
-the opportunistic host-task reconcile pass described in §3S.bis, then exit.
-Do not wait or enter any loop.
+After printing the snapshot table, run the opportunistic host-task reconcile
+pass described in §3S.bis, then exit. Do not wait or enter any loop.
 
 #### 3S.bis. Snapshot opportunistic host-task reconcile (issue #128)
 
@@ -317,340 +314,22 @@ for a in plan.get('reconcile_plan', []):
 fi
 ```
 
-### 4S. Collect mode (--collect only)
+### 4S. Collection Routing
 
-> Only entered when `--collect` was passed AND `SESSION_MODE == "live"`.
+`crew:status` does not collect, merge, apply, push, deploy, or wait for
+background work. It remains a snapshot command.
 
-Wait for all running tasks to reach a terminal state. Poll every 5 seconds
-(use TaskGet wake-on-change when `HAS_TASK_TOOLS == 1` to reduce latency):
-
-```bash
-PRE_RUN_HEAD=$(python3 -c "
-import json
-try:
-    s = json.load(open('${SESSION_FILE}'))
-    print(s.get('pre_run_head', ''))
-except Exception:
-    print('')
-" 2>/dev/null)
-
-while true:
-    # Re-read session.json to detect newly injected tasks
-    REMAINING=$(python3 -c "
-import json
-s = json.load(open('${SESSION_FILE}'))
-print(sum(1 for t in s['tasks'] if t['status'] not in ('completed', 'blocked')))
-" 2>/dev/null)
-
-    # For each still-running task, check result.md and update session.json.
-    # The regex accepts both plain-text ("STATUS: completed") and Markdown-bold
-    # ("**Status:** completed") for backward compatibility (issue #31).
-    # Canonical form: "STATUS: value"; legacy form: "**Status:** value"
-    # (colon is inside the bold markers in the legacy format).
-    python3 -c "
-import json, re
-s = json.load(open('${SESSION_FILE}'))
-changed = False
-# Matches: STATUS: value  OR  **Status:** value  (colon inside ** in legacy form)
-_status_re = re.compile(r'^(?:\*\*)?status:\*{0,2}\s+\*{0,2}(\w+)\*{0,2}', re.IGNORECASE | re.MULTILINE)
-for t in s['tasks']:
-    if t['status'] not in ('completed', 'blocked'):
-        result_path = t['task_dir'] + '/result.md'
-        try:
-            content = open(result_path).read()
-            m = _status_re.search(content)
-            if m:
-                val = m.group(1).lower()
-                if val == 'completed':
-                    t['status'] = 'completed'; changed = True
-                elif val in ('blocked', 'cancelled'):
-                    t['status'] = 'blocked'; changed = True
-        except Exception:
-            pass
-if changed:
-    json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
-" 2>/dev/null
-
-    if [ "${REMAINING}" = "0" ]; then
-        break  # All tasks have reached terminal state
-    fi
-
-    # When HAS_TASK_TOOLS == 1: prefer TaskGet wake-on-change over sleep
-    # (poll each task's host task id; sleep is the fallback guard)
-    sleep 5
-done
-```
-
-After all tasks complete, mark `session.json` as done:
-
-```bash
-python3 -c "
-import json
-s = json.load(open('${SESSION_FILE}'))
-s['status'] = 'completed'
-json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
-" 2>/dev/null
-```
-
-Apply the same crash-retry rule as `crew:run` Step 7: if a task's `result.md`
-is missing or lacks a STATUS field after the poll loop exits, treat it as a
-crash and re-invoke the supervisor for that task (up to 3 retries, passing
-the same `TASK_DIR` so the supervisor resumes from `pipeline.json`).
-
-### 4S.5. Reconcile host TaskList (--collect only, capability-gated, issue #128)
-
-After the poll loop exits — every task is now in a terminal state — sweep the
-host TaskList one more time. This is the authoritative reconcile pass: it
-covers the case where a supervisor crashed before Phase 3 (so its in-process
-Step 2b never ran) or where stage close-out missed a per-stage `TaskUpdate`
-because of a transient host error.
-
-Gated on `HAS_TASK_TOOLS == 1`. When `task_tools=false` this block is a strict
-no-op — the file-based `result.md` STATUS remains the single source of truth.
-
-```bash
-if [ "${HAS_TASK_TOOLS}" = "1" ]; then
-  python3 -c "
-import json
-s = json.load(open('${SESSION_FILE}'))
-for t in s.get('tasks', []):
-    if t.get('status') in ('completed', 'blocked'):
-        print(t['task_dir'])
-" 2>/dev/null | while IFS= read -r TASK_DIR_ITER; do
-    [ -z "${TASK_DIR_ITER}" ] && continue
-    RECONCILE_PLAN=$(python3 "${AGENT_CREW_HOME}/scripts/reconcile-host-tasks.py" \
-      --task-dir "${TASK_DIR_ITER}" --format json 2>/dev/null) || continue
-    echo "${RECONCILE_PLAN}" | python3 -c "
-import json, sys
-plan = json.load(sys.stdin)
-for a in plan.get('reconcile_plan', []):
-    print(a['host_task_id'], a['target_status'], sep='\t')
-" 2>/dev/null | while IFS=$'\t' read -r HTID TARGET; do
-      [ -z "${HTID}" ] && continue
-      # CURRENT=$(TaskGet(taskId=${HTID}).status)
-      # if [ "${CURRENT}" != "completed" ] && [ "${CURRENT}" != "blocked" ] && [ "${CURRENT}" != "cancelled" ]; then
-      #   TaskUpdate(taskId=${HTID}, status="${TARGET}")
-      # fi
-      :  # capability-gated host calls issued by the runtime
-    done
-  done
-fi
-```
-
-This sweep iterates **every** entry in the reconcile plan (parent + stage)
-because at this point no in-process supervisor remains — the orchestrator
-(via `crew:status --collect`) is the only party that can transition the rows.
-
-### 5S. Run Summary (--collect only)
-
-> This is the equivalent of `crew:run` Step 7's Run Summary. Read
-> `result.md` for each task and display the full diff / commit output.
-
-Read all task results from `session.json`:
-
-```bash
-python3 -c "
-import json
-s = json.load(open('${SESSION_FILE}'))
-for t in s['tasks']:
-    print(t['task_id'], t['task_dir'], t['branch'], t['status'],
-          '1' if t.get('injected') else '0', sep='|')
-" 2>/dev/null
-```
-
-For each task, collect the diff relative to `pre_run_head`:
-
-```bash
-TASK_PROJECT_ROOT="${TASK_DIR}/../../.."  # worktrees are under PROJECT_ROOT/.crew-worktrees/
-# Or read PROJECT_ROOT from result.md if recorded
-
-git -C "${PROJECT_ROOT_FOR_TASK}" diff --stat ${PRE_RUN_HEAD}..HEAD
-DIFF_OUTPUT=$(git -C "${PROJECT_ROOT_FOR_TASK}" diff ${PRE_RUN_HEAD}..HEAD 2>/dev/null)
-DIFF_LINES=$(echo "$DIFF_OUTPUT" | wc -l | tr -d ' ')
-if [ "$DIFF_LINES" -le 200 ]; then
-  echo "$DIFF_OUTPUT"
-else
-  echo "$DIFF_OUTPUT" | head -200
-  echo "… $((DIFF_LINES - 200)) more lines. Run: git diff ${PRE_RUN_HEAD}..HEAD"
-fi
-```
-
-If `${TASK_DIR}/context/evolution-report.md` exists, include a compact
-Learning Summary after the commits block. The report is a read-only closeout
-artifact; it is not proof that any generated asset was created. The summary
-must surface `captured`, `captured_events`, `repeated_pattern`, `proposal`,
-`evidence`, `reason`, and `next_action` so the operator can see whether the
-run contributed to growth.
-
-If `${TASK_DIR}/context/evolution-proposals-summary.txt` exists, include a
-compact Self-Evolution Proposals excerpt after the Learning Report so operators
-can see approval-gated proposals when checking status later. This is advisory
-only and does not mean any asset was created or applied.
+For variants sessions, use:
 
 ```text
-**📦 Run Summary**
-
-Task 1: {description}  [injected]    ← "(injected)" tag when task.injected == true
-  Status : completed | blocked
-  Branch : {branch}
-
-  Changes:
-    {git diff --stat {PRE_RUN_HEAD}..HEAD output}
-
-  Diff:
-    {git diff {PRE_RUN_HEAD}..HEAD | head -200 output}
-    (If over 200 lines: "… {N} more lines. Run: git diff {PRE_RUN_HEAD}..HEAD")
-
-  Commits ({N}):
-    {git log --oneline, up to 5 lines}
-
-  Learning Summary:
-    captured: yes|no
-    captured_events: {N}
-    repeated_pattern: yes|no
-    proposal: none|approval_required|approved|applied
-    evidence: {context/evolution-report.md and learning/events.jsonl when present}
-    reason: {why a proposal exists or why it does not}
-    next_action: {approval or more evidence}
-
-  Self-Evolution Proposals:
-    {context/evolution-proposals-summary.txt lines, when present}
-
-Task 2: {description}
-  ...
+crew:variants collect
+crew:variants select TASK_ID
+crew:variants apply
 ```
 
-If any task has `STATUS: blocked`, report the blocker. Do not proceed to merge.
-
-### 6S. Merge Branches (--collect only, N > 1)
-
-> This is the equivalent of `crew:run` Step 8.
-
-If `session.json` has `session_type == "variants"`, this is a
-candidate variants comparison gate instead of a merge step. Summarize the candidate
-variants from `tasks[]`, keep `selection_status: pending`, and stop for user
-selection. Do not merge all completed branches in a variants session.
-
-```text
-**Candidate Variants**
-
-Selection status: pending
-session_type: "variants"
-selection_status: pending
-
-  1  {TASK_ID_1}  {VARIANT_STRATEGY_1}  {BRANCH_1}  {STATUS_1}
-  2  {TASK_ID_2}  {VARIANT_STRATEGY_2}  {BRANCH_2}  {STATUS_2}
-
-Do not merge all completed branches. Select one candidate implementation first.
-```
-
-Merge all completed task branches into `main` locally:
-
-```bash
-SESSION_FILE="${STATE_DIR}/session.json"
-ALL_BRANCHES=$(python3 -c "
-import json
-s = json.load(open('${SESSION_FILE}'))
-for t in s['tasks']:
-    if t['status'] == 'completed':
-        print(t['branch'])
-" 2>/dev/null)
-
-git checkout main
-for BRANCH in ${ALL_BRANCHES}; do
-  git merge --no-ff "${BRANCH}" -m "merge: ${BRANCH} into main"
-done
-```
-
-If a merge conflict occurs, invoke the conflict resolver before continuing:
-
-```text
-crew:run "resolve merge conflicts"
-```
-
-After all merges succeed:
-
-```text
-**🛠️ Implementation Summary**
-
-Merged branches into main (local):
-  - {BRANCH_1}  ({N} commits)
-  - {BRANCH_2}  ({N} commits)
-
-Commits ready for push (origin/main..HEAD):
-  {git log --oneline origin/main..HEAD, up to 10 lines}
-
-Note: No remote push has occurred yet.
-```
-
-> **Stop here by default.** Do not volunteer deployment. If the user wants to
-> deploy or push, they will request it explicitly.
-
-### 7S. Deploy Approval (--collect only, devops stage present)
-
-> This is the equivalent of `crew:run` Steps 10–11. Only runs when at least
-> one pipeline in the session included a `devops` stage.
-
-Check if any pipeline had a devops stage:
-
-```bash
-HAS_DEVOPS=$(python3 -c "
-import json, os
-import json as j
-s = j.load(open('${SESSION_FILE}'))
-for t in s['tasks']:
-    pp = os.path.join(t['task_dir'], 'pipeline.json')
-    try:
-        p = j.load(open(pp))
-        if any('devops' in stage for stage in p.get('stages', [])):
-            print('yes'); exit()
-    except Exception:
-        pass
-print('no')
-" 2>/dev/null)
-```
-
-If `HAS_DEVOPS == "no"`: skip this step entirely.
-
-If `HAS_DEVOPS == "yes"`: display the Deployment Plan and emit a **structured
-user-choice intent** (per `core/rules/capabilities/interactive-question.md`):
-
-```text
-## Deployment Plan
-
-Action: push main to origin (all task branches merged)
-
-Commits to be published (origin/main..HEAD):
-  {git log --oneline origin/main..HEAD}
-
-Target remote: origin
-Risk notes:
-  - {any merge conflicts detected?}
-  - {any blocked tasks?}
-```
-
-```text
-# Structured user-choice intent (host-bound — see
-# core/rules/capabilities/interactive-question.md):
-ask_question:
-  header: "Deploy"
-  question: "Review the deployment plan above. Approve to push main to remote, or cancel to hold."
-  options:
-    - label: "Approve"
-      description: "Push main to origin now"
-    - label: "Cancel"
-      description: "Hold, do not push (branches remain local)"
-```
-
-If **Approve**:
-
-```bash
-git push origin main
-```
-
-Report: `Deployment complete. Pushed: main`
-
-If **Cancel**: Print the branch name(s) so the user can push manually later.
+For non-variant parallel session finalization, introduce a separate explicit
+command before restoring any wait/merge/apply behavior. Do not hide that
+mutation-capable workflow behind status.
 
 ---
 
@@ -1026,9 +705,8 @@ Pipeline stages:
 
 ## Notes
 
-- `crew:status` is read-only in snapshot mode. It never modifies any state file.
-  The `--collect` flag is the only mode that modifies state (merging branches,
-  marking session as completed, writing `approval.md`).
+- `crew:status` is read-only. It never collects variants, merges branches,
+  applies candidates, pushes, deploys, or waits for background work.
 - For the **expanded, on-demand single-view** that unites all five per-task
   state sources (including `handoff.md`, which this snapshot does not read) into
   one coherent read-only block per task, use `crew:smm`
@@ -1042,10 +720,8 @@ Pipeline stages:
   session is present. It targets the most recently modified task directory
   (using `ls -t … | head -1`). To inspect an older task, pass the TASK_ID
   directly as an argument (future extension — not required for v1).
-- **`crew:status --collect`** is the finalization command for background sessions.
-  It waits for all tasks to complete, then runs the equivalent of `crew:run` Steps
-  7–11 (Run Summary, branch merge, Implementation Summary, Deploy approval). Use
-  this after `crew:run` spawns a background parallel session and returns early.
+- Background finalization must live behind a separate explicit command if it is
+  restored for non-variant parallel sessions.
 - Stage markers in single-task mode reflect `completed_stages` from `pipeline.json`,
   not live agent output. For live event streaming, the "Recent events" section reads
   `{TASK_DIR}/progress.log` (tail -20), which is written by the supervisor at every

@@ -64,6 +64,8 @@ candidate implementations of the same base task:
       "task_dir": "/path/to/.agent-crew/state/proj/tasks/20260516-012345-0",
       "branch": "crew/implement-order-api-v1",
       "task": "implement order API",
+      "project_root": "/path/to/project/.crew-worktrees/20260516-012345-0",
+      "base_project_root": "/path/to/project",
       "task_hash": "implement order api",
       "status": "running",
       "injected": false,
@@ -102,8 +104,10 @@ and each `tasks[]` entry because field set evolves per refactor phase.
 | `task_dir` | string (absolute path) | yes | Used by Step 7 result collection. |
 | `branch` | string | yes | Follows `core/rules/branch-naming.md`. |
 | `task` | string | yes | Original task description. |
+| `project_root` | string (absolute path) | optional | Task execution root. In git-backed variants sessions this is the candidate's isolated `.crew-worktrees/{TASK_ID}` path, not the base checkout. |
+| `base_project_root` | string (absolute path) | optional | Original checkout root when `project_root` points at an isolated variant worktree. |
 | `task_hash` | string | optional (Phase B0+) | Normalized form for duplicate-injection detection. Pre-B0 entries omit it. |
-| `status` | enum `running \| completed \| blocked` | yes | Bumped to terminal value by Step 7 once `result.md` is parsed. |
+| `status` | enum `running \| completed \| blocked \| cancelled` | yes | Bumped to terminal value by Step 7 once `result.md` is parsed. |
 | `injected` | boolean | optional (defaults to false) | True for tasks added by Step 1.5 injection path. |
 | `variant_id` | string | optional | Stable candidate id in a variants session. |
 | `variant_index` | integer | optional | One-based candidate index in a variants session. |

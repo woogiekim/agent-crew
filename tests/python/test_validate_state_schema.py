@@ -87,6 +87,8 @@ def _valid_variants_session(task_dir: Path) -> dict:
                 "task_dir": str(task_dir),
                 "branch": "crew/test-task-v1",
                 "task": "test task",
+                "project_root": "/tmp/project/.crew-worktrees/20260101-120000-0",
+                "base_project_root": "/tmp/project",
                 "task_hash": "test task",
                 "status": "running",
                 "injected": False,
@@ -333,6 +335,33 @@ class TestValidateStateSchema:
                 "comment_count": 1,
             }
         ]
+        (task_dir / "register.json").write_text(json.dumps(register))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, (
+            f"expected 0, got {r.returncode}\nstdout:\n{r.stdout}\n"
+            f"stderr:\n{r.stderr}"
+        )
+
+    def test_variant_register_state_is_schema_valid(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        register = _valid_register()
+        register["execution_mode"] = "variant"
+        register["session_type"] = "variants"
+        register["project_root"] = "/tmp/project/.crew-worktrees/20260101-120000-0"
+        register["base_project_root"] = "/tmp/project"
+        register["variant_id"] = "minimal"
+        register["variant_index"] = 1
+        register["variant_strategy"] = "minimal"
         (task_dir / "register.json").write_text(json.dumps(register))
         (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
         _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])

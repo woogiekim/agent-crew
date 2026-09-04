@@ -47,7 +47,12 @@
     "project_root": {
       "type": "string",
       "minLength": 1,
-      "description": "Absolute path to project root. May be a worktree path in parallel mode."
+      "description": "Absolute path to project root. May be a worktree path in parallel or variant mode."
+    },
+    "base_project_root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Original checkout root when project_root points at an isolated variant worktree."
     },
     "project_name": {
       "type": "string",
@@ -71,7 +76,7 @@
     },
     "execution_mode": {
       "type": "string",
-      "enum": ["single", "parallel"],
+      "enum": ["single", "parallel", "variant"],
       "description": "Matches the EXECUTION_MODE supervisor input."
     },
     "mutation_scope": {
@@ -214,6 +219,24 @@
         "manual_fallback_cancelled"
       ],
       "description": "Host bridge execution classification for distinguishing automatic completion, manual fallback, and true blocked handoffs."
+    },
+    "session_type": {
+      "type": "string",
+      "enum": ["parallel", "variants"],
+      "description": "Session-level mode copied onto per-task registers when useful for local tooling."
+    },
+    "variant_id": {
+      "type": "string",
+      "description": "Stable candidate identifier inside a variants session."
+    },
+    "variant_index": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "One-based candidate index inside a variants session."
+    },
+    "variant_strategy": {
+      "type": "string",
+      "description": "Human-readable strategy label for this candidate implementation."
     },
     "host_bridge_completion_path": {
       "type": "string",
