@@ -52,3 +52,14 @@ def test_supervisor_prompt_uses_bold_only_implementation_summary_label() -> None
 
     assert "**🛠️ Implementation Summary**" in supervisor_text
     assert "## 🛠️ Implementation Summary" not in supervisor_text
+
+
+def test_variant_collect_blocks_merge_until_candidate_selection() -> None:
+    run_text = RUN_COMMAND.read_text(encoding="utf-8")
+    status_text = STATUS_COMMAND.read_text(encoding="utf-8")
+
+    assert "--variants N" in run_text
+    assert 'session_type: "variants"' in run_text
+    assert "candidate variants" in status_text
+    assert "Do not merge all completed branches" in status_text
+    assert "selection_status: pending" in status_text

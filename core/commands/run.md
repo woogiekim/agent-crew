@@ -35,6 +35,13 @@ This gives single-task and multi-task execution the same engine:
 
 - Single request -> one `supervisor`
 - Multiple requests -> multiple `supervisor` agents
+- `--variants N` -> N candidate `supervisor` handoffs for the same request
+
+`--variants N` creates a variants session for one task. The runtime preserves
+the original task text, writes `session_type: "variants"` with
+`selection_status: "pending"` in `session.json`, and annotates each task entry
+with `variant_id`, `variant_index`, and `variant_strategy`. Variant candidates
+are collected for comparison; they are not merged together automatically.
 
 ## Lean Workflow Contract
 
@@ -1552,6 +1559,34 @@ see a valid `session.json` with `status: running`.
 
 For single-task runs (`N == 1`), no session file is written — injection requires
 a live parallel session and is not meaningful for single-task execution.
+
+#### Variant Registry Initialization (`--variants N`)
+
+When `crew run --variants N "task"` is used, treat the single task string as
+the immutable base requirement and fan it out into N candidate task handoffs.
+This uses the same top-level session fan-out model as multi-task execution,
+not `parallelizable_units`.
+
+Each candidate entry must preserve the same `task` text and include:
+
+```json
+{
+  "variant_id": "minimal",
+  "variant_index": 1,
+  "variant_strategy": "minimal"
+}
+```
+
+The top-level session must include:
+
+```text
+session_type: "variants"
+selection_status: "pending"
+```
+
+Variant collection is a comparison gate. `crew:status --collect` may summarize
+candidate variants, but must not merge every completed branch until the user
+selects one implementation.
 
 ### 5.pre — Requirements Sufficiency Check
 

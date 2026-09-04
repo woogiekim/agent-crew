@@ -25,6 +25,28 @@
       "type": "string",
       "description": "Git SHA of the pre-run HEAD. Optional — older session.json files may omit it. Used by crew:status --collect for diff stat."
     },
+    "session_type": {
+      "type": "string",
+      "enum": ["parallel", "variants"],
+      "description": "Optional session mode. Omitted legacy sessions are plain parallel sessions; variants sessions fan out one task into candidate implementations."
+    },
+    "base_task": {
+      "type": "string",
+      "description": "Original task text shared by every candidate in a variants session."
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of candidate variant task entries requested for a variants session."
+    },
+    "selection_status": {
+      "type": "string",
+      "enum": ["pending", "selected", "cancelled"],
+      "description": "Selection gate status for variants sessions."
+    },
+    "selected_task_id": {
+      "description": "Selected task id for a variants session after the user chooses a candidate."
+    },
     "tasks": {
       "type": "array",
       "items": {
@@ -50,6 +72,19 @@
           "injected": {
             "type": "boolean",
             "description": "True when the task was added via the run.md Step 1.5 injection path."
+          },
+          "variant_id": {
+            "type": "string",
+            "description": "Stable candidate identifier inside a variants session."
+          },
+          "variant_index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "One-based candidate index inside a variants session."
+          },
+          "variant_strategy": {
+            "type": "string",
+            "description": "Human-readable strategy label for this candidate implementation."
           }
         }
       }

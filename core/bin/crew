@@ -63,7 +63,8 @@ Commands:
                                     Request or print deterministic resume state
   update [--local [SOURCE_ROOT]] [--all-projects] [--reconcile-skills]
                                     Refresh installed assets
-  run [--read-only] "task"         Write state and host handoff for a task
+  run [--read-only] [--variants N] "task"
+                                    Write state and host handoff for a task
   evolve status|approve|apply      Inspect and operate on approved learning proposals
   relay [args]                     Package a prompt for another AI session
   sessions [args]                  List recent AI session candidates
@@ -1210,6 +1211,7 @@ cmd_run() {
   if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     cat <<'EOF'
 usage: crew run [--read-only] [--mutation-scope read_only|workspace_write]
+                [--variants N]
                 [--fake-host-result completed] [--host-bridge-command CMD] "task"
 
 Creates deterministic local task state and a supervisor handoff. If no external
@@ -1228,6 +1230,10 @@ be completed manually.
 --read-only is an alias for --mutation-scope read_only. It allows task-local
 state writes but suppresses installed runtime/hook auto-sync and binds a
 no-project/Git/Memory/external-write contract into the supervisor handoff.
+
+--variants N creates N candidate task handoffs for the same task in one
+variants session. Candidate branches are not merged together automatically;
+collect and review the candidates before selecting one implementation.
 EOF
     return 0
   fi

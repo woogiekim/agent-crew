@@ -66,6 +66,7 @@ rc=$?
 assert_exit 0 "${rc}"
 assert_contains "${out}" "--read-only"
 assert_contains "${out}" "--mutation-scope read_only|workspace_write"
+assert_contains "${out}" "--variants N"
 
 TMP_HOME=$(make_tmp)
 TMP_PROJECT=$(make_tmp)
@@ -671,6 +672,51 @@ assert_exit 0 "${rc}"
 terminated_task_dir=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 assert_contains "$(cat "${terminated_task_dir}/register.json")" '"task": "--mutation-scope"'
 assert_contains "$(cat "${terminated_task_dir}/register.json")" '"mutation_scope": "workspace_write"'
+
+VARIANT_HOME=$(make_tmp)
+VARIANT_PROJECT=$(make_tmp)
+mkdir -p "${VARIANT_HOME}/commands" "${VARIANT_HOME}/scripts"
+cp -R "${REPO_ROOT}/core/commands/." "${VARIANT_HOME}/commands/"
+cp -R "${REPO_ROOT}/core/scripts/." "${VARIANT_HOME}/scripts/"
+
+it "crew run --variants creates one variants session with candidate task entries"
+out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0 AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN=0 \
+  bash "${CREW}" run --variants 3 "implement candidate mode" 2>&1)
+rc=$?
+assert_exit 0 "${rc}" "variants run"
+
+VARIANT_STATE="$(project_state_dir "${VARIANT_HOME}" "${VARIANT_PROJECT}")"
+VARIANT_SESSION="${VARIANT_STATE}/session.json"
+assert_file_exists "${VARIANT_SESSION}"
+
+it "variants session records type, selection status, and all candidate entries"
+variant_summary=$(python3 - "${VARIANT_SESSION}" <<'PYEOF'
+import json, sys
+
+session = json.load(open(sys.argv[1]))
+tasks = session.get("tasks", [])
+print(session.get("session_type"))
+print(session.get("selection_status"))
+print(len(tasks))
+print(",".join(str(task.get("variant_id")) for task in tasks))
+print(",".join(str(task.get("variant_index")) for task in tasks))
+print(",".join(str(task.get("variant_strategy")) for task in tasks))
+PYEOF
+)
+assert_eq $'variants\npending\n3\nminimal,balanced,structural\n1,2,3\nminimal,balanced,structural' "${variant_summary}" "variant session fields"
+
+it "variant task state preserves the original task text and marks variants execution"
+first_variant_dir=$(python3 - "${VARIANT_SESSION}" <<'PYEOF'
+import json, sys
+
+session = json.load(open(sys.argv[1]))
+print(session["tasks"][0]["task_dir"])
+PYEOF
+)
+assert_contains "$(cat "${first_variant_dir}/register.json")" '"execution_mode": "variant"'
+assert_contains "$(cat "${first_variant_dir}/register.json")" '"task": "implement candidate mode"'
+assert_contains "$(cat "${first_variant_dir}/handoff.md")" "VARIANT_STRATEGY: minimal"
 
 HOOK_SYNC_HOME=$(make_tmp)
 HOOK_SYNC_PROJECT=$(make_tmp)

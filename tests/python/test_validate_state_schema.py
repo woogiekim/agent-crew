@@ -68,6 +68,36 @@ def _valid_progress_row(task_id: str = "20260101-120000-0") -> dict:
     }
 
 
+def _valid_variants_session(task_dir: Path) -> dict:
+    task_id = "20260101-120000-0"
+    session_id = task_id.rsplit("-", 1)[0]
+    return {
+        "schema_version": 1,
+        "session_id": session_id,
+        "session_type": "variants",
+        "status": "running",
+        "pre_run_head": "abc1234",
+        "base_task": "test task",
+        "candidate_count": 1,
+        "selection_status": "pending",
+        "selected_task_id": None,
+        "tasks": [
+            {
+                "task_id": task_id,
+                "task_dir": str(task_dir),
+                "branch": "crew/test-task-v1",
+                "task": "test task",
+                "task_hash": "test task",
+                "status": "running",
+                "injected": False,
+                "variant_id": "minimal",
+                "variant_index": 1,
+                "variant_strategy": "minimal",
+            }
+        ],
+    }
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for row in rows:
@@ -305,6 +335,26 @@ class TestValidateStateSchema:
         ]
         (task_dir / "register.json").write_text(json.dumps(register))
         (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, (
+            f"expected 0, got {r.returncode}\nstdout:\n{r.stdout}\n"
+            f"stderr:\n{r.stderr}"
+        )
+
+    def test_variants_session_registry_is_schema_valid(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        (state_dir / "session.json").write_text(json.dumps(_valid_variants_session(task_dir)))
         _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
 
         r = script_runner(

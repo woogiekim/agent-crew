@@ -65,6 +65,7 @@ AGENT_LAYER_SCOPES = {
     "user": "모든 프로젝트에서 기본 후보로 사용",
     "system": "agent-crew가 제공하는 기본값",
 }
+VARIANT_STRATEGIES = ("minimal", "balanced", "structural")
 
 
 def utc_now_z() -> str:
@@ -174,6 +175,23 @@ def git_root() -> Path:
 def slug(text: str) -> str:
     value = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
     return value[:48] or "task"
+
+
+def variant_strategy(index: int) -> str:
+    if 1 <= index <= len(VARIANT_STRATEGIES):
+        return VARIANT_STRATEGIES[index - 1]
+    return f"variant-{index}"
+
+
+def current_git_head(project_root: Path) -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(project_root), "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return ""
 
 
 def append_jsonl(path: Path, event: dict) -> None:
@@ -2519,6 +2537,228 @@ def resolve_agent_definition_choice(
     )
 
 
+def command_run_variants(
+    *,
+    args: argparse.Namespace,
+    project_root: Path,
+    project_name: str,
+    state_info: dict,
+    state_dir: Path,
+    tasks_dir: Path,
+    now_z: str,
+    session_id: str,
+) -> int:
+    raw_task = args.task
+    task = raw_task
+    mutation_scope = getattr(args, "mutation_scope", "workspace_write")
+    pre_run_head = current_git_head(project_root)
+    task_hash = re.sub(r"[.,;:!?]+$", "", re.sub(r"\s+", " ", task).strip().lower())
+    task_entries = []
+    task_index = 0
+
+    for variant_index in range(1, args.variants + 1):
+        while True:
+            task_id = f"{session_id}-{task_index}"
+            task_index += 1
+            task_dir = tasks_dir / task_id
+            if not task_dir.exists():
+                break
+
+        context_dir = task_dir / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+
+        variant_strategy_name = variant_strategy(variant_index)
+        variant_id = variant_strategy_name
+        branch = f"crew/{slug(task)}-v{variant_index}"
+        repair_command = f"crew repair {task_id} --status completed --note \"<summary>\""
+        normalization_metadata = input_normalization_metadata(
+            raw_task,
+            next_target=f"crew run supervisor variant {variant_index}",
+        )
+
+        register = {
+            "schema_version": 1,
+            "task_id": task_id,
+            "session_id": session_id,
+            "session_type": "variants",
+            "task": task,
+            "branch": branch,
+            "project_root": str(project_root),
+            "project_name": project_name,
+            "project_state_key": state_info["project_state_key"],
+            "state_dir": str(state_dir),
+            "task_dir": str(task_dir),
+            "execution_mode": "variant",
+            "mutation_scope": mutation_scope,
+            "current_phase": "handoff_ready",
+            "approval_status": "not_required",
+            "verification_status": "skipped",
+            "pipeline_path": str(task_dir / "pipeline.json"),
+            "handoff_path": str(task_dir / "handoff.md"),
+            "progress_log_path": str(task_dir / "progress.log"),
+            "progress_buffer_path": str(task_dir / "progress.buffer.jsonl"),
+            "result_path": str(task_dir / "result.md"),
+            "blocked_by": [],
+            "host_bridge_status": "internal_handoff_ready",
+            "repair_command": repair_command,
+            "variant_id": variant_id,
+            "variant_index": variant_index,
+            "variant_strategy": variant_strategy_name,
+        }
+
+        pipeline = {
+            "schema_version": 1,
+            "task": task,
+            "mutation_scope": mutation_scope,
+            "session_type": "variants",
+            "execution_mode": "variant",
+            "variant_id": variant_id,
+            "variant_index": variant_index,
+            "variant_strategy": variant_strategy_name,
+            "stages": ["supervisor"],
+            "completed_stages": 0,
+            "stage_agent_status": {
+                "1": {
+                    "supervisor": "blocked",
+                }
+            },
+        }
+
+        handoff = (
+            "# Supervisor Handoff\n\n"
+            f"TASK_ID: {task_id}\n"
+            f"TASK: {task}\n"
+            f"PROJECT_ROOT: {project_root}\n"
+            f"MUTATION_SCOPE: {mutation_scope}\n"
+            "MODE: native-cli\n"
+            "SESSION_TYPE: variants\n"
+            f"VARIANT_ID: {variant_id}\n"
+            f"VARIANT_INDEX: {variant_index}\n"
+            f"VARIANT_STRATEGY: {variant_strategy_name}\n"
+            "STATUS: handoff_ready\n"
+            f"REPAIR: {repair_command}\n"
+        )
+
+        result = (
+            f"# {task}\n\n"
+            "STATUS: handoff_ready\n"
+            f"TASK_ID: {task_id}\n"
+            f"BRANCH: {branch}\n"
+            f"MUTATION_SCOPE: {mutation_scope}\n"
+            "SESSION_TYPE: variants\n"
+            f"VARIANT_ID: {variant_id}\n"
+            f"VARIANT_INDEX: {variant_index}\n"
+            f"VARIANT_STRATEGY: {variant_strategy_name}\n"
+            "HOST_BRIDGE: internal_handoff_ready\n"
+        )
+        result += host_bridge_next_line(task_dir, task_id, False)
+
+        write_json(task_dir / "register.json", register)
+        write_json(task_dir / "pipeline.json", pipeline)
+        write_json(task_dir / "context" / "input-normalization.json", normalization_metadata)
+        issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
+        if issue_ingestions:
+            register["issue_comment_ingestion"] = issue_ingestions
+            write_json(task_dir / "register.json", register)
+        (task_dir / "handoff.md").write_text(handoff, encoding="utf-8")
+        (task_dir / "result.md").write_text(result, encoding="utf-8")
+        (task_dir / "progress.log").write_text(
+            f"{now_z} | STARTED | {task}\n"
+            f"{now_z} | VARIANT | {variant_index}/{args.variants} {variant_strategy_name}\n"
+            f"{now_z} | STATUS | handoff_ready\n",
+            encoding="utf-8",
+        )
+        append_jsonl(
+            task_dir / "progress.buffer.jsonl",
+            {
+                "ts": now_z,
+                "trace_id": f"{session_id}.{task_id}.0.0",
+                "task_id": task_id,
+                "session_id": session_id,
+                "event": "STARTED",
+                "stage": 0,
+                "agent": "",
+                "attempt": 0,
+                "status": "started",
+                "detail": task,
+                "files": [],
+            },
+        )
+        append_jsonl(
+            task_dir / "progress.buffer.jsonl",
+            {
+                "ts": now_z,
+                "trace_id": f"{session_id}.{task_id}.0.0",
+                "task_id": task_id,
+                "session_id": session_id,
+                "event": "VARIANT",
+                "stage": 0,
+                "agent": "",
+                "attempt": 0,
+                "status": "handoff_ready",
+                "detail": f"{variant_index}/{args.variants} {variant_strategy_name}",
+                "files": ["handoff.md", "register.json", "pipeline.json"],
+            },
+        )
+        append_delegation(
+            task_dir,
+            trace_id=f"{session_id}.{task_id}.0.0",
+            span_id=f"{task_id}:supervisor",
+            parent_span_id="",
+            agent_role="supervisor",
+            unit_id=task_id,
+            delegated_by="crew-runtime",
+            status="handoff_ready",
+        )
+
+        task_entries.append(
+            {
+                "task_id": task_id,
+                "task_dir": str(task_dir),
+                "branch": branch,
+                "task": task,
+                "task_hash": task_hash,
+                "status": "running",
+                "injected": False,
+                "variant_id": variant_id,
+                "variant_index": variant_index,
+                "variant_strategy": variant_strategy_name,
+            }
+        )
+
+    write_json(
+        state_dir / "session.json",
+        {
+            "schema_version": 1,
+            "session_id": session_id,
+            "session_type": "variants",
+            "status": "running",
+            "pre_run_head": pre_run_head,
+            "base_task": task,
+            "candidate_count": args.variants,
+            "selection_status": "pending",
+            "selected_task_id": None,
+            "tasks": task_entries,
+        },
+    )
+
+    print("[crew] START variants", flush=True)
+    print(f"SESSION_ID: {session_id}")
+    print("SESSION_TYPE: variants")
+    print(f"CANDIDATE_COUNT: {args.variants}")
+    print(f"BASE_TASK: {task}")
+    print("SELECTION_STATUS: pending")
+    print("NEXT: Complete candidate handoffs, then run `crew status --collect` to compare variants before selecting one.")
+    for entry in task_entries:
+        print(
+            f"TASK_ID: {entry['task_id']} "
+            f"VARIANT_INDEX: {entry['variant_index']} "
+            f"VARIANT_STRATEGY: {entry['variant_strategy']} "
+            f"TASK_DIR: {entry['task_dir']}"
+        )
+    return 0
+
+
 def command_run(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
@@ -2536,6 +2776,22 @@ def command_run(args: argparse.Namespace) -> int:
     now = datetime.now(timezone.utc)
     now_z = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     session_id = now.strftime("%Y%m%d-%H%M%S")
+    variants = getattr(args, "variants", 1)
+    if variants < 1:
+        print("error: --variants must be a positive integer", file=sys.stderr)
+        return 2
+    if variants > 1:
+        return command_run_variants(
+            args=args,
+            project_root=project_root,
+            project_name=project_name,
+            state_info=state_info,
+            state_dir=state_dir,
+            tasks_dir=tasks_dir,
+            now_z=now_z,
+            session_id=session_id,
+        )
+
     task_id = f"{session_id}-0"
     index = 0
     while (tasks_dir / task_id).exists():
@@ -3747,6 +4003,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_const",
         const="read_only",
     )
+    run.add_argument("--variants", type=int, default=1)
     run.add_argument("--fake-host-result", choices=["completed"], default=None)
     run.add_argument("--host-bridge-command", default=None)
     run.set_defaults(func=command_run)

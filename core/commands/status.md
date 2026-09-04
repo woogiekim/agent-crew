@@ -526,6 +526,24 @@ If any task has `STATUS: blocked`, report the blocker. Do not proceed to merge.
 
 > This is the equivalent of `crew:run` Step 8.
 
+If `session.json` has `session_type == "variants"`, this is a
+candidate variants comparison gate instead of a merge step. Summarize the candidate
+variants from `tasks[]`, keep `selection_status: pending`, and stop for user
+selection. Do not merge all completed branches in a variants session.
+
+```text
+**Candidate Variants**
+
+Selection status: pending
+session_type: "variants"
+selection_status: pending
+
+  1  {TASK_ID_1}  {VARIANT_STRATEGY_1}  {BRANCH_1}  {STATUS_1}
+  2  {TASK_ID_2}  {VARIANT_STRATEGY_2}  {BRANCH_2}  {STATUS_2}
+
+Do not merge all completed branches. Select one candidate implementation first.
+```
+
 Merge all completed task branches into `main` locally:
 
 ```bash
