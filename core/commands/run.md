@@ -1596,6 +1596,19 @@ Variant collection is a comparison gate. `crew:variants collect` may summarize
 candidate variants, but must not merge every completed branch until the user
 selects one implementation.
 
+**Variants 완료 연속성:** `session_type: variants`에서는 모든 supervisor를 병렬
+위임한 orchestrator가 완료까지 연결을 유지한다. 아래 P4의 즉시 종료 규칙은
+variants에 적용하지 않는다. 부모가 자동으로 `crew variants collect --wait
+--timeout 600`을 실행하고 호스트 agent 완료 알림을 처리한다. 사용자가 추가로
+collect를 요청할 때까지 멈추지 않는다. timeout은 미완료 상태로 보고하고 기존
+agent를 중복 생성하지 않는다.
+
+모든 후보가 종료되면 완료된 후보들의 실제 commit SHA, base 대비 diff, 테스트
+출력, 요구사항을 reviewer에 전달하여 비교 리뷰를 수행한다. 실패 후보와 동일 SHA
+후보를 따로 표시하고 `variant-review.md`에 추천과 근거를 기록한다. 이 경로는
+일반 병렬 작업의 Step 8 전체 브랜치 merge로 넘어가지 않는다. 추천 후 사용자
+선택을 기다리며 `selected_task_id`와 apply 승인 상태는 자동 변경하지 않는다.
+
 ### 5.pre — Requirements Sufficiency Check
 
 > **NEVER-SKIP-WITHOUT-SUFFICIENCY-CHECK**: REQUIREMENTS must always be produced
@@ -1817,6 +1830,8 @@ printf '%s | SUPERVISOR_HANDOFF | waiting for supervisor Phase 0\n' \
 ```
 
 **P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
+Variants 세션은 위의 완료 연속성 규칙을 따른다. 아래 즉시 종료는 variants가 아닌
+세션에만 적용된다.
 Spawn each supervisor as a host background agent, print a "Background Session
 Started" summary, and **RETURN immediately** (end the turn). Do NOT enter any
 poll loop.

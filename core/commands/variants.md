@@ -4,6 +4,7 @@ Manage candidate implementations created by `crew:run --variants N`.
 
 ```text
 crew:variants collect
+crew:variants collect --wait --timeout 600
 crew:variants select TASK_ID
 crew:variants apply
 crew:variants apply --target BRANCH --dry-run
@@ -63,3 +64,16 @@ Git common directory의 `crew-variants-apply.lock` 디렉터리를 사용한다.
 복구한 다음 해당 잠금 디렉터리를 제거한다. 다른 Git 도구를 통한 동시 편집은 피한다.
 
 Use `crew:variants collect` for candidate collection.
+
+`crew:variants collect --wait`는 모든 후보의 result.md가 completed/blocked/cancelled가
+될 때까지 기다린 뒤 비교표를 출력한다. 기본 제한 시간은 600초, 조회 간격은 1초다.
+`--timeout SECONDS`와 `--interval SECONDS`로 조정한다. 제한 시간 초과는 종료 코드
+`3`과 `collection_status: timed_out`을 반환하며 미완료 후보를 완료로 처리하지 않는다.
+대기 중 세션 또는 후보 목록이 바뀌면 종료 코드 `2`로 중단한다.
+
+호스트의 `crew:run --variants` orchestrator는 모든 supervisor를 병렬 위임한 뒤
+이 완료 장벽을 자동 실행한다. 사용자의 추가 collect 요청을 기다리지 않는다.
+완료 후 reviewer에게 완료된 후보별 커밋·실제 diff·테스트 로그·요구사항을 전달하여
+비교 리뷰를 수행하고 `variant-review.md`에 추천 후보와 근거를 남긴다. 실패하거나
+동일 SHA로 중복된 후보는 따로 표시한다. 추천은 선택 승인이 아니므로
+selected_task_id를 자동 변경하거나 merge하지 않는다. CLI는 AI를 직접 호출하지 않는다.

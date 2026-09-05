@@ -8,11 +8,13 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -23,6 +25,10 @@ STATUS_RE = re.compile(
 FIELD_RE = re.compile(
     r"^(?:\*\*)?(summary|description|branch|blocker):\*{0,2}\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
+)
+SUMMARY_SECTION_RE = re.compile(
+    r"^#{1,6}[ \t]+(?:summary|description)[ \t]*:?[ \t]*\r?\n(.*?)(?=^#{1,6}[ \t]|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
 
 
@@ -81,7 +87,7 @@ def result_fields(task_dir: Path) -> dict:
     status_match = STATUS_RE.search(text)
     if status_match:
         status = status_match.group(1).strip().lower()
-        fields["status"] = status if status in {"completed", "blocked", "cancelled"} else status
+        fields["status"] = status if status in {"completed", "blocked", "cancelled"} else "running"
 
     blockers: list[str] = []
     for key, value in FIELD_RE.findall(text):
@@ -95,6 +101,11 @@ def result_fields(task_dir: Path) -> dict:
             blockers.append(normalized_value)
 
     fields["blockers"] = blockers
+    if not fields["summary"]:
+        section = SUMMARY_SECTION_RE.search(text)
+        if section:
+            paragraph = section.group(1).strip().split("\n\n", 1)[0]
+            fields["summary"] = " ".join(paragraph.splitlines()).strip()
     if not fields["summary"]:
         fields["summary"] = "No summary recorded in result.md"
     return fields
@@ -225,6 +236,35 @@ def select_variant(state_dir: Path, task_id: str) -> tuple[int, str]:
         "",
     ]
     return 0, "\n".join(lines)
+
+
+def collect_until_terminal(state_dir: Path, timeout: float, interval: float) -> tuple[int, str]:
+    session, _, message = require_variants_session(state_dir)
+    if session is None or not session.get("tasks"):
+        return 2, message or "수집할 후보가 없습니다.\n"
+
+    def identity(value: dict) -> tuple:
+        return (value.get("session_id"), value.get("base_task"),
+                [(task.get("task_id"), task.get("task_dir")) for task in value.get("tasks", [])])
+
+    expected = identity(session)
+    deadline = time.monotonic() + timeout
+    while True:
+        # 대기 중에는 잠금을 해제하여 다른 상태 명령을 막지 않는다.
+        with operation_lock(state_dir, ".variants.lock"):
+            current, _, message = require_variants_session(state_dir)
+            if current is None or identity(current) != expected:
+                return 2, "대기 중 variants 세션이 변경되었습니다. 새 세션을 확인하세요.\n"
+            code, output = collect_variants(state_dir)
+            current = load_json(state_dir / "session.json")
+        if code:
+            return code, output
+        if all(task.get("status") in {"completed", "blocked", "cancelled"} for task in current["tasks"]):
+            return 0, "collection_status: complete\n" + output
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return 3, "collection_status: timed_out\n" + output
+        time.sleep(min(interval, remaining))
 
 
 def git_output(root: Path, *args: str) -> str:
@@ -462,7 +502,19 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--confirm", metavar="PLAN_HASH")
+    parser.add_argument("--wait", action="store_true")
+    parser.add_argument("--timeout", type=float)
+    parser.add_argument("--interval", type=float)
     args = parser.parse_args(argv)
+
+    if args.wait or args.timeout is not None or args.interval is not None:
+        if args.action != "collect" or not args.wait:
+            parser.error("--timeout/--interval require collect --wait")
+        args.timeout = 600.0 if args.timeout is None else args.timeout
+        args.interval = 1.0 if args.interval is None else args.interval
+        if (not math.isfinite(args.timeout) or args.timeout < 0
+                or not math.isfinite(args.interval) or args.interval <= 0):
+            parser.error("--timeout must be finite and >= 0; --interval must be finite and > 0")
 
     if args.target is not None or args.dry_run or args.confirm is not None:
         if args.action != "apply" or not args.target or not (args.dry_run or args.confirm):
@@ -474,11 +526,13 @@ def main(argv: list[str] | None = None) -> int:
         action = lambda: select_variant(Path(args.state_dir), args.task_id)
     elif args.action == "apply":
         action = lambda: apply_variant(Path(args.state_dir), args.target, args.confirm)
+    elif args.wait:
+        action = lambda: collect_until_terminal(Path(args.state_dir), args.timeout, args.interval)
     else:
         action = lambda: collect_variants(Path(args.state_dir))
 
     try:
-        if Path(args.state_dir).is_dir() and (args.action != "apply" or args.confirm):
+        if Path(args.state_dir).is_dir() and not args.wait and (args.action != "apply" or args.confirm):
             with operation_lock(Path(args.state_dir), ".variants.lock"):
                 code, output = action()
         else:

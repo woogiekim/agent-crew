@@ -559,7 +559,7 @@ PYEOF
 cmd_variants_collect() {
   local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
   require_file "${collector}" "variant session collector"
-  python3 "${collector}" collect --state-dir "${STATE_DIR}"
+  python3 "${collector}" collect --state-dir "${STATE_DIR}" "$@"
 }
 
 cmd_variants_select() {
@@ -585,7 +585,7 @@ cmd_variants() {
   case "${action}" in
     ""|-h|--help)
       cat <<'EOF'
-usage: crew variants collect
+usage: crew variants collect [--wait [--timeout SECONDS] [--interval SECONDS]]
        crew variants select TASK_ID
        crew variants apply [--target BRANCH --dry-run]
        crew variants apply --target BRANCH --confirm PLAN_HASH
@@ -597,8 +597,7 @@ EOF
       ;;
     collect)
       shift
-      [ "$#" -eq 0 ] || die "variants collect takes no arguments"
-      cmd_variants_collect
+      cmd_variants_collect "$@"
       ;;
     select)
       shift
