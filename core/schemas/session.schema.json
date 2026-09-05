@@ -23,7 +23,7 @@
     },
     "pre_run_head": {
       "type": "string",
-      "description": "Git SHA of the pre-run HEAD. Optional — older session.json files may omit it. Used by crew:status --collect for diff stat."
+      "description": "Git SHA of the pre-run HEAD. Optional — older session.json files may omit it. Used when comparing candidate changes."
     },
     "session_type": {
       "type": "string",
@@ -47,6 +47,32 @@
     "selected_task_id": {
       "description": "Selected task id for a variants session after the user chooses a candidate."
     },
+    "apply_status": {
+      "type": "string",
+      "enum": ["applying", "applied", "failed", "conflict"],
+      "description": "선택 후보의 로컬 반영 상태."
+    },
+    "apply_record": {
+      "type": "object",
+      "required": ["plan_hash", "plan", "started_at"],
+      "properties": {
+        "plan_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "plan": { "type": "object" },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "applied_commit": { "type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "apply_history": {
+      "type": "array",
+      "items": { "type": "object" },
+      "description": "복구 후 재시도하기 전의 반영 기록."
+    },
+    "applied_branch": { "type": "string", "minLength": 1 },
+    "applied_task_id": { "type": "string", "minLength": 1 },
+    "applied_at": { "type": "string", "format": "date-time" },
     "tasks": {
       "type": "array",
       "items": {

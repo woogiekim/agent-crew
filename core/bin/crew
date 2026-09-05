@@ -576,7 +576,7 @@ cmd_variants_select() {
 cmd_variants_apply() {
   local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
   require_file "${collector}" "variant session collector"
-  python3 "${collector}" apply --state-dir "${STATE_DIR}"
+  python3 "${collector}" apply --state-dir "${STATE_DIR}" "$@"
 }
 
 cmd_variants() {
@@ -587,7 +587,8 @@ cmd_variants() {
       cat <<'EOF'
 usage: crew variants collect
        crew variants select TASK_ID
-       crew variants apply
+       crew variants apply [--target BRANCH --dry-run]
+       crew variants apply --target BRANCH --confirm PLAN_HASH
 
 Manages a crew run variants session. collect summarizes candidate outputs
 without selecting or merging. select/apply are the next selection-gate steps.
@@ -605,8 +606,7 @@ EOF
       ;;
     apply)
       shift
-      [ "$#" -eq 0 ] || die "variants apply takes no arguments"
-      cmd_variants_apply
+      cmd_variants_apply "$@"
       ;;
     *)
       die "unknown variants action: ${action}"

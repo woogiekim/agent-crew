@@ -2836,7 +2836,7 @@ def command_run_variants(
     print(f"CANDIDATE_COUNT: {args.variants}")
     print(f"BASE_TASK: {task}")
     print("SELECTION_STATUS: pending")
-    print("NEXT: Complete candidate handoffs, then run `crew status --collect` to compare variants before selecting one.")
+    print("NEXT: 후보 구현이 완료되면 `crew variants collect`로 비교한 뒤 하나를 선택하세요.")
     for entry in task_entries:
         print(
             f"TASK_ID: {entry['task_id']} "
