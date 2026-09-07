@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 
@@ -238,7 +239,7 @@ def select_variant(state_dir: Path, task_id: str) -> tuple[int, str]:
     return 0, "\n".join(lines)
 
 
-def collect_until_terminal(state_dir: Path, timeout: float, interval: float) -> tuple[int, str]:
+def collect_until_terminal(state_dir: Path, timeout: float, interval: float, resume: bool = False) -> tuple[int, str]:
     session, _, message = require_variants_session(state_dir)
     if session is None or not session.get("tasks"):
         return 2, message or "수집할 후보가 없습니다.\n"
@@ -257,6 +258,8 @@ def collect_until_terminal(state_dir: Path, timeout: float, interval: float) -> 
                 return 2, "대기 중 variants 세션이 변경되었습니다. 새 세션을 확인하세요.\n"
             code, output = collect_variants(state_dir)
             current = load_json(state_dir / "session.json")
+            if resume and all(task.get("status") in {"completed", "blocked", "cancelled"} for task in current["tasks"]):
+                return 0, json.dumps(review_readiness(state_dir, current), ensure_ascii=False) + "\n"
         if code:
             return code, output
         if all(task.get("status") in {"completed", "blocked", "cancelled"} for task in current["tasks"]):
@@ -275,6 +278,114 @@ def git_output(root: Path, *args: str) -> str:
     if result.returncode:
         raise ValueError(result.stderr.strip() or "Git 검증 실패")
     return result.stdout.strip()
+
+
+def review_inputs(session: dict) -> dict:
+    tasks = session.get("tasks") or []
+    if not tasks or any(task.get("status") not in {"completed", "blocked", "cancelled"} for task in tasks):
+        raise ValueError("후보 수집이 완료되지 않았습니다. crew variants resume으로 이어가세요.")
+    candidates = []
+    for task in tasks:
+        task_dir = Path(task["task_dir"])
+        evidence = [path for path in task_dir.iterdir() if path.is_file()]
+        context = task_dir / "context"
+        if context.is_dir():
+            evidence.extend(path for path in context.rglob("*") if path.is_file())
+        item = {"task": task, "evidence": {
+            str(path.relative_to(task_dir)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(evidence)
+        }}
+        if task["status"] == "completed":
+            root = Path(task["project_root"]).resolve()
+            base = Path(task["base_project_root"]).resolve()
+            if root == base or git_output(root, "rev-parse", "--show-toplevel") != str(root):
+                raise ValueError("완료 후보에 독립 worktree가 필요합니다.")
+            if git_output(root, "rev-parse", "--path-format=absolute", "--git-common-dir") != git_output(base, "rev-parse", "--path-format=absolute", "--git-common-dir"):
+                raise ValueError("후보와 원본은 동일한 저장소여야 합니다.")
+            if git_output(root, "symbolic-ref", "--quiet", "HEAD") != f"refs/heads/{task['branch']}":
+                raise ValueError("후보 브랜치가 변경되었습니다.")
+            if git_output(root, "status", "--porcelain"):
+                raise ValueError("완료 후보에 미커밋 변경이 있습니다.")
+            item["commit"] = git_output(root, "rev-parse", "HEAD")
+            item["base_commit"] = git_output(base, "rev-parse", "HEAD")
+        candidates.append(item)
+    return {"session_id": session.get("session_id"), "base_task": session.get("base_task"), "candidates": candidates}
+
+
+def read_review_receipt(state_dir: Path) -> dict:
+    path = state_dir / "variant-review-state.json"
+    receipt = load_json(path)
+    if path.exists() and (receipt.get("status") not in {"running", "completed", "released"}
+                          or not receipt.get("token") or not receipt.get("input_hash")
+                          or not isinstance(receipt.get("history", []), list)):
+        raise ValueError("리뷰 상태 파일이 손상되었습니다. 실행 이력을 확인하고 수동 복구하세요.")
+    return receipt
+
+
+def review_readiness(state_dir: Path, session: dict) -> dict:
+    inputs = review_inputs(session)
+    input_hash = fingerprint(inputs)
+    receipt = read_review_receipt(state_dir)
+    action = "review_required"
+    if not any(task["status"] == "completed" for task in session["tasks"]):
+        action = "no_completed_candidates"
+    if receipt.get("status") == "running":
+        action = "review_in_progress"
+    elif receipt.get("status") == "completed" and receipt.get("input_hash") == input_hash:
+        report = state_dir / "variant-review.md"
+        if not report.is_file() or hashlib.sha256(report.read_bytes()).hexdigest() != receipt.get("report_hash"):
+            raise ValueError("완료 리뷰 보고서가 없거나 변경되었습니다. 리뷰 기록을 확인하세요.")
+        action = "review_complete"
+    return {"next_action": action, "input_hash": input_hash, "inputs": inputs,
+            "review_token": receipt.get("token"), "review_input_hash": receipt.get("input_hash")}
+
+
+def manage_review(state_dir: Path, claim: str | None, complete: str | None,
+                  release: str | None, report: str | None) -> tuple[int, str]:
+    receipt_path = state_dir / "variant-review-state.json"
+    receipt = read_review_receipt(state_dir)
+    if release:
+        if receipt.get("status") != "running" or receipt.get("token") != release:
+            raise ValueError("진행 중인 리뷰의 token이 필요합니다.")
+        receipt["status"] = "released"
+    else:
+        session, _, message = require_variants_session(state_dir)
+        if session is None:
+            raise ValueError(message)
+        collect_variants(state_dir)
+        session = load_json(state_dir / "session.json")
+        ready = review_readiness(state_dir, session)
+        if claim:
+            if ready["next_action"] != "review_required" or ready["input_hash"] != claim:
+                raise ValueError("리뷰가 진행/완료되었거나 입력이 변경되었습니다. resume 결과를 확인하세요.")
+            history = list(receipt.get("history", []))
+            if receipt:
+                history.append({key: value for key, value in receipt.items() if key != "history"})
+            receipt = {"status": "running", "input_hash": claim, "token": uuid.uuid4().hex,
+                       "started_at": datetime.now(timezone.utc).isoformat(),
+                       "history": history}
+        else:
+            if (receipt.get("status") != "running" or receipt.get("token") != complete
+                    or receipt.get("input_hash") != ready["input_hash"]):
+                raise ValueError("리뷰 token 또는 입력이 변경되었습니다. 기존 리뷰 실행 상태를 확인하세요.")
+            data = Path(report).read_bytes()
+            if not data.strip():
+                raise ValueError("빈 리뷰 보고서는 완료로 등록할 수 없습니다.")
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=state_dir, delete=False) as stream:
+                    temporary = Path(stream.name)
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                temporary.replace(state_dir / "variant-review.md")
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            receipt.update(status="completed", report_hash=hashlib.sha256(data).hexdigest(),
+                           finished_at=datetime.now(timezone.utc).isoformat())
+    write_json(receipt_path, receipt)
+    return 0, json.dumps(receipt, ensure_ascii=False) + "\n"
 
 
 def require_finished_git_operation(root: Path) -> None:
@@ -495,7 +606,7 @@ def apply_variant(state_dir: Path, target: str | None = None, confirmed: str | N
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="manage crew run variants")
-    parser.add_argument("action", nargs="?", default="collect", choices=["collect", "select", "apply"])
+    parser.add_argument("action", nargs="?", default="collect", choices=["collect", "select", "apply", "resume", "review"])
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--task-id")
     parser.add_argument("--target")
@@ -505,11 +616,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wait", action="store_true")
     parser.add_argument("--timeout", type=float)
     parser.add_argument("--interval", type=float)
+    review_mode = parser.add_mutually_exclusive_group()
+    review_mode.add_argument("--claim", metavar="INPUT_HASH")
+    review_mode.add_argument("--complete", metavar="TOKEN")
+    review_mode.add_argument("--release", metavar="TOKEN")
+    parser.add_argument("--report")
     args = parser.parse_args(argv)
 
+    if args.action == "review":
+        if not (args.claim or args.complete or args.release) or bool(args.complete) != bool(args.report):
+            parser.error("review requires --claim INPUT_HASH, --release TOKEN or --complete TOKEN --report PATH")
+    elif args.claim or args.complete or args.release or args.report:
+        parser.error("review options require review")
+    if args.task_id and args.action != "select":
+        parser.error("--task-id requires select")
+    if args.action == "resume":
+        args.wait = True
     if args.wait or args.timeout is not None or args.interval is not None:
-        if args.action != "collect" or not args.wait:
-            parser.error("--timeout/--interval require collect --wait")
+        if args.action not in {"collect", "resume"} or not args.wait:
+            parser.error("--timeout/--interval require collect --wait or resume")
         args.timeout = 600.0 if args.timeout is None else args.timeout
         args.interval = 1.0 if args.interval is None else args.interval
         if (not math.isfinite(args.timeout) or args.timeout < 0
@@ -526,8 +651,10 @@ def main(argv: list[str] | None = None) -> int:
         action = lambda: select_variant(Path(args.state_dir), args.task_id)
     elif args.action == "apply":
         action = lambda: apply_variant(Path(args.state_dir), args.target, args.confirm)
+    elif args.action == "review":
+        action = lambda: manage_review(Path(args.state_dir), args.claim, args.complete, args.release, args.report)
     elif args.wait:
-        action = lambda: collect_until_terminal(Path(args.state_dir), args.timeout, args.interval)
+        action = lambda: collect_until_terminal(Path(args.state_dir), args.timeout, args.interval, args.action == "resume")
     else:
         action = lambda: collect_variants(Path(args.state_dir))
 

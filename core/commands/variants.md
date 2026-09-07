@@ -5,6 +5,10 @@ Manage candidate implementations created by `crew:run --variants N`.
 ```text
 crew:variants collect
 crew:variants collect --wait --timeout 600
+crew:variants resume --timeout 600
+crew:variants review --claim INPUT_HASH
+crew:variants review --complete TOKEN --report PATH
+crew:variants review --release TOKEN
 crew:variants select TASK_ID
 crew:variants apply
 crew:variants apply --target BRANCH --dry-run
@@ -77,3 +81,42 @@ Use `crew:variants collect` for candidate collection.
 비교 리뷰를 수행하고 `variant-review.md`에 추천 후보와 근거를 남긴다. 실패하거나
 동일 SHA로 중복된 후보는 따로 표시한다. 추천은 선택 승인이 아니므로
 selected_task_id를 자동 변경하거나 merge하지 않는다. CLI는 AI를 직접 호출하지 않는다.
+
+## 중단 후 재개
+
+`crew:variants resume`는 현재 세션의 기존 후보를 재수집하고 미완료 후보만 기다린다.
+기본 timeout/interval과 종료 코드는 `collect --wait`와 같다. 새 task, branch,
+worktree, supervisor를 생성하지 않는다. 대기 중 부모가 종료되어도 같은 명령으로
+이어간다. 살아 있는 후보에는 다시 위임하지 않는다. 호스트 실행이 끊긴 후보는
+기존 task ID와 handoff 및 승인된 계획으로 복구해야 하며 이 CLI가 재실행하지 않는다.
+잠금이 남았으면 앞서 설명한 실행 상태 확인·수동 복구 절차를 먼저 따른다.
+
+수집 완료 시 JSON의 `next_action`에 따라 호스트 orchestrator가 이어간다:
+
+- `review_required`: 출력된 `input_hash`로 `crew variants review --claim INPUT_HASH`를
+  먼저 실행한다. 성공한 한 호출만 `token`을 받는다. 그 뒤 reviewer를 위임한다.
+- `review_in_progress`: 기존 리뷰를 기다리거나 해당 호스트 실행을 이어간다.
+  입력이 변경되어도 자동으로 두 번째 reviewer를 만들지 않는다.
+- `review_complete`: 같은 입력으로 완료한 `variant-review.md`를 재사용하고 선택을 기다린다.
+- `no_completed_candidates`: 성공 후보가 없으므로 실패 사유를 보고하고 멈춘다.
+
+Reviewer에는 `inputs`의 후보별 실제 커밋과 base 커밋, diff, task 원문/요구사항,
+테스트 증거를 전달한다. 리뷰는 task 증거를 수정하지 않고 별도 초안에 작성한다.
+완료 후 `crew variants review --complete TOKEN --report PATH`로 등록한다.
+이 명령은 고정 경로 `variant-review.md`에 보고서를 원자적으로 저장하고
+`variant-review-state.json`에 입력 해시·토큰·보고서 해시·완료 상태를 기록한다.
+CLI의 완료 등록은 리뷰 품질을 판정하거나 실제 AI 실행을 증명하지 않는다.
+
+입력 해시는 세션 ID/원문, 후보 메타데이터, task 바로 아래 파일과 context 하위
+파일의 내용, 완료 후보의 실제 HEAD와 원본 HEAD를 포함한다. 완료 후보는 원본과
+같은 저장소의 깨끗한 독립 worktree 및 기록된 브랜치여야 한다. 외부 증거는 먼저
+task/context에 보존한다. 입력 변경 시 오래된 토큰의 완료 등록을 거부하며 완료
+리뷰도 재사용하지 않는다. 손상된 상태 파일은 새 리뷰로 간주하지 않고 중단한다.
+
+부모 또는 reviewer가 종료된 경우 **이전 reviewer가 더 이상 실행되지 않음을 먼저
+확인한 뒤** `crew variants review --release TOKEN`으로 실행 기록을 해제하고
+resume → claim 순서로 재시도한다. release는 AI를 취소하지 않으며 자동 만료도 없다.
+새 claim은 새 토큰을 발급하고 이전 기록을 history에 보존한다. 보고서 저장 직후
+프로세스가 끊겨 상태가 running이면 같은 토큰으로 complete를 다시 시도할 수 있다.
+기존 토큰 없는 보고서만 있으면 완료 증거로 신뢰하지 않고 비교 리뷰를 다시 수행한다.
+어느 재개 단계도 후보 선택이나 apply 승인을 자동 변경하지 않는다.

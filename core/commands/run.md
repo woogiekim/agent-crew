@@ -1598,14 +1598,22 @@ selects one implementation.
 
 **Variants 완료 연속성:** `session_type: variants`에서는 모든 supervisor를 병렬
 위임한 orchestrator가 완료까지 연결을 유지한다. 아래 P4의 즉시 종료 규칙은
-variants에 적용하지 않는다. 부모가 자동으로 `crew variants collect --wait
+variants에 적용하지 않는다. 부모가 자동으로 `crew variants resume
 --timeout 600`을 실행하고 호스트 agent 완료 알림을 처리한다. 사용자가 추가로
 collect를 요청할 때까지 멈추지 않는다. timeout은 미완료 상태로 보고하고 기존
 agent를 중복 생성하지 않는다.
 
+최초 실행과 중단 후 재개 모두 `variants.md`의 next_action 및 review claim/complete
+절차를 따른다. 기존 task ID와 worktree를 재사용하며 `crew run --variants`를 다시
+실행하여 세션을 교체하지 않는다. review_required에서 claim에 성공한 경우에만
+reviewer를 위임한다. review_in_progress에서는 중복 위임하지 않고 기존 실행을
+확인한다. review_complete이면 기존 보고서를 재사용한다. no_completed_candidates는
+실패 사유를 보고하고 종료한다. reviewer 종료가 확인된 경우에만 토큰을 release한다.
+
 모든 후보가 종료되면 완료된 후보들의 실제 commit SHA, base 대비 diff, 테스트
 출력, 요구사항을 reviewer에 전달하여 비교 리뷰를 수행한다. 실패 후보와 동일 SHA
-후보를 따로 표시하고 `variant-review.md`에 추천과 근거를 기록한다. 이 경로는
+후보를 따로 표시하고 별도 초안에 추천과 근거를 기록한 뒤 `crew variants review
+--complete TOKEN --report PATH`로 `variant-review.md`를 등록한다. 이 경로는
 일반 병렬 작업의 Step 8 전체 브랜치 merge로 넘어가지 않는다. 추천 후 사용자
 선택을 기다리며 `selected_task_id`와 apply 승인 상태는 자동 변경하지 않는다.
 

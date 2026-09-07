@@ -49,7 +49,8 @@ Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json|--summary] [--recent N]
                                     Show deterministic local task state
-  variants collect|select|apply     Collect, choose, or apply run variants
+  variants collect|select|apply|resume|review
+                                    Manage candidate implementations
   telemetry [args]                 Show timing, retry, blocker, and token metrics
   trace [args]                     Show per-task progress trace events
   cost [args]                      Show token/cost aggregate metrics
@@ -586,6 +587,10 @@ cmd_variants() {
     ""|-h|--help)
       cat <<'EOF'
 usage: crew variants collect [--wait [--timeout SECONDS] [--interval SECONDS]]
+       crew variants resume [--timeout SECONDS] [--interval SECONDS]
+       crew variants review --claim INPUT_HASH
+       crew variants review --complete TOKEN --report PATH
+       crew variants review --release TOKEN
        crew variants select TASK_ID
        crew variants apply [--target BRANCH --dry-run]
        crew variants apply --target BRANCH --confirm PLAN_HASH
@@ -598,6 +603,12 @@ EOF
     collect)
       shift
       cmd_variants_collect "$@"
+      ;;
+    resume|review)
+      shift
+      local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
+      require_file "${collector}" "variant session collector"
+      python3 "${collector}" "${action}" --state-dir "${STATE_DIR}" "$@"
       ;;
     select)
       shift
