@@ -10,6 +10,9 @@
 > by sibling modules. The Stage Retry Rule and Phase 3 close-out live in
 > `supervisor-retry.md`.
 
+`planning_required: true`인 native handoff는 파일이 있어도 fresh run이다.
+아래 `START_MODE` 판정이 파일 존재만 사용하는 모든 resume 설명보다 우선한다.
+
 ---
 
 ### Phase 0: Resume Check + Context Bootstrap
@@ -196,11 +199,11 @@ surface so users can see live pipeline progress in the host UI:
    when the file is absent. The full implementation lives in Phase 3 Step 2b of
    `supervisor-retry.md`.
 
-   Under background fan-out (P4), `crew:status --collect` reads
-   `TaskGet(HOST_TASK_ID).status` as the primary signal that the runner
-   has finished. The collect loop exits when status is `"completed"`, `"blocked"`,
-   or `"cancelled"` — so passing `status="blocked"` (not `"in_progress"`) is
-   essential for blocked exits to unblock the collector.
+   background fan-out (P4)의 호스트 orchestrator는 task 도구가 있을 때
+   `TaskGet(HOST_TASK_ID).status`로 실행 종료를 관찰할 수 있다. 종료 상태는
+   `"completed"`, `"blocked"`, `"cancelled"`이므로 차단 시 `"in_progress"`가
+   아니라 `"blocked"`를 전달한다. native variants 완료 장벽은 각 task의
+   `result.md`를 읽으며 `crew variants resume` 또는 `crew variants collect`가 소유한다.
 
 When `HAS_TASK_TOOLS == 0`: delete the boot sentinel immediately after the
 `STARTED` log event (before any Phase 1 work begins):
@@ -532,15 +535,24 @@ fi
 This guard is exempt from the resume-skip rule: even on a resume, `PROJECT_ROOT`
 must still be a valid git repo or the pipeline cannot continue.
 
-**Resume check**: If `PIPELINE_PATH` already exists, resume from that state
-instead of creating a new plan from scratch.
+**Resume check**: 실행 전 읽기 전용 helper로 임시 handoff와 실행 계획을 구분한다.
+파일 존재만으로 계획/승인이 끝났다고 추정하지 않는다.
+
+```bash
+START_MODE=$(python3 "${AGENT_CREW_HOME}/scripts/supervisor-start-mode.py" --pipeline "${PIPELINE_PATH}") || exit 1
+```
+
+`START_MODE=fresh`이면 Phase 1a -> 1b+1c 실제 analyst 위임 -> 1d -> 1.5로 진행한다.
+`planning_required: true`를 supervisor가 지워 resume으로 바꾸거나 직접 구현하지 않는다.
+analyst가 실제 실행 계획으로 교체한 뒤 quality-plan gate를 통과해야 Phase 2에 진입한다.
+초기 v2 승인 그래프 안의 계획은 기존 승인 범위를 계승하며 범위/비용 변경만 새 승인이 필요하다.
 
 Resume rules:
 
-- If `PIPELINE_PATH` exists: read `completed_stages` and `stage_agent_status`, then
+- If `START_MODE=resume` (`PIPELINE_PATH` exists and is not a placeholder): read `completed_stages` and `stage_agent_status`, then
   **skip Phases 1a, 1b+1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
   Planning, analysis, and plan approval were already completed in the prior run.
-- If `PIPELINE_PATH` does not exist: proceed normally through Phases 1a → 1b+1c → 1d → 1.5 → 2.
+- If `PIPELINE_PATH` does not exist or `START_MODE=fresh`: proceed normally through Phases 1a → 1b+1c → 1d → 1.5 → 2.
 - Never duplicate the planner step for an already initialized task.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
@@ -562,13 +574,15 @@ This prevents restarting already-finished agents when resuming after an interrup
 
 #### Phase 0 resume capability preflight
 
-When `PIPELINE_PATH` already exists at Phase 0, run the same capability
+When `START_MODE=resume` at Phase 0, run the same capability
 preflight used after fresh planning before jumping to Phase 2. This prevents an
 interrupted or externally edited `pipeline.json` from bypassing role/tool
 boundaries on resume.
 
 ```bash
-if [ -f "${PIPELINE_PATH}" ]; then
+if [ "${START_MODE}" = "resume" ]; then
+  python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
+    --pipeline "${PIPELINE_PATH}" --format text || exit 1
   CAPABILITY_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
     --pipeline "${PIPELINE_PATH}" \
     --manifest "${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
@@ -596,12 +610,12 @@ fi
 ### Phase 1: Analysis + Planning
 
 > **Skip this entire Phase 1 (1a, 1b+1c, 1d) and Phase 1.5 when resuming** (i.e.,
-> when `PIPELINE_PATH` already existed at Phase 0). Jump directly to Phase 2 using
+> when `START_MODE=resume` at Phase 0, not when a placeholder merely exists). Jump directly to Phase 2 using
 > the `completed_stages` and `stage_agent_status` read in Phase 0.
 
 #### Direct implementation bypass guard
 
-For a fresh run (`PIPELINE_PATH` did not exist at Phase 0), there is no
+For a fresh run (`START_MODE=fresh`, including a native placeholder), there is no
 "simple enough" shortcut around this phase. Existing requirements, including a
 pre-populated `{TASK_DIR}/context/requirements.md`, may shorten Phase 1a but
 must never skip Phase 1b+1c, Phase 1d, Phase 1.5, or Phase 2.
@@ -1085,8 +1099,8 @@ equivalent to "DAG mirror disabled".
 
 ### Phase 1d: Plan Approval Gate
 
-> **Skip this phase when resuming** (i.e., `PIPELINE_PATH` already existed at
-> Phase 0). The plan was approved in the prior run; jump directly to Phase 1.5.
+> **Skip this phase when resuming** (i.e., `START_MODE=resume` at Phase 0).
+> A placeholder is not prior approval. The prior approved plan resumes at Phase 1.5.
 
 Emit before displaying the plan:
 

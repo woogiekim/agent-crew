@@ -1,0 +1,223 @@
+{
+  "schema_version": 2,
+  "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "base_task": "Reject empty input.",
+  "base_commit": "1111111111111111111111111111111111111111",
+  "requirements": [
+    {
+      "requirement_id": "r1",
+      "text": "Reject empty input."
+    }
+  ],
+  "units": [
+    {
+      "unit_id": "validation",
+      "requirement_ids": [
+        "r1"
+      ],
+      "description": "Input validation"
+    }
+  ],
+  "candidate_analyses": [
+    {
+      "task_id": "v1",
+      "commit": "1111111111111111111111111111111111111111",
+      "units": [
+        {
+          "unit_id": "validation",
+          "five_w_one_h": {
+            "who": {
+              "statement": "service owns input validation",
+              "basis": "observed",
+              "evidence": [
+                {
+                  "task_id": "v1",
+                  "commit": "1111111111111111111111111111111111111111",
+                  "path": "service.py",
+                  "line": 1
+                }
+              ],
+              "reason": "Pinned implementation supports this statement."
+            },
+            "when": {
+              "statement": "before processing each request",
+              "basis": "observed",
+              "evidence": [
+                {
+                  "task_id": "v1",
+                  "commit": "1111111111111111111111111111111111111111",
+                  "path": "service.py",
+                  "line": 1
+                }
+              ],
+              "reason": "Pinned implementation supports this statement."
+            },
+            "where": {
+              "statement": "service.py entry point",
+              "basis": "observed",
+              "evidence": [
+                {
+                  "task_id": "v1",
+                  "commit": "1111111111111111111111111111111111111111",
+                  "path": "service.py",
+                  "line": 1
+                }
+              ],
+              "reason": "Pinned implementation supports this statement."
+            },
+            "what": {
+              "statement": "reject empty input",
+              "basis": "observed",
+              "evidence": [
+                {
+                  "task_id": "v1",
+                  "commit": "1111111111111111111111111111111111111111",
+                  "path": "service.py",
+                  "line": 1
+                }
+              ],
+              "reason": "Pinned implementation supports this statement."
+            },
+            "how": {
+              "statement": "check input before side effects",
+              "basis": "observed",
+              "evidence": [
+                {
+                  "task_id": "v1",
+                  "commit": "1111111111111111111111111111111111111111",
+                  "path": "service.py",
+                  "line": 1
+                }
+              ],
+              "reason": "Pinned implementation supports this statement."
+            },
+            "why": {
+              "statement": "preserve the request contract",
+              "basis": "observed",
+              "evidence": [
+                {
+                  "task_id": "v1",
+                  "commit": "1111111111111111111111111111111111111111",
+                  "path": "service.py",
+                  "line": 1
+                }
+              ],
+              "reason": "Pinned implementation supports this statement."
+            }
+          },
+          "strengths": [
+            "Validation precedes side effects."
+          ],
+          "weaknesses": []
+        }
+      ]
+    }
+  ],
+  "comparison": [
+    {
+      "unit_id": "validation",
+      "summary": "One candidate; cross-candidate comparison is limited.",
+      "compatibility": "Preserves input contract.",
+      "candidate_ids": [
+        "v1"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "decision_id": "d1",
+      "unit_id": "validation",
+      "action": "adopt",
+      "source_task_id": "v1",
+      "source_commit": "1111111111111111111111111111111111111111",
+      "five_w_one_h": {
+        "who": {
+          "statement": "service owns input validation",
+          "basis": "observed",
+          "evidence": [
+            {
+              "task_id": "v1",
+              "commit": "1111111111111111111111111111111111111111",
+              "path": "service.py",
+              "line": 1
+            }
+          ],
+          "reason": "Pinned implementation supports this statement."
+        },
+        "when": {
+          "statement": "before processing each request",
+          "basis": "observed",
+          "evidence": [
+            {
+              "task_id": "v1",
+              "commit": "1111111111111111111111111111111111111111",
+              "path": "service.py",
+              "line": 1
+            }
+          ],
+          "reason": "Pinned implementation supports this statement."
+        },
+        "where": {
+          "statement": "service.py entry point",
+          "basis": "observed",
+          "evidence": [
+            {
+              "task_id": "v1",
+              "commit": "1111111111111111111111111111111111111111",
+              "path": "service.py",
+              "line": 1
+            }
+          ],
+          "reason": "Pinned implementation supports this statement."
+        },
+        "what": {
+          "statement": "reject empty input",
+          "basis": "observed",
+          "evidence": [
+            {
+              "task_id": "v1",
+              "commit": "1111111111111111111111111111111111111111",
+              "path": "service.py",
+              "line": 1
+            }
+          ],
+          "reason": "Pinned implementation supports this statement."
+        },
+        "how": {
+          "statement": "check input before side effects",
+          "basis": "observed",
+          "evidence": [
+            {
+              "task_id": "v1",
+              "commit": "1111111111111111111111111111111111111111",
+              "path": "service.py",
+              "line": 1
+            }
+          ],
+          "reason": "Pinned implementation supports this statement."
+        },
+        "why": {
+          "statement": "preserve the request contract",
+          "basis": "observed",
+          "evidence": [
+            {
+              "task_id": "v1",
+              "commit": "1111111111111111111111111111111111111111",
+              "path": "service.py",
+              "line": 1
+            }
+          ],
+          "reason": "Pinned implementation supports this statement."
+        }
+      },
+      "target": "service.py entry point",
+      "validation": "Run empty-input acceptance test.",
+      "compatibility": "Preserves input contract."
+    }
+  ],
+  "semantic_review": {
+    "reviewer_id": "independent-reviewer",
+    "verdict": "approved",
+    "unresolved_findings": []
+  }
+}

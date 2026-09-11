@@ -34,6 +34,16 @@
       "type": "string",
       "description": "Original task text shared by every candidate in a variants session."
     },
+    "variants_workflow_version": { "type": "integer", "enum": [1, 2] },
+    "outcome_mode": { "type": "string", "enum": ["comparison", "synthesis"] },
+    "workflow_status": {
+      "type": "string",
+      "description": "v2 실행 단계 또는 resume의 next_action. 후보 완료만으로 전체 status가 completed가 되지 않는다."
+    },
+    "variants_dir": {
+      "type": "string",
+      "description": "새 v2 세션별 리뷰·종합 산출물 경로. STATE_DIR/variants/session_id에 고정된다."
+    },
     "candidate_count": {
       "type": "integer",
       "minimum": 1,

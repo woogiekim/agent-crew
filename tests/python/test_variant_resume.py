@@ -207,9 +207,10 @@ def test_interrupted_wait_can_resume_without_new_tasks(resumable, monkeypatch):
     def interrupt(_):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(module.time, "sleep", interrupt)
-    with pytest.raises(KeyboardInterrupt):
-        module.collect_until_terminal(state, 10, 1, resume=True)
+    with monkeypatch.context() as interrupted:
+        interrupted.setattr(module.time, "sleep", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            module.collect_until_terminal(state, 10, 1, resume=True)
     assert not (state / ".variants.lock").exists()
     before = json.loads((state / "session.json").read_text())["tasks"]
     (task_dir / "result.md").write_text("STATUS: completed\n")

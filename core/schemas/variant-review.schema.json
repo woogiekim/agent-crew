@@ -1,0 +1,1328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Variant review v2",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "input_hash",
+    "base_task",
+    "base_commit",
+    "requirements",
+    "units",
+    "candidate_analyses",
+    "comparison",
+    "decisions",
+    "semantic_review"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "input_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "base_task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "requirement_id",
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "requirement_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "unit_id",
+          "requirement_ids",
+          "description"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requirement_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "candidate_analyses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "units"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "units": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "unit_id",
+                "five_w_one_h",
+                "strengths",
+                "weaknesses"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "unit_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "five_w_one_h": {
+                  "type": "object",
+                  "required": [
+                    "who",
+                    "when",
+                    "where",
+                    "what",
+                    "how",
+                    "why"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "who": {
+                      "type": "object",
+                      "required": [
+                        "statement",
+                        "basis",
+                        "evidence",
+                        "reason"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "basis": {
+                          "enum": [
+                            "observed",
+                            "inferred",
+                            "unknown",
+                            "not_applicable"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "minItems": 0,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "commit",
+                                  "path",
+                                  "line"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "commit": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "artifact",
+                                  "sha256"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "artifact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "when": {
+                      "type": "object",
+                      "required": [
+                        "statement",
+                        "basis",
+                        "evidence",
+                        "reason"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "basis": {
+                          "enum": [
+                            "observed",
+                            "inferred",
+                            "unknown",
+                            "not_applicable"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "minItems": 0,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "commit",
+                                  "path",
+                                  "line"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "commit": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "artifact",
+                                  "sha256"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "artifact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "where": {
+                      "type": "object",
+                      "required": [
+                        "statement",
+                        "basis",
+                        "evidence",
+                        "reason"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "basis": {
+                          "enum": [
+                            "observed",
+                            "inferred",
+                            "unknown",
+                            "not_applicable"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "minItems": 0,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "commit",
+                                  "path",
+                                  "line"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "commit": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "artifact",
+                                  "sha256"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "artifact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "what": {
+                      "type": "object",
+                      "required": [
+                        "statement",
+                        "basis",
+                        "evidence",
+                        "reason"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "basis": {
+                          "enum": [
+                            "observed",
+                            "inferred",
+                            "unknown",
+                            "not_applicable"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "minItems": 0,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "commit",
+                                  "path",
+                                  "line"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "commit": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "artifact",
+                                  "sha256"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "artifact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "how": {
+                      "type": "object",
+                      "required": [
+                        "statement",
+                        "basis",
+                        "evidence",
+                        "reason"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "basis": {
+                          "enum": [
+                            "observed",
+                            "inferred",
+                            "unknown",
+                            "not_applicable"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "minItems": 0,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "commit",
+                                  "path",
+                                  "line"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "commit": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "artifact",
+                                  "sha256"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "artifact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "why": {
+                      "type": "object",
+                      "required": [
+                        "statement",
+                        "basis",
+                        "evidence",
+                        "reason"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "basis": {
+                          "enum": [
+                            "observed",
+                            "inferred",
+                            "unknown",
+                            "not_applicable"
+                          ]
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "minItems": 0,
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "commit",
+                                  "path",
+                                  "line"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "commit": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                                  },
+                                  "path": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "task_id",
+                                  "artifact",
+                                  "sha256"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "task_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "artifact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "strengths": {
+                  "type": "array",
+                  "minItems": 0,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "weaknesses": {
+                  "type": "array",
+                  "minItems": 0,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "comparison": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "unit_id",
+          "summary",
+          "compatibility",
+          "candidate_ids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "compatibility": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidate_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "decision_id",
+          "unit_id",
+          "action",
+          "source_task_id",
+          "five_w_one_h",
+          "target",
+          "validation",
+          "compatibility"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "unit_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "enum": [
+              "adopt",
+              "adapt",
+              "reject",
+              "retain"
+            ]
+          },
+          "source_task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "five_w_one_h": {
+            "type": "object",
+            "required": [
+              "who",
+              "when",
+              "where",
+              "what",
+              "how",
+              "why"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "who": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "basis",
+                  "evidence",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "observed",
+                      "inferred",
+                      "unknown",
+                      "not_applicable"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "commit",
+                            "path",
+                            "line"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "commit": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "artifact",
+                            "sha256"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "artifact": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "when": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "basis",
+                  "evidence",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "observed",
+                      "inferred",
+                      "unknown",
+                      "not_applicable"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "commit",
+                            "path",
+                            "line"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "commit": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "artifact",
+                            "sha256"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "artifact": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "where": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "basis",
+                  "evidence",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "observed",
+                      "inferred",
+                      "unknown",
+                      "not_applicable"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "commit",
+                            "path",
+                            "line"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "commit": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "artifact",
+                            "sha256"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "artifact": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "what": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "basis",
+                  "evidence",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "observed",
+                      "inferred",
+                      "unknown",
+                      "not_applicable"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "commit",
+                            "path",
+                            "line"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "commit": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "artifact",
+                            "sha256"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "artifact": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "how": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "basis",
+                  "evidence",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "observed",
+                      "inferred",
+                      "unknown",
+                      "not_applicable"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "commit",
+                            "path",
+                            "line"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "commit": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "artifact",
+                            "sha256"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "artifact": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "why": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "basis",
+                  "evidence",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "observed",
+                      "inferred",
+                      "unknown",
+                      "not_applicable"
+                    ]
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "commit",
+                            "path",
+                            "line"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "commit": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "task_id",
+                            "artifact",
+                            "sha256"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "task_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "artifact": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "validation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "compatibility": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "semantic_review": {
+      "type": "object",
+      "required": [
+        "reviewer_id",
+        "verdict",
+        "unresolved_findings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reviewer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": {
+          "enum": [
+            "approved",
+            "needs_changes"
+          ]
+        },
+        "unresolved_findings": {
+          "type": "array",
+          "minItems": 0,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 try:
@@ -24,6 +24,7 @@ except ModuleNotFoundError:
     from project_state import resolve_project_state
 from quality_loop_lib import check_quality_loop, looks_mutating_task
 from task_capability_lib import required_capabilities_for_task
+from variant_state import operation_lock, variants_artifacts_dir, read_state, write_json as atomic_write_json
 
 
 SECRET_PATTERNS = [
@@ -256,12 +257,12 @@ def ensure_crew_worktrees_ignored(project_root: Path) -> None:
             handle.write(".crew-worktrees/\n")
 
 
-def create_variant_worktree(project_root: Path, branch: str, task_id: str) -> Path:
+def create_variant_worktree(project_root: Path, branch: str, task_id: str, base_commit: str = "HEAD") -> Path:
     ensure_crew_worktrees_ignored(project_root)
     worktree_path = project_root / ".crew-worktrees" / task_id
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.check_call(
-        ["git", "-C", str(project_root), "worktree", "add", "-b", branch, str(worktree_path), "HEAD"]
+        ["git", "-C", str(project_root), "worktree", "add", "-b", branch, str(worktree_path), base_commit]
     )
     return worktree_path.resolve()
 
@@ -2623,8 +2624,27 @@ def command_run_variants(
     raw_task = args.task
     task = raw_task
     mutation_scope = getattr(args, "mutation_scope", "workspace_write")
+    previous = read_state(state_dir / "session.json")
+    if previous.get("variants_workflow_version", 1) >= 2:
+        artifacts = variants_artifacts_dir(state_dir, previous)
+        active = any(read_state(artifacts / name).get("status") in
+                     {"running", "preparing", "validating", "needs_changes"}
+                     for name in ("variant-review-state.json", "variant-synthesis-state.json"))
+        if previous.get("status") == "running" or active:
+            print("error: active variants session; use crew variants resume before a new run", file=sys.stderr)
+            return 3
     pre_run_head = current_git_head(project_root)
     git_backed = bool(pre_run_head)
+    if mutation_scope == "read_only":
+        print("error: variants v2 synthesis requires workspace_write approval", file=sys.stderr)
+        return 3
+    if not git_backed:
+        print("error: variants v2 requires a Git commit and independent worktrees; no handoffs created", file=sys.stderr)
+        return 3
+    while (state_dir / "variants" / session_id).exists() or session_id == previous.get("session_id"):
+        session_id = (datetime.strptime(session_id, "%Y%m%d-%H%M%S") + timedelta(seconds=1)).strftime("%Y%m%d-%H%M%S")
+    variants_dir = state_dir / "variants" / session_id
+    variants_dir.mkdir(parents=True)
     task_hash = re.sub(r"[.,;:!?]+$", "", re.sub(r"\s+", " ", task).strip().lower())
     task_entries = []
     task_index = 0
@@ -2646,7 +2666,7 @@ def command_run_variants(
         variant_project_root = project_root
         if git_backed:
             try:
-                variant_project_root = create_variant_worktree(project_root, branch, task_id)
+                variant_project_root = create_variant_worktree(project_root, branch, task_id, pre_run_head)
             except subprocess.CalledProcessError as exc:
                 print(
                     f"error: failed to create isolated variant worktree for {task_id}: {exc}",
@@ -2696,6 +2716,7 @@ def command_run_variants(
             "task": task,
             "mutation_scope": mutation_scope,
             "session_type": "variants",
+            "planning_required": True,
             "execution_mode": "variant",
             "variant_id": variant_id,
             "variant_index": variant_index,
@@ -2718,6 +2739,10 @@ def command_run_variants(
             f"MUTATION_SCOPE: {mutation_scope}\n"
             "MODE: native-cli\n"
             "SESSION_TYPE: variants\n"
+            "VARIANTS_WORKFLOW_VERSION: 2\n"
+            "PLANNING_REQUIRED: true\n"
+            "REVIEW_MODE: variant-analysis\n"
+            "ANALYSIS_SKILL: variant-analysis.md\n"
             f"VARIANT_ID: {variant_id}\n"
             f"VARIANT_INDEX: {variant_index}\n"
             f"VARIANT_STRATEGY: {variant_strategy_name}\n"
@@ -2814,13 +2839,20 @@ def command_run_variants(
             }
         )
 
-    write_json(
+    if previous.get("variants_dir"):
+        atomic_write_json(variants_artifacts_dir(state_dir, previous) / "session.json", previous)
+    atomic_write_json(
         state_dir / "session.json",
         {
             "schema_version": 1,
             "session_id": session_id,
             "session_type": "variants",
             "status": "running",
+            "variants_workflow_version": 2,
+            "outcome_mode": "synthesis",
+            "workflow_status": "implementing",
+            "variants_dir": str(variants_dir),
+            "mutation_scope": mutation_scope,
             "pre_run_head": pre_run_head,
             "base_task": task,
             "candidate_count": args.variants,
@@ -2833,10 +2865,11 @@ def command_run_variants(
     print("[crew] START variants", flush=True)
     print(f"SESSION_ID: {session_id}")
     print("SESSION_TYPE: variants")
+    print(f"VARIANTS_DIR: {variants_dir}")
     print(f"CANDIDATE_COUNT: {args.variants}")
     print(f"BASE_TASK: {task}")
     print("SELECTION_STATUS: pending")
-    print("NEXT: 후보 구현이 완료되면 `crew variants collect`로 비교한 뒤 하나를 선택하세요.")
+    print("NEXT: `crew variants resume`으로 구현 분석 → 비교 → 종합 → 독립 검증까지 이어가세요. `crew variants collect`는 수집 전용입니다.")
     for entry in task_entries:
         print(
             f"TASK_ID: {entry['task_id']} "
@@ -2869,16 +2902,16 @@ def command_run(args: argparse.Namespace) -> int:
         print("error: --variants must be a positive integer", file=sys.stderr)
         return 2
     if variants > 1:
-        return command_run_variants(
-            args=args,
-            project_root=project_root,
-            project_name=project_name,
-            state_info=state_info,
-            state_dir=state_dir,
-            tasks_dir=tasks_dir,
-            now_z=now_z,
-            session_id=session_id,
-        )
+        try:
+            with operation_lock(state_dir, ".variants.lock"):
+                return command_run_variants(
+                    args=args, project_root=project_root, project_name=project_name,
+                    state_info=state_info, state_dir=state_dir, tasks_dir=tasks_dir,
+                    now_z=now_z, session_id=session_id,
+                )
+        except (ValueError, OSError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 3
 
     task_id = f"{session_id}-0"
     index = 0

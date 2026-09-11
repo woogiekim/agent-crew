@@ -228,8 +228,9 @@ SUPERVISOR_DIR="${AGENT_CREW_HOME}/system/agents"
 
 | Trigger | Read this file | Phases covered |
 |---|---|---|
+| Spawn entry, `planning_required: true` native placeholder | `supervisor-bootstrap.md`; treat as fresh even though the file exists | Phase 0 -> 1a -> 1b+1c -> 1d -> 1.5 |
 | Spawn entry, `PIPELINE_PATH` does not yet exist | `supervisor-bootstrap.md` | Phase 0 → 1a → 1b+1c → 1c-bis → 1d → 1.5 |
-| Spawn entry, `PIPELINE_PATH` already exists (resume) | `supervisor-bootstrap.md` (Phase 0 only — read the file, execute Phase 0 to load capability flags and host task ids, then jump to the Phase 2 row below) | Phase 0 only |
+| Spawn entry, `PIPELINE_PATH` already exists (resume only after `START_MODE=resume`) | `supervisor-bootstrap.md` (Phase 0 only — read the file, execute Phase 0 to load capability flags and host task ids, then jump to the Phase 2 row below) | Phase 0 only |
 | About to enter Phase 2 (whether fresh or resuming) | `supervisor-stages.md` AND `supervisor-retry.md` (both — retry holds the Stage Retry Rule which Phase 2 invokes for every stage spawn) | Phase 2 + Phase 2.5 + Stage Retry Rule |
 | About to enter Phase 3 (after Phase 2.5 returns, OR on early BLOCKED exit) | `supervisor-retry.md` (already in working set from Phase 2 trigger; re-Read if it was evicted) | Phase 3 close-out, marker cleanup, final return |
 

@@ -102,3 +102,42 @@ def test_collect_extracts_markdown_summary_without_following_test_section(tmp_pa
     assert result.returncode == 0, result.stdout + result.stderr
     session = json.loads((tmp_path / "session.json").read_text())
     assert session["tasks"][0]["summary"] == "범위 파서를 구현했다. 중복을 제거한다."
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_completed_candidate_clears_prior_active_blockers(tmp_path, version):
+    tasks = state_with_tasks(tmp_path)
+    session_path = tmp_path / "session.json"
+    session = json.loads(session_path.read_text())
+    session["variants_workflow_version"] = version
+    session["tasks"][0].update(status="blocked", blockers=["host_child_tools_unavailable"])
+    session_path.write_text(json.dumps(session))
+    (Path(tasks[0]["task_dir"]) / "result.md").write_text("STATUS: completed\nSUMMARY: recovered\n")
+
+    result = subprocess.run([sys.executable, str(SCRIPT), "collect", "--state-dir", str(tmp_path)],
+                            capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    candidate = json.loads(session_path.read_text())["tasks"][0]
+    assert candidate["status"] == "completed"
+    assert candidate["blockers"] == []
+
+
+@pytest.mark.parametrize("result_text,expected", [
+    (None, ["prior failure"]),
+    ("STATUS: completed\nBLOCKER: unresolved contract\n", ["unresolved contract"]),
+])
+def test_collect_preserves_unresolved_or_unavailable_blocker_evidence(tmp_path, result_text, expected):
+    tasks = state_with_tasks(tmp_path)
+    session_path = tmp_path / "session.json"
+    session = json.loads(session_path.read_text())
+    session["tasks"][0].update(status="blocked", blockers=["prior failure"])
+    session_path.write_text(json.dumps(session))
+    if result_text is not None:
+        (Path(tasks[0]["task_dir"]) / "result.md").write_text(result_text)
+
+    result = subprocess.run([sys.executable, str(SCRIPT), "collect", "--state-dir", str(tmp_path)],
+                            capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(session_path.read_text())["tasks"][0]["blockers"] == expected

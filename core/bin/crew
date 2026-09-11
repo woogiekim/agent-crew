@@ -49,7 +49,7 @@ Commands:
   setup [PROJECT_ROOT]             Install/refresh host adapter for a project
   status [--json|--summary] [--recent N]
                                     Show deterministic local task state
-  variants collect|select|apply|resume|review
+  variants collect|select|apply|resume|review|synthesize
                                     Manage candidate implementations
   telemetry [args]                 Show timing, retry, blocker, and token metrics
   trace [args]                     Show per-task progress trace events
@@ -244,6 +244,12 @@ sync_source_runtime_assets_if_drifted() {
     "core/scripts/retry-chaos-check.py:${AGENT_CREW_HOME}/scripts/retry-chaos-check.py" \
     "core/scripts/telemetry-taxonomy-check.py:${AGENT_CREW_HOME}/scripts/telemetry-taxonomy-check.py" \
     "core/scripts/variant-session-collect.py:${AGENT_CREW_HOME}/scripts/variant-session-collect.py" \
+    "core/scripts/variant_state.py:${AGENT_CREW_HOME}/scripts/variant_state.py" \
+    "core/scripts/supervisor-start-mode.py:${AGENT_CREW_HOME}/scripts/supervisor-start-mode.py" \
+    "core/scripts/variant_review.py:${AGENT_CREW_HOME}/scripts/variant_review.py" \
+    "core/scripts/variant_synthesis.py:${AGENT_CREW_HOME}/scripts/variant_synthesis.py" \
+    "core/schemas/variant-review.schema.json:${AGENT_CREW_HOME}/schemas/variant-review.schema.json" \
+    "core/schemas/variant-synthesis-state.schema.json:${AGENT_CREW_HOME}/schemas/variant-synthesis-state.schema.json" \
     "core/scripts/auto-issue-reporter.py:${AGENT_CREW_HOME}/scripts/auto-issue-reporter.py" \
     "core/scripts/evolution-proposal-aggregate.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-aggregate.py" \
     "core/scripts/evolution-proposal-apply.py:${AGENT_CREW_HOME}/scripts/evolution-proposal-apply.py" \
@@ -591,9 +597,14 @@ usage: crew variants collect [--wait [--timeout SECONDS] [--interval SECONDS]]
        crew variants review --claim INPUT_HASH
        crew variants review --complete TOKEN --report PATH
        crew variants review --release TOKEN
+       crew variants review --bind TOKEN --host-id ID
+       crew variants synthesize --prepare INPUT_HASH
+       crew variants synthesize --bind TOKEN --host-id ID
+       crew variants synthesize --complete TOKEN --result PATH
+       crew variants synthesize --release TOKEN
        crew variants select TASK_ID
-       crew variants apply [--target BRANCH --dry-run]
-       crew variants apply --target BRANCH --confirm PLAN_HASH
+       crew variants apply [--artifact final] [--target BRANCH --dry-run]
+       crew variants apply [--artifact final] --target BRANCH --confirm PLAN_HASH
 
 Manages a crew run variants session. collect summarizes candidate outputs
 without selecting or merging. select/apply are the next selection-gate steps.
@@ -604,7 +615,7 @@ EOF
       shift
       cmd_variants_collect "$@"
       ;;
-    resume|review)
+    resume|review|synthesize)
       shift
       local collector="${ASSET_ROOT}/scripts/variant-session-collect.py"
       require_file "${collector}" "variant session collector"
@@ -1302,8 +1313,10 @@ state writes but suppresses installed runtime/hook auto-sync and binds a
 no-project/Git/Memory/external-write contract into the supervisor handoff.
 
 --variants N creates N candidate task handoffs for the same task in one
-variants session. Candidate branches are not merged together automatically;
-collect and review the candidates before selecting one implementation.
+v2 session with isolated Git worktrees. The approved host workflow analyzes
+each implementation, compares strengths, synthesizes a separate final result,
+and validates it independently. Use variants resume to continue. Applying the
+final artifact to the original branch still requires explicit approval.
 EOF
     return 0
   fi

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -17,6 +16,9 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from variant_state import load_json, write_json, operation_lock, fingerprint, git_output, variants_artifacts_dir
 
 
 STATUS_RE = re.compile(
@@ -31,45 +33,6 @@ SUMMARY_SECTION_RE = re.compile(
     r"^#{1,6}[ \t]+(?:summary|description)[ \t]*:?[ \t]*\r?\n(.*?)(?=^#{1,6}[ \t]|\Z)",
     re.IGNORECASE | re.MULTILINE | re.DOTALL,
 )
-
-
-def load_json(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def write_json(path: Path, data: dict) -> None:
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-@contextmanager
-def operation_lock(root: Path, name: str):
-    lock = root / name
-    try:
-        lock.mkdir()
-    except FileExistsError as error:
-        raise ValueError(f"작업 잠금이 있습니다: {lock}. 실행 중인 작업 또는 중단 상태를 확인하세요.") from error
-    try:
-        yield
-    finally:
-        lock.rmdir()
-
-
-def fingerprint(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def session_fingerprint(session: dict) -> str:
@@ -141,7 +104,9 @@ def render_summary(session: dict) -> str:
     lines.extend(
         [
             "",
-            "Do not merge all completed branches. Select one candidate implementation first.",
+            ("Do not merge all completed branches. `crew variants resume`으로 구현 분석·비교·종합·독립 검증을 이어가세요."
+             if session.get("variants_workflow_version", 1) >= 2
+             else "Do not merge all completed branches. Select one candidate implementation first."),
             "",
         ]
     )
@@ -184,14 +149,14 @@ def collect_variants(state_dir: Path) -> tuple[int, str]:
             task["summary"] = summary
             changed = True
         blockers = fields.get("blockers") or []
-        if blockers and task.get("blockers") != blockers:
+        if (blockers or status == "completed") and task.get("blockers", []) != blockers:
             task["blockers"] = blockers
             changed = True
         if status in {"completed", "blocked", "cancelled"}:
             terminal_count += 1
 
     tasks = session.get("tasks", [])
-    if tasks and terminal_count == len(tasks) and session.get("status") != "completed":
+    if tasks and terminal_count == len(tasks) and session.get("status") != "completed" and session.get("variants_workflow_version", 1) < 2:
         session["status"] = "completed"
         changed = True
     session["selection_status"] = session.get("selection_status") or "pending"
@@ -200,7 +165,7 @@ def collect_variants(state_dir: Path) -> tuple[int, str]:
         changed = True
 
     summary = render_summary(session)
-    (state_dir / "variant-summary.md").write_text(summary, encoding="utf-8")
+    (variants_artifacts_dir(state_dir, session) / "variant-summary.md").write_text(summary, encoding="utf-8")
     if changed:
         write_json(session_path, session)
 
@@ -259,7 +224,14 @@ def collect_until_terminal(state_dir: Path, timeout: float, interval: float, res
             code, output = collect_variants(state_dir)
             current = load_json(state_dir / "session.json")
             if resume and all(task.get("status") in {"completed", "blocked", "cancelled"} for task in current["tasks"]):
-                return 0, json.dumps(review_readiness(state_dir, current), ensure_ascii=False) + "\n"
+                readiness = review_readiness(state_dir, current)
+                if current.get("variants_workflow_version", 1) >= 2:
+                    current["workflow_status"] = readiness["next_action"]
+                    current["status"] = "completed" if readiness["next_action"] == "ready_for_apply" else "running"
+                    if readiness["next_action"] in {"no_completed_candidates", "synthesis_failed", "blocked"}:
+                        current["status"] = "blocked"
+                    write_json(state_dir / "session.json", current)
+                return 0, json.dumps(readiness, ensure_ascii=False) + "\n"
         if code:
             return code, output
         if all(task.get("status") in {"completed", "blocked", "cancelled"} for task in current["tasks"]):
@@ -270,17 +242,10 @@ def collect_until_terminal(state_dir: Path, timeout: float, interval: float, res
         time.sleep(min(interval, remaining))
 
 
-def git_output(root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "--no-optional-locks", "-C", str(root), *args],
-        text=True, capture_output=True,
-    )
-    if result.returncode:
-        raise ValueError(result.stderr.strip() or "Git 검증 실패")
-    return result.stdout.strip()
-
-
 def review_inputs(session: dict) -> dict:
+    version = session.get("variants_workflow_version", 1)
+    if version >= 2 and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", str(session.get("pre_run_head", ""))):
+        raise ValueError("v2 비교에는 고정 pre_run_head가 필요합니다.")
     tasks = session.get("tasks") or []
     if not tasks or any(task.get("status") not in {"completed", "blocked", "cancelled"} for task in tasks):
         raise ValueError("후보 수집이 완료되지 않았습니다. crew variants resume으로 이어가세요.")
@@ -291,6 +256,12 @@ def review_inputs(session: dict) -> dict:
         context = task_dir / "context"
         if context.is_dir():
             evidence.extend(path for path in context.rglob("*") if path.is_file())
+        if version >= 2:
+            # 실행 중 달라지는 운영 기록은 코드/요구사항/검증 증거와 분리한다.
+            operational = {"progress.log", "progress.buffer.jsonl", "delegation.jsonl", "register.json",
+                           "pipeline.json", "current-status.md", "input-normalization.json",
+                           "skill-load.md", "skill-load.json", "skill-use.md", "skill-use.json"}
+            evidence = [path for path in evidence if path.name not in operational]
         item = {"task": task, "evidence": {
             str(path.relative_to(task_dir)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(evidence)
@@ -307,13 +278,27 @@ def review_inputs(session: dict) -> dict:
             if git_output(root, "status", "--porcelain"):
                 raise ValueError("완료 후보에 미커밋 변경이 있습니다.")
             item["commit"] = git_output(root, "rev-parse", "HEAD")
-            item["base_commit"] = git_output(base, "rev-parse", "HEAD")
+            item["base_commit"] = git_output(base, "rev-parse", "--verify", f"{session['pre_run_head']}^{{commit}}") if version >= 2 else git_output(base, "rev-parse", "HEAD")
+            if version >= 2:
+                git_output(root, "merge-base", "--is-ancestor", item["base_commit"], item["commit"])
         candidates.append(item)
-    return {"session_id": session.get("session_id"), "base_task": session.get("base_task"), "candidates": candidates}
+    inputs = {"session_id": session.get("session_id"), "base_task": session.get("base_task"), "candidates": candidates}
+    if version >= 2:
+        inputs.update(variants_workflow_version=version, base_commit=session["pre_run_head"], review_contract_version=2)
+        asset_root = Path(__file__).parents[1]
+        agents = asset_root / "agents"
+        if not agents.is_dir():
+            agents = asset_root / "system/agents"
+        policy = [Path(__file__).with_name("variant_review.py"),
+                  asset_root / "schemas/variant-review.schema.json",
+                  agents / "skills/variant-analysis.md", agents / "reviewer.md"]
+        inputs["policy_hash"] = fingerprint({path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                                            if path.is_file() else "missing" for path in policy})
+    return inputs
 
 
 def read_review_receipt(state_dir: Path) -> dict:
-    path = state_dir / "variant-review-state.json"
+    path = variants_artifacts_dir(state_dir) / "variant-review-state.json"
     receipt = load_json(path)
     if path.exists() and (receipt.get("status") not in {"running", "completed", "released"}
                           or not receipt.get("token") or not receipt.get("input_hash")
@@ -326,23 +311,33 @@ def review_readiness(state_dir: Path, session: dict) -> dict:
     inputs = review_inputs(session)
     input_hash = fingerprint(inputs)
     receipt = read_review_receipt(state_dir)
+    artifacts = variants_artifacts_dir(state_dir, session)
     action = "review_required"
     if not any(task["status"] == "completed" for task in session["tasks"]):
         action = "no_completed_candidates"
     if receipt.get("status") == "running":
         action = "review_in_progress"
     elif receipt.get("status") == "completed" and receipt.get("input_hash") == input_hash:
-        report = state_dir / "variant-review.md"
+        report = artifacts / "variant-review.md"
         if not report.is_file() or hashlib.sha256(report.read_bytes()).hexdigest() != receipt.get("report_hash"):
             raise ValueError("완료 리뷰 보고서가 없거나 변경되었습니다. 리뷰 기록을 확인하세요.")
         action = "review_complete"
-    return {"next_action": action, "input_hash": input_hash, "inputs": inputs,
+        if session.get("variants_workflow_version", 1) >= 2:
+            document = load_json(artifacts / "variant-review.json")
+            if not document or fingerprint(document) != receipt.get("document_hash"):
+                raise ValueError("구조화 리뷰 문서가 변경되었습니다.")
+            from variant_synthesis import synthesis_readiness
+            synthesis = synthesis_readiness(artifacts, {**inputs, "input_hash": input_hash})
+            return {**synthesis, "synthesis_input_hash": synthesis.get("input_hash"),
+                    "input_hash": input_hash, "inputs": inputs, "variants_dir": str(artifacts)}
+    return {"next_action": action, "input_hash": input_hash, "inputs": inputs, "variants_dir": str(artifacts),
             "review_token": receipt.get("token"), "review_input_hash": receipt.get("input_hash")}
 
 
 def manage_review(state_dir: Path, claim: str | None, complete: str | None,
                   release: str | None, report: str | None) -> tuple[int, str]:
-    receipt_path = state_dir / "variant-review-state.json"
+    artifacts = variants_artifacts_dir(state_dir)
+    receipt_path = artifacts / "variant-review-state.json"
     receipt = read_review_receipt(state_dir)
     if release:
         if receipt.get("status") != "running" or receipt.get("token") != release:
@@ -371,14 +366,25 @@ def manage_review(state_dir: Path, claim: str | None, complete: str | None,
             data = Path(report).read_bytes()
             if not data.strip():
                 raise ValueError("빈 리뷰 보고서는 완료로 등록할 수 없습니다.")
+            if session.get("variants_workflow_version", 1) >= 2:
+                document = json.loads(data)
+                if not receipt.get("host_id") or document.get("semantic_review", {}).get("reviewer_id") != receipt["host_id"]:
+                    raise ValueError("v2 리뷰는 실제 호스트 실행 ID를 token에 bind해야 합니다.")
+                from variant_review import validate_review, render_review
+                errors = validate_review(document, {**ready["inputs"], "input_hash": ready["input_hash"]})
+                if errors:
+                    raise ValueError("리뷰 계약 위반: " + "; ".join(errors))
+                write_json(artifacts / "variant-review.json", document)
+                receipt["document_hash"] = fingerprint(document)
+                data = render_review(document).encode("utf-8")
             temporary = None
             try:
-                with tempfile.NamedTemporaryFile(dir=state_dir, delete=False) as stream:
+                with tempfile.NamedTemporaryFile(dir=artifacts, delete=False) as stream:
                     temporary = Path(stream.name)
                     stream.write(data)
                     stream.flush()
                     os.fsync(stream.fileno())
-                temporary.replace(state_dir / "variant-review.md")
+                temporary.replace(artifacts / "variant-review.md")
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
@@ -386,6 +392,49 @@ def manage_review(state_dir: Path, claim: str | None, complete: str | None,
                            finished_at=datetime.now(timezone.utc).isoformat())
     write_json(receipt_path, receipt)
     return 0, json.dumps(receipt, ensure_ascii=False) + "\n"
+
+
+def bind_execution(state_dir: Path, action: str, token: str, host_id: str) -> tuple[int, str]:
+    state_dir = variants_artifacts_dir(state_dir)
+    name = "variant-review-state.json" if action == "review" else "variant-synthesis-state.json"
+    receipt = load_json(state_dir / name)
+    if receipt.get("token") != token or receipt.get("status") not in {"running", "validating", "needs_changes"}:
+        raise ValueError("진행 중인 단계의 token이 필요합니다.")
+    if receipt.get("host_id") and receipt["host_id"] != host_id:
+        raise ValueError("이미 다른 호스트 실행에 연결된 token입니다.")
+    receipt["host_id"] = host_id
+    write_json(state_dir / name, receipt)
+    return 0, json.dumps(receipt, ensure_ascii=False) + "\n"
+
+
+def manage_synthesis(state_dir: Path, prepare: str | None, complete: str | None,
+                     release: str | None, result_path: str | None) -> tuple[int, str]:
+    from variant_synthesis import prepare_synthesis, record_synthesis_result, release_synthesis
+    session, _, message = require_variants_session(state_dir)
+    if session is None or session.get("variants_workflow_version", 1) < 2:
+        raise ValueError(message or "종합 실행은 승인된 v2 세션에서만 가능합니다.")
+    if session.get("mutation_scope") == "read_only":
+        raise ValueError("읽기 전용 실행은 종합 구현 승인이 필요합니다.")
+    artifacts = variants_artifacts_dir(state_dir, session)
+    if release:
+        result = release_synthesis(artifacts, release)
+    else:
+        inputs = review_inputs(session)
+        inputs["input_hash"] = fingerprint(inputs)
+        if prepare:
+            result = prepare_synthesis(artifacts, prepare, inputs)
+        else:
+            document = json.loads(Path(result_path).read_text(encoding="utf-8"))
+            receipt = load_json(artifacts / "variant-synthesis-state.json")
+            if not receipt.get("host_id") or document.get("implementer_id") != receipt["host_id"]:
+                raise ValueError("종합 결과의 implementer_id가 bind된 호스트와 다릅니다.")
+            result = record_synthesis_result(artifacts, complete, document, inputs)
+    session["workflow_status"] = result["next_action"]
+    session["status"] = "completed" if result["next_action"] == "ready_for_apply" else "running"
+    if result["next_action"] in {"synthesis_failed", "blocked"}:
+        session["status"] = "blocked"
+    write_json(state_dir / "session.json", session)
+    return 0, json.dumps(result, ensure_ascii=False) + "\n"
 
 
 def require_finished_git_operation(root: Path) -> None:
@@ -473,10 +522,13 @@ def preview_merge(selected: dict, target: str) -> tuple[int, list[str], dict]:
         "candidate_branch": branch, "candidate_commit": candidate_sha,
         "project_root": str(worktree), "base_project_root": str(base),
         "merged_tree": merge_lines[0], "operation": "merge --no-ff --strategy=ort",
-        "runtime_fingerprint": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "runtime_fingerprint": fingerprint({path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                                            for path in [Path(__file__), *Path(__file__).parent.glob("variant_*.py")]}),
         "config_fingerprint": fingerprint(git_output(base, "config", "--null", "--list")),
         "hooks_fingerprint": fingerprint(hook_fingerprints),
     }
+    if selected.get("validation_fingerprint"):
+        plan["validation_fingerprint"] = selected["validation_fingerprint"]
     return result.returncode, lines, plan
 
 
@@ -524,7 +576,7 @@ def confirm_merge(state_dir: Path, session: dict, selected: dict, target: str, a
         try:
             result = subprocess.run(
                 ["git", "-C", str(base), "merge", "--no-ff", "--no-edit", "--strategy=ort",
-                 "-m", f"merge: apply crew variant {session['selected_task_id']}", plan["candidate_commit"]],
+                 "-m", f"merge: apply crew variant {selected['task_id']}", plan["candidate_commit"]],
                 stdin=subprocess.DEVNULL, text=True, capture_output=True,
             )
             if result.returncode:
@@ -548,28 +600,35 @@ def confirm_merge(state_dir: Path, session: dict, selected: dict, target: str, a
 
         session["apply_status"] = "applied"
         session["applied_branch"] = target
-        session["applied_task_id"] = session["selected_task_id"]
+        session["applied_task_id"] = selected["task_id"]
         session["applied_at"] = datetime.now(timezone.utc).isoformat()
         record["applied_commit"] = applied_commit
         write_json(session_path, session)
         return 0, f"apply_status: applied\napplied_branch: {target}\napplied_commit: {applied_commit}\n"
 
 
-def apply_variant(state_dir: Path, target: str | None = None, confirmed: str | None = None) -> tuple[int, str]:
+def apply_variant(state_dir: Path, target: str | None = None, confirmed: str | None = None,
+                  artifact: str = "candidate") -> tuple[int, str]:
     session, _session_path, message = require_variants_session(state_dir)
     if session is None:
         return 2, message or "No variants session to apply.\n"
-    if session.get("selection_status") != "selected" or not session.get("selected_task_id"):
+    if artifact == "final":
+        if int(session.get("variants_workflow_version", 1)) < 2:
+            return 2, "Final artifact requires a v2 variants session.\n"
+        from variant_synthesis import final_artifact
+        inputs = review_inputs(session)
+        inputs["input_hash"] = fingerprint(inputs)
+        selected = final_artifact(variants_artifacts_dir(state_dir, session), inputs)
+    elif int(session.get("variants_workflow_version", 1)) >= 2:
+        return 2, "v2 종합 결과는 --artifact final로 검증 후 적용하세요.\n"
+    elif session.get("selection_status") != "selected" or not session.get("selected_task_id"):
         return 2, "No selected variant. Run crew variants select TASK_ID first.\n"
-
-    selected_task_id = str(session.get("selected_task_id"))
-    selected = None
-    for task in session.get("tasks", []):
-        if str(task.get("task_id") or "") == selected_task_id:
-            selected = task
-            break
+    else:
+        selected = next((task for task in session.get("tasks", [])
+                         if task.get("task_id") == session.get("selected_task_id")), None)
     if selected is None:
-        return 2, f"Selected variant task not found: {selected_task_id}\n"
+        return 2, f"Selected variant task not found: {session.get('selected_task_id')}\n"
+    selected_task_id = selected["task_id"]
 
     if confirmed is not None:
         try:
@@ -587,18 +646,29 @@ def apply_variant(state_dir: Path, target: str | None = None, confirmed: str | N
         except (ValueError, OSError) as error:
             return 2, f"미리보기 실패: {error}\n"
 
+    if artifact == "final":
+        title = "Final synthesis apply plan"
+        identity = [f"final_task_id: {selected_task_id}", "artifact: final"]
+        confirmation = "--artifact final --target BRANCH --confirm PLAN_HASH"
+    else:
+        title = "Variant apply plan"
+        identity = [
+            f"selected_task_id: {selected_task_id}",
+            f"selected_variant: {selected.get('variant_strategy') or selected.get('variant_id') or 'variant'}",
+        ]
+        confirmation = "--target BRANCH --confirm PLAN_HASH"
+
     lines = [
-        "Variant apply plan",
+        title,
         f"session_id: {session.get('session_id') or 'Unknown'}",
-        f"selected_task_id: {selected_task_id}",
-        f"selected_variant: {selected.get('variant_strategy') or selected.get('variant_id') or 'variant'}",
+        *identity,
         f"branch: {selected.get('branch') or 'Unknown'}",
         f"project_root: {selected.get('project_root') or 'Unknown'}",
         f"base_project_root: {selected.get('base_project_root') or selected.get('project_root') or 'Unknown'}",
         *details,
         "",
         "No branch mutation was performed.",
-        "반영하려면 --target BRANCH --confirm PLAN_HASH로 출력된 계획을 승인하세요.",
+        f"반영하려면 {confirmation}로 출력된 계획을 승인하세요.",
         "",
     ]
     return code, "\n".join(lines)
@@ -606,10 +676,11 @@ def apply_variant(state_dir: Path, target: str | None = None, confirmed: str | N
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="manage crew run variants")
-    parser.add_argument("action", nargs="?", default="collect", choices=["collect", "select", "apply", "resume", "review"])
+    parser.add_argument("action", nargs="?", default="collect", choices=["collect", "select", "apply", "resume", "review", "synthesize"])
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--task-id")
     parser.add_argument("--target")
+    parser.add_argument("--artifact", choices=["candidate", "final"])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--confirm", metavar="PLAN_HASH")
@@ -620,14 +691,30 @@ def main(argv: list[str] | None = None) -> int:
     review_mode.add_argument("--claim", metavar="INPUT_HASH")
     review_mode.add_argument("--complete", metavar="TOKEN")
     review_mode.add_argument("--release", metavar="TOKEN")
+    review_mode.add_argument("--bind", metavar="TOKEN")
+    review_mode.add_argument("--prepare", metavar="INPUT_HASH")
+    parser.add_argument("--host-id")
+    parser.add_argument("--result")
     parser.add_argument("--report")
     args = parser.parse_args(argv)
+    if args.artifact and args.action != "apply":
+        parser.error("--artifact requires apply")
 
-    if args.action == "review":
+    if args.bind:
+        if args.action not in {"review", "synthesize"} or not args.host_id or args.report or args.result:
+            parser.error("--bind TOKEN --host-id ID requires review or synthesize")
+    elif args.host_id:
+        parser.error("--host-id requires --bind TOKEN")
+    elif args.action == "synthesize":
+        if not (args.prepare or args.complete or args.release) or bool(args.complete) != bool(args.result) or args.claim or args.report:
+            parser.error("synthesize requires --prepare HASH, --complete TOKEN --result PATH or --release TOKEN")
+    elif args.action == "review":
         if not (args.claim or args.complete or args.release) or bool(args.complete) != bool(args.report):
             parser.error("review requires --claim INPUT_HASH, --release TOKEN or --complete TOKEN --report PATH")
     elif args.claim or args.complete or args.release or args.report:
         parser.error("review options require review")
+    if args.prepare and args.action != "synthesize" or args.result and args.action != "synthesize":
+        parser.error("--prepare/--result require synthesize")
     if args.task_id and args.action != "select":
         parser.error("--task-id requires select")
     if args.action == "resume":
@@ -645,14 +732,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.action != "apply" or not args.target or not (args.dry_run or args.confirm):
             parser.error("apply requires --target BRANCH and --dry-run or --confirm PLAN_HASH")
 
-    if args.action == "select":
+    if args.bind:
+        action = lambda: bind_execution(Path(args.state_dir), args.action, args.bind, args.host_id)
+    elif args.action == "select":
         if not args.task_id:
             parser.error("select requires --task-id")
         action = lambda: select_variant(Path(args.state_dir), args.task_id)
     elif args.action == "apply":
-        action = lambda: apply_variant(Path(args.state_dir), args.target, args.confirm)
+        action = lambda: apply_variant(Path(args.state_dir), args.target, args.confirm, args.artifact or "candidate")
     elif args.action == "review":
         action = lambda: manage_review(Path(args.state_dir), args.claim, args.complete, args.release, args.report)
+    elif args.action == "synthesize":
+        action = lambda: manage_synthesis(Path(args.state_dir), args.prepare, args.complete, args.release, args.result)
     elif args.wait:
         action = lambda: collect_until_terminal(Path(args.state_dir), args.timeout, args.interval, args.action == "resume")
     else:

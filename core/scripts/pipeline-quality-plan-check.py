@@ -418,6 +418,8 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
 
     failures: list[str] = []
     implementation_stage_results: list[dict] = []
+    if pipeline.get("planning_required"):
+        failures.append("unplanned_handoff")
     raw_mutation_scope = pipeline.get("mutation_scope")
     mutation_scope = (
         "workspace_write"

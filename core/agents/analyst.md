@@ -722,6 +722,11 @@ Write handoff content to `{TASK_DIR}/handoff.md`:
 - Constraints and cautions
 - PRD path: `{TASK_DIR}/context/prd.md`
 
+종합 실행 입력에 `VARIANT_SYNTHESIS: true`가 있으면 handoff를 새로 작성할 때도
+`MODE: supervisor`와 `VARIANT_SYNTHESIS: true`를 각각 독립된 평문 행으로 보존한다.
+`MODE: variant-synthesis`로 대체하지 않는다. 원문, 고정 입력 경로, 별도 최종
+worktree와 채택 결정 범위도 유지하며 일반 analyst handoff에는 이 플래그를 추가하지 않는다.
+
 ### Step 8 — Return ANALYSIS block
 
 Return inline so supervisor can proceed directly to Phase 1d (plan approval):

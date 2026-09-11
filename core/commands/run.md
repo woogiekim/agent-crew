@@ -592,6 +592,8 @@ prompt, or the N>1 prompt):
 #### Injection guard
 
 The injection path MUST NOT be entered when:
+- `variants_workflow_version: 2`인 variants 세션이다. 후보 추가는 고정 분석 입력과
+  승인 그래프를 바꾸므로 새 승인 revision이 필요하다. 일반 injection으로 우회하지 않는다.
 - The detected session's `status` is `"completed"` or `"blocked"` (stale file).
 - The `SESSION_FILE` is older than 24 hours (likely abandoned).
 - The project has no `STATE_DIR` (setup not run).
@@ -1593,29 +1595,62 @@ selection_status: "pending"
 ```
 
 Variant collection is a comparison gate. `crew:variants collect` may summarize
-candidate variants, but must not merge every completed branch until the user
-selects one implementation.
+candidate variants, but must not merge candidate branches. v1 preserves explicit
+candidate selection; approved v2 continues through the synthesis graph below.
 
-**Variants 완료 연속성:** `session_type: variants`에서는 모든 supervisor를 병렬
-위임한 orchestrator가 완료까지 연결을 유지한다. 아래 P4의 즉시 종료 규칙은
-variants에 적용하지 않는다. 부모가 자동으로 `crew variants resume
---timeout 600`을 실행하고 호스트 agent 완료 알림을 처리한다. 사용자가 추가로
-collect를 요청할 때까지 멈추지 않는다. timeout은 미완료 상태로 보고하고 기존
-agent를 중복 생성하지 않는다.
+#### Variants v2 승인 그래프
 
-최초 실행과 중단 후 재개 모두 `variants.md`의 next_action 및 review claim/complete
-절차를 따른다. 기존 task ID와 worktree를 재사용하며 `crew run --variants`를 다시
-실행하여 세션을 교체하지 않는다. review_required에서 claim에 성공한 경우에만
-reviewer를 위임한다. review_in_progress에서는 중복 위임하지 않고 기존 실행을
-확인한다. review_complete이면 기존 보고서를 재사용한다. no_completed_candidates는
-실패 사유를 보고하고 종료한다. reviewer 종료가 확인된 경우에만 토큰을 release한다.
+신규 승인된 종합 세션은 `variants_workflow_version: 2`,
+`outcome_mode: synthesis`를 기록한다. 최초 실행 전 초기 승인 계획에 다음 그래프와
+역할, 범위, 비용 상한을 포함하고 원문과 `pre_run_head`를 고정한다.
 
-모든 후보가 종료되면 완료된 후보들의 실제 commit SHA, base 대비 diff, 테스트
-출력, 요구사항을 reviewer에 전달하여 비교 리뷰를 수행한다. 실패 후보와 동일 SHA
-후보를 따로 표시하고 별도 초안에 추천과 근거를 기록한 뒤 `crew variants review
---complete TOKEN --report PATH`로 `variant-review.md`를 등록한다. 이 경로는
-일반 병렬 작업의 Step 8 전체 브랜치 merge로 넘어가지 않는다. 추천 후 사용자
-선택을 기다리며 `selected_task_id`와 apply 승인 상태는 자동 변경하지 않는다.
+`implement -> analyze/compare -> synthesize -> independent validate`
+
+새 후보/종합 handoff의 `planning_required: true`는 미계획 상태다.
+supervisor-start-mode.py에서 fresh로 판정하고 기존 analyst 계획 단계를 실제 위임한다.
+임시 pipeline 파일의 존재는 기존 실행 승인이나 Phase 2 진입 근거가 아니다.
+
+신규 native v2의 산출물은 `session.variants_dir`인
+`STATE_DIR/variants/<session_id>`에 둔다. 필드가 없는 기존 세션은 STATE_DIR를
+사용한다. CLI의 VARIANTS_DIR 및 resume의 variants_dir를 각 handoff에 고정하여
+후보 task_dir 밖에서 리뷰/종합 산출물을 작성한다. 루트 session.json은 후보와 상태를
+유지하며 native run도 공통 .variants.lock을 사용한다. 활성 v2를 새 run으로
+덮어쓰지 말고 resume한다. 완료 후 새 세션은 이전 산출물을 변경하지 않는다.
+
+nonGit v2는 읽기 전용도 Git이 필수이며 handoff 생성 전에 exit 3으로 차단한다.
+구현 작업 역시 mutating parallel launch 전에 차단한다. Git 기준 SHA와 독립
+worktree를 입증할 수 없으면 공유 디렉터리 병렬 쓰기로 대체하지 않는다.
+후보 구현자와 종합 구현자는 모두 기존 supervisor의
+`Red -> Green -> Refactor`를 수행하며 실제 테스트 결과를 남긴다.
+비교 reviewer는 read-only이고 종합 구현자와 최종 독립 reviewer는 실제 host ID가
+달라야 한다. 원본 요구사항, 공통 단위, 후보 SHA와 증거 manifest를 각 handoff에 전달한다.
+
+**Variants 완료 연속성:** orchestrator는 추가 사용자 요청 없이 후보 종료 장벽부터
+분석/비교, 종합, 독립 검증을 거쳐 `ready_for_apply`까지 연결을 유지한다.
+P4의 즉시 종료와 일반 Step 8 전체 브랜치 merge는 적용하지 않는다.
+실패, 예산 소진 또는 승인 범위 변경이면 이유를 보고하고 차단하며 완료로 표시하지 않는다.
+native CLI는 상태/토큰/근거 정합성만 검사하고 AI를 실행하지 않는다.
+
+최초 실행과 중단 후 재개는 `variants.md`의 v2 next_action 절차를 따른다.
+`review_required`에서 claim 후 실제 reviewer를 위임하고 반환된 host ID를 bind한다.
+리뷰의 `MODE: variant-analysis`와 `MODE: variant-comparison`은 후보 × 행동 단위
+구현 분석과 별도의 채택 decision 분석을 수행한다. 실제 canonical JSON 등록 후
+`synthesis_required`로 이어가며 사용자 후보 선택을 기다리지 않는다.
+`synthesis_in_progress`는 기존 실행을 확인하고 중복 위임하지 않는다.
+`validation_required`는 독립 reviewer와 기존 수리 루프로 이어간다.
+실행 종료를 확인한 경우에만 release하며 동일 task/worktree를 재사용한다.
+중단 복구를 위해 `crew run --variants`로 새 세션을 만들지 않는다.
+
+종합은 고정 base의 별도 worktree에서 승인된 요소를 구현한다. 최종 산출물은 후보
+tasks 목록에 넣지 않는다. 실제 호스트 실행 ID와 코드/테스트 로그 없이 가짜 receipt나
+prompt-only 완료를 만들지 않는다. `ready_for_apply`에서는 최종 diff/SHA,
+비교·채택 근거와 검증 결과를 제시한다. `selected_task_id`는 자동 변경하지 않는다.
+`apply --artifact final`은 별도 승인 경계이며 원본 자동 merge/push는 금지한다.
+
+버전이 없거나 1인 v1은 기존 Markdown 리뷰 및 후보 선택/apply 절차를 유지한다.
+v1 `review_complete`에서는 기존 보고서를 재사용하고 선택을 기다린다.
+v1을 승인 없이 v2로 승격하지 않는다. v2 승인 그래프 안의 단계 이동에는 반복 승인을
+요구하지 않지만 범위/비용/그래프 변경은 새 계획을 요구한다.
 
 ### 5.pre — Requirements Sufficiency Check
 
@@ -1840,6 +1875,8 @@ printf '%s | SUPERVISOR_HANDOFF | waiting for supervisor Phase 0\n' \
 **P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
 Variants 세션은 위의 완료 연속성 규칙을 따른다. 아래 즉시 종료는 variants가 아닌
 세션에만 적용된다.
+v2는 `ready_for_apply` 또는 명시적 blocked 상태까지 승인된 호스트 orchestrator가
+이어간다. 아래 Background Session Started 및 STOP 예시는 non-variants 전용이다.
 Spawn each supervisor as a host background agent, print a "Background Session
 Started" summary, and **RETURN immediately** (end the turn). Do NOT enter any
 poll loop.

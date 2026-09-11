@@ -413,6 +413,16 @@ SETUP_STATE="$(project_state_dir "${SETUP_HOME}/.agent-crew" "${SETUP_PROJECT}")
 assert_file_exists "${SETUP_STATE}/capabilities.json"
 assert_contains "$(cat "${SETUP_STATE}/capabilities.json")" '"interactive_question_mode": "codex_plan_mode_conditional"'
 
+it "crew setup bootstrap exposes Codex system review as host-native lens"
+assert_file_exists "${SETUP_STATE}/review-lenses.json"
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"lens_id": "codex-system-review"'
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"provider": "codex"'
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"surface": "host-native"'
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"read_only": true'
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"mutates": false'
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"path": "'"${SETUP_CODEX_HOME}"'/skills/.system/review-agent/SKILL.md"'
+assert_contains "$(cat "${SETUP_STATE}/review-lenses.json")" '"result_source_label": "source_lens=codex-system-review"'
+
 PATH_HOME=$(make_tmp)
 PATH_INSTALL=$(make_tmp)
 PATH_PROJECT=$(make_tmp)
@@ -679,6 +689,9 @@ VARIANT_PROJECT=$(make_tmp)
 mkdir -p "${VARIANT_HOME}/commands" "${VARIANT_HOME}/scripts"
 cp -R "${REPO_ROOT}/core/commands/." "${VARIANT_HOME}/commands/"
 cp -R "${REPO_ROOT}/core/scripts/." "${VARIANT_HOME}/scripts/"
+git -C "${VARIANT_PROJECT}" init >/dev/null 2>&1
+git -C "${VARIANT_PROJECT}" -c user.name='Agent Crew Test' -c user.email='agent-crew@example.invalid' \
+  commit --allow-empty -m 'test: seed variants base' >/dev/null 2>&1
 
 it "crew run --variants creates one variants session with candidate task entries"
 out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
@@ -689,6 +702,7 @@ assert_exit 0 "${rc}" "variants run"
 
 VARIANT_STATE="$(project_state_dir "${VARIANT_HOME}" "${VARIANT_PROJECT}")"
 VARIANT_SESSION="${VARIANT_STATE}/session.json"
+VARIANT_ARTIFACTS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["variants_dir"])' "${VARIANT_SESSION}")
 assert_file_exists "${VARIANT_SESSION}"
 
 it "variants session records type, selection status, and all candidate entries"
@@ -784,8 +798,8 @@ assert_exit 0 "${rc}" "variant collect"
 assert_contains "${out}" "Candidate Variants"
 assert_contains "${out}" "selection_status: pending"
 assert_contains "${out}" "Do not merge all completed branches"
-assert_file_exists "${VARIANT_STATE}/variant-summary.md"
-assert_contains "$(cat "${VARIANT_STATE}/variant-summary.md")" "Candidate Variants"
+assert_file_exists "${VARIANT_ARTIFACTS}/variant-summary.md"
+assert_contains "$(cat "${VARIANT_ARTIFACTS}/variant-summary.md")" "Candidate Variants"
 assert_contains "$(cat "${VARIANT_SESSION}")" '"status": "completed"'
 assert_contains "$(cat "${VARIANT_SESSION}")" '"selection_status": "pending"'
 
@@ -817,14 +831,12 @@ assert_eq "selected
 ${selected_variant_task}
 balanced" "${variant_selection}" "variant selection state"
 
-it "crew variants apply prints a gated apply plan for the selected candidate"
+it "crew variants apply cannot bypass v2 final synthesis by selecting a candidate"
 out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \
   bash "${CREW}" variants apply 2>&1)
 rc=$?
-assert_exit 0 "${rc}" "variant apply plan"
-assert_contains "${out}" "Variant apply plan"
-assert_contains "${out}" "selected_task_id: ${selected_variant_task}"
-assert_contains "${out}" "No branch mutation was performed"
+assert_exit 2 "${rc}" "variant final artifact required"
+assert_contains "${out}" "--artifact final"
 
 it "crew status --collect is removed from the native CLI"
 out=$(AGENT_CREW_HOME="${VARIANT_HOME}" PROJECT_ROOT="${VARIANT_PROJECT}" \

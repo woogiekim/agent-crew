@@ -7,6 +7,10 @@
   "additionalProperties": true,
   "required": ["task", "stages", "completed_stages"],
   "properties": {
+    "planning_required": {
+      "type": "boolean",
+      "description": "true인 native handoff는 임시 상태다. 실제 analyst 계획 및 quality-plan gate 전에는 실행하지 않는다."
+    },
     "schema_version": {
       "type": "integer",
       "const": 1,

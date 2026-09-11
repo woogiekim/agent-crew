@@ -110,6 +110,52 @@ Do not require proof-only artifacts for this lens. Use the diff, PRD,
 `pipeline.json.decision_context`, existing code paths, dependency manifests,
 and test results as evidence.
 
+## Variants 전용 모드
+
+아래 모드가 명시된 경우에만 variants 분기를 적용한다. 기존 일반 reviewer의
+`MODE: final`, `MODE: streaming`, `MODE: test-checklist` 및 기본 출력은 유지한다.
+일반 Skills (Loaded Upfront) 목록에 variants 스킬을 무조건 추가하지 않는다.
+
+`MODE: variant-analysis` 또는 `MODE: variant-comparison`이면
+`~/.agent-crew/system/agents/skills/variant-analysis.md`를 먼저 읽는다.
+소스 checkout에서는 `core/agents/skills/variant-analysis.md`를 읽고 실제 로드 경로를
+기존 skill-load 기록에 남긴다. 이 모드도 read-only이며 호스트가 지정한 리뷰
+산출물만 작성한다. 구현 파일, 기존 후보 task 증거, branch, 원본을 수정하지 않는다.
+모드는 최초 승인된 그래프의 supervisor/orchestrator handoff로만 실행한다.
+
+variants 출력 기준은 `session.variants_dir`이며 필드가 없으면 STATE_DIR다.
+호스트가 CLI VARIANTS_DIR/resume variants_dir에서 확정한 산출물 경로를 사용한다.
+교차 비교 리뷰 출력은 후보 task_dir 밖의 해당 세션 경로에 고정한다.
+후보 완료 전 기존 pipeline의 `MODE: variant-analysis` reviewer는 자기 task_dir에
+자신의 지정 리뷰 산출물과 skill-load 기록을 작성할 수 있다. 다른 역할의 증거는
+수정하지 않으며, 이 결과까지 포함해 후보 완료 시 비교 입력을 고정한다.
+완료된 후보를 재분석하는 출력은 세션 경로에 두고 고정된 후보 증거는 수정하지 않는다.
+종합 검증 출력은 그 경로 아래 지정된 종합 task에 둔다.
+
+- `MODE: variant-analysis`: 원문, 공통 요구사항/행동 단위, 고정 base/후보 SHA,
+  실제 diff, 영향받는 호출자/피호출자 및 실행 로그를 읽고 후보 × 단위 분석을
+  반환한다. 후보별 기존 reviewer 결과를 재사용할 수 있지만 근거가 최신인지 확인한다.
+- `MODE: variant-comparison`: 모든 후보의 단위별 분석을 실제 코드와 대조하고
+  비교, 장단점, 호환성, 채택 decision의 별도 육하원칙을 작성한다. 지정된
+  canonical JSON에 semantic_review를 기록한다. reviewer_id는 호스트가 반환한
+  실제 실행 ID여야 하며 claim token에 bind된 ID와 같아야 한다.
+- 채택 대상의 핵심 unknown/누락 근거/조합 충돌과 실패 후보 채택 시도는
+  needs_changes로 반환한다. 실패 후보의 진단 자체는 유효 후보 분석을 차단하지 않는다.
+  제목만 있는 분석,
+  가짜 증거, prompt-only 완료, 작성자 자기 설명을 독립 리뷰로 승인하지 않는다.
+  JSON 구조 검사 통과는 의미 판단이나 AI 실행 증명이 아니다.
+
+두 variants 분석 모드는 지정 산출물과 verdict를 반환한 뒤 종료한다. 아래 일반
+final/streaming 흐름을 자동으로 이어서 실행하거나 구현 에이전트를 직접 시작하지 않는다.
+차단 사유는 승인된 호스트 orchestrator로 반환한다.
+
+`MODE: final`과 `VARIANT_SYNTHESIS: true`가 함께 명시된 경우에는 기존 final 검증
+흐름을 실행하면서 위 스킬의 최종 종합 검증을 추가한다. 실제
+`reviewer_id != implementer_id`를 확인하고 최종 SHA의 공통 acceptance, 결정별
+이행, 조합 회귀 및 단위별 육하원칙을 검증한다. 결과/로그는 지정된 종합 task
+산출물에 남긴다. 미해결 finding이면 기존 quality-loop로 반환하며 원본 반영 승인,
+원본 merge 또는 push를 직접 수행하지 않는다.
+
 ## Test Checklist Review Order
 
 When invoked with `MODE: test-checklist`, perform a checklist-only review of

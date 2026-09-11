@@ -306,6 +306,11 @@ Write a concise handoff.md that gives downstream agents exactly what they need w
 - The PRD path (`{TASK_DIR}/context/prd.md`)
 - API contract location if available
 
+종합 입력의 `VARIANT_SYNTHESIS: true`는 handoff 재작성 후에도 보존한다.
+해당 경우에만 `MODE: supervisor`와 `VARIANT_SYNTHESIS: true`를 각각 독립된
+평문 행으로 기록하며 `MODE: variant-synthesis`로 바꾸지 않는다. 고정 입력 경로,
+최종 worktree 및 채택 결정 범위를 변경하지 않는다. 일반 계획에는 추가하지 않는다.
+
 ---
 
 ## Checklist
