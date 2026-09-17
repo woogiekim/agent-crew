@@ -1093,7 +1093,8 @@ primitives it uses are:
 - `git rev-parse --git-dir` and `git rev-parse --git-common-dir` (Guard 1
   comparison probes).
 - `git rev-parse --show-superproject-working-tree` (Guard 2 submodule probe).
-- `git check-ignore -q .crew-worktrees` (Guard 3 ignore verification before
+- `git rev-parse --git-common-dir` and append-only writes to
+  `.git/info/exclude` (Guard 3 local exclude registration before
   `git worktree add`).
 
 ```bash
@@ -1130,17 +1131,20 @@ if [ -z "${CREW_SUPERPROJECT}" ] \
     "${CREW_GIT_DIR}" "${CREW_GIT_COMMON}" "${CREW_WORKTREES_BASE}"
 fi
 
-# Guard 3: Ignore verification
-# `.crew-worktrees/` MUST be git-ignored before any `git worktree add`.
+# Guard 3: Local exclude registration
+# `.crew-worktrees/` MUST be ignored before any `git worktree add`, but the
+# supervisor must not mutate or commit the repository's tracked `.gitignore`.
 if ! git -C "${PROJECT_ROOT}" check-ignore -q .crew-worktrees 2>/dev/null; then
-  GITIGNORE_PATH="${PROJECT_ROOT}/.gitignore"
-  if ! grep -Fxq '.crew-worktrees/' "${GITIGNORE_PATH}" 2>/dev/null; then
-    printf '%s\n' '.crew-worktrees/' >> "${GITIGNORE_PATH}"
+  CREW_GIT_COMMON_RAW="$(git -C "${PROJECT_ROOT}" rev-parse --git-common-dir 2>/dev/null || true)"
+  CREW_GIT_COMMON="$(crew_realpath "${CREW_GIT_COMMON_RAW}")"
+  CREW_EXCLUDE_PATH="${CREW_GIT_COMMON}/info/exclude"
+  mkdir -p "$(dirname "${CREW_EXCLUDE_PATH}")"
+  touch "${CREW_EXCLUDE_PATH}"
+  if ! grep -Fxq '.crew-worktrees/' "${CREW_EXCLUDE_PATH}" 2>/dev/null; then
+    printf '%s\n' '.crew-worktrees/' >> "${CREW_EXCLUDE_PATH}"
   fi
-  git -C "${PROJECT_ROOT}" add .gitignore
-  git -C "${PROJECT_ROOT}" commit -m "chore(repo): ignore .crew-worktrees harness directory"
   if ! git -C "${PROJECT_ROOT}" check-ignore -q .crew-worktrees 2>/dev/null; then
-    printf '[crew] worktree-guard 3: .crew-worktrees still not ignored after .gitignore update — halting\n' >&2
+    printf '[crew] worktree-guard 3: .crew-worktrees still not ignored after local exclude update — halting\n' >&2
     exit 1
   fi
 fi

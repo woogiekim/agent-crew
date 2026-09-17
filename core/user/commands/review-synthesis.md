@@ -43,6 +43,11 @@ user-facing labels such as `IMPLEMENTED`, `LOCAL_DONE`, or `POLICY_WAITING`.
 Before selecting lenses, run review lens discovery using
 `core/scripts/review-lens-discovery.py` or the installed equivalent. Discovery
 uses the provider-neutral contract in `core/rules/review-lens-discovery.md`.
+When the active host adapter exposes a provider-native review lens manifest,
+pass it to discovery with `--host-lens-manifest`; when the adapter sets
+`AGENT_CREW_REVIEW_LENS_MANIFEST`, discovery must consume that automatically.
+If the active project state contains a host-written `${STATE_DIR}/review-lenses.json`,
+pass that manifest to discovery as the host lens manifest.
 
 Discovery must separate installed capability from execution result:
 
@@ -57,6 +62,9 @@ Discovery must separate installed capability from execution result:
 - report duplicate semantic lenses as `duplicate-suppressed`.
 
 Do not directly invoke the system `reviewer` agent. It is supervisor-spawned.
+AI-provided system review participates only as a declared host-native lens such
+as `codex-system-review`, and only when its metadata is read-only,
+non-mutating, and does not require supervisor context.
 
 ## Default Lenses
 
@@ -72,12 +80,22 @@ Provider-native lenses may participate only when their metadata declares a
 read-only, non-mutating review-lens contract and the host adapter reports them
 available.
 
+Include AI system review by default when it is discovered as an eligible
+host-native lens such as `codex-system-review`. If the host does not expose a
+callable system review surface, keep the lens `not-run` or `degraded` with the
+adapter reason instead of fabricating a completed result.
+When a discovered host-native lens includes runner metadata, the active host
+adapter is responsible for applying that runner to the same read-only review
+scope and preserving the lens source label in the synthesized output.
+
 ## Output
 
 The synthesis report must list every discovered or configured lens with one of:
 `eligible`, `completed`, `not-run`, `suggested`, `blocked`, `degraded`, or
 `duplicate-suppressed`. Every finding must preserve its source lens label, and
 local implementation status must stay separate from remote MR completion.
+Findings from AI system review must keep the host-native source label, for
+example `source_lens=codex-system-review`.
 
 When a lens reports caller graph coverage, preserve it in the synthesis instead
 of flattening it into a generic finding. Surface BFS inventory, selective DFS

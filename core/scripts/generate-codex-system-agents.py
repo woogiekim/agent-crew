@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 from pathlib import Path
@@ -22,12 +23,33 @@ REASONING_MAP = {
     "light": "low",
 }
 
-MODEL_MAP = {
-    "xhigh": "gpt-5.5",
-    "deep": "gpt-5.5",
-    "balanced": "gpt-5.4",
-    "light": "gpt-5.4-mini",
-}
+SUPPORTED_TIERS = frozenset(REASONING_MAP)
+
+
+def load_model_policy(path: Path | None) -> dict[str, str]:
+    if path is None:
+        return {}
+
+    with path.open(encoding="utf-8") as policy_file:
+        policy = json.load(policy_file)
+
+    if policy.get("schema_version") != 1:
+        raise ValueError("model policy schema_version must be 1")
+
+    models = policy.get("models", {})
+    if not isinstance(models, dict):
+        raise ValueError("model policy models must be a table")
+
+    unknown_tiers = set(models) - SUPPORTED_TIERS
+    if unknown_tiers:
+        unknown = sorted(unknown_tiers)[0]
+        raise ValueError(f"unknown model policy tier: {unknown}")
+
+    for tier, model in models.items():
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError(f"model policy value for {tier} must be a non-empty string")
+
+    return {tier: model.strip() for tier, model in models.items()}
 
 
 def parse_frontmatter(text: str) -> dict[str, str]:
@@ -56,7 +78,11 @@ def toml_name_for(name: str, fallback: str) -> str:
     return re.sub(r"[^\w-]", "-", name.lower()).strip("-") or fallback
 
 
-def render_toml(source_path: Path, source_ref: str | None = None) -> tuple[str, str]:
+def render_toml(
+    source_path: Path,
+    source_ref: str | None = None,
+    model_policy: dict[str, str] | None = None,
+) -> tuple[str, str]:
     text = source_path.read_text(encoding="utf-8")
     fm = parse_frontmatter(text)
     fallback = source_path.stem
@@ -66,7 +92,7 @@ def render_toml(source_path: Path, source_ref: str | None = None) -> tuple[str, 
     description = re.sub(r"\s+", " ", description).lstrip("> ").strip()
     tier = (fm.get("reasoning_tier") or "balanced").strip()
     effort = REASONING_MAP.get(tier, REASONING_MAP["balanced"])
-    model = MODEL_MAP.get(tier, MODEL_MAP["balanced"])
+    model = (model_policy or {}).get(tier)
     canonical_ref = source_ref or str(source_path)
 
     instructions = f"""# {name}
@@ -83,9 +109,10 @@ Before doing any work:
 """
 
     desc_escaped = description.replace("\\", "\\\\").replace('"', '\\"')
+    model_line = f'model = "{model}"\n' if model else ""
     content = (
         f'description = "{desc_escaped}"\n'
-        f'model = "{model}"\n'
+        f'{model_line}'
         f'model_reasoning_effort = "{effort}"\n'
         f'developer_instructions = """\n{toml_escape(instructions.rstrip())}\n"""\n'
         f'name = "{toml_name}"\n'
@@ -93,7 +120,12 @@ Before doing any work:
     return toml_name, content
 
 
-def generate(source_dir: Path, dest_dir: Path, source_ref_root: str | None = None) -> int:
+def generate(
+    source_dir: Path,
+    dest_dir: Path,
+    source_ref_root: str | None = None,
+    model_policy: dict[str, str] | None = None,
+) -> int:
     dest_dir.mkdir(parents=True, exist_ok=True)
     converted = 0
 
@@ -103,7 +135,7 @@ def generate(source_dir: Path, dest_dir: Path, source_ref_root: str | None = Non
         ref = None
         if source_ref_root:
             ref = str(Path(source_ref_root) / source_path.name)
-        toml_name, content = render_toml(source_path, ref)
+        toml_name, content = render_toml(source_path, ref, model_policy)
         (dest_dir / f"{toml_name}.toml").write_text(content, encoding="utf-8")
         converted += 1
 
@@ -118,13 +150,19 @@ def main() -> int:
         "--source-ref-root",
         help="Path root to embed in generated bootstrap instructions instead of source_dir.",
     )
+    parser.add_argument(
+        "--model-policy",
+        type=Path,
+        help="Optional Codex tier-to-model override policy. Models inherit from the host when omitted.",
+    )
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir)
     if not source_dir.is_dir():
         raise SystemExit(f"source_dir not found: {source_dir}")
 
-    converted = generate(source_dir, Path(args.dest_dir), args.source_ref_root)
+    model_policy = load_model_policy(args.model_policy)
+    converted = generate(source_dir, Path(args.dest_dir), args.source_ref_root, model_policy)
     print(f"[generate-codex-system-agents] {converted} system agent(s) converted to TOML in {args.dest_dir}")
     return 0
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -58,6 +59,8 @@ def run_discovery(
     task: str = "review current changes",
     mr_id: str = "",
     parity_scope: str = "",
+    host_lens_manifest: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> dict:
     args = [
         "python3",
@@ -73,8 +76,10 @@ def run_discovery(
         args.extend(["--mr-id", mr_id])
     if parity_scope:
         args.extend(["--parity-scope", parity_scope])
+    if host_lens_manifest:
+        args.extend(["--host-lens-manifest", str(host_lens_manifest)])
 
-    result = subprocess.run(args, text=True, capture_output=True)
+    result = subprocess.run(args, text=True, capture_output=True, env=env)
     assert result.returncode == 0, result.stdout + result.stderr
     return json.loads(result.stdout)
 
@@ -86,12 +91,153 @@ def lens_by_id(payload: dict, lens_id: str) -> dict:
     raise AssertionError(f"missing lens {lens_id}: {payload}")
 
 
+def test_host_native_system_review_lens_manifest_is_eligible(tmp_path: Path) -> None:
+    manifest = tmp_path / "codex-review-lenses.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "lenses": [
+                    {
+                        "lens_id": "codex-system-review",
+                        "name": "Codex system review",
+                        "provider": "codex",
+                        "surface": "host-native",
+                        "read_only": True,
+                        "mutates": False,
+                        "default_enabled": True,
+                        "requires_mr": "optional",
+                        "requires_remote_read": "none",
+                        "requires_supervisor_context": False,
+                        "timeout_seconds": 120,
+                        "duplicate_group": "ai-system-review",
+                        "runner": "codex-system-skill",
+                        "result_source_label": "source_lens=codex-system-review",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = run_discovery(tmp_path, host_lens_manifest=manifest)
+
+    lens = lens_by_id(payload, "codex-system-review")
+    assert lens["status"] == "eligible"
+    assert lens["reason"] == "eligible_read_only_lens"
+    assert lens["provider"] == "codex"
+    assert lens["surface"] == "host-native"
+    assert lens["runner"] == "codex-system-skill"
+    assert lens["result_source_label"] == "source_lens=codex-system-review"
+
+
+def test_host_native_lens_manifest_failure_is_degraded(tmp_path: Path) -> None:
+    manifest = tmp_path / "broken-review-lenses.json"
+    manifest.write_text("{", encoding="utf-8")
+
+    payload = run_discovery(tmp_path, host_lens_manifest=manifest)
+
+    lens = lens_by_id(payload, "host-lens-manifest")
+    assert lens["status"] == "degraded"
+    assert lens["reason"] == "host_lens_manifest_unreadable"
+
+
+def test_host_native_lens_manifest_string_false_does_not_become_truthy(
+    tmp_path: Path,
+) -> None:
+    manifest = tmp_path / "codex-review-lenses.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "lenses": [
+                    {
+                        "lens_id": "codex-system-review",
+                        "provider": "codex",
+                        "surface": "host-native",
+                        "read_only": "true",
+                        "mutates": "false",
+                        "default_enabled": "true",
+                        "requires_supervisor_context": "false",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = run_discovery(tmp_path, host_lens_manifest=manifest)
+
+    assert lens_by_id(payload, "codex-system-review")["status"] == "eligible"
+
+
+def test_discovery_never_marks_host_native_lens_completed(tmp_path: Path) -> None:
+    manifest = tmp_path / "codex-review-lenses.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "lenses": [
+                    {
+                        "lens_id": "codex-system-review",
+                        "provider": "codex",
+                        "surface": "host-native",
+                        "read_only": True,
+                        "mutates": False,
+                        "default_enabled": True,
+                        "requires_mr": "optional",
+                        "requires_remote_read": "none",
+                        "requires_supervisor_context": False,
+                        "status": "completed",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = run_discovery(tmp_path, host_lens_manifest=manifest)
+
+    assert lens_by_id(payload, "codex-system-review")["status"] == "eligible"
+
+
+def test_host_native_lens_manifest_can_be_supplied_by_environment(tmp_path: Path) -> None:
+    manifest = tmp_path / "codex-review-lenses.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "lenses": [
+                    {
+                        "lens_id": "codex-system-review",
+                        "provider": "codex",
+                        "surface": "host-native",
+                        "read_only": True,
+                        "mutates": False,
+                        "default_enabled": True,
+                        "requires_mr": "optional",
+                        "requires_remote_read": "none",
+                        "requires_supervisor_context": False,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = run_discovery(
+        tmp_path,
+        env={**os.environ, "AGENT_CREW_REVIEW_LENS_MANIFEST": str(manifest)},
+    )
+
+    assert lens_by_id(payload, "codex-system-review")["status"] == "eligible"
+
+
 def test_review_lens_discovery_script_and_rule_are_shipped() -> None:
     assert DISCOVERY_SCRIPT.is_file()
     assert DISCOVERY_RULE.is_file()
     assert REVIEW_SYNTHESIS_COMMAND.is_file()
     assert "`eligible`" in DISCOVERY_RULE.read_text(encoding="utf-8")
     assert "`eligible`" in REVIEW_SYNTHESIS_COMMAND.read_text(encoding="utf-8")
+    assert "AGENT_CREW_REVIEW_LENS_MANIFEST" in DISCOVERY_RULE.read_text(encoding="utf-8")
+    assert "codex-system-review" in REVIEW_SYNTHESIS_COMMAND.read_text(encoding="utf-8")
 
 
 def test_review_synthesis_reports_findings_as_triage_candidates() -> None:

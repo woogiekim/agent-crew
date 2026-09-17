@@ -83,7 +83,7 @@ fi
 # ── Claude global paths ───────────────────────────────────────────────────────
 if [ -d "${CLAUDE_DIR}/agent-crew" ]; then
   printf '[update-global-adapters] Updating Claude global paths → %s/agent-crew/\n' "${CLAUDE_DIR}"
-  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" SOURCE_ROOT="${SOURCE_ROOT}" \
+  AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" AGENT_CREW_WRITE_CAPABILITIES=0 SOURCE_ROOT="${SOURCE_ROOT}" \
     bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null 2>&1 || \
     printf '[update-global-adapters] WARNING: Claude adapter returned non-zero (continuing)\n' >&2
 else
@@ -97,6 +97,7 @@ CODEX_AGENTS_DIR="${CODEX_HOME}/agents"
 CODEX_AGENT_GENERATOR="${SOURCE_DIR}/scripts/generate-codex-system-agents.py"
 CODEX_USER_AGENT_GENERATOR="${SOURCE_DIR}/scripts/generate-codex-user-agents.py"
 CODEX_TEMPLATE_DIR="${ADAPTERS_DIR}/codex/template"
+CODEX_MODEL_POLICY="${AGENT_CREW_CODEX_MODEL_POLICY:-${ADAPTERS_DIR}/codex/model-policy.json}"
 
 prune_and_copy_dir() {
   local src="$1" dest="$2"
@@ -500,7 +501,8 @@ if [ -d "${ADAPTERS_DIR}/codex/template/agents" ]; then
     python3 "${CODEX_AGENT_GENERATOR}" \
       "${SOURCE_DIR}/agents" \
       "${tmp_agents}" \
-      --source-ref-root "${AGENT_CREW_HOME}/system/agents" >/dev/null
+      --source-ref-root "${AGENT_CREW_HOME}/system/agents" \
+      --model-policy "${CODEX_MODEL_POLICY}" >/dev/null
     sync_codex_managed_agents "${tmp_agents}" "${CODEX_AGENTS_DIR}"
     rm -rf "${tmp_agents}"
   else

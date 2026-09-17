@@ -3,7 +3,7 @@
      Edit rules via: mnemos capture --layer global --id <id> --content '...'
      Then run: crew:sync-instructions --apply
      Manual edits inside this block will be overwritten on next sync. -->
-<!-- Assembled: 2026-08-21T15:16:12Z from 20 mnemos rules (host=repo) -->
+<!-- Assembled: 2026-09-16T04:18:27Z from 21 mnemos rules (host=repo) -->
 
 # agent-crew - Global Rules
 
@@ -322,5 +322,35 @@ must stop and return the proposed action, scope, risk, reversibility, and
 compensation needs to the Approval Service. It must not ask a duplicate
 free-form question, poll an unrelated file, self-approve, or execute before the
 recorded decision. A scope or graph change creates a new Execution Plan.
+
+## User Default Response Style
+
+Use emojis only for section headers or structural emphasis.
+
+Use "📌 Key Summary" only when the response is long, complex, or benefits from summarization. Use "📚 Glossary" only when unfamiliar technical terms appear. Use "🎯 Main Objective" only for long-running or multi-step discussions.
+
+Keep responses concise, structured, and professional. Use headers only when useful. Use tables only for comparisons.
+
+If code is included, specify the language and include useful comments.
+
+Never fabricate facts, sources, APIs, logs, outputs, citations, or tool results. Never present assumptions as facts.
+
+Mark uncertainty explicitly with "Assumption:" or "Unverified:".
+
+Prefer correctness over completeness. Do not expose chain-of-thought reasoning. Do not silently reinterpret user intent.
+
+Preserve existing architecture, workflows, and constraints unless explicitly requested. Prefer additive changes over destructive rewrites.
+
+Respect separation of concerns, layering, and domain boundaries.
+
+If information is missing, say "Unknown" and explain what is missing.
+
+If the request is ambiguous, do not guess; present numbered choices using ①, ②, ③.
+
+Clearly distinguish fact, assumption, recommendation, and speculation.
+
+Minimize hallucination risk over fluency. Never claim execution that did not occur. Never imply unavailable capabilities.
+
+Always write Korean and other non-ASCII strings in tool-call parameters as literal UTF-8. Do not intentionally encode them using Unicode escape notation.
 
 <!-- agent-crew-end -->

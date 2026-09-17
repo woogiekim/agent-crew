@@ -377,6 +377,7 @@ install_system_agents_codex() {
   local system_agents_dir="${AGENT_CREW_HOME}/system/agents"
   local dest_dir="${CODEX_HOME}/agents"
   local generator=""
+  local model_policy=""
 
   [ -d "${system_agents_dir}" ] || return 0
   mkdir -p "${dest_dir}"
@@ -396,9 +397,24 @@ install_system_agents_codex() {
     return 1
   fi
 
+  for candidate in \
+    "${AGENT_CREW_CODEX_MODEL_POLICY:-}" \
+    "${SOURCE_ROOT:-}/adapters/codex/model-policy.json" \
+    "${AGENT_CREW_HOME}/adapters/codex/model-policy.json"; do
+    if [ -n "${candidate}" ] && [ -f "${candidate}" ]; then
+      model_policy="${candidate}"
+      break
+    fi
+  done
+
   local tmp_agents
   tmp_agents="$(mktemp -d)"
-  python3 "${generator}" "${system_agents_dir}" "${tmp_agents}" >/dev/null
+  if [ -n "${model_policy}" ]; then
+    python3 "${generator}" "${system_agents_dir}" "${tmp_agents}" \
+      --model-policy "${model_policy}" >/dev/null
+  else
+    python3 "${generator}" "${system_agents_dir}" "${tmp_agents}" >/dev/null
+  fi
   printf '[generate-codex-system-agents] %s system agent(s) converted to TOML in %s\n' \
     "$(find "${tmp_agents}" -maxdepth 1 -name '*.toml' 2>/dev/null | wc -l | tr -d ' ')" \
     "${dest_dir}"
@@ -780,6 +796,7 @@ else
   STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 fi
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
+REVIEW_LENSES_FILE="${STATE_DIR}/review-lenses.json"
 if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   mkdir -p "${STATE_DIR}"
   cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
@@ -796,9 +813,33 @@ if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   "hook_system": false
 }
 CAPS_EOF
+  cat > "${REVIEW_LENSES_FILE}" <<LENSES_EOF
+{
+  "lenses": [
+    {
+      "lens_id": "codex-system-review",
+      "name": "Codex system review",
+      "provider": "codex",
+      "surface": "host-native",
+      "read_only": true,
+      "mutates": false,
+      "default_enabled": true,
+      "requires_mr": "optional",
+      "requires_remote_read": "none",
+      "requires_supervisor_context": false,
+      "timeout_seconds": 120,
+      "duplicate_group": "ai-system-review",
+      "path": "${CODEX_HOME}/skills/.system/review-agent/SKILL.md",
+      "runner": "codex-system-skill",
+      "result_source_label": "source_lens=codex-system-review"
+    }
+  ]
+}
+LENSES_EOF
 fi
 
 printf 'HOST: codex\n'
 printf 'INSTALLED: %s\n' "${CODEX_HOME}"
 printf 'CAPABILITIES: %s\n' "${CAPABILITIES_FILE}"
+printf 'REVIEW_LENSES: %s\n' "${REVIEW_LENSES_FILE}"
 run_codex_shell_startup_preflight

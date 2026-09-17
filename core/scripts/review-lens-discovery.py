@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 from typing import Iterable
@@ -87,6 +88,16 @@ def metadata_value(metadata: dict[str, str], key: str, default: str = "") -> str
     return metadata.get(key.replace("-", "_"), default).strip()
 
 
+def manifest_bool(item: dict[str, object], key: str, *, default: bool) -> bool:
+    value = item.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return as_bool(value, default=default)
+
+    return default
+
+
 def iter_markdown_files(roots: Iterable[Path]) -> Iterable[Path]:
     seen: set[Path] = set()
     for root in roots:
@@ -150,6 +161,96 @@ def classify_lens(
     return "eligible", "eligible_read_only_lens"
 
 
+def lens_from_metadata(path: Path, metadata: dict[str, str]) -> dict[str, object]:
+    lens_id = metadata_value(metadata, "lens_id") or metadata_value(metadata, "name") or path.stem
+
+    return {
+        "lens_id": lens_id,
+        "name": metadata_value(metadata, "name", lens_id),
+        "provider": metadata_value(metadata, "provider", "unknown"),
+        "surface": metadata_value(metadata, "surface", "unknown"),
+        "path": str(path),
+        "read_only": as_bool(metadata_value(metadata, "read_only"), default=False),
+        "mutates": as_bool(metadata_value(metadata, "mutates"), default=True),
+        "default_enabled": as_bool(metadata_value(metadata, "default_enabled"), default=False),
+        "requires_mr": metadata_value(metadata, "requires_mr", "none"),
+        "requires_remote_read": metadata_value(metadata, "requires_remote_read", "none"),
+        "requires_supervisor_context": as_bool(
+            metadata_value(metadata, "requires_supervisor_context"),
+            default=False,
+        ),
+        "timeout_seconds": metadata_value(metadata, "timeout_seconds", "120"),
+        "duplicate_group": metadata_value(metadata, "duplicate_group", lens_id),
+    }
+
+
+def lens_from_manifest_item(item: object, manifest_path: Path) -> dict[str, object]:
+    if not isinstance(item, dict):
+        raise ValueError("host lens manifest entries must be objects")
+
+    lens_id = str(item.get("lens_id") or item.get("name") or "").strip()
+    if not lens_id:
+        raise ValueError("host lens manifest entry missing lens_id")
+
+    lens = {
+        "lens_id": lens_id,
+        "name": str(item.get("name") or lens_id).strip(),
+        "provider": str(item.get("provider") or "unknown").strip(),
+        "surface": str(item.get("surface") or "host-native").strip(),
+        "path": str(item.get("path") or manifest_path),
+        "read_only": manifest_bool(item, "read_only", default=False),
+        "mutates": manifest_bool(item, "mutates", default=True),
+        "default_enabled": manifest_bool(item, "default_enabled", default=False),
+        "requires_mr": str(item.get("requires_mr") or "none").strip(),
+        "requires_remote_read": str(item.get("requires_remote_read") or "none").strip(),
+        "requires_supervisor_context": manifest_bool(
+            item,
+            "requires_supervisor_context",
+            default=False,
+        ),
+        "timeout_seconds": str(item.get("timeout_seconds") or "120").strip(),
+        "duplicate_group": str(item.get("duplicate_group") or lens_id).strip(),
+    }
+    for optional_key in ("runner", "result_source_label"):
+        value = str(item.get(optional_key) or "").strip()
+        if value:
+            lens[optional_key] = value
+
+    return lens
+
+
+def degraded_host_manifest_lens(manifest_path: Path, reason: str) -> dict[str, object]:
+    return {
+        "lens_id": "host-lens-manifest",
+        "name": "host lens manifest",
+        "provider": "unknown",
+        "surface": "host-native",
+        "path": str(manifest_path),
+        "read_only": True,
+        "mutates": False,
+        "default_enabled": False,
+        "requires_mr": "none",
+        "requires_remote_read": "none",
+        "requires_supervisor_context": False,
+        "timeout_seconds": "120",
+        "duplicate_group": "host-lens-manifest",
+        "status": "degraded",
+        "reason": reason,
+    }
+
+
+def read_host_lens_manifest(path: Path) -> list[dict[str, object]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw_lenses = payload.get("lenses", payload) if isinstance(payload, dict) else payload
+        if not isinstance(raw_lenses, list):
+            raise ValueError("host lens manifest must be a list or object with lenses")
+
+        return [lens_from_manifest_item(item, path) for item in raw_lenses]
+    except Exception:
+        return [degraded_host_manifest_lens(path, "host_lens_manifest_unreadable")]
+
+
 def lens_sort_key(lens: dict[str, object]) -> tuple[int, int, str]:
     return (
         PROVIDER_PRIORITY.get(str(lens["provider"]), PROVIDER_PRIORITY["unknown"]),
@@ -164,6 +265,7 @@ def discover_lenses(
     task: str,
     mr_id: str = "",
     parity_scope: str = "",
+    host_lens_manifests: Iterable[Path] = (),
 ) -> list[dict[str, object]]:
     lenses: list[dict[str, object]] = []
     for path in iter_markdown_files(roots):
@@ -176,25 +278,7 @@ def discover_lenses(
         if not is_review_lens(metadata):
             continue
 
-        lens_id = metadata_value(metadata, "lens_id") or metadata_value(metadata, "name") or path.stem
-        lens: dict[str, object] = {
-            "lens_id": lens_id,
-            "name": metadata_value(metadata, "name", lens_id),
-            "provider": metadata_value(metadata, "provider", "unknown"),
-            "surface": metadata_value(metadata, "surface", "unknown"),
-            "path": str(path),
-            "read_only": as_bool(metadata_value(metadata, "read_only"), default=False),
-            "mutates": as_bool(metadata_value(metadata, "mutates"), default=True),
-            "default_enabled": as_bool(metadata_value(metadata, "default_enabled"), default=False),
-            "requires_mr": metadata_value(metadata, "requires_mr", "none"),
-            "requires_remote_read": metadata_value(metadata, "requires_remote_read", "none"),
-            "requires_supervisor_context": as_bool(
-                metadata_value(metadata, "requires_supervisor_context"),
-                default=False,
-            ),
-            "timeout_seconds": metadata_value(metadata, "timeout_seconds", "120"),
-            "duplicate_group": metadata_value(metadata, "duplicate_group", lens_id),
-        }
+        lens = lens_from_metadata(path, metadata)
         status, reason = classify_lens(
             lens,
             task=task,
@@ -204,6 +288,22 @@ def discover_lenses(
         lens["status"] = status
         lens["reason"] = reason
         lenses.append(lens)
+
+    for manifest in host_lens_manifests:
+        for lens in read_host_lens_manifest(manifest):
+            if lens.get("status") == "degraded":
+                lenses.append(lens)
+                continue
+
+            status, reason = classify_lens(
+                lens,
+                task=task,
+                mr_id=mr_id,
+                parity_scope=parity_scope,
+            )
+            lens["status"] = status
+            lens["reason"] = reason
+            lenses.append(lens)
 
     lenses.sort(key=lens_sort_key)
 
@@ -228,17 +328,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", default="")
     parser.add_argument("--mr-id", default="")
     parser.add_argument("--parity-scope", default="")
+    parser.add_argument("--host-lens-manifest", action="append", type=Path, default=[])
     parser.add_argument("--format", choices=("json", "text"), default="json")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    host_lens_manifests = list(args.host_lens_manifest)
+    env_manifest = os.environ.get("AGENT_CREW_REVIEW_LENS_MANIFEST", "").strip()
+    if env_manifest:
+        host_lens_manifests.append(Path(env_manifest))
+
     lenses = discover_lenses(
         args.root,
         task=args.task,
         mr_id=args.mr_id,
         parity_scope=args.parity_scope,
+        host_lens_manifests=host_lens_manifests,
     )
     payload = {
         "schema_version": "agent-crew.review-lens-discovery.v1",

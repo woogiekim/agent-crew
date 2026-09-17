@@ -19,14 +19,17 @@ out=$(HOME="${HOME_T}" AGENT_CREW_HOME="${ACHOME}" CLAUDE_DIR="${HOME_T}/.claude
 rc=$?
 assert_exit 0 "${rc}"
 
-it "parity commands install to user and discovery command paths"
+it "user commands install to user and discovery command paths"
 assert_file_exists "${ACHOME}/user/commands/parity-check.md"
 assert_file_exists "${ACHOME}/user/commands/parity-implement.md"
+assert_file_exists "${ACHOME}/user/commands/smoke-test.md"
 assert_file_exists "${ACHOME}/commands/parity-check.md"
 assert_file_exists "${ACHOME}/commands/parity-implement.md"
+assert_file_exists "${ACHOME}/commands/smoke-test.md"
 
-it "parity commands are not installed as system commands"
+it "user commands are not installed as system commands"
 assert_file_absent "${ACHOME}/system/commands/parity-check.md"
 assert_file_absent "${ACHOME}/system/commands/parity-implement.md"
+assert_file_absent "${ACHOME}/system/commands/smoke-test.md"
 
 end_report

@@ -6,17 +6,18 @@ Each system agent declares the abstract compute tier it benefits from
 via the `reasoning_tier` field in its frontmatter. The vocabulary is
 provider-neutral — `xhigh`, `deep`, `balanced`, `light` — describing the
 character of the work, not a specific model. Host adapters translate
-the abstract tier into a concrete model assignment when they install
-agent definitions into the host's discovery path. This keeps `core/`
+the abstract tier into host-supported reasoning settings when they install
+agent definitions into the host's discovery path. Adapters may also apply an
+explicit local model override policy, but otherwise inherit the host model.
+This keeps `core/`
 free of any vendor's model identifier (Invariant 3) while still letting
 each adapter route an agent's workload to the cost/quality point that
 fits the agent's role.
 
 This capability is **install-time only**. There is no `capabilities.json`
 flag and no runtime gating. The supervisor and other core consumers do
-not consult `reasoning_tier` at execution time — they only ever read
-`model:` from the installed agent file, which the adapter has already
-materialized.
+not consult `reasoning_tier` at execution time; installed host agent files
+already contain the reasoning setting and any explicit model override.
 
 ## Tier vocabulary
 
@@ -37,25 +38,22 @@ Unlike runtime capabilities, this one has no `capabilities.json` flag.
 An adapter implements `reasoning_tier` by performing two install-time
 duties:
 
-1. **Tier-to-model mapping table.** The adapter MUST define an internal
-   mapping from `{xhigh, deep, balanced, light}` to its host's model
-   identifiers. Where the adapter ships this mapping is up to the
-   adapter (a constant in `setup.sh`, a separate config file, etc.).
-   The mapping MUST be hermetic to the adapter — `core/` MUST NOT see
-   any host-specific model name.
+1. **Tier-to-reasoning mapping.** The adapter MUST define how
+   `{xhigh, deep, balanced, light}` maps to its host's reasoning controls.
+   A concrete tier-to-model policy is optional and MUST remain hermetic to
+   the adapter — `core/` MUST NOT see any host-specific model name.
 
 2. **Frontmatter materialization.** During `setup.sh`, after the
    adapter has copied agent files into the host's discovery path, the
    adapter MUST walk each installed agent file, read its
-   `reasoning_tier` field, look up the corresponding model in the
-   mapping table, and rewrite the `model:` line with the resolved
-   value. Source files under `core/agents/` MUST be left unchanged
-   (they keep `model: inherit`).
+   `reasoning_tier` field, look up the corresponding tier in the adapter
+   mapping, and materialize the host reasoning control. It writes a
+   concrete model only when the adapter-local override policy supplies one;
+   otherwise the installed agent inherits the host model. Source files under
+   `core/agents/` MUST be left unchanged (they keep `model: inherit`).
 
-Adapters whose host does not support per-agent model assignment MAY
-skip step 2; the abstract tier is then ignored and the host's default
-model applies to every agent. The adapter SHOULD document this in its
-`invocation.md` so operators know the tier declarations have no effect.
+Adapters whose host does not support per-agent reasoning controls MAY skip
+step 2; the abstract tier is then advisory and the host defaults apply.
 
 ## Consumer Contract (core)
 
@@ -96,7 +94,7 @@ host's default model if a host ever discovers them directly.
 | Adapter | Mapping | Notes |
 |---|---|---|
 | claude  | `xhigh → claude-fable-5`, `deep → claude-opus-4-8`, `balanced → claude-sonnet-5`, `light → claude-haiku-4-5` | Materializer runs after `merge_agents_to_discovery`; rewrites `~/.claude/agents/*.md` with concrete model IDs. |
-| codex   | `xhigh → model="gpt-5.5", model_reasoning_effort="xhigh"`, `deep → model="gpt-5.5", effort="high"`, `balanced → model="gpt-5.4", effort="medium"`, `light → model="gpt-5.4-mini", effort="low"` | Codex custom agents support per-agent `model`, `model_reasoning_effort`, `sandbox_mode`, and related config keys. The adapter maps system-agent abstract tiers to Codex-supported concrete model IDs and reasoning effort, while preserving user-specified concrete model keys. |
+| codex   | `xhigh → effort="xhigh"`, `deep → effort="high"`, `balanced → effort="medium"`, `light → effort="low"` | System agents inherit the Codex host model by default. Optional overrides live only in `adapters/codex/model-policy.json`; user-specified concrete model keys remain untouched. |
 | generic | none — single-model environment | Leaves `model: inherit` (or absent equivalent) untouched. Tier declarations have no install-time effect. |
 
 ## Related Files
@@ -105,10 +103,10 @@ Producer (install-time):
 
 - `adapters/claude/setup.sh` — Claude materializer (rewrites
   `~/.claude/agents/*.md`)
-- `adapters/codex/setup.sh` and
+- `adapters/codex/setup.sh`, `adapters/codex/model-policy.json`, and
   `core/scripts/generate-codex-system-agents.py` — Codex (maps system-agent
-  tiers to `model` and `model_reasoning_effort`; preserves user-owned concrete
-  model keys)
+  tiers to `model_reasoning_effort`, optionally applies central model overrides,
+  and preserves user-owned concrete model keys)
 - `adapters/generic/setup.sh` — no-op
 
 Consumer (none at runtime). The field is purely declarative for

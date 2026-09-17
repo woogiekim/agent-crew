@@ -305,6 +305,7 @@ else
   STATE_DIR="${AGENT_CREW_HOME}/state/${PROJECT_NAME}"
 fi
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
+REVIEW_LENSES_FILE="${STATE_DIR}/review-lenses.json"
 if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   mkdir -p "${STATE_DIR}"
   cat > "${CAPABILITIES_FILE}" <<'CAPS_EOF'
@@ -317,6 +318,29 @@ if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   "hook_system": true
 }
 CAPS_EOF
+  cat > "${REVIEW_LENSES_FILE}" <<LENSES_EOF
+{
+  "lenses": [
+    {
+      "lens_id": "claude-system-review",
+      "name": "Claude system review",
+      "provider": "claude",
+      "surface": "host-native",
+      "read_only": true,
+      "mutates": false,
+      "default_enabled": true,
+      "requires_mr": "optional",
+      "requires_remote_read": "none",
+      "requires_supervisor_context": false,
+      "timeout_seconds": 120,
+      "duplicate_group": "ai-system-review",
+      "path": "${CLAUDE_DIR}/commands/review-synthesis.md",
+      "runner": "claude-current-session-review",
+      "result_source_label": "source_lens=claude-system-review"
+    }
+  ]
+}
+LENSES_EOF
 fi
 
 # Register Agent diff PreToolUse/PostToolUse hooks into Claude settings.json
@@ -742,3 +766,4 @@ printf 'HOST: claude\n'
 printf 'PROJECT_ROOT: %s\n' "${PROJECT_ROOT}"
 printf 'INSTALLED: %s\n' "${CLAUDE_DIR}"
 printf 'CAPABILITIES: %s\n' "${CAPABILITIES_FILE}"
+printf 'REVIEW_LENSES: %s\n' "${REVIEW_LENSES_FILE}"

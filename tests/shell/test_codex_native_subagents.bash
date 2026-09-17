@@ -148,8 +148,8 @@ assert_contains "${setup_config_out}" "max_depth = 1"
 it "Codex setup maps xhigh system agents to xhigh effort"
 assert_contains "$(cat "${codex_home}/agents/analyst.toml")" 'model_reasoning_effort = "xhigh"'
 
-it "Codex setup maps xhigh system agents to Codex frontier model"
-assert_contains "$(cat "${codex_home}/agents/analyst.toml")" 'model = "gpt-5.5"'
+it "Codex setup lets xhigh system agents inherit the host model"
+assert_not_contains "$(cat "${codex_home}/agents/analyst.toml")" 'model ='
 
 it "Codex setup does not install project-local hook files"
 assert_file_absent "${setup_repo}/.codex/hooks/tool-event-recorder.sh"
@@ -172,8 +172,8 @@ assert_file_exists "${ac_home}/hooks/custom-local-hook.sh"
 it "Codex setup maps deep implementation agents to high effort"
 assert_contains "$(cat "${codex_home}/agents/backend.toml")" 'model_reasoning_effort = "high"'
 
-it "Codex setup maps deep implementation agents to Codex frontier model"
-assert_contains "$(cat "${codex_home}/agents/backend.toml")" 'model = "gpt-5.5"'
+it "Codex setup lets deep implementation agents inherit the host model"
+assert_not_contains "$(cat "${codex_home}/agents/backend.toml")" 'model ='
 
 it "Codex setup does not install removed input normalizer agents"
 if [ -e "${codex_home}/agents/input-normalizer.toml" ] || [ -e "${codex_home}/agents/korean-normalizer.toml" ]; then

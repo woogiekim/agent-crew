@@ -36,6 +36,31 @@ def test_parity_wrappers_and_commands_ship_together():
     assert not (COMMAND_ROOT / "parity-implement.md").exists()
 
 
+def test_smoke_test_wrapper_and_user_command_ship_together():
+    wrapper = (SKILL_ROOT / "smoke-test" / "SKILL.md").read_text(encoding="utf-8")
+    command = (USER_COMMAND_ROOT / "smoke-test.md").read_text(encoding="utf-8")
+
+    assert "~/.agent-crew/commands/smoke-test.md" in wrapper
+    assert "$smoke-test" in wrapper
+    assert "IntelliJ `.http`" in wrapper
+    assert "local project server" in wrapper
+    assert "Docker" in wrapper
+    assert "devstack" not in wrapper.lower()
+    assert "dev stack" not in wrapper.lower()
+    assert "devstack" not in command.lower()
+    assert "dev stack" not in command.lower()
+    assert (USER_COMMAND_ROOT / "smoke-test.md").is_file()
+    assert not (COMMAND_ROOT / "smoke-test.md").exists()
+
+
+def test_smoke_test_artifacts_are_named_by_feature_not_issue_identifier():
+    command = (USER_COMMAND_ROOT / "smoke-test.md").read_text(encoding="utf-8")
+
+    assert "FEATURE_NAME" in command
+    assert "smoke-<feature-name>-<timestamp>.md" in command
+    assert "Do not include issue, ticket, MR, PR, branch, or commit identifiers" in command
+
+
 def test_review_synthesis_wrapper_uses_effective_command_path():
     wrapper = (SKILL_ROOT / "review-synthesis" / "SKILL.md").read_text(
         encoding="utf-8"
@@ -44,6 +69,19 @@ def test_review_synthesis_wrapper_uses_effective_command_path():
     assert "~/.agent-crew/commands/review-synthesis.md" in wrapper
     assert "~/.agent-crew/user/commands/review-synthesis.md" not in wrapper
     assert (USER_COMMAND_ROOT / "review-synthesis.md").is_file()
+
+
+def test_review_synthesis_wrapper_loads_codex_system_review_agent_as_lens():
+    wrapper = (SKILL_ROOT / "review-synthesis" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "~/.codex/skills/.system/review-agent/SKILL.md" in wrapper
+    assert "codex-system-review" in wrapper
+    assert "source_lens=codex-system-review" in wrapper
+    assert "load it in full" in wrapper
+    assert "read-only" in wrapper
+    assert "Do not directly invoke the system `reviewer` agent" in wrapper
 
 
 def test_parity_check_preserves_explicit_repository_and_mode_resolution():

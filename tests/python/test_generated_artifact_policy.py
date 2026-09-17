@@ -33,3 +33,21 @@ def test_readme_documents_generated_artifact_policy():
     assert "Host-generated project artifacts" in text
     assert "should remain uncommitted" in text
     assert "registered in `.git/info/exclude` during setup" in text
+
+
+def test_crew_worktrees_are_not_tracked_gitignore_policy():
+    text = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert ".crew-worktrees/" not in text.splitlines()
+
+
+def test_worktree_guard_docs_do_not_mutate_repo_gitignore():
+    for path in (
+        REPO_ROOT / "core" / "commands" / "run.md",
+        REPO_ROOT / "core" / "agents" / "supervisor-stages.md",
+    ):
+        text = path.read_text(encoding="utf-8")
+
+        assert "GITIGNORE_PATH" not in text
+        assert "git -C \"${PROJECT_ROOT}\" add .gitignore" not in text
+        assert "chore(repo): ignore .crew-worktrees harness directory" not in text

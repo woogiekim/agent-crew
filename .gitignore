@@ -2,16 +2,12 @@
 .agent-crew/
 .codex/
 .claude/
-.crew-worktrees/
 .crew_task_id
 
 # Dot-prefixed directories (catch-all)
 .*/
 !.claude-plugin/
 !.claude-plugin/plugin.json
-
-# Generated worktrees
-.crew-worktrees/
 
 # Build outputs
 build/

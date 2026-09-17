@@ -40,8 +40,8 @@ assert_not_contains "${codex_setup}" '${HOME}/.codex/agent-crew/skills' "dry-run
 it "Codex setup registers automatic issue reporter hooks"
 assert_contains "${codex_setup}" "auto-issue-report.sh" "Codex hooks must route agent-crew bug reports"
 
-it "Codex setup prunes managed global hook duplicates"
-assert_contains "${codex_setup}" "prune-codex-global-hooks.py" "Codex setup must remove legacy global agent-crew hook duplicates"
+it "Codex setup prunes managed global hook duplicates during merge"
+assert_contains "${codex_setup}" "prune_managed_hooks" "Codex setup must remove legacy global agent-crew hook duplicates"
 
 it "Claude setup registers automatic issue reporter hooks"
 claude_setup=$(cat "${REPO_ROOT}/adapters/claude/setup.sh")
@@ -53,6 +53,10 @@ assert_contains "${update_doc}" 'AGENT_CREW_SOURCE_DIR="${SOURCE_ROOT}"' "instal
 
 it "crew:update install pass skips Claude compatibility before project-local setup"
 assert_contains "${update_doc}" "AGENT_CREW_INSTALL_CLAUDE_COMPAT=0" "global hook registration must not clobber project capabilities"
+
+it "update-global-adapters skips Claude project capability writes"
+update_global_adapters=$(cat "${REPO_ROOT}/core/scripts/update-global-adapters.sh")
+assert_contains "${update_global_adapters}" "AGENT_CREW_WRITE_CAPABILITIES=0" "Claude global adapter refresh must not clobber active project capabilities"
 
 it "crew:update no longer documents the broken core/core source path"
 assert_not_contains "${update_doc}" 'AGENT_CREW_SOURCE_DIR="${SOURCE_DIR}"' "SOURCE_DIR points at core/ and makes install.sh look for core/core"

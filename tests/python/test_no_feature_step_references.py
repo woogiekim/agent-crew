@@ -26,6 +26,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 THIS_FILE = Path(__file__).resolve()
+LEGACY_FINGERPRINT_FILE = REPO_ROOT / "core" / "scripts" / "project-local-asset-fingerprints.json"
 
 EXCLUDED_DIR_NAMES = {".git", ".crew-worktrees", "dist", "node_modules", ".pytest_cache"}
 
@@ -43,6 +44,11 @@ def _iter_repo_files():
         # banned tokens (as string constants and in this docstring) in order
         # to check for them, so it would otherwise never be able to pass.
         if path.resolve() == THIS_FILE:
+            continue
+        # Migration fingerprints intentionally retain historical blob paths so
+        # old project-local feature-step mirrors can still be recognized and
+        # removed after the command rename.
+        if path.resolve() == LEGACY_FINGERPRINT_FILE:
             continue
         relative_parts = path.relative_to(REPO_ROOT).parts[:-1]
         if any(part in EXCLUDED_DIR_NAMES for part in relative_parts):

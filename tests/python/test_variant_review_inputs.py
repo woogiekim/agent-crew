@@ -141,5 +141,7 @@ def test_new_run_records_synthesis_contract_and_pinned_base(v2, tmp_path):
         assert collector.load_json(Path(task["task_dir"]) / "pipeline.json")["planning_required"] is True
     assert session["base_task"] == "원문 그대로"
     assert "crew variants resume" in result.stdout
+    assert not (base / ".gitignore").exists()
+    assert ".crew-worktrees/" in (base / ".git/info/exclude").read_text(encoding="utf-8").splitlines()
     for task in session["tasks"]:
         assert git(task["project_root"], "rev-parse", "HEAD") == session["pre_run_head"]

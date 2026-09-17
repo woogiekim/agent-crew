@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "generate-codex-system-agents.py"
+DEFAULT_POLICY = REPO_ROOT / "adapters" / "codex" / "model-policy.json"
 
 
 def load_generator_module():
@@ -23,6 +24,12 @@ def test_parse_frontmatter_returns_empty_for_plain_markdown():
     module = load_generator_module()
 
     assert module.parse_frontmatter("# Plain Agent\n\nNo frontmatter.\n") == {}
+
+
+def test_default_policy_inherits_host_models():
+    module = load_generator_module()
+
+    assert module.load_model_policy(DEFAULT_POLICY) == {}
 
 
 def test_generate_codex_system_agents_rejects_missing_source_dir(tmp_path: Path):
@@ -41,8 +48,7 @@ def test_generate_codex_system_agents_rejects_missing_source_dir(tmp_path: Path)
     assert "source_dir not found" in result.stderr
 
 
-def test_render_toml_materializes_model_from_reasoning_tier(tmp_path: Path):
-    # given
+def test_render_toml_inherits_host_model_by_default(tmp_path: Path):
     module = load_generator_module()
     agent = tmp_path / "analyst.md"
     agent.write_text(
@@ -58,42 +64,51 @@ model: inherit
         encoding="utf-8",
     )
 
-    # when
     _, content = module.render_toml(agent)
 
-    # then
-    assert 'model = "gpt-5.5"' in content
-    assert "claude-fable-5" not in content
+    assert "model =" not in content
     assert 'model_reasoning_effort = "xhigh"' in content
 
 
-def test_render_toml_materializes_all_supported_tier_models(tmp_path: Path):
-    # given
+def test_render_toml_materializes_explicit_policy_override(tmp_path: Path):
     module = load_generator_module()
-    expected_models = {
-        "xhigh": "gpt-5.5",
-        "deep": "gpt-5.5",
-        "balanced": "gpt-5.4",
-        "light": "gpt-5.4-mini",
-    }
-
-    for tier, expected_model in expected_models.items():
-        agent = tmp_path / f"{tier}.md"
-        agent.write_text(
-            f"""---
-name: {tier}
-description: {tier} agent.
-reasoning_tier: {tier}
+    policy = tmp_path / "model-policy.json"
+    policy.write_text(
+        '{"schema_version": 1, "models": {"xhigh": "gpt-frontier"}}\n',
+        encoding="utf-8",
+    )
+    agent = tmp_path / "analyst.md"
+    agent.write_text(
+        """---
+name: analyst
+description: Analyze code.
+reasoning_tier: xhigh
 model: inherit
 ---
 
-# {tier}
+# Analyst
 """,
-            encoding="utf-8",
-        )
+        encoding="utf-8",
+    )
 
-        # when
-        _, content = module.render_toml(agent)
+    model_policy = module.load_model_policy(policy)
+    _, content = module.render_toml(agent, model_policy=model_policy)
 
-        # then
-        assert f'model = "{expected_model}"' in content
+    assert 'model = "gpt-frontier"' in content
+    assert 'model_reasoning_effort = "xhigh"' in content
+
+
+def test_load_model_policy_rejects_unknown_tier(tmp_path: Path):
+    module = load_generator_module()
+    policy = tmp_path / "model-policy.json"
+    policy.write_text(
+        '{"schema_version": 1, "models": {"turbo": "gpt-frontier"}}\n',
+        encoding="utf-8",
+    )
+
+    try:
+        module.load_model_policy(policy)
+    except ValueError as error:
+        assert "unknown model policy tier: turbo" in str(error)
+    else:
+        raise AssertionError("unknown model policy tier must be rejected")

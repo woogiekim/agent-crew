@@ -217,7 +217,7 @@ each, decide: does my host expose the required surface (see
 | `cost_tracking` | runtime | Some way to report per-call token totals | No cost data; quality-loop uses retry-count only |
 | `hook_system` | runtime | PreToolUse / PostToolUse hook registration | Model-side guidance only |
 | `interactive_question` | runtime | `askQuestion(prompt, options) -> chosen` | Structured markdown prompt; model interprets reply |
-| `reasoning_tier` | install-time | `setup.sh` materializes the abstract tier (`deep`/`balanced`/`light`) to a concrete host model identifier | Single-model environment — tier hint is advisory only |
+| `reasoning_tier` | install-time | `setup.sh` materializes the abstract tier (`deep`/`balanced`/`light`) to host reasoning controls and may apply an adapter-local model override | Single-model environment — tier hint is advisory only |
 
 **You MUST only declare `true` for capabilities your host genuinely
 exposes.** Declaring `true` falsely will break core's gated paths.
@@ -227,10 +227,10 @@ absence-contract treats every flag as `false`. That is the floor of
 what works.
 
 `reasoning_tier` does NOT appear in `capabilities.json`. It is honored
-by your `setup.sh` only — the materializer block writes per-agent
-model identifiers into your host's preferred format (e.g., the Claude
-adapter rewrites the `model:` frontmatter; the Codex adapter sets a
-TOML field). See `core/rules/capabilities/reasoning-tier.md`.
+by your `setup.sh` only. The Claude adapter rewrites `model:` frontmatter;
+the Codex adapter writes `model_reasoning_effort` while inheriting the host
+model unless its adapter-local policy explicitly overrides one. See
+`core/rules/capabilities/reasoning-tier.md`.
 
 ## Wiring core/scripts/
 

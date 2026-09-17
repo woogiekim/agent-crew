@@ -31,10 +31,49 @@ requires_supervisor_context: false
 default_enabled: true
 timeout_seconds: 120
 duplicate_group: semantic-review-family
+runner: optional-host-runner-id
+result_source_label: source_lens=stable-id
 ```
 
 Host adapters may expose provider-native lenses through the same contract. Core
 commands must not call provider-specific review tools without this declaration.
+
+Host adapters that expose provider-native lenses without markdown files may
+write a JSON manifest and pass its path to discovery with
+`--host-lens-manifest`, or set `AGENT_CREW_REVIEW_LENS_MANIFEST` for the
+current command invocation. A host adapter may also write a well-known
+`${STATE_DIR}/review-lenses.json` manifest and instruct its command wrapper to
+pass that path to discovery. The manifest is a list, or an object with a
+`lenses` list, whose entries use the same metadata keys. Discovery classifies
+those entries with the same safety filter as markdown lenses.
+
+Example host-native AI system review lens:
+
+```json
+{
+  "lenses": [
+    {
+      "lens_id": "codex-system-review",
+      "name": "Codex system review",
+      "provider": "codex",
+      "surface": "host-native",
+      "read_only": true,
+      "mutates": false,
+      "requires_mr": "optional",
+      "requires_remote_read": "none",
+      "requires_supervisor_context": false,
+      "default_enabled": true,
+      "timeout_seconds": 120,
+      "duplicate_group": "ai-system-review",
+      "runner": "codex-system-skill",
+      "result_source_label": "source_lens=codex-system-review"
+    }
+  ]
+}
+```
+
+If the manifest cannot be read or parsed, discovery reports a degraded
+`host-lens-manifest` lens instead of failing the whole synthesis.
 
 ## Status Values
 
