@@ -391,14 +391,14 @@ eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
 SESSION_FILE="${STATE_DIR}/session.json"
 ```
 
-**Setup guard (pre-injection)**: Before reading `session.json`, verify that the
-project has been initialized. If either `STATE_DIR` does not exist or
-`capabilities.json` is absent inside it, stop immediately and display this error
-(no silent failure — host adapter implementations MUST surface both lines verbatim):
+**Setup guard (pre-injection)**: Before reading `session.json`, initialize a
+completely new project through the normal host dispatcher. If `STATE_DIR`
+already exists without `capabilities.json`, treat it as partial or damaged
+state and stop for explicit recovery instead of overwriting it:
 
 ```text
-Error: Project '{PROJECT_NAME}' is not initialized.
-Run crew:setup first to initialize the workspace.
+Error: Project '{PROJECT_NAME}' has partial or damaged agent-crew state.
+Run crew:setup to recover the workspace.
 ```
 
 The `{PROJECT_NAME}` placeholder resolves to display metadata from the bash
@@ -407,10 +407,9 @@ project basenames do not collide. The guard is expressed as:
 
 ```bash
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
-if [ ! -d "${STATE_DIR}" ] || [ ! -f "${CAPABILITIES_FILE}" ]; then
-  printf 'Error: Project '\''%s'\'' is not initialized.\nRun crew:setup first to initialize the workspace.\n' \
-    "${PROJECT_NAME}"
-  return 1 2>/dev/null || exit 1
+if [ ! -f "${CAPABILITIES_FILE}" ]; then
+  bash "${AGENT_CREW_HOME}/scripts/ensure-project-initialized.sh" || \
+    return 1 2>/dev/null || exit 1
 fi
 ```
 
@@ -1221,30 +1220,25 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
   --agent-crew-home "${AGENT_CREW_HOME}" \
   --project-root "${PROJECT_ROOT}" \
-  --ensure \
-  --migrate-legacy \
+  --prefer-existing-legacy \
   --format shell)"
 ```
 
-If `STATE_DIR` does not exist **or** `${STATE_DIR}/capabilities.json` does not
-exist, stop immediately and display this error to the user (no silent failure —
-host adapter implementations MUST surface both lines verbatim):
+If `STATE_DIR` does not exist, initialize it automatically through the normal
+host dispatcher. If `STATE_DIR` already exists but
+`${STATE_DIR}/capabilities.json` does not, stop and display this recovery error:
 
 ```text
-Error: Project '{PROJECT_NAME}' is not initialized.
-Run crew:setup first to initialize the workspace.
+Error: Project '{PROJECT_NAME}' has partial or damaged agent-crew state.
+Run crew:setup to recover the workspace.
 ```
 
 The `{PROJECT_NAME}` placeholder resolves to display metadata from the bash
 block above; `STATE_DIR` uses `PROJECT_STATE_KEY`.
 
-The check covers two distinct failure modes:
-
-- `STATE_DIR` absent — `crew:setup` was never run for this project.
-- `STATE_DIR` present but `capabilities.json` absent — `crew:setup` was interrupted
-  or only partially completed (e.g., `mkdir` ran but the adapter install did not).
-
-Both conditions indicate an unconfigured project and must produce the same error.
+The initializer only handles the first-run case where `STATE_DIR` is entirely
+absent. A present directory without `capabilities.json` indicates interrupted,
+partial, or damaged state and must not be repaired implicitly.
 A `capabilities.json` that exists but is empty or unparseable is treated as
 configured (the supervisor falls back to all-false flags — this is expected
 behaviour for minimal setups, not an error).
@@ -1296,10 +1290,9 @@ The guard is expressed as:
 
 ```bash
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
-if [ ! -d "${STATE_DIR}" ] || [ ! -f "${CAPABILITIES_FILE}" ]; then
-  printf 'Error: Project '\''%s'\'' is not initialized.\nRun crew:setup first to initialize the workspace.\n' \
-    "${PROJECT_NAME}"
-  return 1 2>/dev/null || exit 1
+if [ ! -f "${CAPABILITIES_FILE}" ]; then
+  bash "${AGENT_CREW_HOME}/scripts/ensure-project-initialized.sh" || \
+    return 1 2>/dev/null || exit 1
 fi
 ```
 
