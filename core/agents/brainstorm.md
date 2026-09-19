@@ -41,6 +41,25 @@ the response. Every recommendation must distinguish observed evidence from an
 unresolved assumption. Evidence locations use `file:line` or a task-artifact
 path.
 
+## Canonical Bound Fields
+
+The following fields are approval-bound and must be emitted in `MODE=design`
+exactly as named. They are the canonical hash input; do not replace them with
+display-only design prose.
+
+- `classification`
+- `downgrade`
+- `goals`
+- `non_goals`
+- `interfaces`
+- `responsibility_boundaries`
+- `data_model`
+- `repositories`
+- `modules`
+- `security_risks`
+- `operational_risks`
+- `pipeline`
+
 ## Modes and Outputs
 
 Return exactly one `BRAINSTORM` block for the selected mode. Do not claim that
@@ -117,6 +136,17 @@ BRAINSTORM:
   mode: design
   design_path: TASK_DIR/context/brainstorm-design.md
   classification: Bounded
+  downgrade: false
+  goals: []
+  non_goals: []
+  interfaces: []
+  responsibility_boundaries: []
+  data_model: []
+  repositories: []
+  modules: []
+  security_risks: []
+  operational_risks: []
+  pipeline: []
   components: []
   data_flow: []
   error_handling: []
