@@ -60,3 +60,28 @@ Scope: `core/commands/run.md`, `core/agents/supervisor-bootstrap.md`,
 - `git diff --check`: clean.
 
 No push, merge, deployment, or other remote mutation was performed.
+
+## Second Final Fix Wave — README Runtime Alignment
+
+The user explicitly approved a second and final fix wave for the remaining
+Important README mismatch.
+
+- Scope: `README.md` and `tests/python/test_readme_runtime_alignment.py` only,
+  plus this report update.
+- RED: the new semantic and negative assertions produced 2 expected failures
+  with 24 existing README tests passing. The failures proved that the README
+  still described orchestrator-first requirements and a Supervisor handoff with
+  pre-injected `REQUIREMENTS`.
+- GREEN: the normal flow now documents immutable raw input handed directly to
+  Supervisor Phase 1a, which owns preliminary classification, classification-
+  adaptive requirements, and final classification. Orchestrator-first
+  requirements wording was removed from the normal path.
+- Compatibility: legacy/injected requirements ownership is documented in a
+  separate compatibility section. A pre-existing `REQUIREMENTS` block alone
+  cannot select that mode or skip Phase 1a.
+- Verification: README, Brainstorm Supervisor, pipeline-bypass, run execution
+  policy, and sufficiency suites completed with 170 passed in 14.60s.
+- `git diff --check`: clean before commit.
+
+No push, merge, deployment, or other remote mutation was performed in this
+second wave.

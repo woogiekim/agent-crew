@@ -79,6 +79,34 @@ def test_readme_documents_sufficiency_gated_requirements():
     assert "delegate to requirements agent only when ambiguous" in text
 
 
+def test_readme_normal_run_assigns_classification_adaptive_requirements_to_supervisor():
+    text = readme_text()
+    pipeline = text.split("### Pipeline Flow", 1)[1].split("### Multiple Tasks", 1)[0]
+    requirements = text.split("### Requirements Collection: Sufficiency-Gated Architecture", 1)[1].split(
+        "### State Directory Layout", 1
+    )[0]
+
+    assert "immutable raw input" in pipeline
+    assert "preliminary classification → classification-adaptive requirements → final classification" in pipeline
+    assert "Supervisor Phase 1a owns the normal `crew:run` requirements lifecycle" in requirements
+    assert "legacy/injected compatibility path" in requirements
+
+
+def test_readme_does_not_restore_orchestrator_first_requirements_contract():
+    text = readme_text()
+    normal_flow = text.split("### Pipeline Flow", 1)[1].split("### Multiple Tasks", 1)[0]
+    requirements = text.split("### Requirements Collection: Sufficiency-Gated Architecture", 1)[1].split(
+        "### State Directory Layout", 1
+    )[0]
+
+    assert "Run deterministic requirements sufficiency check" not in normal_flow
+    assert "delegate one supervisor per task (with REQUIREMENTS)" not in normal_flow
+    assert "Both the orchestrator and supervisor use the same sufficiency" not in requirements
+    assert "`crew:run` first runs `core/scripts/requirements-sufficiency.py` per task" not in requirements
+    assert "REQUIREMENTS` block passed to each supervisor" not in requirements
+    assert "When `REQUIREMENTS` is present, Phase 1a is skipped entirely" not in requirements
+
+
 def test_readme_documents_codex_capability_fallbacks():
     text = readme_text()
     assert "Host Capability Caveat" in text

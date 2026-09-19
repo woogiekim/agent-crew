@@ -340,7 +340,7 @@ contract.
 ### Pipeline Flow
 
 ```
-Phase 1a requirements → Phase 1b Brainstorm → Phase 1c analyst+planner → Phase 1d approval → [stages] → reviewer
+Phase 1a preliminary classification → classification-adaptive requirements → final classification → Phase 1b Brainstorm → Phase 1c analyst+planner → Phase 1d approval → [stages] → reviewer
 ```
 
 For each task, the full execution path is:
@@ -348,15 +348,14 @@ For each task, the full execution path is:
 ```
 crew:run "request"
        │
-      ▼ Run deterministic requirements sufficiency check
-      │   → synthesize REQUIREMENTS inline, or delegate to requirements agent if ambiguous
+      ▼ preserve immutable raw input in the task context
 [orchestrator]
        │
-       ▼ delegate one supervisor per task (with REQUIREMENTS)
+       ▼ delegate one supervisor per task (without pre-injected REQUIREMENTS)
 [supervisor]
        │ Phase 0:  Resume check + context bootstrap
-      │ Phase 1a: preliminary classification + requirements intake
-      │ Phase 1b: final classification + Brainstorm dialogue/design
+      │ Phase 1a: preliminary classification → classification-adaptive requirements → final classification
+      │ Phase 1b: Brainstorm dialogue/design
       │ Phase 1c: analyst as merged analysis+planning step
       │ Phase 1d: combined Bounded approval or Architectural execution-plan approval
        │ Phase 1.5: agent creation (needs_creation from pipeline.json)
@@ -470,11 +469,16 @@ classification, design approval, combined approval, or downgrade.
 ### Requirements Collection: Sufficiency-Gated Architecture
 
 Requirements are collected only when the task description is not specific enough
-to plan safely. Both the orchestrator and supervisor use the same sufficiency
-check before invoking the requirements agent. A missing question can therefore
-be intentional: `SUFFICIENT` tasks synthesize a `REQUIREMENTS` block inline and
-do not ask the user. `AMBIGUOUS` tasks must ask and wait through the host's
-structured-question surface or the adapter's markdown fallback.
+to plan safely. Supervisor Phase 1a owns the normal `crew:run` requirements lifecycle:
+it first classifies the immutable raw input as preliminary, then uses the
+sufficiency result and that classification to choose the interview depth, and
+finally persists the final classification. A missing question can therefore
+be intentional: `SUFFICIENT` tasks synthesize a `REQUIREMENTS` block inline and do
+not ask the user. `AMBIGUOUS` tasks must ask and wait through the host's
+structured-question surface or the adapter's markdown fallback. Architectural
+work uses `deep_interview`; Bounded work uses `single_round`; Spike asks only
+probe-critical questions. The final pass may promote the preliminary result but
+may not silently weaken a deterministic hard rule.
 
 The gate also exposes an OMC-inspired interaction policy. `light` favors
 ordinary direct answers for read-only question-shaped work, `balanced` preserves
@@ -486,9 +490,10 @@ unchanged, while JSON and synthesized `REQUIREMENTS` blocks include
 `ambiguity`, `ambiguity_threshold`, `interaction_intensity`, and
 `implementation_allowed`.
 
-#### Layer 1 — Orchestrator (crew:run Step 5)
+#### Layer 1 — Supervisor Phase 1a (normal crew:run)
 
-`crew:run` first runs `core/scripts/requirements-sufficiency.py` per task:
+After preliminary classification, the Supervisor runs
+`core/scripts/requirements-sufficiency.py` for its task:
 
 - `SUFFICIENT` — synthesize the `REQUIREMENTS` block inline and continue.
 - `AMBIGUOUS` — delegate to the requirements agent for a structured interview.
@@ -514,11 +519,17 @@ When delegation is needed, the requirements agent asks:
 | Full-stack | State management approach · Database choice |
 | UI only | State management approach · Design system |
 
-The synthesized or collected answers are merged into a single `REQUIREMENTS` block passed to each supervisor.
+The synthesized or collected answers are merged into the task-local
+`REQUIREMENTS` block. The Supervisor then performs final classification before
+entering Phase 1b; the orchestrator neither creates this block first nor injects
+it into a new Supervisor handoff.
 
-#### Layer 2 — supervisor Phase 1a (fallback)
+#### Layer 2 — legacy/injected compatibility path
 
-If a supervisor receives no `REQUIREMENTS` in its input (e.g., directly spawned without the orchestrator), it runs the same sufficiency check and delegates to the **requirements agent** only when the task is ambiguous. When `REQUIREMENTS` is present, Phase 1a is skipped entirely.
+An explicitly recognized legacy/injected compatibility path may already own
+requirements outside the normal Brainstorm lifecycle. Only that path may reuse
+a pre-existing `REQUIREMENTS` block. Its presence alone never selects
+compatibility mode and never skips Supervisor Phase 1a for a normal `crew:run`.
 
 ### State Directory Layout
 
