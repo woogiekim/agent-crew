@@ -227,6 +227,95 @@ def test_build_smm_all_sources(tmp_path: Path):
     }
 
 
+def test_build_smm_reads_brainstorm_register_pointers(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    task_dir = _make_task(state_dir, "20260529-100101-8",
+                          current_phase="phase_1b_brainstorm")
+    context = task_dir / "context"
+    pointed = context / "pointed"
+    pointed.mkdir()
+
+    classification_path = pointed / "classification.json"
+    dialogue_path = pointed / "dialogue.json"
+    design_path = pointed / "design.md"
+    approval_path = pointed / "approval.json"
+    classification_path.write_text(json.dumps({
+        "preliminary": "Bounded", "final": "Architectural", "status": "final",
+    }), encoding="utf-8")
+    dialogue_path.write_text(json.dumps({
+        "status": "waiting_for_input", "active_question_id": "q-2",
+    }), encoding="utf-8")
+    design_path.write_text("# Design\n", encoding="utf-8")
+    approval_path.write_text(json.dumps({
+        "decisions": [
+            {
+                "decision_id": "design-1", "approval_kind": "architectural_design",
+                "status": "pending", "bound_fields": {},
+            },
+            {
+                "decision_id": "downgrade-1", "approval_kind": "user_downgrade",
+                "status": "approved", "bound_fields": {},
+            },
+            {
+                "decision_id": "invalidate-1", "approval_kind": "approval_invalidation",
+                "status": "invalidated",
+                "bound_fields": {"invalidates_decision_id": "design-1"},
+            },
+        ],
+    }), encoding="utf-8")
+    register_path = task_dir / "register.json"
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+    register.update({
+        "brainstorm_classification_path": str(classification_path),
+        "brainstorm_dialogue_path": str(dialogue_path),
+        "brainstorm_design_path": str(design_path),
+        "brainstorm_approval_path": str(approval_path),
+    })
+    register_path.write_text(json.dumps(register), encoding="utf-8")
+
+    before = _snapshot_tree(state_dir)
+    result = smm.build_smm(state_dir, task_dir)
+
+    assert result["brainstorm"] == {
+        "classification": "Architectural",
+        "classification_stage": "final",
+        "dialogue_status": "waiting_for_input",
+        "active_question_id": "q-2",
+        "design_approval_status": "invalidated",
+        "downgrade_status": "approved",
+        "artifacts": {
+            "classification": True,
+            "dialogue": True,
+            "design": True,
+            "approval": True,
+        },
+    }
+    assert _snapshot_tree(state_dir) == before
+
+
+def test_render_text_and_json_include_brainstorm_only_when_present(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    current = _make_task(state_dir, "20260529-100101-9")
+    legacy = _make_task(state_dir, "20260529-100101-10")
+    (current / "context" / "brainstorm-classification.json").write_text(
+        json.dumps({"preliminary": "Bounded", "final": "Bounded", "status": "final"}),
+        encoding="utf-8",
+    )
+    (current / "context" / "brainstorm-dialogue.json").write_text(
+        json.dumps({"status": "accepted"}), encoding="utf-8",
+    )
+
+    current_smm = smm.build_smm(state_dir, current)
+    legacy_smm = smm.build_smm(state_dir, legacy)
+    rendered = smm.render_text([current_smm])
+
+    assert "Brainstorm:" in rendered
+    assert "classification=Bounded" in rendered
+    assert "dialogue=accepted" in rendered
+    assert "brainstorm" not in legacy_smm
+    assert "Brainstorm:" not in smm.render_text([legacy_smm])
+
+
 def test_build_smm_includes_orchestration_summary(tmp_path: Path):
     state_dir = tmp_path / "state"
     task_dir = _make_task(state_dir, "20260529-100102-0", completed_stages=0)
@@ -665,6 +754,27 @@ def test_cli_format_json_shape(tmp_path: Path):
     # full SMM dict keys are present
     assert "sources_present" in payload["tasks"][0]
     assert "handoff" in payload["tasks"][0]
+
+
+def test_cli_json_brainstorm_contract_and_legacy_omission(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    current = _make_task(state_dir, "20260529-100400-1")
+    _make_task(state_dir, "20260529-100400-2")
+    (current / "context" / "brainstorm-classification.json").write_text(
+        json.dumps({"preliminary": "Architectural", "status": "preliminary"}),
+        encoding="utf-8",
+    )
+    (current / "context" / "brainstorm-dialogue.json").write_text(
+        json.dumps({"status": "not_started"}), encoding="utf-8",
+    )
+
+    proc = _run_cli("--state-dir", str(state_dir), "--recent", "10", "--format", "json")
+
+    assert proc.returncode == 0, proc.stderr
+    tasks = {row["task_id"]: row for row in json.loads(proc.stdout)["tasks"]}
+    assert tasks["20260529-100400-1"]["brainstorm"]["classification"] == "Architectural"
+    assert tasks["20260529-100400-1"]["brainstorm"]["classification_stage"] == "preliminary"
+    assert "brainstorm" not in tasks["20260529-100400-2"]
 
 
 def test_cli_format_text(tmp_path: Path):

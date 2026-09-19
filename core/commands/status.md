@@ -728,9 +728,9 @@ Downgrade  : {DOWNGRADE_STATUS}  ← printed only when a downgrade decision exis
 Recent events (from progress.log):
   2026-05-10T14:22:01 | STARTED    | Implement order management API
   2026-05-10T14:22:03 | PHASE      | 1a — Requirement collection
-  2026-05-10T14:22:45 | PHASE      | 1b — Analysis
-  2026-05-10T14:23:10 | PHASE      | 1c — Planning
-  2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
+  2026-05-10T14:22:45 | PHASE      | 1b — Brainstorm
+  2026-05-10T14:23:10 | PHASE      | 1c — Analysis + Planning
+  2026-05-10T14:23:11 | PHASE      | 1d — Execution approval
   2026-05-10T14:24:00 | STAGE      | 1/3 — backend
 
 Review / Fix Loop Summary:

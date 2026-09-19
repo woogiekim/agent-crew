@@ -121,7 +121,12 @@ mutate task state. To act on a displayed next action, the user must invoke the
 corresponding command explicitly.
 
 `--format json` prints `{"state_dir": str, "tasks": [<smm dict>, ...]}` where
-each task dict carries every field above plus a `sources_present` map.
+each task dict carries every always-present field above plus a `sources_present`
+map. Tasks with a valid classification artifact also carry an optional
+`brainstorm` object with `classification`, `classification_stage`,
+`dialogue_status`, `active_question_id`, `design_approval_status`,
+`downgrade_status`, and per-artifact presence flags. Legacy tasks omit the
+`brainstorm` key entirely.
 
 ## Degradation
 

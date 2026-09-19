@@ -48,6 +48,23 @@ def test_readme_preserves_merged_analyst_planner_inside_phase_1c():
     assert "Phase 1b: analyst" not in text
 
 
+def test_operator_docs_do_not_present_legacy_phase_as_current():
+    readme = readme_text()
+    status = (REPO_ROOT / "core" / "commands" / "status.md").read_text(encoding="utf-8")
+
+    for stale in (
+        "Phase 1b+1c",
+        "1b+1c — Analysis + Planning",
+        "1b — Analysis",
+    ):
+        assert stale not in readme
+        assert stale not in status
+    assert "1b — Brainstorm" in readme
+    assert "1c — Analysis + Planning" in readme
+    assert "1b — Brainstorm" in status
+    assert "1c — Analysis + Planning" in status
+
+
 def test_readme_documents_sufficiency_gated_requirements():
     text = readme_text()
     assert "Requirements sufficiency gate" in text

@@ -792,8 +792,9 @@ Example output during a pipeline run:
 ```
 [crew] 20260510-140000-0 | STARTED   | implement order management API
 [crew] 20260510-140000-0 | PHASE     | 1a — Requirement collection
-[crew] 20260510-140000-0 | PHASE     | 1b+1c — Analysis + Planning
-[crew] 20260510-140000-0 | PHASE     | 1d — Plan approval
+[crew] 20260510-140000-0 | PHASE     | 1b — Brainstorm
+[crew] 20260510-140000-0 | PHASE     | 1c — Analysis + Planning
+[crew] 20260510-140000-0 | PHASE     | 1d — Execution approval
 [crew] 20260510-140000-0 | STAGE     | 1/2 — backend
 [crew] 20260510-140000-0 | STAGE_DONE| backend — N/A
 [crew] 20260510-140000-0 | STAGE     | 2/2 — reviewer
@@ -816,8 +817,9 @@ Each entry is a timestamped line:
 ```
 2026-05-10T14:22:01 | STARTED    | implement order management API
 2026-05-10T14:22:03 | PHASE      | 1a — Requirement collection
-2026-05-10T14:22:45 | PHASE      | 1b+1c — Analysis + Planning
-2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
+2026-05-10T14:22:45 | PHASE      | 1b — Brainstorm
+2026-05-10T14:23:10 | PHASE      | 1c — Analysis + Planning
+2026-05-10T14:23:11 | PHASE      | 1d — Execution approval
 2026-05-10T14:24:00 | STAGE      | 1/3 — backend
 2026-05-10T14:31:22 | STAGE_DONE | backend — N/A
 2026-05-10T14:31:23 | COMPLETED  | branch=feature/implement-order-api-... commits=2
@@ -1064,8 +1066,9 @@ Status : in-progress
 
 Recent events (from progress.log):
   2026-05-10T14:22:01 | STARTED    | implement order management API
-  2026-05-10T14:22:45 | PHASE      | 1b+1c — Analysis + Planning
-  2026-05-10T14:23:11 | PHASE      | 1d — Plan approval
+  2026-05-10T14:22:45 | PHASE      | 1b — Brainstorm
+  2026-05-10T14:23:10 | PHASE      | 1c — Analysis + Planning
+  2026-05-10T14:23:11 | PHASE      | 1d — Execution approval
   2026-05-10T14:24:00 | STAGE      | 1/3 — backend
 
 Pipeline stages:

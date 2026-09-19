@@ -3,7 +3,7 @@
 smm-aggregate.py — Provider-neutral Shared Mental Model (SMM) single-view.
 
 Purpose:
-  Stitch the five currently-fragmented per-task state sources under
+  Stitch the core per-task state sources under
   ${STATE_DIR}/tasks/{TASK_ID}/ into one coherent read-only surface, so an
   operator (or a downstream agent) sees the WHOLE pipeline state at a glance
   without opening five files:
@@ -12,6 +12,8 @@ Purpose:
     - progress.buffer.jsonl  (structured event buffer)
     - register.json          (slim state pointer: phase / approval / verify)
     - handoff.md             (freeform stage handoff narrative)
+    - optional context/brainstorm-* artifacts (classification / dialogue /
+      design / approval, resolved through register pointers when present)
 
   Issue #129 Finding #2. crew:status already renders a compact snapshot and
   telemetry-aggregate.py produces a metrics table, but neither unites the whole
@@ -204,6 +206,88 @@ def _read_json_document(path):
     except Exception:
         return {}, path.exists(), False
     return payload if isinstance(payload, dict) else {}, True, isinstance(payload, dict)
+
+
+def _brainstorm_artifact_path(task_dir, register, register_key, fallback):
+    configured = register.get(register_key)
+    if isinstance(configured, str) and configured:
+        path = Path(configured)
+        return path if path.is_absolute() else Path(task_dir) / path
+    return Path(task_dir) / fallback
+
+
+def _read_brainstorm(task_dir, register):
+    """Return the optional Brainstorm view without inventing legacy state."""
+    paths = {
+        "classification": _brainstorm_artifact_path(
+            task_dir, register, "brainstorm_classification_path",
+            "context/brainstorm-classification.json",
+        ),
+        "dialogue": _brainstorm_artifact_path(
+            task_dir, register, "brainstorm_dialogue_path",
+            "context/brainstorm-dialogue.json",
+        ),
+        "design": _brainstorm_artifact_path(
+            task_dir, register, "brainstorm_design_path",
+            "context/brainstorm-design.md",
+        ),
+        "approval": _brainstorm_artifact_path(
+            task_dir, register, "brainstorm_approval_path",
+            "context/brainstorm-approval.json",
+        ),
+    }
+    classification, classification_present, classification_valid = \
+        _read_json_document(paths["classification"])
+    if not classification_present or not classification_valid:
+        return None
+
+    dialogue, dialogue_present, dialogue_valid = _read_json_document(paths["dialogue"])
+    approval, approval_present, approval_valid = _read_json_document(paths["approval"])
+    if not dialogue_valid:
+        dialogue = {}
+    if not approval_valid:
+        approval = {}
+
+    decisions = approval.get("decisions")
+    if not isinstance(decisions, list):
+        decisions = []
+    invalidated = {
+        decision.get("bound_fields", {}).get("invalidates_decision_id")
+        for decision in decisions
+        if isinstance(decision, dict)
+        and decision.get("approval_kind") == "approval_invalidation"
+        and isinstance(decision.get("bound_fields"), dict)
+    }
+    design_status = "not_required"
+    downgrade_status = None
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            continue
+        status = ("invalidated" if decision.get("decision_id") in invalidated
+                  else str(decision.get("status") or "unknown"))
+        kind = decision.get("approval_kind")
+        if kind in ("architectural_design", "bounded_combined"):
+            design_status = status
+        elif kind == "user_downgrade":
+            downgrade_status = status
+
+    has_final = isinstance(classification.get("final"), str)
+    return {
+        "classification": str(
+            classification.get("final") or classification.get("preliminary") or "Unknown"
+        ),
+        "classification_stage": "final" if has_final else "preliminary",
+        "dialogue_status": str(dialogue.get("status") or "Unknown"),
+        "active_question_id": dialogue.get("active_question_id"),
+        "design_approval_status": design_status,
+        "downgrade_status": downgrade_status,
+        "artifacts": {
+            "classification": classification_present,
+            "dialogue": dialogue_present,
+            "design": paths["design"].is_file(),
+            "approval": approval_present,
+        },
+    }
 
 
 def _existing_artifacts(task_dir, rel_paths):
@@ -551,7 +635,7 @@ def build_smm(state_dir, task_dir):
     if status not in ("completed", "blocked", "cancelled", "running", "unknown"):
         status = "running"
 
-    return {
+    result = {
         "task_id": task_dir.name,
         "task": row.get("task") or register.get("task") or "",
         "branch": branch,
@@ -583,6 +667,10 @@ def build_smm(state_dir, task_dir):
             pipeline_present,
         ),
     }
+    brainstorm = _read_brainstorm(task_dir, register)
+    if brainstorm is not None:
+        result["brainstorm"] = brainstorm
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -606,6 +694,19 @@ def _render_block(smm):
     lines.append(f"Mutation: {smm.get('mutation_scope') or 'workspace_write'}")
     lines.append(f"Approval: {smm['approval_status']}    "
                  f"Verify: {smm['verification_status']}")
+
+    brainstorm = smm.get("brainstorm")
+    if brainstorm:
+        summary = (
+            f"classification={brainstorm['classification']} "
+            f"dialogue={brainstorm['dialogue_status']} "
+            f"design={brainstorm['design_approval_status']}"
+        )
+        if brainstorm.get("active_question_id"):
+            summary += f" question={brainstorm['active_question_id']}"
+        if brainstorm.get("downgrade_status") is not None:
+            summary += f" downgrade={brainstorm['downgrade_status']}"
+        lines.append(f"Brainstorm: {summary}")
 
     lines.append(f"Stages  : {smm['stages_completed']}/{smm['stages_total']}")
     for stage in smm["stage_list"]:
