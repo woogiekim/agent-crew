@@ -146,6 +146,8 @@ if it does not exist.
 | `BRAINSTORM_CLASSIFICATION` | preliminary 또는 final 분류 저장/표시 후 | stage, 분류 artifact 경로; 사용자에게 분류·근거·과정을 별도 표시 |
 | `BRAINSTORM_QUESTION` | Architectural 단일 질문 또는 Bounded grouped interaction 표시 전 | task ID와 question ID 또는 묶음 ID |
 | `BRAINSTORM_DESIGN_READY` | 설계 검증과 필요한 섹션 확인 완료 | design artifact 경로; 승인 완료를 뜻하지 않음 |
+| `BRAINSTORM_APPROVAL_INVALIDATED` | canonical 설계/분류/계획 binding 변경 | decision ID와 변경 사유; 의존 승인만 무효화 |
+| `BRAINSTORM_RESUME` | Phase 0 및 phase boundary의 공통 gate 검사 후 | 현재 해시, 정확한 재개 단계, active question 또는 pending decision ID |
 | `SPIKE_COMPLETED` | Spike 조사 결과로 종료 | findings 경로; 구현 pipeline 없이 종료 |
 | `DEGRADED` | 분류 helper/Agent 결과를 신뢰할 수 없음 | 원인과 중단/보수적 처리; 자동 Bounded 금지 |
 | `STAGE` | Each pipeline stage begins | `{i}/{total} — {agent_name}` |
@@ -237,7 +239,7 @@ SUPERVISOR_DIR="${AGENT_CREW_HOME}/system/agents"
 |---|---|---|
 | Spawn entry, `planning_required: true` native placeholder | `supervisor-bootstrap.md`; treat as fresh even though the file exists | Phase 0 → 1a preliminary/requirements → 1b Brainstorm → 1c planning → 1d → 1.5 |
 | Spawn entry, `PIPELINE_PATH` does not yet exist | `supervisor-bootstrap.md` | Phase 0 → 1a → 1b → 1c → 1c-bis → 1d → 1.5; Spike는 1b에서 종료 |
-| Spawn entry, `PIPELINE_PATH` already exists (resume only after `START_MODE=resume`) | `supervisor-bootstrap.md` (Phase 0 only — read the file, execute Phase 0 to load capability flags and host task ids, then jump to the Phase 2 row below) | Phase 0 only |
+| Spawn entry, prior task state exists | `supervisor-bootstrap.md` — Phase 0의 approval/hash gate로 정확한 재개 위치를 확인하고 해당 절을 읽는다. pipeline 존재 또는 `START_MODE=resume`만으로 Phase 2에 가지 않는다 | Phase 0 + selected incomplete phase |
 | About to enter Phase 2 (whether fresh or resuming) | `supervisor-stages.md` AND `supervisor-retry.md` (both — retry holds the Stage Retry Rule which Phase 2 invokes for every stage spawn) | Phase 2 + Phase 2.5 + Stage Retry Rule |
 | About to enter Phase 3 (after Phase 2.5 returns, OR on early BLOCKED exit) | `supervisor-retry.md` (already in working set from Phase 2 trigger; re-Read if it was evicted) | Phase 3 close-out, marker cleanup, final return |
 
@@ -261,6 +263,12 @@ Brainstorm Agent는 read-only 탐색과 제한된 design artifact만 소유한�
 Architectural은 한 task에 한 active 질문을 유지하며 Bounded는 미답변 고영향
 질문을 하나의 grouped interaction으로 묶는다. 섹션 확인과 설계 검증은 승인이
 아니며 실제 승인 결정은 별도 approval boundary의 책임이다.
+Architectural은 전체 설계의 현재 hash를 승인받은 뒤 analyst를 위임한다. Bounded는
+Phase 1d에서 설계+계획을 한 번에 승인한다. informed downgrade는 원분류를 보존하며
+ceremony만 바꾼다. 외부 액션 승인과 Phase 2.5는 그대로 유지한다.
+재개 및 각 단계 전환은 bootstrap의 단일 hash gate를 사용한다. 질문/pending 결정 ID를
+유지하며 변경된 binding은 무효화한다. `approval.md`는 기존 실행 signal이고 별도의
+Brainstorm 기록은 그 signal을 대체하지 않는다. legacy 작업에는 새 기록을 강제하지 않는다.
 
 ## Absolute Rules
 

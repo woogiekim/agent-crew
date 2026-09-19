@@ -235,6 +235,27 @@ def test_approval_requires_decision_at_after_pending(tmp_path: Path) -> None:
     assert result.returncode == 2
 
 
+def test_success_case_contract_architectural_execution_preserves_design_decision(tmp_path: Path) -> None:
+    task_dir = make_valid_task(tmp_path)
+    approval = approval_fixture(status="approved")
+    original_design = json.dumps(approval["decisions"][0], sort_keys=True)
+    approval["decisions"].append({
+        "decision_id": "execution-1", "approval_kind": "architectural_execution", "status": "approved",
+        "design_hash": "b" * 64,
+        "bound_fields": {"design_decision_id": "decision-1", "classification_hash": "c" * 64,
+                         "execution_plan_hash": "d" * 64, "approval_signal_path": "context/approval.md"},
+        "created_at": "2026-09-20T01:00:00Z", "decision_at": "2026-09-20T01:01:00Z",
+        "idempotency_key": "execution-response-1",
+    })
+    write_artifact(task_dir, "brainstorm-approval.json", approval)
+
+    result = run_validator(task_dir)
+
+    assert result.returncode == 0, result.stdout
+    saved = json.loads((task_dir / "context/brainstorm-approval.json").read_text())
+    assert json.dumps(saved["decisions"][0], sort_keys=True) == original_design
+
+
 def test_register_accepts_brainstorm_phases_and_pointers() -> None:
     register = valid_register(current_phase="phase_1b_brainstorm")
     register.update(

@@ -1,10 +1,9 @@
 # Supervisor — Bootstrap & Setup (Phases 0 → 1.5)
 
-> This module is read by the `supervisor` agent at spawn time when no
-> `PIPELINE_PATH` exists yet (fresh run). On a resuming run, only Phase 0
-> is executed from this module — the agent skips Phases 1a, 1b, 1c,
-> 1c-bis, 1d, and 1.5 and proceeds directly to Phase 2 (which lives in
-> `supervisor-stages.md`).
+> This module is read by the `supervisor` agent on fresh runs and resumes.
+> Phase 0 verifies dialogue, design, and approval bindings before selecting
+> the exact resume position. Only an approved execution resumes in Phase 2
+> (`supervisor-stages.md`); a pipeline file alone does not establish approval.
 >
 > All phase names defined here (Phase 0 through Phase 1.5) are referenced
 > by sibling modules. The Stage Retry Rule and Phase 3 close-out live in
@@ -576,15 +575,17 @@ START_MODE=$(python3 "${AGENT_CREW_HOME}/scripts/supervisor-start-mode.py" --pip
 1c 실제 analyst 위임 -> 1d -> 1.5로 진행한다. Spike는 1b 조사 결과로 종료한다.
 `planning_required: true`를 supervisor가 지워 resume으로 바꾸거나 직접 구현하지 않는다.
 analyst가 실제 실행 계획으로 교체한 뒤 quality-plan gate를 통과해야 Phase 2에 진입한다.
-초기 v2 승인 그래프 안의 계획은 기존 승인 범위를 계승하며 범위/비용 변경만 새 승인이 필요하다.
+초기 v2 승인 그래프 안의 계획은 기존 실행 범위를 계승한다. Brainstorm의 설계 승인과
+Phase 1d의 현재 design/plan binding은 별도로 확인하며, 범위/비용 변경은 재승인한다.
 
 Resume rules:
 
-- If `START_MODE=resume` (`PIPELINE_PATH` exists and is not a placeholder): read `completed_stages` and `stage_agent_status`, then
-  **skip Phases 1a, 1b, 1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
-  Planning, analysis, and plan approval were already completed in the prior run.
-- If `PIPELINE_PATH` does not exist or `START_MODE=fresh`: proceed normally through Phases 1a → 1b → 1c → 1d → 1.5 → 2 (Spike는 1b에서 종료).
-- Never duplicate the planner step for an already initialized task.
+- `START_MODE`는 pipeline의 형식 판정이다. 아래 **Brainstorm approval and resume gate**의
+  `resume_at`을 실제 재개 위치로 사용한다. pipeline 존재는 설계/실행 승인 증거가 아니다.
+- 질문/설계가 있으면 pipeline이 없어도 해당 위치에서 재개한다. 이미 유효한 설계/계획을
+  처음부터 만들지 않는다. 아무 Brainstorm artifact도 없는 fresh 작업만 Phase 1a로 간다.
+- Brainstorm 도입 전 작업은 `legacy` 결과를 받고 기존 `approval.md`의 `APPROVED`를
+  확인한 뒤 이전 재개 규칙을 적용한다. 기존 artifact를 새 승인으로 변환하지 않는다.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
   Only agents missing from the map (or with status other than `"completed"`) are retried.
@@ -603,15 +604,205 @@ Resume rules:
 
 This prevents restarting already-finished agents when resuming after an interrupt.
 
+#### Brainstorm approval and resume gate
+
+Phase 0 및 모든 phase boundary에서 다음 단일 gate를 실행한다. JSON `resume_at`을
+`RESUME_AT`에 저장하고 해당 단계만 재개한다. 실패 시 `brainstorm_approval_state_invalid`로 차단한다. Supervisor는
+stderr의 `BRAINSTORM_APPROVAL_INVALIDATED` 사건을 `progress.log`에도 남기고 재개 위치를
+`BRAINSTORM_RESUME`으로 기록한다. UI를 열거나 Agent를 위임하기 전에 이 검사를 마친다.
+
+canonical JSON은 실제 design artifact의 `<!-- brainstorm-bound-fields -->` 바로 뒤
+`json` fenced block 하나에서 읽는다. 별도 cached hash나 응답 사본으로 대체하지 않는다.
+classifier의 `canonical_hash`를 재사용한다. `classification_hash`는 원분류/증거/버전 snapshot,
+`execution_plan_hash`는 pipeline에서 실행 진행 상태만 제외한 선언적 계획에 대한 해시다.
+목표, 비목표, 인터페이스, 책임 경계, 데이터, 저장소/module, 위험, pipeline, 분류,
+downgrade의 변경은 의존 승인을 무효화한다. JSON 밖 표시 문구 변경은 제외한다.
+
+```bash
+python3 - "${TASK_DIR}" "${AGENT_CREW_HOME}" <<'PYEOF'
+import json
+import os
+import re
+import runpy
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+task_dir, crew_home = map(Path, sys.argv[1:])
+context = task_dir / "context"
+
+def read_json(path, default=None):
+    if not path.exists():
+        return default
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"object required: {path.name}")
+    return value
+
+def atomic_write(path, value):
+    data = json.dumps(value, ensure_ascii=False, indent=2) + "\n" if isinstance(value, dict) else value
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(data)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+def inspect():
+    classifier = runpy.run_path(str(crew_home / "scripts/brainstorm-classification.py"))
+    canonical_hash = classifier["canonical_hash"]
+    classification = read_json(context / "brainstorm-classification.json")
+    dialogue = read_json(context / "brainstorm-dialogue.json", {})
+    approval_path = context / "brainstorm-approval.json"
+    approval = read_json(approval_path, {"decisions": []})
+    design_path = context / "brainstorm-design.md"
+    if classification is None:
+        if dialogue or approval["decisions"] or design_path.exists():
+            raise ValueError("classification missing for existing Brainstorm state")
+        return {"resume_at": "legacy"}
+    if classification.get("status") != "final":
+        if classification.get("status") == "preliminary":
+            return {"resume_at": "phase_1a_requirements"}
+        raise ValueError("final classification unavailable")
+    automatic = classification.get("final")
+    if automatic not in ("Spike", "Bounded", "Architectural"):
+        raise ValueError("unknown classification")
+    if approval.get("task_id", classification["task_id"]) != classification["task_id"]:
+        raise ValueError("approval belongs to another task")
+    if dialogue and dialogue.get("task_id") != classification["task_id"]:
+        raise ValueError("dialogue belongs to another task")
+
+    fields = None
+    if design_path.exists():
+        blocks = re.findall(r"<!-- brainstorm-bound-fields -->\s*```json\s*\n(.*?)\n```", design_path.read_text(encoding="utf-8"), re.DOTALL)
+        if len(blocks) != 1:
+            raise ValueError("exactly one canonical design block required")
+        fields = json.loads(blocks[0])
+        if not isinstance(fields, dict) or any(key not in fields for key in classifier["BOUND_FIELDS"]):
+            raise ValueError("canonical design fields missing")
+
+    classification_hash = canonical_hash({"classification": classification})
+    design_hash = canonical_hash(fields) if fields is not None else None
+    pipeline = read_json(task_dir / "pipeline.json", {})
+    has_plan = bool(pipeline.get("stages")) and pipeline.get("planning_required") is not True
+    runtime_keys = {"completed_stages", "stage_agent_status", "host_task_ids"}
+    plan_fields = {key: value for key, value in pipeline.items() if key not in runtime_keys}
+    plan_hash = canonical_hash({"pipeline": plan_fields}) if has_plan else None
+    result = {"design_hash": design_hash, "classification_hash": classification_hash,
+              "execution_plan_hash": plan_hash, "bound_fields": fields,
+              "effective_classification": automatic, "approved_design_hash": None}
+    decisions = approval["decisions"]
+    changed = False
+    design_invalidated = False
+    for decision in decisions:
+        if decision["status"] not in ("pending", "approved"):
+            continue
+        bound = decision["bound_fields"]
+        reason = None
+        if (design_hash != decision["design_hash"] or canonical_hash(bound) != design_hash
+                or bound.get("classification_hash") != classification_hash):
+            reason = "design_or_classification_hash_changed"
+            design_invalidated = design_invalidated or decision["approval_kind"] != "architectural_execution"
+        elif decision["approval_kind"] in ("bounded_combined", "architectural_execution") and bound.get("execution_plan_hash") != plan_hash:
+            reason = "execution_plan_hash_changed"
+        elif decision["approval_kind"] == "architectural_execution":
+            reference = next((item for item in reversed(decisions)
+                              if item["decision_id"] == bound.get("design_decision_id")), None)
+            if (not reference or reference["approval_kind"] != "architectural_design"
+                    or reference["status"] != "approved" or not reference.get("idempotency_key")
+                    or bound.get("approval_signal_path") != "context/approval.md"):
+                reason = "execution_design_reference_invalid"
+        if reason:
+            decision.update(status="invalidated", decision_at=datetime.now(timezone.utc).isoformat(), reason=reason)
+            changed = True
+            print(f"BRAINSTORM_APPROVAL_INVALIDATED: {decision['decision_id']} {reason}", file=sys.stderr)
+    if changed:
+        atomic_write(approval_path, approval)
+        signal = context / "approval.md"
+        if signal.exists() and signal.read_text(encoding="utf-8").strip() == "APPROVED":
+            atomic_write(signal, "PLAN_READY\n")
+    if design_invalidated and dialogue:
+        dialogue["status"] = "design_review"
+        atomic_write(context / "brainstorm-dialogue.json", dialogue)
+
+    def latest(kind):
+        return next((item for item in reversed(decisions) if item["approval_kind"] == kind), None)
+
+    def approved(decision):
+        return bool(decision and decision["status"] == "approved" and decision.get("decision_at")
+                    and decision.get("idempotency_key"))
+
+    downgrade = latest("user_downgrade")
+    override = fields.get("downgrade") if fields else None
+    if automatic == "Architectural" and approved(downgrade) and isinstance(override, dict) and override.get("override") == "Bounded":
+        result["effective_classification"] = "Bounded"
+    architectural = result["effective_classification"] == "Architectural"
+    design_decision = latest("architectural_design")
+    execution_decision = latest("architectural_execution" if architectural else "bounded_combined")
+    current_decision = design_decision if architectural else execution_decision
+    signal_path = context / "approval.md"
+    signal = signal_path.read_text(encoding="utf-8").strip() if signal_path.exists() else ""
+    if approved(design_decision):
+        result["approved_design_hash"] = design_hash
+
+    if (signal == "CANCELLED" or (current_decision and current_decision["status"] == "cancelled")
+            or (execution_decision and execution_decision["status"] == "cancelled")):
+        resume_at = "cancelled"
+    elif dialogue.get("active_question_id") or any(item.get("status") == "pending" for item in dialogue.get("questions", [])):
+        resume_at = "phase_1b_question"
+        result["active_question_id"] = dialogue.get("active_question_id")
+    elif automatic == "Spike":
+        resume_at = "phase_1b_spike"
+    elif dialogue.get("classification") != automatic or (fields and fields["classification"] != automatic):
+        resume_at = "phase_1b_dialogue"
+    elif dialogue.get("status") == "blocked":
+        raise ValueError("dialogue blocked")
+    elif not fields or dialogue.get("status") in ("not_started", "design_review", "waiting_for_input"):
+        resume_at = "phase_1b_design"
+    elif dialogue.get("status") not in ("ready_for_approval", "accepted"):
+        raise ValueError("design readiness unavailable")
+    elif architectural and not approved(design_decision):
+        resume_at = "phase_1b_design_approval"
+    elif not has_plan:
+        resume_at = "phase_1c_plan"
+    else:
+        execution_ok = approved(execution_decision)
+        if not execution_ok or signal != "APPROVED":
+            resume_at = "phase_1d_plan_approval"
+        elif pipeline.get("completed_stages", 0) or pipeline.get("stage_agent_status"):
+            resume_at = "phase_2"
+        else:
+            resume_at = "phase_1_5"
+    result["resume_at"] = resume_at
+    return result
+
+try:
+    print(json.dumps(inspect(), ensure_ascii=False, sort_keys=True))
+except (OSError, ValueError, KeyError, TypeError) as exc:
+    print(f"BLOCKER: brainstorm_approval_state_invalid: {exc}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+```
+
+이 gate는 사용자 승인 결정을 만들지 않는다. invalidation만 atomic write하며, 같은
+무효화는 다시 기록하지 않는다. 순서는 질문 → 분류 변경 대화 → 설계 검증 → 필요한
+설계 승인 → 계획 → 실행 승인 → Phase 1.5/2이다. active 질문 ID, pending 결정 ID와
+이미 저장된 응답 키를 재사용한다. `cancelled`는 종료하며 timeout/빈 응답으로 대체하지 않는다.
+승인 기록과 실행 signal 쓰기가 중단되면 현재 해시와 원 사용자 응답의 idempotency key를
+확인한 후 같은 결정을 완성한다. 이미 받은 승인을 새 사용자 interaction으로 다시 묻지 않는다.
+
 #### Phase 0 resume capability preflight
 
-When `START_MODE=resume` at Phase 0, run the same capability
+When the gate selects `phase_1_5` or `phase_2` at Phase 0, run the same capability
 preflight used after fresh planning before jumping to Phase 2. This prevents an
 interrupted or externally edited `pipeline.json` from bypassing role/tool
 boundaries on resume.
 
 ```bash
-if [ "${START_MODE}" = "resume" ]; then
+if [ "${RESUME_AT:-}" = "phase_1_5" ] || [ "${RESUME_AT:-}" = "phase_2" ] || { [ "${RESUME_AT:-}" = "legacy" ] && [ "${START_MODE}" = "resume" ]; }; then
   python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
     --pipeline "${PIPELINE_PATH}" --format text || exit 1
   CAPABILITY_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
@@ -640,9 +831,8 @@ fi
 
 ### Phase 1: Analysis + Planning
 
-> **Skip this entire Phase 1 (1a, 1b, 1c, 1d) and Phase 1.5 when resuming** (i.e.,
-> when `START_MODE=resume` at Phase 0, not when a placeholder merely exists). Jump directly to Phase 2 using
-> the `completed_stages` and `stage_agent_status` read in Phase 0.
+> Phase 0의 gate 결과에 따라 정확한 미완료 단계부터 재개한다. `phase_2`일 때만
+> Phase 1을 건너뛰고 `completed_stages`와 `stage_agent_status`를 사용한다.
 
 #### Direct implementation bypass guard
 
@@ -1046,6 +1236,11 @@ Bounded는 분류 근거, 선택 행동과 경계, 변경 범위, 제외 대안�
 두 경우 모두 `brainstorm.md`의 canonical bound fields를 그대로 유지한다.
 Agent 응답은 `context/brainstorm-design-response.md`에 원문 보존하고 `design_path`가 정확히
 `{TASK_DIR}/context/brainstorm-design.md`인지 확인한다.
+`MODE=design` 호출에 artifact 형식도 전달한다: canonical 필드 전체를
+`<!-- brainstorm-bound-fields -->` 바로 뒤의 단일 `json` fenced block에 보존한다.
+설명/제목은 이 block 밖에 둔다. 분류는 자동 final 값이며, 승인된 downgrade가 있으면
+`classification: Architectural`과 `downgrade.override: Bounded`를 함께 보존한다.
+원분류를 Bounded로 다시 쓰지 않고 effective 경로만 Bounded 설계 분량으로 선택한다.
 
 ##### Design validation
 
@@ -1074,6 +1269,64 @@ phase_done
 final classification을 전달한다. Architectural은 해당 설계 승인 전 Phase 1c에
 진입할 수 없다. Bounded는 짧은 설계를 보존하여 Phase 1d의 combined gate로
 전달하며 별도 설계 승인 질문을 추가하지 않는다.
+
+##### Informed downgrade
+
+자동 Architectural을 Bounded ceremony로 낮추려는 명시적 요청은 설계 승인과 별개의
+결정이다. 먼저 automatic classification, evidence, skipped design steps, expected risks,
+affected boundaries를 사용자 언어로 모두 표시한다. 무엇을 생략하는지 모르는 상태에서
+"빠르게 진행"을 동의로 해석하지 않는다. Supervisor/orchestrator만 Approval Service를
+통해 `approval_kind: user_downgrade`를 렌더링한다. 선택은 downgrade 승인, 기존
+Architectural 유지, 취소이며 응답 전에는 현재 경로를 유지한다.
+
+알려진 canonical 필드와 제안 override를 가진 설계 snapshot을 먼저 만든다. 이 snapshot의
+`downgrade`는 `automatic_classification: Architectural`, `override: Bounded`, `reason`,
+`skipped_steps`, `risks`, `affected_boundaries`를 담는다. 이후 아래 결정 저장 규칙으로
+pending/approved 기록을 쓴다. 기록만 pending이거나 거절/취소되면 override는 효력이 없다.
+`brainstorm-classification.json`의 `preliminary`, `final: Architectural`, rule/semantic 원문과
+근거를 보존한다. 실제 승인된 downgrade만 effective Bounded 경로를 선택하며 설계 snapshot이
+변경되면 그 downgrade도 재확인한다. 거절은 `status: cancelled`, 이유에 `keep_architectural`을
+기록하고 override 제안을 제거한 후 Architectural로 계속한다. 작업 취소는 종료한다.
+
+downgrade changes brainstorming ceremony only. 실행 범위, mutating 권한,
+external-write, push, deploy, merge, release 등 기존 외부 액션 승인은 그대로 필요하다.
+Phase 2.5 remains required. 위험한 액션이나 planning/approval/reviewer gate를 생략하거나
+이미 완료된 구현으로 간주할 권한을 주지 않는다.
+
+##### Architectural design approval
+
+검증과 섹션 확인을 마친 **전체 설계**를 먼저 표시한다. Supervisor/orchestrator만
+Approval Service의 structured decision을 렌더링한다. 다음 pending record를
+`context/brainstorm-approval.json`의 `decisions[]`에 atomic append한 뒤 표시한다:
+
+```text
+approval_kind: architectural_design
+decision_id: task-local stable ID
+status: pending
+design_hash: current canonical design hash
+bound_fields: canonical design fields + classification_hash
+created_at: current timestamp
+```
+
+envelope는 `schema_version: 1`, `task_id`, `decisions`이며 schema 외 top-level 필드를
+만들지 않는다. `bound_fields.classification_hash`는 공통 gate의 현재 해시 그대로 저장한다.
+상호작용 선택은 설계 승인, 수정 요청, 취소이다. 부분 섹션 확인을 이 승인으로 바꾸지 않는다.
+새 사용자 응답에는 `decision_at`과 `idempotency_key`를 저장하고 `status: approved`로
+전환한다. 동일 키/내용의 재전송은 기존 결정을 재사용하며 동일 키/다른 내용은 충돌로
+차단한다. 한 task에는 한 pending 설계 결정만 표시하고 병렬 작업의 결정을 섞지 않는다.
+저장/read-back 실패는 전진을 막는다. 명시 응답 없는 timeout/빈 응답은 pending이다.
+
+승인 직전과 저장 후 공통 gate를 재실행한다. 사용자가 본 `design_hash` 및
+`bound_fields.classification_hash`가 달라졌으면 승인하지 않고 무효화/재검증한다.
+approved design_hash가 현재 해시와 일치해야 Phase 1c의 analyst 위임이 가능하다.
+승인 시 dialogue는 `accepted`로 전환하며 설계 승인은 `approval.md`에 `APPROVED`를
+쓰지 않는다. 이것은 계획/구현 실행 승인이 아니다.
+
+수정 요청이면 pending 결정을 `invalidated`로 남기고 `reason: request_changes`,
+`decision_at`을 저장한다. dialogue는 `design_review`로 되돌려 `MODE=design`을 수행한다.
+새 결정이 필요할 때만 질문하고 수정된 전체 설계를 다시 표시한다. 취소는 `cancelled`,
+`decision_at`, 응답 키와 이유를 기록하고 종료한다. 어느 경우도 승인 전에 PRD/pipeline을
+생성하지 않는다. 승인 이후 설계 변경도 같은 무효화/재승인 경로를 따른다.
 
 #### Phase 1c: Analyst (merged analyst + planner — single spawn)
 
@@ -1461,8 +1714,45 @@ equivalent to "DAG mirror disabled".
 
 ### Phase 1d: Plan Approval Gate
 
-> **Skip this phase when resuming** (i.e., `START_MODE=resume` at Phase 0).
-> A placeholder is not prior approval. The prior approved plan resumes at Phase 1.5.
+> 공통 gate가 `phase_1d_plan_approval`이면 이 단계에서 재개한다. placeholder는 승인
+> 증거가 아니다. 현재 해시의 승인과 기존 실행 signal이 모두 유효할 때만 건너뛴다.
+
+Bounded(유효한 downgrade 포함)는 여기서 짧은 설계와 실제 실행 계획을 함께 보여주고
+한 번의 structured interaction으로 승인받는다. 별도 Bounded 설계 승인 질문을 추가하지
+않는다. UI 전에 공통 gate 결과로 `decisions[]`에 다음 pending 결정을 저장한다:
+
+```text
+approval_kind: bounded_combined
+design_hash: current canonical design hash
+bound_fields: all canonical design fields
+bound_fields.classification_hash: current classification hash
+bound_fields.execution_plan_hash: current execution plan hash
+status: pending
+```
+
+`decision_id`, `created_at`, envelope 및 멱등/atomic 저장은 Architectural과 같은 규칙이다.
+현재 schema의 확장 가능한 `bound_fields` 안에 두 추가 hash를 저장한다. 최상위 record에
+`classification_hash`/`execution_plan_hash`를 추가하지 않는다. 이 키 경로를 analyst에게
+그대로 전달하고 계획이 설계와 어긋나면 승인 전에 Phase 1b로 복귀한다.
+
+Architectural은 이미 승인된 전체 설계에 연결해 이 기존 계획 승인만 수행한다.
+`decisions[]`에 `approval_kind: architectural_execution`을 **별도 append**한다.
+원 architectural_design의 `decision_at`, `idempotency_key`, `bound_fields`를 덮어쓰거나
+실행 snapshot을 그 안에 추가하지 않는다. 설계 결정은 계획 승인 전후 byte-for-byte 같다.
+새 record에는 `decision_id`, `status`, `design_hash`, `created_at`을 쓰고 canonical 필드와
+`classification_hash`, `execution_plan_hash`, `design_decision_id`,
+`approval_signal_path: context/approval.md`를 `bound_fields`에 저장한다.
+`design_decision_id`는 현재 승인된 architectural_design 결정을 참조해야 한다.
+UI 전 pending을 저장하고 응답 뒤 `decision_at`/`idempotency_key`와 결과를 기록한다.
+계획 변경만 발생하면 이 실행 결정만 무효화하고 설계 승인은 유지한다.
+설계/분류 변경이면 둘 다 무효화한다. 새로운 재계획 승인은 새 execution record로 append한다.
+
+`context/approval.md`는 기존 실행 승인 signal이다. single/parallel 모두 같은 사용자
+결정에서 hash-bound record와 `APPROVED`를 연결한다. orchestration이 signal을 쓰는
+parallel 모드는 기록된 pending hashes를 그대로 승인 결과에 매핑하고 재확인한다.
+`PLAN_READY`/빈 파일/단순 파일 존재는 동의가 아니며 `APPROVED`만으로 새 Brainstorm
+binding을 건너뛰지 않는다. hash 기록만 있고 signal이 없는 중단은 같은 응답 키로 저장을
+완성하며 새로운 승인 interaction을 만들지 않는다.
 
 Emit before displaying the plan:
 
@@ -1893,8 +2183,9 @@ Either outcome is acceptable. The pipeline must not block on the prefetch.
 
 Then fire a **structured user-choice intent** (see
 `core/rules/capabilities/interactive-question.md`):
-- header: "Implementation Plan"
-- question: "Review the implementation plan above. Approve to begin execution."
+- header: Bounded는 "Design + Plan", Architectural은 "Implementation Plan"
+- question: Bounded는 위 설계와 실행 계획을 함께 승인하도록 묻는다. Architectural은
+  승인된 설계 hash에 연결된 실행 계획을 승인하도록 묻는다.
 - options:
   - label: "Approve"
     description: "Begin stage execution"
@@ -1943,7 +2234,12 @@ Notes on this cleanup:
 - On Cancel or Request changes, prefetch results are discarded silently. The
   warmed pages cost nothing extra; they will simply age out of the cache.
 
-**If Approve:** mark the register and proceed to Phase 1.5.
+**If Approve:** 사용자가 본 pending hashes와 공통 gate 결과를 다시 대조한다. 일치할 때만
+Bounded combined 결정 또는 Architectural execution 결정을 `approved`로 atomic 저장하고
+`decision_at`/응답 키를 read-back한다. 같은 응답으로 `approval.md`에 `APPROVED`를 저장한다.
+그 후 register를 갱신하고 Phase 1.5로 간다. 두 저장 사이 중단은 같은 키로 복구한다.
+변경되면 `PLAN_READY`로 보류하고 재설계/계획 gate로 복귀한다. 외부 액션과 Phase 2.5
+승인은 이 결정으로 대체되지 않는다.
 
 ```bash
 register_update approval_status approved
@@ -1953,6 +2249,10 @@ register_update approval_status approved
 **If Request changes:** collect the change description from the user's response,
 then re-invoke the **analyst** (merged analyst+planner) with the change request.
 Pass only paths — never inline file contents:
+
+먼저 현재 실행 binding을 무효화하고 `approval.md`를 `PLAN_READY`로 되돌린다. 요청이
+canonical design fields를 바꾸면 analyst를 재호출하기 전에 Phase 1b의 재분류/설계/승인을
+수행한다. 계획만 바뀌면 기존 설계 승인과 해시를 유지해 아래 재계획으로 진행한다.
 
 ```text
 TASK: {TASK}
@@ -1972,6 +2272,9 @@ After the analyst returns, return to Phase 1d (re-display the updated plan and
 ask again). Do not proceed to Phase 1.5 until the user selects Approve.
 
 **If Cancel:**
+
+현재 combined 결정 또는 execution 결정을 `cancelled`로 기록하고 응답 키/시간을
+보존한다. 기존 `approval.md` signal도 `CANCELLED`로 저장한다.
 
 ```bash
 echo "# {TASK}
