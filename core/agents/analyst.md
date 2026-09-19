@@ -99,7 +99,7 @@ canonical JSON object after `<!-- brainstorm-bound-fields -->` from
 source checkout only as an explicit development fallback:
 
 ```bash
-BRAINSTORM_CLASSIFIER="${AGENT_CREW_HOME}/scripts/brainstorm-classification.py"
+BRAINSTORM_CLASSIFIER="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/brainstorm-classification.py"
 if [ ! -f "${BRAINSTORM_CLASSIFIER}" ]; then
   BRAINSTORM_CLASSIFIER="${PROJECT_ROOT}/core/scripts/brainstorm-classification.py"
 fi

@@ -685,11 +685,44 @@ def test_failure_case_analyst_requires_accepted_matching_design_hash_before_plan
         assert token in sut
     assert "Never expand the accepted design" in sut
     assert "This gate does not apply to `MODE=direct`" in sut
-    installed = '${AGENT_CREW_HOME}/scripts/brainstorm-classification.py'
+    installed = '${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/brainstorm-classification.py'
     source_fallback = '${PROJECT_ROOT}/core/scripts/brainstorm-classification.py'
     assert installed in sut and source_fallback in sut
     assert sut.index(installed) < sut.index(source_fallback)
     assert sut.index("brainstorm_design_hash_mismatch") < sut.index("### Step 5 — Write analysis.md")
+
+
+def analyst_classifier_resolution_script() -> str:
+    text = ANALYST.read_text(encoding="utf-8")
+    section_text = text.split("## Brainstorm Design Gate", 1)[1].split("The final classification artifact", 1)[0]
+    match = re.search(r"```bash\n(.*?)\n```", section_text, re.DOTALL)
+    assert match, "Analyst design gate needs an executable classifier resolution block"
+    return match.group(1)
+
+
+def test_success_case_analyst_classifier_uses_standard_home_when_agent_crew_home_unset(tmp_path):
+    task_home = tmp_path / "home"
+    installed = task_home / ".agent-crew/scripts/brainstorm-classification.py"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("# installed helper\n", encoding="utf-8")
+    unrelated_project = tmp_path / "unrelated-project"
+    unrelated_project.mkdir()
+    env = {
+        **os.environ,
+        "HOME": str(task_home),
+        "PROJECT_ROOT": str(unrelated_project),
+    }
+    env.pop("AGENT_CREW_HOME", None)
+
+    result = subprocess.run(
+        ["bash", "-c", analyst_classifier_resolution_script() + "\nprintf '%s\\n' \"${BRAINSTORM_CLASSIFIER}\""],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(installed)
 
 
 def test_success_case_analyst_binds_design_hash_to_every_planning_artifact():
