@@ -840,29 +840,31 @@ interrupted or externally edited `pipeline.json` from bypassing role/tool
 boundaries on resume.
 
 ```bash
-if [ "${RESUME_AT:-}" = "phase_1_5" ] || [ "${RESUME_AT:-}" = "phase_2" ] || { [ "${RESUME_AT:-}" = "legacy" ] && [ "${START_MODE}" = "resume" ]; }; then
-  python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
-    --pipeline "${PIPELINE_PATH}" --format text || exit 1
-  CAPABILITY_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
-    --pipeline "${PIPELINE_PATH}" \
-    --manifest "${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
-    --agent-dir "${AGENT_CREW_HOME}/system/agents" \
-    --agent-dir "${AGENT_CREW_HOME}/user/agents" \
-    --format text 2>&1)
-  CAPABILITY_CHECK_RC=$?
+if [ "${START_MODE}" = "resume" ]; then
+  if [ "${RESUME_AT:-}" = "phase_1_5" ] || [ "${RESUME_AT:-}" = "phase_2" ] || [ "${RESUME_AT:-}" = "legacy" ]; then
+    python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
+      --pipeline "${PIPELINE_PATH}" --format text || exit 1
+    CAPABILITY_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-capability-check.py" \
+      --pipeline "${PIPELINE_PATH}" \
+      --manifest "${AGENT_CREW_HOME}/policies/agent-capabilities.json" \
+      --agent-dir "${AGENT_CREW_HOME}/system/agents" \
+      --agent-dir "${AGENT_CREW_HOME}/user/agents" \
+      --format text 2>&1)
+    CAPABILITY_CHECK_RC=$?
 
-  if [ "${CAPABILITY_CHECK_RC}" -ne 0 ]; then
-    log_progress "BLOCKED" "pipeline capability preflight failed on resume: ${CAPABILITY_CHECK_OUTPUT}"
-    register_update current_phase blocked
-    register_update blocked_by pipeline_capability_preflight_failed
-    cat > "${TASK_DIR}/result.md" <<EOF
+    if [ "${CAPABILITY_CHECK_RC}" -ne 0 ]; then
+      log_progress "BLOCKED" "pipeline capability preflight failed on resume: ${CAPABILITY_CHECK_OUTPUT}"
+      register_update current_phase blocked
+      register_update blocked_by pipeline_capability_preflight_failed
+      cat > "${TASK_DIR}/result.md" <<EOF
 STATUS: BLOCKED
 BLOCKER: pipeline_capability_preflight_failed
 DETAIL: existing pipeline.json violates the agent capability manifest.
 
 ${CAPABILITY_CHECK_OUTPUT}
 EOF
-    exit 1
+      exit 1
+    fi
   fi
 fi
 ```
