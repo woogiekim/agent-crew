@@ -90,7 +90,7 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 
 ## Key Features
 
-- **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run; the same helper now reports interaction intensity, ambiguity score, and a default 20% ambiguity threshold for deep/strict workflows
+- **Requirements sufficiency gate** — Supervisor Phase 1a first classifies each task's immutable raw input, then well-specified tasks synthesize a task-local `REQUIREMENTS` block through a deterministic helper while ambiguous tasks use the classification-adaptive requirements interview; final classification follows requirements. The same helper reports interaction intensity, ambiguity score, and a default 20% ambiguity threshold for deep/strict workflows. Orchestrator-owned requirements apply only to the explicitly identified legacy/injected compatibility path.
 - **Brainstorm Phase** — every new `crew:run` task receives a visible `Spike / Bounded / Architectural` preliminary classification before requirements and a final classification afterward. Bounded work uses one combined design and plan approval; Architectural work uses a separate design approval before Phase 1c planning. An informed downgrade shortens only the design ceremony and never weakens external-action approvals.
 - **Lean workflow methodology** — command files stay thin while shared rules define `Align -> Plan -> Execute/TDD -> Review`, context diet, workflow-origin vs target-scope handling, bounded reviewer loops, and fake-completion scanning. Standard-risk quality gates report concrete gaps and allow proceed / fix-gaps / strict-100 decisions when coverage is above threshold; high-risk gates remain strict.
 - **Minimal-change decision gate** — analyst/planner output records Need Analyzer answers, ordered Capability Search, `Will Do`, `Will NOT Do`, and a diff budget in existing artifacts. The planning-time gate rejects implementation pipelines when reuse, configuration, deletion, existing APIs, or platform capabilities can satisfy the request first.
@@ -380,14 +380,13 @@ crew:run "request"
 ```
 crew:run "task A" | "task B" | "task C"
        │
-      ▼ requirements sufficiency check for each task; requirements agent only for ambiguous tasks
+      ▼ create git worktree + branch and preserve immutable raw input for each task
        │
-       ▼ create git worktree + branch for each task
-       │
-       ▼ delegate all supervisors simultaneously (with per-task REQUIREMENTS)
+       ▼ delegate all supervisors simultaneously (without pre-injected REQUIREMENTS)
 [supervisor A]         ‖   [supervisor B]         ‖   [supervisor C]
   own worktree               own worktree               own worktree
-  1a req→1b Brainstorm→1c analyst+plan→1d approval→stages→reviewer   ...same...   ...same...
+  preliminary classification → classification-adaptive requirements → final classification   ...same...   ...same...
+  1b Brainstorm→1c analyst+plan→1d approval→stages→reviewer          ...same...   ...same...
   local commits only         local commits only         local commits only
        │
        ▼ all complete
@@ -408,7 +407,7 @@ Each `supervisor` handles its full pipeline independently. **Remote push never h
 | Phase | Name | Description |
 |---|---|---|
 | **0** | Resume check + bootstrap | Validate Brainstorm hashes and approval bindings, then resume the exact pending question, design gate, planning boundary, or approved execution |
-| **1a** | Requirement collection | Compute preliminary classification; skip collection if REQUIREMENTS are present, otherwise run the sufficiency check and delegate to requirements agent only when ambiguous |
+| **1a** | Preliminary classification + adaptive requirements | Classify the immutable raw input, run the sufficiency gate, synthesize task-local requirements or use the classification-adaptive interview when ambiguous, then compute final classification. Pre-existing requirements do not skip this normal-flow boundary. |
 | **1b** | Brainstorm Phase | Compute and disclose final classification; run the Spike, Bounded, or Architectural interaction; accept the short design or obtain separate design approval |
 | **1c** | Analysis + planning | Analyst runs as the merged analyst+planner step from the accepted/approved design hash; writes `analysis.md`, `prd.md`, `pipeline.json`, and `handoff.md` |
 | **1d** | Execution approval gate | Bounded uses one combined design and plan approval. Architectural binds the execution plan to its separate design approval. Request changes invalidates affected bindings and returns to the owning phase. |

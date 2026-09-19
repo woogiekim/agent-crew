@@ -85,3 +85,27 @@ Important README mismatch.
 
 No push, merge, deployment, or other remote mutation was performed in this
 second wave.
+
+### Second Wave Review-Fix Round 1
+
+- Reviewer finding: three README locations outside the earlier Pipeline Flow
+  test scope still described normal `crew:run` as collecting requirements before
+  Supervisor startup or injecting per-task `REQUIREMENTS` into each parallel
+  Supervisor.
+- RED: the expanded global/multi-task negative diagnostic failed with 1 expected
+  failure and 25 existing README tests passing. It detected the stale parallel
+  requirements-first sequence.
+- GREEN: Key Features, Multiple Tasks, and the Phase 1a table now consistently
+  assign immutable raw input classification, adaptive requirements, and final
+  classification to each Supervisor. The orchestrator only prepares isolated
+  task context/worktrees and delegates without pre-injected requirements.
+- Regression hardening: negative assertions now scan both single- and multi-task
+  normal-flow sections and the README outside the scoped legacy/injected
+  compatibility exception. They reject the former requirements-first and
+  `REQUIREMENTS`-skips-Phase-1a phrases.
+- Verification: README plus related Brainstorm Supervisor, pipeline-bypass, run
+  execution-policy, and sufficiency suites completed with 170 passed in 9.93s.
+- Full README negative diagnostic found none of:
+  `before supervisors run`, `requirements sufficiency check for each task`,
+  `with per-task REQUIREMENTS`, or `skip collection if REQUIREMENTS are present`.
+- `git diff --check`: clean before commit.

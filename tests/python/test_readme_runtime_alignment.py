@@ -69,14 +69,15 @@ def test_readme_parallel_flow_includes_brainstorm_and_phase_1c():
     text = readme_text()
 
     assert "req→analyst+plan→[1d]→stages→reviewer" not in text
-    assert "1a req→1b Brainstorm→1c analyst+plan→1d approval→stages→reviewer" in text
+    assert "preliminary classification → classification-adaptive requirements → final classification" in text
+    assert "1b Brainstorm→1c analyst+plan→1d approval→stages→reviewer" in text
 
 
 def test_readme_documents_sufficiency_gated_requirements():
     text = readme_text()
     assert "Requirements sufficiency gate" in text
     assert "Sufficiency-Gated Architecture" in text
-    assert "delegate to requirements agent only when ambiguous" in text
+    assert "classification-adaptive requirements interview" in text
 
 
 def test_readme_normal_run_assigns_classification_adaptive_requirements_to_supervisor():
@@ -95,16 +96,26 @@ def test_readme_normal_run_assigns_classification_adaptive_requirements_to_super
 def test_readme_does_not_restore_orchestrator_first_requirements_contract():
     text = readme_text()
     normal_flow = text.split("### Pipeline Flow", 1)[1].split("### Multiple Tasks", 1)[0]
+    multi_flow = text.split("### Multiple Tasks (Parallel)", 1)[1].split(
+        "### Supervisor Execution Phases", 1
+    )[0]
     requirements = text.split("### Requirements Collection: Sufficiency-Gated Architecture", 1)[1].split(
         "### State Directory Layout", 1
     )[0]
+    compatibility = requirements.split("#### Layer 2 — legacy/injected compatibility path", 1)[1]
+    normal_readme = text.replace(compatibility, "")
 
     assert "Run deterministic requirements sufficiency check" not in normal_flow
     assert "delegate one supervisor per task (with REQUIREMENTS)" not in normal_flow
+    assert "requirements sufficiency check for each task" not in multi_flow
+    assert "delegate all supervisors simultaneously (with per-task REQUIREMENTS)" not in multi_flow
+    assert "preliminary classification → classification-adaptive requirements → final classification" in multi_flow
     assert "Both the orchestrator and supervisor use the same sufficiency" not in requirements
     assert "`crew:run` first runs `core/scripts/requirements-sufficiency.py` per task" not in requirements
     assert "REQUIREMENTS` block passed to each supervisor" not in requirements
     assert "When `REQUIREMENTS` is present, Phase 1a is skipped entirely" not in requirements
+    assert "before supervisors run" not in normal_readme
+    assert "skip collection if REQUIREMENTS are present" not in normal_readme
 
 
 def test_readme_documents_codex_capability_fallbacks():
