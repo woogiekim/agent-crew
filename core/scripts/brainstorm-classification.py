@@ -80,7 +80,7 @@ def resolve_classification(rule_result: dict, semantic_result: dict | None) -> d
         return _rule_minimum(rule_classification, "degraded")
 
     semantic_classification = semantic_result.get("classification")
-    if semantic_classification not in ORDER:
+    if not isinstance(semantic_classification, str) or semantic_classification not in ORDER:
         return _rule_minimum(rule_classification, "degraded")
 
     if ORDER[semantic_classification] > ORDER[rule_classification]:
@@ -122,7 +122,7 @@ def load_text(path: str | None) -> str:
         return ""
     try:
         return Path(path).read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise InputReadError(f"cannot read {path}: {exc}") from exc
 
 
@@ -131,7 +131,7 @@ def load_json_object(path: str | None) -> dict | None:
         return None
     try:
         decoded: Any = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise InputReadError(f"cannot read {path}: {exc}") from exc
     if not isinstance(decoded, dict):
         raise InputReadError(f"cannot read {path}: JSON object required")
@@ -159,13 +159,26 @@ def build_payload(
 
 
 def format_text(payload: dict) -> str:
+    rule_result = payload["rule_result"]
+    semantic_result = payload["semantic_result"]
+    semantic_evidence = None
+    if isinstance(semantic_result, dict):
+        semantic_evidence = semantic_result.get("evidence")
+
     return "\n".join(
         (
             f"stage: {payload['stage']}",
             f"classification: {payload['final_classification']}",
             f"resolution: {payload['resolution']}",
+            f"matched_rules: {', '.join(rule_result['matched_rules']) or '(none)'}",
+            f"rule_evidence: {_compact_json(rule_result['evidence'])}",
+            f"semantic_evidence: {_compact_json(semantic_evidence)}",
         )
     )
+
+
+def _compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

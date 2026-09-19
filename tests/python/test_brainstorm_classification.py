@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "core" / "scripts" / "brainstorm-classification.py"
@@ -43,6 +45,22 @@ def test_unknown_semantic_classification_degrades_to_rule_minimum() -> None:
     resolved = module.resolve_classification(
         {"classification": "Bounded", "matched_rules": []},
         {"classification": "Unknown", "evidence": []},
+    )
+
+    assert resolved == {
+        "classification": "Bounded",
+        "resolution": "rule_minimum_preserved",
+        "semantic_status": "degraded",
+    }
+
+
+@pytest.mark.parametrize("semantic_classification", ([], {}))
+def test_non_string_semantic_classification_degrades_to_rule_minimum(
+    semantic_classification: object,
+) -> None:
+    resolved = module.resolve_classification(
+        {"classification": "Bounded", "matched_rules": []},
+        {"classification": semantic_classification, "evidence": []},
     )
 
     assert resolved == {
@@ -94,3 +112,50 @@ def test_cli_returns_structured_error_for_unreadable_semantic_input(tmp_path: Pa
 
     assert result.returncode != 0
     assert json.loads(result.stderr)["error"] == "input_read_error"
+
+
+@pytest.mark.parametrize("option", ("--semantic-file", "--evidence-file"))
+def test_cli_returns_structured_error_for_non_utf8_json_input(tmp_path: Path, option: str) -> None:
+    invalid_json_file = tmp_path / "invalid.json"
+    invalid_json_file.write_bytes(b"\xff")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "Add a local validation", option, str(invalid_json_file)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert json.loads(result.stderr)["error"] == "input_read_error"
+
+
+def test_text_output_includes_rule_and_semantic_evidence(tmp_path: Path) -> None:
+    evidence_file = tmp_path / "evidence.json"
+    evidence_file.write_text(
+        json.dumps({"backward_incompatible_public_contract": True}),
+        encoding="utf-8",
+    )
+    semantic_file = tmp_path / "semantic.json"
+    semantic_file.write_text(
+        json.dumps({"classification": "Architectural", "evidence": ["ownership boundary moves"]}),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "Remove a response field",
+            "--evidence-file",
+            str(evidence_file),
+            "--semantic-file",
+            str(semantic_file),
+            "--format",
+            "text",
+        ],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert "matched_rules: backward_incompatible_public_contract" in result.stdout
+    assert 'rule_evidence: {"backward_incompatible_public_contract":true}' in result.stdout
+    assert 'semantic_evidence: ["ownership boundary moves"]' in result.stdout
