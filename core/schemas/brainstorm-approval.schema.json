@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-crew/schemas/brainstorm-approval.schema.json",
   "title": "agent-crew Brainstorm approval decisions",
-  "description": "Optional Brainstorm approval artifact. Lives at {TASK_DIR}/context/brainstorm-approval.json and records downgrade, architectural-design, architectural-execution, and bounded-combined decisions. Architectural execution appends a separate record and preserves its design decision. The existing approval.md remains the execution-approval protocol.",
+  "description": "Optional Brainstorm approval artifact. Lives at {TASK_DIR}/context/brainstorm-approval.json and records downgrade, design/execution decisions, and append-only approval_invalidation events. Later invalidation preserves and references the original decision. The existing approval.md remains the execution-approval protocol.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "task_id", "decisions"],
@@ -35,7 +35,7 @@
           },
           "approval_kind": {
             "type": "string",
-            "enum": ["architectural_design", "architectural_execution", "bounded_combined", "user_downgrade"]
+            "enum": ["architectural_design", "architectural_execution", "bounded_combined", "user_downgrade", "approval_invalidation"]
           },
           "status": {
             "type": "string",
@@ -52,7 +52,10 @@
               "classification_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
               "execution_plan_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
               "design_decision_id": {"type": "string", "minLength": 1},
-              "approval_signal_path": {"type": "string", "const": "context/approval.md"}
+              "approval_signal_path": {"type": "string", "const": "context/approval.md"},
+              "invalidates_decision_id": {"type": "string", "minLength": 1},
+              "previous_hashes": {"type": "object"},
+              "current_hashes": {"type": "object"}
             }
           },
           "created_at": {
@@ -74,6 +77,9 @@
         "oneOf": [
           {
             "properties": {
+              "approval_kind": {
+                "enum": ["architectural_design", "architectural_execution", "bounded_combined", "user_downgrade"]
+              },
               "status": {
                 "enum": ["pending"]
               }
@@ -82,12 +88,26 @@
           {
             "required": ["decision_at"],
             "properties": {
+              "approval_kind": {
+                "enum": ["architectural_design", "architectural_execution", "bounded_combined", "user_downgrade"]
+              },
               "status": {
                 "enum": ["approved", "cancelled", "invalidated"]
               },
               "decision_at": {
                 "type": "string",
                 "minLength": 1
+              }
+            }
+          },
+          {
+            "required": ["decision_at", "reason"],
+            "properties": {
+              "approval_kind": {"const": "approval_invalidation"},
+              "status": {"const": "invalidated"},
+              "reason": {"type": "string", "minLength": 1},
+              "bound_fields": {
+                "required": ["invalidates_decision_id", "previous_hashes", "current_hashes"]
               }
             }
           }

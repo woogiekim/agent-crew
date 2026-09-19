@@ -695,10 +695,28 @@ def inspect():
               "execution_plan_hash": plan_hash, "bound_fields": fields,
               "effective_classification": automatic, "approved_design_hash": None}
     decisions = approval["decisions"]
+    invalidated_ids = set()
+    current_decisions = {}
+    for decision in decisions:
+        if decision["approval_kind"] == "approval_invalidation":
+            if decision["status"] != "invalidated":
+                raise ValueError("invalidation event must have invalidated status")
+            invalidated_ids.add(decision["bound_fields"]["invalidates_decision_id"])
+        else:
+            current_decisions[decision["approval_kind"]] = decision
+
+    def latest(kind):
+        decision = current_decisions.get(kind)
+        return decision if decision and decision["decision_id"] not in invalidated_ids else None
+
+    def approved(decision):
+        return bool(decision and decision["status"] == "approved" and decision.get("decision_at")
+                    and decision.get("idempotency_key"))
+
     changed = False
     design_invalidated = False
-    for decision in decisions:
-        if decision["status"] not in ("pending", "approved"):
+    for decision in current_decisions.values():
+        if decision["decision_id"] in invalidated_ids or decision["status"] not in ("pending", "approved"):
             continue
         bound = decision["bound_fields"]
         reason = None
@@ -709,31 +727,37 @@ def inspect():
         elif decision["approval_kind"] in ("bounded_combined", "architectural_execution") and bound.get("execution_plan_hash") != plan_hash:
             reason = "execution_plan_hash_changed"
         elif decision["approval_kind"] == "architectural_execution":
-            reference = next((item for item in reversed(decisions)
-                              if item["decision_id"] == bound.get("design_decision_id")), None)
-            if (not reference or reference["approval_kind"] != "architectural_design"
-                    or reference["status"] != "approved" or not reference.get("idempotency_key")
+            reference = latest("architectural_design")
+            if (not approved(reference) or reference["decision_id"] != bound.get("design_decision_id")
                     or bound.get("approval_signal_path") != "context/approval.md"):
                 reason = "execution_design_reference_invalid"
         if reason:
-            decision.update(status="invalidated", decision_at=datetime.now(timezone.utc).isoformat(), reason=reason)
+            now = datetime.now(timezone.utc).isoformat()
+            decisions.append({
+                "decision_id": f"{decision['decision_id']}:invalidation",
+                "approval_kind": "approval_invalidation", "status": "invalidated",
+                "design_hash": decision["design_hash"],
+                "bound_fields": {
+                    "invalidates_decision_id": decision["decision_id"],
+                    "previous_hashes": {"design_hash": decision["design_hash"],
+                                        "classification_hash": bound.get("classification_hash"),
+                                        "execution_plan_hash": bound.get("execution_plan_hash")},
+                    "current_hashes": {"design_hash": design_hash, "classification_hash": classification_hash,
+                                       "execution_plan_hash": plan_hash},
+                },
+                "created_at": now, "decision_at": now, "reason": reason,
+            })
+            invalidated_ids.add(decision["decision_id"])
             changed = True
             print(f"BRAINSTORM_APPROVAL_INVALIDATED: {decision['decision_id']} {reason}", file=sys.stderr)
-    if changed:
-        atomic_write(approval_path, approval)
-        signal = context / "approval.md"
-        if signal.exists() and signal.read_text(encoding="utf-8").strip() == "APPROVED":
-            atomic_write(signal, "PLAN_READY\n")
     if design_invalidated and dialogue:
         dialogue["status"] = "design_review"
         atomic_write(context / "brainstorm-dialogue.json", dialogue)
-
-    def latest(kind):
-        return next((item for item in reversed(decisions) if item["approval_kind"] == kind), None)
-
-    def approved(decision):
-        return bool(decision and decision["status"] == "approved" and decision.get("decision_at")
-                    and decision.get("idempotency_key"))
+    if changed:
+        signal = context / "approval.md"
+        if signal.exists() and signal.read_text(encoding="utf-8").strip() == "APPROVED":
+            atomic_write(signal, "PLAN_READY\n")
+        atomic_write(approval_path, approval)
 
     downgrade = latest("user_downgrade")
     override = fields.get("downgrade") if fields else None
@@ -749,8 +773,12 @@ def inspect():
         result["approved_design_hash"] = design_hash
 
     if (signal == "CANCELLED" or (current_decision and current_decision["status"] == "cancelled")
-            or (execution_decision and execution_decision["status"] == "cancelled")):
+            or (execution_decision and execution_decision["status"] == "cancelled")
+            or (downgrade and downgrade["status"] == "cancelled" and downgrade.get("reason") == "user_cancel")):
         resume_at = "cancelled"
+    elif downgrade and downgrade["status"] == "pending":
+        resume_at = "phase_1b_downgrade"
+        result["pending_decision_id"] = downgrade["decision_id"]
     elif dialogue.get("active_question_id") or any(item.get("status") == "pending" for item in dialogue.get("questions", [])):
         resume_at = "phase_1b_question"
         result["active_question_id"] = dialogue.get("active_question_id")
@@ -760,6 +788,8 @@ def inspect():
         resume_at = "phase_1b_dialogue"
     elif dialogue.get("status") == "blocked":
         raise ValueError("dialogue blocked")
+    elif architectural and dialogue.get("status") == "not_started":
+        resume_at = "phase_1b_dialogue"
     elif not fields or dialogue.get("status") in ("not_started", "design_review", "waiting_for_input"):
         resume_at = "phase_1b_design"
     elif dialogue.get("status") not in ("ready_for_approval", "accepted"):
@@ -787,10 +817,18 @@ except (OSError, ValueError, KeyError, TypeError) as exc:
 PYEOF
 ```
 
-이 gate는 사용자 승인 결정을 만들지 않는다. invalidation만 atomic write하며, 같은
-무효화는 다시 기록하지 않는다. 순서는 질문 → 분류 변경 대화 → 설계 검증 → 필요한
+이 gate는 사용자 승인 결정을 만들지 않는다. 무효화는 원 record의 시간·상태·bound_fields를
+변경하지 않고 `approval_kind: approval_invalidation` 사건을 `decisions[]`에 append한다.
+사건은 `bound_fields.invalidates_decision_id`, 변경 전/후 `previous_hashes`/`current_hashes`,
+`reason`을 담는다. 원 결정의 JSON 값은 byte-for-byte 보존하고 effective approval 조회는
+후속 무효화 사건을 반영한다. 같은 결정을 두 번 무효화하지 않으며 해시가 복원되어도
+무효화된 승인을 되살리지 않는다. 재승인은 새 decision ID로 append한다.
+순서는 pending downgrade → 질문 → 분류 변경 대화 → 설계 검증 → 필요한
 설계 승인 → 계획 → 실행 승인 → Phase 1.5/2이다. active 질문 ID, pending 결정 ID와
-이미 저장된 응답 키를 재사용한다. `cancelled`는 종료하며 timeout/빈 응답으로 대체하지 않는다.
+이미 저장된 응답 키를 재사용한다. `phase_1b_downgrade`는 동일 pending downgrade ID를
+재표시한다. downgrade 취소 중 `reason: user_cancel`은 terminal이며
+`reason: keep_architectural`은 Architectural 경로를 유지한다. `not_started` Architectural은
+설계 생성 전에 `phase_1b_dialogue`부터 재개한다. timeout/빈 응답은 결정으로 대체하지 않는다.
 승인 기록과 실행 signal 쓰기가 중단되면 현재 해시와 원 사용자 응답의 idempotency key를
 확인한 후 같은 결정을 완성한다. 이미 받은 승인을 새 사용자 interaction으로 다시 묻지 않는다.
 
@@ -1287,6 +1325,9 @@ pending/approved 기록을 쓴다. 기록만 pending이거나 거절/취소되�
 근거를 보존한다. 실제 승인된 downgrade만 effective Bounded 경로를 선택하며 설계 snapshot이
 변경되면 그 downgrade도 재확인한다. 거절은 `status: cancelled`, 이유에 `keep_architectural`을
 기록하고 override 제안을 제거한 후 Architectural로 계속한다. 작업 취소는 종료한다.
+작업 취소는 같은 cancelled 상태라도 `reason: user_cancel`을 기록한다. 미결 상태는
+`phase_1b_downgrade`에서 같은 pending decision ID로 재개하며, 새 설계 승인 질문으로
+대체하지 않는다. `keep_architectural`은 작업 취소가 아니고 이후 명시적 재설계/대화로 계속한다.
 
 downgrade changes brainstorming ceremony only. 실행 범위, mutating 권한,
 external-write, push, deploy, merge, release 등 기존 외부 액션 승인은 그대로 필요하다.
@@ -1311,8 +1352,10 @@ created_at: current timestamp
 envelope는 `schema_version: 1`, `task_id`, `decisions`이며 schema 외 top-level 필드를
 만들지 않는다. `bound_fields.classification_hash`는 공통 gate의 현재 해시 그대로 저장한다.
 상호작용 선택은 설계 승인, 수정 요청, 취소이다. 부분 섹션 확인을 이 승인으로 바꾸지 않는다.
-새 사용자 응답에는 `decision_at`과 `idempotency_key`를 저장하고 `status: approved`로
-전환한다. 동일 키/내용의 재전송은 기존 결정을 재사용하며 동일 키/다른 내용은 충돌로
+새 사용자 응답에는 동일 logical `decision_id`의 결과 snapshot을 append하고
+`decision_at`, `idempotency_key`, `status: approved`를 저장한다. 기존 pending/승인 snapshot은
+덮어쓰지 않는다. 같은 종류의 최신 snapshot과 후속 invalidation으로 effective 상태를 계산한다.
+동일 키/내용의 재전송은 기존 결정을 재사용하며 동일 키/다른 내용은 충돌로
 차단한다. 한 task에는 한 pending 설계 결정만 표시하고 병렬 작업의 결정을 섞지 않는다.
 저장/read-back 실패는 전진을 막는다. 명시 응답 없는 timeout/빈 응답은 pending이다.
 
@@ -1322,8 +1365,9 @@ approved design_hash가 현재 해시와 일치해야 Phase 1c의 analyst 위임
 승인 시 dialogue는 `accepted`로 전환하며 설계 승인은 `approval.md`에 `APPROVED`를
 쓰지 않는다. 이것은 계획/구현 실행 승인이 아니다.
 
-수정 요청이면 pending 결정을 `invalidated`로 남기고 `reason: request_changes`,
-`decision_at`을 저장한다. dialogue는 `design_review`로 되돌려 `MODE=design`을 수행한다.
+수정 요청이면 원 pending 결정을 유지하고 `approval_invalidation` 사건에
+`invalidates_decision_id`, 변경 전/후 hashes, `reason: request_changes`, `decision_at`을
+기록한다. dialogue는 `design_review`로 되돌려 `MODE=design`을 수행한다.
 새 결정이 필요할 때만 질문하고 수정된 전체 설계를 다시 표시한다. 취소는 `cancelled`,
 `decision_at`, 응답 키와 이유를 기록하고 종료한다. 어느 경우도 승인 전에 PRD/pipeline을
 생성하지 않는다. 승인 이후 설계 변경도 같은 무효화/재승인 경로를 따른다.
@@ -1743,7 +1787,8 @@ Architectural은 이미 승인된 전체 설계에 연결해 이 기존 계획 �
 `classification_hash`, `execution_plan_hash`, `design_decision_id`,
 `approval_signal_path: context/approval.md`를 `bound_fields`에 저장한다.
 `design_decision_id`는 현재 승인된 architectural_design 결정을 참조해야 한다.
-UI 전 pending을 저장하고 응답 뒤 `decision_at`/`idempotency_key`와 결과를 기록한다.
+UI 전 pending을 저장하고 응답 뒤 동일 logical ID의 결과 snapshot을 append한다.
+기존 snapshot을 바꾸지 않고 새 snapshot에 `decision_at`/`idempotency_key`와 결과를 기록한다.
 계획 변경만 발생하면 이 실행 결정만 무효화하고 설계 승인은 유지한다.
 설계/분류 변경이면 둘 다 무효화한다. 새로운 재계획 승인은 새 execution record로 append한다.
 

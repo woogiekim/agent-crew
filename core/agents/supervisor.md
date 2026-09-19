@@ -146,7 +146,7 @@ if it does not exist.
 | `BRAINSTORM_CLASSIFICATION` | preliminary 또는 final 분류 저장/표시 후 | stage, 분류 artifact 경로; 사용자에게 분류·근거·과정을 별도 표시 |
 | `BRAINSTORM_QUESTION` | Architectural 단일 질문 또는 Bounded grouped interaction 표시 전 | task ID와 question ID 또는 묶음 ID |
 | `BRAINSTORM_DESIGN_READY` | 설계 검증과 필요한 섹션 확인 완료 | design artifact 경로; 승인 완료를 뜻하지 않음 |
-| `BRAINSTORM_APPROVAL_INVALIDATED` | canonical 설계/분류/계획 binding 변경 | decision ID와 변경 사유; 의존 승인만 무효화 |
+| `BRAINSTORM_APPROVAL_INVALIDATED` | canonical 설계/분류/계획 binding 변경 | 원 결정을 보존하는 approval_invalidation 사건; 참조 decision ID와 변경 전/후 hashes 및 사유 |
 | `BRAINSTORM_RESUME` | Phase 0 및 phase boundary의 공통 gate 검사 후 | 현재 해시, 정확한 재개 단계, active question 또는 pending decision ID |
 | `SPIKE_COMPLETED` | Spike 조사 결과로 종료 | findings 경로; 구현 pipeline 없이 종료 |
 | `DEGRADED` | 분류 helper/Agent 결과를 신뢰할 수 없음 | 원인과 중단/보수적 처리; 자동 Bounded 금지 |
@@ -269,6 +269,9 @@ ceremony만 바꾼다. 외부 액션 승인과 Phase 2.5는 그대로 유지한�
 재개 및 각 단계 전환은 bootstrap의 단일 hash gate를 사용한다. 질문/pending 결정 ID를
 유지하며 변경된 binding은 무효화한다. `approval.md`는 기존 실행 signal이고 별도의
 Brainstorm 기록은 그 signal을 대체하지 않는다. legacy 작업에는 새 기록을 강제하지 않는다.
+승인 이력은 append-only이며 무효화 사건으로 effective 승인을 계산한다. pending downgrade는
+동일 결정에서 재개하고 `keep_architectural`과 terminal `user_cancel`을 구분한다.
+Architectural `not_started`는 설계 생성보다 순차 대화부터 재개한다.
 
 ## Absolute Rules
 

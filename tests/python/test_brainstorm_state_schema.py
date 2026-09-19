@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VALIDATOR = REPO_ROOT / "core" / "scripts" / "validate-state-schema.py"
@@ -254,6 +256,42 @@ def test_success_case_contract_architectural_execution_preserves_design_decision
     assert result.returncode == 0, result.stdout
     saved = json.loads((task_dir / "context/brainstorm-approval.json").read_text())
     assert json.dumps(saved["decisions"][0], sort_keys=True) == original_design
+
+
+def test_success_case_contract_append_only_invalidation_references_original_decision(tmp_path: Path) -> None:
+    task_dir = make_valid_task(tmp_path)
+    approval = approval_fixture(status="approved")
+    approval["decisions"].append({
+        "decision_id": "invalidate-decision-1", "approval_kind": "approval_invalidation",
+        "status": "invalidated", "design_hash": "b" * 64,
+        "bound_fields": {"invalidates_decision_id": "decision-1",
+                         "previous_hashes": {"design_hash": "b" * 64},
+                         "current_hashes": {"design_hash": "c" * 64}},
+        "created_at": "2026-09-20T02:00:00Z", "decision_at": "2026-09-20T02:00:00Z",
+        "reason": "design_or_classification_hash_changed",
+    })
+    write_artifact(task_dir, "brainstorm-approval.json", approval)
+
+    result = run_validator(task_dir)
+
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize("missing", ["invalidates_decision_id", "previous_hashes", "current_hashes"])
+def test_failure_case_contract_invalidation_requires_target_and_hash_snapshots(tmp_path: Path, missing: str) -> None:
+    task_dir = make_valid_task(tmp_path)
+    approval = approval_fixture(status="approved")
+    record = approval["decisions"][0]
+    record.update(approval_kind="approval_invalidation", status="invalidated", reason="hash_changed",
+                  bound_fields={"invalidates_decision_id": "original-1",
+                                "previous_hashes": {"design_hash": "b" * 64},
+                                "current_hashes": {"design_hash": "c" * 64}})
+    del record["bound_fields"][missing]
+    write_artifact(task_dir, "brainstorm-approval.json", approval)
+
+    result = run_validator(task_dir)
+
+    assert result.returncode == 2, result.stdout
 
 
 def test_register_accepts_brainstorm_phases_and_pointers() -> None:

@@ -420,7 +420,8 @@ def test_success_case_workflow_downgrade_keeps_automatic_classification(tmp_path
 ])
 def test_failure_case_workflow_changed_bound_field_invalidates_approval(tmp_path, field):
     fields = workflow_fixture(tmp_path)
-    workflow_decision(tmp_path, fields, "architectural_design")
+    original = workflow_decision(tmp_path, fields, "architectural_design")
+    original_bytes = json.dumps(original, sort_keys=True).encode()
     fields[field] = True if field == "downgrade" else ["changed"]
     write_workflow_design(tmp_path, fields)
 
@@ -429,11 +430,19 @@ def test_failure_case_workflow_changed_bound_field_invalidates_approval(tmp_path
     assert gate["resume_at"] == "phase_1b_design"
     assert "BRAINSTORM_APPROVAL_INVALIDATED" in events
     approval = json.loads((tmp_path / "context/brainstorm-approval.json").read_text())
-    assert approval["decisions"][0]["status"] == "invalidated"
-    assert "decision_at" in approval["decisions"][0]
+    assert json.dumps(approval["decisions"][0], sort_keys=True).encode() == original_bytes
+    invalidation = approval["decisions"][-1]
+    assert invalidation["approval_kind"] == "approval_invalidation"
+    assert invalidation["status"] == "invalidated"
+    assert invalidation["bound_fields"]["invalidates_decision_id"] == original["decision_id"]
+    assert invalidation["bound_fields"]["previous_hashes"]["design_hash"] == original["design_hash"]
+    assert invalidation["bound_fields"]["current_hashes"]["design_hash"] == gate["design_hash"]
+    saved_bytes = (tmp_path / "context/brainstorm-approval.json").read_bytes()
     repeated, repeated_events = run_workflow_gate(tmp_path)
     assert repeated["resume_at"] == "phase_1b_design"
+    assert repeated["approved_design_hash"] is None
     assert "BRAINSTORM_APPROVAL_INVALIDATED" not in repeated_events
+    assert (tmp_path / "context/brainstorm-approval.json").read_bytes() == saved_bytes
 
 
 def test_failure_case_workflow_promotion_invalidates_bounded_approval(tmp_path):
@@ -591,3 +600,71 @@ def test_failure_case_workflow_architectural_execution_cancel_survives_signal_wr
     gate, _ = run_workflow_gate(tmp_path)
 
     assert gate["resume_at"] == "cancelled"
+
+
+@pytest.mark.parametrize("decision_status,reason,expected", [
+    ("pending", None, "phase_1b_downgrade"),
+    ("cancelled", "keep_architectural", "phase_1b_design_approval"),
+    ("cancelled", "user_cancel", "cancelled"),
+])
+def test_success_case_workflow_downgrade_decision_resumes_its_own_boundary(tmp_path, decision_status, reason, expected):
+    fields = workflow_fixture(tmp_path)
+    fields["downgrade"] = {"override": "Bounded", "automatic_classification": "Architectural",
+                           "skipped_steps": ["section_review"], "risks": ["less design review"],
+                           "affected_boundaries": ["workflow"], "reason": "user request"}
+    write_workflow_design(tmp_path, fields)
+    decision = workflow_decision(tmp_path, fields, "user_downgrade", "pending")
+    approval_path = tmp_path / "context/brainstorm-approval.json"
+    approval = json.loads(approval_path.read_text())
+    if decision_status == "cancelled":
+        approval["decisions"][0].update(status=decision_status, reason=reason,
+                                         decision_at="now", idempotency_key="downgrade-response-1")
+        write_json(approval_path, approval)
+    before = approval_path.read_bytes()
+
+    gate, events = run_workflow_gate(tmp_path)
+
+    assert gate["resume_at"] == expected
+    assert gate["effective_classification"] == "Architectural"
+    if decision_status == "pending":
+        assert gate["pending_decision_id"] == decision["decision_id"]
+    assert approval_path.read_bytes() == before
+    assert "BRAINSTORM_APPROVAL_INVALIDATED" not in events
+    repeated, _ = run_workflow_gate(tmp_path)
+    assert repeated["resume_at"] == expected
+    assert approval_path.read_bytes() == before
+
+
+def test_success_case_workflow_architectural_first_dialogue_precedes_design(tmp_path):
+    workflow_fixture(tmp_path)
+    (tmp_path / "context/brainstorm-design.md").unlink()
+    dialogue_path = tmp_path / "context/brainstorm-dialogue.json"
+    dialogue = json.loads(dialogue_path.read_text())
+    dialogue["status"] = "not_started"
+    write_json(dialogue_path, dialogue)
+
+    gate, _ = run_workflow_gate(tmp_path)
+
+    assert gate["resume_at"] == "phase_1b_dialogue"
+    assert gate["design_hash"] is None
+    assert not (tmp_path / "pipeline.json").exists()
+
+
+def test_failure_case_workflow_append_only_invalidation_prevents_reusing_restored_design(tmp_path):
+    fields = workflow_fixture(tmp_path)
+    workflow_decision(tmp_path, fields, "architectural_design")
+    write_workflow_design(tmp_path, {**fields, "goals": ["changed"]})
+    run_workflow_gate(tmp_path)
+    write_workflow_design(tmp_path, fields)
+    dialogue_path = tmp_path / "context/brainstorm-dialogue.json"
+    dialogue = json.loads(dialogue_path.read_text())
+    dialogue["status"] = "ready_for_approval"
+    write_json(dialogue_path, dialogue)
+
+    gate, _ = run_workflow_gate(tmp_path)
+
+    assert gate["resume_at"] == "phase_1b_design_approval"
+    assert gate["approved_design_hash"] is None
+    history = json.loads((tmp_path / "context/brainstorm-approval.json").read_text())["decisions"]
+    assert history[0]["status"] == "approved"
+    assert history[-1]["approval_kind"] == "approval_invalidation"
