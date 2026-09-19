@@ -12,13 +12,40 @@ def readme_text() -> str:
     return README.read_text(encoding="utf-8")
 
 
-def test_readme_documents_merged_analyst_planner_flow():
+def test_readme_documents_brainstorm_phase_and_approval_split():
+    text = readme_text()
+    assert "Brainstorm Phase" in text
+    assert "Spike / Bounded / Architectural" in text
+    assert "preliminary classification" in text
+    assert "final classification" in text
+    assert "combined design and plan approval" in text
+    assert "separate design approval" in text
+    assert "downgrade" in text
+    assert "crew:agent" in text and "unchanged" in text
+
+
+def test_readme_documents_brainstorm_lifecycle_and_artifacts():
+    text = readme_text()
+    for phase in ("Phase 1a", "Phase 1b", "Phase 1c", "Phase 1d"):
+        assert phase in text
+    for artifact in (
+        "brainstorm-classification.json",
+        "brainstorm-dialogue.json",
+        "brainstorm-design.md",
+        "brainstorm-approval.json",
+    ):
+        assert artifact in text
+    assert "one active question per task" in text
+    assert "legacy `phase_1bc`" in text
+    assert "external-action approvals" in text
+
+
+def test_readme_preserves_merged_analyst_planner_inside_phase_1c():
     text = readme_text()
     assert "analyst+planner" in text
-    assert "Phase 1b+1c" in text
+    assert "Phase 1c" in text
     assert "requirements → analyst → planner" not in text
     assert "Phase 1b: analyst" not in text
-    assert "Phase 1c: planner" not in text
 
 
 def test_readme_documents_sufficiency_gated_requirements():

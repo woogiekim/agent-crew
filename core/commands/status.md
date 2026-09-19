@@ -384,6 +384,86 @@ except Exception:
 fi
 ```
 
+### 2.6. Read optional Brainstorm state
+
+After reading `register.json`, resolve its optional Brainstorm pointers. Read
+only files that exist and never create, repair, or normalize an artifact. A
+classification artifact is the presence signal: legacy tasks omit the entire
+Brainstorm block instead of displaying false defaults.
+
+```bash
+BRAINSTORM_STATUS=$(python3 - "${REGISTER}" "${TASK_DIR}" <<'PYEOF' 2>/dev/null || true
+import json
+import sys
+from pathlib import Path
+
+register_path = Path(sys.argv[1])
+task_dir = Path(sys.argv[2])
+try:
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+except Exception:
+    register = {}
+
+def artifact(register_key, fallback):
+    configured = register.get(register_key)
+    path = Path(configured) if isinstance(configured, str) and configured else task_dir / fallback
+    return path
+
+def read_optional(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    except Exception:
+        return None
+
+classification = read_optional(artifact(
+    "brainstorm_classification_path", "context/brainstorm-classification.json"
+))
+if classification is None:
+    raise SystemExit(0)
+
+dialogue = read_optional(artifact(
+    "brainstorm_dialogue_path", "context/brainstorm-dialogue.json"
+)) or {}
+approval = read_optional(artifact(
+    "brainstorm_approval_path", "context/brainstorm-approval.json"
+)) or {"decisions": []}
+
+classification_name = classification.get("final", classification.get("preliminary", "Unknown"))
+dialogue_status = dialogue.get("status", "Unknown")
+print(f"Brainstorm : {classification_name} / {dialogue_status}")
+
+active_question = dialogue.get("active_question_id")
+if active_question:
+    print(f"Question   : {active_question}")
+
+decisions = approval.get("decisions", [])
+design_status = "not_required"
+downgrade_status = None
+invalidated = {
+    decision.get("bound_fields", {}).get("invalidates_decision_id")
+    for decision in decisions
+    if decision.get("approval_kind") == "approval_invalidation"
+}
+for decision in decisions:
+    kind = decision.get("approval_kind")
+    status = "invalidated" if decision.get("decision_id") in invalidated else decision.get("status", "Unknown")
+    if kind in ("architectural_design", "bounded_combined"):
+        design_status = status
+    elif kind == "user_downgrade":
+        downgrade_status = status
+
+print(f"Design     : {design_status}")
+if downgrade_status is not None:
+    print(f"Downgrade  : {downgrade_status}")
+PYEOF
+)
+```
+
+The snippet prefers the four register pointers and uses their canonical
+`context/brainstorm-*` paths only as an absence-tolerant fallback for state
+created before the pointers were written. Invalid JSON stays invisible here;
+schema validation and the Supervisor resume gate own blocking diagnostics.
+
 ### 3. Determine overall status
 
 ```bash
@@ -640,6 +720,10 @@ Status  : {in-progress | completed | blocked}
 Phase   : {REG_CURRENT_PHASE}    ← printed only when register.json present
 Approval: {REG_APPROVAL_STATUS}  ← printed only when register.json present and approval_status != not_required
 Reviewer: {REG_VERIFY_STATUS}    ← printed only when register.json present and verification_status not in (not_started, skipped)
+Brainstorm : {FINAL_OR_PRELIMINARY_CLASSIFICATION} / {DIALOGUE_STATUS}  ← printed only when Brainstorm state exists
+Question   : {ACTIVE_QUESTION_ID} ← printed only while one question is active
+Design     : {DESIGN_APPROVAL_STATUS}
+Downgrade  : {DOWNGRADE_STATUS}  ← printed only when a downgrade decision exists
 
 Recent events (from progress.log):
   2026-05-10T14:22:01 | STARTED    | Implement order management API
@@ -666,6 +750,19 @@ Pipeline stages:
 
 Completed: 3 / 5 stages
 ```
+
+For example, an architectural task paused on its second question includes:
+
+```text
+Phase      : phase_1b_brainstorm
+Brainstorm : Architectural / waiting_for_input
+Question   : q-2
+Design     : pending
+```
+
+Insert `${BRAINSTORM_STATUS}` after the register-derived Phase/Approval/Reviewer
+lines and before recent events. If it is empty, print no Brainstorm heading or
+placeholder; legacy tasks omit this block entirely.
 
 When `RECENT_PROGRESS` is empty (no log file yet), omit the "Recent events" section:
 

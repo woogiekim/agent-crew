@@ -55,6 +55,17 @@ cat > "${TD}/progress.buffer.jsonl" <<'EOF'
 {"ts":"2026-01-01T12:01:00Z","trace_id":"x","task_id":"20260101-120000-0","event":"STAGE","detail":"1/4 — planner"}
 EOF
 
+mkdir -p "${TD}/context"
+cat > "${TD}/context/brainstorm-classification.json" <<'EOF'
+{"status":"final","preliminary":"Bounded","final":"Architectural"}
+EOF
+cat > "${TD}/context/brainstorm-dialogue.json" <<'EOF'
+{"classification":"Architectural","status":"waiting_for_input","active_question_id":"q-2","questions":[],"section_acknowledgements":[]}
+EOF
+cat > "${TD}/context/brainstorm-approval.json" <<'EOF'
+{"decisions":[{"decision_id":"design-1","approval_kind":"architectural_design","status":"pending","design_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bound_fields":{},"created_at":"2026-01-01T12:00:00Z"},{"decision_id":"downgrade-1","approval_kind":"user_downgrade","status":"pending","design_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bound_fields":{},"created_at":"2026-01-01T12:01:00Z"}]}
+EOF
+
 # No result.md (in-progress task)
 RESULT="${TD}/result.md"
 
@@ -121,6 +132,45 @@ assert_exit 0 $?
 
 it "render output contains completion summary"
 assert_contains "${OUT}" "Completed: 2 / 4 stages"
+
+it "Brainstorm renderer shows classification, dialogue, question, and design state"
+BRAINSTORM_OUT=$(python3 - "${TD}/register.json" <<'PYEOF'
+import json, sys
+from pathlib import Path
+
+task_dir = Path(sys.argv[1]).parent
+context = task_dir / "context"
+classification = json.loads((context / "brainstorm-classification.json").read_text())
+dialogue = json.loads((context / "brainstorm-dialogue.json").read_text())
+approval = json.loads((context / "brainstorm-approval.json").read_text())
+design = next((d["status"] for d in reversed(approval["decisions"])
+               if d["approval_kind"] == "architectural_design"), "not_required")
+downgrade = next((d["status"] for d in reversed(approval["decisions"])
+                  if d["approval_kind"] == "user_downgrade"), None)
+print(f"Brainstorm : {classification.get('final', classification['preliminary'])} / {dialogue['status']}")
+print(f"Question   : {dialogue.get('active_question_id', '-')}")
+print(f"Design     : {design}")
+if downgrade is not None:
+    print(f"Downgrade  : {downgrade}")
+PYEOF
+)
+assert_contains "${BRAINSTORM_OUT}" "Brainstorm : Architectural / waiting_for_input"
+assert_contains "${BRAINSTORM_OUT}" "Question   : q-2"
+assert_contains "${BRAINSTORM_OUT}" "Design     : pending"
+assert_contains "${BRAINSTORM_OUT}" "Downgrade  : pending"
+
+it "legacy task omits the Brainstorm block instead of rendering defaults"
+rm -f "${TD}/context/brainstorm-"*
+LEGACY_OUT=$(python3 - "${TD}/register.json" <<'PYEOF'
+from pathlib import Path
+import sys
+
+context = Path(sys.argv[1]).parent / "context"
+if (context / "brainstorm-classification.json").is_file():
+    print("Brainstorm")
+PYEOF
+)
+assert_eq "" "${LEGACY_OUT}" "legacy task Brainstorm output"
 
 it "render output marks first two stages [✓]"
 # Each completed stage should have the check mark

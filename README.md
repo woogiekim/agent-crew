@@ -91,10 +91,11 @@ Use these artifacts to evaluate agent-crew on its own control-plane strengths:
 ## Key Features
 
 - **Requirements sufficiency gate** — well-specified tasks synthesize a `REQUIREMENTS` block inline through a deterministic helper script; ambiguous tasks still use the requirements agent for a structured interview before supervisors run; the same helper now reports interaction intensity, ambiguity score, and a default 20% ambiguity threshold for deep/strict workflows
+- **Brainstorm Phase** — every new `crew:run` task receives a visible `Spike / Bounded / Architectural` preliminary classification before requirements and a final classification afterward. Bounded work uses one combined design and plan approval; Architectural work uses a separate design approval before Phase 1c planning. An informed downgrade shortens only the design ceremony and never weakens external-action approvals.
 - **Lean workflow methodology** — command files stay thin while shared rules define `Align -> Plan -> Execute/TDD -> Review`, context diet, workflow-origin vs target-scope handling, bounded reviewer loops, and fake-completion scanning. Standard-risk quality gates report concrete gaps and allow proceed / fix-gaps / strict-100 decisions when coverage is above threshold; high-risk gates remain strict.
 - **Minimal-change decision gate** — analyst/planner output records Need Analyzer answers, ordered Capability Search, `Will Do`, `Will NOT Do`, and a diff budget in existing artifacts. The planning-time gate rejects implementation pipelines when reuse, configuration, deletion, existing APIs, or platform capabilities can satisfy the request first.
 - **Explicit command adapter hook** — `auto-route.sh` adapts explicit agent-crew commands such as `$crew:run`, `$crew:agent`, `crew:run`, and `crew:agent`. It does not classify ordinary natural language as read-only or mutating, and it does not choose `crew:agent` vs `crew:run`.
-- **Merged analyst + planner layer** — supervisor Phase 1b+1c invokes the analyst as the combined analysis/planning step; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
+- **Merged analyst + planner layer** — supervisor Phase 1c invokes the analyst as the combined analysis/planning step after Brainstorm design acceptance or approval; it distills intent, writes the PRD, chooses stages, and produces `pipeline.json` / `handoff.md`
 - **Phase 1d plan approval gate** — after analysis/planning, supervisor displays the full implementation plan (pipeline stages, dynamic agents to create, risk summary) and requires explicit user approval before any stage agent executes
 - **Automatic subagent creation** — the merged analysis/planning step can populate `needs_creation` in `pipeline.json`; supervisor Phase 1.5 spawns an inline Agent for each missing specialist that writes the agent definition into the installed/user agent layer before execution starts
 - **Quality loop enforcement (test-driven review, Issue #3)** — every implementation stage runs a validate → fix → re-validate cycle (max 3 retries) before reporting completion; the reviewer EXECUTES the project's discovered test runner (`pytest` / `npm test` / `gradle test` / `go test` / `cargo test` / `tox`) and rejects with `STATUS: REJECTED REASON=tests_failed` on non-zero exit, `tests_absent_for_code_change` when no runner exists for a code-touching diff, or `cross_process_path_mismatch` when a `*.sh` hook and a `*.py / *.ts / *.js` module disagree on filesystem path literals. The supervisor loops back to the most recent implementer within the existing Stage Retry Rule budget; planner opts out for docs-only stages via `requires_test_execution: false` on the reviewer-stage object. **A real test suite now exists in `tests/`** (see [Testing](#testing)) — the reviewer's runner-discovery on this repo finds `pytest` and exercises the Python, shell, and integration suites end-to-end
@@ -339,7 +340,7 @@ contract.
 ### Pipeline Flow
 
 ```
-requirements sufficiency → analyst+planner → [Phase 1d: plan approval] → [stages] → reviewer
+Phase 1a requirements → Phase 1b Brainstorm → Phase 1c analyst+planner → Phase 1d approval → [stages] → reviewer
 ```
 
 For each task, the full execution path is:
@@ -354,9 +355,10 @@ crew:run "request"
        ▼ delegate one supervisor per task (with REQUIREMENTS)
 [supervisor]
        │ Phase 0:  Resume check + context bootstrap
-      │ Phase 1a: REQUIREMENTS present → skip; absent → sufficiency check / requirements agent
-      │ Phase 1b+1c: analyst as merged analysis+planning step
-      │ Phase 1d: AskUserQuestion — show plan, await Approve / Request changes / Cancel
+      │ Phase 1a: preliminary classification + requirements intake
+      │ Phase 1b: final classification + Brainstorm dialogue/design
+      │ Phase 1c: analyst as merged analysis+planning step
+      │ Phase 1d: combined Bounded approval or Architectural execution-plan approval
        │ Phase 1.5: agent creation (needs_creation from pipeline.json)
        │ Phase 2:  stage execution with quality loop
        │ Phase 2.5: stage action gate (centralized approval for devops/deploy stages)
@@ -406,14 +408,64 @@ Each `supervisor` handles its full pipeline independently. **Remote push never h
 
 | Phase | Name | Description |
 |---|---|---|
-| **0** | Resume check + bootstrap | Path resolution, resume detection; if `pipeline.json` exists, jump directly to Phase 2 |
-| **1a** | Requirement collection | Skip if REQUIREMENTS provided; else run the sufficiency check and delegate to requirements agent only when ambiguous |
-| **1b+1c** | Analysis + planning | Analyst agent runs as the merged analyst+planner step; writes `analysis.md`, `prd.md`, `pipeline.json`, and `handoff.md` |
-| **1d** | Plan approval gate | Display full implementation plan (pipeline, dynamic agents, risk count); AskUserQuestion: Approve / Request changes / Cancel; "Request changes" re-invokes the analyst planning step and loops back to 1d |
+| **0** | Resume check + bootstrap | Validate Brainstorm hashes and approval bindings, then resume the exact pending question, design gate, planning boundary, or approved execution |
+| **1a** | Requirement collection | Compute preliminary classification; skip collection if REQUIREMENTS are present, otherwise run the sufficiency check and delegate to requirements agent only when ambiguous |
+| **1b** | Brainstorm Phase | Compute and disclose final classification; run the Spike, Bounded, or Architectural interaction; accept the short design or obtain separate design approval |
+| **1c** | Analysis + planning | Analyst runs as the merged analyst+planner step from the accepted/approved design hash; writes `analysis.md`, `prd.md`, `pipeline.json`, and `handoff.md` |
+| **1d** | Execution approval gate | Bounded uses one combined design and plan approval. Architectural binds the execution plan to its separate design approval. Request changes invalidates affected bindings and returns to the owning phase. |
 | **1.5** | Dynamic agent creation | Read `needs_creation` from `pipeline.json`; spawn an inline Agent for each missing specialist; verify file exists before proceeding |
 | **2** | Stage execution | Execute `stages` sequentially; apply quality loop rule (validate → fix → re-validate, up to 3 retries) per stage |
 | **2.5** | Stage action gate | Display implementation summary; if pipeline includes `devops` stage, use AskUserQuestion for deployment approval before running devops; stage agents write PLAN blocks — they do not call AskUserQuestion directly |
 | **3** | Result reporting | Collect git log; write `result.md`; emit `COMPLETED`; remove active marker (single mode) or preserve it (parallel mode) |
+
+### Brainstorm Phase
+
+Classification is deliberately two-pass. The preliminary classification uses
+the immutable raw input and inexpensive repository evidence to choose the
+requirements depth; it is not approval evidence. After requirements are known,
+the final classification combines deterministic rules with the Brainstorm
+Agent's semantic result, preserving the heavier result. The three paths are:
+
+- **Spike** — acknowledge a cheap investigation method, return findings and a
+  recommendation, and require a new classified transition before keeping probe
+  code or implementing a solution.
+- **Bounded** — ask only high-impact unanswered questions, allow related
+  questions in one structured interaction, and present a short design. Phase 1d
+  provides the single combined design and plan approval; there is no additional
+  design-approval interaction.
+- **Architectural** — ask one active question per task in sequence, compare
+  materially distinct approaches when they exist, review design sections, and
+  require separate design approval before Phase 1c. Phase 1d then approves the
+  execution plan against that approved design.
+
+After the automatic classification and risks are disclosed, a user can request
+an Architectural-to-Bounded downgrade. The recorded downgrade skips only the
+extra Architectural dialogue and separate design gate. It does not lower the
+final automatic classification or relax deployment, push, merge, destructive,
+credential, permission, security, or other external-action approvals. Newly
+discovered architectural impact invalidates the downgrade and dependent
+approvals.
+
+Brainstorm state is durable under `{TASK_DIR}/context/`:
+
+| Artifact | Purpose |
+|---|---|
+| `brainstorm-classification.json` | preliminary and final classifications, evidence, resolution, and classifier version |
+| `brainstorm-dialogue.json` | ordered questions, one active question, responses, section acknowledgements, and idempotency keys |
+| `brainstorm-design.md` | canonical design fields, selected approach, and rejected alternatives |
+| `brainstorm-approval.json` | append-only downgrade, design, execution-binding, and invalidation decisions |
+| `approval.md` | existing execution-approval signal; still distinct from Brainstorm decisions |
+
+Resume uses those artifacts and canonical hashes: it returns to the exact
+unanswered question or design approval, starts Phase 1c from an approved design,
+and rejects a PRD or pipeline bound to a different design hash. Every legacy `phase_1bc`
+task with no Brainstorm artifacts keeps its existing approved-plan
+resume path without fabricated classification or retrospective approval.
+
+The direct `crew:agent` contract is unchanged: it remains explicit direct-Agent
+execution and does not enter the supervised Brainstorm lifecycle. Phase 2.5 and
+all external-action approvals are also unchanged and cannot be bypassed by a
+classification, design approval, combined approval, or downgrade.
 
 ### Requirements Collection: Sufficiency-Gated Architecture
 
@@ -620,7 +672,10 @@ Step 5: Write handoff.md
 Step 6: Return concise completion report
 ```
 
-The standard `crew:run` path no longer performs a separate planner spawn after analyst. Supervisor Phase 1b+1c delegates once to the analyst, which produces both reasoning and planning artifacts.
+The standard `crew:run` path no longer performs a separate planner spawn after
+analyst. Supervisor Phase 1c delegates once to the analyst after Brainstorm
+acceptance or approval, and the analyst produces both reasoning and planning
+artifacts bound to the design hash.
 
 ## Specialized Skills
 

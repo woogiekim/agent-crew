@@ -55,6 +55,31 @@ python3 "${AGENT_CREW_HOME}/scripts/smm-aggregate.py" \
   "$@"
 ```
 
+For every selected task whose `register.json` contains a
+`brainstorm_classification_path` (or whose canonical classification artifact
+exists), append the same compact Brainstorm view defined by
+`core/commands/status.md`: final classification (preliminary only while final is
+not available), dialogue status, optional active question ID, current design
+approval status, and optional downgrade status. Resolve the register's
+`brainstorm_classification_path`, `brainstorm_dialogue_path`,
+`brainstorm_design_path`, and `brainstorm_approval_path` first; read an artifact
+only when it exists. The view is derived in memory and must not write defaults
+back to `register.json` or `context/`.
+
+```text
+Brainstorm
+  Classification : Architectural
+  Dialogue       : waiting_for_input
+  Question       : q-2
+  Design         : pending
+  Downgrade      : (omitted when no downgrade decision exists)
+```
+
+Legacy tasks with no Brainstorm classification artifact omit this section
+entirely. Missing optional dialogue, question, design, or downgrade data is not
+fabricated. This preserves `crew:smm` as a read-only view and leaves schema and
+resume enforcement to the Supervisor.
+
 ## What the view shows
 
 One coherent block per task (a session header line is added when more than one
@@ -66,6 +91,8 @@ task matches, so interleaved N>1 runs read cleanly):
 - `Phase`    — `register.json.current_phase`
 - `Mutation` — explicit `mutation_scope` (`workspace_write` for legacy state)
 - `Approval` / `Verify` — `approval_status` / `verification_status`
+- `Brainstorm` — classification, dialogue, active question, design approval,
+                 and downgrade state when Brainstorm artifacts exist
 - `Stages`   — `{completed}/{total}` plus a per-stage list with
                `[x]` (done) / `[>]` (current) / `[ ]` (pending) markers
 - `Files`    — `register.json.modified_files`
