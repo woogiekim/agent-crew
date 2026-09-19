@@ -211,7 +211,10 @@ After the stage agent returns and its result is recorded:
 ```
 
 ```bash
-log_progress "STAGE_DONE" "{agent_name} — {APPROVED|NEEDS_CHANGES|N/A}"
+STAGE_END_EPOCH="$(date +%s)"
+STAGE_ELAPSED=$(( STAGE_END_EPOCH - STAGE_START_EPOCH ))
+log_progress "STAGE_DONE" \
+  "{agent_name} — {APPROVED|NEEDS_CHANGES|N/A} elapsed=${STAGE_ELAPSED}s"
 
 # Phase F4: append modified files to register (deduplicated).
 MODFILES=$(

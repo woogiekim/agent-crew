@@ -83,7 +83,7 @@ This is keep-EXCLUDE for a sharper reason than "Claude-only": **the existing por
 
 Superpowers' `dispatching-parallel-agents` skill fans out independent work units into concurrent Claude Task subagent invocations within a single host message.
 
-Agent-crew implements parallel dispatch in two complementary precedents. First, supervisor-level fan-out for `crew:run N>1` is gated by `agent_background` at `core/rules/capabilities/agent-background.md:30-58`: when true, supervisors spawn as background agents; when false, the orchestrator runs them inline. Second, sub-task fan-out within a single supervisor is implemented as `parallelizable_units` at `core/agents/supervisor-stages.md:699-742`, which dispatches N parallel agents in one host message with a resolver pre-flight overlap check at `core/agents/supervisor-stages.md:728-742`.
+Agent-crew implements parallel dispatch in two complementary precedents. First, supervisor-level fan-out for `crew:run N>1` follows explicit execution policy: the default remains foreground on every host, while user-selected `--background` is validated against `agent_background` at `core/rules/capabilities/agent-background.md`. Second, sub-task fan-out within a single supervisor is implemented as `parallelizable_units` at `core/agents/supervisor-stages.md:699-742`, which dispatches N parallel agents in one host message with a resolver pre-flight overlap check at `core/agents/supervisor-stages.md:728-742`.
 
 Both paths use the same supervisor-layer abstraction. The host-side acceleration (concurrent spawn) is an augmentation gated through `agent_background`. The fallback is identical structure on every adapter: when `agent_background=false`, the orchestrator runs the same units inline.
 

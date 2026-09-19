@@ -21,6 +21,11 @@
       "type": "string",
       "enum": ["running", "completed", "blocked"]
     },
+    "execution_policy": {
+      "type": "string",
+      "enum": ["foreground", "background"],
+      "description": "Explicit user-selected lifecycle policy. Optional only for legacy session files; missing values are not injectable."
+    },
     "pre_run_head": {
       "type": "string",
       "description": "Git SHA of the pre-run HEAD. Optional — older session.json files may omit it. Used when comparing candidate changes."
@@ -118,6 +123,11 @@
           "injected": {
             "type": "boolean",
             "description": "True when the task was added via the run.md Step 1.5 injection path."
+          },
+          "background_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Host-returned background invocation id. Required by runtime policy for new explicit-background tasks."
           },
           "variant_id": {
             "type": "string",

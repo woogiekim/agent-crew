@@ -70,6 +70,7 @@ Retry logic per agent:
 # the structured buffer (trace_id's 4th segment).
 RETRY_ATTEMPT = 1
 crash_attempts = 0
+capacity_attempts = 0
 token_limit_resumes_used = 0
 clarification_attempts = 0
 while crash_attempts <= 5:
@@ -94,6 +95,15 @@ while crash_attempts <= 5:
         append the analyst's clarification response to handoff.md
         continue   # re-spawn current stage agent — do NOT bump
                    # RETRY_ATTEMPT, do NOT bump crash_attempts
+    elif host invocation reports capacity unavailable:
+        capacity_attempts += 1
+        RETRY_ATTEMPT += 1
+        log_progress "RETRY" "attempt {RETRY_ATTEMPT} — reason=capacity capacity_attempts={capacity_attempts}/1 fallback=unavailable"
+        if capacity_attempts > 1:
+            write BLOCKER: capacity_unavailable to result.md
+            return STATUS: blocked
+        re-invoke the same pinned agent once; do not select a model fallback
+        continue
     else:  # no STATUS line — classify
         classification = "crash"
         if HAS_TASK_TOOLS == 1 AND host_task_ids[i-1][agent_name] is set:
@@ -129,6 +139,11 @@ single token-truncation resume does not count against this budget), report
 BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
 host task id is absent, every "no STATUS line" outcome is classified as a
 crash — identical to pre-P7 behavior.
+
+Capacity exhaustion is separate from crash exhaustion. It has one bounded
+retry, always records `reason=capacity` and `capacity_attempts`, and uses
+`fallback=unavailable` because the supervisor has no authority to invent a
+different model or agent.
 
 `clarification_attempts` is independent of the validation (3) and crash (5)
 budgets and has its own hard budget of **2 bounces** per stage. A
@@ -221,6 +236,26 @@ overruns do (see § Cost Circuit Breaker below) — exhaustion of the
 operating budget is not a failure of approach. The operator's correct
 response is to escalate: raise `AGENT_CREW_STAGE_TIMEOUT_SECONDS`,
 simplify the request, decompose the stage, or abort.
+
+The pre-invocation check alone is not timeout enforcement. When
+`STAGE_TIMEOUT_SECONDS != 0`, compute the remaining timeout before every host
+agent call and pass that deadline to a cancellable host wait/invocation
+surface. If the deadline expires while the agent is running, cancel or
+interrupt the host invocation, emit `STAGE_TIMEOUT` with elapsed and budget,
+write the same terminal `stage_timeout` result, and stop the stage.
+
+```text
+remaining timeout = STAGE_TIMEOUT_SECONDS - elapsed
+invoke/wait with deadline=remaining timeout
+deadline reached -> cancel or interrupt the host invocation
+                   -> STATUS: blocked, BLOCKER: stage_timeout
+```
+
+If the active adapter cannot provide a cancellable wait, deadline, or interrupt
+surface, fail before starting the configured-budget stage with
+`BLOCKER: stage_timeout_unenforceable`. Do not start an unbounded invocation
+while claiming that the configured budget is enforced. The default
+`STAGE_TIMEOUT_SECONDS=0` remains unchanged and does not require this surface.
 
 `log_progress` is the helper introduced by `supervisor-bootstrap.md`
 Phase 0; `register_update` writes the terminal phase + blocker label

@@ -157,11 +157,13 @@ assert_contains "${FRONTEND_UPFRONT_SKILLS}" "ui-component-design.md"
 it "frontend.md upfront registry declares documentation impact skill"
 assert_contains "${FRONTEND_UPFRONT_SKILLS}" "documentation-impact.md"
 
-it "agent-skill-loading.md requires upfront loading of every associated skill"
-assert_contains "${LOADING_RULE_CONTENT}" "MUST load every skill listed"
+it "agent-skill-loading.md requires upfront loading of every cross-cutting skill"
+assert_contains "${LOADING_RULE_CONTENT}" "MUST load"
+assert_contains "${LOADING_RULE_CONTENT}" "every cross-cutting skill listed"
 
-it "agent-skill-loading.md forbids subset selection of associated skills"
-assert_contains "${LOADING_RULE_CONTENT}" "must not select a subset"
+it "agent-skill-loading.md selects language skills from changed-code evidence"
+assert_contains "${LOADING_RULE_CONTENT}" "Language Skills (Loaded by Changed-Code Evidence)"
+assert_contains "${LOADING_RULE_CONTENT}" "must not load unrelated language skills"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 4: every skill path declared in agent files resolves to a real file

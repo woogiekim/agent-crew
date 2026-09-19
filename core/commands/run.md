@@ -235,8 +235,39 @@ Accept:
 
 - One task: `crew:run "implement order API"`
 - Multiple tasks: `crew:run "Order API" | "Product API" | "User API"`
+- Explicit background execution: `crew:run --background "implement order API"`
+- Finalize an explicit background session: `crew:run --finalize-background`
 - Injecting into a live run: `crew:run --inject "new task"` (see Step 1.5)
 - Strict read-only task: `crew:run --read-only "inspect the current contract"`
+
+The default execution policy is foreground, regardless of whether the active
+host advertises a background-agent mechanism. Parse the execution-policy flag
+before task normalization and remove only that option from the command input:
+
+```bash
+BACKGROUND_REQUESTED=0
+BACKGROUND_FINALIZE_REQUESTED=0
+case "${1:-}" in
+  --background)
+    BACKGROUND_REQUESTED=1
+    shift
+    ;;
+  --finalize-background)
+    BACKGROUND_FINALIZE_REQUESTED=1
+    shift
+    ;;
+esac
+```
+
+`--background` is an explicit lifecycle choice, not a performance hint. All
+task text remaining after deterministic option parsing is preserved verbatim.
+`--finalize-background` takes no task text; it resumes terminal collection and
+finalization for the current explicit-background `session.json`.
+
+If `BACKGROUND_FINALIZE_REQUESTED=1`, skip empty-input task collection and the
+workflow-preset prompt. Resolve the existing session in Step 1.5, validate it,
+and follow the finalizer routing defined there. Reject extra task text rather
+than silently combining finalization with a new task.
 
 Preserve each input task verbatim with cardinality `N >= 1`. Do not translate
 Korean or other non-English task text to English before planning, handoff, or
@@ -391,6 +422,23 @@ eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
 SESSION_FILE="${STATE_DIR}/session.json"
 ```
 
+Load the background capability before classifying a live session. Step 6
+reuses this value and must not reinterpret it as an execution-policy choice:
+
+```bash
+read -r HAS_AGENT_BACKGROUND HAS_TASK_TOOLS < <(python3 -c "
+import json
+try:
+    c = json.load(open('${STATE_DIR}/capabilities.json'))
+    print(
+        '1' if c.get('agent_background') else '0',
+        '1' if c.get('task_tools') else '0',
+    )
+except Exception:
+    print('0 0')
+" 2>/dev/null)
+```
+
 **Setup guard (pre-injection)**: Before reading `session.json`, initialize a
 completely new project through the normal host dispatcher. If `STATE_DIR`
 already exists without `capabilities.json`, treat it as partial or damaged
@@ -413,19 +461,100 @@ if [ ! -f "${CAPABILITIES_FILE}" ]; then
 fi
 ```
 
-A **live session** is one where `session.json` exists AND its `status` field
-is `"running"`:
+A session is injectable only when `session.json` exists, its `status` is
+`"running"`, its recorded `execution_policy` is `"background"`, and the host
+supports the mechanism. A foreground session may remain `running` while its
+parent waits; that state must never be treated as an injection window:
+
+```bash
+read -r SESSION_STATUS SESSION_POLICY < <(python3 -c "
+import json
+try:
+    s = json.load(open('${SESSION_FILE}'))
+    print(s.get('status', 'absent'), s.get('execution_policy', 'legacy_unknown'))
+except Exception:
+    print('absent legacy_unknown')
+" 2>/dev/null)
+
+if [ "${SESSION_STATUS}" = "running" ] \
+  && [ "${SESSION_POLICY}" = "foreground" ] \
+  && [ "${BACKGROUND_FINALIZE_REQUESTED}" != "1" ]; then
+  echo "[crew] BLOCKED | foreground_session_active"
+  echo "DETAIL: The foreground parent may have been interrupted. Inspect crew:status and canonical result.md files, then resume or repair that session. A new run must not overwrite its session.json."
+  return 1
+fi
+```
+
+This fail-closed re-entry guard preserves result/register/active-marker truth
+after an interrupt. It never marks the existing run complete and never treats
+the interrupting input as an injected task.
 
 ```bash
 IS_LIVE_SESSION=$(python3 -c "
 import json, sys
 try:
     s = json.load(open('${SESSION_FILE}'))
-    print('1' if s.get('status') == 'running' else '0')
+    injectable = (
+        s.get('status') == 'running'
+        and s.get('execution_policy') == 'background'
+        and '${HAS_AGENT_BACKGROUND}' == '1'
+    )
+    print('1' if injectable else '0')
 except Exception:
     print('0')
 " 2>/dev/null)
 ```
+
+If `HAS_AGENT_BACKGROUND=0` while a running session file exists, emit
+`Task injection is not supported on this host` and keep
+`IS_LIVE_SESSION=0`. A pre-policy session with no `execution_policy` is not
+injectable; this fail-closed migration avoids guessing whether it was a
+foreground or background lifecycle.
+
+```bash
+if [ "${SESSION_STATUS}" = "running" ] \
+  && [ "${SESSION_POLICY}" = "background" ] \
+  && [ "${HAS_AGENT_BACKGROUND}" = "0" ]; then
+  echo "[crew] WARN | Task injection is not supported on this host"
+  IS_LIVE_SESSION=0
+fi
+```
+
+#### Explicit background finalizer
+
+When `BACKGROUND_FINALIZE_REQUESTED=1`, do not collect a new task. Require a
+running session file and validate its policy before entering result collection:
+
+```bash
+BACKGROUND_FINALIZER_ACTIVE=0
+if [ "${BACKGROUND_FINALIZE_REQUESTED}" = "1" ]; then
+  if [ ! -f "${SESSION_FILE}" ]; then
+    echo "[crew] BLOCKED | background_finalize_session_not_found"
+    return 1
+  fi
+  SESSION_POLICY=$(python3 -c "
+import json
+print(json.load(open('${SESSION_FILE}')).get('execution_policy', 'legacy_unknown'))
+" 2>/dev/null)
+  if [ "${SESSION_POLICY}" != "background" ]; then
+    echo "[crew] BLOCKED | background_finalize_policy_mismatch"
+    return 1
+  fi
+  if [ "${HAS_AGENT_BACKGROUND}" != "1" ]; then
+    echo "[crew] BLOCKED | background_execution_unsupported"
+    return 1
+  fi
+  BACKGROUND_FINALIZER_ACTIVE=1
+  RUN_IN_BACKGROUND=1  # finalizer resumes the P4 lifecycle
+fi
+```
+
+With `BACKGROUND_FINALIZER_ACTIVE=1`, skip new task preparation, requirements,
+and supervisor spawn, then jump to the `BACKGROUND_FINALIZER_COLLECTION` entry
+inside Step 6. Wait for every registered supervisor to reach a terminal state,
+read each canonical `result.md`, call the registry-close helper, and then
+continue into Step 7 summary/final gates. `crew:status` remains read-only
+monitoring.
 
 #### Inject-intent detection (Phase J14)
 
@@ -526,6 +655,13 @@ ask_question:
 When injection is chosen (regardless of whether triggered by `--inject`, the N==1
 prompt, or the N>1 prompt):
 
+0. Inherit the already validated explicit-background session policy so Step 6
+   cannot route the injected supervisor through the foreground branch:
+
+   ```bash
+   BACKGROUND_REQUESTED=1  # inherit the validated session policy
+   ```
+
 1. Read the live `SESSION_ID` from `session.json`:
 
    ```bash
@@ -565,7 +701,8 @@ prompt, or the N>1 prompt):
        'task': '${TASK}',
        'task_hash': _task_hash('${TASK}'),
        'status': 'running',
-       'injected': True
+       'injected': True,
+       'background_id': '${BACKGROUND_ID}'
    })
    json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
    "
@@ -1508,12 +1645,23 @@ fi
 Every later prompt that receives `TASK_DIR` must treat this file, when present,
 as part of the user request context.
 
-#### Session Registry Initialization (N > 1 only)
+#### Session Registry Initialization (N > 1 or explicit background)
 
-For parallel runs, after all task contexts are prepared, create (or overwrite)
-`session.json` in `STATE_DIR`. This file is the canonical registry for all
-tasks in the current execution session — including any tasks injected later
-via Step 1.5.
+For parallel runs and every explicit-background run (including `N == 1`),
+after all task contexts are prepared, create (or overwrite) `session.json` in
+`STATE_DIR`. This file is the canonical registry for all tasks in the current
+execution session — including any tasks injected later via Step 1.5. A default
+foreground `N == 1` run does not need a session registry.
+
+```bash
+CREATE_SESSION_REGISTRY=0
+if [ "${N}" -gt 1 ] || [ "${BACKGROUND_REQUESTED}" = "1" ]; then
+  CREATE_SESSION_REGISTRY=1
+fi
+```
+
+Run the registry creation block below only when
+`CREATE_SESSION_REGISTRY == 1`.
 
 ```bash
 SESSION_ID="$(date +%Y%m%d-%H%M%S)"
@@ -1543,6 +1691,7 @@ for entry in ${TASK_LIST_JSON}:
 session = {
     'session_id': '${SESSION_ID}',
     'status': 'running',
+    'execution_policy': 'background' if ${BACKGROUND_REQUESTED} == 1 else 'foreground',
     'pre_run_head': '${PRE_RUN_HEAD}',
     'tasks': tasks
 }
@@ -1557,8 +1706,10 @@ The session file is written atomically before any supervisor is spawned, so
 that a concurrent `crew:run --inject` arriving immediately after Step 4 will
 see a valid `session.json` with `status: running`.
 
-For single-task runs (`N == 1`), no session file is written — injection requires
-a live parallel session and is not meaningful for single-task execution.
+For default foreground single-task runs (`N == 1` and
+`BACKGROUND_REQUESTED == 0`), no session file is written. Explicit-background
+single-task runs write the registry so monitor, injection, terminal collection,
+and `crew:run --finalize-background` have one durable lifecycle record.
 
 #### Variant Registry Initialization (`--variants N`)
 
@@ -1834,26 +1985,32 @@ progress for any AMBIGUOUS task.
 > supervisor's Phase 1d is independent.
 
 Delegate one `supervisor` per task. The orchestrator chooses between two
-delegation surfaces based on the `agent_background` capability flag.
+delegation surfaces based on the explicit execution policy. The
+`agent_background` capability only validates whether the requested mechanism
+exists; it never selects the policy.
 
-Read both `agent_background` and `task_tools` in a single Python process so
-the file is opened only once and both Step 6 and Step 7.5 reuse the cached
-values without a second process startup:
+Reuse the `HAS_AGENT_BACKGROUND` and `HAS_TASK_TOOLS` values loaded together
+in Step 1.5. Do not re-read capabilities here and do not reinterpret mechanism
+availability as execution policy.
+
+Resolve the requested policy after reading capabilities:
 
 ```bash
-# Single read — both flags cached here and reused in Steps 6 and 7.5.
-read -r HAS_AGENT_BACKGROUND HAS_TASK_TOOLS < <(python3 -c "
-import json
-try:
-    c = json.load(open('${CAPABILITIES_PATH}'))
-    print(
-        '1' if c.get('agent_background') else '0',
-        '1' if c.get('task_tools') else '0',
-    )
-except Exception:
-    print('0 0')
-" 2>/dev/null)
+RUN_IN_BACKGROUND=0
+if [ "${BACKGROUND_REQUESTED}" = "1" ]; then
+  if [ "${HAS_AGENT_BACKGROUND}" = "0" ]; then
+    echo "[crew] BLOCKED | background_execution_unsupported"
+    echo "DETAIL: --background requires agent_background=true on the active host."
+    return 1
+  fi
+  RUN_IN_BACKGROUND=1
+fi
 ```
+
+In contract terms: `BACKGROUND_REQUESTED == 1` together with
+`HAS_AGENT_BACKGROUND == 0` fails closed as
+`background_execution_unsupported`. `RUN_IN_BACKGROUND == 0` is the normal
+foreground path even when `HAS_AGENT_BACKGROUND == 1`.
 
 Before spawning any supervisor, write the boot sentinel and append a progress
 event. This applies to both the background P4 path and the legacy inline path;
@@ -1868,21 +2025,24 @@ printf '%s | SUPERVISOR_HANDOFF | waiting for supervisor Phase 0\n' \
   "${SPAWNED_AT}" >> "${TASK_DIR}/progress.log"
 ```
 
-**P4 — Background fan-out (preferred when `HAS_AGENT_BACKGROUND == 1`).**
+**P4 — Background fan-out (only when `RUN_IN_BACKGROUND == 1`).**
 Variants 세션은 위의 완료 연속성 규칙을 따른다. 아래 즉시 종료는 variants가 아닌
 세션에만 적용된다.
 v2는 `ready_for_apply` 또는 명시적 blocked 상태까지 승인된 호스트 orchestrator가
 이어간다. 아래 Background Session Started 및 STOP 예시는 non-variants 전용이다.
-Spawn each supervisor as a host background agent, print a "Background Session
-Started" summary, and **RETURN immediately** (end the turn). Do NOT enter any
-poll loop.
+This is **explicit background execution**. Spawn each supervisor as a host
+background agent, print a "Background Session Started" summary, and **RETURN
+immediately** (end the turn). Do NOT enter any poll loop in the starting turn.
 
-This branch runs for **every** nontrivial task — including single-task runs
-(`N == 1`) — when the capability flag is true. The previous `N == 1` carve-out
-to the inline path is gone: unifying single and parallel under the background
-surface is what makes mid-session task injection work for ordinary one-shot
-`crew:run` invocations as well as for parallel fan-outs. Trivial intents
-(Step 1.7) still dispatch inline because they never spawn a supervisor.
+This branch runs only when `BACKGROUND_REQUESTED == 1` and capability
+validation set `RUN_IN_BACKGROUND=1`. It supports both single-task and
+parallel runs. Trivial intents (Step 1.7) still dispatch inline because they
+never spawn a supervisor.
+
+The explicit background lifecycle is: **start** the supervisors, **monitor**
+through `crew:status`, **terminal collect** every supervisor result, then
+**finalize** through the existing background finalizer. Starting a background
+session alone is not completion.
 
 The orchestrator does **not** call `TaskCreate` before spawning. Each
 supervisor creates its own host task entry at Phase 0 startup (when
@@ -1897,12 +2057,19 @@ for each task i:
 
     # Spawn the supervisor as a background agent. The supervisor handles
     # its own TaskCreate in Phase 0 when task_tools capability is present.
-    spawn supervisor as background agent with:
+    BACKGROUND_ID = spawn supervisor as background agent with:
         TASK, TASK_ID, TASK_DIR, PROJECT_ROOT, BRANCH,
         MODE: supervisor,
         EXECUTION_MODE=parallel,
         REQUIREMENTS=$REQUIREMENTS
+
+    atomically update this task's session.json entry with:
+        background_id: BACKGROUND_ID
 ```
+
+Persisting `background_id` is mandatory for both initial and injected
+background supervisors. The finalizer uses it as the lifecycle signal even
+when `task_tools=false`; `result.md` remains the semantic result source.
 
 After all N background supervisors are spawned, print the following summary
 and **STOP — end the turn**:
@@ -1923,7 +2090,8 @@ Tasks   : {N} supervisor(s) spawned as background agents
 
 > Background agents are running.
 > - Check pipeline state: `crew:status`
-> - Inject another task: `crew:run "new task"`
+> - Inject another task: `crew:run --inject "new task"`
+> - Collect and finalize: `crew:run --finalize-background`
 > - Collect variant candidates: `crew:variants collect`
 
 Next step suggestion: run `crew:status` shortly to see the live phase /
@@ -1932,11 +2100,11 @@ free for additional `crew:run` or `crew:status` invocations.
 ```
 
 **Do NOT proceed to Steps 7–11 on the P4 path.** Those steps (result
-collection, merge, summary, deploy) require a separate explicit finalizer
-command; they are not handled by `crew:status`.
+collection, merge, summary, deploy) require
+`crew:run --finalize-background`; they are not handled by `crew:status`.
 Returning early here is what enables true mid-run task injection: because the
 orchestrator's turn has ended, the user can immediately run
-`crew:run "new task"` to inject into the live session.
+`crew:run --inject "new task"` to inject into the live session.
 
 Under this path, **each supervisor owns a per-task `direct-edit-guard`
 marker** (`tasks/active.<TASK_ID>`) so concurrent teardown by one runner does
@@ -1944,12 +2112,14 @@ not strand another runner's edits. The hook accepts either layout — see
 `core/hooks/direct-edit-guard.sh` and
 `core/rules/capabilities/agent-background.md`.
 
-**Legacy inline fan-out** is used only when `HAS_AGENT_BACKGROUND == 0`
-(Codex, generic, and any other host that has not advertised
-`agent_background = true` in `capabilities.json`). It is the best-effort
-fallback for hosts without a background-agent surface; the orchestrator's
-turn stays alive until every supervisor returns, and task injection is
-effectively unavailable.
+**Foreground fan-out** is used whenever `RUN_IN_BACKGROUND == 0`, including on
+hosts that advertise `agent_background=true`. The orchestrator's turn stays
+alive, waits for every supervisor to reach a terminal state, and fan in every
+result before proceeding to finalization. Task injection is unavailable during
+this foreground lifecycle.
+
+In operational terms, wait for every supervisor to reach a terminal state and
+fan in every result before the parent turn completes.
 
 - If `N == 1`, invoke one `supervisor` via the host's Agent/Task tool. Do not
   execute the pipeline inline.
@@ -1963,8 +2133,8 @@ effectively unavailable.
   needed context from `TASK_DIR`, `PROJECT_ROOT`, and installed agent-crew
   files.
 
-Hosts that advertise `agent_background = true` do not reach this branch —
-they always take the P4 path above, regardless of `N`.
+Capability availability does not bypass this branch. Only explicit
+`--background` selects P4.
 
 Both paths use the same supervisor agent definition. The supervisor's Phase 0
 behavior is identical in both cases: when `HAS_TASK_TOOLS == 1`, it calls
@@ -2000,10 +2170,10 @@ Write the completion report to {TASK_DIR}/result.md.
 
 #### Supervisor Health Check (Persistent Execution — inline path only)
 
-> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator has
+> **P4 path skip**: When `RUN_IN_BACKGROUND == 1`, the orchestrator has
 > already returned at the end of the spawn block above. This health check
 > and the result collection loop below apply only to the **inline path**
-> (`HAS_AGENT_BACKGROUND == 0`). Background-path crash classification and
+> (`RUN_IN_BACKGROUND == 0`). Background-path crash classification and
 > retries require the explicit background finalizer; they are not performed by
 > `crew:status`.
 
@@ -2043,13 +2213,17 @@ real, substantive blocker.
 
 Wait for all supervisors to finish (including any crash-retry cycles).
 
-#### Session-Aware Result Collection (inline path only — N > 1 with injection support)
+#### Session-Aware Result Collection (foreground or explicit finalizer)
 
-> **P4 path skip**: On the background fan-out path (`HAS_AGENT_BACKGROUND == 1`),
-> the orchestrator has already returned early after spawning. This collection
-> loop is only used by the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
-> For the P4 path, result collection requires the explicit background
-> finalizer; it is not performed by `crew:status`.
+`BACKGROUND_FINALIZER_COLLECTION` is the executable re-entry point for
+`crew:run --finalize-background`. The starting P4 turn does not reach it.
+
+> **P4 starting-turn skip**: On the background fan-out starting turn
+> (`RUN_IN_BACKGROUND == 1` and `BACKGROUND_FINALIZER_ACTIVE != 1`), the
+> orchestrator already returned after spawning. The collection loop runs for
+> the foreground path (`RUN_IN_BACKGROUND == 0`) and for an explicit
+> background finalizer (`BACKGROUND_FINALIZER_ACTIVE == 1`). It is never run
+> by `crew:status`.
 
 When a session file exists, the orchestrator's result collection loop MUST
 monitor `session.json` continuously rather than operating on a fixed task list.
@@ -2061,6 +2235,8 @@ loop.
 # Dynamic collection loop — runs until session is done
 COLLECTED=()
 PENDING_TASK_IDS=()  # Start with original tasks
+declare -A BACKGROUND_CRASH_ATTEMPTS
+declare -A BACKGROUND_MISSING_RESULT_RESUMES
 
 while true:
     # Re-read session.json to pick up any injected tasks
@@ -2083,7 +2259,114 @@ while true:
     # Check which pending tasks have completed
     for TASK_ID in "${PENDING_TASK_IDS[@]}"; do
         TASK_DIR="${STATE_DIR}/tasks/${TASK_ID}"
-        if grep -qiE "^(\*\*)?status:\*{0,2}\s+\**(completed|blocked|BLOCKED)\**" "${TASK_DIR}/result.md" 2>/dev/null; then
+
+        # Explicit-background finalization must observe the host invocation,
+        # not poll result.md forever. Read background_id from this task's
+        # session entry, then use the host background await/status surface.
+        if [ "${BACKGROUND_FINALIZER_ACTIVE:-0}" = "1" ]; then
+            BACKGROUND_ID=$(python3 -c "
+import json
+s = json.load(open('${SESSION_FILE}'))
+print(next((t.get('background_id', '') for t in s['tasks'] if t['task_id'] == '${TASK_ID}'), ''))
+" 2>/dev/null)
+
+            if [ -z "${BACKGROUND_ID}" ]; then
+                # A new explicit-background session without an id is invalid.
+                # Legacy sessions require an explicit migration/recovery path.
+                BACKGROUND_HOST_STATUS=terminal_without_result
+            else
+                BACKGROUND_HOST_STATUS=$(awaitBackgroundAgent("${BACKGROUND_ID}").status)
+            fi
+
+            case "${BACKGROUND_HOST_STATUS}" in
+              running|pending)
+                continue
+                ;;
+              error|completed|blocked|cancelled|terminal_without_result)
+                BACKGROUND_RESULT_STATUS=$(python3 - "${TASK_DIR}/result.md" <<'PYEOF' 2>/dev/null
+import re
+import sys
+
+try:
+    text = open(sys.argv[1], encoding="utf-8").read()
+except OSError:
+    text = ""
+
+match = re.search(
+    r"(?im)^(?:\*\*)?status:\*{0,2}\s+\**(completed|blocked|cancelled)\**",
+    text,
+)
+print(match.group(1).lower() if match else "invalid_or_missing")
+PYEOF
+                )
+
+                case "${BACKGROUND_RESULT_STATUS}" in
+                  completed|blocked)
+                    : # canonical semantic result wins over the host tail
+                    ;;
+                  cancelled)
+                    cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: cancelled
+DETAIL: host_status=${BACKGROUND_HOST_STATUS}; canonical result status was CANCELLED
+EOF
+                    ;;
+                  invalid_or_missing)
+                    if [ "${BACKGROUND_HOST_STATUS}" = "error" ]; then
+                        BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]=$(( ${BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]:-0} + 1 ))
+                        if [ "${BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]}" -le 3 ]; then
+                            re-invoke the same pinned supervisor and atomically replace background_id
+                            continue
+                        fi
+                    fi
+
+                    BACKGROUND_MISSING_RESULT_RESUMES["${TASK_ID}"]=$(( ${BACKGROUND_MISSING_RESULT_RESUMES["${TASK_ID}"]:-0} + 1 ))
+                    if [ "${BACKGROUND_MISSING_RESULT_RESUMES["${TASK_ID}"]}" -le 1 ] \
+                      && [ "${BACKGROUND_HOST_STATUS}" = "completed" ]; then
+                        re-invoke once with the existing token-truncation resume hint and replace background_id
+                        continue
+                    fi
+                    BACKGROUND_TERMINAL_WITHOUT_RESULT="${BACKGROUND_HOST_STATUS}"
+                    ;;
+                esac
+                ;;
+            esac
+
+            if [ -n "${BACKGROUND_TERMINAL_WITHOUT_RESULT:-}" ]; then
+                cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: background_result_missing_after_terminal
+DETAIL: host_status=${BACKGROUND_TERMINAL_WITHOUT_RESULT}; bounded retry/resume exhausted
+EOF
+                TERMINAL_STATUS=blocked
+                unset BACKGROUND_TERMINAL_WITHOUT_RESULT
+            fi
+        fi
+
+        TERMINAL_STATUS=$(python3 - "${TASK_DIR}/result.md" <<'PYEOF' 2>/dev/null
+import re
+import sys
+
+try:
+    text = open(sys.argv[1], encoding="utf-8").read()
+except OSError:
+    print("")
+    raise SystemExit(0)
+
+match = re.search(
+    r"(?im)^(?:\*\*)?status:\*{0,2}\s+\**(completed|blocked)\**",
+    text,
+)
+print(match.group(1).lower() if match else "")
+PYEOF
+        )
+        case "${TERMINAL_STATUS}" in
+          blocked) TERMINAL_STATUS=blocked ;;
+          completed) TERMINAL_STATUS=completed ;;
+          *) continue ;;
+        esac
+
+        if [ -n "${TERMINAL_STATUS}" ]; then
             COLLECTED+=("${TASK_ID}")
             PENDING_TASK_IDS=("${PENDING_TASK_IDS[@]/$TASK_ID}")  # remove from pending
             # Update session.json status for this task
@@ -2092,7 +2375,7 @@ import json
 s = json.load(open('${SESSION_FILE}'))
 for t in s['tasks']:
     if t['task_id'] == '${TASK_ID}':
-        t['status'] = 'completed'
+        t['status'] = '${TERMINAL_STATUS}'
         break
 json.dump(s, open('${SESSION_FILE}', 'w'), ensure_ascii=False, indent=2)
 "
@@ -2114,6 +2397,13 @@ print(sum(1 for t in s['tasks'] if t['status'] not in ('completed', 'blocked')))
 done
 ```
 
+A terminal host invocation without a canonical result must not keep polling.
+It follows the bounded crash/token-resume budgets above and then becomes an
+explicit blocked result. If neither `background_id` nor another authoritative
+host terminal surface is available, finalization fails closed as
+`background_result_missing_after_terminal` instead of entering an unbounded
+file-only wait.
+
 When `HAS_TASK_TOOLS == 1` and background task IDs are tracked, use
 `TaskList` + `TaskGet` for the wakeup signal instead of polling `result.md`
 directly — the file remains the canonical source.
@@ -2121,20 +2411,20 @@ directly — the file remains the canonical source.
 After all tasks complete, mark `session.json` as done so future `crew:run`
 invocations do not treat it as a live session.
 
-> **MANDATORY (Codex / generic inline path — `HAS_AGENT_BACKGROUND == 0`):**
-> After all inline supervisors return (and after any crash-retry cycles),
+> **MANDATORY terminal collection path:**
+> After all foreground supervisors return, or after an explicit background
+> finalizer collects every terminal result,
 > call `finalize-session.sh` unconditionally. This is the authoritative
-> finalization step for the inline path. Skipping it leaves `session.json`
+> registry-close step. Skipping it leaves `session.json`
 > with `status: running`, causing future `crew:run` invocations to detect a
 > false live session and offer the injection prompt incorrectly.
 >
 > The script is idempotent: calling it on an already-completed session is safe.
-> The P4 background path must NOT call this script; its finalization requires
-> a separate explicit background finalizer.
+> The P4 starting turn does not call it because that turn returns early;
+> `crew:run --finalize-background` calls it after terminal collection.
 
 ```bash
-# MANDATORY inline-path finalization — run unconditionally after all supervisors finish.
-# This call is the canonical session-close step for HAS_AGENT_BACKGROUND=0, N>1 runs.
+# MANDATORY registry close after foreground or explicit-background collection.
 bash "${AGENT_CREW_HOME}/scripts/finalize-session.sh" "${SESSION_FILE}" "${STATE_DIR}"
 FINALIZE_RC=$?
 if [ "${FINALIZE_RC}" -eq 2 ]; then
@@ -2151,12 +2441,12 @@ fi
 
 ### 7.5. Parallel Action Gate (inline path, N > 1 only)
 
-> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator
+> **P4 path skip**: When `RUN_IN_BACKGROUND == 1`, the orchestrator
 > already returned early at the end of Step 6. This step is **not executed
 > on the P4 path**. On the P4 path, the action gate for each supervisor is
 > handled by the supervisor's own Phase 2.5 Stage Action Gate (using
 > per-task `approval.md`). The consolidated gate here is only for the inline
-> parallel path (`HAS_AGENT_BACKGROUND == 0`, `N > 1`).
+> foreground parallel path (`RUN_IN_BACKGROUND == 0`, `N > 1`).
 
 > **Skip this step entirely when N == 1.** For single-task runs, the supervisor
 > itself acts as the local orchestrator for its own stage agents and issues the
@@ -2295,11 +2585,12 @@ faster wakeup; it never removes the file contract.
 
 ### 7. Collect Results & Show Per-Task Summary
 
-> **P4 path skip**: When `HAS_AGENT_BACKGROUND == 1`, the orchestrator
-> already returned early at the end of Step 6. Steps 7–11 are **not
-> executed on the P4 path**. Background finalization requires a separate
-> explicit finalizer when the user is ready to finalize the session. Steps 7–11 below apply
-> only to the **inline path** (`HAS_AGENT_BACKGROUND == 0`).
+> **P4 starting-turn skip**: When `RUN_IN_BACKGROUND == 1` and
+> `BACKGROUND_FINALIZER_ACTIVE != 1`, the starting orchestrator already
+> returned at the end of Step 6, so Steps 7–11 are not executed in that turn.
+> A later `crew:run --finalize-background` invocation sets
+> `BACKGROUND_FINALIZER_ACTIVE=1` and enters this collection path. Default
+> foreground runs also enter it with `RUN_IN_BACKGROUND == 0`.
 
 #### Session-Aware Task List
 
@@ -2326,7 +2617,8 @@ in Step 6's Session-Aware Result Collection section).
 #### P4 — Background fan-out result collection
 
 When supervisors were spawned as background host agents (Step 6 background
-path, `HAS_AGENT_BACKGROUND == 1`), the orchestrator does NOT block on inline
+path, `RUN_IN_BACKGROUND == 1` after capability validation), the orchestrator
+does NOT block on inline
 Agent return values. Instead it polls each task's parent host task for
 terminal status:
 
@@ -2355,8 +2647,9 @@ The crash-retry rule below applies identically: a runner whose
 `TaskGet().status == "error"` (or whose `result.md` is missing after status
 reached `completed`) is treated as a crash and re-spawned, up to 3 attempts.
 
-When `HAS_AGENT_BACKGROUND == 0`: the orchestrator simply waits for the inline
-Agent calls from Step 6 to return, as before. Behavior is identical to pre-P4.
+When `RUN_IN_BACKGROUND == 0`, the orchestrator waits for all foreground Agent
+calls from Step 6 to reach terminal state, reads each canonical `result.md`,
+and performs result fan-in before any run summary or finalization.
 
 Injected tasks that arrived via the background fan-out path also have their
 `HOST_TASK_ID` registered in `session.json` at injection time; the collection
@@ -2746,13 +3039,14 @@ crew:run "resolve merge conflicts"
   Step 11, only after explicit user approval in Step 10.
 - **Step 8 (merge) applies only to parallel runs (N > 1).** For single-task runs,
   the feature branch is pushed directly without merging to main.
-- **P4 path (background fan-out)**: When `HAS_AGENT_BACKGROUND == 1`, the
-  orchestrator returns immediately after spawning all background supervisors
+- **P4 path (background fan-out)**: When explicit `--background` is requested
+  and `HAS_AGENT_BACKGROUND == 1`, the orchestrator returns immediately after
+  spawning all background supervisors
   (including single-task runs). Steps 7–11 are NOT executed in this turn. To
   wait for results and finalize the session (merge branches, show summary,
   deploy), use a separate explicit background finalizer.
 - **Mid-run task injection**: Because the P4 path returns early, the user may
-  immediately run `crew:run "new task"` to inject tasks into the live session.
+  immediately run `crew:run --inject "new task"` to inject tasks into the live session.
   The injected tasks join the same `session.json` and require the same explicit
   background finalizer.
 - **Fast-path (Step 1.7)**: Trivial operational intents (merge, push, deploy,

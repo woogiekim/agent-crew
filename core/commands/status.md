@@ -327,8 +327,9 @@ crew:variants select TASK_ID
 crew:variants apply
 ```
 
-For non-variant parallel session finalization, introduce a separate explicit
-command before restoring any wait/merge/apply behavior. Do not hide that
+For a non-variant explicit-background session, use
+`crew:run --finalize-background` to wait for terminal supervisors, collect
+canonical results, and run the existing finalization gates. Do not hide that
 mutation-capable workflow behind status.
 
 ---

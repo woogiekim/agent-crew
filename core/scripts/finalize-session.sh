@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
-# finalize-session.sh — Finalize session.json after inline fan-out completes
+# finalize-session.sh — Finalize session.json after terminal collection
 #
 # Usage:
 #   finalize-session.sh <SESSION_FILE> [STATE_DIR]
 #
 # Purpose:
-#   On the Codex / generic inline fan-out path (HAS_AGENT_BACKGROUND=0, N>1),
-#   the orchestrator's turn stays alive while supervisors run synchronously.
-#   After all inline Agent calls return, this script:
+#   After a foreground orchestrator or `crew:run --finalize-background` has
+#   collected terminal supervisor results, this script:
 #     1. Reads every task's result.md and updates the per-task status in
 #        session.json (running → completed / blocked).
 #     2. Sets the top-level session.json status to 'completed' once all
 #        tasks are in a terminal state.
 #
-# This is the authoritative session finalization step for the inline path.
-# Calling it is MANDATORY immediately after all inline supervisors return
-# and before proceeding to Step 7 (result collection / merge).
-#
-# The P4 background path (HAS_AGENT_BACKGROUND=1) does NOT call this script —
-# its session finalization is handled by crew:status --collect (Step 4S).
+# This is the authoritative session-registry close step. The P4 starting turn
+# returns before collection and therefore does not call it; the later explicit
+# background finalizer calls it after every task is terminal. `crew:status`
+# remains read-only and never finalizes a session.
 #
 # Exit codes:
 #   0  — session.json written with status=completed (or already completed)

@@ -201,6 +201,20 @@ resumable. Set either timeout to `0` only for deliberate unbounded debugging.
 
 ## Limitations
 
+### Foreground wait and interruptible input
+
+Normal `crew:run` uses a **foreground wait** in Codex: after native supervisors
+are spawned, the parent turn waits for every terminal supervisor result and
+performs result fan-in. Codex may still allow new user input while that wait is
+active; new user input can interrupt the parent turn. That UI behavior does not prove that the supervisor ran in background and is not evidence of a missing
+wait operation.
+
+After an interruption, inspect the supervisor/task terminal state and
+canonical `result.md`, then run the existing reconcile path before deciding
+whether to resume or finalize. Whether a particular Codex host interruption
+also stops a child is runtime-dependent and remains Unknown without host task
+evidence.
+
 ### Task injection is not available in Codex
 
 Task injection (`crew:run --inject`) — submitting new tasks into an already-running
@@ -208,11 +222,12 @@ parallel session — is **not supported** in Codex.
 
 **Why it cannot work:** Codex sets `HAS_AGENT_BACKGROUND=0` in `capabilities.json`,
 meaning the orchestrator runs inline and its turn does not end until all supervisors
-have completed. Because the orchestrator's turn never ends mid-run, there is no
-window for the user to issue a new `crew:run` command while tasks are executing.
-The `session.json` injection detection logic (`run.md` Step 1.5) runs but is
-effectively inert on the Codex path — `IS_LIVE_SESSION` is treated as `0` because
-no new input can arrive during the execution window.
+have completed unless the parent turn is interrupted. Codex may accept an
+interrupting user message during that wait, but this does not create a supported
+background injection window. The `session.json` injection detection logic
+(`run.md` Step 1.5) requires both `execution_policy=background` and
+`HAS_AGENT_BACKGROUND=1`, so a Codex foreground session remains non-injectable
+even when the UI accepted another message.
 
 **Workaround — queue all tasks upfront:**
 

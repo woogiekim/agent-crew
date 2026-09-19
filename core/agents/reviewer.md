@@ -213,23 +213,48 @@ retries the reviewer only and must not send work back to the implementer.
 ## Skills (Loaded Upfront)
 
 Read every skill file listed below before execution. These are the skills
-associated with this agent; do not select a subset:
+associated with this agent's cross-cutting review policy:
 - Code review methodology and PRD coverage: `~/.agent-crew/system/agents/skills/code-review.md`
 - Layered architecture and dependency rules: `~/.agent-crew/system/agents/skills/clean-architecture.md`
 - Agile and XP practices (Definition of Done): `~/.agent-crew/system/agents/skills/agile-xp.md`
 - OOP principles (SOLID, Tell Don't Ask): `~/.agent-crew/system/agents/skills/oop-principles.md`
 - Security hardening checklist: `~/.agent-crew/system/agents/skills/security-hardening.md`
-- Kotlin review checklist: `~/.agent-crew/system/agents/skills/effective-kotlin.md`
-- Java review checklist: `~/.agent-crew/system/agents/skills/effective-java.md`
-- TypeScript review checklist: `~/.agent-crew/system/agents/skills/effective-typescript.md`
-- Python review checklist: `~/.agent-crew/system/agents/skills/effective-python.md`
-- Go review checklist: `~/.agent-crew/system/agents/skills/effective-go.md`
-- Rust review checklist: `~/.agent-crew/system/agents/skills/effective-rust.md`
-- Scala review checklist: `~/.agent-crew/system/agents/skills/effective-scala.md`
-- Swift review checklist: `~/.agent-crew/system/agents/skills/effective-swift.md`
 - Domain-Driven Design review: `~/.agent-crew/system/agents/skills/domain-driven-design.md`
 - Refactoring catalog and tidyings (Fowler + Beck): `~/.agent-crew/system/agents/skills/refactoring-catalog.md`
 - Documentation drift review from the diff, without proof artifacts: `~/.agent-crew/system/agents/skills/documentation-impact.md`
+
+## Language Skills (Loaded by Changed-Code Evidence)
+
+Language-specific `effective-*` skills are not upfront skills. Resolve them
+only from changed source file paths; repository manifests and nearby unchanged
+files are not language evidence. Docs-only and config-only changes select no
+language skill. The selector emits only matching skill paths in deterministic
+order:
+
+```bash
+LANGUAGE_SKILL_SELECTOR="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/system/scripts/language-skill-select.py"
+[ -f "${LANGUAGE_SKILL_SELECTOR}" ] \
+  || LANGUAGE_SKILL_SELECTOR="${PROJECT_ROOT}/core/scripts/language-skill-select.py"
+
+CHANGED_FILES=$(
+  {
+    git -C "${PROJECT_ROOT}" diff --name-only "${TASK_START_HEAD:-HEAD}" -- 2>/dev/null
+    git -C "${PROJECT_ROOT}" ls-files --others --exclude-standard 2>/dev/null
+  } | sort -u
+)
+LANGUAGE_SKILL_PATHS=$(printf '%s\n' "${CHANGED_FILES}" \
+  | python3 "${LANGUAGE_SKILL_SELECTOR}" --agent reviewer)
+```
+
+The diff command compares the complete current working tree (staged and
+unstaged tracked changes) to `TASK_START_HEAD`; `ls-files --others` adds new
+untracked source files. This prevents a same-HEAD task from appearing to have
+no changed language when all implementation files are still uncommitted.
+
+Read every emitted path before reviewing its matching changed code. The helper
+must not load unrelated language skills, and an empty result is the expected
+outcome for a docs-only change. Record concrete changed-file evidence for each
+selected skill in `context/review.md`.
 
 > **MANDATORY: Before reviewing any code change, read `~/.agent-crew/system/agents/skills/code-review.md`.**
 > This skill defines the PRD coverage matrix, git diff analysis procedure, and the NEEDS_CHANGES / APPROVED decision criteria.
@@ -240,8 +265,7 @@ associated with this agent; do not select a subset:
 > **MANDATORY: Read `~/.agent-crew/system/agents/skills/agile-xp.md` before declaring APPROVED.**
 > Verify the Definition of Done (Rule 10): all tests pass, PRD acceptance criteria met, no known regressions.
 
-> **Load the language-specific skill matching the detected project language before reviewing code.**
-> Use the same detection heuristic as the implementer agents (build files → language → skill file).
+> **Load only language-specific skills returned by changed-code evidence before reviewing code.**
 > Record `language_skill_application_evidence` in `context/review.md` before
 > approval. The evidence must name each loaded language skill, cite the changed
 > file or diff hunk where a concrete rule was applied, and state the review
@@ -572,8 +596,8 @@ TEST_RUN_RESULT: discovered=0; touched_code=true
 REPORT: ${TASK_DIR}/context/review-tests.md
 ```
 
-(Detect code-file touches by running `git -C "${PROJECT_ROOT}" diff
---name-only "${TASK_START_HEAD:-HEAD~5}..HEAD"` and matching the
+(Detect code-file touches from the `CHANGED_FILES` working-tree snapshot
+collected above, including tracked and untracked files, and match the
 extension list above.) The supervisor's Reviewer Loop-Back Rule will
 re-spawn the target implementation/TDD stage with the directive "add tests".
 
@@ -592,8 +616,7 @@ because pre-existing tests happen to pass; the diff itself must include a test
 file unless the implementation stage recorded an explicit TDD exception.
 
 ```bash
-CHANGED=$(git -C "${PROJECT_ROOT}" diff --name-only \
-          "${TASK_START_HEAD:-HEAD~5}..HEAD" 2>/dev/null)
+CHANGED="${CHANGED_FILES}"
 
 TOUCHED_CODE=0
 DIFF_TEST_FILE_COUNT=0
@@ -631,6 +654,30 @@ REPORT: ${TASK_DIR}/context/review-tests.md
 
 If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to
 Step 1.
+
+Before executing a discovered runner, inspect any prior verification evidence
+against the exact current `HEAD`, changed-file set, command, environment, and
+exit status. Treat a mismatch or missing binding as **stale verification evidence**;
+stale verification evidence must not be reused. When evidence is stale, select
+exactly one fresh verification run for that runner.
+
+For Gradle, **Choose the verification mode before executing Gradle**:
+
+- reuse one valid same-HEAD/same-diff successful result, or
+- run the normal command once, or
+- run the command once with `--rerun-tasks` when a fresh uncached execution is
+  required by the task risk or evidence contract.
+
+The reviewer **MUST NOT automatically follow** a successful or `UP-TO-DATE`
+normal Gradle run with a second `--rerun-tasks` invocation. If cached output is
+not acceptable, choose the forced mode first and execute it once.
+
+Resolve and validate an installed JDK 17 before the first Gradle invocation.
+On macOS, use `/usr/libexec/java_home -v 17`; otherwise validate an existing
+`JAVA_HOME` or a discovered Java executable reports major version 17. Export
+the validated `JAVA_HOME` for the single selected Gradle command. If no JDK 17
+can be resolved, stop before Gradle with `REASON: jdk17_unavailable`; do not
+perform a speculative invocation with a hard-coded path.
 
 For each runner recorded in `${TESTS_REPORT}` (parsed from the
 `command:` lines), invoke the runner via `bash -c`, capture the exit
@@ -690,8 +737,7 @@ Python/JS/TS module that writes to filesystem paths, scan both sides
 for path literals and assert agreement.
 
 ```bash
-CHANGED=$(git -C "${PROJECT_ROOT}" diff --name-only \
-            "${TASK_START_HEAD:-HEAD~5}..HEAD" 2>/dev/null)
+CHANGED="${CHANGED_FILES}"
 
 HAS_SH=0;     HAS_CODE=0
 SH_FILES="";  CODE_FILES=""

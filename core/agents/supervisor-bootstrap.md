@@ -151,9 +151,9 @@ esac
 
 `STAGE_TIMEOUT_SECONDS == 0` is the absence-tolerant default: the Stage
 Retry Rule's timeout check (see `supervisor-retry.md` § Stage Timeout)
-becomes a no-op and existing pipelines run unchanged. Recommended
-value when enabling: `1800` (30 minutes per stage), which matches
-typical agent invocation costs without false-positive timeouts.
+becomes a no-op and existing pipelines run unchanged. No default is inferred:
+the budget remains disabled/Unknown unless the operator explicitly configures
+`AGENT_CREW_STAGE_TIMEOUT_SECONDS` from measured workload evidence.
 
 If `HAS_TASK_TOOLS == 1`, the supervisor registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
@@ -277,8 +277,8 @@ EOF
   local _status
   case "${event}" in
     STARTED)                                            _status="started" ;;
-    PHASE|STAGE|STAGE_TDD_PARALLEL_STARTED|STAGE_FANOUT_STARTED|STAGE_FANOUT_UNIT_DONE|STAGE_FANOUT_RESOLVER_STARTED) _status="in_progress" ;;
-    STAGE_DONE|STAGE_TDD_PARALLEL_DONE|STAGE_FANOUT_DONE|STAGE_FANOUT_RESOLVER_DONE|COMPLETED|HANDOFF_PAGEDOUT) _status="completed" ;;
+    PHASE|PHASE_START|STAGE|STAGE_TDD_PARALLEL_STARTED|STAGE_FANOUT_STARTED|STAGE_FANOUT_UNIT_DONE|STAGE_FANOUT_RESOLVER_STARTED) _status="in_progress" ;;
+    PHASE_DONE|STAGE_DONE|STAGE_TDD_PARALLEL_DONE|STAGE_FANOUT_DONE|STAGE_FANOUT_RESOLVER_DONE|COMPLETED|HANDOFF_PAGEDOUT) _status="completed" ;;
     BLOCKED|COST_BLOCKED|STAGE_TIMEOUT|HANDOFF_PAGEOUT_FAILED|STAGE_FANOUT_BLOCKED) _status="failed" ;;
     RETRY)                                              _status="retry" ;;
     HANDOFF_PAGEOUT_SKIPPED)                            _status="skipped" ;;
@@ -315,6 +315,33 @@ PYEOF
 }
 # Usage: log_progress "PHASE" "1b — Analysis + Planning (merged)"
 ```
+
+Every numbered supervisor phase (0, 1a, 1b+1c, 1d, 1.5, 2, 2.5, and 3)
+must emit a start event at entry and an end event immediately before advancing
+or returning. Use these helpers so both timestamps and elapsed seconds are
+derived from one clock source:
+
+```bash
+phase_start() {
+  PHASE_NAME="$1"
+  PHASE_START_EPOCH="$(date +%s)"
+  log_progress "PHASE_START" "${PHASE_NAME} started_at=${PHASE_START_EPOCH}"
+}
+
+phase_done() {
+  local phase_end_epoch
+  local PHASE_ELAPSED
+  phase_end_epoch="$(date +%s)"
+  PHASE_ELAPSED=$(( phase_end_epoch - PHASE_START_EPOCH ))
+  log_progress "PHASE_DONE" \
+    "${PHASE_NAME} ended_at=${phase_end_epoch} elapsed=${PHASE_ELAPSED}s"
+  unset PHASE_NAME PHASE_START_EPOCH
+}
+```
+
+Blocked and early-return branches call `phase_done` before writing their
+terminal event. Existing `log_progress "PHASE" ...` lines are human-readable
+phase descriptions; they do not replace the mandatory start/done pair.
 
 ### register.json update helper (Phase F4)
 
@@ -845,10 +872,26 @@ Return the ANALYSIS block.
 Pass only paths in the prompt — never inline file contents.
 
 Wrap this analyst delegation in a semantic completion validation loop. Initialize
-`ANALYST_VALIDATION_ATTEMPTS=0` before the first invocation. Immediately after
-each analyst response, bind its host invocation return value without rewriting
-it. Bind the exact returned text to `ANALYST_RESPONSE`; do not reconstruct a
-summary or create a separate proof artifact.
+`ANALYST_VALIDATION_ATTEMPTS=0` and `ANALYST_CAPACITY_ATTEMPTS=0` before the
+first invocation. A host response explicitly classified as capacity exhaustion
+increments `ANALYST_CAPACITY_ATTEMPTS` and emits an observable retry line with
+`reason=capacity`, the bounded attempt count, and `fallback=unavailable`.
+Retry the same pinned analyst at most once; do not invent a different model or
+agent fallback. A repeated capacity result stops with
+`BLOCKER: capacity_unavailable` rather than entering the generic crash loop.
+Immediately after each non-capacity analyst response, bind its host invocation
+return value without rewriting it. Bind the exact returned text to `ANALYST_RESPONSE`;
+do not reconstruct a summary or create a separate proof artifact.
+
+```text
+ANALYST_CAPACITY_ATTEMPTS=0
+capacity response:
+  ANALYST_CAPACITY_ATTEMPTS += 1
+  log_progress "RETRY" "reason=capacity capacity_attempts=${ANALYST_CAPACITY_ATTEMPTS}/1 fallback=unavailable"
+  if ANALYST_CAPACITY_ATTEMPTS > 1:
+    STATUS: BLOCKED
+    BLOCKER: capacity_unavailable
+```
 
 Extract the `ANALYSIS` block from the analyst's response, but do not read
 `pipeline.json` or any referenced artifact yet. If the analyst returns

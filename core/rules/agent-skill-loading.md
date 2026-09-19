@@ -12,9 +12,15 @@ requires editing this rule or any existing agent file.
 ## Convention: "## Skills (Loaded Upfront)" Section
 
 The section is the authoritative **agent-associated upfront loading**
-registry: once an agent is selected, it MUST load every skill listed in
-that agent's section before execution. The agent must not select a subset
-based on perceived task need.
+registry for cross-cutting skills: once an agent is selected, it MUST load
+every cross-cutting skill listed in that agent's section before execution.
+Language-specific skills are selected separately from changed-code evidence
+and must not load unrelated language skills.
+
+For the reviewer transition described below, language-specific skills are a
+changed-code-evidence subset, while cross-cutting skills remain upfront. Other
+implementation agents retain their current upfront registries until they adopt
+the same selector contract; this change does not silently reinterpret them.
 
 Every implementation agent that consumes skill files MUST include a section
 with the exact heading:
@@ -30,10 +36,17 @@ annotation. The format is:
 ## Skills (Loaded Upfront)
 
 Read every skill file listed below before execution. These are the skills
-associated with this agent; do not select a subset:
+associated with this agent's cross-cutting policy:
 - {Purpose annotation}: `{relative path to skill file}`
 - {Purpose annotation}: `{relative path to skill file}`
 ```
+
+An agent that supports multiple implementation languages SHOULD declare a
+separate `## Language Skills (Loaded by Changed-Code Evidence)` section. Its
+selector takes the changed file paths and agent name as inputs and returns only
+the matching `effective-*` skill paths. Build manifests, task prose, and
+unchanged repository contents are not sufficient language evidence. A
+docs-only diff returns no language-specific skill.
 
 ### Path resolution
 

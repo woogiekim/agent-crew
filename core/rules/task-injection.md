@@ -37,6 +37,7 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/session.json
 {
   "session_id": "20260515-140000",
   "status": "running",
+  "execution_policy": "background",
   "pre_run_head": "<SHA>",
   "tasks": [
     {
@@ -55,7 +56,8 @@ ${AGENT_CREW_HOME}/state/${PROJECT_NAME}/session.json
       "task": "implement product API",
       "task_hash": "implement product api",
       "status": "running",
-      "injected": true
+      "injected": true,
+      "background_id": "host-background-invocation-id"
     }
   ]
 }
@@ -102,6 +104,12 @@ unique" — never as an empty-string match. The new field is additive; the
 rest of the schema is unchanged and tolerant of mixed pre/post-B0 entries
 within the same array.
 
+Pre-execution-policy session files omit `execution_policy`. Consumers must not
+guess that such a running session is injectable. New default foreground
+sessions record `foreground`; only `background` is eligible for injection.
+An operator may finish an already known legacy background session only through
+an explicit recovery/migration decision.
+
 > **Note**: `task_hash` is NOT mirrored to the per-task
 > `{TASK_DIR}/register.json` (Phase F4). session.json is the sole
 > dedup source — `register.json` carries per-task pointer state, not
@@ -112,7 +120,7 @@ within the same array.
 
 | `session.status` | Meaning |
 |---|---|
-| `running` | Live session accepting injections |
+| `running` | Session has active work; injection additionally requires `execution_policy=background` |
 | `completed` | All tasks finished; session closed |
 | `blocked` | One or more tasks blocked the session |
 
@@ -122,32 +130,37 @@ within the same array.
 | `completed` | Task-runner wrote `result.md` with STATUS: completed |
 | `blocked` | Task-runner terminated with STATUS: blocked |
 
+Every new explicit-background task records the host-returned `background_id`.
+The finalizer observes that id so a terminal host error or a terminal invocation
+with a missing `result.md` consumes bounded retry/resume budgets and becomes an
+explicit blocker instead of an unbounded file poll.
+
 ## Lifecycle
 
-### Normal parallel run (N > 1, no injection)
+### Explicit background parallel run (N > 1, no injection)
 
 ```
-crew:run "Task A" | "Task B"
+crew:run --background "Task A" | "Task B"
     └─► Step 4: create TASK_DIR, worktree per task
     └─► Step 4 session init: write session.json {status: running, tasks: [A, B]}
                               (each task gets a task_hash field — see Schema above)
     └─► Step 6: spawn supervisors for A and B
-    └─► Step 7: collection loop polls session.json; marks each task completed
-    └─► Step 7 session close: write session.json {status: completed}
-    └─► Step 8: merge all branches from session.json[tasks]
+    └─► Starting turn returns after supervisors are registered
+    └─► crew:status monitors session.json without finalizing it
+    └─► Explicit finalizer collects terminal results and closes the session
 ```
 
 ### Injection into live run
 
 ```
-crew:run "Task C"  (while A and B are still running)
+crew:run --inject "Task C"  (while explicit-background A and B are running)
     └─► Step 1.5: detect session.json {status: running}
     └─► Inject path: create TASK_DIR, worktree for C
     └─► Step 5: collect requirements for C
     └─► Step 6: spawn supervisor for C
     └─► Append C to session.json tasks with injected: true
-    └─► Original orchestrator's Step 7 loop picks up C on next poll
-    └─► C participates in merge (Step 8) and summary (Step 9)
+    └─► Explicit background finalizer picks up C from session.json
+    └─► C participates in terminal collection and finalization
 ```
 
 ## Detection Rules
@@ -172,11 +185,15 @@ If any condition fails, `crew:run` starts a fresh session normally.
 ## Host-Capability Guard
 
 Before evaluating the Detection Rules below, check whether the current host
-supports background agents. Task injection requires the orchestrator's turn to
-end after spawning supervisors (the P4 background fan-out path). On hosts where
+supports background agents. Task injection requires an existing session that
+was started with explicit `--background`, so the orchestrator's turn ended
+after spawning supervisors (the P4 background fan-out path). Default
+foreground runs never create an injection window. On hosts where
 `HAS_AGENT_BACKGROUND=0` (Codex, generic adapters), the orchestrator runs inline
-and its turn never ends during execution — no new user input is possible while
-supervisors are running.
+and its turn does not yield a supported injection window while supervisors are
+running. A host UI may accept interrupting user input during a foreground wait,
+but that interruption does not provide task injection and must not be
+misclassified as background execution.
 
 When `HAS_AGENT_BACKGROUND=0`, treat `IS_LIVE_SESSION` as `0` regardless of
 `session.json` state:
@@ -224,14 +241,15 @@ This is written to the injecting process's stdout but not to any single
 ## Session Ownership
 
 The session is owned by the orchestrator that created it (the original
-`crew:run` invocation). The injecting `crew:run` call acts as a thin
+explicit-background `crew:run --background` invocation). The injecting
+`crew:run --inject` call acts as a thin
 dispatcher: it prepares context, collects requirements, spawns the supervisor,
 registers the task in `session.json`, and returns. It does NOT run its own
 result collection loop or its own merge/approval gates for the injected tasks.
 
-The original orchestrator's collection loop (Step 7) detects injected tasks by
-re-reading `session.json` on each iteration, and includes them in the final
-merge (Step 8) and summary (Step 9) automatically.
+The explicit background finalizer detects injected tasks by re-reading
+`session.json`, and includes them in terminal collection and finalization.
+`crew:status` is read-only monitoring and never substitutes for finalization.
 
 ## Concurrent Write Safety
 

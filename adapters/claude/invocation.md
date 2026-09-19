@@ -83,20 +83,29 @@ this adapter binds it to Claude Code's native tool surface as follows:
 | `updateTask(taskId, { status, metadata? })` | `TaskUpdate` |
 | `streamOutput(taskId)` / `getOutputTail(taskId, n)` | `TaskOutput` |
 | `spawnBackgroundAgent(agentName, prompt, env?)` | Claude Code's background agent surface (the same flow used by `crew:run` Step 6 P4 background fan-out) |
+| `getBackgroundAgent(backgroundId)` | `TaskOutput(task_id=backgroundId, block=false)` with native state normalized to `running \| completed \| error \| cancelled` |
+| `awaitBackgroundAgent(backgroundId, timeoutSeconds?)` | `TaskOutput(task_id=backgroundId, block=true, timeout=timeoutSeconds)`; timeout returns normalized current state |
 
 The capability flags written by `setup.sh` (see `core/rules/capabilities/*.md`)
 determine which of these intents the core pipeline emits. Specifically:
 
 - `task_tools=true` → the four task-lifecycle intents above are routed through
   the corresponding `Task*` tools (see `core/rules/capabilities/task-tools.md`).
-- `agent_background=true` → `spawnBackgroundAgent` is routed through the
-  host's background-agent surface (see
+- `agent_background=true` → `spawnBackgroundAgent`, `getBackgroundAgent`, and
+  `awaitBackgroundAgent` are routed through Claude Code's background-agent and
+  `TaskOutput` surfaces (see
   `core/rules/capabilities/agent-background.md`).
 - `monitor_tool=true` → `streamOutput` / `getOutputTail` is routed through
   `TaskOutput` (see `core/rules/capabilities/monitor-tool.md`).
 - `interactive_question=true` → `ask_question` is routed through
   `AskUserQuestion` (see
   `core/rules/capabilities/interactive-question.md`).
+
+`agent_background=true` advertises mechanism availability only. Default
+`crew:run` remains foreground; only explicit `--background` selects the
+background surface. **Unverified runtime:** this mapping is static adapter
+evidence and does not by itself prove the lifecycle of any particular Claude
+run. Confirm a specific run from its host task and task-state trace.
 
 When a flag is `false` (or `capabilities.json` is absent), core falls back to
 the file-based or markdown-based path documented in the per-flag detail doc
