@@ -90,6 +90,8 @@
       "enum": [
         "phase_0",
         "phase_1a",
+        "phase_1b_brainstorm",
+        "phase_1c_plan",
         "phase_1bc",
         "phase_1c_bis",
         "phase_1d",
@@ -117,6 +119,22 @@
     "requirements_path": {
       "type": "string",
       "description": "Path to {TASK_DIR}/context/requirements.md. May not exist yet if Phase 1a has not run."
+    },
+    "brainstorm_classification_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/brainstorm-classification.json. Populated when Brainstorm classification begins."
+    },
+    "brainstorm_dialogue_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/brainstorm-dialogue.json. Populated when structured Brainstorm questions or acknowledgements exist."
+    },
+    "brainstorm_design_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/brainstorm-design.md. Populated after Brainstorm design drafting."
+    },
+    "brainstorm_approval_path": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/brainstorm-approval.json. Populated for downgrade, design, or bounded-combined approval decisions."
     },
     "analysis_path": {
       "type": "string",

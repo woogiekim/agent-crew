@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/brainstorm-approval.schema.json",
+  "title": "agent-crew Brainstorm approval decisions",
+  "description": "Optional Brainstorm approval artifact. Lives at {TASK_DIR}/context/brainstorm-approval.json and records downgrade, architectural-design, and bounded-combined decisions. The existing approval.md remains the execution-approval protocol.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "decisions"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}(-[0-9]+)?$"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision_id",
+          "approval_kind",
+          "status",
+          "design_hash",
+          "bound_fields",
+          "created_at"
+        ],
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approval_kind": {
+            "type": "string",
+            "enum": ["architectural_design", "bounded_combined", "user_downgrade"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "approved", "cancelled", "invalidated"]
+          },
+          "design_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bound_fields": {
+            "type": "object",
+            "description": "Canonical approval-bound design fields used to calculate design_hash."
+          },
+          "created_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "enum": ["pending"]
+              }
+            }
+          },
+          {
+            "required": ["decision_at"],
+            "properties": {
+              "status": {
+                "enum": ["approved", "cancelled", "invalidated"]
+              },
+              "decision_at": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/brainstorm-classification.schema.json",
+  "title": "agent-crew Brainstorm classification",
+  "description": "Optional Brainstorm classification artifact. Lives at {TASK_DIR}/context/brainstorm-classification.json and preserves the preliminary classification before requirements collection and the optional final classification after it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "raw_input_hash",
+    "preliminary",
+    "classifier_version",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}(-[0-9]+)?$"
+    },
+    "raw_input_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the immutable Root Input Snapshot used for classification."
+    },
+    "preliminary": {
+      "type": "string",
+      "enum": ["Spike", "Bounded", "Architectural"]
+    },
+    "final": {
+      "type": "string",
+      "enum": ["Spike", "Bounded", "Architectural"],
+      "description": "Absent until requirements collection is complete."
+    },
+    "classifier_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["preliminary", "final", "degraded"]
+    },
+    "rule_result": {
+      "type": "object",
+      "description": "Deterministic classifier result, including matched rules and evidence."
+    },
+    "semantic_result": {
+      "description": "Read-only Brainstorm Agent result when one was available."
+    },
+    "resolution": {
+      "type": "string",
+      "description": "How deterministic and semantic results were resolved."
+    }
+  }
+}

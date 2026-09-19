@@ -585,6 +585,27 @@ class TestValidateStateSchema:
 
         assert r.returncode == 0, r.stdout + r.stderr
 
+    def test_brainstorm_artifacts_are_optional_but_invalid_artifacts_fail_hard(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        """An existing Brainstorm artifact cannot bypass the task state contract."""
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
+        (task_dir / "context").mkdir(exist_ok=True)
+        (task_dir / "context" / "brainstorm-classification.json").write_text(
+            json.dumps({"schema_version": 1, "preliminary": "Unknown"})
+        )
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir", str(state_dir),
+            "--task-dir", str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 2, r.stdout + r.stderr
+
     def test_invalid_quality_metrics_exits_2(
         self, script_runner, env_with_home, state_dir, task_dir
     ):

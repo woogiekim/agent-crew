@@ -79,6 +79,9 @@ TASK_FILES = [
 OPTIONAL_TASK_FILES = [
     ("context/quality-metrics.json", "quality-metrics.schema.json", "error", False),
     ("context/evolution-report.json", "evolution-report.schema.json", "error", False),
+    ("context/brainstorm-classification.json", "brainstorm-classification.schema.json", "error", False),
+    ("context/brainstorm-dialogue.json", "brainstorm-dialogue.schema.json", "error", False),
+    ("context/brainstorm-approval.json", "brainstorm-approval.schema.json", "error", False),
 ]
 
 
