@@ -1207,6 +1207,116 @@ Supervisor만 `context/brainstorm-dialogue.json`을 쓴다. 최초 문서는
   `acknowledged_at`로 별도 기록한다. 이것은 최종 설계 승인 또는 실행 승인이 아니다.
   섹션 수정 시 이전 섹션 ID의 확인을 재사용하지 않는다.
 
+##### Supervisor-owned response persistence
+
+Orchestrator가 task label과 함께 전달한 응답을 Supervisor가 저장한다. 응답 payload는
+`task_id`와 하나 이상의 `responses[]`를 가지며 각 항목은 `question_id`,
+`selected_option_id`, `idempotency_key`, `answered_at`을 포함한다. Architectural은
+현재 `active_question_id`에 대한 응답 하나만 허용하고, Bounded는
+`active_question_id` 없이 grouped interaction의 여러 응답을 한 번에 허용한다.
+
+```bash
+python3 - "${TASK_DIR}/context/brainstorm-dialogue.json" "${BRAINSTORM_RESPONSE_PATH}" "${TASK_ID}" <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+
+dialogue_path, response_path, task_id = sys.argv[1:]
+with open(dialogue_path, "r", encoding="utf-8") as stream:
+    dialogue = json.load(stream)
+with open(response_path, "r", encoding="utf-8") as stream:
+    payload = json.load(stream)
+
+if dialogue.get("task_id") != task_id or payload.get("task_id") != task_id:
+    raise SystemExit("brainstorm_task_id_mismatch")
+
+responses = payload.get("responses")
+if not isinstance(responses, list) or not responses:
+    raise SystemExit("brainstorm_responses_missing")
+if len({item.get("question_id") for item in responses if isinstance(item, dict)}) != len(responses):
+    raise SystemExit("brainstorm_duplicate_question_response")
+
+questions = {item.get("question_id"): item for item in dialogue.get("questions", [])}
+classification = dialogue.get("classification")
+active_question_id = dialogue.get("active_question_id")
+if classification == "Architectural" and len(responses) != 1:
+    raise SystemExit("brainstorm_architectural_response_count_invalid")
+if classification == "Bounded" and active_question_id is not None:
+    raise SystemExit("brainstorm_bounded_active_question_forbidden")
+
+changed = False
+for submitted in responses:
+    if not isinstance(submitted, dict):
+        raise SystemExit("brainstorm_response_invalid")
+    question_id = submitted.get("question_id")
+    question = questions.get(question_id)
+    if question is None:
+        raise SystemExit("brainstorm_question_missing")
+
+    response = question.get("response")
+    expected = {
+        "selected_option_id": submitted.get("selected_option_id"),
+        "idempotency_key": submitted.get("idempotency_key"),
+        "answered_at": submitted.get("answered_at"),
+    }
+    if response:
+        if response == expected:
+            continue
+        if response.get("idempotency_key") == expected["idempotency_key"]:
+            raise SystemExit("brainstorm_idempotency_conflict")
+        raise SystemExit("brainstorm_question_already_answered")
+
+    if classification == "Architectural" and active_question_id != question_id:
+        raise SystemExit("brainstorm_active_question_mismatch")
+    if question.get("status") != "pending":
+        raise SystemExit("brainstorm_question_not_pending")
+    valid_options = {item.get("option_id") for item in question.get("options", [])}
+    if expected["selected_option_id"] not in valid_options:
+        raise SystemExit("brainstorm_option_invalid")
+    if not all(isinstance(expected[field], str) and expected[field] for field in expected):
+        raise SystemExit("brainstorm_response_fields_invalid")
+
+    question["status"] = "answered"
+    question["response"] = expected
+    changed = True
+
+if not changed:
+    raise SystemExit(0)
+
+if classification == "Architectural":
+    dialogue.pop("active_question_id", None)
+    dialogue["status"] = "design_review"
+elif classification == "Bounded":
+    pending = any(item.get("status") == "pending" for item in dialogue.get("questions", []))
+    dialogue["status"] = "waiting_for_input" if pending else "design_review"
+else:
+    raise SystemExit("brainstorm_response_classification_invalid")
+
+directory = os.path.dirname(dialogue_path)
+descriptor, temporary = tempfile.mkstemp(prefix=".brainstorm-dialogue-", dir=directory)
+try:
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        json.dump(dialogue, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, dialogue_path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+
+with open(dialogue_path, "r", encoding="utf-8") as stream:
+    saved = json.load(stream)
+if saved.get("task_id") != task_id:
+    raise SystemExit("brainstorm_dialogue_readback_failed")
+PYEOF
+```
+
+종료 코드가 0이고 read-back이 성공한 뒤에만 같은 task의 다음 질문 또는 설계 단계로
+진행한다. payload 파일은 Supervisor task context 안의 단일 응답 envelope이며 다른
+task의 상태 경로나 응답을 함께 포함하지 않는다.
+
 ##### Spike probe
 
 조사 질문, probe contract(방법·성공 판단·읽기 범위·폐기 가능한 결과)를 2~3문장으로
@@ -1475,6 +1585,7 @@ analyst+planner — it produces all planning artifacts in one spawn:
 TASK: {TASK}
 TASK_DIR: {TASK_DIR}
 PROJECT_ROOT: {PROJECT_ROOT}
+MODE: supervisor
 MUTATION_SCOPE: {MUTATION_SCOPE}
 REQUIREMENTS: {REQUIREMENTS — always present at this point}
 MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  (read this file if non-empty for prior context)

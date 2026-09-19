@@ -685,6 +685,10 @@ def test_failure_case_analyst_requires_accepted_matching_design_hash_before_plan
         assert token in sut
     assert "Never expand the accepted design" in sut
     assert "This gate does not apply to `MODE=direct`" in sut
+    installed = '${AGENT_CREW_HOME}/scripts/brainstorm-classification.py'
+    source_fallback = '${PROJECT_ROOT}/core/scripts/brainstorm-classification.py'
+    assert installed in sut and source_fallback in sut
+    assert sut.index(installed) < sut.index(source_fallback)
     assert sut.index("brainstorm_design_hash_mismatch") < sut.index("### Step 5 — Write analysis.md")
 
 
@@ -703,20 +707,21 @@ def test_success_case_supervisor_passes_brainstorm_contract_to_analyst():
     assert "BRAINSTORM_CLASSIFICATION_PATH: {TASK_DIR}/context/brainstorm-classification.json" in sut
     assert "BRAINSTORM_DESIGN_PATH: {TASK_DIR}/context/brainstorm-design.md" in sut
     assert "BRAINSTORM_DESIGN_HASH: {approved or accepted canonical hash}" in sut
+    assert "MODE: supervisor" in sut
 
 
-def brainstorm_response_script() -> str:
-    text = RUN_MD.read_text(encoding="utf-8")
+def supervisor_response_script() -> str:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
     match = re.search(
-        r"#### Per-task Brainstorm response persistence\n.*?```bash\n(.*?)\n```",
+        r"##### Supervisor-owned response persistence\n.*?```bash\n(.*?)\n```",
         text,
         re.DOTALL,
     )
-    assert match, "run orchestrator needs an executable task-scoped response helper"
+    assert match, "Supervisor needs an executable task-scoped response helper"
     return match.group(1)
 
 
-def test_success_case_workflow_run_orchestrator_answer_is_task_scoped(tmp_path):
+def test_success_case_workflow_supervisor_architectural_answer_is_task_scoped(tmp_path):
     task_a = tmp_path / "20260920-120000-0"
     task_b = tmp_path / "20260920-120000-1"
     for task_dir, task_id, active_question_id in (
@@ -746,18 +751,25 @@ def test_success_case_workflow_run_orchestrator_answer_is_task_scoped(tmp_path):
         })
 
     untouched = (task_b / "context/brainstorm-dialogue.json").read_bytes()
+    response_path = task_a / "context/brainstorm-response.json"
+    write_json(response_path, {
+        "task_id": task_a.name,
+        "responses": [{
+            "question_id": "a-q1",
+            "selected_option_id": "keep",
+            "idempotency_key": "response-a-1",
+            "answered_at": "2026-09-20T00:00:00Z",
+        }],
+    })
     response_env = {
         **os.environ,
         "TASK_ID": task_a.name,
         "TASK_DIR": str(task_a),
-        "BRAINSTORM_QUESTION_ID": "a-q1",
-        "BRAINSTORM_OPTION_ID": "keep",
-        "BRAINSTORM_IDEMPOTENCY_KEY": "response-a-1",
-        "BRAINSTORM_ANSWERED_AT": "2026-09-20T00:00:00Z",
+        "BRAINSTORM_RESPONSE_PATH": str(response_path),
         "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
     }
     result = subprocess.run(
-        ["bash", "-c", brainstorm_response_script()],
+        ["bash", "-c", supervisor_response_script()],
         capture_output=True,
         text=True,
         env=response_env,
@@ -773,13 +785,78 @@ def test_success_case_workflow_run_orchestrator_answer_is_task_scoped(tmp_path):
 
     saved = (task_a / "context/brainstorm-dialogue.json").read_bytes()
     duplicate = subprocess.run(
-        ["bash", "-c", brainstorm_response_script()],
+        ["bash", "-c", supervisor_response_script()],
         capture_output=True,
         text=True,
         env=response_env,
     )
     assert duplicate.returncode == 0, duplicate.stderr
     assert (task_a / "context/brainstorm-dialogue.json").read_bytes() == saved
+
+
+def test_success_case_workflow_supervisor_persists_bounded_group_without_active_question(tmp_path):
+    context = tmp_path / "context"
+    context.mkdir()
+    questions = []
+    responses = []
+    for index in (1, 2):
+        question_id = f"bounded-q{index}"
+        questions.append({
+            "question_id": question_id,
+            "header": "Scope",
+            "prompt": f"Choice {index}?",
+            "options": [
+                {"option_id": f"{question_id}:yes", "label": "Yes", "description": "Choose yes"},
+                {"option_id": f"{question_id}:no", "label": "No", "description": "Choose no"},
+            ],
+            "why_it_matters": "Defines bounded behavior",
+            "status": "pending",
+        })
+        responses.append({
+            "question_id": question_id,
+            "selected_option_id": f"{question_id}:yes",
+            "idempotency_key": f"response-{index}",
+            "answered_at": f"2026-09-20T00:00:0{index}Z",
+        })
+    write_json(context / "brainstorm-dialogue.json", {
+        "schema_version": 1,
+        "task_id": "20260920-120000-0",
+        "classification": "Bounded",
+        "status": "waiting_for_input",
+        "questions": questions,
+        "section_acknowledgements": [],
+    })
+    response_path = context / "brainstorm-response.json"
+    write_json(response_path, {"task_id": "20260920-120000-0", "responses": responses})
+
+    result = subprocess.run(
+        ["bash", "-c", supervisor_response_script()],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "TASK_ID": "20260920-120000-0",
+            "TASK_DIR": str(tmp_path),
+            "BRAINSTORM_RESPONSE_PATH": str(response_path),
+            "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    updated = json.loads((context / "brainstorm-dialogue.json").read_text())
+    assert updated["status"] == "design_review"
+    assert "active_question_id" not in updated
+    assert [question["status"] for question in updated["questions"]] == ["answered", "answered"]
+
+
+def test_success_case_run_orchestrator_routes_responses_without_mutating_dialogue():
+    sut = RUN_MD.read_text(encoding="utf-8")
+    routing = sut.split("#### Per-task Brainstorm interaction routing", 1)[1].split("### 6. Run Supervisors", 1)[0]
+
+    assert "route the task-labeled response payload" in routing
+    assert "must not mutate" in routing
+    assert "os.replace" not in routing
+    assert "brainstorm-dialogue.json" not in routing
 
 
 def test_success_case_run_orchestrator_preserves_new_and_legacy_resume_contracts():

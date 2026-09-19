@@ -95,9 +95,22 @@ contract and creates no planning artifacts.
 Before analysis, PRD authoring, or pipeline creation, read the three Brainstorm
 inputs above and verify them against the current task artifacts. Extract the
 canonical JSON object after `<!-- brainstorm-bound-fields -->` from
-`BRAINSTORM_DESIGN_PATH` and compute it with `canonical_hash` from
-`core/scripts/brainstorm-classification.py`. The computed value must equal
-`BRAINSTORM_DESIGN_HASH`.
+`BRAINSTORM_DESIGN_PATH`. Resolve the installed runtime helper first and use the
+source checkout only as an explicit development fallback:
+
+```bash
+BRAINSTORM_CLASSIFIER="${AGENT_CREW_HOME}/scripts/brainstorm-classification.py"
+if [ ! -f "${BRAINSTORM_CLASSIFIER}" ]; then
+  BRAINSTORM_CLASSIFIER="${PROJECT_ROOT}/core/scripts/brainstorm-classification.py"
+fi
+if [ ! -f "${BRAINSTORM_CLASSIFIER}" ]; then
+  printf '%s\n' "STATUS: BLOCKED" "BLOCKER: brainstorm_design_hash_mismatch"
+  exit 1
+fi
+```
+
+Load `canonical_hash` from `BRAINSTORM_CLASSIFIER` and compute the extracted
+canonical object. The computed value must equal `BRAINSTORM_DESIGN_HASH`.
 
 The final classification artifact must be final and its classification must
 match the design. For `Architectural`, the effective, non-invalidated

@@ -1960,72 +1960,12 @@ Candidate selection, Brainstorm design approval, Phase 1d execution approval,
 and external-action approval are distinct recorded decisions. A response to
 one surface must never be treated as approval for another surface.
 
-#### Per-task Brainstorm response persistence
-
-Run this only after resolving the structured response to one exact `task_id`.
-The Supervisor remains the state owner; this helper is the orchestrator's
-atomic persistence boundary before it resumes that Supervisor.
-
-```bash
-python3 - "${TASK_DIR}/context/brainstorm-dialogue.json" "${TASK_ID}" \
-  "${BRAINSTORM_QUESTION_ID}" "${BRAINSTORM_OPTION_ID}" \
-  "${BRAINSTORM_IDEMPOTENCY_KEY}" "${BRAINSTORM_ANSWERED_AT}" <<'PYEOF'
-import json
-import os
-import sys
-import tempfile
-
-path, task_id, question_id, option_id, idempotency_key, answered_at = sys.argv[1:]
-with open(path, "r", encoding="utf-8") as stream:
-    dialogue = json.load(stream)
-
-if dialogue.get("task_id") != task_id:
-    raise SystemExit("brainstorm_task_id_mismatch")
-
-question = next(
-    (item for item in dialogue.get("questions", []) if item.get("question_id") == question_id),
-    None,
-)
-if question is None:
-    raise SystemExit("brainstorm_question_missing")
-
-response = question.get("response")
-if response:
-    if response.get("idempotency_key") == idempotency_key:
-        if response.get("selected_option_id") == option_id and response.get("answered_at") == answered_at:
-            raise SystemExit(0)
-        raise SystemExit("brainstorm_idempotency_conflict")
-    raise SystemExit("brainstorm_question_already_answered")
-if dialogue.get("active_question_id") != question_id:
-    raise SystemExit("brainstorm_active_question_mismatch")
-
-valid_options = {item.get("option_id") for item in question.get("options", [])}
-if option_id not in valid_options:
-    raise SystemExit("brainstorm_option_invalid")
-
-question["status"] = "answered"
-question["response"] = {
-    "selected_option_id": option_id,
-    "idempotency_key": idempotency_key,
-    "answered_at": answered_at,
-}
-dialogue.pop("active_question_id", None)
-dialogue["status"] = "design_review"
-
-directory = os.path.dirname(path)
-descriptor, temporary = tempfile.mkstemp(prefix=".brainstorm-dialogue-", dir=directory)
-try:
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        json.dump(dialogue, stream, ensure_ascii=False, indent=2)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
-finally:
-    if os.path.exists(temporary):
-        os.unlink(temporary)
-PYEOF
-```
+After resolving a structured response, route the task-labeled response payload
+to that task's existing Supervisor and resume it at its pending Brainstorm
+interaction. The orchestrator must not mutate Supervisor-owned state. It may
+group task-labeled presentation, but it must dispatch each payload separately
+and wait for the owning Supervisor's persistence/read-back result before
+presenting that task's next dependent interaction.
 
 ### 6. Run Supervisors
 
