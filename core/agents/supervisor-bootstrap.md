@@ -870,6 +870,62 @@ JSON 입력으로 전달하거나 classification/evidence를 supervisor가 재�
 Agent가 없거나 응답이 파싱 불가하면 `DEGRADED`를 표시하고 원본을 보존한 뒤
 Classification failure로 멈춘다. 이 경로에서 가짜 semantic 결과를 만들지 않는다.
 
+##### Semantic response gate
+
+JSON 파싱 성공과 `readiness: READY`만으로 final classifier를 호출하지 않는다.
+다음 guard를 먼저 실행하여 Agent classify 계약의 필수 필드와 타입을 검증한다.
+`classification`은 문자열 `Spike`, `Bounded`, `Architectural` 중 하나여야 한다.
+`evidence`는 배열이며 각 항목에 비어 있지 않은 문자열 `source`와 `finding`이
+있어야 한다. `mode: classify`, `readiness: READY`, 배열 `unresolved`도 필수다.
+실패하면 기존 Classification failure의 DEGRADED/차단 경계를 적용하며 final
+artifact를 만들거나 classifier의 Bounded 최소값으로 대체하지 않는다.
+
+```bash
+if ! python3 - "${TASK_DIR}/context/brainstorm-semantic.json" <<'PYEOF'
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        semantic = json.load(stream)
+    if not isinstance(semantic, dict):
+        raise ValueError("semantic response must be an object")
+    classification = semantic.get("classification")
+    if not isinstance(classification, str) or classification not in ("Spike", "Bounded", "Architectural"):
+        raise ValueError("classification must be Spike, Bounded, or Architectural")
+    if semantic.get("mode") != "classify" or semantic.get("readiness") != "READY":
+        raise ValueError("semantic response requires mode=classify and readiness=READY")
+    if not isinstance(semantic.get("unresolved"), list):
+        raise ValueError("unresolved must be an array")
+
+    evidence = semantic.get("evidence")
+    if not isinstance(evidence, list):
+        raise ValueError("evidence must be an array")
+    for item in evidence:
+        if not isinstance(item, dict) or any(
+            not isinstance(item.get(field), str) or not item[field].strip()
+            for field in ("source", "finding")
+        ):
+            raise ValueError("evidence entries require nonempty source and finding strings")
+except (OSError, UnicodeDecodeError, ValueError) as exc:
+    print(f"semantic_response_invalid: {exc}", file=sys.stderr)
+    sys.exit(2)
+PYEOF
+then
+  log_progress "DEGRADED" "brainstorm_classification_failed — semantic_response_invalid"
+  register_update current_phase blocked
+  register_update blocked_by brainstorm_classification_failed
+  phase_done
+  log_progress "BLOCKED" "brainstorm_classification_failed — semantic_response_invalid"
+  cat > "${TASK_DIR}/result.md" <<EOF
+STATUS: blocked
+BLOCKER: brainstorm_classification_failed
+MUTATION_SCOPE: ${MUTATION_SCOPE}
+DETAIL: semantic_response_invalid; original response preserved in context/brainstorm-semantic-response.md.
+EOF
+  exit 1
+fi
+```
+
 요구사항과 저장소 근거를 반영한 `context/brainstorm-final-evidence.json`을 만든다.
 증거 없는 `false` 전환으로 preliminary hard rule을 지우지 않는다. 그 뒤 실행한다:
 

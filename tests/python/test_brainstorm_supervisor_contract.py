@@ -1,7 +1,13 @@
 """Supervisor prompt contracts from the approved Brainstorm design and Task 4."""
 
 from pathlib import Path
+import json
+import os
 import re
+import subprocess
+import sys
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -138,3 +144,90 @@ def test_success_case_audit_register_phases_and_brainstorm_events_are_published(
         assert f"`{event}`" in sut
     assert "Phase 1b: Brainstorm" in sut
     assert "사전 수집" in sut
+
+
+def semantic_gate_script() -> str:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    match = re.search(r"##### Semantic response gate\n.*?```bash\n(.*?)\n```", text, re.DOTALL)
+    assert match, "final classification needs an executable semantic response gate"
+    assert match.end() < text.index("--stage final")
+    return match.group(1)
+
+
+def semantic_response() -> dict:
+    return {
+        "mode": "classify",
+        "classification": "Bounded",
+        "evidence": [{"source": "context/requirements.md", "finding": "기존 책임 경계 유지"}],
+        "unresolved": [],
+        "readiness": "READY",
+    }
+
+
+def run_semantic_gate(tmp_path: Path, response: dict) -> subprocess.CompletedProcess:
+    context = tmp_path / "context"
+    context.mkdir()
+    semantic_path = context / "brainstorm-semantic.json"
+    original = json.dumps(response, ensure_ascii=False)
+    semantic_path.write_text(original, encoding="utf-8")
+    script = """
+log_progress() { printf '%s %s\\n' "$1" "$2"; }
+register_update() { printf '%s %s\\n' "$1" "$2"; }
+phase_done() { :; }
+""" + semantic_gate_script() + "\nprintf 'CLASSIFIER_REACHED\\n'\n"
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TASK_DIR": str(tmp_path), "MUTATION_SCOPE": "read_only",
+             "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}"},
+    )
+
+    assert semantic_path.read_text(encoding="utf-8") == original
+    return result
+
+
+@pytest.mark.parametrize("field,value", [
+    ("classification", None),
+    ("classification", "Unknown"),
+    ("classification", ["Bounded"]),
+    ("evidence", None),
+    ("evidence", "repository evidence"),
+    ("evidence", [{}]),
+    ("evidence", [{"source": "", "finding": "scope"}]),
+    ("evidence", [{"source": "file:1", "finding": 42}]),
+    ("mode", None),
+    ("mode", "design"),
+    ("readiness", None),
+    ("readiness", "BLOCKED"),
+    ("unresolved", None),
+    ("unresolved", "Unknown"),
+])
+def test_failure_case_contract_invalid_semantic_response_blocks_before_classifier(tmp_path, field, value):
+    response = semantic_response()
+    if value is None:
+        del response[field]
+    else:
+        response[field] = value
+
+    result = run_semantic_gate(tmp_path, response)
+
+    assert result.returncode != 0
+    assert "DEGRADED" in result.stdout
+    assert "brainstorm_classification_failed" in result.stdout
+    assert "CLASSIFIER_REACHED" not in result.stdout
+    assert "STATUS: blocked" in (tmp_path / "result.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("classification", ["Spike", "Bounded", "Architectural"])
+def test_success_case_contract_valid_semantic_response_reaches_classifier_unchanged(tmp_path, classification):
+    response = semantic_response()
+    response["classification"] = classification
+
+    result = run_semantic_gate(tmp_path, response)
+
+    assert result.returncode == 0
+    assert "CLASSIFIER_REACHED" in result.stdout
+    assert "DEGRADED" not in result.stdout
+    assert not (tmp_path / "result.md").exists()
