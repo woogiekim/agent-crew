@@ -2,7 +2,7 @@
 
 > This module is read by the `supervisor` agent at spawn time when no
 > `PIPELINE_PATH` exists yet (fresh run). On a resuming run, only Phase 0
-> is executed from this module — the agent skips Phases 1a, 1b+1c,
+> is executed from this module — the agent skips Phases 1a, 1b, 1c,
 > 1c-bis, 1d, and 1.5 and proceeds directly to Phase 2 (which lives in
 > `supervisor-stages.md`).
 >
@@ -283,6 +283,9 @@ EOF
     RETRY)                                              _status="retry" ;;
     HANDOFF_PAGEOUT_SKIPPED)                            _status="skipped" ;;
     COST_WARN|HANDOFF_PAGEOUT|STATE_WARN|STAGE_FANOUT_CONFLICT) _status="warn" ;;
+    BRAINSTORM_CLASSIFICATION|BRAINSTORM_QUESTION)        _status="in_progress" ;;
+    BRAINSTORM_DESIGN_READY|SPIKE_COMPLETED)              _status="completed" ;;
+    DEGRADED)                                           _status="warn" ;;
     *)                                                  _status="unknown" ;;
   esac
 
@@ -313,10 +316,10 @@ with open(path, "a", encoding="utf-8") as f:
     f.write(json.dumps(row, ensure_ascii=False) + "\n")
 PYEOF
 }
-# Usage: log_progress "PHASE" "1b — Analysis + Planning (merged)"
+# Usage: log_progress "PHASE" "1c — Analysis + Planning (merged)"
 ```
 
-Every numbered supervisor phase (0, 1a, 1b+1c, 1d, 1.5, 2, 2.5, and 3)
+Every numbered supervisor phase (0, 1a, 1b, 1c, 1d, 1.5, 2, 2.5, and 3)
 must emit a start event at entry and an end event immediately before advancing
 or returning. Use these helpers so both timestamps and elapsed seconds are
 derived from one clock source:
@@ -569,7 +572,8 @@ must still be a valid git repo or the pipeline cannot continue.
 START_MODE=$(python3 "${AGENT_CREW_HOME}/scripts/supervisor-start-mode.py" --pipeline "${PIPELINE_PATH}") || exit 1
 ```
 
-`START_MODE=fresh`이면 Phase 1a -> 1b+1c 실제 analyst 위임 -> 1d -> 1.5로 진행한다.
+`START_MODE=fresh`이면 Phase 1a preliminary/요구사항 -> 1b Brainstorm ->
+1c 실제 analyst 위임 -> 1d -> 1.5로 진행한다. Spike는 1b 조사 결과로 종료한다.
 `planning_required: true`를 supervisor가 지워 resume으로 바꾸거나 직접 구현하지 않는다.
 analyst가 실제 실행 계획으로 교체한 뒤 quality-plan gate를 통과해야 Phase 2에 진입한다.
 초기 v2 승인 그래프 안의 계획은 기존 승인 범위를 계승하며 범위/비용 변경만 새 승인이 필요하다.
@@ -577,9 +581,9 @@ analyst가 실제 실행 계획으로 교체한 뒤 quality-plan gate를 통과�
 Resume rules:
 
 - If `START_MODE=resume` (`PIPELINE_PATH` exists and is not a placeholder): read `completed_stages` and `stage_agent_status`, then
-  **skip Phases 1a, 1b+1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
+  **skip Phases 1a, 1b, 1c, 1d, and 1.5 entirely and jump directly to Phase 2**.
   Planning, analysis, and plan approval were already completed in the prior run.
-- If `PIPELINE_PATH` does not exist or `START_MODE=fresh`: proceed normally through Phases 1a → 1b+1c → 1d → 1.5 → 2.
+- If `PIPELINE_PATH` does not exist or `START_MODE=fresh`: proceed normally through Phases 1a → 1b → 1c → 1d → 1.5 → 2 (Spike는 1b에서 종료).
 - Never duplicate the planner step for an already initialized task.
 - For parallel stages, use `stage_agent_status["{i}"]` to determine which individual
   agents already completed. On resume, skip only those agents — do not re-run them.
@@ -636,7 +640,7 @@ fi
 
 ### Phase 1: Analysis + Planning
 
-> **Skip this entire Phase 1 (1a, 1b+1c, 1d) and Phase 1.5 when resuming** (i.e.,
+> **Skip this entire Phase 1 (1a, 1b, 1c, 1d) and Phase 1.5 when resuming** (i.e.,
 > when `START_MODE=resume` at Phase 0, not when a placeholder merely exists). Jump directly to Phase 2 using
 > the `completed_stages` and `stage_agent_status` read in Phase 0.
 
@@ -645,13 +649,17 @@ fi
 For a fresh run (`START_MODE=fresh`, including a native placeholder), there is no
 "simple enough" shortcut around this phase. Existing requirements, including a
 pre-populated `{TASK_DIR}/context/requirements.md`, may shorten Phase 1a but
-must never skip Phase 1b+1c, Phase 1d, Phase 1.5, or Phase 2.
+must never skip Phase 1b Brainstorm or the applicable implementation gates in
+Phase 1c, Phase 1d, Phase 1.5, and Phase 2. Spike findings are the explicit
+non-implementation terminal path defined below.
 
 Before any implementation activity, the required fresh-run sequence is:
 
 ```text
-Phase 1a requirement gate
-Phase 1b+1c analyst planning spawn
+Phase 1a preliminary classification + requirement gate
+Phase 1b final classification + dialogue + validated design
+applicable design acceptance/approval boundary
+Phase 1c analyst planning spawn
 pipeline.json + analysis.md + prd.md + handoff.md written
 Phase 1d plan approval gate
 Phase 1.5 custom-agent creation, if needed
@@ -671,6 +679,70 @@ BLOCKER: supervisor_pipeline_bypass_prevented
 DETAIL: Fresh supervisor run attempted direct implementation before pipeline.json, plan approval, stage-agent execution, and reviewer completion.
 ```
 
+#### Phase 1a preliminary classification
+
+fresh task는 요구사항을 이미 전달받았더라도 먼저 이 절을 수행한다.
+`TASK`는 immutable Root Input Snapshot이며 번역·요약·정규화하지 않는다.
+저렴한 저장소 읽기와 명시 요구에서 확인한 사실만
+`context/brainstorm-preliminary-evidence.json`에 기록한다. hard-rule 이름의
+boolean은 확인된 근거가 있을 때만 `true`로 두고, 출처와 미확인 사항을 함께
+기록한다. 파일 수, 언어, 기간, `API` 같은 단어만으로 hard rule을 켜지 않는다.
+
+```bash
+phase_start "1a — Preliminary classification + requirements"
+register_update current_phase phase_1a
+python3 "${AGENT_CREW_HOME}/scripts/brainstorm-classification.py" \
+  --stage preliminary \
+  --evidence-file "${TASK_DIR}/context/brainstorm-preliminary-evidence.json" \
+  --format json -- "${TASK}" \
+  > "${TASK_DIR}/context/brainstorm-preliminary-result.json"
+```
+
+종료 코드와 JSON을 확인한 후에만 결과를 사용한다. 실패했거나 필요한 증거가
+없으면 아래 Classification failure 절을 적용한다. 성공 시 원본 CLI 결과를
+보존하고 `brainstorm-classification.schema.json`에 맞는
+`context/brainstorm-classification.json` wrapper를 atomic write한다:
+
+- `schema_version: 1`, `task_id: TASK_ID`, `raw_input_hash`: 원문 TASK UTF-8의 SHA-256.
+- `preliminary`: 결과의 `final_classification`, `status: preliminary`.
+- `classifier_version`, `rule_result`, `semantic_result`, `resolution`: CLI 결과 그대로.
+- `final`은 아직 쓰지 않는다. preliminary는 인터뷰 깊이만 정하며 승인 상태를 설정하지 않는다.
+
+```bash
+register_update brainstorm_classification_path "${TASK_DIR}/context/brainstorm-classification.json"
+log_progress "BRAINSTORM_CLASSIFICATION" "stage=preliminary artifact=${TASK_DIR}/context/brainstorm-classification.json"
+```
+
+##### Classification rendering
+
+preliminary/final 두 결과를 각각 사용자에게 표시한다. 경로만 표시하지 말고
+`rule_result.matched_rules`, rule/semantic evidence의 출처, 미확인 사항,
+`resolution`, `classifier_version`을 짧게 설명한다. 두 분류가 다르면 변경된
+사실과 인터뷰/설계 과정의 차이를 명시한다:
+
+```text
+BRAINSTORM_CLASSIFICATION: {Spike|Bounded|Architectural} ({preliminary|final})
+REASON: {적용 규칙, 책임 경계 근거와 출처, 남은 미확인 사항, resolution/version}
+PROCESS: {Spike 조사 | Bounded 묶음 질문과 짧은 설계 | Architectural 순차 질문과 대안 비교}
+```
+
+##### Classification failure
+
+deterministic helper 실패, 잘못된 JSON, 검증 불가능한 근거는 자동으로 Bounded를
+선택하는 이유가 아니다. 원본 응답과 stderr를 보존하고 다음을 실행한다:
+
+```bash
+log_progress "DEGRADED" "brainstorm_classification_failed — classification cannot be trusted"
+register_update current_phase blocked
+register_update blocked_by brainstorm_classification_failed
+phase_done
+```
+
+`result.md`에 `STATUS: blocked`, `BLOCKER: brainstorm_classification_failed`,
+`MUTATION_SCOPE: {MUTATION_SCOPE}`, 실패 근거를 기록하고 멈춘다. 기존 wrapper가
+있으면 결과를 조작하지 않고 `status: degraded`로 둔다. 최초 결과가 없으면
+가짜 preliminary 값을 만들지 않는다. 실패는 사용자에게도 `DEGRADED`로 표시한다.
+
 #### Phase 1a: Requirement Collection Gate
 
 Emit before checking:
@@ -688,8 +760,10 @@ register_update current_phase phase_1a
 
 ##### Case A — `REQUIREMENTS` is present
 
-Skip both rounds below. Use the received `REQUIREMENTS` value as-is and proceed
-directly to Phase 1b.
+추가 요구사항 인터뷰를 생략한다. 받은 `REQUIREMENTS`를 원문 그대로
+`{TASK_DIR}/context/requirements.md`에 보존하고 Phase 1b: Brainstorm으로 간다.
+분류나 설계를 생략하지 않는다. 기존 artifact가 받은 값과 다르면 조용히
+덮어쓰지 말고 변경 근거를 기록한다.
 
 ##### Case B — `REQUIREMENTS` is absent
 
@@ -730,20 +804,27 @@ python3 "${AGENT_CREW_HOME}/scripts/requirements-sufficiency.py" \
 
 The synthesized block has the exact same shape the requirements agent returns.
 
-**If `SUFFICIENCY == "AMBIGUOUS"`:** Delegate to the **requirements agent** in
-the mode selected by `POLICY` (blocking):
+**If `SUFFICIENCY == "AMBIGUOUS"`:** preliminary 결과로 인터뷰 깊이를 정해
+**requirements agent**에 blocking 위임한다. Architectural은
+`MODE: deep_interview`로 매번 질문 한 개만 전달하고 답변 뒤 다음 질문을 정한다.
+Bounded는 `MODE: single_round`로 미답변 고영향 항목만 grouped structured interaction에
+묶는다. 기존 scope/target/constraints가 확인되었으면 반복 질문하지 않는다.
+Spike는 조사 목적·방법·제약의 미확인 항목만 수집한다. `POLICY`는 추가적인
+엄격도를 낮추지 않는 보조 입력이며 preliminary Architectural을 단축할 수 없다.
 
 ```text
 TASK: {TASK}
 TASK_INDEX: 0
 TASK_DIR: {TASK_DIR}
-MODE: {single_round|deep_interview from POLICY}
+MODE: {deep_interview for Architectural; single_round for Bounded; policy-selected for Spike}
+PRELIMINARY_CLASSIFICATION_PATH: {TASK_DIR}/context/brainstorm-classification.json
 
 Run the selected structured user-choice interview (per
 `core/rules/capabilities/interactive-question.md`), write requirements.md, and
 return the REQUIREMENTS block. In `MODE: deep_interview`, ask targeted follow-up
-questions until the ambiguity threshold is satisfied or report BLOCKED before
-implementation.
+questions one at a time until the ambiguity threshold is satisfied or report
+BLOCKED before implementation. Ask only unanswered high-impact requirements;
+do not repeat facts already established by the immutable TASK or evidence.
 ```
 
 Extract the `REQUIREMENTS` block from the requirements agent's response and use it as
@@ -756,21 +837,203 @@ the `REQUIREMENTS` value for Phase 1b.
 
 ---
 
-#### Phase 1b+1c: Analyst (merged analyst + planner — single spawn)
+Case A/B 모두 읽을 수 있는 `requirements.md`가 있어야 진행한다. 요구사항 응답이
+BLOCKED이거나 `implementation_allowed: false`이면 이유를 기록하고 멈춘다.
+요구사항 완료 후 `phase_done`을 호출하고 Phase 1b로 간다.
 
-> **Optimization**: Phases 1b and 1c are merged into a single analyst spawn.
+#### Phase 1b: Brainstorm
+
+```bash
+phase_start "1b — Brainstorm"
+log_progress "PHASE" "1b — Brainstorm"
+register_update current_phase phase_1b_brainstorm
+```
+
+이 phase의 모든 차단 경로는 dialogue가 있으면 `status: blocked`를 저장하고,
+register의 `current_phase: blocked`와 `blocked_by`를 갱신한다. `phase_done`과
+`BLOCKED` 사건을 기록한 뒤 `result.md`에 `STATUS: blocked`, `BLOCKER: {reason}`,
+`MUTATION_SCOPE: {MUTATION_SCOPE}`, 근거를 남긴다. 질문 대기 상태는 차단이나
+완료로 바꾸지 않는다. Brainstorm 응답은 `STATUS:` 대신 단일 `BRAINSTORM` block의
+mode/readiness 계약으로 검증하며 유효한 응답을 일반 stage crash로 취급하지 않는다.
+
+##### Final classification
+
+Brainstorm Agent에 `MODE=classify`로 blocking 위임한다. `TASK`는 원문 그대로,
+`PROJECT_ROOT`, `TASK_DIR`, `REQUIREMENTS_PATH`, `CLASSIFICATION_PATH`는 경로로
+전달한다. Agent는 사용자에게 질문하거나 workflow state를 쓸 수 없다.
+호스트가 돌려준 응답은 `context/brainstorm-semantic-response.md`에 원문 그대로
+저장한다. 정확히 하나인 `BRAINSTORM` block을 파싱해 값 변경 없이 JSON으로
+직렬화한 `context/brainstorm-semantic.json`을 CLI에 전달한다. 원본 텍스트 자체를
+JSON 입력으로 전달하거나 classification/evidence를 supervisor가 재작성하지 않는다.
+
+`readiness: BLOCKED`와 blocking `unresolved`는 원문 이유로 중단한다.
+Agent가 없거나 응답이 파싱 불가하면 `DEGRADED`를 표시하고 원본을 보존한 뒤
+Classification failure로 멈춘다. 이 경로에서 가짜 semantic 결과를 만들지 않는다.
+
+요구사항과 저장소 근거를 반영한 `context/brainstorm-final-evidence.json`을 만든다.
+증거 없는 `false` 전환으로 preliminary hard rule을 지우지 않는다. 그 뒤 실행한다:
+
+```bash
+python3 "${AGENT_CREW_HOME}/scripts/brainstorm-classification.py" \
+  --stage final \
+  --requirements-file "${TASK_DIR}/context/requirements.md" \
+  --semantic-file "${TASK_DIR}/context/brainstorm-semantic.json" \
+  --evidence-file "${TASK_DIR}/context/brainstorm-final-evidence.json" \
+  --format json -- "${TASK}" \
+  > "${TASK_DIR}/context/brainstorm-final-result.json"
+```
+
+종료 코드/JSON을 확인한다. CLI의 `final_classification`은 rule minimum과 semantic의
+더 무거운 결과이며 supervisor가 이를 낮출 수 없다. preliminary wrapper의
+`raw_input_hash`, `preliminary`를 보존하고 `final`, `status: final`, 최신
+`rule_result`, `semantic_result`, `resolution`, `classifier_version`을 atomic 갱신한다.
+두 pass의 원본 CLI 파일을 유지하므로 preliminary 증거도 잃지 않는다.
+Classification rendering과 `BRAINSTORM_CLASSIFICATION` 이벤트를 final에도 적용한다.
+
+##### Question rendering
+
+Supervisor가 `core/rules/capabilities/interactive-question.md`의 structured interaction
+또는 문서화된 markdown fallback을 소유한다. Brainstorm Agent에는 질문 생성만
+맡긴다. 사용자 언어로 질문과 `why_it_matters`를 설명하고 옵션 ID는 유지한다.
+호스트가 제공하는 자유 입력 항목을 중복 추가하지 않는다. 취소, 빈 답변, 연결 끊김은
+선택이나 동의가 아니다. `waiting_for_input`을 유지하거나 명시 취소로 중단하며
+입력 없이 다음 질문·설계·계획으로 넘어가지 않는다.
+
+##### Artifact persistence
+
+Supervisor만 `context/brainstorm-dialogue.json`을 쓴다. 최초 문서는
+`schema_version: 1`, `task_id`, final `classification`, `status: not_started`,
+`questions: []`, `section_acknowledgements: []`로 시작한다. 해당 schema의 필드만
+사용하며 register의 `brainstorm_dialogue_path`를 실제 artifact 경로로 갱신한다.
+각 task는 자기 `TASK_DIR`만 사용한다.
+
+- UI 표시 전에 질문의 `question_id`, `header`, `prompt`, `options`,
+  `why_it_matters`, `status: pending`을 저장한다. Agent 옵션에는 ID가 없으므로
+  supervisor가 `{question_id}:option-{index}` 형태의 안정적인 `option_id`를 붙인다.
+- 새 응답은 새 `idempotency_key`와 `answered_at`을 발급한다. 재전송은 동일 키를
+  재사용하고 이미 처리된 키는 무시한다. 같은 키의 다른 내용은 충돌로 차단한다.
+  응답의 `selected_option_id`가 실제 옵션에 속하는지 먼저 확인한다. 자유 입력은
+  원문을 `context/brainstorm-answer-{question_id}.md`에 보존하고 안정적인 사용자
+  응답 옵션으로 추가한 뒤 참조한다. 임의 필드를 JSON에 넣지 않는다.
+- 응답 저장은 임시 파일과 `os.replace`를 사용한 atomic write로 수행한다.
+  question의 `response`와 `status: answered`, active ID 제거를 한 번에 반영한다.
+  저장 및 read-back 실패 시 다음 질문을 표시하지 않는다. 미답변 active 질문이
+  남은 재접속은 같은 질문을 다시 표시하며 새 ID를 생성하지 않는다.
+- 섹션 확인은 `section_acknowledgements`에 `section_id`, `idempotency_key`,
+  `acknowledged_at`로 별도 기록한다. 이것은 최종 설계 승인 또는 실행 승인이 아니다.
+  섹션 수정 시 이전 섹션 ID의 확인을 재사용하지 않는다.
+
+##### Spike probe
+
+조사 질문, probe contract(방법·성공 판단·읽기 범위·폐기 가능한 결과)를 2~3문장으로
+표시하고 structured acknowledgement를 받는다. 앞 절의 멱등 저장 규칙을 적용한다.
+확인된 범위 안에서 읽기 전용 조사와 검증을 수행하고
+`context/brainstorm-findings.md`에 근거·한계·권고를 기록한다. probe가 필요해도
+프로젝트 코드나 외부 상태를 변경하지 않는다. 추가 권한이 필요하면 중단한다.
+
+`result.md`에 `STATUS: completed`, `MUTATION_SCOPE: {MUTATION_SCOPE}`, findings 경로와
+한계를 기록하고 `register_update current_phase completed`, `phase_done` 후
+`log_progress "SPIKE_COMPLETED" "findings=${TASK_DIR}/context/brainstorm-findings.md"`로
+종료한다. 호스트 task가 있으면 완료를 mirror한다. 이 사건은 pipeline을 요구하는
+구현용 `COMPLETED` 사건과 별개다. Phase 1c/Phase 2로 가지 않으며 PRD/pipeline을
+만들지 않는다. 결과를 구현하거나 probe를 제품에 남기는 전이는 새 분류와 해당
+승인 경계를 필요로 한다.
+
+##### Bounded dialogue
+
+raw input·요구사항·저장소 근거에서 이미 답한 질문은 생략한다. 미답변 고영향
+결정만 한 grouped structured interaction으로 모은다. 추가 질문이 없으면 바로
+짧은 설계를 요청한다. 이 interaction은 Architectural의 active 질문으로
+모델링하지 않으므로 `active_question_id`를 쓰지 않는다. 각 항목의 옵션과 질문을
+`questions[]`에 저장하고 `status: waiting_for_input`으로 둔다. 전체 응답 집합을
+검증한 뒤 항목별 응답 키를 포함한 하나의 atomic 갱신으로 반영한다. 일부만 답하면
+다음 단계로 진행하지 않고 받은 응답을 보존하여 남은 항목만 재표시한다.
+표시할 때 `BRAINSTORM_QUESTION` 사건에 task ID와 묶음의 question ID들을 기록한다.
+
+답변이 책임 경계 변경을 드러내면 해당 증거로 final classification을 다시 수행한다.
+Architectural이면 순차 대화로 전환한다. 새 목표나 저장소를 자동 추가하지 않는다.
+
+##### Architectural dialogue
+
+one active question per task를 지킨다. 미해결 구현 결정이 남아 있을 때만
+`MODE=next_question`을 호출하고 위 artifact 경로들을 전달한다. 정확히 한 질문,
+서로 배타적인 2~3개 옵션, `question_id`, `header`, `prompt`, `why_it_matters`를
+검증한다. 여러 질문이나 중복 질문이 돌아오면 UI에 내보내지 않고 수정을 요청한다.
+
+질문을 저장하면서 `active_question_id`를 해당 ID로 설정하고
+`status: waiting_for_input`으로 전환한다. `BRAINSTORM_QUESTION` 사건에 task와
+질문 ID를 기록한다. 사용자 응답을 저장하고 read-back한 뒤에만 active ID를
+지운다. 그 다음 MODE=next_question 호출은 갱신된 dialogue를 읽게 한다.
+답변으로 범위/근거가 바뀌면 final classification도 다시 확인한다.
+
+요구사항·누적 답변으로 구현을 막는 결정이 모두 해소되면 질문을 중단한다.
+고정 질문 수를 채우기 위해 묻지 않으며 Agent의 질문 존재만으로 미해결 결정을
+발명하지 않는다. 이어 `MODE=compare`를 호출해 실제로 구별되는 접근 1~3개,
+권고안·영향 경계·장단점·위험·되돌리기·검증 방법을 보여준다. 선택이 아직
+미해결이면 같은 단일 질문 절차로 사용자 결정을 저장한다. 대안 수를 채우려고
+변형을 만들거나 미해결 선택을 supervisor가 확정하지 않는다.
+compare 원본 응답은 `context/brainstorm-compare-response.md`에 보존한다.
+
+##### Design generation
+
+Bounded/Architectural 모두 Brainstorm Agent의 `MODE=design`을 호출한다.
+`TASK`, `TASK_DIR`, `PROJECT_ROOT`, `REQUIREMENTS_PATH`, `CLASSIFICATION_PATH`,
+`DIALOGUE_PATH`를 전달하고 새 design-only 산출물 외 쓰기를 허용하지 않는다.
+호출 전 dialogue의 `status: design_review`를 저장한다. compare 응답이 있으면
+`context/brainstorm-compare-response.md` 경로도 읽기 입력으로 전달한다. 사용자
+선택은 dialogue의 질문/응답을 통해 전달하며 권고안을 승인된 결정으로 바꾸지 않는다.
+
+Bounded는 분류 근거, 선택 행동과 경계, 변경 범위, 제외 대안과 이유, 검증 방법,
+위험·부수효과, 제안 pipeline을 담은 짧은 설계를 요청한다. Architectural은
+목표/비목표, 책임 경계, 인터페이스, 데이터 흐름, 오류 복구, 호환/마이그레이션,
+보안/운영 영향, 테스트, 선택/제외 대안, 미해결 사항을 포함한다.
+두 경우 모두 `brainstorm.md`의 canonical bound fields를 그대로 유지한다.
+Agent 응답은 `context/brainstorm-design-response.md`에 원문 보존하고 `design_path`가 정확히
+`{TASK_DIR}/context/brainstorm-design.md`인지 확인한다.
+
+##### Design validation
+
+`readiness: READY`만으로 전진하지 않는다. 실제 design artifact와 canonical
+fields를 확인해 unfinished markers(`TODO`, `TBD`, placeholder), contradictions,
+scope overflow, blocking unknowns가 없는지 요구사항 및 답변과 대조한다.
+인용된 기존 코드의 표식을 설계 미완료와 혼동하지 않는다. 파일 누락, 잘못된 경로,
+필수 필드 누락, final classification 불일치도 검증 실패다.
+
+실패하면 `status: design_review`를 유지하고 결함/근거를 전달해 `MODE=design`으로
+refinement한다. 새로운 사용자 결정이 필요하면 해당 분류의 질문 경로로 돌아간다.
+수정 뒤 같은 검증을 다시 수행하며, 해결 불가능하면 `STATUS: blocked`,
+`BLOCKER: brainstorm_design_invalid`로 끝낸다. 유효하지 않은 설계로 계획하지 않는다.
+
+Architectural 설계를 섹션별로 보여주고 피드백과 `section_acknowledgements`를
+저장한다. 수정된 섹션은 다시 검증·확인한다. 검증 통과와 필요한 섹션 확인 뒤
+dialogue의 `status: ready_for_approval`을 기록하고 다음을 실행한다:
+
+```bash
+register_update brainstorm_design_path "${TASK_DIR}/context/brainstorm-design.md"
+log_progress "BRAINSTORM_DESIGN_READY" "artifact=${TASK_DIR}/context/brainstorm-design.md"
+phase_done
+```
+
+이 절은 승인 결정을 만들지 않는다. Approval Service의 approval boundary에 유효한 설계와
+final classification을 전달한다. Architectural은 해당 설계 승인 전 Phase 1c에
+진입할 수 없다. Bounded는 짧은 설계를 보존하여 Phase 1d의 combined gate로
+전달하며 별도 설계 승인 질문을 추가하지 않는다.
+
+#### Phase 1c: Analyst (merged analyst + planner — single spawn)
+
+> **Optimization**: Analysis and planning use a single analyst spawn in Phase 1c.
 > The analyst now produces `analysis.md`, `pipeline.json`, `prd.md`, and
 > `handoff.md` in one step — eliminating the separate planner round-trip.
 
 Emit before delegating:
 
 ```
-[crew] {TASK_ID} | PHASE | 1b — Analysis + Planning (merged)
+[crew] {TASK_ID} | PHASE | 1c — Analysis + Planning (merged)
 ```
 
 ```bash
-log_progress "PHASE" "1b — Analysis + Planning (merged)"
-register_update current_phase phase_1bc
+log_progress "PHASE" "1c — Analysis + Planning (merged)"
+register_update current_phase phase_1c_plan
 ```
 
 Write the active task marker so the `direct-edit-guard` hook allows edits
@@ -925,7 +1188,7 @@ Use the `PIPELINE_PATH` variable resolved in Phase 0:
 cat "${PIPELINE_PATH}"
 ```
 
-#### Phase 1b analyst skill-read evidence gate
+#### Phase 1c analyst skill-read evidence gate
 
 Before trusting `pipeline.json`, verify that the analyst recorded its mandatory
 skill reads. This converts the analyst's "MANDATORY: Read X" instructions from
@@ -947,7 +1210,7 @@ EOF
 fi
 ```
 
-#### Phase 1b pipeline guard: mandatory reviewer-stage append
+#### Phase 1c pipeline guard: mandatory reviewer-stage append
 
 Immediately after reading `pipeline.json`, run a normalization block that
 appends `["reviewer"]` if the last stage is not already a solo `reviewer`
@@ -1011,7 +1274,7 @@ the block is a no-op (no write, no log event). When it does fire, the pipeline
 is corrected in-place and a `STATE_WARN` progress event should be emitted by the
 supervisor runtime using `log_progress`.
 
-#### Phase 1b pipeline quality gate: mandatory TDD implementation plan
+#### Phase 1c pipeline quality gate: mandatory TDD implementation plan
 
 Immediately after the reviewer-stage guard, validate that any mutating code
 implementation stage is TDD-capable before the pipeline can enter Phase 2. This
@@ -1047,7 +1310,7 @@ assign every PRD `AC-*` item to an implementation or QA-verification stage, then
 keep either a later solo `["reviewer"]` stage or a QA verify stage followed by a
 solo `["reviewer"]` stage.
 
-#### Phase 1b pipeline capability gate: runtime role/tool preflight
+#### Phase 1c pipeline capability gate: runtime role/tool preflight
 
 After the quality-plan gate passes, validate the planned runtime stages against
 the agent capability manifest before Phase 1d plan approval and before any
@@ -1159,7 +1422,7 @@ register_update current_phase phase_1d
 register_update approval_status pending
 
 # Phase 1d pipeline existence gate: plan approval is only meaningful after
-# Phase 1b+1c produced pipeline.json. Missing pipeline state here indicates
+# Phase 1c produced pipeline.json. Missing pipeline state here indicates
 # a supervisor pipeline bypass, not an approvable plan.
 if [ ! -f "${PIPELINE_PATH}" ]; then
   log_progress "BLOCKED" "pipeline_missing_before_plan_approval"

@@ -125,7 +125,8 @@ Example log content:
 ```
 2026-05-10T14:22:01 | STARTED   | Implement order management API
 2026-05-10T14:22:03 | PHASE     | 1a — Requirement collection
-2026-05-10T14:22:45 | PHASE     | 1b — Analysis + Planning (merged)
+2026-05-10T14:22:45 | PHASE     | 1b — Brainstorm
+2026-05-10T14:23:00 | PHASE     | 1c — Analysis + Planning (merged)
 2026-05-10T14:23:11 | PHASE     | 1d — Plan approval
 2026-05-10T14:24:00 | STAGE     | 1/3 — backend
 2026-05-10T14:31:22 | STAGE_DONE| backend — APPROVED
@@ -142,6 +143,11 @@ if it does not exist.
 |---|---|---|
 | `STARTED` | Phase 0 begins | task description truncated to 60 chars |
 | `PHASE` | Each phase transition | phase name + short description |
+| `BRAINSTORM_CLASSIFICATION` | preliminary 또는 final 분류 저장/표시 후 | stage, 분류 artifact 경로; 사용자에게 분류·근거·과정을 별도 표시 |
+| `BRAINSTORM_QUESTION` | Architectural 단일 질문 또는 Bounded grouped interaction 표시 전 | task ID와 question ID 또는 묶음 ID |
+| `BRAINSTORM_DESIGN_READY` | 설계 검증과 필요한 섹션 확인 완료 | design artifact 경로; 승인 완료를 뜻하지 않음 |
+| `SPIKE_COMPLETED` | Spike 조사 결과로 종료 | findings 경로; 구현 pipeline 없이 종료 |
+| `DEGRADED` | 분류 helper/Agent 결과를 신뢰할 수 없음 | 원인과 중단/보수적 처리; 자동 Bounded 금지 |
 | `STAGE` | Each pipeline stage begins | `{i}/{total} — {agent_name}` |
 | `STAGE_DONE` | Each stage completes | `{agent_name} — {APPROVED\|NEEDS_CHANGES\|N/A}` |
 | `BLOCKED` | Any BLOCKED result | blocker summary (1 line) |
@@ -202,7 +208,8 @@ from concurrent runners remain distinguishable:
   target: {target answer}
   constraints: {constraints answer(s)}
   ```
-  When present, skip Phase 1a (requirement collection) and pass directly to the planner.
+  사전 수집 값이 있으면 Phase 1a의 추가 인터뷰만 생략한다. preliminary 분류와
+  Phase 1b: Brainstorm은 유지하며 `requirements.md`를 보존한다.
   When absent, the supervisor collects requirements via the host's interactive
   question mechanism (see `core/rules/capabilities/interactive-question.md`) in
   Phase 1a before invoking the planner.
@@ -228,8 +235,8 @@ SUPERVISOR_DIR="${AGENT_CREW_HOME}/system/agents"
 
 | Trigger | Read this file | Phases covered |
 |---|---|---|
-| Spawn entry, `planning_required: true` native placeholder | `supervisor-bootstrap.md`; treat as fresh even though the file exists | Phase 0 -> 1a -> 1b+1c -> 1d -> 1.5 |
-| Spawn entry, `PIPELINE_PATH` does not yet exist | `supervisor-bootstrap.md` | Phase 0 → 1a → 1b+1c → 1c-bis → 1d → 1.5 |
+| Spawn entry, `planning_required: true` native placeholder | `supervisor-bootstrap.md`; treat as fresh even though the file exists | Phase 0 → 1a preliminary/requirements → 1b Brainstorm → 1c planning → 1d → 1.5 |
+| Spawn entry, `PIPELINE_PATH` does not yet exist | `supervisor-bootstrap.md` | Phase 0 → 1a → 1b → 1c → 1c-bis → 1d → 1.5; Spike는 1b에서 종료 |
 | Spawn entry, `PIPELINE_PATH` already exists (resume only after `START_MODE=resume`) | `supervisor-bootstrap.md` (Phase 0 only — read the file, execute Phase 0 to load capability flags and host task ids, then jump to the Phase 2 row below) | Phase 0 only |
 | About to enter Phase 2 (whether fresh or resuming) | `supervisor-stages.md` AND `supervisor-retry.md` (both — retry holds the Stage Retry Rule which Phase 2 invokes for every stage spawn) | Phase 2 + Phase 2.5 + Stage Retry Rule |
 | About to enter Phase 3 (after Phase 2.5 returns, OR on early BLOCKED exit) | `supervisor-retry.md` (already in working set from Phase 2 trigger; re-Read if it was evicted) | Phase 3 close-out, marker cleanup, final return |
@@ -245,6 +252,15 @@ modules. Any prose in one module that says "(resolved once in Phase
 0)" or "see Stage Retry Rule" refers to a phase or rule defined in
 another module — not to a section of the current file.
 Cross-references resolve semantically; no link-style markup is used.
+
+새 작업의 register phase는 `phase_1b_brainstorm`과 `phase_1c_plan`을 사용한다.
+기존 `phase_1bc`는 이전 작업의 analysis/planning 상태로 계속 읽는다.
+preliminary 분류는 요구사항 깊이, final 분류는 Spike/Bounded/Architectural 설계
+경로를 결정한다. Supervisor가 분류 표시·질문·dialogue 저장을 소유하고
+Brainstorm Agent는 read-only 탐색과 제한된 design artifact만 소유한다.
+Architectural은 한 task에 한 active 질문을 유지하며 Bounded는 미답변 고영향
+질문을 하나의 grouped interaction으로 묶는다. 섹션 확인과 설계 검증은 승인이
+아니며 실제 승인 결정은 별도 approval boundary의 책임이다.
 
 ## Absolute Rules
 
@@ -265,7 +281,7 @@ Cross-references resolve semantically; no link-style markup is used.
 - **Pipeline Bypass Prohibition** — on a fresh run where `pipeline.json` does
   not already exist at Phase 0, the supervisor MUST NOT implement code,
   edit production files, run stage work inline, commit changes, or write
-  `STATUS: completed` before Phase 1b+1c has produced `analysis.md`,
+  `STATUS: completed` before Phase 1b Brainstorm and Phase 1c planning have produced `analysis.md`,
   `prd.md`, `handoff.md`, and `pipeline.json`, Phase 1d plan approval has
   completed, and Phase 2 has spawned every planned stage agent. A detailed
   `{TASK_DIR}/context/requirements.md` file is only input to Phase 1b; it is
@@ -275,6 +291,8 @@ Cross-references resolve semantically; no link-style markup is used.
   Implementation`, `STAGE_DONE | all layers`, or any equivalent all-in-one
   completion before `pipeline.json` exists, it must stop and write
   `STATUS: blocked` with `BLOCKER: supervisor_pipeline_bypass_prevented`.
+  Spike의 읽기 전용 조사 결과는 bootstrap의 명시적 `SPIKE_COMPLETED` 종료 경로를
+  사용하며 구현 완료로 표시하거나 Phase 1c/Phase 2에 진입하지 않는다.
 - **Supervisor mode sentinel** — this agent runs only in `MODE=supervisor`
   under `crew:run`. If inherited prompt context claims `MODE=direct` or says
   not to write `pipeline.json`, `progress.log`, `analysis.md`, `prd.md`, or

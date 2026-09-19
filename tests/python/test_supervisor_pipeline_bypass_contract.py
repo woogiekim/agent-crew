@@ -19,7 +19,7 @@ CODEX_SETUP = REPO_ROOT / "adapters" / "codex" / "setup.sh"
 CLAUDE_SETUP = REPO_ROOT / "adapters" / "claude" / "setup.sh"
 
 
-def test_supervisor_absolute_rules_forbid_fresh_run_pipeline_bypass():
+def test_failure_case_contract_supervisor_forbids_fresh_run_pipeline_bypass():
     text = SUPERVISOR.read_text(encoding="utf-8")
 
     assert "allowed-tools:" in text
@@ -27,7 +27,7 @@ def test_supervisor_absolute_rules_forbid_fresh_run_pipeline_bypass():
     assert "TaskOutput" in text
     assert "Pipeline Bypass Prohibition" in text
     assert "pipeline.json" in text
-    assert "Phase 1b+1c" in text
+    assert "Phase 1b Brainstorm and Phase 1c planning" in text
     assert "Phase 1d plan approval" in text
     assert "Phase 2 has spawned every planned stage agent" in text
     assert "STATUS: completed" in text
@@ -42,13 +42,15 @@ def test_supervisor_requirements_file_cannot_skip_planning_or_review():
     assert "final reviewer may be skipped" in text
 
 
-def test_bootstrap_documents_required_fresh_run_sequence():
+def test_success_case_contract_bootstrap_documents_required_fresh_run_sequence():
     text = BOOTSTRAP.read_text(encoding="utf-8")
 
     assert "Direct implementation bypass guard" in text
     assert "there is no\n\"simple enough\" shortcut" in text
-    assert "Phase 1a requirement gate" in text
-    assert "Phase 1b+1c analyst planning spawn" in text
+    requirements = text.index("Phase 1a preliminary classification + requirement gate")
+    brainstorm = text.index("Phase 1b final classification + dialogue + validated design")
+    planning = text.index("Phase 1c analyst planning spawn")
+    assert requirements < brainstorm < planning
     assert "Phase 1d plan approval gate" in text
     assert "Phase 2 stage-agent execution" in text
     assert "reviewer stage completion" in text
