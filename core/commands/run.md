@@ -1466,6 +1466,14 @@ If resuming:
 - reuse the recorded branch or worktree metadata if present
 - continue through the same `supervisor`
 
+Resume preserves two explicit contracts. An older task with a valid
+`phase_1bc` pipeline, no Brainstorm artifacts, and an existing approved plan
+continues under the legacy approved-plan contract; do not fabricate a
+retrospective classification, dialogue, design, or design approval. Every new
+task enters `phase_1b_brainstorm` and then `phase_1c_plan`. A current task with
+any Brainstorm artifact must use the Brainstorm resume/hash gate and may not
+fall back to `phase_1bc` merely because `pipeline.json` exists.
+
 ### 4. Prepare Each Task Context
 
 For each task index `i`:
@@ -1937,6 +1945,88 @@ Step 6. Extract each task's `REQUIREMENTS` block from its agent's response and
 record it. Do not run supervisors while requirements collection is still in
 progress for any AMBIGUOUS task.
 
+#### Per-task Brainstorm interaction routing
+
+The orchestrator routes structured Brainstorm questions and design approval
+responses back to the Supervisor that owns the matching `task_id`. Maintain
+one active Brainstorm question per task and preserve per-task question order.
+For `N > 1`, task-labeled interactions may be displayed together only when
+each task already has its own active question; never precompute or display the
+next Architectural question before that same task's previous answer is durably
+recorded. A response for one task must not read, reorder, or write another
+task's dialogue history.
+
+Candidate selection, Brainstorm design approval, Phase 1d execution approval,
+and external-action approval are distinct recorded decisions. A response to
+one surface must never be treated as approval for another surface.
+
+#### Per-task Brainstorm response persistence
+
+Run this only after resolving the structured response to one exact `task_id`.
+The Supervisor remains the state owner; this helper is the orchestrator's
+atomic persistence boundary before it resumes that Supervisor.
+
+```bash
+python3 - "${TASK_DIR}/context/brainstorm-dialogue.json" "${TASK_ID}" \
+  "${BRAINSTORM_QUESTION_ID}" "${BRAINSTORM_OPTION_ID}" \
+  "${BRAINSTORM_IDEMPOTENCY_KEY}" "${BRAINSTORM_ANSWERED_AT}" <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+
+path, task_id, question_id, option_id, idempotency_key, answered_at = sys.argv[1:]
+with open(path, "r", encoding="utf-8") as stream:
+    dialogue = json.load(stream)
+
+if dialogue.get("task_id") != task_id:
+    raise SystemExit("brainstorm_task_id_mismatch")
+
+question = next(
+    (item for item in dialogue.get("questions", []) if item.get("question_id") == question_id),
+    None,
+)
+if question is None:
+    raise SystemExit("brainstorm_question_missing")
+
+response = question.get("response")
+if response:
+    if response.get("idempotency_key") == idempotency_key:
+        if response.get("selected_option_id") == option_id and response.get("answered_at") == answered_at:
+            raise SystemExit(0)
+        raise SystemExit("brainstorm_idempotency_conflict")
+    raise SystemExit("brainstorm_question_already_answered")
+if dialogue.get("active_question_id") != question_id:
+    raise SystemExit("brainstorm_active_question_mismatch")
+
+valid_options = {item.get("option_id") for item in question.get("options", [])}
+if option_id not in valid_options:
+    raise SystemExit("brainstorm_option_invalid")
+
+question["status"] = "answered"
+question["response"] = {
+    "selected_option_id": option_id,
+    "idempotency_key": idempotency_key,
+    "answered_at": answered_at,
+}
+dialogue.pop("active_question_id", None)
+dialogue["status"] = "design_review"
+
+directory = os.path.dirname(path)
+descriptor, temporary = tempfile.mkstemp(prefix=".brainstorm-dialogue-", dir=directory)
+try:
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        json.dump(dialogue, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PYEOF
+```
+
 ### 6. Run Supervisors
 
 > **MANDATORY DELEGATION RULE — non-negotiable.** The orchestrator (the Claude
@@ -1963,9 +2053,9 @@ progress for any AMBIGUOUS task.
 > - Editing project source files from the orchestrator. The orchestrator only
 >   writes to `${TASK_DIR}` (state files) and to remotes during Step 11.
 >
-> Why this matters: `supervisor.md` Phase 1b+1c is the only place that creates
+> Why this matters: `supervisor.md` Phase 1c is the only place that creates
 > the active task marker the `direct-edit-guard` PreToolUse hook checks for. If
-> the orchestrator skips delegation, Phase 1b+1c never executes, the marker is
+> the orchestrator skips delegation, Phase 1c never executes, the marker is
 > never created, and every subsequent Edit/Write to project source is blocked by
 > the hook. Every observed "hook blocked my edit" symptom in this repo traces back
 > to a missing delegation here.
@@ -1980,7 +2070,7 @@ progress for any AMBIGUOUS task.
 >
 > **Plan Approval Gate (N > 1):** For parallel runs, each supervisor independently
 > handles Phase 1d for its own pipeline. After all supervisors have finished Phase
-> 1b+1c (merged analysis+planning), each will pause at Phase 1d awaiting user
+> 1b Brainstorm and Phase 1c merged analysis+planning, each will pause at Phase 1d awaiting user
 > approval. The orchestrator does not consolidate these approvals — each
 > supervisor's Phase 1d is independent.
 

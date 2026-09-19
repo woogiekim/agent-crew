@@ -1478,6 +1478,9 @@ PROJECT_ROOT: {PROJECT_ROOT}
 MUTATION_SCOPE: {MUTATION_SCOPE}
 REQUIREMENTS: {REQUIREMENTS — always present at this point}
 MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  (read this file if non-empty for prior context)
+BRAINSTORM_CLASSIFICATION_PATH: {TASK_DIR}/context/brainstorm-classification.json
+BRAINSTORM_DESIGN_PATH: {TASK_DIR}/context/brainstorm-design.md
+BRAINSTORM_DESIGN_HASH: {approved or accepted canonical hash}
 
 Distill intent, identify ambiguities and risks, determine the agent pipeline,
 write {TASK_DIR}/context/analysis.md, {TASK_DIR}/context/prd.md,

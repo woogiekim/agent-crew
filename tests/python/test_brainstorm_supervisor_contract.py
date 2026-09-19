@@ -14,6 +14,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = REPO_ROOT / "core/agents/supervisor-bootstrap.md"
 SUPERVISOR = REPO_ROOT / "core/agents/supervisor.md"
+ANALYST = REPO_ROOT / "core/agents/analyst.md"
+RUN_MD = REPO_ROOT / "core/commands/run.md"
 
 
 def section(start: str, end: str) -> str:
@@ -668,3 +670,127 @@ def test_failure_case_workflow_append_only_invalidation_prevents_reusing_restore
     history = json.loads((tmp_path / "context/brainstorm-approval.json").read_text())["decisions"]
     assert history[0]["status"] == "approved"
     assert history[-1]["approval_kind"] == "approval_invalidation"
+
+
+def test_failure_case_analyst_requires_accepted_matching_design_hash_before_planning():
+    sut = ANALYST.read_text(encoding="utf-8")
+
+    for token in (
+        "BRAINSTORM_CLASSIFICATION_PATH",
+        "BRAINSTORM_DESIGN_PATH",
+        "BRAINSTORM_DESIGN_HASH",
+        "brainstorm_design_hash_mismatch",
+        "brainstorm_design_not_accepted",
+    ):
+        assert token in sut
+    assert "Never expand the accepted design" in sut
+    assert "This gate does not apply to `MODE=direct`" in sut
+    assert sut.index("brainstorm_design_hash_mismatch") < sut.index("### Step 5 — Write analysis.md")
+
+
+def test_success_case_analyst_binds_design_hash_to_every_planning_artifact():
+    sut = ANALYST.read_text(encoding="utf-8")
+
+    assert "brainstorm_design_hash: {BRAINSTORM_DESIGN_HASH}" in sut
+    assert '"brainstorm_design_hash": "{BRAINSTORM_DESIGN_HASH}"' in sut
+    assert "`brainstorm_design_hash: {BRAINSTORM_DESIGN_HASH}` near the document heading" in sut
+    assert "analysis.md, prd.md, and pipeline.json" in sut
+
+
+def test_success_case_supervisor_passes_brainstorm_contract_to_analyst():
+    sut = section("#### Phase 1c: Analyst", "#### Phase 1c analyst skill-read evidence gate")
+
+    assert "BRAINSTORM_CLASSIFICATION_PATH: {TASK_DIR}/context/brainstorm-classification.json" in sut
+    assert "BRAINSTORM_DESIGN_PATH: {TASK_DIR}/context/brainstorm-design.md" in sut
+    assert "BRAINSTORM_DESIGN_HASH: {approved or accepted canonical hash}" in sut
+
+
+def brainstorm_response_script() -> str:
+    text = RUN_MD.read_text(encoding="utf-8")
+    match = re.search(
+        r"#### Per-task Brainstorm response persistence\n.*?```bash\n(.*?)\n```",
+        text,
+        re.DOTALL,
+    )
+    assert match, "run orchestrator needs an executable task-scoped response helper"
+    return match.group(1)
+
+
+def test_success_case_workflow_run_orchestrator_answer_is_task_scoped(tmp_path):
+    task_a = tmp_path / "20260920-120000-0"
+    task_b = tmp_path / "20260920-120000-1"
+    for task_dir, task_id, active_question_id in (
+        (task_a, task_a.name, "a-q1"),
+        (task_b, task_b.name, "b-q1"),
+    ):
+        context = task_dir / "context"
+        context.mkdir(parents=True)
+        write_json(context / "brainstorm-dialogue.json", {
+            "schema_version": 1,
+            "task_id": task_id,
+            "classification": "Architectural",
+            "status": "waiting_for_input",
+            "active_question_id": active_question_id,
+            "questions": [{
+                "question_id": active_question_id,
+                "header": "Boundary",
+                "prompt": "Which boundary?",
+                "options": [
+                    {"option_id": "keep", "label": "Keep", "description": "Keep boundary"},
+                    {"option_id": "move", "label": "Move", "description": "Move boundary"},
+                ],
+                "why_it_matters": "Changes ownership",
+                "status": "pending",
+            }],
+            "section_acknowledgements": [],
+        })
+
+    untouched = (task_b / "context/brainstorm-dialogue.json").read_bytes()
+    response_env = {
+        **os.environ,
+        "TASK_ID": task_a.name,
+        "TASK_DIR": str(task_a),
+        "BRAINSTORM_QUESTION_ID": "a-q1",
+        "BRAINSTORM_OPTION_ID": "keep",
+        "BRAINSTORM_IDEMPOTENCY_KEY": "response-a-1",
+        "BRAINSTORM_ANSWERED_AT": "2026-09-20T00:00:00Z",
+        "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
+    }
+    result = subprocess.run(
+        ["bash", "-c", brainstorm_response_script()],
+        capture_output=True,
+        text=True,
+        env=response_env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    updated = json.loads((task_a / "context/brainstorm-dialogue.json").read_text())
+    assert updated["task_id"] == task_a.name
+    assert updated["questions"][0]["status"] == "answered"
+    assert updated["questions"][0]["response"]["selected_option_id"] == "keep"
+    assert "active_question_id" not in updated
+    assert (task_b / "context/brainstorm-dialogue.json").read_bytes() == untouched
+
+    saved = (task_a / "context/brainstorm-dialogue.json").read_bytes()
+    duplicate = subprocess.run(
+        ["bash", "-c", brainstorm_response_script()],
+        capture_output=True,
+        text=True,
+        env=response_env,
+    )
+    assert duplicate.returncode == 0, duplicate.stderr
+    assert (task_a / "context/brainstorm-dialogue.json").read_bytes() == saved
+
+
+def test_success_case_run_orchestrator_preserves_new_and_legacy_resume_contracts():
+    sut = RUN_MD.read_text(encoding="utf-8")
+
+    for token in (
+        "one active Brainstorm question per task",
+        "preserve per-task question order",
+        "phase_1b_brainstorm",
+        "phase_1c_plan",
+        "phase_1bc",
+        "legacy approved-plan contract",
+    ):
+        assert token in sut

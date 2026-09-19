@@ -1,12 +1,12 @@
 ---
 name: analyst
 description: >
-  TRIGGER when: always invoked by supervisor in Phase 1b, after requirements
-  collection. Merged analyst+planner: distills intent, surfaces risks, recommends
+  TRIGGER when: always invoked by supervisor in Phase 1c, after requirements
+  collection and Brainstorm design acceptance. Merged analyst+planner: distills intent, surfaces risks, recommends
   the agent pipeline, writes analysis.md, AND produces pipeline.json + handoff.md
   in a single spawn — eliminating the separate planner round-trip.
-  SKIP when: supervisor is resuming a prior run (pipeline.json already exists at
-  Phase 0 — the supervisor jumps directly to Phase 2 and does not invoke analyst).
+  SKIP when: supervisor is resuming a legacy approved plan under the explicit
+  phase_1bc compatibility contract, or a current plan whose design hash remains valid.
   Output: {TASK_DIR}/context/analysis.md, {TASK_DIR}/pipeline.json,
   {TASK_DIR}/handoff.md, and an ANALYSIS block returned inline.
 reasoning_tier: xhigh
@@ -18,7 +18,7 @@ model: inherit
 Reasoning, coordination, and planning layer. Reads collected requirements, distills
 user intent, identifies ambiguities and risks, determines the agent pipeline, and
 produces all planning artifacts — **in a single spawn**. The separate planner spawn
-is eliminated; this agent replaces Phase 1b + Phase 1c in one step.
+is eliminated; this agent owns Phase 1c and consumes the design produced in Phase 1b.
 
 ## Direct-Mode Read-Only Contract
 
@@ -82,6 +82,52 @@ fi
 - `TASK_DIR`: state storage path (pass as path only — do not inline file contents)
 - `PROJECT_ROOT`: project root (pass as path only)
 - `REQUIREMENTS`: structured requirements block from the requirements agent
+- `BRAINSTORM_CLASSIFICATION_PATH`: `{TASK_DIR}/context/brainstorm-classification.json`
+- `BRAINSTORM_DESIGN_PATH`: `{TASK_DIR}/context/brainstorm-design.md`
+- `BRAINSTORM_DESIGN_HASH`: approved Architectural or accepted Bounded canonical hash
+
+## Brainstorm Design Gate
+
+This gate applies only to `MODE=supervisor` planning.
+This gate does not apply to `MODE=direct`; direct analyst execution retains its existing read-only inline
+contract and creates no planning artifacts.
+
+Before analysis, PRD authoring, or pipeline creation, read the three Brainstorm
+inputs above and verify them against the current task artifacts. Extract the
+canonical JSON object after `<!-- brainstorm-bound-fields -->` from
+`BRAINSTORM_DESIGN_PATH` and compute it with `canonical_hash` from
+`core/scripts/brainstorm-classification.py`. The computed value must equal
+`BRAINSTORM_DESIGN_HASH`.
+
+The final classification artifact must be final and its classification must
+match the design. For `Architectural`, the effective, non-invalidated
+`architectural_design` decision must be `approved`, bind the same design hash,
+and the dialogue must be `accepted`. For `Bounded`, the validated dialogue must
+be `ready_for_approval` or `accepted`; its design is accepted only for Phase 1c
+planning and still requires the single combined Phase 1d approval. Spike work
+does not enter this agent.
+
+Fail closed before creating or changing any planning artifact:
+
+```text
+STATUS: BLOCKED
+BLOCKER: brainstorm_design_hash_mismatch
+```
+
+Use `BLOCKER: brainstorm_design_not_accepted` when the classification is not
+final, the dialogue/design status is not accepted for its class, or the required
+Architectural approval is absent or invalidated. Never infer acceptance from a
+file's existence, and never reuse a PRD or pipeline whose recorded hash differs.
+
+Never expand the accepted design. If repository analysis reveals a needed scope,
+interface, responsibility, data-model, security, operational, module, repository,
+or pipeline change outside the canonical fields, return `STATUS: BLOCKED` with
+`BLOCKER: brainstorm_design_scope_expansion` so the Supervisor returns to Phase
+1b. Do not silently reinterpret the design inside Phase 1c.
+
+Copy the exact `BRAINSTORM_DESIGN_HASH` into analysis.md, prd.md, and pipeline.json
+as `brainstorm_design_hash`. This is a provenance binding, not
+an execution approval.
 
 ## Before Work — Read Supervisor Memory Context
 
@@ -337,6 +383,8 @@ or `XL`, record `smaller_alternatives_rejected` with concrete reasons.
 cat > "${TASK_DIR}/context/analysis.md" << 'EOF'
 # Analysis
 
+brainstorm_design_hash: {BRAINSTORM_DESIGN_HASH}
+
 ## Intent
 {2–4 sentence intent summary}
 
@@ -445,6 +493,7 @@ Write `{TASK_DIR}/pipeline.json`:
 ```json
 {
   "task": "{TASK}",
+  "brainstorm_design_hash": "{BRAINSTORM_DESIGN_HASH}",
   "stages": {determined stages array},
   "needs_creation": [],
   "completed_stages": 0,
@@ -642,6 +691,7 @@ message the other flags' dispatch already issues.
 ### Step 7 — Write PRD
 
 Write a concise PRD to `{TASK_DIR}/context/prd.md` covering:
+- `brainstorm_design_hash: {BRAINSTORM_DESIGN_HASH}` near the document heading
 - Feature goals and background
 - Core feature list
 - Non-functional requirements, including the maintainability rule that KISS,
@@ -747,6 +797,8 @@ STATUS: completed
 
 - Never read agent definition file contents — only list filenames
 - Never fabricate requirements — work only from `requirements.md`
+- Never expand the accepted design; return scope expansion to Phase 1b
+- Never write planning artifacts until the Brainstorm design gate passes
 - If `NEEDS_CLARIFICATION` after the clarification round: write `BLOCKED` to
   `{TASK_DIR}/context/analysis.md` and return `readiness: BLOCKED`; do not write
   pipeline.json or handoff.md
