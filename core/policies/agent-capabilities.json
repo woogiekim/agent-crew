@@ -260,6 +260,33 @@
       "destructive_requires_approval": false,
       "notes": "Collects and normalizes requirements before planning."
     },
+    "brainstorm": {
+      "role": "readonly",
+      "model_tier": "xhigh",
+      "reasoning_tier": "xhigh",
+      "allowed_capabilities": [
+        "read_file",
+        "task_artifact_write",
+        "requirements_analysis",
+        "structured_output"
+      ],
+      "denied_capabilities": [
+        "approval_gate",
+        "delegate_agents",
+        "destructive_command",
+        "direct_code_implementation",
+        "edit_project_file",
+        "external_state_write",
+        "pipeline_state_write"
+      ],
+      "may_delegate": false,
+      "may_implement": false,
+      "may_modify_production_state": false,
+      "may_mutate_workflow_state": false,
+      "may_execute_destructive": false,
+      "destructive_requires_approval": false,
+      "notes": "Read-only design exploration; may write only the caller-scoped brainstorm design artifact."
+    },
     "backend": {
       "role": "worker",
       "model_tier": "high",
