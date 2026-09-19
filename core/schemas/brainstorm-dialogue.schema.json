@@ -32,6 +32,7 @@
         "not_started",
         "waiting_for_input",
         "design_review",
+        "design_revision_required",
         "ready_for_approval",
         "accepted",
         "blocked"
@@ -126,11 +127,16 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["section_id", "idempotency_key", "acknowledged_at"],
+        "required": ["section_id", "design_hash", "idempotency_key", "acknowledged_at"],
         "properties": {
           "section_id": {
             "type": "string",
             "minLength": 1
+          },
+          "design_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "Canonical hash of the exact design revision acknowledged by the user."
           },
           "idempotency_key": {
             "type": "string",

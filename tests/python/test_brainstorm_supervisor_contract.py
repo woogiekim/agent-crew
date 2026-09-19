@@ -330,9 +330,14 @@ def workflow_pipeline(tmp_path: Path) -> dict:
 
 
 def run_workflow_gate(tmp_path: Path) -> tuple[dict, str]:
+    return run_workflow_gate_with_mode(tmp_path, "fresh")
+
+
+def run_workflow_gate_with_mode(tmp_path: Path, start_mode: str) -> tuple[dict, str]:
     result = subprocess.run(
         ["bash", "-c", workflow_gate_script()], capture_output=True, text=True,
         env={**os.environ, "TASK_DIR": str(tmp_path), "AGENT_CREW_HOME": str(REPO_ROOT / "core"),
+             "START_MODE": start_mode,
              "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}"},
     )
     assert result.returncode == 0, result.stderr
@@ -904,3 +909,109 @@ def test_success_case_run_orchestrator_preserves_new_and_legacy_resume_contracts
         "legacy approved-plan contract",
     ):
         assert token in sut
+
+
+def test_success_case_run_delegates_preliminary_then_adaptive_requirements_to_supervisor():
+    sut = RUN_MD.read_text(encoding="utf-8")
+    regular_path = sut.split("### 5.pre — Requirements Sufficiency Check", 1)[1].split(
+        "### 6. Run Supervisors", 1
+    )[0]
+
+    assert "Supervisor Phase 1a owns preliminary classification before requirements" in regular_path
+    assert "do not run the requirements-sufficiency helper" in regular_path
+    assert "Architectural" in regular_path and "deep_interview" in regular_path
+    assert "Bounded" in regular_path and "single_round" in regular_path
+    assert "Root Input Snapshot" in regular_path
+
+
+def test_boundary_case_empty_new_task_context_never_resumes_as_legacy(tmp_path):
+    (tmp_path / "context").mkdir()
+    write_json(tmp_path / "pipeline.json", {"planning_required": True})
+    write_json(tmp_path / "register.json", {
+        "current_phase": "phase_0", "task_id": "20260920-120000-0"
+    })
+
+    gate, _ = run_workflow_gate_with_mode(tmp_path, "fresh")
+
+    assert gate["resume_at"] == "phase_1a_preliminary"
+
+
+def test_success_case_valid_legacy_resume_requires_all_legacy_evidence(tmp_path):
+    (tmp_path / "context").mkdir()
+    write_json(tmp_path / "pipeline.json", {
+        "task": "legacy task", "stages": [["backend"], ["reviewer"]],
+        "completed_stages": 0, "stage_agent_status": {},
+    })
+    write_json(tmp_path / "register.json", {
+        "current_phase": "phase_1bc", "task_id": "20260920-120000-0"
+    })
+    (tmp_path / "context/approval.md").write_text("APPROVED\n", encoding="utf-8")
+
+    gate, _ = run_workflow_gate_with_mode(tmp_path, "resume")
+
+    assert gate["resume_at"] == "legacy"
+
+
+@pytest.mark.parametrize("missing", ["register", "pipeline", "approval"])
+def test_failure_case_partial_legacy_resume_fails_closed(tmp_path, missing):
+    (tmp_path / "context").mkdir()
+    if missing != "pipeline":
+        write_json(tmp_path / "pipeline.json", {
+            "task": "legacy task", "stages": [["backend"], ["reviewer"]],
+            "completed_stages": 0, "stage_agent_status": {},
+        })
+    if missing != "register":
+        write_json(tmp_path / "register.json", {
+            "current_phase": "phase_1bc", "task_id": "20260920-120000-0"
+        })
+    if missing != "approval":
+        (tmp_path / "context/approval.md").write_text("APPROVED\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", "-c", workflow_gate_script()], capture_output=True, text=True,
+        env={**os.environ, "TASK_DIR": str(tmp_path), "AGENT_CREW_HOME": str(REPO_ROOT / "core"),
+             "START_MODE": "resume",
+             "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}"},
+    )
+
+    assert result.returncode != 0
+    assert "legacy_resume_evidence_incomplete" in result.stderr
+
+
+def test_success_case_architectural_design_review_resumes_after_last_current_ack(tmp_path):
+    fields = workflow_fixture(tmp_path)
+    dialogue_path = tmp_path / "context/brainstorm-dialogue.json"
+    dialogue = json.loads(dialogue_path.read_text())
+    gate, _ = run_workflow_gate(tmp_path)
+    dialogue["status"] = "design_review"
+    dialogue["section_acknowledgements"] = [{
+        "section_id": "goals_and_scope",
+        "design_hash": gate["design_hash"],
+        "idempotency_key": "ack-1",
+        "acknowledged_at": "2026-09-20T00:00:00Z",
+    }]
+    write_json(dialogue_path, dialogue)
+
+    resumed, _ = run_workflow_gate_with_mode(tmp_path, "resume")
+
+    assert resumed["resume_at"] == "phase_1b_design_review"
+    assert resumed["next_design_section"] == "boundaries_and_interfaces"
+
+
+def test_failure_case_stale_design_acknowledgement_is_not_reused(tmp_path):
+    workflow_fixture(tmp_path)
+    dialogue_path = tmp_path / "context/brainstorm-dialogue.json"
+    dialogue = json.loads(dialogue_path.read_text())
+    dialogue["status"] = "design_review"
+    dialogue["section_acknowledgements"] = [{
+        "section_id": "goals_and_scope",
+        "design_hash": "f" * 64,
+        "idempotency_key": "old-ack",
+        "acknowledged_at": "2026-09-19T00:00:00Z",
+    }]
+    write_json(dialogue_path, dialogue)
+
+    resumed, _ = run_workflow_gate_with_mode(tmp_path, "resume")
+
+    assert resumed["resume_at"] == "phase_1b_design_review"
+    assert resumed["next_design_section"] == "goals_and_scope"

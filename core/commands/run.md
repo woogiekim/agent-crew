@@ -1474,6 +1474,13 @@ task enters `phase_1b_brainstorm` and then `phase_1c_plan`. A current task with
 any Brainstorm artifact must use the Brainstorm resume/hash gate and may not
 fall back to `phase_1bc` merely because `pipeline.json` exists.
 
+The Supervisor may return `legacy` only when all four facts are read back:
+`START_MODE=resume`, `register.json.current_phase=phase_1bc`, a non-placeholder
+pipeline with a task and stages, and `context/approval.md` equal to `APPROVED`.
+An empty new-task context returns to Phase 1a preliminary classification.
+Partial legacy evidence is corrupt resume state and fails closed with
+`legacy_resume_evidence_incomplete`; it is never repaired by guessing.
+
 ### 4. Prepare Each Task Context
 
 For each task index `i`:
@@ -1809,20 +1816,37 @@ v1을 승인 없이 v2로 승격하지 않는다. v2 승인 그래프 안의 단
 
 ### 5.pre — Requirements Sufficiency Check
 
-> **NEVER-SKIP-WITHOUT-SUFFICIENCY-CHECK**: REQUIREMENTS must always be produced
-> before Step 6 — but the *agent invocation* itself is now optional. The gate is
+> **Brainstorm slow-path ownership:** A normal `crew:run` task does not execute
+> the legacy orchestrator-side sufficiency/requirements flow below. After task
+> context preparation it proceeds to Step 6 and delegates the unchanged Root Input Snapshot to the Supervisor.
+> Supervisor Phase 1a owns preliminary classification before requirements,
+> then selects the classification-adaptive
+> interview: Architectural uses `deep_interview`, Bounded uses `single_round`,
+> and Spike gathers only probe-critical unknowns. Therefore the orchestrator must not duplicate this work: do not run the requirements-sufficiency helper,
+> synthesize requirements, or
+> spawn a requirements agent for a new Brainstorm task. This prevents duplicate
+> questions and preserves the required preliminary → requirements → final order.
+>
+> The remainder of Step 5.pre and Step 5 is a compatibility path only for an
+> explicitly recognized legacy/injected caller whose state contract already
+> owns requirements outside Supervisor Phase 1a. It must never be selected
+> merely because `context/requirements.md` exists.
+
+> **LEGACY/INJECTED COMPATIBILITY ONLY:** When the explicit legacy/injected
+> caller contract selects this path, REQUIREMENTS must be produced before its
+> stage execution — but the *agent invocation* itself is optional. The gate is
 > the sufficiency check below, not the agent call. The check returns either
 > `SUFFICIENT` (synthesize REQUIREMENTS inline, skip the agent entirely) or
 > `AMBIGUOUS` (fall through to Step 5 with a single-round agent invocation).
 >
-> Step 5 is mandatory for every `crew:run` invocation that reaches it, unless
+> For that compatibility caller, Step 5 is mandatory when it reaches this path, unless
 > (a) Step 1.7 (Fast-Path Intent Classification) classified this as a trivial
 > operational intent — in which case the orchestrator has already returned and
 > Step 5 is not reached at all — or (b) Step 5.pre's sufficiency check
 > synthesized REQUIREMENTS inline, in which case Step 5's agent invocation is
 > bypassed but REQUIREMENTS still exists on disk before Step 6.
 >
-> The principle "REQUIREMENTS must exist before any stage runs" is preserved.
+> The compatibility principle "REQUIREMENTS must exist before any legacy/injected stage runs" is preserved.
 > What changed: well-specified prompts no longer pay the 22 s agent round-trip
 > when the TASK string already carries scope + target + constraints with high
 > confidence, and trivial operational intents (merge/push/etc.) bypass the
@@ -1886,7 +1910,8 @@ the selected requirements mode in parallel with the others.
 
 ### 5. Collect Requirements Per Task (AMBIGUOUS path only)
 
-> **NEVER-SKIP-WITHOUT-SUFFICIENCY-CHECK**: Step 5 runs only when Step 5.pre
+> **LEGACY/INJECTED COMPATIBILITY ONLY:** Step 5 runs only when the explicit
+> compatibility path's Step 5.pre
 > returned `AMBIGUOUS` for this task. REQUIREMENTS is still mandatory before
 > Step 6 — but if the sufficiency check already synthesized it inline, do not
 > re-collect. The task argument is a description, not requirements; the
@@ -1968,6 +1993,14 @@ and wait for the owning Supervisor's persistence/read-back result before
 presenting that task's next dependent interaction.
 
 ### 6. Run Supervisors
+
+For every normal Brainstorm task, this is the immediate next step after task
+context preparation. Do not require an orchestrator-created `requirements.md`:
+the Supervisor first persists preliminary classification, then performs its
+classification-adaptive Phase 1a requirements gate, persists final
+classification, and only then enters Phase 1b. A preliminary artifact on
+resume returns to that same requirements boundary without asking duplicate
+questions.
 
 > **MANDATORY DELEGATION RULE — non-negotiable.** The orchestrator (the Claude
 > instance loaded with this `run.md`) MUST spawn a `supervisor` subagent for

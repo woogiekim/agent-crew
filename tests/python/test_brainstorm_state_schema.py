@@ -195,6 +195,22 @@ def test_dialogue_rejects_plural_active_question_field(tmp_path: Path) -> None:
     assert "active_question_ids" in result.stdout
 
 
+def test_design_section_acknowledgement_requires_design_hash(tmp_path: Path) -> None:
+    task_dir = make_valid_task(tmp_path)
+    dialogue = dialogue_fixture()
+    dialogue["section_acknowledgements"] = [{
+        "section_id": "goals_and_scope",
+        "idempotency_key": "ack-1",
+        "acknowledged_at": "2026-09-20T00:00:00Z",
+    }]
+    write_artifact(task_dir, "brainstorm-dialogue.json", dialogue)
+
+    result = run_validator(task_dir)
+
+    assert result.returncode == 2
+    assert "design_hash" in result.stdout
+
+
 def test_classification_final_status_requires_final_classification(tmp_path: Path) -> None:
     preliminary_task = make_valid_task(tmp_path / "preliminary")
     write_artifact(

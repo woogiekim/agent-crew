@@ -619,7 +619,7 @@ classifier의 `canonical_hash`를 재사용한다. `classification_hash`는 원�
 downgrade의 변경은 의존 승인을 무효화한다. JSON 밖 표시 문구 변경은 제외한다.
 
 ```bash
-python3 - "${TASK_DIR}" "${AGENT_CREW_HOME}" <<'PYEOF'
+python3 - "${TASK_DIR}" "${AGENT_CREW_HOME}" "${START_MODE}" <<'PYEOF'
 import json
 import os
 import re
@@ -629,7 +629,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-task_dir, crew_home = map(Path, sys.argv[1:])
+task_dir, crew_home = map(Path, sys.argv[1:3])
+start_mode = sys.argv[3]
 context = task_dir / "context"
 
 def read_json(path, default=None):
@@ -662,7 +663,26 @@ def inspect():
     if classification is None:
         if dialogue or approval["decisions"] or design_path.exists():
             raise ValueError("classification missing for existing Brainstorm state")
-        return {"resume_at": "legacy"}
+        register = read_json(task_dir / "register.json", {})
+        pipeline = read_json(task_dir / "pipeline.json", {})
+        signal_path = context / "approval.md"
+        signal = signal_path.read_text(encoding="utf-8").strip() if signal_path.exists() else ""
+        valid_plan = (bool(pipeline.get("task")) and bool(pipeline.get("stages"))
+                      and pipeline.get("planning_required") is not True)
+        legacy_evidence = {
+            "start_mode": start_mode == "resume",
+            "register_phase": register.get("current_phase") == "phase_1bc",
+            "valid_plan": valid_plan,
+            "approved_signal": signal == "APPROVED",
+        }
+        if all(legacy_evidence.values()):
+            return {"resume_at": "legacy"}
+        has_partial_legacy = (register.get("current_phase") == "phase_1bc"
+                              or valid_plan or signal in ("APPROVED", "PLAN_READY", "CANCELLED"))
+        if has_partial_legacy:
+            missing = sorted(key for key, value in legacy_evidence.items() if not value)
+            raise ValueError("legacy_resume_evidence_incomplete: " + ",".join(missing))
+        return {"resume_at": "phase_1a_preliminary"}
     if classification.get("status") != "final":
         if classification.get("status") == "preliminary":
             return {"resume_at": "phase_1a_requirements"}
@@ -686,6 +706,17 @@ def inspect():
 
     classification_hash = canonical_hash({"classification": classification})
     design_hash = canonical_hash(fields) if fields is not None else None
+    review_sections = (
+        "goals_and_scope",
+        "boundaries_and_interfaces",
+        "data_and_recovery",
+        "risks_tests_and_alternatives",
+    )
+    current_acknowledgements = {
+        item.get("section_id")
+        for item in dialogue.get("section_acknowledgements", [])
+        if item.get("design_hash") == design_hash
+    }
     pipeline = read_json(task_dir / "pipeline.json", {})
     has_plan = bool(pipeline.get("stages")) and pipeline.get("planning_required") is not True
     runtime_keys = {"completed_stages", "stage_agent_status", "host_task_ids"}
@@ -751,7 +782,7 @@ def inspect():
             changed = True
             print(f"BRAINSTORM_APPROVAL_INVALIDATED: {decision['decision_id']} {reason}", file=sys.stderr)
     if design_invalidated and dialogue:
-        dialogue["status"] = "design_review"
+        dialogue["status"] = "design_revision_required"
         atomic_write(context / "brainstorm-dialogue.json", dialogue)
     if changed:
         signal = context / "approval.md"
@@ -790,6 +821,14 @@ def inspect():
         raise ValueError("dialogue blocked")
     elif architectural and dialogue.get("status") == "not_started":
         resume_at = "phase_1b_dialogue"
+    elif dialogue.get("status") == "design_revision_required":
+        resume_at = "phase_1b_design"
+    elif architectural and fields and dialogue.get("status") == "design_review":
+        result["next_design_section"] = next(
+            (section for section in review_sections if section not in current_acknowledgements), None
+        )
+        result["design_review_complete"] = result["next_design_section"] is None
+        resume_at = "phase_1b_design_review"
     elif not fields or dialogue.get("status") in ("not_started", "design_review", "waiting_for_input"):
         resume_at = "phase_1b_design"
     elif dialogue.get("status") not in ("ready_for_approval", "accepted"):
@@ -1205,8 +1244,10 @@ Supervisor만 `context/brainstorm-dialogue.json`을 쓴다. 최초 문서는
   question의 `response`와 `status: answered`, active ID 제거를 한 번에 반영한다.
   저장 및 read-back 실패 시 다음 질문을 표시하지 않는다. 미답변 active 질문이
   남은 재접속은 같은 질문을 다시 표시하며 새 ID를 생성하지 않는다.
-- 섹션 확인은 `section_acknowledgements`에 `section_id`, `idempotency_key`,
-  `acknowledged_at`로 별도 기록한다. 이것은 최종 설계 승인 또는 실행 승인이 아니다.
+- 섹션 확인은 `section_acknowledgements`에 `section_id`, 현재 canonical `design_hash`,
+  `idempotency_key`, `acknowledged_at`로 별도 기록한다. 이것은 최종 설계 승인 또는
+  실행 승인이 아니다. `design_hash`가 현재 설계와 다른 stale acknowledgement는 확인으로
+  세지 않고 첫 미확인 섹션부터 다시 표시한다.
   섹션 수정 시 이전 섹션 ID의 확인을 재사용하지 않는다.
 
 ##### Supervisor-owned response persistence
@@ -1408,6 +1449,13 @@ refinement한다. 새로운 사용자 결정이 필요하면 해당 분류의 �
 Architectural 설계를 섹션별로 보여주고 피드백과 `section_acknowledgements`를
 저장한다. 수정된 섹션은 다시 검증·확인한다. 검증 통과와 필요한 섹션 확인 뒤
 dialogue의 `status: ready_for_approval`을 기록하고 다음을 실행한다:
+
+섹션 ID와 순서는 `goals_and_scope`, `boundaries_and_interfaces`,
+`data_and_recovery`, `risks_tests_and_alternatives`이다. 재개 gate가
+`resume_at: phase_1b_design_review`를 반환하면 `next_design_section`부터 정확히
+재개한다. `design_review_complete: true`이면 설계를 재생성하지 않고 검증 후
+`ready_for_approval` 전이만 수행한다. acknowledgement는 반드시 당시 canonical
+`design_hash`와 함께 저장하며, 설계 수정 뒤의 stale hash는 재사용하지 않는다.
 
 ```bash
 register_update brainstorm_design_path "${TASK_DIR}/context/brainstorm-design.md"
