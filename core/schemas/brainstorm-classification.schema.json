@@ -55,5 +55,26 @@
       "type": "string",
       "description": "How deterministic and semantic results were resolved."
     }
-  }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "status": {
+          "enum": ["preliminary", "degraded"]
+        }
+      }
+    },
+    {
+      "required": ["final"],
+      "properties": {
+        "status": {
+          "enum": ["final"]
+        },
+        "final": {
+          "type": "string",
+          "enum": ["Spike", "Bounded", "Architectural"]
+        }
+      }
+    }
+  ]
 }

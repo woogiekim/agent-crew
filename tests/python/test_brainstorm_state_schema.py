@@ -193,6 +193,37 @@ def test_dialogue_rejects_plural_active_question_field(tmp_path: Path) -> None:
     assert "active_question_ids" in result.stdout
 
 
+def test_classification_final_status_requires_final_classification(tmp_path: Path) -> None:
+    preliminary_task = make_valid_task(tmp_path / "preliminary")
+    write_artifact(
+        preliminary_task,
+        "brainstorm-classification.json",
+        classification_fixture(),
+    )
+    assert run_validator(preliminary_task).returncode == 0
+
+    complete_final_task = make_valid_task(tmp_path / "complete-final")
+    complete_final = classification_fixture(preliminary="Architectural")
+    complete_final["status"] = "final"
+    complete_final["final"] = "Architectural"
+    write_artifact(
+        complete_final_task,
+        "brainstorm-classification.json",
+        complete_final,
+    )
+    assert run_validator(complete_final_task).returncode == 0
+
+    incomplete_final_task = make_valid_task(tmp_path / "incomplete-final")
+    incomplete_final = classification_fixture()
+    incomplete_final["status"] = "final"
+    write_artifact(
+        incomplete_final_task,
+        "brainstorm-classification.json",
+        incomplete_final,
+    )
+    assert run_validator(incomplete_final_task).returncode == 2
+
+
 def test_approval_requires_decision_at_after_pending(tmp_path: Path) -> None:
     task_dir = make_valid_task(tmp_path)
     approval = approval_fixture(status="approved")
