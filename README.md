@@ -388,7 +388,7 @@ crew:run "task A" | "task B" | "task C"
        ▼ delegate all supervisors simultaneously (with per-task REQUIREMENTS)
 [supervisor A]         ‖   [supervisor B]         ‖   [supervisor C]
   own worktree               own worktree               own worktree
-  req→analyst+plan→[1d]→stages→reviewer   ...same...   ...same...
+  1a req→1b Brainstorm→1c analyst+plan→1d approval→stages→reviewer   ...same...   ...same...
   local commits only         local commits only         local commits only
        │
        ▼ all complete

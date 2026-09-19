@@ -65,6 +65,13 @@ def test_operator_docs_do_not_present_legacy_phase_as_current():
     assert "1c — Analysis + Planning" in status
 
 
+def test_readme_parallel_flow_includes_brainstorm_and_phase_1c():
+    text = readme_text()
+
+    assert "req→analyst+plan→[1d]→stages→reviewer" not in text
+    assert "1a req→1b Brainstorm→1c analyst+plan→1d approval→stages→reviewer" in text
+
+
 def test_readme_documents_sufficiency_gated_requirements():
     text = readme_text()
     assert "Requirements sufficiency gate" in text
