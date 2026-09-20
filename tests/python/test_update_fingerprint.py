@@ -103,6 +103,22 @@ def test_update_fingerprint_reports_changed_categories(tmp_path: Path):
     ]
 
 
+def test_update_fingerprint_ignores_python_runtime_cache(tmp_path: Path):
+    source = tmp_path / "source"
+    _make_checkout(source)
+    write = _run(tmp_path, "--write")
+    assert write.returncode == 0, write.stdout + write.stderr
+    cache = source / "core" / "scripts" / "__pycache__"
+    cache.mkdir()
+    (cache / "module.cpython-312.pyc").write_bytes(b"runtime-only")
+
+    result = _run(tmp_path, "--check", "--format", "json")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["matched"] is True
+
+
 def test_update_fingerprint_text_reports_changed_categories(tmp_path: Path):
     source = tmp_path / "source"
     _make_checkout(source)

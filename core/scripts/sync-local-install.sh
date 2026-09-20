@@ -240,6 +240,13 @@ copy_tree() {
   cp -rf "${src}/." "${dest}/"
 }
 
+prune_python_runtime_cache() {
+  local root="$1"
+  [ -d "${root}" ] || return 0
+  find "${root}" -type d -name '__pycache__' -prune -exec rm -rf -- {} +
+  find "${root}" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+}
+
 install_path_crew_cli() {
   local src="${SOURCE_ROOT}/core/bin/crew"
   local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
@@ -274,6 +281,8 @@ copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"
 copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks" "*.sh"
 copy_tree "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
 copy_tree "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/scripts"
+prune_python_runtime_cache "${AGENT_CREW_HOME}/system/scripts"
+prune_python_runtime_cache "${AGENT_CREW_HOME}/scripts"
 copy_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/system/evaluations"
 copy_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/evaluations"
 copy_flat "${SOURCE_ROOT}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"

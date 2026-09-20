@@ -36,13 +36,18 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def is_python_runtime_cache(path: Path, root: Path) -> bool:
+    relative = path.relative_to(root)
+    return "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}
+
+
 def source_files(root: Path) -> dict[str, Path]:
     if not root.is_dir():
         return {}
     return {
         str(path.relative_to(root)): path
         for path in sorted(root.rglob("*"))
-        if path.is_file()
+        if path.is_file() and not is_python_runtime_cache(path, root)
     }
 
 
@@ -52,7 +57,7 @@ def dest_files(root: Path) -> dict[str, Path]:
     return {
         str(path.relative_to(root)): path
         for path in sorted(root.rglob("*"))
-        if path.is_file()
+        if path.is_file() and not is_python_runtime_cache(path, root)
     }
 
 

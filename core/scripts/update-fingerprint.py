@@ -31,12 +31,17 @@ def managed_path_crew(path: Path) -> bool:
     )
 
 
+def is_python_runtime_cache(path: Path, root: Path) -> bool:
+    relative = path.relative_to(root)
+    return "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}
+
+
 def add_tree(entries: dict[str, str], label: str, root: Path) -> None:
     if not root.is_dir():
         entries[f"{label}/"] = "<missing>"
         return
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
+        if not path.is_file() or is_python_runtime_cache(path, root):
             continue
         rel = path.relative_to(root)
         entries[f"{label}/{rel}"] = sha256_file(path)

@@ -40,6 +40,25 @@ def test_compare_tree_handles_missing_roots_and_prunes_extra_files(tmp_path: Pat
     assert not (dest / "extra.txt").exists()
 
 
+def test_compare_tree_ignores_python_runtime_cache(tmp_path: Path):
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    source_cache = src / "__pycache__"
+    dest_cache = dest / "__pycache__"
+    source_cache.mkdir(parents=True)
+    dest_cache.mkdir(parents=True)
+    (src / "module.py").write_text("value = 1\n", encoding="utf-8")
+    (dest / "module.py").write_text("value = 1\n", encoding="utf-8")
+    (source_cache / "module.cpython-312.pyc").write_bytes(b"source-path")
+    (dest_cache / "module.cpython-312.pyc").write_bytes(b"installed-path")
+
+    result = module.compare_tree(src, dest, prune_extra=False)
+
+    assert result["passed"] is True
+    assert result["mismatched"] == []
+    assert result["extra"] == []
+
+
 def test_compare_file_reports_source_missing_dest_missing_and_mismatch(tmp_path: Path):
     assert module.compare_file(tmp_path / "missing-src", tmp_path / "dest")["missing"] == [
         str(tmp_path / "missing-src")
