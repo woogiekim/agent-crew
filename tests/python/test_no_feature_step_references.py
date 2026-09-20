@@ -21,6 +21,7 @@ excluded below, same as the other generated/vendored directories.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 
@@ -28,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 THIS_FILE = Path(__file__).resolve()
 LEGACY_FINGERPRINT_FILE = REPO_ROOT / "core" / "scripts" / "project-local-asset-fingerprints.json"
 
-EXCLUDED_DIR_NAMES = {".git", ".crew-worktrees", "dist", "node_modules", ".pytest_cache"}
+EXCLUDED_DIR_NAMES = {".git", ".worktrees", ".crew-worktrees", "dist", "node_modules", ".pytest_cache"}
 
 TOKENS = ("feature-step", "feature_step")
 
@@ -72,6 +73,16 @@ def _find_token_matches() -> list[tuple[str, str]]:
 def test_no_feature_step_token_references_remain_in_tracked_repo() -> None:
     matches = _find_token_matches()
     assert matches == [], f"dangling feature-step/feature_step references found: {matches}"
+
+
+def test_generated_worktrees_are_excluded(tmp_path: Path, monkeypatch) -> None:
+    generated = tmp_path / ".worktrees" / "feature-branch" / "tracked-copy.md"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("feature-step\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("current repository\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+
+    assert _find_token_matches() == []
 
 
 def test_old_feature_step_command_doc_no_longer_exists() -> None:
