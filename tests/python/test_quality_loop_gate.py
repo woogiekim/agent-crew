@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REPAIR = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
@@ -472,6 +474,70 @@ def test_quality_gate_accepts_review_atom_markdown_alias(tmp_path: Path):
 
 def test_repair_blocks_mutating_task_without_quality_loop_evidence(tmp_path: Path):
     state_dir, task_id, _task_dir = make_task(tmp_path, "Implement a new update gate")
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "BLOCKER: missing_quality_loop_evidence" in result.stderr
+
+
+def test_repair_skips_quality_loop_for_explicit_read_only_design_task(tmp_path: Path):
+    state_dir, task_id, task_dir = make_task(
+        tmp_path,
+        "새로운 협업 기능을 추가하고 싶은데 실제 코드 변경 없이 설계 선택까지만 진행해줘.",
+    )
+    register_path = task_dir / "register.json"
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+    register["mutation_scope"] = "read_only"
+    register_path.write_text(json.dumps(register), encoding="utf-8")
+    pipeline_path = task_dir / "pipeline.json"
+    pipeline = json.loads(pipeline_path.read_text(encoding="utf-8"))
+    pipeline["mutation_scope"] = "read_only"
+    pipeline_path.write_text(json.dumps(pipeline), encoding="utf-8")
+
+    result = run_repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads(
+        (task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8")
+    )
+    assert repair["quality_gate"] == {
+        "required": False,
+        "passed": True,
+        "bypassed": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("register_scope", "pipeline_scope"),
+    [
+        ("read_only", "workspace_write"),
+        ("workspace_write", "read_only"),
+        ("workspace_write", "workspace_write"),
+        (None, None),
+        ("", ""),
+        ("unknown", "unknown"),
+    ],
+)
+def test_repair_requires_quality_loop_without_matching_explicit_read_only_scopes(
+    tmp_path: Path,
+    register_scope: str | None,
+    pipeline_scope: str | None,
+):
+    state_dir, task_id, task_dir = make_task(
+        tmp_path,
+        "새로운 협업 기능을 추가하고 실제 코드까지 구현해줘.",
+    )
+    register_path = task_dir / "register.json"
+    register = json.loads(register_path.read_text(encoding="utf-8"))
+    pipeline_path = task_dir / "pipeline.json"
+    pipeline = json.loads(pipeline_path.read_text(encoding="utf-8"))
+    if register_scope is not None:
+        register["mutation_scope"] = register_scope
+    if pipeline_scope is not None:
+        pipeline["mutation_scope"] = pipeline_scope
+    register_path.write_text(json.dumps(register), encoding="utf-8")
+    pipeline_path.write_text(json.dumps(pipeline), encoding="utf-8")
 
     result = run_repair(state_dir, task_id)
 

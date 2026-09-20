@@ -2165,7 +2165,15 @@ def enforce_skill_understanding_gate(
 
 def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
     task = register.get("task", "")
-    required = args.status == "completed" and looks_quality_gated_task(task)
+    pipeline = load_json(task_dir / "pipeline.json")
+    register_scope = str(register.get("mutation_scope") or "workspace_write").strip()
+    pipeline_scope = str(pipeline.get("mutation_scope") or "workspace_write").strip()
+    explicit_read_only = register_scope == pipeline_scope == "read_only"
+    required = (
+        args.status == "completed"
+        and not explicit_read_only
+        and looks_quality_gated_task(task)
+    )
     if not required:
         return {"required": False, "passed": True, "bypassed": False}
 
