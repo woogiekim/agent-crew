@@ -160,6 +160,10 @@
       "type": "string",
       "description": "Path to {TASK_DIR}/progress.buffer.jsonl. Phase F5 structured event buffer."
     },
+    "stage_lifecycle_dir": {
+      "type": "string",
+      "description": "Path to {TASK_DIR}/context/stage-lifecycle. Optional for legacy tasks; contains provider-neutral child lifecycle artifacts."
+    },
     "result_path": {
       "type": "string",
       "description": "Path to {TASK_DIR}/result.md. Written by Phase 3 close-out."

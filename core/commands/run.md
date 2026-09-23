@@ -2244,8 +2244,12 @@ After each supervisor returns (inline path), the orchestrator must verify its ou
 
 - If the supervisor returns **without a STATUS field** (crash, token limit,
   or interrupt):
-  - Treat as a crash. Do **not** mark the task as failed.
-  - Re-invoke the same supervisor with identical parameters.
+  - Read its persisted lifecycle decision. A supervisor is mutating unless it
+    was explicitly classified otherwise.
+  - Never re-invoke a mutating supervisor from scratch; reconcile its task
+    artifacts or block with the recorded terminal reason.
+  - Re-invoke only when the lifecycle helper returns `retry` for an explicit
+    `mutating=false` invocation.
   - The supervisor will resume from `pipeline.json` (Phase 0 resume check).
   - Retry up to **3 times** before marking the task as blocked.
 
@@ -2260,15 +2264,15 @@ HOST_STATUS=$(TaskGet(taskId=$(cat "${TASK_DIR}/host-task-id.txt")).status)
 
 | `TaskGet` status | Classification | Orchestrator action |
 |---|---|---|
-| `error` | True crash | Re-invoke (counts against 3-retry budget) |
-| `completed` | Token-truncation tail | Re-invoke with resume hint pointing at `${TASK_DIR}/progress.log` and `pipeline.json`; this resume does **not** count against the 3-retry budget (one free token-truncation resume per task) |
-| `blocked` | Task-runner reached BLOCKED but failed to write STATUS | Read `${TASK_DIR}/result.md`; if STATUS present treat as blocked, else re-invoke as crash |
-| `in_progress` / `pending` | Host did not yet observe completion — likely runtime interrupt | Re-invoke (counts as crash) |
+| `error` | Possible crash | Consult persisted lifecycle state; retry only when it returns `retry` with `mutating=false`, otherwise reconcile or block |
+| `completed` | Possible token-truncation tail | Resume only when lifecycle state permits a non-mutating retry; reconcile mutating work from task state or block |
+| `blocked` | Task-runner reached BLOCKED but failed to write STATUS | Read `${TASK_DIR}/result.md`; if STATUS is absent, consult lifecycle state and never restart a mutating supervisor |
+| `in_progress` / `pending` | Child is still active | Continue bounded waiting on the same host id; do not re-invoke |
 | `cancelled` | User cancelled at gate | Mark task blocked with reason "Cancelled by approval gate" — do not retry |
 
-When `HAS_TASK_TOOLS == 0` or the parent host task id is absent: skip the
-classification entirely and apply the legacy "every no-STATUS outcome is a
-crash, retry up to 3 times" rule. Behavior is identical to pre-P7.
+When `HAS_TASK_TOOLS == 0` or the parent host task id is absent, use the same
+file-backed lifecycle decision. Missing mutation metadata is fail-closed; it
+must not restore blanket no-STATUS retry behavior.
 
 This "끈질기게 실행" (persistent execution) rule means the orchestrator never
 gives up on a supervisor until it explicitly returns `STATUS: blocked` with a
@@ -2376,17 +2380,23 @@ EOF
                     ;;
                   invalid_or_missing)
                     if [ "${BACKGROUND_HOST_STATUS}" = "error" ]; then
-                        BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]=$(( ${BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]:-0} + 1 ))
-                        if [ "${BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]}" -le 3 ]; then
-                            re-invoke the same pinned supervisor and atomically replace background_id
-                            continue
+                        read the persisted supervisor lifecycle decision
+                        if decision.action == retry AND decision.retry_allowed == true AND decision.mutating == false:
+                            BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]=$(( ${BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]:-0} + 1 ))
+                            if [ "${BACKGROUND_CRASH_ATTEMPTS["${TASK_ID}"]}" -le 3 ]; then
+                                re-invoke the same pinned non-mutating supervisor and atomically replace background_id
+                                continue
+                            fi
+                        else:
+                            BACKGROUND_TERMINAL_WITHOUT_RESULT="mutating_or_unclassified_no_status"
                         fi
                     fi
 
                     BACKGROUND_MISSING_RESULT_RESUMES["${TASK_ID}"]=$(( ${BACKGROUND_MISSING_RESULT_RESUMES["${TASK_ID}"]:-0} + 1 ))
                     if [ "${BACKGROUND_MISSING_RESULT_RESUMES["${TASK_ID}"]}" -le 1 ] \
-                      && [ "${BACKGROUND_HOST_STATUS}" = "completed" ]; then
-                        re-invoke once with the existing token-truncation resume hint and replace background_id
+                      && [ "${BACKGROUND_HOST_STATUS}" = "completed" ] \
+                      && lifecycle decision explicitly permits retry with mutating=false; then
+                        re-invoke the pinned non-mutating supervisor once with the existing token-truncation resume hint and replace background_id
                         continue
                     fi
                     BACKGROUND_TERMINAL_WITHOUT_RESULT="${BACKGROUND_HOST_STATUS}"

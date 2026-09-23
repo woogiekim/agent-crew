@@ -146,6 +146,13 @@ def test_validate_state_schema_helpers_cover_validator_edges(monkeypatch, tmp_pa
     validate_state.validate(0, {"type": "number", "minimum": 1}, findings, tmp_path / "file.json")
     validate_state.validate("abc", {"type": "string", "pattern": r"^xyz$"}, findings, tmp_path / "file.json")
     validate_state.validate("abc", {"oneOf": [{"type": "string"}, {"type": "string"}]}, findings, tmp_path / "file.json")
+    union_findings = validate_state.Findings()
+    validate_state.validate(
+        None,
+        {"type": ["string", "null"]},
+        union_findings,
+        tmp_path / "union.json",
+    )
     validate_state.validate(
         {"x_name": 1, "unexpected": True},
         {
@@ -167,6 +174,7 @@ def test_validate_state_schema_helpers_cover_validator_edges(monkeypatch, tmp_pa
     assert any("does not match pattern" in message for message in messages)
     assert any("oneOf matched 2" in message for message in messages)
     assert any("unexpected field 'unexpected'" in message for message in messages)
+    assert union_findings.errors == []
 
     try:
         validate_state.load_schema(tmp_path, "missing.schema.json")
@@ -350,6 +358,98 @@ class TestValidateStateSchema:
             f"expected 0, got {r.returncode}\nstdout:\n{r.stdout}\n"
             f"stderr:\n{r.stderr}"
         )
+
+    def test_stage_lifecycle_artifact_is_validated(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
+        lifecycle_dir = task_dir / "context" / "stage-lifecycle"
+        lifecycle_dir.mkdir(parents=True)
+        lifecycle_dir.joinpath("stage-1-backend.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "stage_index": 1,
+                    "agent": "backend",
+                    "stage_kind": "implementation",
+                    "unit_id": "backend",
+                    "invocation_id": "invocation-1",
+                    "attempt": 1,
+                    "mutating": True,
+                    "fallback_mode": "native",
+                    "status": "dispatched",
+                    "timing": {
+                        "dispatched_at": "2026-01-01T12:00:00Z",
+                        "first_output_at": None,
+                        "artifact_ready_at": None,
+                        "terminal_at": None,
+                        "parent_resume_at": None,
+                    },
+                    "timeout": {
+                        "seconds": 1800,
+                        "deadline_at": "2026-01-01T12:30:00Z",
+                        "enforceable": True,
+                    },
+                    "terminal_grace_seconds": 30,
+                    "outcome": {
+                        "terminal_state": None,
+                        "terminal_reason": None,
+                        "timed_out": False,
+                        "interrupted": False,
+                    },
+                    "activity": {
+                        "subprocess_running": False,
+                        "last_progress_at": None,
+                    },
+                    "events": [
+                        {
+                            "event": "dispatched",
+                            "at": "2026-01-01T12:00:00Z",
+                            "reason": "child invocation dispatched",
+                            "event_id": "",
+                        }
+                    ],
+                    "seen_event_ids": [],
+                    "elapsed_seconds": {"total": None},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir",
+            str(state_dir),
+            "--task-dir",
+            str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 0, r.stdout
+
+    def test_malformed_stage_lifecycle_artifact_fails_validation(
+        self, script_runner, env_with_home, state_dir, task_dir
+    ):
+        (task_dir / "register.json").write_text(json.dumps(_valid_register()))
+        (task_dir / "pipeline.json").write_text(json.dumps(_valid_pipeline()))
+        _write_jsonl(task_dir / "progress.buffer.jsonl", [_valid_progress_row()])
+        lifecycle_dir = task_dir / "context" / "stage-lifecycle"
+        lifecycle_dir.mkdir(parents=True)
+        lifecycle_dir.joinpath("stage-1-backend.json").write_text("{}")
+
+        r = script_runner(
+            "validate-state-schema.py",
+            "--state-dir",
+            str(state_dir),
+            "--task-dir",
+            str(task_dir),
+            env=env_with_home,
+        )
+
+        assert r.returncode == 2
+        assert "stage-1-backend.json" in r.stdout
 
     def test_variant_register_state_is_schema_valid(
         self, script_runner, env_with_home, state_dir, task_dir

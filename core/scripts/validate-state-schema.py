@@ -84,6 +84,10 @@ OPTIONAL_TASK_FILES = [
     ("context/brainstorm-approval.json", "brainstorm-approval.schema.json", "error", False),
 ]
 
+OPTIONAL_TASK_GLOBS = [
+    ("context/stage-lifecycle/*.json", "stage-lifecycle.schema.json", "error"),
+]
+
 
 # --------------------------------------------------------------------------- #
 # Findings buffer                                                             #
@@ -136,16 +140,27 @@ def validate(instance, schema, findings, file_path, json_path="$"):
     # type
     expected = schema.get("type")
     if expected is not None:
-        py_type = TYPE_MAP.get(expected)
-        if py_type is None:
+        expected_types = expected if isinstance(expected, list) else [expected]
+        known_types = [item for item in expected_types if item in TYPE_MAP]
+        if not known_types:
             return  # unknown type — silently ignore
-        if expected == "integer" and isinstance(instance, bool):
-            findings.add("error", file_path, json_path,
-                         "expected integer, got boolean")
-            return
-        if not isinstance(instance, py_type):
-            findings.add("error", file_path, json_path,
-                         f"expected {expected}, got {type(instance).__name__}")
+
+        def matches_type(type_name):
+            if type_name == "integer" and isinstance(instance, bool):
+                return False
+            return isinstance(instance, TYPE_MAP[type_name])
+
+        if not any(matches_type(item) for item in known_types):
+            label = " | ".join(known_types)
+            actual_type = (
+                "boolean" if isinstance(instance, bool) else type(instance).__name__
+            )
+            findings.add(
+                "error",
+                file_path,
+                json_path,
+                f"expected {label}, got {actual_type}",
+            )
             return
 
     # const
@@ -442,6 +457,14 @@ def main():
             path = task_dir / fname
             (validate_jsonl_file if is_jsonl else validate_optional_file)(
                 path, schema, severity, findings)
+        for pattern, schema_name, severity in OPTIONAL_TASK_GLOBS:
+            try:
+                schema = load_schema(schemas_dir, schema_name)
+            except FileNotFoundError as exc:
+                findings.add("error", schemas_dir / schema_name, "$", str(exc))
+                continue
+            for path in sorted(task_dir.glob(pattern)):
+                validate_file(path, schema, severity, findings)
 
     # Report
     if args.format == "json":

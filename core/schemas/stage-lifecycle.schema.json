@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-crew/schemas/stage-lifecycle.schema.json",
+  "title": "agent-crew child stage lifecycle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "stage_index",
+    "agent",
+    "stage_kind",
+    "unit_id",
+    "invocation_id",
+    "attempt",
+    "mutating",
+    "fallback_mode",
+    "status",
+    "timing",
+    "timeout",
+    "terminal_grace_seconds",
+    "outcome",
+    "activity",
+    "events",
+    "seen_event_ids",
+    "elapsed_seconds"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "stage_index": { "type": "integer", "minimum": 0 },
+    "agent": { "type": "string", "minLength": 1 },
+    "stage_kind": { "type": "string", "minLength": 1 },
+    "unit_id": { "type": "string", "minLength": 1 },
+    "invocation_id": { "type": "string", "minLength": 1 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "mutating": { "type": "boolean" },
+    "fallback_mode": {
+      "type": "string",
+      "enum": ["native", "current_session"]
+    },
+    "status": { "type": "string", "minLength": 1 },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dispatched_at",
+        "first_output_at",
+        "artifact_ready_at",
+        "terminal_at",
+        "parent_resume_at"
+      ],
+      "properties": {
+        "dispatched_at": { "type": "string", "format": "date-time" },
+        "first_output_at": { "type": ["string", "null"], "format": "date-time" },
+        "artifact_ready_at": { "type": ["string", "null"], "format": "date-time" },
+        "terminal_at": { "type": ["string", "null"], "format": "date-time" },
+        "parent_resume_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "timeout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seconds", "deadline_at", "enforceable"],
+      "properties": {
+        "seconds": { "type": "integer", "minimum": 0 },
+        "deadline_at": { "type": ["string", "null"], "format": "date-time" },
+        "enforceable": { "type": "boolean" }
+      }
+    },
+    "terminal_grace_seconds": { "type": "integer", "minimum": 0 },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminal_state", "terminal_reason", "timed_out", "interrupted"],
+      "properties": {
+        "terminal_state": {
+          "type": ["string", "null"],
+          "enum": [
+            null,
+            "terminal_completed",
+            "terminal_blocked",
+            "terminal_failed",
+            "timed_out",
+            "interrupted"
+          ]
+        },
+        "terminal_reason": { "type": ["string", "null"] },
+        "timed_out": { "type": "boolean" },
+        "interrupted": { "type": "boolean" }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subprocess_running", "last_progress_at"],
+      "properties": {
+        "subprocess_running": { "type": "boolean" },
+        "last_progress_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "at", "reason", "event_id"],
+        "properties": {
+          "event": { "type": "string", "minLength": 1 },
+          "at": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" },
+          "event_id": { "type": "string" }
+        }
+      }
+    },
+    "seen_event_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "elapsed_seconds": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["number", "null"],
+        "minimum": 0
+      }
+    }
+  }
+}

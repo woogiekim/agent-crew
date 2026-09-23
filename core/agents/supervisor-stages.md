@@ -114,6 +114,68 @@ iteration (after `STAGE_DONE`), `unset STAGE_INDEX STAGE_AGENT
 RETRY_ATTEMPT STAGE_START_EPOCH` so subsequent Phase 2.5 and Phase 3
 events emit with `stage=0`, `agent=""`, `attempt=0`.
 
+#### Provider-neutral child lifecycle controller
+
+Every child invocation is initialized through `stage_lifecycle.py init`
+before the host spawn. This is executable runtime state, not an optional proof
+note. Normalize the stage kind first:
+
+```text
+backend | frontend -> STAGE_KIND="implementation", STAGE_MUTATING="true"
+test-writer         -> STAGE_KIND="test_writer", STAGE_MUTATING="true"
+qa-owner            -> STAGE_KIND="qa", STAGE_MUTATING="false"
+reviewer            -> STAGE_KIND="reviewer", STAGE_MUTATING="false"
+other               -> declared kind, STAGE_MUTATING="true" (fail-closed)
+```
+
+```bash
+UNIT_ID="${UNIT_ID:-${STAGE_AGENT}}"
+INVOCATION_ID="${INVOCATION_ID:?host child invocation id required}"
+STAGE_LIFECYCLE_PATH="${STAGE_LIFECYCLE_DIR}/stage-${STAGE_INDEX}-unit-${UNIT_ID}-invocation-${INVOCATION_ID}-attempt-${RETRY_ATTEMPT}.json"
+TIMEOUT_ARGS=()
+if [ -n "${STAGE_TIMEOUT_OVERRIDE}" ]; then
+  TIMEOUT_ARGS=(--timeout-seconds "${STAGE_TIMEOUT_OVERRIDE}")
+fi
+
+PREFLIGHT_JSON=$(python3 "${STAGE_LIFECYCLE_SCRIPT}" init \
+  --state "${STAGE_LIFECYCLE_PATH}" \
+  --stage-index "${STAGE_INDEX}" \
+  --agent "${STAGE_AGENT}" \
+  --stage-kind "${STAGE_KIND}" \
+  --unit-id "${UNIT_ID}" \
+  --invocation-id "${INVOCATION_ID}" \
+  --attempt "${RETRY_ATTEMPT}" \
+  --mutating "${STAGE_MUTATING}" \
+  --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --timeout-enforceable "${HOST_CHILD_TIMEOUT_ENFORCEABLE}" \
+  --fallback-mode "${SUPERVISOR_FALLBACK_MODE:-native}" \
+  "${TIMEOUT_ARGS[@]}")
+```
+
+`HOST_CHILD_TIMEOUT_ENFORCEABLE` is `true` only when the active host binding
+can both wait with a deadline and interrupt the running child. If the preflight
+action is `block_before_dispatch`, write
+`BLOCKER: stage_timeout_unenforceable`, update the register, and stop before
+spawn. An override of `0` has no deadline and therefore does not require an
+interrupt surface.
+
+During the bounded host wait, persist observable transitions with
+`stage_lifecycle.py event`:
+
+- first visible child output -> `first_output`
+- required artifacts verified -> `artifact_ready`
+- child subprocess start/finish or CPU/log progress ->
+  `subprocess_started`, `subprocess_finished`, or `progress`
+- parsed final -> `terminal_completed`, `terminal_blocked`, or
+  `terminal_failed`
+- host deadline interrupt -> `timed_out`, then `interrupted`
+- immediately before advancing the pipeline -> `parent_resume`
+
+Use a stable `event_id` when a host wait can replay the same event. Missing
+streaming output leaves `first_output_at` null; do not invent a timestamp.
+The artifact path is also exposed through `register.json.stage_lifecycle_dir`
+so `crew:status` and repair can inspect terminal reason and elapsed intervals.
+
 #### Quality Loop Rule (resolved once in Phase 0, reused here)
 
 `QUALITY_RULE_PATH` was already resolved in Phase 0. Use the variable as-is.
@@ -382,6 +444,19 @@ Read and apply the quality loop rule from QUALITY_RULE_PATH before reporting com
 Perform the assigned work.
 All file operations must be performed relative to {PROJECT_ROOT}.
 ```
+
+The host spawn receives only this path-based payload plus the stage acceptance
+criteria, selected skill/rule paths, verified prior artifact paths, branch, and
+permission boundary. It must use the adapter's minimum-context option. Full
+conversation inheritance is forbidden by default. A bounded exception may
+inherit at most three recent turns and requires a task-local reason; never use
+unbounded or full-history inheritance for routine stages.
+
+For Codex the adapter mapping is `fork_turns="none"` by default. Other hosts
+must use their equivalent no-history/minimal-context surface. The supervisor
+may generate the normalized payload with
+`stage_lifecycle.build_child_context(...)`; it must not paste the conversation
+or duplicate the handoff content into the child prompt.
 
 ##### Reviewer-stage prompt addendum (Issue #3)
 

@@ -101,6 +101,34 @@ research, debugging, and targeted fixes. Avoid giving multiple write-capable
 agents the same files unless the supervisor has created isolated worktrees and
 the resolver/fan-in path is active.
 
+### Child lifecycle binding
+
+Codex binds the provider-neutral stage lifecycle to native subagent controls:
+
+```text
+wait_agent(timeout_ms=bounded) + interrupt_agent available
+  -> HOST_CHILD_TIMEOUT_ENFORCEABLE="true"
+either primitive unavailable or nested blocking exec
+  -> HOST_CHILD_TIMEOUT_ENFORCEABLE="false"
+```
+
+- spawn with `fork_turns="none"` by default and pass only task/handoff paths,
+  stage acceptance criteria, selected skill/rule paths, verified artifact
+  paths, branch/worktree, and permission boundaries;
+- use `wait_agent` with a timeout no greater than the remaining lifecycle
+  deadline;
+- on `stage_timeout` or a terminal-grace interrupt decision, call
+  `interrupt_agent` for that exact child before recording `interrupted`;
+- inspect fresh child status, running subprocess evidence, and output progress
+  before a terminal-only interrupt.
+
+If either bounded `wait_agent` or `interrupt_agent` is unavailable in the
+active Codex surface, the supervisor reports `stage_timeout_unenforceable`
+before dispatching a bounded child. It must not claim that a blocking nested
+`codex exec` call is cancellable. Full-history inheritance is allowed only as
+a task-local, reasoned exception of at most three recent turns; `fork_turns="all"`
+is not the routine fallback.
+
 ### Capability boundary
 
 Codex native subagents are not the same as agent-crew's

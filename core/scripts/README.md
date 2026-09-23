@@ -81,6 +81,11 @@ invocation in SKILL.md; generic adds guidance).
 
 ## Diagnostic tooling
 
+- `stage_lifecycle.py` — persists collision-free child invocation state and
+  applies stage-specific bounded timeout defaults. An unset
+  `AGENT_CREW_STAGE_TIMEOUT_SECONDS` uses those defaults; explicit `0` is only
+  for deliberate unbounded debugging.
+
 - `check-completion-artifact.py` — validates that semantic analyst, planner,
   and reviewer completion responses point to existing task-local regular files.
   It reads only enough UTF-8 content to reject empty or whitespace-only

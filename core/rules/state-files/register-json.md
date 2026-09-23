@@ -57,6 +57,7 @@ Canonical shape:
   "handoff_path":        "{task_dir}/handoff.md",
   "progress_log_path":   "{task_dir}/progress.log",
   "progress_buffer_path":"{task_dir}/progress.buffer.jsonl",
+  "stage_lifecycle_dir": "{task_dir}/context/stage-lifecycle",
   "result_path":         "{task_dir}/result.md",
   "approval_path":       "{task_dir}/context/approval.md",
   "start_head_path":     "{task_dir}/context/start-head.txt",
@@ -87,6 +88,7 @@ JSON Schema: `${AGENT_CREW_HOME}/schemas/register.schema.json`.
 | `approval_status` | enum `not_required \| pending \| approved \| cancelled` | yes | bumped by Phase 1d and Phase 2.5 gates |
 | `verification_status` | enum `not_started \| running \| passed \| failed \| skipped` | yes | bumped by reviewer stage entry/exit |
 | `requirements_path` ... `start_head_path` | string | optional | path pointers populated from supervisor-bootstrap variables; the files themselves may not exist yet |
+| `stage_lifecycle_dir` | string | optional | provider-neutral per-child lifecycle JSON directory; missing is valid for legacy tasks |
 | `modified_files` | array of strings | optional (default `[]`) | cumulative list of files modified by stage agents, deduplicated; populated from NUL-safe `git status --porcelain=v1 -z` output |
 | `blocked_by` | array of strings | optional (default `[]`) | populated only when `current_phase == blocked`; multi-entry when multiple sub-causes apply |
 

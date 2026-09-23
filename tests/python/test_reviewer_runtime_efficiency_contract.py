@@ -77,9 +77,12 @@ def test_failure_case_capacity_retries_are_bounded_and_observable():
     assert "reason=capacity" in RETRY
 
 
-def test_boundary_case_no_arbitrary_stage_timeout_is_claimed_as_recommended():
-    assert "Recommended value when enabling: `1800`" not in BOOTSTRAP
-    assert "No default is inferred" in BOOTSTRAP
+def test_boundary_case_stage_timeouts_use_bounded_kind_specific_defaults():
+    assert "stage-specific defaults" in BOOTSTRAP
+    assert "requirements, Brainstorm" in BOOTSTRAP
+    assert "planning, test-writer, implementation, QA, reviewer" in BOOTSTRAP
+    assert "explicit `0`" in BOOTSTRAP
+    assert "stage_timeout_unenforceable" in BOOTSTRAP
     assert "AGENT_CREW_STAGE_TIMEOUT_SECONDS" in BOOTSTRAP
 
 

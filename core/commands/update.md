@@ -935,45 +935,40 @@ file. No new directories under `${STATE_DIR}`.
 compat alias. The new `crew:telemetry` slash command is discoverable
 immediately after the next refresh.
 
-### Phase I11 — Per-stage wall-clock timeout (opt-in)
+### Phase I11 — Per-stage wall-clock lifecycle budget
 
-The supervisor's Stage Retry Rule now consults a per-stage wall-clock
-budget read from `AGENT_CREW_STAGE_TIMEOUT_SECONDS`. When the env var
-is unset or `0` (the default), behavior is identical to pre-I11. When
-set to a positive integer, the supervisor halts with
-`STATUS: blocked` + `BLOCKER: stage_timeout` if any single stage
-(including all its retries) exceeds the budget.
+The supervisor's Stage Retry Rule now consults the provider-neutral
+`stage_lifecycle.py` state machine. Each stage kind has a bounded default
+wall-clock budget. `AGENT_CREW_STAGE_TIMEOUT_SECONDS` is an optional global
+override; an explicit `0` is reserved for deliberate unbounded debugging.
+When a positive deadline expires, the supervisor interrupts the child and
+halts with `STATUS: blocked` + `BLOCKER: stage_timeout`.
 
 **No migration code required.** Pure additive:
 
-- `supervisor-bootstrap.md` Phase 0 resolves `STAGE_TIMEOUT_SECONDS`
-  from the env var; `0` is the absence-tolerant default.
+- `supervisor-bootstrap.md` Phase 0 resolves the lifecycle helper and optional
+  override. An unset override uses the stage-kind default.
 - `supervisor-stages.md` Phase 2 stage loop records
-  `STAGE_START_EPOCH` once per stage (not per parallel agent — the
-  budget applies to the slowest agent in the stage).
-- `supervisor-retry.md` Stage Retry Rule runs a timeout check before
-  every invoke-agent call, mirroring the Cost Circuit Breaker
-  pattern. Hard stop skips BLOCKED Recovery for the same reason cost
-  overruns do (escalation, not retry, is the correct response).
+  dispatch/output/artifact/terminal/parent-resume transitions in one atomic
+  artifact per child invocation.
+- `supervisor-retry.md` asks the helper for the next action after every bounded
+  wait. It may continue, interrupt and accept verified read-only recovery, or
+  block; mutating children are never re-invoked from scratch after ambiguous
+  terminal loss.
 - `supervisor.md` Event catalog gains `STAGE_TIMEOUT` so
   `progress.buffer.jsonl` and `crew:status` surface the event.
-- `register.json.blocked_by` records `["stage_timeout"]` for
-  programmatic detection without parsing `result.md`.
+- `register.json.stage_lifecycle_dir` exposes the artifacts and
+  `blocked_by` records timeout/unenforceable blockers for programmatic use.
 
-**No new capability flag.** Stage timeout is host-agnostic. Adapters
-do nothing.
+**No new capability flag.** Lifecycle policy is host-agnostic. Adapters map
+their bounded wait and interrupt primitives to the provider-neutral contract.
 
 **No `settings.json` changes.** No hook is added.
 
-**Recommended values.**
-
-- `AGENT_CREW_STAGE_TIMEOUT_SECONDS=1800` (30 min): conservative
-  default for most projects; catches genuinely hung stages without
-  false-positives on long legitimate work.
-- `AGENT_CREW_STAGE_TIMEOUT_SECONDS=3600` (60 min): for projects
-  with heavy analysis or large refactors.
-- Unset or `0`: disabled — recommended for one-off / exploratory
-  runs where the operator is watching live.
+**Override guidance.** Leave `AGENT_CREW_STAGE_TIMEOUT_SECONDS` unset to use
+the stage-kind defaults. Set a positive integer only when the whole run needs a
+different uniform budget. Use `0` only for deliberate, observable unbounded
+debugging; the lifecycle artifact records that decision.
 
 **Interaction with the cost circuit breaker.** Both run at the same
 checkpoint (before every invoke-agent call). If both budgets are

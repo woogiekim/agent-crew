@@ -29,7 +29,9 @@ Every stage invocation (single or parallel) is wrapped in a retry loop.
 Retry limits follow the quality-loop rule (`QUALITY_RULE_PATH`):
 
 - **Validation failure** (STATUS returned but criteria not met): up to **3 retries**.
-- **Crash** (true agent failure, not a token-limit tail): up to **5 retries**.
+- **Crash** (true agent failure, not a token-limit tail and no possible
+  mutation): up to **5 retries**. A mutating child is never re-invoked from
+  scratch solely because its terminal line is missing.
 - **Token-limit truncation** (run reached the end without a STATUS line but
   produced substantial output, P7): **1 resume** with a checkpoint hint, then
   fall through to the crash retry budget if still no STATUS line.
@@ -57,9 +59,27 @@ with a resume hint pointing at `${TASK_DIR}/progress.log` and the latest
 spawn instead of burning all 5 crash retries.
 
 **Legacy fallback when `HAS_TASK_TOOLS == 0` or the host-task id is absent**:
-Any agent invocation that returns without a `STATUS:` line in its response is
-treated as a crash. There is no way to distinguish token-limit truncation
-from a true crash on this path, so the full 5-retry budget applies uniformly.
+use the same provider-neutral lifecycle artifact and bounded wait as the native
+path. Host-task absence is not permission to call every no-STATUS result a
+crash. Inspect verified artifacts, child subprocess state, CPU/log progress,
+and the lifecycle deadline. If the host cannot bound and interrupt the wait,
+fail before dispatch with `stage_timeout_unenforceable`.
+
+After each bounded wait result, run `stage_lifecycle.py decide` with the
+observed host status, artifact-verification result, subprocess state, and
+progress signal. Apply the returned action exactly:
+
+- `resume_parent`: record `parent_resume` and advance immediately.
+- `wait`: continue only until the recorded deadline or terminal grace expires.
+- `interrupt_and_accept_verified_artifact`: only read-only analysis/planning,
+  QA, or reviewer work whose required output was semantically verified and
+  whose subprocess/progress checks are idle; record
+  `terminal_only_missing_after_verified_artifact`, interrupt, and advance.
+- `interrupt_and_block`: interrupt and stop. In particular,
+  `mutating_terminal_missing_after_verified_artifact`: must not re-invoke the mutating child from scratch.
+- `retry`: allowed only when the lifecycle decision explicitly proves the
+  invocation is non-mutating and safe to repeat.
+- `block_before_dispatch`: stop with `stage_timeout_unenforceable`.
 
 Retry logic per agent:
 
@@ -104,41 +124,40 @@ while crash_attempts <= 5:
             return STATUS: blocked
         re-invoke the same pinned agent once; do not select a model fallback
         continue
-    else:  # no STATUS line — classify
-        classification = "crash"
-        if HAS_TASK_TOOLS == 1 AND host_task_ids[i-1][agent_name] is set:
-            STAGE_HOST_STATUS = TaskGet(taskId).status
-            if STAGE_HOST_STATUS == "completed":
-                classification = "token_truncation"
-            elif STAGE_HOST_STATUS == "blocked":
-                halt pipeline — write blocker to result.md and return STATUS: blocked
-            elif STAGE_HOST_STATUS == "cancelled":
-                halt pipeline — write CANCELLED to result.md and return STATUS: blocked
-            # else (error / pending / in_progress): treat as crash
-
-        if classification == "token_truncation" AND token_limit_resumes_used < 1:
-            token_limit_resumes_used += 1
-            RETRY_ATTEMPT += 1
-            log_progress "RETRY" "attempt {RETRY_ATTEMPT} — token_truncation resume"
-            re-invoke agent with resume hint:
-              "Resume from: {TASK_DIR}/context/stage_{i}_progress.md if present,
-               else from {TASK_DIR}/progress.log tail. Continue prior work."
-            continue  # do not increment crash_attempts
-        else:
+    else:  # no STATUS line — consult shared lifecycle state
+        DECISION = run stage_lifecycle.py decide with:
+          STAGE_LIFECYCLE_PATH, current UTC time, host status,
+          required-artifacts-verified, subprocess-running, recent-progress
+        if DECISION.action == "wait":
+            bounded-wait on the SAME child; do not spawn a replacement
+            continue
+        if DECISION.action == "interrupt_and_accept_verified_artifact":
+            interrupt the SAME child
+            record event interrupted with DECISION.reason
+            record event parent_resume after semantic artifact verification
+            break
+        if DECISION.action in ("interrupt_and_block", "block_before_dispatch"):
+            interrupt the child when it exists
+            write DECISION.reason to result.md
+            return STATUS: blocked
+        if DECISION.action == "retry":
             crash_attempts += 1
             RETRY_ATTEMPT += 1
-            log_progress "RETRY" "attempt {RETRY_ATTEMPT} — crash"
+            log_progress "RETRY" "attempt {RETRY_ATTEMPT} — verified_non_mutating_crash"
             if crash_attempts > 5:
                 write crash details to {TASK_DIR}/result.md
-                return STATUS: blocked (reason: agent crashed after 5 attempts)
-            re-invoke agent (pass TASK_DIR/HANDOFF_PATH/QUALITY_RULE_PATH only)
+                return STATUS: blocked
+            re-invoke only the verified non-mutating child with the minimal
+            path-based context and existing checkpoint
+            continue
+        halt pipeline — unrecognized lifecycle decision is a contract failure
 ```
 
-Do not silently swallow a crash. After 5 crash failures on the same agent (the
-single token-truncation resume does not count against this budget), report
-BLOCKED with the agent name and stage index. When `HAS_TASK_TOOLS == 0` or the
-host task id is absent, every "no STATUS line" outcome is classified as a
-crash — identical to pre-P7 behavior.
+Do not silently swallow a crash. After 5 safe-to-repeat, non-mutating crash
+failures on the same agent, report BLOCKED with the agent name and stage index.
+Host-task absence never widens this retry permission. For a mutating child,
+resume/wait/interrupt the same invocation when the host supports it; otherwise
+block without duplicate execution.
 
 Capacity exhaustion is separate from crash exhaustion. It has one bounded
 retry, always records `reason=capacity` and `capacity_attempts`, and uses
@@ -190,14 +209,11 @@ implementation that encodes these steps in the fan-out dispatch section.
 
 ### Stage Timeout (Phase I11)
 
-Before each stage spawn AND before each retry inside the loop above,
-the supervisor checks elapsed wall-clock time for the current stage
-against `STAGE_TIMEOUT_SECONDS` (resolved once in Phase 0 from
-`AGENT_CREW_STAGE_TIMEOUT_SECONDS`).
-
-The check is **gated on `STAGE_TIMEOUT_SECONDS != 0`**. When the env
-var is unset or zero, this subsection is a no-op — the retry loop
-above runs unchanged and pre-I11 pipelines see identical behavior.
+Before each stage spawn and on every bounded wait tick, the supervisor reads
+the stage-specific deadline from `STAGE_LIFECYCLE_PATH`. Unset
+`AGENT_CREW_STAGE_TIMEOUT_SECONDS` uses the helper's stage-kind default;
+an explicit `0` is a deliberate unbounded-debugging override recorded in the
+artifact.
 
 When `STAGE_TIMEOUT_SECONDS != 0`, run the following block
 **immediately before every `invoke agent` call** — once at the top of
@@ -206,6 +222,10 @@ the retry loop (covers the initial spawn) and inside both the
 branch:
 
 ```bash
+# Read these values from STAGE_LIFECYCLE_PATH; do not recalculate a new
+# deadline on retry.
+STAGE_TIMEOUT_SECONDS=<timeout.seconds>
+STAGE_START_EPOCH=<epoch(timing.dispatched_at)>
 if [ "${STAGE_TIMEOUT_SECONDS}" != "0" ]; then
   STAGE_ELAPSED=$(( $(date +%s) - ${STAGE_START_EPOCH:-$(date +%s)} ))
   if [ "${STAGE_ELAPSED}" -gt "${STAGE_TIMEOUT_SECONDS}" ]; then
@@ -220,8 +240,8 @@ STATUS: blocked
 BLOCKER: stage_timeout
 DETAIL: Stage ${STAGE_INDEX:-?} (${STAGE_AGENT:-?}) exceeded the per-stage
         wall-clock budget. elapsed=${STAGE_ELAPSED}s budget=${STAGE_TIMEOUT_SECONDS}s.
-        Re-run with AGENT_CREW_STAGE_TIMEOUT_SECONDS adjusted (or unset to
-        disable) if the work legitimately requires more time.
+        Re-run with AGENT_CREW_STAGE_TIMEOUT_SECONDS adjusted, decompose the
+        stage, or use explicit 0 only for deliberate unbounded debugging.
 EOF
     # Skip BLOCKED Recovery — timeouts indicate the operating budget
     # is wrong, not the approach. Run Phase 3 close-out and return
@@ -251,11 +271,12 @@ deadline reached -> cancel or interrupt the host invocation
                    -> STATUS: blocked, BLOCKER: stage_timeout
 ```
 
-If the active adapter cannot provide a cancellable wait, deadline, or interrupt
-surface, fail before starting the configured-budget stage with
+If the active adapter cannot provide both a cancellable wait/deadline and an
+interrupt surface, fail before starting the bounded stage with
 `BLOCKER: stage_timeout_unenforceable`. Do not start an unbounded invocation
-while claiming that the configured budget is enforced. The default
-`STAGE_TIMEOUT_SECONDS=0` remains unchanged and does not require this surface.
+while claiming that the configured budget is enforced. Only an explicit
+timeout override of `0` disables the deadline and does not require this
+surface.
 
 `log_progress` is the helper introduced by `supervisor-bootstrap.md`
 Phase 0; `register_update` writes the terminal phase + blocker label

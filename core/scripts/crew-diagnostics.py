@@ -275,6 +275,7 @@ def effective_config(args: argparse.Namespace) -> dict[str, Any]:
         "core_objective": capability_ceiling(capabilities),
         "budgets": {
             "stage_timeout_seconds": int(os.environ.get("AGENT_CREW_STAGE_TIMEOUT_SECONDS") or 0),
+            "stage_timeout_policy": "stage_specific_defaults",
             "task_token_budget": os.environ.get("AGENT_CREW_TASK_TOKEN_BUDGET", ""),
         },
         "timeouts": {

@@ -18,7 +18,8 @@ For each stage, repeat the following until **all acceptance criteria pass** or
 the retry limit is reached:
 
 - **Validation failure** (criteria checked, output incorrect): retry up to **3 times**.
-- **Agent crash** (no STATUS returned at all): retry up to **5 times** before BLOCKED.
+- **Agent exit without STATUS**: consult the lifecycle decision. Retry only when
+  `mutating=false`; absent mutation metadata defaults to fail-closed.
 
 ```
 1. Implement (or review) the assigned work.
@@ -26,8 +27,8 @@ the retry limit is reached:
 3. If any criterion fails → fix the issue, then return to step 2.
    (Validation failure retry counter increments here.)
 4. If all criteria pass → report completion.
-5. If the stage returns no STATUS → treat as crash, increment crash retry counter,
-   and re-invoke the stage from step 1.
+5. If the stage returns no STATUS → consult `stage_lifecycle.py decide`.
+   Re-invoke only an explicit `mutating=false` child when it returns `retry`.
 6. If the validation retry limit (3) is reached without passing →
    attempt BLOCKED Recovery (see below) before reporting BLOCKED.
 7. If the crash retry limit (5) is reached → report BLOCKED with details.
@@ -412,8 +413,9 @@ Read and apply the quality loop rule before reporting stage completion.
 After each stage returns, the supervisor checks:
 
 - If `STATUS: completed` → continue to next stage.
-- If no STATUS returned → treat as crash. Re-invoke the stage (up to 5 crash
-  retries). After all crash retries are exhausted, report BLOCKED.
+- If no STATUS returned → use the persisted lifecycle decision. Only an
+  explicit mutating=false child may be retried; custom/resolver/writer children
+  default to mutating and block rather than re-running from scratch.
 - If `STATUS: BLOCKED` → halt the pipeline and report the blocker to the
   orchestrator.
 - If `STATUS: needs_clarification` → spawn the analyst with the

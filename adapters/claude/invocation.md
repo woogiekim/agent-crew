@@ -85,6 +85,7 @@ this adapter binds it to Claude Code's native tool surface as follows:
 | `spawnBackgroundAgent(agentName, prompt, env?)` | Claude Code's background agent surface (the same flow used by `crew:run` Step 6 P4 background fan-out) |
 | `getBackgroundAgent(backgroundId)` | `TaskOutput(task_id=backgroundId, block=false)` with native state normalized to `running \| completed \| error \| cancelled` |
 | `awaitBackgroundAgent(backgroundId, timeoutSeconds?)` | `TaskOutput(task_id=backgroundId, block=true, timeout=timeoutSeconds)`; timeout returns normalized current state |
+| `interruptBackgroundAgent(backgroundId)` | `TaskStop(task_id=backgroundId)` for that exact child |
 
 The capability flags written by `setup.sh` (see `core/rules/capabilities/*.md`)
 determine which of these intents the core pipeline emits. Specifically:
@@ -92,7 +93,7 @@ determine which of these intents the core pipeline emits. Specifically:
 - `task_tools=true` → the four task-lifecycle intents above are routed through
   the corresponding `Task*` tools (see `core/rules/capabilities/task-tools.md`).
 - `agent_background=true` → `spawnBackgroundAgent`, `getBackgroundAgent`, and
-  `awaitBackgroundAgent` are routed through Claude Code's background-agent and
+  `awaitBackgroundAgent` / `interruptBackgroundAgent` are routed through Claude Code's background-agent and
   `TaskOutput` surfaces (see
   `core/rules/capabilities/agent-background.md`).
 - `monitor_tool=true` → `streamOutput` / `getOutputTail` is routed through
@@ -100,6 +101,13 @@ determine which of these intents the core pipeline emits. Specifically:
 - `interactive_question=true` → `ask_question` is routed through
   `AskUserQuestion` (see
   `core/rules/capabilities/interactive-question.md`).
+
+For a background child, bounded `TaskOutput` plus `TaskStop` sets
+`HOST_CHILD_TIMEOUT_ENFORCEABLE="true"`; the background id returned by spawn is
+the required `INVOCATION_ID`. If either surface is unavailable, or the child is
+started through a blocking foreground call that cannot be interrupted by id,
+set the capability to `false` and fail bounded lifecycle preflight before
+dispatch. Never invent an invocation id before the host returns one.
 
 `agent_background=true` advertises mechanism availability only. Default
 `crew:run` remains foreground; only explicit `--background` selects the

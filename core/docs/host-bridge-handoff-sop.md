@@ -18,6 +18,14 @@ resumable state, not an infrastructure failure.
 current host session to continue the handoff. No background bridge is still
 running; continue from `handoff.md` in the current host session.
 
+The current-session supervisor uses the same provider-neutral lifecycle state
+as native execution. It must not recreate supervisor retry/timeout logic in a
+Codex-only hook. Before each child, initialize the task-local lifecycle with
+`stage_lifecycle.py init --fallback-mode current_session`, then use the same
+bounded `decide` actions, terminal parser, artifact verification, retry budget,
+interrupt reason, and closeout path. Lifecycle JSON lives under
+`${TASK_DIR}/context/stage-lifecycle/`.
+
 `BLOCKER: host AI bridge has not completed this handoff` now means an external
 bridge command was configured or expected but did not complete successfully.
 
@@ -43,6 +51,11 @@ TASK_DIR=<from_crew_run_output>
 # Inspect canonical result for the task
 cat "${TASK_DIR}/result.md"
 ```
+
+Also inspect `register.json.stage_lifecycle_dir` when a child emitted useful
+artifacts or commentary but did not return a terminal `STATUS:`. Artifact
+readiness alone is not success: verify required outputs, subprocess/CPU/log
+progress, and the bounded terminal grace decision first.
 
 3. If this is intentionally manual/non-hosted execution:
 

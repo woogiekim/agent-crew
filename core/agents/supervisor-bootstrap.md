@@ -133,26 +133,72 @@ check the relevant flag and fall back to the
 file-based primary (`progress.log`, `approval.md`, `pipeline.json`) when the
 flag is `0`.
 
-### Stage timeout budget (Phase I11)
+### Stage lifecycle and bounded timeout policy
 
-Read the per-stage wall-clock budget from the environment. Absence (or
-zero) means the timeout is disabled and the supervisor behaves exactly
-as it did before Phase I11. When set, the value is the maximum number
-of seconds a single stage iteration (including all retries) may run
-before the supervisor halts with `BLOCKER: stage_timeout`.
+Resolve the provider-neutral lifecycle helper once. Native supervision and a
+`HOST_BRIDGE: current_session_required` continuation MUST use this same helper;
+the fallback mode changes only the adapter binding, not lifecycle semantics.
 
 ```bash
-STAGE_TIMEOUT_SECONDS="${AGENT_CREW_STAGE_TIMEOUT_SECONDS:-0}"
-case "${STAGE_TIMEOUT_SECONDS}" in
-  ''|*[!0-9]*) STAGE_TIMEOUT_SECONDS=0 ;;  # ignore non-integer
+STAGE_LIFECYCLE_SCRIPT="${AGENT_CREW_HOME}/scripts/stage_lifecycle.py"
+STAGE_LIFECYCLE_DIR="${TASK_DIR}/context/stage-lifecycle"
+```
+
+The helper owns stage-specific defaults for requirements, Brainstorm,
+planning, test-writer, implementation, QA, reviewer, and build/test
+subprocesses. `AGENT_CREW_STAGE_TIMEOUT_SECONDS` is an optional global
+override. Unset uses the stage-specific default; an explicit `0` is reserved
+for deliberate unbounded debugging and MUST be recorded in the lifecycle
+artifact.
+
+```bash
+STAGE_TIMEOUT_OVERRIDE="${AGENT_CREW_STAGE_TIMEOUT_SECONDS-}"
+case "${STAGE_TIMEOUT_OVERRIDE}" in
+  ''|*[!0-9]*) STAGE_TIMEOUT_OVERRIDE="" ;;
 esac
 ```
 
-`STAGE_TIMEOUT_SECONDS == 0` is the absence-tolerant default: the Stage
-Retry Rule's timeout check (see `supervisor-retry.md` § Stage Timeout)
-becomes a no-op and existing pipelines run unchanged. No default is inferred:
-the budget remains disabled/Unknown unless the operator explicitly configures
-`AGENT_CREW_STAGE_TIMEOUT_SECONDS` from measured workload evidence.
+Before any requirements, Brainstorm, planning, or Phase 2 child invocation,
+initialize a lifecycle artifact and run its preflight. The active adapter must
+prove that it can bound the wait and interrupt the running invocation. If it
+cannot, the helper returns `stage_timeout_unenforceable`; do not start an
+unbounded invocation while claiming a bounded timeout. An explicit timeout
+override of `0` disables this enforcement only for deliberate debugging.
+
+Phase 1 uses the same executable controller, not prose-only timing. Every
+blocking delegation below is replaced by this exact lifecycle sequence:
+
+```text
+1. Resolve the call-site timeout (stage default or explicit override) and the
+   adapter's bounded-wait plus interrupt capability. If the timeout is positive
+   and either capability is absent, return block_before_dispatch now; no child
+   has been spawned.
+2. Spawn through the proven adapter path and capture the returned host id as
+   PHASE1_INVOCATION_ID. A bounded child must not use an uninterruptible
+   foreground spawn.
+3. Set PHASE1_STAGE_KIND to the call-site kind, PHASE1_MUTATING=false,
+   PHASE1_UNIT_ID="phase-1-${PHASE1_STAGE_KIND}", and attempt=1.
+4. Derive the unique path with `stage_lifecycle.py path`; execute
+   `stage_lifecycle.py init` with stage-index=0, unit id, invocation id, kind,
+   mutation flag, the already-proven adapter capability, and timeout override.
+   Treat any contradictory init preflight result as a contract failure and
+   interrupt the just-created child before blocking.
+5. Wait only to the recorded deadline. Persist observed first_output,
+   artifact_ready, terminal, subprocess/progress, and interrupt events with
+   `stage_lifecycle.py event`.
+6. Execute `stage_lifecycle.py decide` and apply wait, resume, interrupt, or
+   block to the same host id. Never spawn a replacement unless it explicitly
+   returns retry. Record parent_resume before leaving the call site.
+```
+
+Call-site kinds are mandatory: ambiguous requirements uses `requirements`;
+every Brainstorm classify/question/compare/design call uses `brainstorm`; the
+merged analyst+planner call uses `planning`.
+
+Every child lifecycle records `dispatched_at`, `first_output_at`,
+`artifact_ready_at`, `terminal_at`, and `parent_resume_at`. Phase 1 child
+invocations use `stage_index=0` plus a stable lifecycle id such as
+`phase-1c-analyst`; Phase 2 uses the real stage index and agent name.
 
 If `HAS_TASK_TOOLS == 1`, the supervisor registers itself with the host's task
 surface so users can see live pipeline progress in the host UI:
@@ -401,6 +447,7 @@ except Exception:
         "handoff_path":         f"{task_dir}/handoff.md",
         "progress_log_path":    f"{task_dir}/progress.log",
         "progress_buffer_path": f"{task_dir}/progress.buffer.jsonl",
+        "stage_lifecycle_dir":  f"{task_dir}/context/stage-lifecycle",
         "result_path":          f"{task_dir}/result.md",
         "approval_path":        f"{task_dir}/context/approval.md",
         "start_head_path":      f"{task_dir}/context/start-head.txt",
@@ -528,6 +575,8 @@ loss — register_update preserves all other fields).
 if [ ! -f "${TASK_DIR}/register.json" ]; then
   register_update current_phase phase_0
 fi
+mkdir -p "${STAGE_LIFECYCLE_DIR}"
+register_update stage_lifecycle_dir "${STAGE_LIFECYCLE_DIR}"
 ```
 
 ### Git-repository guard (Phase 0)
@@ -1386,6 +1435,19 @@ raw input·요구사항·저장소 근거에서 이미 답한 질문은 생략�
 검증한 뒤 항목별 응답 키를 포함한 하나의 atomic 갱신으로 반영한다. 일부만 답하면
 다음 단계로 진행하지 않고 받은 응답을 보존하여 남은 항목만 재표시한다.
 표시할 때 `BRAINSTORM_QUESTION` 사건에 task ID와 묶음의 question ID들을 기록한다.
+
+요구사항이 이미 충분하고 final classification이 `Bounded`이면
+`stage_lifecycle.py bounded-policy`를 실행한다. security, migration,
+destructive, 또는 Architectural 위험 태그가 하나라도 있으면 표준 경로를 유지한다.
+eligible 결과만 별도 requirements Agent를 생략하고 Bounded design+plan을 하나의
+controller lifecycle로 묶을 수 있다. 이 경로도 TDD controller와 독립 reviewer를
+반드시 유지한다. QA가 방금 생성한 동일 command/diff digest의 fresh evidence는
+reviewer가 독립적으로 digest와 범위를 검증한 뒤 재사용할 수 있지만, reviewer의
+정적/계약 검토 자체를 생략하지 않는다. policy 결과와 입력 risk tags를
+`context/bounded-lifecycle-policy.json`에 atomic write한다.
+
+Architectural/security/migration/destructive 작업에는 이 완화 경로를 적용하지
+않는다. policy helper 실패나 불완전한 requirements도 표준 경로로 fail-closed한다.
 
 답변이 책임 경계 변경을 드러내면 해당 증거로 final classification을 다시 수행한다.
 Architectural이면 순차 대화로 전환한다. 새 목표나 저장소를 자동 추가하지 않는다.

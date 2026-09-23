@@ -1342,9 +1342,9 @@ Every 15 seconds:
 
 3. For each new commit SHA, run Streaming Step 3.
 
-4. Sleep 15 seconds and loop. Bounded by the supervisor's
-   `AGENT_CREW_STAGE_TIMEOUT_SECONDS` (if set); the reviewer does not
-   enforce its own wall-clock limit beyond returning when the
+4. Sleep 15 seconds and loop. Bounded by the supervisor lifecycle artifact's
+   stage-kind deadline (or its explicit global override); the reviewer does
+   not create a separate wall-clock budget beyond returning when the
    implementer is done.
 
 ### Streaming Step 3: Per-commit incremental review
