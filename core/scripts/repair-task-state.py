@@ -2001,6 +2001,106 @@ def enforce_specialist_dispatch_gate(args: argparse.Namespace, task_dir: Path, r
     return status
 
 
+def enforce_current_session_execution_gate(
+    args: argparse.Namespace, task_dir: Path, specialist_gate: dict
+) -> dict:
+    contract_path = task_dir / "context" / "current-session-execution.json"
+    if args.status != "completed" or not contract_path.is_file():
+        return {"required": False, "passed": True}
+
+    contract = load_json(contract_path)
+    selected_subagents = sorted(set(specialist_gate.get("selected_subagents") or []))
+    if "supervisor" in selected_subagents and not contract.get(
+        "top_level_supervisor_spawn_allowed", True
+    ):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: nested_supervisor_forbidden\n"
+            "DETAIL: current-session fallback already runs as the supervisor; "
+            "a supervisor child may not be selected."
+        )
+
+    lifecycle_by_agent: dict[str, list[dict]] = {}
+    lifecycle_dir = task_dir / "context" / "stage-lifecycle"
+    lifecycle_paths = sorted(lifecycle_dir.glob("*.json")) if lifecycle_dir.is_dir() else []
+    for path in lifecycle_paths:
+        lifecycle = load_json(path)
+        agent = str(lifecycle.get("agent") or "").strip()
+        if agent:
+            lifecycle_by_agent.setdefault(agent, []).append(lifecycle)
+
+    incomplete: list[str] = []
+    for agent in selected_subagents:
+        completed = any(
+            lifecycle.get("status") == "parent_resumed"
+            and (lifecycle.get("outcome") or {}).get("terminal_state")
+            == "terminal_completed"
+            and bool((lifecycle.get("timing") or {}).get("terminal_at"))
+            and bool((lifecycle.get("timing") or {}).get("parent_resume_at"))
+            for lifecycle in lifecycle_by_agent.get(agent, [])
+        )
+        if not completed:
+            incomplete.append(agent)
+
+    if incomplete and contract.get("subagent_lifecycle_required", False):
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: current_session_lifecycle_incomplete\n"
+            "DETAIL: selected subagents lack terminal completion and parent-resume "
+            "evidence: "
+            + ", ".join(incomplete)
+            + "."
+        )
+
+    return {
+        "required": True,
+        "passed": True,
+        "contract_path": str(contract_path),
+        "selected_subagents": selected_subagents,
+        "verified_subagents": selected_subagents,
+    }
+
+
+def enforce_inline_execution_gate(args: argparse.Namespace, task_dir: Path) -> dict:
+    contract_path = task_dir / "context" / "current-session-execution.json"
+    if args.status != "completed" or not contract_path.is_file():
+        return {"required": False, "passed": True}
+
+    contract = load_json(contract_path)
+    profile = str(contract.get("execution_profile") or "")
+    if profile not in {"inline_tdd", "inline_readonly"}:
+        return {"required": False, "passed": True, "execution_profile": profile}
+
+    evidence_path = task_dir / "context" / "inline-execution.json"
+    evidence = load_json(evidence_path) if evidence_path.is_file() else {}
+    gates = evidence.get("gates") if isinstance(evidence.get("gates"), dict) else {}
+    required_gates = [
+        str(gate) for gate in contract.get("required_quality_gates") or [] if gate
+    ]
+    missing_gates = [gate for gate in required_gates if gates.get(gate) != "passed"]
+    if evidence.get("execution_profile") != profile:
+        missing_gates.insert(0, f"execution_profile={profile}")
+
+    if missing_gates:
+        raise SystemExit(
+            "STATUS: blocked\n"
+            "BLOCKER: inline_execution_incomplete\n"
+            "DETAIL: inline execution evidence is missing or incomplete: "
+            + ", ".join(missing_gates)
+            + ".\n"
+            "NEXT: complete the required inline gates and record them in "
+            "context/inline-execution.json."
+        )
+
+    return {
+        "required": True,
+        "passed": True,
+        "execution_profile": profile,
+        "evidence_path": str(evidence_path),
+        "verified_gates": required_gates,
+    }
+
+
 def enforce_skill_load_gate(args: argparse.Namespace, task_dir: Path, register: dict) -> dict:
     task = register.get("task", "")
     host_bridge_status = str(register.get("host_bridge_status") or "")
@@ -2176,6 +2276,40 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     )
     if not required:
         return {"required": False, "passed": True, "bypassed": False}
+
+    inline_gate = enforce_inline_execution_gate(args, task_dir)
+    if inline_gate.get("required") and inline_gate.get("passed"):
+        evidence_path = str(inline_gate.get("evidence_path") or "")
+        return {
+            "required": True,
+            "passed": True,
+            "bypassed": False,
+            "execution_profile": inline_gate.get("execution_profile"),
+            "pipeline_passed": True,
+            "pipeline_gate": {
+                "passed": True,
+                "mode": inline_gate.get("execution_profile"),
+                "failures": [],
+                "hard_failures": [],
+                "soft_failures": [],
+            },
+            "tdd_evidence_paths": [evidence_path] if evidence_path else [],
+            "red_phase_evidence_paths": [evidence_path] if evidence_path else [],
+            "refactor_phase_evidence_paths": [evidence_path] if evidence_path else [],
+            "review_evidence_paths": [evidence_path] if evidence_path else [],
+            "tdd_exception_paths": [],
+            "tdd_outcome_source": "inline_execution",
+            "review_outcome_source": "inline_diff_review",
+            "red_phase_passed": True,
+            "green_phase_passed": True,
+            "refactor_phase_passed": True,
+            "red_phase_advisory": False,
+            "refactor_phase_advisory": False,
+            "red_phase_source": "inline_execution",
+            "refactor_phase_source": "inline_execution",
+            "contradiction": False,
+            "trace_evidence": {},
+        }
 
     evidence_paths = list(args.evidence) + list(args.quality_evidence)
     status = quality_evidence_status(task_dir, evidence_paths)
@@ -2657,6 +2791,10 @@ def repair(args: argparse.Namespace) -> dict:
     original_host_bridge_status = str(register.get("host_bridge_status") or "")
     quality_gate = enforce_quality_gate(args, task_dir, register)
     specialist_gate = enforce_specialist_dispatch_gate(args, task_dir, register)
+    inline_execution_gate = enforce_inline_execution_gate(args, task_dir)
+    current_session_execution_gate = enforce_current_session_execution_gate(
+        args, task_dir, specialist_gate
+    )
     required_capability_gate = enforce_required_capability_gate(args, task_dir, register, specialist_gate)
     commit_specialist_gate = enforce_commit_specialist_gate(args, task_dir, register, specialist_gate)
     skill_load_gate = enforce_skill_load_gate(args, task_dir, register)
@@ -2712,6 +2850,8 @@ def repair(args: argparse.Namespace) -> dict:
         "memory_context_reused": args.reused_memory_context,
         "quality_gate": quality_gate,
         "specialist_dispatch_gate": specialist_gate,
+        "inline_execution_gate": inline_execution_gate,
+        "current_session_execution_gate": current_session_execution_gate,
         "required_capability_gate": required_capability_gate,
         "commit_specialist_gate": commit_specialist_gate,
         "skill_load_gate": skill_load_gate,

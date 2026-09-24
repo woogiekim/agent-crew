@@ -67,11 +67,115 @@ AGENT_LAYER_SCOPES = {
     "system": "agent-crew가 제공하는 기본값",
 }
 VARIANT_STRATEGIES = ("minimal", "balanced", "structural")
+CURRENT_SESSION_PROFILE_SIGNALS = (
+    (
+        "explicit_full_crew",
+        re.compile(
+            r"\b(?:full[-_ ]?crew|all[-_ ]?agents?|multi[-_ ]?agent)|"
+            r"전체\s*(?:crew|에이전트)|다중\s*에이전트",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "multi_repository",
+        re.compile(
+            r"\b(?:multi|cross)[-_ ]?repo(?:sitory|s)?\b|"
+            r"여러\s*저장소|다중\s*저장소|교차\s*저장소",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "external_write",
+        re.compile(
+            r"\b(?:push|deploy|release|publish|rollback)|"
+            r"원격\s*(?:변경|반영)|배포|릴리스|롤백",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "explicit_parallelism",
+        re.compile(r"\bparallel(?:ize|ism)?\b|병렬", re.IGNORECASE),
+    ),
+)
 
 
 def utc_now_z() -> str:
     """Return the progress-buffer timestamp format used by supervisor."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def current_session_execution_profile(
+    task: str, mutation_scope: str = "workspace_write"
+) -> tuple[str, list[str]]:
+    signals = [
+        signal
+        for signal, pattern in CURRENT_SESSION_PROFILE_SIGNALS
+        if pattern.search(task)
+    ]
+    if signals:
+        return "full_crew", signals
+    if mutation_scope == "read_only":
+        return "inline_readonly", signals
+    return "inline_tdd", signals
+
+
+def current_session_execution_contract(
+    task_id: str,
+    created_at: str,
+    task: str = "",
+    mutation_scope: str = "workspace_write",
+) -> dict:
+    """Return the enforceable Codex current-session fallback contract."""
+    execution_profile, profile_signals = current_session_execution_profile(
+        task, mutation_scope
+    )
+    required_quality_gates = [
+        "requirements_sufficiency",
+        "relevant_verification",
+        "inline_diff_review",
+        "structured_closeout",
+    ]
+    if execution_profile == "inline_tdd":
+        required_quality_gates.insert(1, "focused_red_green_refactor")
+    return {
+        "schema_version": 1,
+        "task_id": task_id,
+        "created_at": created_at,
+        "execution_mode": "inline_supervisor",
+        "execution_profile": execution_profile,
+        "profile_signals": profile_signals,
+        "top_level_supervisor_spawn_allowed": False,
+        "subagent_default": "none",
+        "subagent_lifecycle_required": True,
+        "max_wait_seconds_per_call": 60,
+        "max_unchanged_waits": 2,
+        "required_quality_gates": required_quality_gates,
+        "runtime_escalation_allowed": True,
+        "runtime_escalation_reasons": [
+            "scope_ambiguity",
+            "cross_repository_dependency",
+            "parallelizable_independent_units",
+            "external_write",
+            "high_risk_or_hard_to_reverse",
+        ],
+    }
+
+
+def write_current_session_execution_contract(
+    task_dir: Path,
+    task_id: str,
+    created_at: str,
+    task: str = "",
+    mutation_scope: str = "workspace_write",
+) -> Path:
+    path = task_dir / "context" / "current-session-execution.json"
+    write_json(
+        path,
+        current_session_execution_contract(
+            task_id, created_at, task, mutation_scope
+        ),
+    )
+    return path
 
 
 def redact(text: str) -> str:
@@ -3124,6 +3228,9 @@ def command_run(args: argparse.Namespace) -> int:
         write_json(task_dir / "context" / "host-bridge-invocation.json", bridge_record)
         if host_bridge_current_session_required(bridge_record):
             now = utc_now_z()
+            write_current_session_execution_contract(
+                task_dir, task_id, now, task, mutation_scope
+            )
             current_next = host_bridge_current_session_next_line(task_dir, task_id)
             register.update(
                 {

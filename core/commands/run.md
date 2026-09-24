@@ -3154,7 +3154,27 @@ use this sequence:
 3. In current-session fallback runs, `HOST_BRIDGE: current_session_required`
    means the host adapter requires the current host session to continue the
    handoff; no background bridge is still running. Continue from `handoff.md` in
-   the current host session, then repair after completion.
+   the current host session, then repair after completion. The current host
+   session is the supervisor for the pinned plan. It must not spawn or select a
+   second top-level `supervisor` child.
+   - Read `context/current-session-execution.json`. The runtime selects
+     `inline_tdd` for a simple local mutation, `inline_readonly` for a simple
+     read-only task, and `full_crew` when the input explicitly requires full
+     crew, multiple repositories, parallel work, or external writes.
+   - For an inline profile, execute in the current session with no requirements,
+     brainstorm, analyst, planner, test-writer, or reviewer child turns. Preserve
+     their quality contracts through the `required_quality_gates` list and
+     record completed gates in `context/inline-execution.json`.
+   - If execution discovers scope ambiguity, cross-repository dependencies,
+     useful parallel units, an external write, or hard-to-reverse risk, escalate
+     to `full_crew` and record the reason. Delegate only independently bounded
+     units that materially benefit from a child agent.
+   - For every selected child, write lifecycle evidence under
+     `context/stage-lifecycle/` through `terminal_completed` and
+     `parent_resumed`. Bound each wait by `max_wait_seconds_per_call`; after
+     `max_unchanged_waits` unchanged waits, inspect or interrupt that exact
+     child instead of polling again. Completion repair rejects nested supervisor
+     selection and incomplete child lifecycle evidence.
    - During current-session closeout, relay the same summary contract before
      `crew repair <TASK_ID> --status completed` or before the final user
      response. Do not replace the structured closeout with a plain prose-only
@@ -3172,8 +3192,9 @@ use this sequence:
      state where applicable. If no merge, push, deploy, or production-code
      change occurred, say that explicitly in the corresponding block.
    - Before executing any task work, re-apply the same specialist dispatch
-     contract the supervisor would have applied: select the appropriate
-     agent/user-agent and required agent skill(s) for the normalized task.
+     contract: the selected top-level agent is the inline current-session
+     supervisor; select only the appropriate user-agent and required agent
+     skill(s) for the normalized task.
      This is a general fallback invariant, not a commit/deploy-specific rule.
    - If a concrete user agent or dispatcher skill is available for the task
      axis, use it or load its instructions before acting. Do not substitute

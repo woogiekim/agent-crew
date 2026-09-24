@@ -1151,6 +1151,7 @@ assert_not_contains "${out}" "BLOCKER:"
 CURRENT_SESSION_RUN_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 CURRENT_SESSION_RUN_REGISTER=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/register.json")
 CURRENT_SESSION_RUN_INVOCATION=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/context/host-bridge-invocation.json")
+CURRENT_SESSION_RUN_CONTRACT=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/context/current-session-execution.json")
 CURRENT_SESSION_RUN_HANDOFF=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/handoff.md")
 CURRENT_SESSION_RUN_RESULT=$(cat "${CURRENT_SESSION_RUN_TASK_DIR}/result.md")
 assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"current_phase": "handoff_ready"'
@@ -1160,6 +1161,11 @@ assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"mutation_scope": "read_only"
 assert_contains "${CURRENT_SESSION_RUN_REGISTER}" '"blocked_by": []'
 assert_contains "${CURRENT_SESSION_RUN_INVOCATION}" '"failure_class": "current_session_required"'
 assert_contains "${CURRENT_SESSION_RUN_INVOCATION}" '"status": "current_session_required"'
+assert_contains "${CURRENT_SESSION_RUN_CONTRACT}" '"execution_mode": "inline_supervisor"'
+assert_contains "${CURRENT_SESSION_RUN_CONTRACT}" '"execution_profile": "inline_readonly"'
+assert_contains "${CURRENT_SESSION_RUN_CONTRACT}" '"top_level_supervisor_spawn_allowed": false'
+assert_contains "${CURRENT_SESSION_RUN_CONTRACT}" '"subagent_default": "none"'
+assert_contains "${CURRENT_SESSION_RUN_CONTRACT}" '"max_unchanged_waits": 2'
 assert_contains "${CURRENT_SESSION_RUN_HANDOFF}" "MUTATION_SCOPE: read_only"
 assert_contains "${CURRENT_SESSION_RUN_RESULT}" "STATUS: handoff_ready"
 assert_contains "${CURRENT_SESSION_RUN_RESULT}" "HOST_BRIDGE: current_session_required"

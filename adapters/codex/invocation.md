@@ -217,8 +217,13 @@ When the bridge is invoked from an already-active Codex session, it fails fast
 instead of launching a nested `codex exec` process. Nested Codex sessions do not
 provide reliable completion signals in this adapter path, so the runtime keeps
 the existing handoff/request state resumable and tells the operator to continue
-from the current host session. Set `AGENT_CREW_CODEX_ALLOW_NESTED=1` only for
-explicit debugging or test fixtures.
+from the current host session. For `crew:run`, that current session becomes the
+inline supervisor and must not spawn a second top-level supervisor. Bounded
+local mutations use the `inline_tdd` profile; bounded read-only work uses
+`inline_readonly`. Both keep agent-crew state and quality evidence while
+avoiding separate role turns. Any selected child requires terminal and
+parent-resume lifecycle evidence before completion repair. Set
+`AGENT_CREW_CODEX_ALLOW_NESTED=1` only for explicit debugging or test fixtures.
 
 The core runtime bounds bridge execution. Workflow handoffs use
 `AGENT_CREW_BRIDGE_TIMEOUT_SECONDS=1800` by default, and direct-agent handoffs

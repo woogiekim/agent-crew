@@ -24,7 +24,9 @@ crew:run
    Do not auto-load non-agent-crew or third-party host/plugin skills from
    trigger-description matches during agent-crew execution.
 4. Follow the command definition exactly, including mandatory requirements collection.
-5. Delegate execution to supervisor as defined by the command.
+5. Delegate execution to supervisor as defined by the command. In the
+   current-session fallback, the current Codex session itself is that
+   supervisor; do not spawn a second top-level supervisor.
 
 ## Workflow Origin vs Target Scope
 
@@ -37,19 +39,47 @@ wording is present.
 ## Current-Session Fallback
 
 When `crew:run` returns `HOST_BRIDGE: current_session_required`, continue from
-the printed `handoff.md` in the current Codex session. Before doing any task
-work, re-apply specialist selection: choose the appropriate agent/user-agent,
-subagent(s), and agent skill(s) for the normalized task. This is a general
-dispatch requirement for all task axes. It is not limited to commits, deploys,
-or any single operation.
+the printed `handoff.md` in the current Codex session. The current session is
+the supervisor for the pinned plan. Never spawn or select another top-level
+`supervisor` child in this mode. Execute bounded work inline by default; the
+default selected subagent set is empty. Before doing any task work, re-apply
+specialist and skill selection for the normalized task. Select a child agent
+only when it owns an independently bounded unit that materially benefits from
+delegation.
+
+Read `{TASK_DIR}/context/current-session-execution.json` and obey its wait and
+lifecycle bounds. Its `execution_profile` is authoritative:
+
+- `inline_tdd`: keep the whole simple implementation in the current session;
+  do not spawn requirements, brainstorm, analyst, planner, test-writer, or
+  reviewer children. Perform the listed quality gates inline.
+- `inline_readonly`: perform the read-only investigation and inline review in
+  the current session without manufacturing a TDD cycle.
+- `full_crew`: delegate only the independently bounded specialist units needed
+  by the pinned plan. The current session still remains the top-level
+  supervisor.
+
+For an inline profile, record every `required_quality_gates` entry as `passed`
+in `{TASK_DIR}/context/inline-execution.json`. Do not mark a gate passed without
+its real test, diff, or task evidence. If scope ambiguity, cross-repository
+dependencies, useful parallel units, external writes, or hard-to-reverse risk
+are discovered, escalate to `full_crew` and record the reason instead of
+continuing with an invalid inline profile.
+
+Every selected child must have a lifecycle record under
+`{TASK_DIR}/context/stage-lifecycle/` that reaches `terminal_completed` and
+`parent_resumed`. A bounded wait may not exceed `max_wait_seconds_per_call`.
+After `max_unchanged_waits` unchanged waits, inspect or interrupt the exact
+child instead of polling indefinitely. Completion repair rejects a nested
+supervisor and any selected child without terminal and parent-resume evidence.
 
 Record the selection in `{TASK_DIR}/context/specialist-dispatch.md` when
 available before manual execution. Include `selected_agent`, `selection_reason`,
 and `execution_mode`; include any applicable `selected_user_agent`,
 `selected_subagents`, and `selected_skill` / `selected_skills` entries. Missing
 or incomplete dispatch coverage is reported as an advisory gap during repair.
-If no specialist exists, state why and proceed through the regular
-supervisor/planner path rather than inventing an ad hoc shortcut.
+For an inline profile, the absence of child specialists is intentional rather
+than a dispatch gap. Execute the pinned plan as the current-session supervisor.
 
 Load only applicable agent-crew skills before acting and record the exact loaded
 skill path(s) in `{TASK_DIR}/context/skill-load.md` or
@@ -95,4 +125,6 @@ completed may reject missing runtime quality-loop outcomes or high-risk hard
 blockers, but standard-risk missing phase-note artifacts are advisory coverage
 gaps.
 
-Do not implement directly, run generic verification, inspect the repository as a substitute, or duplicate supervisor logic in this skill.
+Outside the current-session fallback, do not implement directly or duplicate
+supervisor logic in this skill. Inside the fallback, execute only the already
+pinned plan as the inline supervisor; do not re-plan or widen scope.
