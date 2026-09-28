@@ -32,9 +32,33 @@ cat > "${ACHOME}/user/agents/scout.md" <<'MD'
 ---
 name: scout
 description: User scout agent
-model: inherit
+model: claude-sonnet-5
 ---
 Use the user-owned scout instructions.
+MD
+cat > "${ACHOME}/user/agents/auditor.md" <<'MD'
+---
+name: auditor
+description: User auditor agent
+model: claude-opus-4-8
+---
+Use the user-owned auditor instructions.
+MD
+cat > "${ACHOME}/user/agents/researcher.md" <<'MD'
+---
+name: researcher
+description: User researcher agent
+model: claude-fable-5
+---
+Use the user-owned researcher instructions.
+MD
+cat > "${ACHOME}/user/agents/formatter.md" <<'MD'
+---
+name: formatter
+description: User formatter agent
+model: claude-haiku-4-5
+---
+Use the user-owned formatter instructions.
 MD
 cat > "${ACHOME}/user/agents/my-custom.md" <<'MD'
 ---
@@ -125,7 +149,15 @@ assert_file_exists "${CODEX_HOME}/agents/scout.toml"
 scout_toml="$(cat "${CODEX_HOME}/agents/scout.toml")"
 assert_contains "${scout_toml}" "Codex adapter bootstrap for an agent-crew user agent"
 assert_contains "${scout_toml}" "Use the user-owned scout instructions."
-assert_not_contains "${scout_toml}" 'model = "inherit"'
+assert_contains "${scout_toml}" 'model = "gpt-6-sol"'
+
+it "global Codex user agents map Claude frontier models to supported Codex models"
+auditor_toml="$(cat "${CODEX_HOME}/agents/auditor.toml")"
+assert_contains "${auditor_toml}" 'model = "gpt-6-astra"'
+researcher_toml="$(cat "${CODEX_HOME}/agents/researcher.toml")"
+assert_contains "${researcher_toml}" 'model = "gpt-6-astra"'
+formatter_toml="$(cat "${CODEX_HOME}/agents/formatter.toml")"
+assert_contains "${formatter_toml}" 'model = "gpt-6-luna"'
 
 it "global Codex agents prune stale managed user agents"
 assert_file_absent "${CODEX_HOME}/agents/old-user.toml"
