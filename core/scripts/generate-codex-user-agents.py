@@ -9,6 +9,12 @@ from pathlib import Path
 
 
 MANAGED_MARKER = "# This is a Codex adapter bootstrap for an agent-crew user agent."
+CODEX_MODEL_EQUIVALENTS = {
+    "claude-fable-5": "gpt-6-astra",
+    "claude-opus-4-8": "gpt-6-astra",
+    "claude-sonnet-5": "gpt-6-sol",
+    "claude-haiku-4-5": "gpt-6-luna",
+}
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -59,6 +65,8 @@ def render_toml(source_path: Path) -> tuple[str, str, str]:
     nickname_candidates = (frontmatter.get("nickname_candidates") or "").strip()
     if model.lower() == "inherit":
         model = ""
+    else:
+        model = CODEX_MODEL_EQUIVALENTS.get(model, model)
 
     toml_name = codex_agent_name(name)
     description_escaped = description.replace("\\", "\\\\").replace('"', '\\"')

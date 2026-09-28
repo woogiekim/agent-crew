@@ -133,6 +133,13 @@ sandbox_mode = fm.get('sandbox_mode', '').strip()
 nickname_candidates = fm.get('nickname_candidates', '').strip()
 if model.lower() == 'inherit':
     model = ''
+else:
+    model = {
+        'claude-fable-5': 'gpt-6-astra',
+        'claude-opus-4-8': 'gpt-6-astra',
+        'claude-sonnet-5': 'gpt-6-sol',
+        'claude-haiku-4-5': 'gpt-6-luna',
+    }.get(model, model)
 
 if not description:
     description = f'User agent: {name}'
