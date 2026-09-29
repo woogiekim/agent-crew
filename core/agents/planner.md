@@ -406,14 +406,13 @@ If the decision is unclear, conservatively include more agents.
 
 #### Mandatory TDD implementation stages
 
-A stage entry may be encoded as `{ "agents": [...], "tdd_parallel":
-true }` instead of the bare-string / bare-array form. When set, the
-supervisor co-spawns `test-writer` alongside the implementation agent
-in a single parallel host dispatch, halving the critical path for that
-stage pair. See `core/rules/state-files/pipeline-json.md` § TDD
-parallel stage form for the schema.
+A stage entry must encode TDD ownership as `{ "agents": [...], "tdd_mode":
+"inline" }` instead of the bare-string / bare-array form. Use
+`sequential_pair` only when a separate test-writer must complete Red before the
+implementer starts. Use `isolated_parallel` only with verified distinct
+worktrees. See `core/rules/state-files/pipeline-json.md` § TDD mode stage form.
 
-Set `tdd_parallel: true` for every code implementation stage (backend,
+Set a valid `tdd_mode` for every code implementation stage (backend,
 frontend, or a generic implementer custom agent). For mutating code
 work this is not an optimization knob; it is the pipeline's quality
 contract: implementation runs with a TDD partner, then reviewer output

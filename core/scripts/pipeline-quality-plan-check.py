@@ -91,9 +91,11 @@ from quality_loop_lib import (
     is_tdd_capable_stage,
     load_json,
     looks_mutating_task,
+    native_execution_profile,
     pipeline_shape,
     stage_agents,
     stage_implementer_agents,
+    stage_tdd_mode,
 )
 
 
@@ -403,11 +405,12 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
     stages = pipeline.get("stages") or []
     shape = pipeline_shape(pipeline)
     code_task = looks_code_implementation_task(task_text)
-    required = looks_mutating_task(task_text) and (code_task or shape["has_implementation_stage"])
+    minimal_change_required = looks_mutating_task(task_text) and code_task
+    required = shape["has_implementation_stage"] or minimal_change_required
 
     minimal_change = validate_minimal_change_decision_context(
         pipeline,
-        required,
+        minimal_change_required,
         shape,
     )
     no_code_route = bool(
@@ -456,18 +459,44 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
 
             agents = stage_agents(stage)
             implementers = stage_implementer_agents(stage)
+            tdd_mode = stage_tdd_mode(stage)
             tdd_capable = is_tdd_capable_stage(stage)
             result = {
                 "stage_index": idx,
                 "agents": agents,
                 "implementers": implementers,
                 "tdd_capable": tdd_capable,
+                "tdd_mode": tdd_mode,
             }
             implementation_stage_results.append(result)
 
             if len(implementers) != 1:
                 failures.append("multi_agent_implementation_stage_must_split_for_tdd")
 
+            raw_tdd_mode = stage.get("tdd_mode") if isinstance(stage, dict) else None
+            if raw_tdd_mode is not None and not tdd_mode:
+                failures.append("invalid_implementation_tdd_mode")
+            if tdd_mode == "isolated_parallel" and not bool(
+                stage.get("isolated_worktrees")
+            ):
+                failures.append("isolated_parallel_without_worktree_isolation")
+            if tdd_mode == "isolated_parallel" and bool(
+                stage.get("isolated_worktrees")
+            ):
+                paths = stage.get("isolated_worktree_paths") or []
+                normalized_paths = (
+                    {str(path).strip() for path in paths if str(path).strip()}
+                    if isinstance(paths, list)
+                    else set()
+                )
+                if (
+                    not isinstance(paths, list)
+                    or len(paths) < 2
+                    or len(normalized_paths) != len(paths)
+                ):
+                    failures.append(
+                        "isolated_parallel_without_distinct_worktree_paths"
+                    )
             if not tdd_capable:
                 failures.append("implementation_stage_without_tdd_parallel")
 
@@ -482,6 +511,7 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
 
     failures.extend(minimal_change["failures"])
 
+    execution_profile = native_execution_profile(pipeline)
     return {
         "passed": not failures,
         "required": required,
@@ -491,6 +521,8 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
         "mutation_scope": mutation_scope,
         "read_only_violations": read_only_violations,
         "pipeline_shape": shape,
+        "execution_profile": execution_profile["profile"],
+        "execution_profile_reasons": execution_profile["reasons"],
         "implementation_stages": implementation_stage_results,
         "minimal_change_decision": minimal_change,
     }

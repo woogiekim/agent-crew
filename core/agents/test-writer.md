@@ -2,10 +2,9 @@
 name: test-writer
 description: >
   TRIGGER when: the supervisor enters a stage whose pipeline.json entry has
-  `tdd_parallel: true`. The supervisor spawns test-writer in parallel with the
-  implementation agent (backend / frontend / generic implementer) so test
-  authoring and implementation share the same critical-path budget.
-  SKIP when: no stage in the pipeline carries `tdd_parallel: true`, or the
+  `tdd_mode: sequential_pair` or an isolated `tdd_mode: isolated_parallel`.
+  In sequential mode, test-writer completes before the implementer starts.
+  SKIP when: no stage selects either mode, or the
   task is non-code work with no implementation stage.
   Output: context/test-checklist.md, context/test-checklist-review.md,
   test files under the project's test directory (per project convention),
@@ -16,12 +15,12 @@ model: inherit
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-# Test Writer (TDD parallel partner)
+# Test Writer (TDD Red owner)
 
 Writes unit / integration tests for an upcoming implementation, derived
-purely from the planner's spec. Runs in parallel with the implementation
-agent — this is the entire point of the role, so the supervisor's TDD
-parallel critical-path budget is half of the sequential equivalent.
+purely from the planner's spec. In `sequential_pair`, it returns tested Red
+evidence before the implementation agent starts. Parallel execution is allowed
+only in `isolated_parallel` with verified distinct worktree paths.
 
 **Domain behavior gate.** Tests must follow this order:
 requirements analysis -> test checklist derivation -> checklist-only review -> test code generation -> TC-ID mapping verification.
@@ -35,7 +34,7 @@ behavior coverage.
 
 **Hard rule — spec only.** This agent reads the planner's spec
 (`analysis.md`, `prd.md`, `pipeline.json`, `handoff.md`). It MUST NOT
-read the implementation code being written in parallel. Tests are
+read implementation code. Tests are
 derived purely from the contract — that is the entire TDD discipline
 this agent enforces.
 

@@ -134,6 +134,272 @@ def test_plan_checker_accepts_read_only_agents_in_read_only_execution(tmp_path: 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["passed"] is True
+    assert payload["execution_profile"] == "inline_readonly"
+
+
+def test_plan_checker_selects_single_agent_tdd_after_scope_resolution(tmp_path: Path):
+    path = write_pipeline(tmp_path, _passing_pipeline())
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["execution_profile"] == "single_agent_tdd"
+    assert payload["execution_profile_reasons"] == ["one_cohesive_implementation_stage"]
+
+
+def test_plan_checker_keeps_multiple_implementation_stages_on_full_crew(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"] = [
+        {"agents": ["backend"], "tdd_parallel": True},
+        "reviewer",
+        {"agents": ["frontend"], "tdd_parallel": True},
+        "reviewer",
+    ]
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["execution_profile"] == "full_crew"
+    assert "multiple_implementation_stages" in payload["execution_profile_reasons"]
+
+
+def test_plan_checker_keeps_independent_fanout_units_on_full_crew(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0]["parallelizable_units"] = [
+        {"id": "api", "files": ["api.py"], "brief": "API"},
+        {"id": "worker", "files": ["worker.py"], "brief": "worker"},
+    ]
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["execution_profile"] == "full_crew"
+    assert "independent_parallel_units" in payload["execution_profile_reasons"]
+
+
+def test_plan_checker_keeps_external_side_effect_stage_on_full_crew(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"].extend([["devops"], ["reviewer"]])
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["execution_profile"] == "full_crew"
+    assert "external_side_effect_stage" in payload["execution_profile_reasons"]
+
+
+def test_plan_checker_accepts_inline_tdd_mode(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0] = {"agents": ["backend"], "tdd_mode": "inline"}
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["implementation_stages"][0]["tdd_mode"] == "inline"
+
+
+def test_plan_checker_accepts_sequential_pair_tdd_mode(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0] = {
+        "agents": ["backend"],
+        "tdd_mode": "sequential_pair",
+    }
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["implementation_stages"][0]["tdd_mode"] == "sequential_pair"
+
+
+def test_plan_checker_normalizes_legacy_tdd_parallel_to_sequential_pair(tmp_path: Path):
+    path = write_pipeline(tmp_path, _passing_pipeline())
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["implementation_stages"][0]["tdd_mode"] == "sequential_pair"
+
+
+def test_plan_checker_rejects_unknown_tdd_mode(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0] = {"agents": ["backend"], "tdd_mode": "turbo"}
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "invalid_implementation_tdd_mode" in payload["failures"]
+
+
+def test_plan_checker_requires_isolation_for_parallel_tdd_mode(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0] = {
+        "agents": ["backend"],
+        "tdd_mode": "isolated_parallel",
+    }
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "isolated_parallel_without_worktree_isolation" in payload["failures"]
+
+
+def test_plan_checker_requires_distinct_paths_for_isolated_parallel(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0] = {
+        "agents": ["backend"],
+        "tdd_mode": "isolated_parallel",
+        "isolated_worktrees": True,
+        "isolated_worktree_paths": ["/tmp/shared", "/tmp/shared"],
+    }
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "isolated_parallel_without_distinct_worktree_paths" in payload["failures"]
+
+
+def test_plan_checker_accepts_isolated_parallel_with_distinct_paths(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["stages"][0] = {
+        "agents": ["backend"],
+        "tdd_mode": "isolated_parallel",
+        "isolated_worktrees": True,
+        "isolated_worktree_paths": ["/tmp/test-writer", "/tmp/implementer"],
+    }
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 0
+
+
+def test_ticket_only_task_still_validates_resolved_implementation_stage(tmp_path: Path):
+    pipeline = _passing_pipeline()
+    pipeline["task"] = "ENRTC-1400"
+    pipeline["stages"][0] = {
+        "agents": ["backend"],
+        "tdd_mode": "isolated_parallel",
+        "isolated_worktrees": True,
+    }
+    path = write_pipeline(tmp_path, pipeline)
+
+    result = run_checker(path)
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["required"] is True
+    assert payload["minimal_change_decision"]["required"] is False
+    assert "isolated_parallel_without_distinct_worktree_paths" in payload["failures"]
+
+
+def test_supervisor_contract_uses_safe_tdd_modes_without_same_worktree_cospawn():
+    stages = (REPO_ROOT / "core" / "agents" / "supervisor-stages.md").read_text(
+        encoding="utf-8"
+    )
+    pipeline_schema = (
+        REPO_ROOT / "core" / "rules" / "state-files" / "pipeline-json.md"
+    ).read_text(encoding="utf-8")
+    planner = (
+        REPO_ROOT / "core" / "agents" / "skills" / "pipeline-planning.md"
+    ).read_text(encoding="utf-8")
+    analyst = (REPO_ROOT / "core" / "agents" / "analyst.md").read_text(
+        encoding="utf-8"
+    )
+    test_writer = (REPO_ROOT / "core" / "agents" / "test-writer.md").read_text(
+        encoding="utf-8"
+    )
+
+    for mode in ("inline", "sequential_pair", "isolated_parallel"):
+        assert mode in stages
+        assert mode in pipeline_schema
+        assert mode in planner
+
+    assert "co-spawns `test-writer`" not in pipeline_schema
+    assert "both agents in one host message" not in stages
+    assert "final Green" in stages
+    assert '"tdd_mode": "inline"' in analyst
+    assert "test-writer completes before the implementer starts" in test_writer
+    assert "spawns test-writer in parallel" not in test_writer
+
+
+def test_pipeline_schema_declares_tdd_modes_and_legacy_safe_mapping():
+    schema = json.loads(
+        (REPO_ROOT / "core" / "schemas" / "pipeline.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    stage_object = schema["properties"]["stages"]["items"]["oneOf"][2]
+    properties = stage_object["properties"]
+
+    assert properties["tdd_mode"]["enum"] == [
+        "inline",
+        "sequential_pair",
+        "isolated_parallel",
+    ]
+    assert properties["isolated_worktrees"]["type"] == "boolean"
+    assert "sequential_pair" in properties["tdd_parallel"]["description"]
+
+
+def test_supervisor_bootstrap_persists_resolved_execution_profile():
+    bootstrap = (
+        REPO_ROOT / "core" / "agents" / "supervisor-bootstrap.md"
+    ).read_text(encoding="utf-8")
+
+    assert "pipeline-quality-plan.json" in bootstrap
+    assert 'p["execution_profile"] = profile["execution_profile"]' in bootstrap
+    assert "single_agent_tdd" in bootstrap
+
+
+def test_single_agent_profile_only_overrides_implementation_stage_modes():
+    stages = (REPO_ROOT / "core" / "agents" / "supervisor-stages.md").read_text(
+        encoding="utf-8"
+    )
+    bootstrap = (
+        REPO_ROOT / "core" / "agents" / "supervisor-bootstrap.md"
+    ).read_text(encoding="utf-8")
+
+    guard = "p.get('execution_profile') == 'single_agent_tdd' and mode != 'none'"
+    assert guard in stages
+    assert guard in bootstrap
+
+
+def test_inline_dispatch_skips_checklist_and_fanout_consumes_tdd_mode():
+    stages = (REPO_ROOT / "core" / "agents" / "supervisor-stages.md").read_text(
+        encoding="utf-8"
+    )
+    tdd_section = stages.split("### TDD Mode Dispatch", 1)[1].split(
+        "### Sub-Task Fan-Out Dispatch", 1
+    )[0]
+    fanout_section = stages.split("### Sub-Task Fan-Out Dispatch", 1)[1].split(
+        "### Streaming Review Dispatch", 1
+    )[0]
+
+    assert "inline skips checklist and checklist review" in tdd_section
+    assert "STAGE_TDD_PARALLEL ==" not in tdd_section
+    assert tdd_section.index("inline skips checklist and checklist review") < tdd_section.index(
+        "MODE=checklist"
+    )
+    assert "STAGE_TDD_MODE == sequential_pair" in fanout_section
+    assert "STAGE_TDD_PARALLEL == 1" not in fanout_section
+    assert "final Green after integrated fan-out changes" in fanout_section
 
 
 def test_plan_checker_accepts_read_only_supervisor_bootstrap_stage(tmp_path: Path):

@@ -168,7 +168,7 @@ prior run's Phase 3 close-out (see `core/rules/memory-governance.md`
 `task_shape` matches the current task, treat its `recall_hint` as a
 **deterministic plan-shaping hint** when you build `pipeline.json`:
 
-- Prefer `{ "agents": [...], "tdd_parallel": true }` for the recurring
+- Prefer `{ "agents": [...], "tdd_mode": "inline" }` for the recurring
   implementation stage the memo flagged.
 - Retain the solo `["reviewer"]` stage (never drop it on the memo's advice).
 - Widen planned test coverage for the surface the memo identified as repeatedly
@@ -191,7 +191,7 @@ Treat every recalled candidate as **advisory input only**, never ground truth:
 
 - A candidate may inform your `analysis.md` risk table (e.g. add a row noting a
   surface that has been reviewer-rejected before) and may suggest pipeline
-  shape adjustments to the planner step (e.g. `tdd_parallel: true`, widened
+  shape adjustments to the planner step (e.g. `tdd_mode: "inline"`, widened
   test coverage).
 - A candidate may **not** remove the reviewer stage, shorten the quality loop,
   skip the TDD red/green/refactor cycle, or bypass the centralized approval
@@ -466,12 +466,12 @@ preserve the TDD contract for code implementation stages.
 
 Rule: If agent B does not read any file that agent A writes within the same stage,
 they may be grouped as a parallel stage unless either agent is a code
-implementer that must run as a single-agent `tdd_parallel` stage.
+implementer that must run as a single-agent `tdd_mode` stage.
 
 Default grouping:
 - `designer` may run before code implementation to produce `design-spec.md`.
 - Backend/frontend/custom code implementers each get their own
-  `{ "agents": ["..."], "tdd_parallel": true }` stage.
+  `{ "agents": ["..."], "tdd_mode": "inline" }` stage by default.
 - Any two non-code agents that write to different output files and do not consume
   each other's output within the same stage round may run together.
 
@@ -484,21 +484,21 @@ Always sequential (never group with others in the same stage):
   `["reviewer"]`. Never group reviewer with others. Omitting the final
   reviewer after TDD/QA verification is a pipeline composition error.
 
-When uncertain: **prefer parallel**. File-level merge conflicts, if any arise from
-parallel writes, are resolved by the resolver agent — that is its purpose.
-Choosing sequential to avoid conflicts is the wrong trade-off.
+When uncertain, prefer sequential mutation. Parallelize non-code work freely,
+but use `isolated_parallel` for mutating work only when distinct worktree paths
+are proven.
 
 | Request Type | stages |
 |---|---|
-| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
-| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
-| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Backend API / Domain Logic | `[{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Full-stack including UI | `[["designer"], { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
+| UI only (static pages, etc.) | `[["designer"], { "agents": ["frontend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 | CI/CD, infrastructure, IaC, containers | `[["devops"], ["reviewer"]]` |
 | Deployment / release / tagging | `[["devops"], ["reviewer"]]` |
-| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
-| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Feature + deploy (backend with deployment) | `[{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Full-stack + deploy | `[["designer"], { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-002"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
+| User-facing or high-risk QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 | Analysis only | `[]` |
 
 Write `{TASK_DIR}/pipeline.json`:
@@ -556,11 +556,12 @@ route first. The planning-time quality gate rejects implementation stages when
 #### Mandatory TDD implementation stage
 
 Every code implementation stage must be encoded as the object
-`{ "agents": [...], "tdd_parallel": true }` instead of the bare-string
-/ bare-array form. The supervisor then co-spawns `test-writer`
-alongside the implementer in a single parallel host dispatch — see
-`core/agents/supervisor-stages.md` § TDD Parallel Dispatch and
-`core/rules/state-files/pipeline-json.md` § TDD parallel stage form.
+`{ "agents": [...], "tdd_mode": "inline" }` instead of the bare-string
+/ bare-array form. Use `sequential_pair` only when a separate test-writer must
+establish Red before the implementer starts. Use `isolated_parallel` only with
+`isolated_worktrees: true` and distinct worktree paths. See
+`core/agents/supervisor-stages.md` § TDD Mode Dispatch and
+`core/rules/state-files/pipeline-json.md` § TDD mode stage form.
 
 For mutating implementation work, every PRD `AC-*` item must be assigned to at
 least one implementation or QA-verification stage through that stage's
@@ -568,16 +569,16 @@ least one implementation or QA-verification stage through that stage's
 means an unowned Must or acceptance criterion remains outside the implementation
 contract.
 
-Example stages with one TDD parallel stage:
+Example stages with one inline TDD stage:
 
 ```json
 [
-  { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] },
+  { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] },
   ["reviewer"]
 ]
 ```
 
-For implementation tasks, `tdd_parallel: true` is mandatory for each
+For implementation tasks, a valid `tdd_mode` is mandatory for each
 single-agent code implementer stage (backend, frontend, or a custom
 implementer). If the task lacks enough input/output contract for
 test-writer to derive tests, stop in requirements collection or write
@@ -616,12 +617,12 @@ The implementer stage must still satisfy:
 - The project has a detectable test directory (`tests/`, `test/`,
   `spec/`, `__tests__/`, etc.).
 - The stage's `agents` array has length 1 (MVP scope —
-  multi-implementer TDD parallel is not emitted by the planner).
+  multi-implementer TDD stages are not emitted by the planner).
 
 For multi-agent implementation work, split the pipeline into separate
 single-agent code stages instead of writing one combined stage. Example:
-write `["designer"], {"agents":["backend"],"tdd_parallel":true},
-{"agents":["frontend"],"tdd_parallel":true}` rather than
+write `["designer"], {"agents":["backend"],"tdd_mode":"inline"},
+{"agents":["frontend"],"tdd_mode":"inline"}` rather than
 `["designer", "backend"], ["frontend"]`.
 
 The existing bare forms (`"backend"`, `["designer", "backend"]`) remain
@@ -634,7 +635,7 @@ A stage entry may also carry a `parallelizable_units: [...]` array on
 the object form. When the array has length `>= 2`, the supervisor
 spawns one agent-of-`agents[0]` per unit in a single host message
 (mini fan-out within a single supervisor). When absent or length `<= 1`,
-behavior is identical to the bare / TDD-parallel forms — pre-existing
+behavior is identical to the bare / TDD-mode forms — pre-existing
 pipelines are unaffected.
 
 ```json
@@ -653,10 +654,10 @@ units have similar shape. When unsure, default to a single unit. See
 `core/agents/planner.md` § When to set `parallelizable_units` for the
 full criteria, examples, and the pre-flight overlap check.
 
-`tdd_parallel` and `parallelizable_units` are independent flags. The
+`tdd_mode` and `parallelizable_units` are independent fields. The
 truth table for combinations lives in
 `core/rules/state-files/pipeline-json.md` § Interaction with
-`tdd_parallel`. For MVP, prefer setting at most one per stage.
+`tdd_mode`. For MVP, use `isolated_parallel` only with verified worktree isolation.
 
 #### Streaming review opt-in (`streaming_review`)
 
@@ -694,10 +695,10 @@ out, for example:
 - Stages where the trailing stage is not exactly `["reviewer"]`
 
 See `core/agents/planner.md` § When to set `streaming_review` for the
-full criteria, the interaction table with `tdd_parallel` /
+full criteria, the interaction table with `tdd_mode` /
 `parallelizable_units`, and the supervisor's eligibility check.
 
-`streaming_review` is orthogonal to `tdd_parallel` and
+`streaming_review` is orthogonal to `tdd_mode` and
 `parallelizable_units` — the reviewer is added to whatever single host
 message the other flags' dispatch already issues.
 

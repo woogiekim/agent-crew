@@ -278,6 +278,29 @@ while claiming that the configured budget is enforced. Only an explicit
 timeout override of `0` disables the deadline and does not require this
 surface.
 
+After every bounded host wait, run `stage_lifecycle.py observe-wait` with a
+stable fingerprint from the returned
+host status, progress cursor/revision, and verified artifact set. Persist it
+before deciding whether to wait again:
+
+```bash
+python3 "${AGENT_CREW_HOME}/scripts/stage_lifecycle.py" observe-wait \
+  --state "${STAGE_LIFECYCLE_PATH}" \
+  --fingerprint "${HOST_STATUS}:${PROGRESS_REVISION}:${ARTIFACT_FINGERPRINT}" \
+  --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+python3 "${AGENT_CREW_HOME}/scripts/stage_lifecycle.py" decide \
+  --state "${STAGE_LIFECYCLE_PATH}" \
+  --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --host-status "${HOST_STATUS}"
+```
+
+The first fingerprint establishes the baseline. Two consecutive unchanged
+waits produce `action=interrupt_and_inspect`; interrupt the exact child and
+inspect its lifecycle/artifacts instead of polling again. Any fingerprint
+change resets the counter. A terminal result still takes precedence and
+resumes or blocks the parent normally.
+
 `log_progress` is the helper introduced by `supervisor-bootstrap.md`
 Phase 0; `register_update` writes the terminal phase + blocker label
 to `register.json` so external tooling can detect timeout without

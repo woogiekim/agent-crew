@@ -630,19 +630,17 @@ ls "${TASK_DIR}/context/"
 
 Pass information indirectly to the next stage agent through `HANDOFF_PATH`.
 
-### TDD Parallel Dispatch
+### TDD Mode Dispatch
 
-A code implementation stage uses the **TDD parallel** form by encoding itself as
-the object `{ "agents": [...], "tdd_parallel": true }` instead of the
-bare string / bare array forms. The schema doc
-(`core/rules/state-files/pipeline-json.md` § TDD parallel stage form)
-shows the wire shape. The dispatch contract below is what Phase 2 runs
-at stage entry.
+A code implementation stage uses the object
+`{ "agents": [...], "tdd_mode": "inline|sequential_pair|isolated_parallel" }`.
+Legacy `tdd_parallel: true` normalizes to `sequential_pair`. It never
+authorizes concurrent mutation in a shared worktree.
 
 #### Normalization
 
 At the top of each stage iteration, normalize the stage entry into
-five locals — `STAGE_AGENTS`, `STAGE_TDD_PARALLEL`, `STAGE_UNITS_COUNT`,
+five locals — `STAGE_AGENTS`, `STAGE_TDD_MODE`, `STAGE_UNITS_COUNT`,
 `STAGE_STREAMING_REVIEW`, and (for the existing parallel-agents path)
 `STAGE_AGENT` per inner-loop iteration. The units detail itself is
 read from `PIPELINE_PATH` on demand by the Sub-Task Fan-Out path; the
@@ -650,22 +648,24 @@ count suffices to route dispatch.
 
 ```bash
 # Read the current stage entry shape from PIPELINE_PATH and normalize.
-read -r STAGE_AGENTS STAGE_TDD_PARALLEL STAGE_UNITS_COUNT STAGE_STREAMING_REVIEW < <(python3 -c "
+read -r STAGE_AGENTS STAGE_TDD_MODE STAGE_UNITS_COUNT STAGE_STREAMING_REVIEW < <(python3 -c "
 import json
 p = json.load(open('${PIPELINE_PATH}'))
 stage = p['stages'][${i} - 1]
 if isinstance(stage, str):
-    agents = [stage]; tdd = False; units = 0; stream = False
+    agents = [stage]; mode = 'none'; units = 0; stream = False
 elif isinstance(stage, list):
-    agents = stage;   tdd = False; units = 0; stream = False
+    agents = stage;   mode = 'none'; units = 0; stream = False
 elif isinstance(stage, dict):
     agents = stage.get('agents', [])
-    tdd    = bool(stage.get('tdd_parallel', False))
+    mode   = str(stage.get('tdd_mode') or ('sequential_pair' if stage.get('tdd_parallel') else 'none'))
+    if p.get('execution_profile') == 'single_agent_tdd' and mode != 'none':
+        mode = 'inline'
     units  = len(stage.get('parallelizable_units', []) or [])
     stream = bool(stage.get('streaming_review', False))
 else:
-    agents = []; tdd = False; units = 0; stream = False
-print(' '.join(agents), '1' if tdd else '0', units, '1' if stream else '0')
+    agents = []; mode = 'none'; units = 0; stream = False
+print(' '.join(agents), mode, units, '1' if stream else '0')
 ")
 
 # Streaming-review eligibility check: the flag is only honored when the
@@ -703,10 +703,14 @@ Dispatch routing:
 
 - `STAGE_UNITS_COUNT >= 2` selects the **Sub-Task Fan-Out** path
   documented in § Sub-Task Fan-Out Dispatch below. If
-  `STAGE_TDD_PARALLEL == 1` is also set, the combined-mode rule in
+  `STAGE_TDD_MODE` is not `none`, the mode-specific rule in
   that section applies.
-- `STAGE_UNITS_COUNT <= 1` AND `STAGE_TDD_PARALLEL == 1` selects the
-  TDD parallel path below.
+- `STAGE_TDD_MODE == inline` selects one implementer that owns Red through
+  final Green.
+- `STAGE_TDD_MODE == sequential_pair` completes `test-writer` first, then
+  starts the implementer.
+- `STAGE_TDD_MODE == isolated_parallel` requires `isolated_worktrees: true`
+  and distinct worktree paths before parallel dispatch.
 - Both `0` → fall through to the existing Single / Parallel Agents
   paths above — no regression for any pre-existing pipeline.json
   (including every pipeline that predates this feature).
@@ -718,28 +722,33 @@ Dispatch routing:
   consumed: `completed_stages` advances by **2** instead of 1. See §
   Streaming Review Dispatch below for the spawn protocol.
 
-#### Dispatch — checklist preflight, then both agents in one host message
+#### Dispatch — mode-owned Red and final Green
 
-When `STAGE_TDD_PARALLEL == 1`:
+When `STAGE_TDD_MODE` is not `none`:
 
-1. Compose a `test-writer` prompt with `MODE=checklist`. This preflight reads
+`inline skips checklist and checklist review`: dispatch no `test-writer` and no
+checklist reviewer. The implementer owns the focused checklist,
+`test-case-mapping.md`, `test-coverage.md`, Red evidence, production changes,
+final Green, and refactor rerun.
+
+1. For `sequential_pair` and `isolated_parallel`, compose a `test-writer`
+   prompt with `MODE=checklist`. This preflight reads
    only the spec and writes `${TASK_DIR}/context/test-checklist.md`; it must
    not write test code. The expected normal return is
    `CHECKLIST_REVIEW_REQUIRED: true` with `STATUS: completed`; this is a
    non-terminal checklist handoff, not a pipeline blocker.
 
-2. Run `reviewer` with `MODE=test-checklist`. The reviewer performs the
+2. For those two modes only, run `reviewer` with `MODE=test-checklist`. The reviewer performs the
    checklist-only review and writes
    `${TASK_DIR}/context/test-checklist-review.md`. If the verdict is not
    `REVIEW: APPROVED`, re-loop to the checklist preflight. Do not dispatch the
    implementer and do not write tests while a Missing MUST remains.
 
-3. Compose **two** agent prompts (test-writer with `MODE=tests` + each
-   implementer in `STAGE_AGENTS`) using the standard Agent prompt format above.
-   The test-writer prompt carries `STAGE_INDEX` and `IMPLEMENTER_AGENT` inputs
-   so its commit message can reference both, and it must verify that
-   `${TASK_DIR}/context/test-checklist-review.md` is approved before writing
-   tests.
+3. For `inline`, compose only the implementer prompt and require focused Red
+   before production code. For `sequential_pair`, compose and dispatch the
+   test-writer prompt, wait for Red evidence and terminal completion, then
+   compose the implementer prompt. For `isolated_parallel`, first verify
+   `isolated_worktrees: true` and distinct worktree paths.
 
 4. Emit the start event **before** dispatch:
 
@@ -747,11 +756,9 @@ When `STAGE_TDD_PARALLEL == 1`:
    log_progress "STAGE_TDD_PARALLEL_STARTED" "stage=${i} agents=test-writer,${STAGE_AGENTS// /,}"
    ```
 
-5. Issue both Agent tool calls in a **single response** (the host's
-   parallel-spawn semantics — the same convention the existing
-   Parallel Agents path uses). The supervisor's response message
-   contains one Agent call per parallel partner; the host dispatches
-   them concurrently.
+5. Dispatch according to the selected mode. `inline` and `sequential_pair`
+   have at most one active mutating child. Only `isolated_parallel` may issue
+   parallel calls after worktree isolation is verified.
 
    MVP scope: each TDD parallel stage carries exactly one implementer.
    `STAGE_AGENTS` may legally hold more than one entry (the schema
@@ -795,7 +802,8 @@ EOF
    domain behavior coverage and 100% changed-surface coverage evidence for
    the reviewer.
 
-7. Wait for **both** agent calls to return. Per-agent status writes
+7. Wait for the active sequential call to return before starting the next one.
+   For `isolated_parallel`, wait for both isolated calls. Per-agent status writes
    into `pipeline.json.stage_agent_status["${i}"]` use the same
    atomic intermediate-write block documented in § Parallel Agents above
    (tempfile + os.replace — never bare json.dump(open(path, "w"))):
@@ -828,18 +836,18 @@ EOF
      "stage=${i} test_status=${TEST_STATUS} impl_status=${IMPL_STATUS}"
    ```
 
-7. Advance `completed_stages` only when **both** statuses are
-   `completed`. If either is `crashed`, apply the Stage Retry Rule
+7. Advance `completed_stages` only after the implementer's final Green evidence
+   is newer than the last production or test mutation and all required statuses
+   are `completed`. If either is `crashed`, apply the Stage Retry Rule
    (`supervisor-retry.md`) to that agent only — selective retry, do
    not re-spawn the agent that already completed. If either is
    `blocked`, halt the pipeline per the BLOCKED Recovery contract.
 
 #### File-conflict handling
 
-The test-writer writes to the project's test directory; the implementer
-writes to the project's source directory. The two output sets are
-disjoint by convention, so resolver invocation is normally not
-required.
+Source/test directory separation is not isolation: both agents can touch shared
+fixtures and build outputs. Use sequential dispatch unless distinct worktree
+paths have been verified.
 
 If a `git commit` from either agent fails because of a merge conflict
 on the same file (rare — typically only when the implementer creates a
@@ -853,7 +861,7 @@ plumbing change is needed.
 
 #### Sequential-path fall-through
 
-When `STAGE_TDD_PARALLEL == 0` (the absence case — bare string or
+When `STAGE_TDD_MODE == none` (the absence case — bare string or
 bare array stage entries), Phase 2 dispatch is unchanged from the
 behavior documented in § Single Agent and § Parallel Agents above. The
 planning-time quality gate blocks this shape for newly emitted mutating
@@ -1296,18 +1304,16 @@ When `STAGE_UNITS_COUNT >= 2`:
 
 4. Issue all N Agent tool calls in a **single response** — the same
    host parallel-spawn convention used by § Parallel Agents and § TDD
-   Parallel Dispatch above. The supervisor's response message
+   Mode Dispatch above. The supervisor's response message
    contains one Agent call per unit; the host dispatches them
    concurrently.
 
-   Combined mode (`STAGE_TDD_PARALLEL == 1` AND
-   `STAGE_UNITS_COUNT >= 2`): co-spawn **one** `test-writer` in the
-   same response alongside the N implementer units. The test-writer
-   covers the contract that is shared across units. This is the
-   advanced combination documented in
-   `core/rules/state-files/pipeline-json.md` § Interaction with
-   `tdd_parallel`; for MVP the planner is steered toward setting at
-   most one of the two flags per stage.
+   With `STAGE_TDD_MODE == sequential_pair`, dispatch one `test-writer` first
+   and wait for its Red evidence and terminal completion before issuing the N
+   isolated implementer calls. With `isolated_parallel`, the test-writer may
+   join the same response only when its worktree path is also distinct from
+   every unit path. With `inline`, each isolated unit owns its own Red-to-Green
+   cycle and no test-writer is spawned.
 
 5. As each unit returns, record its terminal status in
    `pipeline.json.stage_agent_status` under a composite key
@@ -1345,8 +1351,9 @@ When `STAGE_UNITS_COUNT >= 2`:
    log reader can identify which unit failed without reading
    `pipeline.json`.
 
-7. Advance `completed_stages` only when **every** unit (and, in
-   combined mode, the test-writer) is `completed`. Use the atomic
+7. After integrating completed unit changes, run final Green after integrated fan-out changes
+   in the destination worktree. Advance `completed_stages` only when every
+   required participant is `completed` and that final Green succeeds. Use the atomic
    write helper:
 
    ```python

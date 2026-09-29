@@ -19,6 +19,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 DEFAULT_TERMINAL_GRACE_SECONDS = 30
+DEFAULT_MAX_UNCHANGED_WAITS = 2
 MAX_INHERITED_HISTORY_TURNS = 3
 
 DEFAULT_TIMEOUT_SECONDS = {
@@ -177,6 +178,12 @@ def new_stage_state(
             "subprocess_running": False,
             "last_progress_at": None,
         },
+        "wait_observation": {
+            "fingerprint": None,
+            "unchanged_waits": 0,
+            "max_unchanged_waits": DEFAULT_MAX_UNCHANGED_WAITS,
+            "last_observed_at": None,
+        },
         "events": [
             {
                 "event": "dispatched",
@@ -189,6 +196,33 @@ def new_stage_state(
         "elapsed_seconds": {},
     }
     _refresh_elapsed(state)
+    return state
+
+
+def record_wait_observation(
+    state: dict[str, Any], *, fingerprint: str, at: str
+) -> dict[str, Any]:
+    """Record bounded wait progress and count consecutive unchanged results."""
+    observed_at = _parse_timestamp(at)
+    observation = state.setdefault(
+        "wait_observation",
+        {
+            "fingerprint": None,
+            "unchanged_waits": 0,
+            "max_unchanged_waits": DEFAULT_MAX_UNCHANGED_WAITS,
+            "last_observed_at": None,
+        },
+    )
+    last_observed_at = observation.get("last_observed_at")
+    if last_observed_at and observed_at < _parse_timestamp(last_observed_at):
+        raise ValueError("wait_observation_timestamp_regressed")
+
+    if observation.get("fingerprint") == fingerprint:
+        observation["unchanged_waits"] = int(observation.get("unchanged_waits", 0)) + 1
+    else:
+        observation["fingerprint"] = fingerprint
+        observation["unchanged_waits"] = 0
+    observation["last_observed_at"] = at
     return state
 
 
@@ -306,6 +340,16 @@ def decide_next_action(
         return {
             "action": "interrupt_and_block",
             "reason": "stage_timeout",
+            "retry_allowed": False,
+        }
+
+    wait_observation = state.get("wait_observation", {})
+    if int(wait_observation.get("unchanged_waits", 0)) >= int(
+        wait_observation.get("max_unchanged_waits", DEFAULT_MAX_UNCHANGED_WAITS)
+    ):
+        return {
+            "action": "interrupt_and_inspect",
+            "reason": "unchanged_wait_limit",
             "retry_allowed": False,
         }
 
@@ -513,6 +557,11 @@ def _build_parser() -> argparse.ArgumentParser:
     event_parser.add_argument("--reason", required=True)
     event_parser.add_argument("--event-id", default="")
 
+    wait_parser = subparsers.add_parser("observe-wait")
+    wait_parser.add_argument("--state", type=Path, required=True)
+    wait_parser.add_argument("--fingerprint", required=True)
+    wait_parser.add_argument("--at", required=True)
+
     decide_parser = subparsers.add_parser("decide")
     decide_parser.add_argument("--state", type=Path, required=True)
     decide_parser.add_argument("--now", required=True)
@@ -569,6 +618,16 @@ def main() -> int:
         )
         write_state_atomic(args.state, state)
         print(json.dumps(state, ensure_ascii=False, sort_keys=True))
+        return 0
+
+    if args.command == "observe-wait":
+        record_wait_observation(
+            state,
+            fingerprint=args.fingerprint,
+            at=args.at,
+        )
+        write_state_atomic(args.state, state)
+        print(json.dumps(state["wait_observation"], sort_keys=True))
         return 0
 
     decision = decide_next_action(

@@ -386,6 +386,84 @@ def test_success_case_small_bounded_policy_keeps_tdd_and_independent_review():
     assert policy["independent_review_required"] is True
 
 
+def test_wait_observation_interrupts_after_two_unchanged_results():
+    sut = _state()
+
+    stage_lifecycle.record_wait_observation(
+        sut, fingerprint="running:0", at="2026-09-22T00:00:01Z"
+    )
+    stage_lifecycle.record_wait_observation(
+        sut, fingerprint="running:0", at="2026-09-22T00:00:02Z"
+    )
+    stage_lifecycle.record_wait_observation(
+        sut, fingerprint="running:0", at="2026-09-22T00:00:03Z"
+    )
+
+    decision = stage_lifecycle.decide_next_action(
+        sut,
+        now="2026-09-22T00:00:04Z",
+        host_status="running",
+    )
+
+    assert sut["wait_observation"]["unchanged_waits"] == 2
+    assert decision == {
+        "action": "interrupt_and_inspect",
+        "reason": "unchanged_wait_limit",
+        "retry_allowed": False,
+    }
+
+
+def test_wait_observation_progress_resets_unchanged_counter():
+    sut = _state()
+    stage_lifecycle.record_wait_observation(
+        sut, fingerprint="running:0", at="2026-09-22T00:00:01Z"
+    )
+    stage_lifecycle.record_wait_observation(
+        sut, fingerprint="running:0", at="2026-09-22T00:00:02Z"
+    )
+
+    stage_lifecycle.record_wait_observation(
+        sut, fingerprint="running:1", at="2026-09-22T00:00:03Z"
+    )
+
+    assert sut["wait_observation"]["unchanged_waits"] == 0
+    decision = stage_lifecycle.decide_next_action(
+        sut,
+        now="2026-09-22T00:00:04Z",
+        host_status="running",
+    )
+    assert decision["action"] == "wait"
+
+
+def test_terminal_completion_precedes_unchanged_wait_interrupt():
+    sut = _state()
+    for second in range(1, 4):
+        stage_lifecycle.record_wait_observation(
+            sut,
+            fingerprint="running:0",
+            at=f"2026-09-22T00:00:0{second}Z",
+        )
+
+    decision = stage_lifecycle.decide_next_action(
+        sut,
+        now="2026-09-22T00:00:04Z",
+        terminal_text="STATUS: completed",
+        host_status="completed",
+    )
+
+    assert decision["action"] == "resume_parent"
+
+
+def test_supervisor_retry_contract_records_wait_before_next_decision():
+    retry = (REPO_ROOT / "core" / "agents" / "supervisor-retry.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "stage_lifecycle.py observe-wait" in retry
+    assert "interrupt_and_inspect" in retry
+    assert "two consecutive unchanged" in retry.lower()
+
+
 @pytest.mark.parametrize(
     "classification,risk_tags",
     [

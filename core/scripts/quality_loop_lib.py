@@ -548,6 +548,7 @@ NON_IMPLEMENTER_AGENTS = {
     "supervisor",
     "test-writer",
 }
+VALID_TDD_MODES = {"inline", "sequential_pair", "isolated_parallel"}
 
 
 def load_json(path: Path) -> dict:
@@ -1545,11 +1546,59 @@ def is_tdd_capable_stage(stage) -> bool:
     agents = stage_agents(stage)
     if "test-writer" in agents:
         return True
-    return (
+    return bool(stage_tdd_mode(stage)) and len(stage_implementer_agents(stage)) == 1
+
+
+def stage_tdd_mode(stage) -> str:
+    """Normalize new TDD ownership modes and legacy parallel input."""
+    if not isinstance(stage, dict):
+        return ""
+    if "tdd_mode" in stage:
+        mode = str(stage.get("tdd_mode", "")).strip()
+        return mode if mode in VALID_TDD_MODES else ""
+    if bool(stage.get("tdd_parallel")):
+        return "sequential_pair"
+    return ""
+
+
+def native_execution_profile(pipeline: dict) -> dict:
+    """Resolve native execution only after pipeline scope is available."""
+    if str(pipeline.get("mutation_scope", "workspace_write")).strip() == "read_only":
+        return {
+            "profile": "inline_readonly",
+            "reasons": ["read_only_scope"],
+        }
+
+    implementation_stages = [
+        stage for stage in (pipeline.get("stages") or []) if is_implementation_stage(stage)
+    ]
+    reasons: list[str] = []
+    if len(implementation_stages) != 1:
+        reasons.append(
+            "multiple_implementation_stages"
+            if len(implementation_stages) > 1
+            else "no_implementation_stage"
+        )
+
+    if any(
         isinstance(stage, dict)
-        and bool(stage.get("tdd_parallel"))
-        and len(stage_implementer_agents(stage)) == 1
-    )
+        and len(stage.get("parallelizable_units", []) or []) >= 2
+        for stage in implementation_stages
+    ):
+        reasons.append("independent_parallel_units")
+
+    if any("devops" in stage_agents(stage) for stage in (pipeline.get("stages") or [])):
+        reasons.append("external_side_effect_stage")
+
+    if any(len(stage_implementer_agents(stage)) != 1 for stage in implementation_stages):
+        reasons.append("multiple_implementers_in_stage")
+
+    if reasons:
+        return {"profile": "full_crew", "reasons": reasons}
+    return {
+        "profile": "single_agent_tdd",
+        "reasons": ["one_cohesive_implementation_stage"],
+    }
 
 
 def pipeline_shape(pipeline: dict) -> dict:

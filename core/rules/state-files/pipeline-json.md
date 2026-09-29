@@ -94,18 +94,16 @@ Planning-time validation:
   planner must recommend that non-code/reuse/configuration/deletion route first.
 - `L` and `XL` budgets require `smaller_alternatives_rejected`.
 
-### TDD parallel stage form
+### TDD mode stage form
 
-A single code implementation stage uses the **TDD parallel** dispatch
-contract by using the object form below instead of a bare string or
-array:
+A code implementation stage declares test ownership with `tdd_mode`:
 
 ```json
 {
   "stages": [
     {
       "agents": ["backend"],
-      "tdd_parallel": true,
+      "tdd_mode": "inline",
       "acceptance_criteria": ["AC-001"]
     },
     ["reviewer"]
@@ -113,13 +111,14 @@ array:
 }
 ```
 
-When `tdd_parallel: true`, the supervisor co-spawns `test-writer`
-alongside every agent listed in `agents` (single message, parallel
-host dispatch). Both must reach `STATUS: completed` before the stage's
-`completed_stages` counter increments. Either failure path triggers
-the Stage Retry Rule per agent (selective retry).
+Supported modes are `inline`, `sequential_pair`, and `isolated_parallel`.
+`inline` makes the sole implementer own Red through final Green.
+`sequential_pair` completes the test-writer Red handoff before the implementer
+starts, and the implementer owns final Green after the last mutation.
+`isolated_parallel` requires `isolated_worktrees: true` and distinct mutable
+worktrees. Two mutating agents never run concurrently in one worktree.
 
-Coverage contract: `test-writer` owns the stage's
+Coverage contract: for `sequential_pair` and `isolated_parallel`, `test-writer` owns the stage's
 `{TASK_DIR}/context/test-coverage.md` matrix and maps the PRD contract
 to 100% changed-surface coverage evidence. The code implementer owns
 keeping its implementation inside that matrix, and the immediately
@@ -128,25 +127,27 @@ following quality gate owns enforcement. The normal gate is a solo
 by a solo `["reviewer"]`.
 
 Planning contract: newly emitted mutating code implementation pipelines
-must use this form for each backend, frontend, or custom implementer
+must use `tdd_mode` for each backend, frontend, or custom implementer
 stage, each TDD stage must contain exactly one code implementer, every
 PRD `AC-*` item must appear in at least one implementation or QA-verification
 stage's `acceptance_criteria`, and the pipeline must include a later reviewer
 stage. Run
 `${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py --pipeline
 ${TASK_DIR}/pipeline.json` after analyst/planner emission. A failure
-such as `implementation_stage_without_tdd_parallel` means the
+such as `implementation_stage_without_tdd_parallel` or
+`invalid_implementation_tdd_mode` means the
 supervisor must not continue to implementation.
 
-Backwards compatibility: `tdd_parallel` defaults to `false` at the data
-format level. The two legacy stage shapes (`"backend"` as a bare
+Backwards compatibility: `tdd_parallel: true` normalizes to
+`tdd_mode: "sequential_pair"`; it no longer authorizes simultaneous writes.
+`tdd_parallel` defaults to `false` at the data format level. The two legacy stage shapes (`"backend"` as a bare
 string, `["designer", "backend"]` as a list) continue to mean "no TDD
 parallel — sequential spawn(s)" when reading old state, devops-only
 pipelines, or non-code stages. They are schema-compatible, but the
 planner must not emit them for new code implementation stages. A stage
 object with `tdd_parallel: false` (or omitted) is functionally
 identical to writing the `agents` list directly as the stage entry. See
-`core/agents/supervisor-stages.md` § TDD Parallel Dispatch for the spawn
+`core/agents/supervisor-stages.md` § TDD Mode Dispatch for the spawn
 semantics.
 
 ### QA owner stage form (`qa_mode`, `qa_loop_target`)

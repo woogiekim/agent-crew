@@ -1861,10 +1861,11 @@ is a planning-time gate; do not wait until the completion-time
 `quality-loop-check.py` catches the missing evidence.
 
 ```bash
+PLAN_CHECK_PATH="${TASK_DIR}/context/pipeline-quality-plan.json"
 PLAN_CHECK_OUTPUT=$(python3 "${AGENT_CREW_HOME}/scripts/pipeline-quality-plan-check.py" \
   --pipeline "${PIPELINE_PATH}" \
   --task "${TASK}" \
-  --format text 2>&1)
+  --format json 2>&1)
 PLAN_CHECK_RC=$?
 
 if [ "${PLAN_CHECK_RC}" -ne 0 ]; then
@@ -1880,11 +1881,35 @@ ${PLAN_CHECK_OUTPUT}
 EOF
   exit 1
 fi
+
+printf '%s\n' "${PLAN_CHECK_OUTPUT}" > "${PLAN_CHECK_PATH}"
+python3 - "${PIPELINE_PATH}" "${PLAN_CHECK_PATH}" <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+
+pipeline_path, profile_path = sys.argv[1:3]
+p = json.load(open(pipeline_path, encoding="utf-8"))
+profile = json.load(open(profile_path, encoding="utf-8"))
+p["execution_profile"] = profile["execution_profile"]
+p["execution_profile_reasons"] = profile["execution_profile_reasons"]
+fd, temporary = tempfile.mkstemp(dir=os.path.dirname(pipeline_path), prefix=".pipeline.")
+with os.fdopen(fd, "w", encoding="utf-8") as stream:
+    json.dump(p, stream, ensure_ascii=False, indent=2)
+    stream.write("\n")
+os.replace(temporary, pipeline_path)
+PYEOF
 ```
+
+`single_agent_tdd` is authoritative for a cohesive implementation stage: Phase
+2 uses `tdd_mode: inline`, skips the checklist/test-writer pair, and retains the
+following independent reviewer. `full_crew` keeps the resolved orchestration
+shape. `inline_readonly` runs no mutating implementation stage.
 
 Common remediation: rewrite bare code stages such as `["backend"]` or
 `["designer", "backend"]` into separate object stages with
-`{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }`,
+`{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }`,
 assign every PRD `AC-*` item to an implementation or QA-verification stage, then
 keep either a later solo `["reviewer"]` stage or a QA verify stage followed by a
 solo `["reviewer"]` stage.
@@ -2069,26 +2094,29 @@ except Exception:
 stages = p.get('stages', []) or []
 needs_creation = p.get('needs_creation', []) or []
 
-# Normalize each stage entry into a dict with: agents, tdd_parallel,
+# Normalize each stage entry into a dict with: agents, tdd_mode,
 # parallelizable_units, streaming_review. Tolerates the three legacy
 # stage shapes (bare string, bare list, object form).
 def normalize_stage(s):
     if isinstance(s, str):
-        return {'agents': [s], 'tdd_parallel': False,
+        return {'agents': [s], 'tdd_mode': 'none',
                 'parallelizable_units': [], 'streaming_review': False}
     if isinstance(s, list):
         return {'agents': [a for a in s if isinstance(a, str)],
-                'tdd_parallel': False,
+                'tdd_mode': 'none',
                 'parallelizable_units': [], 'streaming_review': False}
     if isinstance(s, dict):
         units = s.get('parallelizable_units') or []
         if not isinstance(units, list):
             units = []
+        mode = str(s.get('tdd_mode') or ('sequential_pair' if s.get('tdd_parallel') else 'none'))
+        if p.get('execution_profile') == 'single_agent_tdd' and mode != 'none':
+            mode = 'inline'
         return {'agents': [a for a in (s.get('agents') or []) if isinstance(a, str)],
-                'tdd_parallel': bool(s.get('tdd_parallel')),
+                'tdd_mode': mode,
                 'parallelizable_units': units,
                 'streaming_review': bool(s.get('streaming_review'))}
-    return {'agents': [], 'tdd_parallel': False,
+    return {'agents': [], 'tdd_mode': 'none',
             'parallelizable_units': [], 'streaming_review': False}
 
 norm_stages = [normalize_stage(s) for s in stages]
@@ -2133,11 +2161,11 @@ detail_missing_note_emitted = False
 # Count total agent spawns for the headline (best-effort estimate)
 def stage_spawn_count(ns):
     n = max(1, len(ns['agents']))
-    if ns['tdd_parallel']:
-        n += 1  # test-writer co-spawn
+    if ns['tdd_mode'] in {'sequential_pair', 'isolated_parallel'}:
+        n += 1
     units = len(ns['parallelizable_units'])
     if units >= 2:
-        n = max(n, units + (1 if ns['tdd_parallel'] else 0))
+        n = max(n, units + (1 if ns['tdd_mode'] in {'sequential_pair', 'isolated_parallel'} else 0))
     if ns['streaming_review']:
         n += 1  # reviewer co-spawned
     return n
@@ -2153,8 +2181,8 @@ for i, ns in enumerate(norm_stages, 1):
     agents = ns['agents'] or ['(unknown)']
     label = ', '.join(agents)
     flags = []
-    if ns['tdd_parallel']:
-        flags.append('tdd_parallel: true')
+    if ns['tdd_mode'] != 'none':
+        flags.append(f'tdd_mode: {ns["tdd_mode"]}')
     units = ns['parallelizable_units']
     if len(units) >= 2:
         flags.append(f'parallelizable_units: {len(units)}')
@@ -2193,9 +2221,10 @@ for i, ns in enumerate(norm_stages, 1):
                     elif isinstance(f, dict) and isinstance(f.get('path'), str):
                         print(f'        - {f[\"path\"]}')
         # Co-spawned helpers under fan-out
-        if ns['tdd_parallel']:
+        if ns['tdd_mode'] in {'sequential_pair', 'isolated_parallel'}:
             tw = prd_agent_detail.get('test-writer', {})
-            print(f'  - test-writer (co-spawned, shared across units)')
+            timing = 'isolated parallel' if ns['tdd_mode'] == 'isolated_parallel' else 'runs before implementer'
+            print(f'  - test-writer ({timing}, shared across units)')
             if tw.get('brief') or tw.get('work'):
                 print(f'      Brief: {tw.get(\"work\") or tw.get(\"brief\")}')
             if tw.get('files'):
@@ -2219,10 +2248,11 @@ for i, ns in enumerate(norm_stages, 1):
         if det.get('work'):
             print(f'      Brief: {det[\"work\"]}')
 
-    # Optional co-spawned agents on the legacy / TDD-parallel path.
-    if ns['tdd_parallel']:
+    # Optional test-writer on sequential or isolated TDD modes.
+    if ns['tdd_mode'] in {'sequential_pair', 'isolated_parallel'}:
         tw = prd_agent_detail.get('test-writer', {})
-        print(f'  - test-writer (co-spawned)')
+        timing = 'isolated parallel' if ns['tdd_mode'] == 'isolated_parallel' else 'runs before implementer'
+        print(f'  - test-writer ({timing})')
         if tw.get('files'):
             print(f'      Files:')
             for f in tw['files']:
@@ -2263,7 +2293,7 @@ per-stage breakdown:
 
 Pipeline: {N} stages, ~{M} agent spawns total
 
-### Stage 1 — backend (tdd_parallel: true)
+### Stage 1 — backend (tdd_mode: inline)
 Brief: Add cancel-order endpoint with idempotency guard
 
 Agents to spawn:
@@ -2272,11 +2302,6 @@ Agents to spawn:
         - src/orders/cancel.ts
         - src/orders/idempotency.ts
       Brief: Implement POST /orders/{id}/cancel with state-machine guard
-  - test-writer (co-spawned)
-      Files:
-        - tests/orders/cancel.spec.ts
-      Brief: Cover happy path, double-cancel, terminal-state rejection
-
 ### Stage 2 — reviewer
 Brief: Verify cancel flow against design doc + run new tests
 

@@ -155,13 +155,19 @@ frontend consumes: design-spec.md + OpenAPI contract
 
 Build `stages` as a 2D array where inner arrays run in parallel and outer arrays
 run sequentially. Every code implementation stage must use the object form
-`{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }`
+`{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }`
 (or frontend/custom equivalent) and must be followed by a deterministic quality
 gate: either a solo `["reviewer"]` stage, or
 `{"agents":["qa-owner"],"qa_mode":"verify","qa_loop_target":"previous_implementation"}`
 followed by a solo `["reviewer"]`. Do not emit bare code stages for new
 implementation work, and do not batch multiple code implementation stages
 before one quality gate.
+
+Use `inline` for one cohesive implementer. Use `sequential_pair` when a
+separate test-writer must establish Red before the implementer starts. Use
+`isolated_parallel` only with `isolated_worktrees: true` and distinct worktree
+paths. Legacy `tdd_parallel: true` is input-only and normalizes to
+`sequential_pair`; do not emit it in new pipelines.
 
 For mutating implementation work, assign every PRD `AC-*` item to at least one
 implementation or QA-verification stage through that stage's
@@ -171,13 +177,13 @@ implementation that leaves PRD behavior unowned.
 
 | Scope | stages |
 |---|---|
-| Backend API | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
-| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
-| UI only | `[["designer"], { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
-| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
+| Backend API | `[{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Full-stack | `[["designer"], { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"], { "agents": ["frontend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-002"] }, ["reviewer"]]` |
+| UI only | `[["designer"], { "agents": ["frontend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Tooling / docs / config | `[{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` for code-touching tooling; `["documenter", { "agents": ["reviewer"], "requires_test_execution": false }]` for docs-only |
 | CI/CD / infra | `[["devops"], ["reviewer"]]` |
-| Feature + deploy | `[{ "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
-| High-risk/user-facing QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
+| Feature + deploy | `[{ "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, ["reviewer"], ["devops"], ["reviewer"]]` |
+| High-risk/user-facing QA validation | `[{ "agents": ["qa-owner"], "qa_mode": "plan" }, { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] }, { "agents": ["qa-owner"], "qa_mode": "verify", "qa_loop_target": "previous_implementation", "acceptance_criteria": ["AC-001"] }, ["reviewer"]]` |
 
 Only place agents in the same inner array when their outputs are **independent**
 and the stage is not a code implementation stage that needs a TDD partner. If
@@ -231,9 +237,9 @@ unchanged`.
   "task": "User authentication flow",
   "stages": [
     ["designer"],
-    { "agents": ["backend"], "tdd_parallel": true, "acceptance_criteria": ["AC-001"] },
+    { "agents": ["backend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-001"] },
     ["reviewer"],
-    { "agents": ["frontend"], "tdd_parallel": true, "acceptance_criteria": ["AC-002"] },
+    { "agents": ["frontend"], "tdd_mode": "inline", "acceptance_criteria": ["AC-002"] },
     ["reviewer"]
   ],
   "needs_creation": [],
