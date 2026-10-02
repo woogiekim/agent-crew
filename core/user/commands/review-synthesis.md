@@ -38,6 +38,15 @@ into `review-ledger.contract_disposition`; do not reuse
 `rejected`, or `not-applicable`) and may also be displayed through existing
 user-facing labels such as `IMPLEMENTED`, `LOCAL_DONE`, or `POLICY_WAITING`.
 
+## Review Evidence Style
+
+Apply `core/rules/review-evidence-style.md` when the review scope is an MR.
+Read the MR source branch remotely without checkout, label claims as fact,
+`Assumption:`, or `Unverified:`, close decision-critical unknowns with a
+confirmation loop and record report corrections, and draft MR notes as
+questions with numbered options only. Posting a note stays a separate step that
+requires explicit approval of the final draft.
+
 ## Review Lens Discovery
 
 Before selecting lenses, run review lens discovery using
