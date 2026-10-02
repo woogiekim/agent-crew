@@ -1124,12 +1124,12 @@ elif [ -f "${EVOLUTION_PROPOSAL_AGGREGATE}" ] && [ -f "${EVOLUTION_PROPOSAL_SUMM
       --output "${EVOLUTION_PROPOSALS_JSON}" \
       --format json >/dev/null 2>&1
   then
-    EVOLUTION_PENDING_COUNT=$(python3 "${EVOLUTION_PROPOSAL_SUMMARY}" \
+    EVOLUTION_VISIBLE_COUNT=$(python3 "${EVOLUTION_PROPOSAL_SUMMARY}" \
       --proposals "${EVOLUTION_PROPOSALS_JSON}" \
       --format json 2>/dev/null \
-      | python3 -c "import sys,json; print(json.load(sys.stdin).get('pending_count', 0))" 2>/dev/null || echo 0)
+      | python3 -c "import sys,json; s=json.load(sys.stdin); print(s.get('pending_count', 0) + s.get('investigation_count', 0))" 2>/dev/null || echo 0)
 
-    if [ "${EVOLUTION_PENDING_COUNT}" = "0" ]; then
+    if [ "${EVOLUTION_VISIBLE_COUNT}" = "0" ]; then
       rm -f "${EVOLUTION_PROPOSALS_SUMMARY}" 2>/dev/null || true
       log_progress "EVOLUTION_PROPOSALS_SKIPPED" "reason=no_repeated_evidence"
     else
@@ -1138,7 +1138,7 @@ elif [ -f "${EVOLUTION_PROPOSAL_AGGREGATE}" ] && [ -f "${EVOLUTION_PROPOSAL_SUMM
           --format text > "${EVOLUTION_PROPOSALS_SUMMARY}" 2>/dev/null
       then
         log_progress "EVOLUTION_PROPOSALS" \
-          "pending=${EVOLUTION_PENDING_COUNT} output=learning-candidates/proposals.json summary=context/evolution-proposals-summary.txt"
+          "visible=${EVOLUTION_VISIBLE_COUNT} output=learning-candidates/proposals.json summary=context/evolution-proposals-summary.txt"
         {
           printf '\n'
           cat "${EVOLUTION_PROPOSALS_SUMMARY}"

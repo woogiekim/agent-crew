@@ -212,12 +212,12 @@ def run_python_script(script: Path, *args: str) -> subprocess.CompletedProcess[s
     )
 
 
-def pending_proposal_count(proposals_path: Path) -> int:
+def pending_proposal_count(proposals_path: Path, status: str = "approval_required") -> int:
     payload = load_json(proposals_path)
     return sum(
         1
         for item in payload.get("proposals") or []
-        if isinstance(item, dict) and item.get("status") == "approval_required"
+        if isinstance(item, dict) and item.get("status") == status
     )
 
 
@@ -645,7 +645,13 @@ def run_evolution_closeout(
 
     count = pending_proposal_count(proposals_json)
     status["pending_proposals"] = count
-    if count <= 0:
+    investigations = pending_proposal_count(proposals_json, "investigation_required")
+    status["investigation_proposals"] = investigations
+    status["repeated_evidence"] = any(
+        isinstance(item, dict) and int(item.get("occurrence_count") or 0) >= 2
+        for item in load_json(proposals_json).get("proposals") or []
+    )
+    if count <= 0 and investigations <= 0:
         proposals_summary.unlink(missing_ok=True)
         status["proposals"] = "skipped"
         append_progress_log(task_dir, "EVOLUTION_PROPOSALS_SKIPPED", "reason=no_repeated_evidence")
@@ -2717,12 +2723,16 @@ def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
     learning_events = status.get("learning_events") if isinstance(status.get("learning_events"), dict) else {}
     event_recorded = int(learning_events.get("recorded") or 0)
     pending_proposals = int(status.get("pending_proposals") or 0)
+    investigations = int(status.get("investigation_proposals") or 0)
     analyzer_completed = status.get("analyzer") == "completed"
     proposal_status = status.get("proposals", "skipped")
     captured = "yes" if analyzer_completed and learning_events.get("status") == "ok" else "no"
-    repeated_pattern = "yes" if pending_proposals > 0 else "no"
+    repeated_pattern = "yes" if status.get("repeated_evidence", pending_proposals > 0) else "no"
     proposal_label = "approval_required" if pending_proposals > 0 else "none"
     reason = "pending proposal found" if pending_proposals > 0 else "no repeated evidence"
+    if pending_proposals == 0 and investigations:
+        proposal_label = "investigation_required"
+        reason = "evidence requires investigation; no concrete approval-ready patch"
     if not analyzer_completed:
         reason = "learning analyzer unavailable"
     elif captured == "no":
@@ -2755,6 +2765,8 @@ def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
         + (
             "review approval-gated proposal before applying any asset change"
             if pending_proposals > 0
+            else "investigate evidence and prepare a concrete patch"
+            if investigations > 0
             else "collect more independent corrected evidence"
         ),
         "",
@@ -2762,6 +2774,7 @@ def append_evolution_closeout_result(task_dir: Path, status: dict) -> None:
         "",
         f"EVOLUTION_PROPOSALS: {proposal_status}",
         f"PENDING_PROPOSALS: {pending_proposals}",
+        f"INVESTIGATION_PROPOSALS: {investigations}",
     ])
 
     summary_path = task_dir / "context" / "evolution-proposals-summary.txt"

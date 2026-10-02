@@ -234,6 +234,7 @@ def skill_content_audit_signal(task_dir: Path) -> dict[str, Any]:
             "available": False,
             "shallow_finding_count": 0,
             "effective_followup_count": 0,
+            "format_findings": [],
         }
 
     shallow = payload.get("shallow_findings")
@@ -242,6 +243,8 @@ def skill_content_audit_signal(task_dir: Path) -> dict[str, Any]:
         "available": True,
         "shallow_finding_count": len(shallow) if isinstance(shallow, list) else 0,
         "effective_followup_count": len(followups) if isinstance(followups, list) else 0,
+        "format_findings": payload.get("format_findings") or [],
+        "legacy_findings": shallow if isinstance(shallow, list) else [],
     }
 
 
@@ -389,7 +392,17 @@ def observed_patterns(row: dict[str, Any], loop_backs: int,
     if int(skill_audit.get("shallow_finding_count") or 0) > 0:
         patterns.append({
             "kind": "skill_content_depth",
-            "summary": "Skill content audit found shallow skill material.",
+            "summary": "Legacy static audit requires investigation; content quality is unverified.",
+            "evidence_kind": "static_observation",
+            "findings": skill_audit.get("legacy_findings") or [],
+            "evidence_refs": ["context/skill-content-audit.json"],
+        })
+    if skill_audit.get("format_findings"):
+        patterns.append({
+            "kind": "skill_format_warning",
+            "summary": "문서 형식 경고이며 작업 실패나 내용 품질 판정이 아닙니다.",
+            "evidence_kind": "static_format",
+            "findings": skill_audit["format_findings"],
             "evidence_refs": ["context/skill-content-audit.json"],
         })
     if int(review_feedback.get("ledger_atom_count") or 0) > 0:
@@ -466,7 +479,7 @@ def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "target_assets": pattern.get("target_assets", []),
         })
 
-    if any(pattern.get("kind") not in {"review_principle", "mistake_correction"} for pattern in patterns):
+    if any(pattern.get("kind") not in {"review_principle", "mistake_correction", "skill_format_warning", "skill_content_depth"} for pattern in patterns):
         candidates.append({
             "asset_type": "skill",
             "name": "existing-skill-patch-suggestion",
@@ -479,6 +492,8 @@ def rejected_candidates(patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def learning_summary(meaningful: bool, patterns: list[dict[str, Any]]) -> str:
+    if patterns and all(pattern.get("kind") in {"skill_format_warning", "skill_content_depth"} for pattern in patterns):
+        return "정적 감사 관찰만 있습니다. 내용 품질과 실제 작업 영향은 미확인이며, 반복 감사는 독립적인 실패 근거가 아닙니다."
     if not meaningful:
         return (
             "No reusable asset candidate produced; the task completed without "

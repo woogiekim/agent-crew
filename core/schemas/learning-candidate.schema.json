@@ -41,7 +41,7 @@
         "type": "string",
         "minLength": 1
       },
-      "description": "Paths (file:line or task-id artifact paths) that ground the candidate. A candidate with zero evidence_refs is invalid — every claim must be traceable."
+      "description": "Paths (file:line or task-id artifact paths) that ground the candidate. A candidate with zero evidence_refs is invalid \u2014 every claim must be traceable."
     },
     "promotion_reason": {
       "type": "string",
@@ -63,7 +63,7 @@
     },
     "captured_at": {
       "type": "string",
-      "description": "Optional ISO-8601 timestamp of when the candidate was first recorded. Useful for lifecycle audits but not required — the loop is content-deterministic."
+      "description": "Optional ISO-8601 timestamp of when the candidate was first recorded. Useful for lifecycle audits but not required \u2014 the loop is content-deterministic."
     },
     "proposal_type": {
       "type": "string",
@@ -72,7 +72,13 @@
     },
     "status": {
       "type": "string",
-      "enum": ["approval_required", "approved", "rejected", "superseded"],
+      "enum": [
+        "approval_required",
+        "approved",
+        "rejected",
+        "superseded",
+        "investigation_required"
+      ],
       "description": "Optional lifecycle status for approval-gated proposal records."
     },
     "target_asset": {
@@ -110,7 +116,7 @@
     "patch_body": {
       "type": "string",
       "minLength": 1,
-      "description": "Optional approved patch body to append to target_skill. Must be present only after operator approval; proposal aggregation preserves it but does not generate or apply it."
+      "description": "Concrete proposed patch body, prepared before approval; aggregation preserves it without applying it."
     },
     "decision_reason": {
       "type": "string",
@@ -130,7 +136,7 @@
     },
     "occurrence_count": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "description": "Optional number of independent reports that support this proposal."
     },
     "approval_gate": {
@@ -142,6 +148,25 @@
       "type": "string",
       "const": "proposal_only_no_needs_creation_write",
       "description": "Optional guardrail proving the proposal aggregator must not populate pipeline.needs_creation."
+    },
+    "expected_impact": {
+      "type": "string"
+    },
+    "previous_status": {
+      "type": "string"
+    },
+    "evidence_kind": {
+      "type": "string"
+    },
+    "observation_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "readiness_gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   }
 }

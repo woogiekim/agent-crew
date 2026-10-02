@@ -427,9 +427,19 @@ reuses this value and must not reinterpret it as an execution-policy choice:
 
 ```bash
 read -r HAS_AGENT_BACKGROUND HAS_TASK_TOOLS < <(python3 -c "
-import json
+import json, os
 try:
     c = json.load(open('${STATE_DIR}/capabilities.json'))
+
+    active_host = os.environ.get('AGENT_CREW_HOST', '').strip().lower()
+    if not active_host:
+        if any(os.environ.get(k, '').strip() for k in ('CODEX', 'CODEX_CI', 'CODEX_THREAD_ID', 'CODEX_MANAGED_BY_NPM')):
+            active_host = 'codex'
+        elif any(os.environ.get(k, '').strip() for k in ('CLAUDECODE', 'CLAUDE_SESSION_ID', 'CLAUDE_MODEL')):
+            active_host = 'claude'
+    stored_host = str(c.get('host') or c.get('adapter') or '').strip().lower()
+    if active_host and stored_host != active_host:
+        c = {}
     print(
         '1' if c.get('agent_background') else '0',
         '1' if c.get('task_tools') else '0',
@@ -439,27 +449,19 @@ except Exception:
 " 2>/dev/null)
 ```
 
-**Setup guard (pre-injection)**: Before reading `session.json`, initialize a
-completely new project through the normal host dispatcher. If `STATE_DIR`
-already exists without `capabilities.json`, treat it as partial or damaged
-state and stop for explicit recovery instead of overwriting it:
-
-```text
-Error: Project '{PROJECT_NAME}' has partial or damaged agent-crew state.
-Run crew:setup to recover the workspace.
-```
-
-The `{PROJECT_NAME}` placeholder resolves to display metadata from the bash
-block above. `STATE_DIR` resolves through `PROJECT_STATE_KEY` so duplicate
-project basenames do not collide. The guard is expressed as:
+**Runtime state guard (pre-injection)**: `capabilities.json`은 선택적인 host
+metadata이며 누락은 손상이 아니다. 전역 설치를 재사용하고 `session.json`을
+읽기 전에 공통 resolver로 런타임 상태만 준비한다. host setup, asset 복사,
+스킬 seed 또는 상태 초기화/삭제를 실행하지 않는다.
 
 ```bash
-CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
-if [ ! -f "${CAPABILITIES_FILE}" ]; then
-  bash "${AGENT_CREW_HOME}/scripts/ensure-project-initialized.sh" || \
-    return 1 2>/dev/null || exit 1
-fi
+bash "${AGENT_CREW_HOME}/scripts/ensure-project-initialized.sh" || \
+  return 1 2>/dev/null || exit 1
 ```
+
+상태 경로 오류나 프로젝트 metadata 손상이 보고되면 원본을 보존하고 해당
+오류를 전달한다. capabilities 누락을 이유로 `crew:setup`을 복구 절차로
+제시하지 않는다.
 
 A session is injectable only when `session.json` exists, its `status` is
 `"running"`, its recorded `execution_policy` is `"background"`, and the host
@@ -1351,87 +1353,34 @@ When `INTENT == "none"`, this step is a no-op. Proceed to Step 2.
 
 ### 2. Initialize State Paths
 
+새 프로젝트와 관리 명령이 먼저 생성한 프로젝트 상태는 같은 lazy 초기화
+경로를 사용한다. `capabilities.json` 없이도 런타임 상태와 task를 생성할 수
+있다. native CLI도 같은 `project_state.py` resolver를 사용한다.
+
 ```bash
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-eval "$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
+bash "${AGENT_CREW_HOME}/scripts/ensure-project-initialized.sh" || \
+  return 1 2>/dev/null || exit 1
+RESOLVED_STATE=$(python3 "${AGENT_CREW_HOME}/scripts/project_state.py" resolve \
   --agent-crew-home "${AGENT_CREW_HOME}" \
   --project-root "${PROJECT_ROOT}" \
   --prefer-existing-legacy \
-  --format shell)"
-```
-
-If `STATE_DIR` does not exist, initialize it automatically through the normal
-host dispatcher. If `STATE_DIR` already exists but
-`${STATE_DIR}/capabilities.json` does not, stop and display this recovery error:
-
-```text
-Error: Project '{PROJECT_NAME}' has partial or damaged agent-crew state.
-Run crew:setup to recover the workspace.
-```
-
-The `{PROJECT_NAME}` placeholder resolves to display metadata from the bash
-block above; `STATE_DIR` uses `PROJECT_STATE_KEY`.
-
-The initializer only handles the first-run case where `STATE_DIR` is entirely
-absent. A present directory without `capabilities.json` indicates interrupted,
-partial, or damaged state and must not be repaired implicitly.
-A `capabilities.json` that exists but is empty or unparseable is treated as
-configured (the supervisor falls back to all-false flags — this is expected
-behaviour for minimal setups, not an error).
-
-If `capabilities.json` declares a different host than the active adapter, the
-runtime MUST refresh the active host adapter before continuing. This prevents a
-shared workspace initialized under Claude from being reused by Codex with stale
-Claude capability flags.
-
-Current host resolution:
-
-```bash
-CURRENT_HOST="${AGENT_CREW_HOST:-auto}"
-if [ "${CURRENT_HOST}" = "auto" ]; then
-  if [ -n "${CODEX:-}${CODEX_CI:-}${CODEX_THREAD_ID:-}${CODEX_MANAGED_BY_NPM:-}" ]; then
-    CURRENT_HOST="codex"
-  else
-    CURRENT_HOST=""
-  fi
-fi
-```
-
-Host mismatch guard:
-
-```bash
-CAPABILITIES_HOST=$(python3 -c "
-import json, sys
-try:
-    print(json.load(open('${CAPABILITIES_FILE}')).get('host', ''))
-except Exception:
-    print('')
-" 2>/dev/null)
-
-if [ -n "${CURRENT_HOST}" ] && [ -n "${CAPABILITIES_HOST}" ] \
-   && [ "${CAPABILITIES_HOST}" != "${CURRENT_HOST}" ]; then
-  if [ -x "${AGENT_CREW_HOME}/adapters/${CURRENT_HOST}/setup.sh" ]; then
-    AGENT_CREW_HOST="${CURRENT_HOST}" AGENT_CREW_MODE=update \
-      bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT}"
-  else
-    printf 'Error: Project '\''%s'\'' capabilities were generated for host '\''%s'\'' but current host is '\''%s'\''.\n' \
-      "${PROJECT_NAME}" "${CAPABILITIES_HOST}" "${CURRENT_HOST}"
-    printf 'Run crew:setup under the current host to refresh capabilities.json.\n'
-    return 1 2>/dev/null || exit 1
-  fi
-fi
-```
-
-The guard is expressed as:
-
-```bash
+  --format shell) || return 1 2>/dev/null || exit 1
+eval "${RESOLVED_STATE}"
 CAPABILITIES_FILE="${STATE_DIR}/capabilities.json"
-if [ ! -f "${CAPABILITIES_FILE}" ]; then
-  bash "${AGENT_CREW_HOME}/scripts/ensure-project-initialized.sh" || \
-    return 1 2>/dev/null || exit 1
-fi
 ```
+
+초기화는 기존 task, session, 승인, 사용자 데이터 및 capabilities를 보존한다.
+상태 경로가 디렉터리가 아니거나 `project.json`이 파싱되지 않거나 다른 프로젝트를
+가리키면 쓰기 전에 중단하고 해당 경로와 원인을 보고한다. 상태 폴더나 capabilities
+존재 여부만으로 손상을 판정하지 않는다.
+
+host 선택은 native runtime의 우선순위인 명시적인 `AGENT_CREW_HOST`, 현재 host
+환경, legacy capabilities 순서를 따른다. capabilities가 없거나 읽을 수 없으면
+선택 기능은 보수적인 기본값을 사용한다. 다른 host의 오래된 capabilities를
+발견해도 setup을 자동 실행하거나 파일을 덮어쓰지 않는다. host adapter 설치와
+갱신은 명시적인 관리 작업으로 분리한다.
 
 Before spawning any supervisor agents, capture the current HEAD:
 
@@ -2836,7 +2785,7 @@ Learning Summary:
   captured: yes|no
   captured_events: {N}
   repeated_pattern: yes|no
-  proposal: none|approval_required|approved|applied
+  proposal: none|investigation_required|approval_required|approved|applied
   evidence: {context/evolution-report.md and learning/events.jsonl when present}
   reason: {why a proposal exists or why it does not}
   next_action: {approval or more evidence}

@@ -87,6 +87,18 @@
             "effective_followup_count": {
               "type": "integer",
               "minimum": 0
+            },
+            "format_findings": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "legacy_findings": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
             }
           }
         },
@@ -273,6 +285,15 @@
           "review_cycle_count": {
             "type": "integer",
             "minimum": 0
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "evidence_kind": {
+            "type": "string"
           }
         }
       }

@@ -139,6 +139,26 @@ def write_project_metadata(home: str | Path, project_root: str | Path, state_dir
     write_json(state_dir / "project.json", metadata_payload(home, project_root, state_dir))
 
 
+def validate_project_state(state_dir: Path, project_root: Path) -> None:
+    if state_dir.exists() and not state_dir.is_dir():
+        raise ValueError(f"state path is not a directory: {state_dir}; preserve it and resolve the path conflict")
+
+    metadata = state_dir / "project.json"
+    if not metadata.exists():
+        return
+
+    try:
+        payload = json.loads(metadata.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"invalid project metadata: {metadata}; inspect and recover it without resetting task state") from error
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"invalid project metadata: {metadata}; expected a JSON object")
+    owner = payload.get("project_root")
+    if owner and not root_matches(owner, project_root):
+        raise ValueError(f"project ownership conflict: {metadata}; recorded root {owner!r} does not match {str(project_root)!r}")
+
+
 def resolve_project_state(
     *,
     home: str | Path | None = None,
@@ -157,6 +177,7 @@ def resolve_project_state(
 
     if migrate_legacy and legacy != target and legacy.exists() and not target.exists():
         if legacy_status in {"match", "unknown"}:
+            validate_project_state(legacy, root)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(legacy), str(target))
             migrated = True
@@ -165,6 +186,8 @@ def resolve_project_state(
         state_dir = legacy
     else:
         state_dir = target
+
+    validate_project_state(state_dir, root)
 
     if ensure:
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -319,7 +342,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         return args.func(args)
-    except ValueError as error:
+    except (ValueError, OSError) as error:
         print(f"project-state: {error}", file=os.sys.stderr)
         return 2
 

@@ -16,7 +16,8 @@ or mutates proposals that already exist under the current project state:
 Read-only and fast path.
 
 - Read `learning-candidates/proposals.json`.
-- Report pending `approval_required` proposals.
+- `approval_required` 승인 대기와 `investigation_required` 조사 대상을 구분한다.
+- 문서 형식 경고는 내용 품질이나 독립적인 작업 실패의 증거가 아니다.
 - Do not run aggregate, analyzer, Mnemos, `crew:agent-maker`, or any agent.
 - Do not create `agent-maker-requests/`.
 
@@ -46,6 +47,10 @@ Approve exactly one proposal by `candidate_id`.
 - Record `approved_by`, `approved_at`, and `decision_reason`.
 - Idempotent when the proposal is already `approved`.
 - Reject terminal or non-approval states.
+- 기존 스킬 수정안은 `target_skill`, `patch_body`, `evidence_refs`,
+  `expected_impact`가 모두 준비되어야 승인할 수 있다. 불완전한 제안은
+  `investigation_required`로 분류한다. 실행 승인을 리뷰 승인으로 대체하지 않는다.
+- 동일한 스킬 파일·내용 해시·문제의 정적 감사는 작업 수만큼 실패로 집계하지 않는다.
 
 ```bash
 crew evolve approve <candidate_id> --approved-by <operator> --reason "<reason>"

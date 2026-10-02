@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from evolution_evidence import patch_readiness_gaps
+
 
 START_MARKER = "<!-- agent-crew-evolution:{candidate_id}:start -->"
 END_MARKER = "<!-- agent-crew-evolution:{candidate_id}:end -->"
@@ -143,6 +145,11 @@ def apply_proposals(proposals_path: Path, skill_dir: Path, request_dir: Path) ->
             continue
         if proposal_type != "patch_existing_skill":
             skipped.append({"candidate_id": candidate_id, "reason": "unsupported_proposal_type"})
+            continue
+
+        gaps = patch_readiness_gaps(proposal)
+        if gaps:
+            skipped.append({"candidate_id": candidate_id, "reason": "incomplete_patch: " + ", ".join(gaps)})
             continue
 
         skill_name = safe_skill_name(str(proposal.get("target_skill") or ""))

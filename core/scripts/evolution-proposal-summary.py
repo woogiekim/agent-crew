@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from evolution_evidence import STATIC_PATTERNS, classify_proposal
+
 
 def read_json(path: Path) -> dict[str, Any]:
     try:
@@ -19,10 +21,12 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def pending_proposals(payload: dict[str, Any], limit: int) -> list[dict[str, Any]]:
     proposals = [
-        item
+        dict(item)
         for item in payload.get("proposals") or []
-        if isinstance(item, dict) and item.get("status") == "approval_required"
+        if isinstance(item, dict) and item.get("status") in {"approval_required", "investigation_required"}
     ]
+    for proposal in proposals:
+        classify_proposal(proposal, static=proposal.get("target_asset") in STATIC_PATTERNS)
     return proposals[:max(0, limit)]
 
 
@@ -39,17 +43,14 @@ def evidence_count(proposal: dict[str, Any]) -> int:
 
 def build_summary(proposals_path: Path, limit: int) -> dict[str, Any]:
     payload = read_json(proposals_path)
-    all_pending = [
-        item
-        for item in payload.get("proposals") or []
-        if isinstance(item, dict) and item.get("status") == "approval_required"
-    ]
+    all_pending = pending_proposals(payload, len(payload.get("proposals") or []))
     visible = pending_proposals(payload, limit)
 
     return {
         "schema_version": 1,
         "proposals_path": str(proposals_path),
-        "pending_count": len(all_pending),
+        "pending_count": sum(item["status"] == "approval_required" for item in all_pending),
+        "investigation_count": sum(item["status"] == "investigation_required" for item in all_pending),
         "shown_count": len(visible),
         "proposals": [
             {
@@ -67,6 +68,7 @@ def build_summary(proposals_path: Path, limit: int) -> dict[str, Any]:
                 "review_principle": str(item.get("review_principle") or ""),
                 "promotion_reason": str(item.get("promotion_reason") or ""),
                 "evidence_count": evidence_count(item),
+                "observation_count": item.get("observation_count", 0),
             }
             for item in visible
         ],
@@ -75,10 +77,13 @@ def build_summary(proposals_path: Path, limit: int) -> dict[str, Any]:
 
 def render_text(summary: dict[str, Any]) -> str:
     pending_count = int(summary.get("pending_count") or 0)
-    if pending_count <= 0:
+    investigation_count = int(summary.get("investigation_count") or 0)
+    if pending_count <= 0 and investigation_count <= 0:
         return "SELF_EVOLUTION_PROPOSALS: 0 pending\n"
 
     lines = [f"SELF_EVOLUTION_PROPOSALS: {pending_count} pending"]
+    if investigation_count:
+        lines.append(f"SELF_EVOLUTION_INVESTIGATIONS: {investigation_count}")
     for proposal in summary.get("proposals") or []:
         candidate_id = proposal.get("candidate_id") or "(unknown)"
         proposal_type = proposal.get("proposal_type") or "(unknown)"
@@ -87,8 +92,10 @@ def render_text(summary: dict[str, Any]) -> str:
             f"- {candidate_id}",
             f"  type: {proposal_type}",
             f"  evidence: {evidence} tasks",
-            "  status: approval_required",
+            f"  status: {proposal.get('status')}",
         ])
+        if proposal.get("observation_count"):
+            lines.append(f"  static evidence: {proposal['observation_count']} observations")
         target_assets = proposal.get("target_assets") or []
         target_asset = proposal.get("target_asset") or proposal.get("asset_name") or ""
         if target_assets:
@@ -104,7 +111,9 @@ def render_text(summary: dict[str, Any]) -> str:
         if reason:
             lines.append(f"  reason: {reason}")
 
-        if str(proposal_type).startswith("create_"):
+        if proposal.get("status") == "investigation_required":
+            lines.append("  next: investigate evidence and prepare a concrete patch before approval")
+        elif str(proposal_type).startswith("create_"):
             lines.append("  next: review and approve; approved creation proposals are handed to crew:agent-maker")
         else:
             lines.append("  next: review and approve before apply")

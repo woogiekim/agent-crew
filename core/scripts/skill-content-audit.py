@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -221,6 +222,7 @@ def _inventory() -> list[dict[str, object]]:
         rows.append(
             {
                 "file": path.name,
+                "content_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 "consuming_agents": consumers,
                 "mandatory_agents": entry.mandatory,
                 "declared_sources": _source_lines(text),
@@ -289,10 +291,12 @@ def _shallow_findings(inventory: list[dict[str, object]]) -> list[dict[str, obje
             findings.append(
                 {
                     "file": row["file"],
+                    "content_sha256": row.get("content_sha256", ""),
+                    "issue_key": "format:" + "|".join(reasons),
+                    "evidence_kind": "static_format",
                     "reasons": reasons,
                     "recommendation": (
-                        "Review content depth before relying on this skill for "
-                        "implementation or approval decisions."
+                        "문서 형식 경고입니다. 내용 품질이나 작업 실패를 입증하지 않습니다."
                     ),
                 }
             )
@@ -306,7 +310,9 @@ def build_payload() -> dict[str, object]:
         "inventory": inventory,
         "effective_followups": _effective_followups(),
         "content_contracts": _content_contracts(),
-        "shallow_findings": _shallow_findings(inventory),
+        "format_findings": _shallow_findings(inventory),
+        "content_assessment": "not_assessed_by_format_checks",
+        "shallow_findings": [],
     }
 
 
@@ -325,7 +331,7 @@ def to_markdown(payload: dict[str, object]) -> str:
     inventory = payload["inventory"]
     followups = payload["effective_followups"]
     contracts = payload["content_contracts"]
-    shallow_findings = payload["shallow_findings"]
+    shallow_findings = payload.get("format_findings", payload["shallow_findings"])
 
     inventory_rows = [
         (
@@ -375,7 +381,7 @@ def to_markdown(payload: dict[str, object]) -> str:
             _markdown_table(["Skill", "Generic Rubric Gaps", "Follow-Up"], followup_rows),
             "## Content Contracts",
             _markdown_table(["Skill", "Status", "Missing Terms"], contract_rows),
-            "## Shallow Content Findings",
+            "## Format Warnings (Content Quality Unverified)",
             _markdown_table(["Skill", "Reason", "Recommendation"], shallow_rows),
         ]
     ) + "\n"

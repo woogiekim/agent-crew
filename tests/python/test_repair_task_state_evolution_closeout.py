@@ -163,12 +163,12 @@ def test_completed_repair_runs_evolution_closeout_and_surfaces_pending_proposals
     assert (state_dir / "learning" / "events.jsonl").is_file()
     summary = task_dir / "context" / "evolution-proposals-summary.txt"
     assert summary.is_file()
-    assert "SELF_EVOLUTION_PROPOSALS: 1 pending" in summary.read_text(encoding="utf-8")
+    assert "SELF_EVOLUTION_INVESTIGATIONS: 1" in summary.read_text(encoding="utf-8")
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "Learning Summary" in result_text
     assert "captured: yes" in result_text
     assert "repeated_pattern: yes" in result_text
-    assert "proposal: approval_required" in result_text
+    assert "proposal: investigation_required" in result_text
     assert "- evidence: context/evolution-report.md\n" in result_text
     assert "- evidence: learning/events.jsonl\n" in result_text
     assert "context/evolution-report.md, learning/events.jsonl" not in result_text
@@ -177,7 +177,8 @@ def test_completed_repair_runs_evolution_closeout_and_surfaces_pending_proposals
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["evolution_closeout"]["analyzer"] == "completed"
     assert repair["evolution_closeout"]["learning_events"]["status"] == "ok"
-    assert repair["evolution_closeout"]["pending_proposals"] == 1
+    assert repair["evolution_closeout"]["pending_proposals"] == 0
+    assert repair["evolution_closeout"]["investigation_proposals"] == 1
 
 
 def test_current_session_repair_materializes_fixed_review_finding_before_evolution(tmp_path: Path):
@@ -426,7 +427,7 @@ def test_repeated_current_session_review_corrections_aggregate_as_approval_requi
         if item["target_asset"] == "mistake_correction:current-session-fallback-evolution-ingestion"
     ]
     assert len(matching) == 1
-    assert matching[0]["status"] == "approval_required"
+    assert matching[0]["status"] == "investigation_required"
     assert matching[0]["proposal_type"] == "investigate_reusable_asset"
     assert matching[0]["occurrence_count"] == 2
     assert proposals["guardrails"]["asset_writes"] == "disabled"

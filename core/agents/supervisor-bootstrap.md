@@ -85,16 +85,29 @@ creation or rewrite so terminal and fallback artifacts retain the contract.
 **Host capability bootstrap**: Read host capabilities (registry:
 `core/rules/host-capabilities.md`; per-flag detail under
 `core/rules/capabilities/`). Treat missing file or parse errors as all-false
-flags. Three flags are loaded once in Phase 0 and reused through every later
+flags. 현재 host와 일치하지 않는 legacy capability도 all-false로 처리한다.
+파일을 갱신하거나 setup을 호출하지 않는다. 명시적 `AGENT_CREW_HOST`, 현재 host
+환경 순서로 판정하며 둘 다 없을 때만 legacy host 정보를 사용한다.
+Four flags are loaded once in Phase 0 and reused through every later
 phase — never re-read the file inline.
 
 ```bash
-# Single Python process reads capabilities.json once and emits all three flags,
+# Single Python process reads capabilities.json once and emits all four flags,
 # eliminating two extra python3 process startups compared to three separate calls.
 read -r HAS_TASK_TOOLS HAS_AGENT_BACKGROUND HAS_MONITOR_TOOL HAS_COST_TRACKING < <(python3 -c "
-import json
+import json, os
 try:
     c = json.load(open('${CAPABILITIES_PATH}'))
+
+    active_host = os.environ.get('AGENT_CREW_HOST', '').strip().lower()
+    if not active_host:
+        if any(os.environ.get(k, '').strip() for k in ('CODEX', 'CODEX_CI', 'CODEX_THREAD_ID', 'CODEX_MANAGED_BY_NPM')):
+            active_host = 'codex'
+        elif any(os.environ.get(k, '').strip() for k in ('CLAUDECODE', 'CLAUDE_SESSION_ID', 'CLAUDE_MODEL')):
+            active_host = 'claude'
+    stored_host = str(c.get('host') or c.get('adapter') or '').strip().lower()
+    if active_host and stored_host != active_host:
+        c = {}
     print(
         '1' if c.get('task_tools') else '0',
         '1' if c.get('agent_background') else '0',

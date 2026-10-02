@@ -145,7 +145,7 @@ def reviewer_status_for(key: str, register: dict[str, Any]) -> str:
         return "corrected"
     if key.startswith("review_principle:"):
         return "approved"
-    return str(register.get("approval_status") or "unknown").lower()
+    return "unknown"
 
 
 def outcome_for(key: str) -> str:
@@ -177,6 +177,35 @@ def build_events(state_dir: Path, task_dir: Path, report_path: Path) -> list[dic
 
     events: list[dict[str, Any]] = []
     for key in proposal_keys(report):
+        if key == "skill_format_warning":
+            for pattern in report.get("observed_patterns") or []:
+                if not isinstance(pattern, dict) or pattern.get("kind") != key:
+                    continue
+                for finding in pattern.get("findings") or []:
+                    if not isinstance(finding, dict):
+                        continue
+                    identity = [str(finding.get(field) or "") for field in ("file", "content_sha256", "issue_key")]
+                    if not all(identity):
+                        continue
+                    signature = key + ":" + event_id_for(*identity)
+                    events.append({
+                        "schema_version": SCHEMA_VERSION,
+                        "event_id": event_id_for(repository_key, signature),
+                        "project_id": project_id,
+                        "repository_key": repository_key,
+                        "task_id": task_id,
+                        "pattern_key": key,
+                        "failure_signature": signature,
+                        "evidence_ref": evidence_ref,
+                        "evidence_kind": "static_format",
+                        "reviewer_status": "unknown",
+                        "outcome": "observed",
+                        "target_assets": [identity[0]],
+                        "content_sha256": identity[1],
+                        "issue_key": identity[2],
+                        "created_at": utc_now_z(),
+                    })
+            continue
         event_id = event_id_for(repository_key, task_shape, key, key, evidence_ref)
         events.append({
             "schema_version": SCHEMA_VERSION,

@@ -572,10 +572,10 @@ def test_blocker_signal_is_reported_as_meaningful(script_runner, env_with_home, 
     assert any(pattern["kind"] == "blocker" for pattern in payload["observed_patterns"])
 
 
-def test_skill_content_depth_maps_to_relevant_rejected_candidate(
+def test_legacy_skill_audit_does_not_request_repetition(
     script_runner, env_with_home, state_dir
 ):
-    """success-case(regression) - maps skill depth to a lightweight skill patch suggestion."""
+    """정적 감사만으로 스킬 패치나 반복 실패 수집을 권하지 않는다."""
     task_dir = _seed_task(state_dir)
     (task_dir / "context" / "skill-content-audit.json").write_text(
         json.dumps({
@@ -597,13 +597,7 @@ def test_skill_content_depth_maps_to_relevant_rejected_candidate(
     assert [item["kind"] for item in payload["observed_patterns"]] == [
         "skill_content_depth"
     ]
-    assert payload["rejected_candidates"] == [{
-        "asset_type": "skill",
-        "name": "existing-skill-patch-suggestion",
-        "reason": "A single task produced a reusable-work signal; prefer a small patch to an existing skill over creating a new asset.",
-        "rejection_reason": "insufficient_repeated_evidence",
-        "required_evidence": "Collect repeated occurrences before suggesting a minimal patch to the closest existing skill.",
-    }]
+    assert payload["rejected_candidates"] == []
 
 
 def test_analyzer_extracts_review_principle_from_kotlin_test_feedback(
@@ -865,7 +859,7 @@ def test_proposal_aggregator_promotes_repeated_report_signals_without_asset_writ
         "approval_required": True,
     }
     assert payload["proposals"][0]["proposal_type"] == "patch_existing_skill"
-    assert payload["proposals"][0]["status"] == "approval_required"
+    assert payload["proposals"][0]["status"] == "investigation_required"
     assert payload["proposals"][0]["evidence_refs"] == [
         "tasks/20260101-120000-0/context/evolution-report.json",
         "tasks/20260102-120000-0/context/evolution-report.json",
@@ -913,7 +907,8 @@ def test_proposal_aggregator_groups_same_pattern_across_candidate_name_drift(
     assert result.returncode == 0, result.stdout + result.stderr
     proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
     assert proposal["target_asset"] == "skill_content_depth"
-    assert proposal["occurrence_count"] == 2
+    assert proposal["occurrence_count"] == 0
+    assert proposal["observation_count"] == 2
     assert proposal["evidence_refs"] == [
         "tasks/20260101-120000-0/context/evolution-report.json",
         "tasks/20260102-120000-0/context/evolution-report.json",
@@ -1230,7 +1225,7 @@ def test_proposal_aggregator_unions_mistake_correction_targets_across_reports(
     assert proposal["target_assets"] == ["core/scripts/quality_loop_lib.py"]
 
 
-def test_proposal_aggregator_preserves_existing_lifecycle_decisions(
+def test_proposal_aggregator_retains_old_patch_but_requires_investigation(
     script_runner, env_with_home, state_dir
 ):
     first = _seed_task(state_dir, "20260101-120000-0")
@@ -1279,11 +1274,13 @@ def test_proposal_aggregator_preserves_existing_lifecycle_decisions(
     assert result.returncode == 0, result.stdout + result.stderr
     proposal = json.loads(output.read_text(encoding="utf-8"))["proposals"][0]
     assert proposal["candidate_id"] == "existing-skill-patch-suggestion-2x"
-    assert proposal["status"] == "approved"
+    assert proposal["status"] == "investigation_required"
+    assert proposal["previous_status"] == "approved"
     assert proposal["target_skill"] == "documentation-impact.md"
     assert proposal["patch_body"] == "## Approved Patch\n\nKeep this text.\n"
     assert proposal["decision_reason"] == "operator approved"
-    assert proposal["occurrence_count"] == 3
+    assert proposal["occurrence_count"] == 0
+    assert proposal["observation_count"] == 3
     assert len(proposal["evidence_refs"]) == 3
 
 
@@ -1305,6 +1302,7 @@ def test_proposal_apply_requires_approved_patch_existing_skill(
                 "status": "approval_required",
                 "target_skill": "example.md",
                 "patch_body": "## Added Rule\n\nUse repeated evidence only.\n",
+                "expected_impact": "반복 근거 없는 규칙 추가 방지",
             }],
         }),
         encoding="utf-8",
@@ -1344,6 +1342,7 @@ def test_proposal_apply_appends_skill_patch_and_creates_agent_maker_requests(
                     "status": "approved",
                     "target_skill": "example.md",
                     "patch_body": "## Added Rule\n\nUse repeated evidence only.\n",
+                    "expected_impact": "반복 근거 없는 규칙 추가 방지",
                     "evidence_refs": ["tasks/one/context/evolution-report.json"],
                 },
                 {
@@ -1454,7 +1453,8 @@ def test_proposal_summary_reports_pending_items(script_runner, env_with_home, st
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "SELF_EVOLUTION_PROPOSALS: 1 pending" in result.stdout
+    assert "SELF_EVOLUTION_PROPOSALS: 0 pending" in result.stdout
+    assert "SELF_EVOLUTION_INVESTIGATIONS: 1" in result.stdout
     assert "- existing-skill-patch-suggestion-2x" in result.stdout
     assert "type: patch_existing_skill" in result.stdout
     assert "evidence: 2 tasks" in result.stdout
@@ -1558,7 +1558,8 @@ def test_proposal_summary_json_counts_pending_items(script_runner, env_with_home
 
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
-    assert payload["pending_count"] == 1
+    assert payload["pending_count"] == 0
+    assert payload["investigation_count"] == 1
     assert payload["proposals"][0]["candidate_id"] == "investigate-reusable-asset-2x"
 
 

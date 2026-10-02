@@ -10,6 +10,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from evolution_evidence import STATIC_PATTERNS, classify_proposal
+
 
 def read_json(path: Path) -> dict[str, Any]:
     try:
@@ -61,6 +63,10 @@ def proposal_keys(report: dict[str, Any]) -> list[str]:
     for item in patterns:
         if not isinstance(item, dict):
             continue
+        if item.get("kind") in STATIC_PATTERNS:
+            if item.get("kind") != "skill_format_warning":
+                keys.append(str(item["kind"]))
+            continue
         if item.get("kind") == "mistake_correction":
             pattern_key = str(item.get("pattern_key") or "")
             if pattern_key:
@@ -79,12 +85,14 @@ def proposal_keys(report: dict[str, Any]) -> list[str]:
             isinstance(item, dict)
             and item.get("kind")
             and item.get("kind") not in {"review_principle", "mistake_correction"}
+            and item.get("kind") != "skill_format_warning"
+            and item.get("kind") not in STATIC_PATTERNS
         )
     ]
     if kinds:
         keys.append("+".join(sorted(set(kinds))))
 
-    if not keys:
+    if not keys and not patterns:
         for item in report.get("rejected_candidates") or []:
             if not isinstance(item, dict):
                 continue
@@ -224,6 +232,7 @@ def preserve_decision_fields(proposal: dict[str, Any], existing: dict[str, Any])
         "status",
         "target_skill",
         "patch_body",
+        "expected_impact",
         "decision_reason",
         "approved_by",
         "approved_at",
@@ -293,6 +302,7 @@ def build_proposals(
         proposal.update(review_principle_metadata(first_report, key))
         proposal.update(mistake_correction_metadata(reports, key))
         preserve_decision_fields(proposal, preserved)
+        classify_proposal(proposal, static=bool(set(key.split("+")) & STATIC_PATTERNS))
         proposals.append(proposal)
     return proposals
 
@@ -325,7 +335,9 @@ def build_event_proposals(
     for event in events:
         if str(event.get("schema_version") or "") != "agent-crew.learning-event.v1":
             continue
-        if not event_is_feedback_backed(event):
+        if event.get("pattern_key") == "skill_format_warning" or event.get("evidence_kind") == "static_format":
+            continue
+        if not event_is_feedback_backed(event) and event.get("pattern_key") not in STATIC_PATTERNS:
             continue
         key = event_group_key(event)
         if key:
@@ -387,6 +399,7 @@ def build_event_proposals(
         if target_assets:
             proposal["target_assets"] = target_assets
         preserve_decision_fields(proposal, preserved)
+        classify_proposal(proposal, static=signature in STATIC_PATTERNS)
         proposals.append(proposal)
     return proposals
 

@@ -212,6 +212,9 @@ invocation in SKILL.md; generic adds guidance).
 - `evolution-proposal-summary.py` — read-only compact renderer for pending
   approval-gated proposals. It is used by close-out/status surfaces to show
   when repeated evidence has produced proposals without applying them.
+- `evolution_evidence.py` — 형식 관찰과 실제 실패 근거를 구분하고,
+  기존 스킬 수정안의 대상·본문·근거·기대 효과가 준비되었는지 검사한다.
+  불완전한 제안은 승인 대기와 별도의 `investigation_required`로 표시한다.
 - `phase-2-validation.py` — runs or plans the second validation pass across
   unit, smoke, integration, alpha, and beta levels, then emits structured
   findings, gaps, recommended follow-up actions, per-command log artifacts,

@@ -38,7 +38,9 @@ EOF
 }
 
 project_state_load() {
-  eval "$(project_state_resolve "$@")"
+  local resolved_state
+  resolved_state="$(project_state_resolve "$@")" || return $?
+  eval "${resolved_state}"
 }
 
 project_state_setup_existing() {

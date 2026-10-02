@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from evolution_evidence import STATIC_PATTERNS, classify_proposal, patch_readiness_gaps
+
 
 TERMINAL_STATUSES = {
     "applied",
@@ -80,14 +82,19 @@ def evidence_count(proposal: dict[str, Any]) -> int:
 def render_status(path: Path, limit: int) -> str:
     payload = read_json(path)
     pending = [
-        item
+        dict(item)
         for item in proposals(payload)
-        if str(item.get("status") or "") == "approval_required"
+        if str(item.get("status") or "") in {"approval_required", "investigation_required"}
     ]
     if not pending:
         return "SELF_EVOLUTION_PROPOSALS: 0 pending\n"
 
-    lines = [f"SELF_EVOLUTION_PROPOSALS: {len(pending)} pending"]
+    for proposal in pending:
+        classify_proposal(proposal, static=proposal.get("target_asset") in STATIC_PATTERNS)
+    approval_count = sum(item.get("status") == "approval_required" for item in pending)
+    lines = [f"SELF_EVOLUTION_PROPOSALS: {approval_count} pending"]
+    if len(pending) != approval_count:
+        lines.append(f"SELF_EVOLUTION_INVESTIGATIONS: {len(pending) - approval_count}")
     for proposal in pending[:max(0, limit)]:
         candidate_id = str(proposal.get("candidate_id") or "(unknown)")
         proposal_type = str(proposal.get("proposal_type") or "(unknown)")
@@ -102,8 +109,10 @@ def render_status(path: Path, limit: int) -> str:
             f"- {candidate_id}",
             f"  type: {proposal_type}",
             f"  evidence: {evidence_count(proposal)} tasks",
-            "  status: approval_required",
+            f"  status: {proposal.get('status')}",
         ])
+        if "observation_count" in proposal:
+            lines.append(f"  static evidence: {proposal['observation_count']} observations")
         if isinstance(target_assets, list) and target_assets:
             lines.append(f"  target: {', '.join(str(item) for item in target_assets)}")
         elif target:
@@ -117,7 +126,9 @@ def render_status(path: Path, limit: int) -> str:
         if reason:
             lines.append(f"  reason: {reason}")
 
-        if proposal_type in CREATE_PROPOSAL_TYPES:
+        if proposal.get("status") == "investigation_required" or patch_readiness_gaps(proposal):
+            lines.append("  next: investigate evidence and prepare target_skill, patch_body, evidence_refs, expected_impact")
+        elif proposal_type in CREATE_PROPOSAL_TYPES:
             lines.append("  next: review and approve; approved creation proposals are handed to crew:agent-maker")
         else:
             lines.append("  next: review and approve before apply")
@@ -138,6 +149,10 @@ def cmd_approve(args: argparse.Namespace) -> int:
         return 2
 
     status = str(proposal.get("status") or "")
+    gaps = patch_readiness_gaps(proposal)
+    if gaps:
+        print("proposal requires investigation: " + ", ".join(gaps), file=sys.stderr)
+        return 2
     if status == "approved":
         print(f"STATUS: already approved\nCANDIDATE_ID: {args.candidate_id}")
         return 0
