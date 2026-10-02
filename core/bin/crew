@@ -101,7 +101,10 @@ find_source_checkout() {
   local source
   for source in "${AGENT_CREW_SOURCE_DIR:-}" "${PROJECT_ROOT}" "${SOURCE_ROOT}"; do
     [ -n "${source}" ] || continue
-    if [ -d "${source}/core" ] && [ -d "${source}/adapters" ]; then
+    if [ -f "${source}/install.sh" ] \
+      && [ -f "${source}/core/bin/crew" ] \
+      && [ -f "${source}/core/scripts/sync-local-install.sh" ] \
+      && grep -q "deterministic shell entrypoint for agent-crew" "${source}/core/bin/crew" 2>/dev/null; then
       (cd "${source}" && pwd)
       return 0
     fi
@@ -179,14 +182,15 @@ is_managed_crew_cli() {
 }
 
 sync_managed_path_crew_cli() {
-  local source_crew="$1" running resolved_running candidate resolved tmp
+  local source_crew="$1" running resolved_running candidate resolved tmp path_dir
   [ -f "${source_crew}" ] || return 0
   running="$(absolute_file_path "${BASH_SOURCE[0]:-}" 2>/dev/null || true)"
 
-  for candidate in \
-    "${BASH_SOURCE[0]:-}" \
-    "$(command -v crew 2>/dev/null || true)" \
-    "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}/crew"; do
+  local candidates=("${BASH_SOURCE[0]:-}" "$(command -v crew 2>/dev/null || true)" "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}/crew")
+  while IFS= read -r path_dir; do
+    [ -n "${path_dir}" ] && candidates+=("${path_dir}/crew")
+  done < <(printf '%s' "${PATH:-}" | tr ':' '\n')
+  for candidate in "${candidates[@]}"; do
     resolved="$(absolute_file_path "${candidate}" 2>/dev/null || true)"
     [ -n "${resolved}" ] || continue
     [ -f "${resolved}" ] || continue
@@ -358,6 +362,198 @@ sync_source_hooks_if_drifted() {
   chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true
 
   printf 'crew: refreshed auto-route hooks from source checkout because installed hooks drifted\n' >&2
+}
+
+runtime_active_host() {
+  if [ -n "${AGENT_CREW_HOST:-}" ]; then
+    printf '%s\n' "${AGENT_CREW_HOST}" | tr '[:upper:]' '[:lower:]'
+    return 0
+  fi
+  if [ -n "${CODEX_THREAD_ID:-}${CODEX_SESSION_ID:-}${CODEX:-}${CODEX_CI:-}" ]; then
+    printf 'codex\n'
+    return 0
+  fi
+  if [ -n "${CLAUDECODE:-}${CLAUDE_SESSION_ID:-}${CLAUDE_MODEL:-}" ]; then
+    printf 'claude\n'
+    return 0
+  fi
+  if [ -f "${STATE_DIR}/capabilities.json" ]; then
+    python3 - "${STATE_DIR}/capabilities.json" <<'PY' 2>/dev/null || printf 'none\n'
+import json, sys
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    value = {}
+host = str(value.get("adapter") or value.get("host") or "none").lower()
+print(host if host in {"codex", "claude", "generic"} else "none")
+PY
+    return 0
+  fi
+  printf 'none\n'
+}
+
+runtime_managed_path_clis() {
+  local candidate resolved running seen="|" path_dir
+  running="$(absolute_file_path "${BASH_SOURCE[0]}" 2>/dev/null || true)"
+  local candidates=("${running}" "$(command -v crew 2>/dev/null || true)" "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}/crew")
+  while IFS= read -r path_dir; do
+    [ -n "${path_dir}" ] && candidates+=("${path_dir}/crew")
+  done < <(printf '%s' "${PATH:-}" | tr ':' '\n')
+  for candidate in "${candidates[@]}"; do
+    resolved="$(absolute_file_path "${candidate}" 2>/dev/null || true)"
+    [ -n "${resolved}" ] || continue
+    is_managed_crew_cli "${resolved}" || continue
+    case "${resolved}" in
+      "${SOURCE_ROOT}/core/bin/crew"|"${AGENT_CREW_HOME}/bin/crew") continue ;;
+    esac
+    case "${seen}" in *"|${resolved}|"*) continue ;; esac
+    printf '%s\n' "${resolved}"
+    seen="${seen}${resolved}|"
+  done
+}
+
+runtime_install_drift_payload() {
+  local source="$1" verifier output rc=0 active_host managed_path_cli
+  local managed_args=()
+  verifier="${source}/core/scripts/verify-install-drift.py"
+  [ -f "${verifier}" ] || {
+    printf '{"status":"UNKNOWN","error":"detector missing"}\n'
+    return 0
+  }
+
+  active_host="$(runtime_active_host)"
+  managed_path_cli="$(runtime_managed_path_clis 2>/dev/null || true)"
+  if [ -n "${managed_path_cli}" ]; then
+    while IFS= read -r candidate; do
+      [ -n "${candidate}" ] && managed_args+=(--managed-path-cli "${candidate}")
+    done <<< "${managed_path_cli}"
+    output="$(python3 "${verifier}" --profile runtime-readonly --format json \
+      --active-host "${active_host}" --source-root "${source}" \
+      --agent-crew-home "${AGENT_CREW_HOME}" --codex-home "${CODEX_HOME:-${HOME}/.codex}" \
+      --claude-dir "${CLAUDE_DIR:-${HOME}/.claude}" \
+      "${managed_args[@]}" 2>/dev/null)" || rc=$?
+  else
+    output="$(python3 "${verifier}" --profile runtime-readonly --format json --skip-path-bin \
+      --active-host "${active_host}" --source-root "${source}" \
+      --agent-crew-home "${AGENT_CREW_HOME}" --codex-home "${CODEX_HOME:-${HOME}/.codex}" \
+      --claude-dir "${CLAUDE_DIR:-${HOME}/.claude}" \
+      --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}" 2>/dev/null)" || rc=$?
+  fi
+  if [ "${rc}" -gt 2 ] || [ -z "${output}" ]; then
+    printf '{"status":"UNKNOWN","error":"detector execution failed","detector_rc":%s}\n' "${rc}"
+    return 0
+  fi
+  printf '%s\n' "${output}"
+}
+
+runtime_drift_preflight() {
+  local mutation_scope="$1"; shift
+  local source payload status action sync_rc=0 active_host prompt options question_id decision installed_cli managed_path_cli
+  [ "${AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN:-1}" = "1" ] || return 0
+
+  source="$(find_source_checkout 2>/dev/null || true)"
+  [ -n "${source}" ] || return 0
+  payload="$(runtime_install_drift_payload "${source}")"
+  status="$(DRIFT_PAYLOAD="${payload}" python3 -c 'import json,os; print(json.loads(os.environ["DRIFT_PAYLOAD"]).get("status","UNKNOWN"))' 2>/dev/null || printf 'UNKNOWN')"
+
+  case "${status}" in
+    MATCH|NOT_APPLICABLE)
+      return 0
+      ;;
+    UNKNOWN)
+      printf 'DRIFT_DIAGNOSTICS: %s\n' "$(printf '%s' "${payload}" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=False,separators=(",",":")))' 2>/dev/null || printf '{}')" >&2
+      printf 'crew: runtime install drift status is UNKNOWN; run blocked before execution\n' >&2
+      return 2
+      ;;
+    MISMATCH) ;;
+    *)
+      printf 'crew: invalid runtime install drift status: %s\n' "${status}" >&2
+      return 2
+      ;;
+  esac
+
+  active_host="$(runtime_active_host)"
+  installed_cli="${AGENT_CREW_HOME}/bin/crew"
+  if [ "${mutation_scope}" = "read_only" ] && ! is_managed_crew_cli "${installed_cli}"; then
+    printf 'STATUS: runtime_drift_no_safe_continuation\n' >&2
+    printf 'DRIFT_DIAGNOSTICS: %s\n' "$(printf '%s' "${payload}" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=False,separators=(",",":")))')" >&2
+    printf 'crew: read-only execution has no safe installed runtime continuation\n' >&2
+    return 2
+  fi
+  options='[{"label":"Sync source then run","value":"sync","description":"Synchronize managed assets, verify them, then run."},{"label":"Continue installed version once","value":"continue","description":"Run once with the verified installed CLI."},{"label":"Cancel","value":"cancel","description":"Stop without running."}]'
+  if [ "${mutation_scope}" = "read_only" ] || [ "${AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN:-1}" != "1" ]; then
+    options='[{"label":"Continue installed version once","value":"continue","description":"Run once with the verified installed CLI."},{"label":"Cancel","value":"cancel","description":"Stop without running."}]'
+  fi
+  if [ "$(absolute_file_path "${BASH_SOURCE[0]}" 2>/dev/null || true)" = "$(absolute_file_path "${source}/core/bin/crew" 2>/dev/null || true)" ] \
+    && ! is_managed_crew_cli "${installed_cli}"; then
+    options="$(OPTIONS_JSON="${options}" python3 -c 'import json,os; print(json.dumps([o for o in json.loads(os.environ["OPTIONS_JSON"]) if o["value"] != "continue"],separators=(",",":")))')"
+  fi
+  prompt="Runtime drift decision | source=${source} | source_fingerprint=$(DRIFT_PAYLOAD="${payload}" python3 -c 'import json,os; print(json.loads(os.environ["DRIFT_PAYLOAD"]).get("source_fingerprint","unknown"))') | install_fingerprint=$(DRIFT_PAYLOAD="${payload}" python3 -c 'import json,os; print(json.loads(os.environ["DRIFT_PAYLOAD"]).get("install_fingerprint","unknown"))') | scope=${mutation_scope} | invocation=$(printf '%s\0' "$@" | shasum -a 256 | awk '{print $1}')"
+  question_id="$(python3 "${source}/core/scripts/interactive-question-state.py" key --prompt "${prompt}" --options-json "${options}")"
+  decision="$(python3 "${source}/core/scripts/interactive-question-state.py" resolve --consume --state-dir "${STATE_DIR}" --question-id "${question_id}" 2>/dev/null || true)"
+  action="$(DECISION="${decision}" python3 -c 'import json,os; print(json.loads(os.environ["DECISION"]).get("chosen_value", ""))' 2>/dev/null || true)"
+  if [ -z "${action}" ]; then
+    printf 'STATUS: runtime_drift_selection_required\n' >&2
+    printf 'QUESTION_ID: %s\n' "${question_id}" >&2
+    printf 'QUESTION_STATE_DIR: %s\n' "${STATE_DIR}" >&2
+    printf 'QUESTION_PROMPT: %s\n' "${prompt}" >&2
+    printf 'OPTIONS_JSON: %s\n' "${options}" >&2
+    printf 'DRIFT_DIAGNOSTICS: %s\n' "$(printf '%s' "${payload}" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=False,separators=(",",":")))')" >&2
+    return 3
+  fi
+
+  case "${action}" in
+    continue)
+      if [ "$(absolute_file_path "${BASH_SOURCE[0]}" 2>/dev/null || true)" != "$(absolute_file_path "${installed_cli}" 2>/dev/null || true)" ]; then
+        is_managed_crew_cli "${installed_cli}" || {
+          printf 'crew: installed runtime continuation is unavailable\n' >&2
+          return 2
+        }
+        printf 'crew: re-entering installed runtime for this run\n' >&2
+        AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN=0 \
+          AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0 \
+          AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN=0 \
+          exec "${installed_cli}" run "$@"
+      fi
+      printf 'crew: continuing once with installed runtime assets\n' >&2
+      return 0
+      ;;
+    cancel)
+      printf 'crew: runtime drift execution cancelled by user choice\n' >&2
+      return 4
+      ;;
+    sync)
+      if [ "${mutation_scope}" = "read_only" ]; then
+        printf 'crew: sync is unavailable for read-only execution\n' >&2
+        return 2
+      fi
+      managed_path_cli="$(runtime_managed_path_clis 2>/dev/null | head -1 || true)"
+      if [ -n "${managed_path_cli}" ]; then
+        AGENT_CREW_DISABLE_FAST_NOOP_UPDATE=1 \
+          AGENT_CREW_HOST="${active_host}" \
+          AGENT_CREW_PATH_BIN="$(dirname "${managed_path_cli}")" \
+          bash "${source}/core/scripts/sync-local-install.sh" "${source}" "${PROJECT_ROOT}" || sync_rc=$?
+      else
+        AGENT_CREW_DISABLE_FAST_NOOP_UPDATE=1 AGENT_CREW_SKIP_PATH_CLI=1 AGENT_CREW_HOST="${active_host}" \
+          bash "${source}/core/scripts/sync-local-install.sh" "${source}" "${PROJECT_ROOT}" || sync_rc=$?
+      fi
+      [ "${sync_rc}" -ne 0 ] || sync_managed_path_crew_cli "${source}/core/bin/crew"
+      payload="$(runtime_install_drift_payload "${source}")"
+      status="$(DRIFT_PAYLOAD="${payload}" python3 -c 'import json,os; print(json.loads(os.environ["DRIFT_PAYLOAD"]).get("status","UNKNOWN"))')"
+      if [ "${sync_rc}" -ne 0 ] || [ "${status}" != "MATCH" ]; then
+        printf 'crew: runtime asset sync/re-verification returned rc=%s status=%s; run blocked without another prompt\n' \
+          "${sync_rc}" "${status}" >&2
+        printf 'DRIFT_DIAGNOSTICS: %s\n' "$(printf '%s' "${payload}" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=False,separators=(",",":")))' 2>/dev/null || printf '{}')" >&2
+        return 2
+      fi
+      printf 'crew: runtime assets synchronized and verified\n' >&2
+      return 0
+      ;;
+    *)
+      printf 'crew: invalid or stale runtime drift decision: %s\n' "${action}" >&2
+      return 2
+      ;;
+  esac
 }
 
 setup_existing_state_action() {
@@ -1342,17 +1538,8 @@ EOF
   esac
 
   print_update_stale_warning
-  if [ "${mutation_scope}" = "read_only" ]; then
-    sync_source_runtime_assets_if_drifted warn
-  else
-    sync_source_runtime_assets_if_drifted
-  fi
+  runtime_drift_preflight "${mutation_scope}" "$@"
   require_file "${ASSET_ROOT}/commands/run.md" "run command definition"
-  if [ "${mutation_scope}" = "read_only" ]; then
-    sync_source_hooks_if_drifted warn
-  else
-    sync_source_hooks_if_drifted
-  fi
   local runtime="${ASSET_ROOT}/scripts/crew-runtime.py"
   require_file "${runtime}" "native runtime helper"
   python3 "${runtime}" run --project-root "${PROJECT_ROOT}" "$@"

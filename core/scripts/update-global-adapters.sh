@@ -84,7 +84,7 @@ fi
 if [ -d "${CLAUDE_DIR}/agent-crew" ]; then
   printf '[update-global-adapters] Updating Claude global paths → %s/agent-crew/\n' "${CLAUDE_DIR}"
   AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" AGENT_CREW_WRITE_CAPABILITIES=0 SOURCE_ROOT="${SOURCE_ROOT}" \
-    bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null 2>&1 || \
+    bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT:-$(pwd)}" >/dev/null 2>&1 || \
     printf '[update-global-adapters] WARNING: Claude adapter returned non-zero (continuing)\n' >&2
 else
   printf '[update-global-adapters] Skipping Claude update — not installed (%s/agent-crew does not exist)\n' "${CLAUDE_DIR}"
@@ -439,7 +439,7 @@ for dest_path in sorted(dest.glob("*.toml")):
     if dest_path.name in src_names:
         continue
     text = dest_path.read_text(encoding="utf-8", errors="replace")
-    managed = system_marker in text or legacy_marker in text
+    managed = system_marker in text or legacy_marker in text or text.startswith(user_marker + "\n")
     if managed:
         print(f"[update-global-adapters] Removing stale Codex global agent: {dest_path.name}")
         dest_path.unlink()

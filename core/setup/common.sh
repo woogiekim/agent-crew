@@ -258,6 +258,10 @@ register_local_git_excludes() {
 
   local exclude_file
   exclude_file="$(git -C "${project_root}" rev-parse --git-path info/exclude)"
+  case "${exclude_file}" in
+    /*) ;;
+    *) exclude_file="${project_root}/${exclude_file}" ;;
+  esac
   mkdir -p "$(dirname "${exclude_file}")"
   touch "${exclude_file}"
 

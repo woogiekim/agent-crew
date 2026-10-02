@@ -28,7 +28,7 @@ verbose output.
 The session registry is stored at:
 
 ```
-${AGENT_CREW_HOME}/state/${PROJECT_NAME}/session.json
+${AGENT_CREW_HOME}/state/${PROJECT_STATE_KEY}/session.json
 ```
 
 ### Schema

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -81,14 +82,21 @@ def cmd_key(args: argparse.Namespace) -> int:
 
 
 def cmd_record(args: argparse.Namespace) -> int:
+    path = decision_path(args)
     options = load_options(args.options_json)
-    labels = {option["label"] for option in options}
+    expected_id = question_id(args.prompt, options)
+    if args.question_id != expected_id:
+        raise SystemExit("interactive-question-state: question id does not match prompt/options")
+    values_by_label = {option["label"]: option["value"] for option in options}
     chosen_label = str(args.chosen_label).strip()
-    if chosen_label != "__cancelled__" and chosen_label not in labels:
+    if chosen_label != "__cancelled__" and chosen_label not in values_by_label:
         raise SystemExit(
             "interactive-question-state: chosen label must match an option label "
             "or __cancelled__"
         )
+    chosen_value = "cancel" if chosen_label == "__cancelled__" else values_by_label[chosen_label]
+    if args.chosen_value and args.chosen_value != chosen_value:
+        raise SystemExit("interactive-question-state: chosen value does not match the selected option")
 
     record = {
         "schema_version": 1,
@@ -96,13 +104,12 @@ def cmd_record(args: argparse.Namespace) -> int:
         "prompt": args.prompt,
         "options": options,
         "chosen_label": chosen_label,
-        "chosen_value": args.chosen_value or chosen_label,
+        "chosen_value": chosen_value,
         "source": args.source,
         "adapter": args.adapter,
         "created_at": utc_now_z(),
         "cancelled": chosen_label == "__cancelled__",
     }
-    path = decision_path(args)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     tmp_path.write_text(
@@ -120,7 +127,17 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         print(json.dumps({"found": False, "question_id": args.question_id}, sort_keys=True))
         return 1
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    if args.consume:
+        claimed = path.with_suffix(path.suffix + f".consumed-{os.getpid()}")
+        try:
+            path.replace(claimed)
+        except FileNotFoundError:
+            print(json.dumps({"found": False, "question_id": args.question_id}, sort_keys=True))
+            return 1
+        payload = json.loads(claimed.read_text(encoding="utf-8"))
+        claimed.unlink(missing_ok=True)
+    else:
+        payload = json.loads(path.read_text(encoding="utf-8"))
     payload["found"] = True
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0
@@ -167,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     resolve.add_argument("--task-dir")
     resolve.add_argument("--state-dir")
     resolve.add_argument("--question-id", required=True)
+    resolve.add_argument("--consume", action="store_true")
     resolve.set_defaults(func=cmd_resolve)
 
     markdown = sub.add_parser("render-markdown", help="render markdown fallback")

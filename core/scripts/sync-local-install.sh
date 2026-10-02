@@ -240,6 +240,17 @@ copy_tree() {
   cp -rf "${src}/." "${dest}/"
 }
 
+prune_managed_tree() {
+  local src="$1" dest="$2" path rel
+  [ -d "${src}" ] || return 0
+  [ -d "${dest}" ] || return 0
+  while IFS= read -r -d '' path; do
+    rel="${path#${dest}/}"
+    [ -f "${src}/${rel}" ] || rm -f -- "${path}"
+  done < <(find "${dest}" -type f -print0)
+  find "${dest}" -depth -type d -empty -delete 2>/dev/null || true
+}
+
 prune_python_runtime_cache() {
   local root="$1"
   [ -d "${root}" ] || return 0
@@ -252,6 +263,10 @@ install_path_crew_cli() {
   local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
   local dest="${dest_dir}/crew"
   local tmp
+  if [ "${AGENT_CREW_SKIP_PATH_CLI:-0}" = "1" ]; then
+    PATH_CREW_CLI_MANAGED=0
+    return 0
+  fi
   [ -f "${src}" ] || return 0
 
   mkdir -p "${dest_dir}"
@@ -272,30 +287,41 @@ install_path_crew_cli() {
 }
 
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
+prune_managed_tree "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands"
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
 copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
+prune_managed_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/rules"
 copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"
+prune_managed_tree "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
 copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks" "*.sh"
 copy_tree "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
+prune_managed_tree "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/system/scripts"
 copy_tree "${SOURCE_ROOT}/core/scripts" "${AGENT_CREW_HOME}/scripts"
 prune_python_runtime_cache "${AGENT_CREW_HOME}/system/scripts"
 prune_python_runtime_cache "${AGENT_CREW_HOME}/scripts"
 copy_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/system/evaluations"
+prune_managed_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/system/evaluations"
 copy_tree "${SOURCE_ROOT}/core/evaluations" "${AGENT_CREW_HOME}/evaluations"
 copy_flat "${SOURCE_ROOT}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"
+prune_managed_tree "${SOURCE_ROOT}/core/schemas" "${AGENT_CREW_HOME}/system/schemas"
 copy_flat "${SOURCE_ROOT}/core/schemas" "${AGENT_CREW_HOME}/schemas" "*.json"
 copy_tree "${SOURCE_ROOT}/core/policies" "${AGENT_CREW_HOME}/system/policies"
+prune_managed_tree "${SOURCE_ROOT}/core/policies" "${AGENT_CREW_HOME}/system/policies"
 copy_tree "${SOURCE_ROOT}/core/policies" "${AGENT_CREW_HOME}/policies"
 copy_flat "${SOURCE_ROOT}/core/setup" "${AGENT_CREW_HOME}/system/setup" "*.sh"
+prune_managed_tree "${SOURCE_ROOT}/core/setup" "${AGENT_CREW_HOME}/system/setup"
 copy_flat "${SOURCE_ROOT}/core/setup" "${AGENT_CREW_HOME}/setup" "*.sh"
 copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/system/adapters"
+prune_managed_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/system/adapters"
 copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/adapters"
+prune_managed_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/adapters"
 copy_tree "${SOURCE_ROOT}/core/agents" "${AGENT_CREW_HOME}/system/agents"
 copy_tree "${SOURCE_ROOT}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
 copy_flat "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
+prune_managed_tree "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin"
 install_path_crew_cli
 print_update_phase "asset_copy"
 record_global_update_scope
@@ -350,7 +376,11 @@ merge_skills_to_discovery \
   "${AGENT_CREW_HOME}/user/skills" \
   "${AGENT_CREW_HOME}/skills"
 
-SOURCE_ROOT="${SOURCE_ROOT}" AGENT_CREW_MODE=update \
+if [ "$(printf '%s' "${AGENT_CREW_HOST:-}" | tr '[:upper:]' '[:lower:]')" = "claude" ]; then
+  mkdir -p "${CLAUDE_DIR}/agent-crew"
+fi
+
+SOURCE_ROOT="${SOURCE_ROOT}" PROJECT_ROOT="${PROJECT_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/scripts/update-global-adapters.sh"
 
 copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"

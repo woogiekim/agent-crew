@@ -13,18 +13,34 @@ crew:run
 
 ## Execution
 
-1. Load `~/.agent-crew/commands/run.md`.
-2. Treat any user text after `$crew:run` as the task description.
+1. Invoke the native `crew run` entry. If it returns
+   `STATUS: runtime_drift_selection_required`, present the emitted choices with
+   the emitted `QUESTION_ID`, `QUESTION_PROMPT`, `OPTIONS_JSON`, and
+   `QUESTION_STATE_DIR`, and `DRIFT_DIAGNOSTICS`. In Plan mode, use `request_user_input`; in Default mode,
+   render the same options as structured Markdown. Record the canonical chosen
+   label with `crew question record --state-dir "${QUESTION_STATE_DIR}" ...`;
+   core derives the canonical value and rejects a caller-supplied mismatch.
+   `request_user_input` may display a presentation-only ` (Recommended)` suffix.
+   Record the original canonical `label` and `value` from `OPTIONS_JSON`, never
+   the decorated display label.
+   Then re-run the
+   exact same command. Core consumes that fingerprint- and invocation-bound
+   decision once. Never substitute an environment-variable acknowledgement or
+   show the question after a failed sync/re-verification.
+   `STATUS: runtime_drift_no_safe_continuation` is a terminal blocked result;
+   do not render a one-option Cancel question.
+2. Load `~/.agent-crew/commands/run.md`.
+3. Treat any user text after `$crew:run` as the task description.
    A leading `$crew:run 코드리뷰` means "run the `코드리뷰` task"; it does
    not mean "review the `$crew:run` skill". Only treat the wrapper itself as
    the review target when the prompt explicitly says the skill, wrapper, file,
    or `SKILL.md` is the object.
-3. Preserve explicitly invoked Codex skill context as task input for
+4. Preserve explicitly invoked Codex skill context as task input for
    requirements collection, supervisor handoffs, and generated prompts.
    Do not auto-load non-agent-crew or third-party host/plugin skills from
    trigger-description matches during agent-crew execution.
-4. Follow the command definition exactly, including mandatory requirements collection.
-5. Delegate execution to supervisor as defined by the command. In the
+5. Follow the command definition exactly, including mandatory requirements collection.
+6. Delegate execution to supervisor as defined by the command. In the
    current-session fallback, the current Codex session itself is that
    supervisor; do not spawn a second top-level supervisor.
 

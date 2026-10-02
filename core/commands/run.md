@@ -100,120 +100,42 @@ crew:run "Fix bug B"
 
 ## Execution Steps
 
-### 0. Auto-sync Installed Commands
+### 0. Runtime Install Drift Choice
 
-> **This step runs before all other steps and is silent on success.** It ensures
-> the installed commands under `~/.agent-crew/commands/` and `~/.claude/commands/`
-> are always in sync with the source repository. This prevents stale command
-> definitions (the root cause of injection detection failures when source commands
-> are updated but installed copies are not refreshed).
+The native `crew run` entry first proves source identity with the installer,
+native CLI marker, and local-sync entrypoint, then performs a side-effect-free
+SHA-256 comparison before this command definition is executed. It compares the
+system-owned trees managed by `sync-local-install.sh`, including stale extras
+and a managed PATH CLI. User layers and unmanaged PATH executables are ignored.
+Only the active host adapter is checked: explicit `AGENT_CREW_HOST`, current
+host environment signal, matching capabilities, then provider-neutral core.
 
-Explicit `--read-only` / `--mutation-scope read_only` executions are the
-exception: perform the same drift comparisons but emit an advisory warning and
-do not copy command, rule, script, hook, Agent, Skill, policy, schema, or CLI
-assets. Task-local state creation remains allowed. The scope is selected only
-by the explicit option; never infer it from natural-language task text.
+- `MATCH`: proceed silently.
+- `NOT_APPLICABLE`: proceed silently when no valid source checkout is available.
+- `UNKNOWN`: stop before execution and report that the comparison could not be
+  completed.
+- `MISMATCH`: emit a selection-required status, structured option metadata, and
+  sanitized JSON diagnostics. A writable run offers **Sync source then run**,
+  **Continue installed version once**, and **Cancel**. A read-only run offers
+  only Continue and Cancel. The host owns the UI; core never asks silently.
 
-Resolve the source repository once:
+The host records the selected action through `crew question record`, using the
+emitted `QUESTION_STATE_DIR`; it does not need to rediscover project state. The
+question key binds source identity, source/install fingerprints, mutation scope,
+and invocation digest. Core atomically consumes it once; changed inputs reject
+the stale decision. `sync` delegates to `core/scripts/sync-local-install.sh`,
+then re-runs the exact same detector. Execution proceeds only when sync exits
+zero and re-verification is `MATCH`. Continue re-enters the verified installed
+  CLI when invoked from source; if none is available the option is withheld or
+  blocked. A read-only source run with no safe installed CLI returns
+  `STATUS: runtime_drift_no_safe_continuation` with diagnostics and no question.
+  A failed sync or failed re-verification stops without another prompt.
 
-```bash
-AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
-CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
-
-# Resolve the local source checkout only when this repo is already present.
-# crew:update no longer records a persistent source path, so this step now
-# skips by default in installed environments.
-SOURCE_ROOT=""
-_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-if [ -d "${_TOPLEVEL}/core" ] && [ -d "${_TOPLEVEL}/adapters" ]; then
-  SOURCE_ROOT="${_TOPLEVEL}"
-fi
-```
-
-If `SOURCE_ROOT` resolves and `${SOURCE_ROOT}/core/commands/` exists, sync system
-command files to the installed system and discovery locations. User command
-seeds from `${SOURCE_ROOT}/core/user/commands/` sync only to the user/discovery
-command locations, never to `system/commands`.
-
-```bash
-if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/commands" ]; then
-  # Sync commands: source → system layer (canonical installed copy)
-  cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/system/commands/" 2>/dev/null || true
-  # Sync commands: source → compat alias (backward-compatible path)
-  cp "${SOURCE_ROOT}/core/commands/"*.md "${AGENT_CREW_HOME}/commands/" 2>/dev/null || true
-  # Sync user command seeds: source → user/discovery paths only.
-  mkdir -p "${AGENT_CREW_HOME}/user/commands"
-  for _cmd in "${SOURCE_ROOT}/core/user/commands/"*.md; do
-    [ -f "${_cmd}" ] || continue
-    [ -f "${AGENT_CREW_HOME}/user/commands/$(basename "${_cmd}")" ] \
-      || cp "${_cmd}" "${AGENT_CREW_HOME}/user/commands/" 2>/dev/null || true
-    cp "${_cmd}" "${AGENT_CREW_HOME}/commands/" 2>/dev/null || true
-  done
-  # Sync commands: source → Claude namespaced slash-command path (/crew:<intent>)
-  mkdir -p "${CLAUDE_DIR}/commands/crew"
-  rm -f \
-    "${CLAUDE_DIR}/commands/agent-maker.md" \
-    "${CLAUDE_DIR}/commands/agent.md" \
-    "${CLAUDE_DIR}/commands/cost.md" \
-    "${CLAUDE_DIR}/commands/evolve.md" \
-    "${CLAUDE_DIR}/commands/interact.md" \
-    "${CLAUDE_DIR}/commands/relay.md" \
-    "${CLAUDE_DIR}/commands/run.md" \
-    "${CLAUDE_DIR}/commands/sessions.md" \
-    "${CLAUDE_DIR}/commands/setup.md" \
-    "${CLAUDE_DIR}/commands/smm.md" \
-    "${CLAUDE_DIR}/commands/status.md" \
-    "${CLAUDE_DIR}/commands/sync-instructions.md" \
-    "${CLAUDE_DIR}/commands/task.md" \
-    "${CLAUDE_DIR}/commands/telemetry.md" \
-    "${CLAUDE_DIR}/commands/update.md" \
-    "${CLAUDE_DIR}/commands/workflow.md" \
-    2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/commands/"*.md "${CLAUDE_DIR}/commands/crew/" 2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/user/commands/"*.md "${CLAUDE_DIR}/commands/" 2>/dev/null || true
-fi
-
-# Also sync rules (session protocol references core/rules/task-injection.md).
-# Stale rules do not break execution but may cause agent confusion.
-if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/rules" ]; then
-  cp "${SOURCE_ROOT}/core/rules/"*.md "${AGENT_CREW_HOME}/system/rules/" 2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/rules/"*.md "${AGENT_CREW_HOME}/rules/" 2>/dev/null || true
-fi
-
-# Sync helper scripts used by command definitions. Commands must not point at
-# stale or missing helpers after Step 0 refreshes the prompt definition.
-if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/scripts" ]; then
-  mkdir -p "${AGENT_CREW_HOME}/system/scripts" "${AGENT_CREW_HOME}/scripts"
-  cp "${SOURCE_ROOT}/core/scripts/"*.py "${AGENT_CREW_HOME}/system/scripts/" 2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/scripts/"*.py "${AGENT_CREW_HOME}/scripts/" 2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/scripts/"*.sh "${AGENT_CREW_HOME}/system/scripts/" 2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/" 2>/dev/null || true
-  chmod +x "${AGENT_CREW_HOME}/system/scripts/"*.py "${AGENT_CREW_HOME}/scripts/"*.py \
-    "${AGENT_CREW_HOME}/system/scripts/"*.sh "${AGENT_CREW_HOME}/scripts/"*.sh \
-    2>/dev/null || true
-fi
-
-# Sync hooks as runtime behavior, not just install-time templates. Stale
-# auto-route hooks can keep injecting old STOP/ROUTE directives after source
-# fixes land.
-if [ -n "${SOURCE_ROOT}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
-  mkdir -p "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks"
-  cp "${SOURCE_ROOT}/core/hooks/"*.sh "${AGENT_CREW_HOME}/system/hooks/" 2>/dev/null || true
-  cp "${SOURCE_ROOT}/core/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/" 2>/dev/null || true
-  chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh \
-    2>/dev/null || true
-fi
-```
-
-**Silent on success**: this step emits nothing when the sync completes normally.
-If `SOURCE_ROOT` cannot be resolved (e.g., the agent-crew source repo is not
-present on this machine), skip this step entirely and proceed to Step 1. The
-absence of a source root is not an error — the installed commands may already
-be current from the last `crew:update` run.
-
-> **Note**: This step updates command, rule, script, and hook payload files. It
-> does NOT re-run hook registration, agent discovery merge, or any other install side-effect.
-> For a full refresh of all assets, run `crew:update` explicitly.
+Do not use project setup state or missing `capabilities.json` as runtime drift
+signals. Missing capabilities is the normal provider-neutral absence case.
+`AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN=0` is the explicit detector bypass for
+controlled re-entry/testing. The legacy `AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0`
+only removes the Sync choice; it no longer suppresses mismatch detection.
 
 ### 0b. Resolve Lazy Project State
 

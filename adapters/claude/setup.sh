@@ -760,6 +760,92 @@ with open(dest, "w") as f:
   f.write("\n")
 PYEOF
 
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}" <<'PYEOF'
+import json
+import shlex
+import sys
+from pathlib import Path
+
+dest = Path(sys.argv[1])
+claude_dir = Path(sys.argv[2])
+tracker = "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane__create_label|mcp__plane__create_work_item_comment|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item|mcp__plane.create_label|mcp__plane.create_work_item_comment"
+required = [
+    ("UserPromptSubmit", None, "auto-route.sh", 5),
+    ("PreToolUse", "Agent|Task|Delegate", "context-guard.sh", 5),
+    ("PreToolUse", "Agent|Task", "normalize-task-guard.sh", 5),
+    ("PreToolUse", "Agent", "agent-diff-pre.sh", 5),
+    ("PostToolUse", "Agent", "agent-diff-post.sh", 10),
+    ("PostToolUse", "*", "supervisor-progress-guard.sh", 5),
+    ("PostToolUse", "*", "cost-tracker.sh", 5),
+    ("PostToolUse", "Bash", "tool-event-recorder.sh", 5),
+    ("PostToolUse", "*", "mnemos-capture-guard.sh", 10),
+    ("UserPromptSubmit", "*", "auto-issue-report.sh", 10),
+    ("PostToolUse", "Bash", "auto-issue-report.sh", 10),
+    ("PreToolUse", "Edit|Write", "direct-edit-guard.sh", 10),
+    ("PreToolUse", "Bash", "guard-dangerous-commands.sh", 5),
+    ("PreToolUse", tracker, "tracker-mutation-guard.sh", 10),
+    ("PostToolUse", "Agent", "forbid-plaintext-approval.sh", 5),
+    ("PostToolUse", "Agent", "route-directive-guard.sh", 5),
+]
+managed_root = (claude_dir / "agent-crew" / "hooks").resolve()
+managed_paths = {(managed_root / name).resolve() for _, _, name, _ in required}
+stale_managed_paths = set()
+try:
+    settings = json.loads(dest.read_text(encoding="utf-8")) if dest.exists() else {}
+except (json.JSONDecodeError, OSError):
+    settings = {}
+if not isinstance(settings, dict):
+    settings = {}
+hooks = settings.setdefault("hooks", {})
+if not isinstance(hooks, dict):
+    hooks = {}
+    settings["hooks"] = hooks
+for event, blocks in list(hooks.items()):
+    if not isinstance(blocks, list):
+        continue
+    retained_blocks = []
+    for block in blocks:
+        if not isinstance(block, dict) or not isinstance(block.get("hooks"), list):
+            retained_blocks.append(block)
+            continue
+        retained_hooks = []
+        for hook in block["hooks"]:
+            command = str(hook.get("command", "")) if isinstance(hook, dict) else ""
+            try:
+                tokens = shlex.split(command)
+            except ValueError:
+                tokens = []
+            registered_managed = False
+            for token in tokens:
+                token_path = Path(token).expanduser().resolve()
+                try:
+                    token_path.relative_to(managed_root)
+                except ValueError:
+                    continue
+                registered_managed = True
+                if token_path not in managed_paths:
+                    stale_managed_paths.add(token_path)
+            if registered_managed:
+                continue
+            retained_hooks.append(hook)
+        if retained_hooks:
+            updated = dict(block)
+            updated["hooks"] = retained_hooks
+            retained_blocks.append(updated)
+    hooks[event] = retained_blocks
+for event, matcher, name, timeout in required:
+    entry = {"type": "command", "command": f"bash {claude_dir}/agent-crew/hooks/{name}", "timeout": timeout}
+    block = {"hooks": [entry]}
+    if matcher is not None:
+        block["matcher"] = matcher
+    hooks.setdefault(event, []).append(block)
+dest.parent.mkdir(parents=True, exist_ok=True)
+dest.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+for stale_path in stale_managed_paths:
+    if stale_path.is_file():
+        stale_path.unlink()
+PYEOF
+
 print_diff_summary
 
 printf 'HOST: claude\n'

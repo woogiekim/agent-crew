@@ -81,11 +81,15 @@ def test_resolve_missing_choice_exits_nonzero(script_runner, task_dir):
 
 
 def test_record_rejects_unknown_choice(script_runner, task_dir):
+    key = script_runner(
+        "interactive-question-state.py", "key", "--prompt", "Proceed with push?",
+        "--options-json", OPTIONS,
+    ).stdout.strip()
     result = script_runner(
         "interactive-question-state.py",
         "record",
         "--task-dir", str(task_dir),
-        "--question-id", "bad-choice",
+        "--question-id", key,
         "--prompt", "Proceed with push?",
         "--options-json", OPTIONS,
         "--chosen-label", "Maybe",
@@ -164,10 +168,14 @@ def test_record_and_resolve_state_scoped_cancelled_choice(script_runner, tmp_pat
 
 
 def test_record_requires_task_or_state_scope(script_runner):
+    key = script_runner(
+        "interactive-question-state.py", "key", "--prompt", "Proceed with push?",
+        "--options-json", OPTIONS,
+    ).stdout.strip()
     result = script_runner(
         "interactive-question-state.py",
         "record",
-        "--question-id", "missing-scope",
+        "--question-id", key,
         "--prompt", "Proceed with push?",
         "--options-json", OPTIONS,
         "--chosen-label", "Approve",
@@ -175,3 +183,70 @@ def test_record_requires_task_or_state_scope(script_runner):
 
     assert result.returncode != 0
     assert "--task-dir or --state-dir is required" in result.stderr
+
+
+def test_consume_removes_recorded_choice(script_runner, tmp_path):
+    state_dir = tmp_path / "state"
+    key = script_runner(
+        "interactive-question-state.py", "key", "--prompt", "bound prompt",
+        "--options-json", OPTIONS,
+    ).stdout.strip()
+    recorded = script_runner(
+        "interactive-question-state.py", "record", "--state-dir", str(state_dir),
+        "--question-id", key, "--prompt", "bound prompt", "--options-json", OPTIONS,
+        "--chosen-label", "Approve",
+    )
+    assert recorded.returncode == 0, recorded.stderr
+
+    consumed = script_runner(
+        "interactive-question-state.py", "resolve", "--consume",
+        "--state-dir", str(state_dir), "--question-id", key,
+    )
+    repeated = script_runner(
+        "interactive-question-state.py", "resolve", "--consume",
+        "--state-dir", str(state_dir), "--question-id", key,
+    )
+
+    assert consumed.returncode == 0
+    assert json.loads(consumed.stdout)["chosen_label"] == "Approve"
+    assert repeated.returncode == 1
+
+
+def test_record_rejects_question_id_that_does_not_match_prompt_and_options(script_runner, task_dir):
+    result = script_runner(
+        "interactive-question-state.py", "record", "--task-dir", str(task_dir),
+        "--question-id", "forged", "--prompt", "Proceed?", "--options-json", OPTIONS,
+        "--chosen-label", "Approve",
+    )
+
+    assert result.returncode != 0
+    assert "question id" in result.stderr.lower()
+
+
+def test_record_derives_canonical_value_and_rejects_caller_mismatch(script_runner, task_dir):
+    key = script_runner(
+        "interactive-question-state.py", "key", "--prompt", "Proceed?", "--options-json", OPTIONS,
+    ).stdout.strip()
+    result = script_runner(
+        "interactive-question-state.py", "record", "--task-dir", str(task_dir),
+        "--question-id", key, "--prompt", "Proceed?", "--options-json", OPTIONS,
+        "--chosen-label", "Approve", "--chosen-value", "Cancel",
+    )
+
+    assert result.returncode != 0
+    assert "chosen value" in result.stderr.lower()
+
+
+def test_record_normalizes_cancelled_choice_to_cancel(script_runner, task_dir):
+    key = script_runner(
+        "interactive-question-state.py", "key", "--prompt", "Proceed?", "--options-json", OPTIONS,
+    ).stdout.strip()
+    result = script_runner(
+        "interactive-question-state.py", "record", "--task-dir", str(task_dir),
+        "--question-id", key, "--prompt", "Proceed?", "--options-json", OPTIONS,
+        "--chosen-label", "__cancelled__",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["chosen_value"] == "cancel"

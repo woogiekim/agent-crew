@@ -8,6 +8,8 @@ source "$(dirname "$0")/_lib.bash"
 set +e
 
 CREW="${REPO_ROOT}/core/bin/crew"
+export AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0
+export AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN=0
 
 project_state_dir() {
   python3 "${REPO_ROOT}/core/scripts/project_state.py" resolve \
@@ -454,9 +456,90 @@ assert_true "$?" "managed PATH crew inode changed"
 
 it "local sync reports native PATH crew install"
 assert_contains "${out}" "installed native crew CLI"
+PATH_SYNC_OUT="${out}"
+
+NO_PATH_HOME=$(make_tmp)
+NO_PATH_INSTALL=$(make_tmp)
+NO_PATH_PROJECT=$(make_tmp)
+it "local sync can omit PATH installation without creating project crew"
+out=$(cd "${NO_PATH_PROJECT}" && HOME="${NO_PATH_HOME}" AGENT_CREW_HOME="${NO_PATH_INSTALL}" \
+  CLAUDE_DIR="${NO_PATH_HOME}/.claude" CODEX_HOME="${NO_PATH_HOME}/.codex" \
+  AGENT_CREW_SKIP_PATH_CLI=1 bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" \
+  "${REPO_ROOT}" "${NO_PATH_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_file_absent "${NO_PATH_PROJECT}/crew"
+
+ACTIVE_CLAUDE_HOME=$(make_tmp)
+ACTIVE_CLAUDE_INSTALL=$(make_tmp)
+ACTIVE_CLAUDE_DIR=$(make_tmp)
+ACTIVE_CLAUDE_CODEX=$(make_tmp)
+ACTIVE_CLAUDE_BIN=$(make_tmp)
+ACTIVE_CLAUDE_PROJECT=$(make_tmp)
+ACTIVE_CLAUDE_CALLER=$(make_tmp)
+git -C "${ACTIVE_CLAUDE_PROJECT}" init -q
+git -C "${ACTIVE_CLAUDE_CALLER}" init -q
+mkdir -p "${ACTIVE_CLAUDE_INSTALL}/user/agents"
+printf '%s\n' '---' 'description: temporary user agent' '---' 'temporary instructions' \
+  > "${ACTIVE_CLAUDE_INSTALL}/user/agents/temporary-user.md"
+it "active Claude sync initializes a missing global adapter"
+out=$(cd "${ACTIVE_CLAUDE_CALLER}" && HOME="${ACTIVE_CLAUDE_HOME}" AGENT_CREW_HOME="${ACTIVE_CLAUDE_INSTALL}" \
+  CLAUDE_DIR="${ACTIVE_CLAUDE_DIR}" CODEX_HOME="${ACTIVE_CLAUDE_CODEX}" \
+  AGENT_CREW_PATH_BIN="${ACTIVE_CLAUDE_BIN}" AGENT_CREW_HOST=claude \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${ACTIVE_CLAUDE_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_file_exists "${ACTIVE_CLAUDE_DIR}/agent-crew/invocation.md"
+assert_contains "$(cat "${ACTIVE_CLAUDE_PROJECT}/.git/info/exclude")" ".claude/"
+assert_not_contains "$(cat "${ACTIVE_CLAUDE_CALLER}/.git/info/exclude")" ".claude/"
+assert_file_exists "${ACTIVE_CLAUDE_CODEX}/agents/temporary-user.toml"
+
+printf 'removed command\n' > "${ACTIVE_CLAUDE_DIR}/commands/crew/removed-command.md"
+printf '# removed managed hook\n' > "${ACTIVE_CLAUDE_DIR}/agent-crew/hooks/removed-hook.sh"
+printf 'user note\n' > "${ACTIVE_CLAUDE_DIR}/agent-crew/hooks/user-note.txt"
+rm -f "${ACTIVE_CLAUDE_INSTALL}/user/agents/temporary-user.md"
+
+python3 - "${ACTIVE_CLAUDE_DIR}/settings.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+data["hooks"].setdefault("PostToolUse", []).append({"matcher": "*", "hooks": [{
+    "type": "command", "command": "bash " + path.rsplit("/", 1)[0] + "/agent-crew/hooks/removed-hook.sh", "timeout": 5
+}]})
+target = data["hooks"]["PreToolUse"][0]
+duplicate = json.loads(json.dumps(target))
+target["matcher"] = "wrong"
+target["hooks"][0].update(type="prompt", timeout=None, command="false " + target["hooks"][0]["command"].split(" ", 1)[1])
+data["hooks"]["PostToolUse"].append(duplicate)
+open(path, "w", encoding="utf-8").write(json.dumps(data))
+PY
+
+it "active Claude detector reports stale owned commands and registered hooks"
+python3 "${REPO_ROOT}/core/scripts/verify-install-drift.py" --profile runtime-readonly \
+  --active-host claude --source-root "${REPO_ROOT}" --agent-crew-home "${ACTIVE_CLAUDE_INSTALL}" \
+  --codex-home "${ACTIVE_CLAUDE_CODEX}" --claude-dir "${ACTIVE_CLAUDE_DIR}" \
+  --managed-path-cli "${ACTIVE_CLAUDE_BIN}/crew" >/dev/null
+assert_exit 1 "$?"
+
+it "active Claude sync repairs managed hook fields and removes duplicates"
+out=$(HOME="${ACTIVE_CLAUDE_HOME}" AGENT_CREW_HOME="${ACTIVE_CLAUDE_INSTALL}" \
+  CLAUDE_DIR="${ACTIVE_CLAUDE_DIR}" CODEX_HOME="${ACTIVE_CLAUDE_CODEX}" \
+  AGENT_CREW_PATH_BIN="${ACTIVE_CLAUDE_BIN}" AGENT_CREW_HOST=claude AGENT_CREW_DISABLE_FAST_NOOP_UPDATE=1 \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${REPO_ROOT}" "${ACTIVE_CLAUDE_PROJECT}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+python3 "${REPO_ROOT}/core/scripts/verify-install-drift.py" --profile runtime-readonly \
+  --active-host claude --source-root "${REPO_ROOT}" --agent-crew-home "${ACTIVE_CLAUDE_INSTALL}" \
+  --codex-home "${ACTIVE_CLAUDE_CODEX}" --claude-dir "${ACTIVE_CLAUDE_DIR}" \
+  --managed-path-cli "${ACTIVE_CLAUDE_BIN}/crew" >/dev/null
+assert_exit 0 "$?"
+assert_file_absent "${ACTIVE_CLAUDE_DIR}/commands/crew/removed-command.md"
+assert_file_absent "${ACTIVE_CLAUDE_DIR}/agent-crew/hooks/removed-hook.sh"
+assert_file_exists "${ACTIVE_CLAUDE_DIR}/agent-crew/hooks/user-note.txt"
+assert_file_absent "${ACTIVE_CLAUDE_CODEX}/agents/temporary-user.toml"
 
 it "local sync explains first fingerprint miss"
-assert_contains "${out}" "MISS: update fingerprint"
+assert_contains "${PATH_SYNC_OUT}" "MISS: update fingerprint"
 
 it "local sync reports global update scope"
 assert_contains "${out}" "update_scope: global="
@@ -567,29 +650,75 @@ assert_contains "${out}" "possible user-modified file(s)"
 RUNTIME_SYNC_HOME=$(make_tmp)
 RUNTIME_SYNC_PROJECT=$(make_tmp)
 RUNTIME_SYNC_BIN=$(make_tmp)
+RUNTIME_SYNC_LATER_BIN=$(make_tmp)
+RUNTIME_SYNC_USER_HOME=$(make_tmp)
+RUNTIME_SYNC_CODEX=$(make_tmp)
+export AGENT_CREW_PATH_BIN="${RUNTIME_SYNC_BIN}"
+export AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN=1
 mkdir -p "${RUNTIME_SYNC_PROJECT}/core" "${RUNTIME_SYNC_BIN}"
-cp -R "${REPO_ROOT}/core/commands" "${RUNTIME_SYNC_PROJECT}/core/"
-cp -R "${REPO_ROOT}/core/scripts" "${RUNTIME_SYNC_PROJECT}/core/"
-cp -R "${REPO_ROOT}/core/hooks" "${RUNTIME_SYNC_PROJECT}/core/"
-cp -R "${REPO_ROOT}/core/evaluations" "${RUNTIME_SYNC_PROJECT}/core/"
-cp -R "${REPO_ROOT}/core/schemas" "${RUNTIME_SYNC_PROJECT}/core/"
-cp -R "${REPO_ROOT}/core/policies" "${RUNTIME_SYNC_PROJECT}/core/"
-cp -R "${REPO_ROOT}/core/bin" "${RUNTIME_SYNC_PROJECT}/core/"
+cp -R "${REPO_ROOT}/core/." "${RUNTIME_SYNC_PROJECT}/core/"
 cp -R "${REPO_ROOT}/adapters" "${RUNTIME_SYNC_PROJECT}/"
+cp "${REPO_ROOT}/install.sh" "${RUNTIME_SYNC_PROJECT}/install.sh"
+HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" \
+  bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${RUNTIME_SYNC_PROJECT}" "${RUNTIME_SYNC_PROJECT}" >/dev/null 2>&1 \
+  || HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" \
+    bash "${REPO_ROOT}/core/scripts/sync-local-install.sh" "${RUNTIME_SYNC_PROJECT}" "${RUNTIME_SYNC_PROJECT}" >/dev/null
+mkdir -p "${RUNTIME_SYNC_CODEX}/skills"
+cp -R "${RUNTIME_SYNC_PROJECT}/adapters/codex/skill/." "${RUNTIME_SYNC_CODEX}/skills/"
 cp "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
 printf '\n# stale managed PATH crew copy\n' >> "${RUNTIME_SYNC_BIN}/crew"
 chmod +x "${RUNTIME_SYNC_BIN}/crew"
+cp "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_LATER_BIN}/crew"
+printf '\n# stale managed later PATH crew copy\n' >> "${RUNTIME_SYNC_LATER_BIN}/crew"
+chmod +x "${RUNTIME_SYNC_LATER_BIN}/crew"
 mkdir -p "${RUNTIME_SYNC_HOME}/scripts"
 printf 'stale runtime\n' > "${RUNTIME_SYNC_HOME}/scripts/crew-runtime.py"
+printf 'stale managed command\n' > "${RUNTIME_SYNC_HOME}/system/commands/stale-runtime.md"
+printf 'stale compat adapter\n' > "${RUNTIME_SYNC_HOME}/adapters/codex/stale-runtime.txt"
+printf 'user owned command\n' > "${RUNTIME_SYNC_HOME}/commands/personal-runtime.md"
 
-it "crew run auto-refreshes drifted runtime assets from local source"
-out=$(PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" "${RUNTIME_SYNC_BIN}/crew" run "runtime sync task" 2>&1)
+it "crew run requests a choice when runtime assets drift"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${RUNTIME_SYNC_LATER_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "runtime sync task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "STATUS: runtime_drift_selection_required"
+assert_contains "${out}" '"label":"Sync source then run"'
+assert_contains "${out}" "DRIFT_DIAGNOSTICS:"
+
+RUNTIME_QUESTION_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^QUESTION_ID:/ {print $2; exit}')
+RUNTIME_QUESTION_PROMPT=$(printf '%s\n' "${out}" | sed -n 's/^QUESTION_PROMPT: //p' | head -1)
+RUNTIME_OPTIONS=$(printf '%s\n' "${out}" | sed -n 's/^OPTIONS_JSON: //p' | head -1)
+RUNTIME_STATE_DIR=$(project_state_dir "${RUNTIME_SYNC_HOME}" "${RUNTIME_SYNC_PROJECT}")
+assert_contains "${out}" "QUESTION_STATE_DIR: ${RUNTIME_STATE_DIR}"
+python3 "${REPO_ROOT}/core/scripts/interactive-question-state.py" record \
+  --state-dir "${RUNTIME_STATE_DIR}" --question-id "${RUNTIME_QUESTION_ID}" \
+  --prompt "${RUNTIME_QUESTION_PROMPT}" --options-json "${RUNTIME_OPTIONS}" \
+  --chosen-label "Sync source then run" --chosen-value sync >/dev/null
+
+it "crew run syncs only after the sync choice"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${RUNTIME_SYNC_LATER_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "runtime sync task" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "refreshed runtime assets"
+assert_contains "${out}" "runtime assets synchronized and verified"
+assert_file_absent "${RUNTIME_SYNC_HOME}/system/commands/stale-runtime.md"
+assert_file_absent "${RUNTIME_SYNC_HOME}/adapters/codex/stale-runtime.txt"
+assert_file_exists "${RUNTIME_SYNC_HOME}/commands/personal-runtime.md"
 
-it "runtime refresh does not overwrite the running PATH crew file"
-assert_contains "$(tail -n 1 "${RUNTIME_SYNC_BIN}/crew")" "stale managed PATH crew copy"
+it "crew run does not ask again after a verified sync"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "runtime sync no-repeat task" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+assert_not_contains "${out}" "runtime_drift_selection_required"
+
+it "runtime refresh updates the managed PATH crew file"
+cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
+assert_exit 0 "$?"
+
+it "runtime refresh updates a later managed PATH crew candidate"
+cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_LATER_BIN}/crew"
+assert_exit 0 "$?"
 
 it "crew run installs missing runtime repair script during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
@@ -642,10 +771,10 @@ assert_file_exists "${RUNTIME_SYNC_HOME}/evaluations/workflow-replay.json"
 it "crew run installs retry chaos fixture during auto-refresh"
 assert_file_exists "${RUNTIME_SYNC_HOME}/evaluations/retry-chaos.json"
 
-it "crew run skips currently running managed PATH crew CLI during auto-refresh"
+it "crew run refreshes the managed PATH crew CLI"
 cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_BIN}/crew"
 rc=$?
-assert_exit 1 "${rc}"
+assert_exit 0 "${rc}"
 
 it "crew run still refreshes installed AGENT_CREW_HOME bin CLI during auto-refresh"
 cmp -s "${REPO_ROOT}/core/bin/crew" "${RUNTIME_SYNC_HOME}/bin/crew"
@@ -654,15 +783,97 @@ assert_exit 0 "${rc}"
 
 printf 'stale runtime retained by read-only run\n' > "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
 
-it "crew run --read-only reports drift without refreshing installed runtime assets"
-out=$(PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
-  "${RUNTIME_SYNC_BIN}/crew" run --read-only "read-only runtime drift task" 2>&1)
+it "crew run keeps detection enabled when automatic sync is disabled"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=0 "${RUNTIME_SYNC_BIN}/crew" run "detection without sync task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "STATUS: runtime_drift_selection_required"
+assert_not_contains "${out}" '"value":"sync"'
+
+NO_INSTALLED_HOME=$(make_tmp)
+it "source read-only run blocks without a safe installed runtime instead of asking only cancel"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" AGENT_CREW_HOME="${NO_INSTALLED_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_PATH_BIN="${NO_INSTALLED_HOME}/path" AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN=1 \
+  bash "${RUNTIME_SYNC_PROJECT}/core/bin/crew" run --read-only "no installed runtime" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "STATUS: runtime_drift_no_safe_continuation"
+assert_not_contains "${out}" "QUESTION_ID:"
+
+it "crew run --read-only offers continue or cancel without a sync choice"
+out=$(env -u CODEX -u CODEX_CI -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+  CLAUDECODE=1 HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run --read-only "read-only runtime drift task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "STATUS: runtime_drift_selection_required"
+assert_not_contains "${out}" "Sync source then run (recommended)"
+assert_contains "${out}" '"active_host":"claude"'
+
+READ_ONLY_QUESTION_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^QUESTION_ID:/ {print $2; exit}')
+READ_ONLY_QUESTION_PROMPT=$(printf '%s\n' "${out}" | sed -n 's/^QUESTION_PROMPT: //p' | head -1)
+READ_ONLY_OPTIONS=$(printf '%s\n' "${out}" | sed -n 's/^OPTIONS_JSON: //p' | head -1)
+python3 "${REPO_ROOT}/core/scripts/interactive-question-state.py" record \
+  --state-dir "${RUNTIME_STATE_DIR}" --question-id "${READ_ONLY_QUESTION_ID}" \
+  --prompt "${READ_ONLY_QUESTION_PROMPT}" --options-json "${READ_ONLY_OPTIONS}" \
+  --chosen-label "Continue installed version once" --chosen-value continue >/dev/null
+
+printf 'stale runtime changed after decision\n' > "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run --read-only "read-only runtime drift task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+CHANGED_QUESTION_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^QUESTION_ID:/ {print $2; exit}')
+[ "${READ_ONLY_QUESTION_ID}" = "${CHANGED_QUESTION_ID}" ]
+assert_exit 1 "$?"
+READ_ONLY_QUESTION_ID="${CHANGED_QUESTION_ID}"
+READ_ONLY_QUESTION_PROMPT=$(printf '%s\n' "${out}" | sed -n 's/^QUESTION_PROMPT: //p' | head -1)
+READ_ONLY_OPTIONS=$(printf '%s\n' "${out}" | sed -n 's/^OPTIONS_JSON: //p' | head -1)
+python3 "${REPO_ROOT}/core/scripts/interactive-question-state.py" record \
+  --state-dir "${RUNTIME_STATE_DIR}" --question-id "${READ_ONLY_QUESTION_ID}" \
+  --prompt "${READ_ONLY_QUESTION_PROMPT}" --options-json "${READ_ONLY_OPTIONS}" \
+  --chosen-label "Continue installed version once" --chosen-value continue >/dev/null
+
+it "crew run --read-only continues with installed assets only after that choice"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run --read-only "read-only runtime drift task" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-assert_contains "${out}" "read-only execution: runtime asset drift detected; auto-sync suppressed"
-assert_eq "stale runtime retained by read-only run" "$(cat "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py")"
+assert_contains "${out}" "re-entering installed runtime for this run"
+assert_eq "stale runtime changed after decision" "$(cat "${RUNTIME_SYNC_HOME}/scripts/repair-task-state.py")"
+read_only_success_out="${out}"
 
-READ_ONLY_TASK_DIR=$(printf '%s\n' "${out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
+it "crew run consumes a runtime drift decision only once"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run --read-only "read-only runtime drift task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+assert_contains "${out}" "STATUS: runtime_drift_selection_required"
+
+cp "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh" "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh.saved"
+printf '#!/usr/bin/env bash\n# sync-local-install.sh\nexit 9\n' > "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "sync failure task" 2>&1)
+rc=$?
+assert_exit 3 "${rc}"
+FAILED_SYNC_QUESTION_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^QUESTION_ID:/ {print $2; exit}')
+FAILED_SYNC_PROMPT=$(printf '%s\n' "${out}" | sed -n 's/^QUESTION_PROMPT: //p' | head -1)
+FAILED_SYNC_OPTIONS=$(printf '%s\n' "${out}" | sed -n 's/^OPTIONS_JSON: //p' | head -1)
+python3 "${REPO_ROOT}/core/scripts/interactive-question-state.py" record \
+  --state-dir "${RUNTIME_STATE_DIR}" --question-id "${FAILED_SYNC_QUESTION_ID}" \
+  --prompt "${FAILED_SYNC_PROMPT}" --options-json "${FAILED_SYNC_OPTIONS}" \
+  --chosen-label "Sync source then run" --chosen-value sync >/dev/null
+
+it "crew run blocks when sync exits nonzero even if verification is rerun"
+out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "sync failure task" 2>&1)
+rc=$?
+assert_exit 2 "${rc}"
+assert_contains "${out}" "sync/re-verification returned rc=9"
+mv "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh.saved" "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh"
+
+READ_ONLY_TASK_DIR=$(printf '%s\n' "${read_only_success_out}" | awk -F': ' '/^TASK_DIR:/ {print $2; exit}')
 read_only_register=$(cat "${READ_ONLY_TASK_DIR}/register.json")
 read_only_pipeline=$(cat "${READ_ONLY_TASK_DIR}/pipeline.json")
 read_only_handoff=$(cat "${READ_ONLY_TASK_DIR}/handoff.md")
@@ -673,6 +884,8 @@ assert_contains "${read_only_register}" '"mutation_scope": "read_only"'
 assert_contains "${read_only_pipeline}" '"mutation_scope": "read_only"'
 assert_contains "${read_only_handoff}" "MUTATION_SCOPE: read_only"
 assert_contains "${read_only_result}" "MUTATION_SCOPE: read_only"
+unset AGENT_CREW_PATH_BIN
+export AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN=0
 
 it "crew run does not parse a task literal after the option terminator"
 out=$(AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
@@ -858,16 +1071,12 @@ printf 'stale hook\n' > "${HOOK_SYNC_HOME}/hooks/auto-route.sh"
 printf 'stale hook\n' > "${HOOK_SYNC_PROJECT}/.agent-crew/hooks/auto-route.sh"
 printf 'stale hook\n' > "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh"
 
-it "crew run auto-refreshes drifted hooks from source checkout"
+it "crew run ignores an incomplete project skeleton as a source checkout"
 out=$(AGENT_CREW_HOME="${HOOK_SYNC_HOME}" PROJECT_ROOT="${HOOK_SYNC_PROJECT}" bash "${CREW}" run "demo hook sync task" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
-
-it "crew run reports runtime drift repair"
-assert_contains "${out}" "refreshed runtime assets from source checkout"
-
-it "crew run refreshes installed global auto-route hook"
-assert_contains "$(cat "${HOOK_SYNC_HOME}/hooks/auto-route.sh")" 'explicit {command} invocation detected'
+assert_not_contains "${out}" "runtime_drift_selection_required"
+assert_eq "stale hook" "$(cat "${HOOK_SYNC_HOME}/hooks/auto-route.sh")"
 
 it "crew run preserves project-local Codex hook overrides"
 assert_eq "stale hook" "$(cat "${HOOK_SYNC_PROJECT}/.codex/hooks/auto-route.sh")"
@@ -1320,6 +1529,7 @@ chmod +x "${SYNC_HOME}/scripts/crew-runtime.py"
 out=$(
   AGENT_CREW_HOME="${SYNC_HOME}" \
   AGENT_CREW_SOURCE_DIR="${REPO_ROOT}" \
+  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 \
   PROJECT_ROOT="${SYNC_PROJECT}" \
     bash "${SYNC_CREW}" agent analyst "explain routing" 2>&1
 )
