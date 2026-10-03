@@ -263,6 +263,7 @@ managed_names = {
     "post-tool-use-dispatcher.sh",
     "auto-issue-report.sh",
     "auto-route.sh",
+    "general-memory-context.sh",
 }
 managed_paths = {str(home / "hooks" / name) for name in managed_names}
 
@@ -296,6 +297,7 @@ def required_hooks():
         "UserPromptSubmit": [
             {
                 "hooks": [
+                    {"type": "command", "command": f"bash '{home}/hooks/general-memory-context.sh'", "timeout": 10},
                     {"type": "command", "command": f"bash '{home}/hooks/auto-issue-report.sh'", "timeout": 10},
                     {"type": "command", "command": f"bash '{home}/hooks/auto-route.sh'", "timeout": 15},
                 ]

@@ -748,7 +748,9 @@ def test_exact_managed_hook_path_with_wrong_executable_is_rejected_and_fingerpri
             ],
             "PostToolUse": [{"matcher": "*", "hooks": [command("post-tool-use-dispatcher.sh", 15)]}],
             "UserPromptSubmit": [{"hooks": [
-                command("auto-issue-report.sh", 10), command("auto-route.sh", 15, executable)
+                command("general-memory-context.sh", 10),
+                command("auto-issue-report.sh", 10),
+                command("auto-route.sh", 15, executable),
             ]}],
         }}
         hooks.write_text(json.dumps(payload), encoding="utf-8")

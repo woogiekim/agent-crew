@@ -533,6 +533,38 @@ with open(dest, "w") as f:
   f.write("\n")
 PYEOF
 
+# Read-only Mnemos recall for ordinary conversation. The hook emits advisory
+# context only and never starts an agent or persists a memory automatically.
+python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/general-memory-context.sh" "*" "UserPromptSubmit" <<'PYEOF'
+import sys, json, os
+dest, hook_path, matcher, hook_type = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook_entry = {"type": "command", "command": f"bash {hook_path}", "timeout": 10}
+if os.path.exists(dest):
+  with open(dest) as f:
+    try: settings = json.load(f)
+    except json.JSONDecodeError: settings = {}
+else:
+  settings = {}
+hooks = settings.setdefault("hooks", {})
+hook_list = hooks.setdefault(hook_type, [])
+hook_path_base = os.path.basename(hook_path)
+for block in hook_list:
+  if block.get("matcher") == matcher:
+    for h in block.get("hooks", []):
+      if hook_path_base in h.get("command", ""):
+        h["command"] = hook_entry["command"]
+        h["timeout"] = hook_entry["timeout"]
+        break
+    else:
+      block.setdefault("hooks", []).append(hook_entry)
+    break
+else:
+  hook_list.append({"matcher": matcher, "hooks": [hook_entry]})
+with open(dest, "w") as f:
+  json.dump(settings, f, indent=2, ensure_ascii=False)
+  f.write("\n")
+PYEOF
+
 # Automatic agent-crew issue reporter. Advisory only: detects explicit
 # agent-crew bug/error prompts and crew Bash output with explicit bug/error
 # signals, then delegates to `crew report auto` for native local reporting.
@@ -771,6 +803,7 @@ claude_dir = Path(sys.argv[2])
 tracker = "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane__create_label|mcp__plane__create_work_item_comment|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item|mcp__plane.create_label|mcp__plane.create_work_item_comment"
 required = [
     ("UserPromptSubmit", None, "auto-route.sh", 5),
+    ("UserPromptSubmit", "*", "general-memory-context.sh", 10),
     ("PreToolUse", "Agent|Task|Delegate", "context-guard.sh", 5),
     ("PreToolUse", "Agent|Task", "normalize-task-guard.sh", 5),
     ("PreToolUse", "Agent", "agent-diff-pre.sh", 5),

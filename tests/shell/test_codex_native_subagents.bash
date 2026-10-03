@@ -162,6 +162,9 @@ assert_contains "${setup_hooks_out}" "post-tool-use-dispatcher.sh" "hooks.json r
 assert_contains "${setup_hooks_out}" '"matcher": "*"' "hooks.json has PostToolUse dispatcher matcher"
 assert_contains "${setup_hooks_out}" '"PostToolUse"' "hooks.json has PostToolUse section"
 
+it "Codex setup registers general Mnemos recall for ordinary prompts"
+assert_contains "${setup_hooks_out}" "general-memory-context.sh" "hooks.json registers general memory context"
+
 it "Codex setup refreshes global hooks from source checkout"
 assert_not_contains "${setup_auto_issue_hook_out}" "stale hook should be refreshed"
 assert_contains "${setup_auto_issue_hook_out}" "Advisory hook wrapper"

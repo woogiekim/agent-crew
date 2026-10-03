@@ -330,6 +330,9 @@ install_global() {
   merge_global_settings "${AGENT_CREW_HOME}/settings.json" "${AGENT_CREW_DIR}/hooks/auto-route.sh"
   log_info "Natural-language routing hook registered → ${AGENT_CREW_HOME}/settings.json"
 
+  merge_global_settings "${AGENT_CREW_HOME}/settings.json" "${AGENT_CREW_DIR}/hooks/general-memory-context.sh"
+  log_info "General conversation memory recall hook registered → ${AGENT_CREW_HOME}/settings.json"
+
   merge_global_pretooluse "${AGENT_CREW_HOME}/settings.json" "Agent|Task|Delegate" "${AGENT_CREW_DIR}/hooks/context-guard.sh"
   log_info "context-guard hook registered → ${AGENT_CREW_HOME}/settings.json"
 
@@ -377,6 +380,7 @@ install_claude_compat() {
     AGENT_CREW_WRITE_CAPABILITIES=0 SOURCE_ROOT="${SOURCE_ROOT}" \
     "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
   merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
+  merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/general-memory-context.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
   merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
   # Issue #130: AI-agnostic input normalization enforcement.

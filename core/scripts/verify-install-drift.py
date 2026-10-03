@@ -187,6 +187,7 @@ def compare_codex_managed_hooks(dest: Path, home: Path) -> dict:
         ("PreToolUse", "Agent", "context-guard.sh", 10),
         ("PreToolUse", "Edit|Write|MultiEdit|apply_patch", "direct-edit-guard.sh", 10),
         ("PostToolUse", "*", "post-tool-use-dispatcher.sh", 15),
+        ("UserPromptSubmit", "", "general-memory-context.sh", 10),
         ("UserPromptSubmit", "", "auto-issue-report.sh", 10),
         ("UserPromptSubmit", "", "auto-route.sh", 15),
     }
@@ -346,6 +347,7 @@ def compare_claude_managed_hooks(dest: Path, claude_dir: Path) -> dict:
     tracker = "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane__create_label|mcp__plane__create_work_item_comment|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item|mcp__plane.create_label|mcp__plane.create_work_item_comment"
     required = {
         ("UserPromptSubmit", "", "auto-route.sh", 5),
+        ("UserPromptSubmit", "*", "general-memory-context.sh", 10),
         ("PreToolUse", "Agent|Task|Delegate", "context-guard.sh", 5),
         ("PreToolUse", "Agent|Task", "normalize-task-guard.sh", 5),
         ("PreToolUse", "Agent", "agent-diff-pre.sh", 5),

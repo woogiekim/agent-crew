@@ -13,19 +13,19 @@ and validation assets. It does not change production product behavior.
 | Area | Resolution | Evidence |
 |---|---|---|
 | Mnemos foreground search/capture can hang or trigger slow vault sync | Add a host-neutral bounded wrapper, a read-only FTS fast path for recall, local support-memory captures by default, and sub-second process polling so hooks, Codex skills, and manual recall paths fail visibly without sitting on Obsidian git sync. | `core/bin/memory`, `core/scripts/mnemos-bounded.sh`, `tests/shell/test_memory_wrapper.bash`, `tests/shell/test_mnemos_bounded.bash` |
-| Codex mnemos preservation is manual | Codex remains hook-limited, so the supported path is explicit bounded recall before non-trivial work; failures are visible and non-blocking. | `core/bin/memory`, `core/scripts/mnemos-bounded.sh` |
+| Codex mnemos preservation is manual | Codex and Claude ordinary prompts receive bounded, read-only recall through a fail-open `UserPromptSubmit` hook. Durable capture remains an explicit model action rather than a hidden lifecycle write. | `core/hooks/general-memory-context.sh`, `core/bin/memory`, `adapters/codex/setup.sh`, `adapters/claude/setup.sh` |
 | Stale global Codex agents | Global stubs are regenerated and pruned by the global adapter update path. Project-local stubs remain the preferred discovery surface for a workspace. | `core/scripts/update-global-adapters.sh`, `tests/shell/test_update_global_codex_agents.bash` |
 | Runtime skill usage verification | Structural skill loading remains covered by tests; runtime verification is defined as beta evidence from pipeline logs and stage artifacts, not as production behavior. | `tests/shell/test_skill_loading_open_closed.bash`, checklist below |
 | Codex routing speed | Keep Codex stubs thin, prefer project-local `.codex/agents`, and use cached command/capability paths where command definitions already materialize them. | `adapters/codex/template/agents/*.toml`, `core/commands/run.md` Step 0 |
 | Background-agent readiness | Codex remains capability-gated with `agent_background=false`; future native background support must flip only the capability file and follow the P4 branch. | `core/rules/host-capabilities.md`, `adapters/codex/setup.sh` |
 | `crew:status --collect` stabilization | File state is still the source of truth; collection diagnosis should start with `session.json`, `result.md`, `progress.log`, and `finalize-session.sh`. | `core/commands/status.md`, `core/scripts/finalize-session.sh` |
 
-## Codex memory recall contract
+## General conversation memory recall contract
 
-Codex currently cannot rely on a trusted automatic hook path for mnemos context
-in the same way Claude can. The supported Codex path is:
+Codex and Claude install `general-memory-context.sh` as a `UserPromptSubmit`
+hook. For ordinary natural-language prompts, the hook:
 
-1. Before non-trivial work, run bounded recall through the memory wrapper:
+1. Runs bounded, read-only Recall V2 through the memory wrapper:
 
    ```bash
    ~/.agent-crew/bin/memory search "<task keywords>" --limit 5
@@ -35,13 +35,16 @@ in the same way Claude can. The supported Codex path is:
    does not read local Mnemos indexes directly; use explicit `legacy` mode only
    for temporary provider text-search compatibility.
 
-2. Treat exit `124` as a visible memory backend timeout, not a workflow blocker.
-3. Continue from local repo context if recall fails.
-4. Capture substantive findings through the existing `memory` wrapper when
-   possible; if capture times out, report the timeout and continue. Support
-   captures default to mnemos's local backend so they remain fast and searchable
-   without forcing Obsidian vault git sync on the critical path. Set
-   `MNEMOS_BACKEND` explicitly to use a configured backend instead.
+2. Injects returned memories as untrusted advisory context without starting an
+   Agent, router, or workflow.
+3. Skips slash commands and explicit `crew:<intent>` / `crew <intent>` inputs so
+   supervised task recall is not duplicated.
+4. Fails open on absence, timeout, incompatible output, invalid JSON, or no
+   results.
+5. Instructs the active model to perform an explicit `memory capture` only when
+   a new durable decision, constraint, or failure lesson emerged. Hooks never
+   persist conversation content automatically, and secrets, raw transcripts,
+   and one-off state remain excluded.
 
 Default bounded CLI timeout is 8 seconds and can be tuned:
 
