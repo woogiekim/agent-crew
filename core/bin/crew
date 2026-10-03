@@ -1450,7 +1450,13 @@ EOF
       run_instruction_refresh "${refresh_source}"
       local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
       require_file "${sync_script}" "local sync script"
-      bash "${sync_script}" "${refresh_source}" "${PROJECT_ROOT}"
+      (
+        local sync_snapshot
+        sync_snapshot="$(mktemp "${TMPDIR:-/tmp}/agent-crew-sync-local-install.XXXXXX")"
+        trap 'rm -f "${sync_snapshot}"' EXIT
+        cp "${sync_script}" "${sync_snapshot}"
+        bash "${sync_snapshot}" "${refresh_source}" "${PROJECT_ROOT}"
+      )
       if [ "${all_projects}" = "1" ]; then
         printf 'crew update: --all-projects is deprecated; update is global-only and does not refresh project-local mirrors.\n'
       fi

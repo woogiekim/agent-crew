@@ -32,7 +32,7 @@ printf 'instructions:%s\n' "$*" >> "${UPDATE_CALL_LOG}"
 EOF
 cat > "${INSTALL}/scripts/sync-local-install.sh" <<'EOF'
 #!/usr/bin/env bash
-printf 'install:%s\n' "$*" >> "${UPDATE_CALL_LOG}"
+printf 'install:%s:%s\n' "$0" "$*" >> "${UPDATE_CALL_LOG}"
 EOF
 cat > "${MNEMOS}" <<'EOF'
 #!/usr/bin/env bash
@@ -66,7 +66,10 @@ second="$(sed -n '2p' "${CALL_LOG}")"
 third="$(sed -n '3p' "${CALL_LOG}")"
 assert_eq "seed:--apply --profile runtime-command-surface" "${first}"
 assert_eq "instructions:--hosts claude,codex,generic --apply" "${second}"
-assert_contains "${third}" "install:${SOURCE} ${PROJECT}"
+assert_contains "${third}" ":${SOURCE} ${PROJECT}"
+
+it "crew update snapshots the installed sync script before it overwrites installed assets"
+assert_not_contains "${third}" "install:${INSTALL}/scripts/sync-local-install.sh:"
 
 it "crew update reports synchronized instruction state"
 assert_contains "${out}" "update_instructions: runtime command rules and host files synchronized"
@@ -82,7 +85,7 @@ assert_exit 0 "${rc}"
 calls="$(cat "${CALL_LOG}" 2>/dev/null || true)"
 assert_contains "${calls}" "seed:--apply --profile runtime-command-surface"
 assert_not_contains "${calls}" "instructions:"
-assert_contains "${calls}" "install:${SOURCE} ${PROJECT}"
+assert_contains "${calls}" ":${SOURCE} ${PROJECT}"
 assert_contains "${out}" "host instruction sync skipped"
 
 end_report
