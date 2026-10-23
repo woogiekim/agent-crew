@@ -97,6 +97,31 @@ When a discovered host-native lens includes runner metadata, the active host
 adapter is responsible for applying that runner to the same read-only review
 scope and preserving the lens source label in the synthesized output.
 
+## 보고 분량
+
+읽는 사람이 한 화면에서 판단할 수 있어야 한다. 길이는 성실함의 증거가 아니다.
+
+- 항목 한 건 = 제목 한 줄 + 근거 한 줄. 두 줄을 넘기지 않는다. 설명 문단을 쓰지 않는다.
+- 근거는 `file:line` 으로 쓴다. 코드 인용은 판단에 꼭 필요할 때만 3줄 이내.
+- `반드시 봐야 할 문제` 최대 5건, `주의할 항목` 최대 7건. 넘치면 `그 외 N건` 한 줄로 접고
+  전체 목록은 아티팩트 경로로 넘긴다. 접었다는 사실을 반드시 적는다.
+- 내용 없는 섹션은 `없음` 한 줄로 쓴다. 빈 템플릿을 남기지 않는다.
+- 같은 사실을 요약과 항목에 두 번 쓰지 않는다.
+- 전체 보고서는 80줄을 넘기지 않는다. 넘치면 항목 수를 줄인다. 문장을 줄여서 맞추지 않는다.
+
+상세 서술이 필요한 항목은 보고서에 한 줄로 두고, 본문은 렌즈 아티팩트
+(`TASK_DIR/context/review-synthesis/<lens>.md`) 에 둔 뒤 경로만 가리킨다.
+
+## 선택지 표기
+
+보고서와 노트 초안에서 선택지를 제시할 때는 아래를 지킨다.
+
+- 마크다운 번호 목록(`1.` `2.` `3.`)으로 쓰고, 한 선택지는 한 항목으로 둔다.
+- `①②③` 같은 원문자를 쓰지 않는다. GitLab·GitHub 마크다운은 원문자를 목록 기호로 보지 않아
+  줄바꿈이 무시되고 선택지 전체가 한 문단으로 붙는다.
+- 목록 앞에는 빈 줄을 둔다. 빈 줄이 없으면 앞 문단에 흡수된다.
+- 선택지 한 건은 한 줄(약 60자)로 끝낸다. 이유·근거는 선택지가 아니라 본문에 둔다.
+
 ## Output
 
 The synthesis report must list every discovered or configured lens with one of:
