@@ -97,7 +97,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    | Category | Source | Destination (primary) | Destination (compat alias) |
    |---|---|---|---|
    | commands | `${SOURCE_DIR}/commands/` | `${AGENT_CREW_HOME}/system/commands/` | `${AGENT_CREW_HOME}/commands/` |
-   | rules | `${SOURCE_DIR}/rules/` | `${AGENT_CREW_HOME}/system/rules/` | `${AGENT_CREW_HOME}/rules/` |
+   | rules | `${SOURCE_DIR}/rules/` | `${AGENT_CREW_HOME}/system/rules/` | (via merge_rules_to_discovery → `${AGENT_CREW_HOME}/rules/`) |
    | hooks | `${SOURCE_DIR}/hooks/` | `${AGENT_CREW_HOME}/system/hooks/` | `${AGENT_CREW_HOME}/hooks/` |
    | scripts | `${SOURCE_DIR}/scripts/` | `${AGENT_CREW_HOME}/system/scripts/` | `${AGENT_CREW_HOME}/scripts/` |
    | schemas | `${SOURCE_DIR}/schemas/` | `${AGENT_CREW_HOME}/system/schemas/` | `${AGENT_CREW_HOME}/schemas/` |
@@ -105,6 +105,7 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
    | setup | `${SOURCE_DIR}/setup/` | `${AGENT_CREW_HOME}/system/setup/` | `${AGENT_CREW_HOME}/setup/` |
    | adapters | `${ADAPTERS_DIR}/` | `${AGENT_CREW_HOME}/system/adapters/` | `${AGENT_CREW_HOME}/adapters/` |
    | agents | `${SOURCE_DIR}/agents/` | `${AGENT_CREW_HOME}/system/agents/` | (via sync_system_agents) |
+   | user commands | `${SOURCE_DIR}/user/commands/` | `${AGENT_CREW_HOME}/user/commands/` (seeded, see below) | `${AGENT_CREW_HOME}/commands/` |
    | skills | `${SOURCE_DIR}/agents/skills/` | `${AGENT_CREW_HOME}/system/skills/` | `${AGENT_CREW_HOME}/skills/` |
 
    **Subdirectory categories:** `rules/` contains a `capabilities/`
@@ -192,6 +193,57 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
      "${AGENT_CREW_HOME}/skills" \
      "${CLAUDE_DIR}/agent-crew/skills"
    ```
+
+   **Rules layer enforcement** (use Bash, not Read/Write):
+
+   `${AGENT_CREW_HOME}/rules/` is a discovery view, not a source mirror. The
+   source tree is copied into `system/rules/` and pruned there; the discovery
+   view is then produced by a user-wins merge so an operator can override a
+   shipped rule without that override being lost on the next update:
+
+   ```bash
+   merge_rules_to_discovery \
+     "${AGENT_CREW_HOME}/system/rules" \
+     "${AGENT_CREW_HOME}/user/rules" \
+     "${AGENT_CREW_HOME}/rules"
+   ```
+
+   The merge walks recursively, so `rules/capabilities/<flag>.md` participates
+   on the same terms as a top-level rule. A discovery file whose relative path
+   is absent from BOTH layers is pruned; a file present in either layer is
+   always kept. The host mirror
+   (`copy_dir_contents "${AGENT_CREW_HOME}/rules" "${CLAUDE_DIR}/agent-crew/rules"`)
+   therefore receives the merged result, not the raw source tree.
+
+   **User command seeding** (use Bash, not Read/Write):
+
+   `${SOURCE_DIR}/user/commands/` is a seed layer: the framework ships a
+   starting copy and the operator owns the installed file. Plain
+   copy-if-absent kept the second half of that promise but broke the first —
+   once a file existed, no source improvement ever reached the machine again,
+   even when the installed copy was still byte-identical to what the framework
+   itself had written. `seed-user-commands.sh` resolves this with a provenance
+   manifest instead of a timestamp or a blind overwrite:
+
+   ```bash
+   bash "${SOURCE_DIR}/setup/seed-user-commands.sh" \
+     "${SOURCE_DIR}/user/commands" \
+     "${AGENT_CREW_HOME}/user/commands" \
+     "${AGENT_CREW_HOME}/system/seed-manifest/commands.json"
+   ```
+
+   Every file the script writes has its sha256 recorded. On a later run the
+   installed file is classified as **absent** (seed it), **pristine** (its hash
+   still matches what we wrote, or it already equals the current source — so it
+   is framework-owned and gets refreshed), or **user-owned** (its hash matches
+   neither; it is never written, and the divergence is reported). A file with
+   no manifest entry whose content differs from source is treated as
+   user-owned, so installs predating the manifest can only be advised about,
+   never overwritten.
+
+   The discovery view `${AGENT_CREW_HOME}/commands/` is then filled from the
+   **installed** user layer, not from source, so an operator's edit actually
+   takes effect in discovery and in the host mirror.
 
    **Channel B template install + seed + reconcile** (Wave A — issue #131):
 
@@ -531,6 +583,20 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   layer. `merge_skills_to_discovery` copies user skills after system skills
   so user skills take precedence in the unified `~/.agent-crew/skills/` view.
   User skill files are NEVER deleted or overwritten by `crew:update`.
+- Any locally-created custom rules at `~/.agent-crew/user/rules/` are
+  preserved — the source tree is synced into `system/rules/` only.
+  `merge_rules_to_discovery` copies user rules after system rules so a user
+  rule takes precedence in `~/.agent-crew/rules/` and in the host mirror,
+  including under `rules/capabilities/`. User rule files are NEVER deleted or
+  overwritten by `crew:update`, and discovery pruning only removes paths that
+  exist in neither layer.
+- Shipped user commands seeded from `core/user/commands/` are refreshed only
+  while the installed file is still byte-identical to what a previous
+  `crew:update` wrote (tracked in
+  `~/.agent-crew/system/seed-manifest/commands.json`). Once the operator edits
+  the file it is NEVER overwritten; the divergence is reported on every update
+  so it can be hand-merged. An installed file with no manifest entry is
+  assumed to be the operator's.
 - Third-party skill files under the shared Claude discovery path
   `~/.claude/agents/skills/` are preserved. `merge_agents_to_discovery`
   refreshes agent-crew system agent skills there, but does not delete unknown
@@ -1223,6 +1289,41 @@ a mock mnemos stub (no real installation required):
 no `capabilities.json` change is required.
 
 **No `settings.json` changes.** No new hook is registered.
+
+### user/rules merge + provenance-tracked user command seeding
+
+Two asset categories were outside the three-layer
+(`system/` + `user/` → discovery) contract that `skills` and `agents` already
+followed.
+
+**`rules`.** `~/.agent-crew/user/rules/` was scaffolded by the Claude adapter
+but read by nothing: the discovery view was an unconditional copy of the source
+tree, so any operator rule placed there — or any hand edit of
+`~/.agent-crew/rules/` — was silently reverted on the next update. The
+discovery view is now built by `merge_rules_to_discovery` (user-wins,
+recursive, stale-pruning), and `~/.claude/agent-crew/rules/` receives the merged
+result because it mirrors the discovery view.
+
+Existing installs need no migration step: the first update after this change
+rebuilds `~/.agent-crew/rules/` from `system/rules/` + `user/rules/`. A rule
+that had been hand-edited directly in the discovery view (rather than in
+`user/rules/`) is replaced by the system copy, exactly as before this change —
+the fix is that moving it to `user/rules/` now makes the edit durable.
+
+**`user commands`.** `core/user/commands/*.md` was installed with
+copy-if-absent, so source improvements never reached a machine that had already
+been seeded once, and nothing reported the divergence. Seeding now goes through
+`core/setup/seed-user-commands.sh`, which records the sha256 of every file it
+writes under `~/.agent-crew/system/seed-manifest/commands.json` and uses that
+provenance to separate a pristine framework copy (refreshable) from an operator
+edit (never written, always reported).
+
+On the first update after this change the manifest does not exist yet, so every
+installed user command is classified as operator-owned. Files that happen to
+equal the current source are adopted into the manifest at that point and track
+source from then on; files that differ are reported as diverged until the
+operator hand-merges or deletes them. No user command is overwritten by the
+migration.
 
 ### Wave A (issue #131) — Channel B adapter skill templates
 

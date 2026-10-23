@@ -672,6 +672,70 @@ merge_skills_to_discovery() {
   fi
 }
 
+# Merge system and user rules into the rules discovery view.
+#
+# Rules form a tree (`capabilities/` lives one level down), so the merge walks
+# recursively and keys every decision on the path relative to each layer root.
+#
+# Policy: when the same relative path exists in both system/rules/ and
+# user/rules/, the user copy wins — it is written after the system copy. The
+# user layer itself is never written to or deleted from.
+#
+# Stale cleanup: a file in dest whose relative path is absent from BOTH layers
+# is removed, so rules deleted upstream stop lingering across updates. A file
+# that exists in either layer is always kept.
+#
+# Arguments:
+#   $1  system_rules  — e.g. ~/.agent-crew/system/rules/
+#   $2  user_rules    — e.g. ~/.agent-crew/user/rules/
+#   $3  dest          — e.g. ~/.agent-crew/rules/  (unified discovery path)
+merge_rules_to_discovery() {
+  local system_rules="$1"
+  local user_rules="$2"
+  local dest="$3"
+
+  mkdir -p "${dest}"
+
+  # Remove stale rules from dest: relative paths present in neither layer.
+  while IFS= read -r -d '' dest_file; do
+    local rel="${dest_file#"${dest}/"}"
+    if [ -f "${system_rules}/${rel}" ] || [ -f "${user_rules}/${rel}" ]; then
+      continue
+    fi
+    printf '[agent-crew] Removing stale rule from discovery: %s\n' "${rel}"
+    rm -f "${dest_file}"
+  done < <(find "${dest}" -type f -print0 2>/dev/null)
+  find "${dest}" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+
+  # System layer first (idempotent — cp -Rf overwrites existing files).
+  if [ -d "${system_rules}" ]; then
+    cp -Rf "${system_rules}/." "${dest}/"
+  fi
+
+  # User layer second: the same relative path overwrites the system copy.
+  if [ -d "${user_rules}" ]; then
+    local overrides=()
+    while IFS= read -r -d '' user_file; do
+      local rel="${user_file#"${user_rules}/"}"
+      if [ "$(basename "${rel}")" = "README.md" ]; then
+        continue
+      fi
+      if [ -f "${system_rules}/${rel}" ]; then
+        overrides+=("${rel}")
+      fi
+      mkdir -p "$(dirname "${dest}/${rel}")"
+      cp -f "${user_file}" "${dest}/${rel}"
+    done < <(find "${user_rules}" -type f -name '*.md' -print0 2>/dev/null)
+
+    if [ ${#overrides[@]} -gt 0 ]; then
+      printf '\n[agent-crew] INFO: User rules overriding system rules (user wins):\n'
+      for o in "${overrides[@]}"; do
+        printf '  override: %s (user/rules/ takes precedence over system/rules/)\n' "${o}"
+      done
+    fi
+  fi
+}
+
 merge_agent_crew_section() {
   local src="$1" dest="$2"
   local start="<!-- agent-crew-start -->"
