@@ -179,6 +179,34 @@ def compare_merged_expected_flat_files(system_src: Path, user_src: Path, dest: P
     }
 
 
+def compare_merged_expected_trees(system_src: Path, user_src: Path, dest: Path) -> dict:
+    """Expected contents of a user-wins discovery tree (system layer + user layer)."""
+    expected: dict[str, Path] = dict(source_files(system_src))
+    for rel, path in source_files(user_src).items():
+        # merge_rules_to_discovery projects *.md only, and treats a user-layer
+        # README.md as documentation rather than a rule.
+        if path.suffix != ".md" or Path(rel).name == "README.md":
+            continue
+        expected[rel] = path
+
+    missing, mismatched = [], []
+    for rel, source in sorted(expected.items()):
+        installed = dest / rel
+        if not installed.is_file():
+            missing.append(rel)
+        elif sha256_file(source) != sha256_file(installed):
+            mismatched.append(rel)
+
+    return {
+        "source": f"{system_src}, {user_src}",
+        "destination": str(dest),
+        "missing": missing,
+        "mismatched": mismatched,
+        "extra": [],
+        "passed": not missing and not mismatched,
+    }
+
+
 def compare_codex_managed_hooks(dest: Path, home: Path) -> dict:
     tracker = "mcp__plane__create_work_item|mcp__plane__update_work_item|mcp__plane__delete_work_item|mcp__plane__create_intake_work_item|mcp__plane__create_label|mcp__plane__create_work_item_comment|mcp__plane.create_work_item|mcp__plane.update_work_item|mcp__plane.delete_work_item|mcp__plane.create_intake_work_item|mcp__plane.create_label|mcp__plane.create_work_item_comment"
     required = {
@@ -677,7 +705,14 @@ def runtime_checks(
             continue
 
         checks.append(compare_trees([source], home / "system" / destination_name, prune_extra=False))
-        if source_name in {"rules", "hooks", "scripts", "evaluations", "policies", "schemas", "setup"}:
+        if source_name == "rules":
+            # Discovery rules are a user-wins merge of system/rules + user/rules,
+            # so the source tree alone is not the expected content.
+            checks.append(compare_merged_expected_trees(
+                home / "system" / "rules", home / "user" / "rules", home / destination_name
+            ))
+            continue
+        if source_name in {"hooks", "scripts", "evaluations", "policies", "schemas", "setup"}:
             checks.append(compare_expected_trees([source], home / destination_name))
 
     checks.append(
@@ -815,12 +850,12 @@ def main() -> int:
                 prune_extra=args.prune_extra,
             )
         )
+        # The user command seed layer is operator-owned once installed, so the
+        # discovery view is expected to match the INSTALLED user layer, not the
+        # source seeds.
         checks.append(
             compare_expected_trees(
-                [
-                    source_root / "core" / "commands",
-                    source_root / "core" / "user" / "commands",
-                ],
+                [source_root / "core" / "commands", home / "user" / "commands"],
                 home / "commands",
             )
         )

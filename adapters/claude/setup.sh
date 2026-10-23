@@ -67,11 +67,30 @@ install_claude_user_commands() {
   fi
 
   mkdir -p "${dest}"
-  if [ -n "${source_user_commands}" ] && [ -d "${source_user_commands}" ]; then
-    diff_install "${source_user_commands}" "${dest}"
+
+  # Seed the installed user layer from source first (absent files only, plus
+  # pristine refreshes — never an operator edit), so a standalone crew:setup
+  # reaches the same state crew:update would produce.
+  local seeder=""
+  if [ -n "${SOURCE_ROOT:-}" ] && [ -f "${SOURCE_ROOT}/core/setup/seed-user-commands.sh" ]; then
+    seeder="${SOURCE_ROOT}/core/setup/seed-user-commands.sh"
+  elif [ -f "${AGENT_CREW_HOME}/setup/seed-user-commands.sh" ]; then
+    seeder="${AGENT_CREW_HOME}/setup/seed-user-commands.sh"
   fi
+  if [ -n "${seeder}" ] && [ -n "${source_user_commands}" ]; then
+    AGENT_CREW_HOME="${AGENT_CREW_HOME}" AGENT_CREW_SEED_TAG="crew:setup" \
+      bash "${seeder}" \
+      "${source_user_commands}" \
+      "${installed_user_commands}" \
+      "${AGENT_CREW_HOME}/system/seed-manifest/commands.json" || true
+  fi
+
+  # The installed user layer is authoritative for the host mirror: it carries
+  # both the seeds and any operator edit.
   if [ -d "${installed_user_commands}" ]; then
     diff_install "${installed_user_commands}" "${dest}"
+  elif [ -n "${source_user_commands}" ] && [ -d "${source_user_commands}" ]; then
+    diff_install "${source_user_commands}" "${dest}"
   fi
 }
 

@@ -203,7 +203,7 @@ fi
 
 mkdir -p \
   "${AGENT_CREW_HOME}/system/commands" "${AGENT_CREW_HOME}/commands" \
-  "${AGENT_CREW_HOME}/user/commands" \
+  "${AGENT_CREW_HOME}/user/commands" "${AGENT_CREW_HOME}/user/rules" \
   "${AGENT_CREW_HOME}/system/rules" "${AGENT_CREW_HOME}/rules" \
   "${AGENT_CREW_HOME}/system/hooks" "${AGENT_CREW_HOME}/hooks" \
   "${AGENT_CREW_HOME}/system/scripts" "${AGENT_CREW_HOME}/scripts" \
@@ -221,17 +221,16 @@ copy_flat() {
   cp -f "${src}"/${pattern} "${dest}/" 2>/dev/null || true
 }
 
-copy_flat_if_absent() {
-  local src="$1" dest="$2" pattern="$3" src_file base
-  [ -d "${src}" ] || return 0
-  mkdir -p "${dest}"
-  # shellcheck disable=SC2086
-  for src_file in "${src}"/${pattern}; do
-    [ -f "${src_file}" ] || continue
-    base="$(basename "${src_file}")"
-    [ -f "${dest}/${base}" ] && continue
-    cp -f "${src_file}" "${dest}/${base}" 2>/dev/null || true
-  done
+# Seed ~/.agent-crew/user/commands from the source seed layer. Pristine copies
+# (still byte-identical to what a previous sync wrote) are refreshed; user-edited
+# copies are preserved and reported. See core/setup/seed-user-commands.sh.
+seed_user_commands() {
+  local seeder="${SOURCE_ROOT}/core/setup/seed-user-commands.sh"
+  [ -f "${seeder}" ] || return 0
+  AGENT_CREW_HOME="${AGENT_CREW_HOME}" bash "${seeder}" \
+    "${SOURCE_ROOT}/core/user/commands" \
+    "${AGENT_CREW_HOME}/user/commands" \
+    "${AGENT_CREW_HOME}/system/seed-manifest/commands.json"
 }
 
 copy_tree() {
@@ -289,11 +288,13 @@ install_path_crew_cli() {
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
 prune_managed_tree "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands"
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
-copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
-copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+# Seed before the adapter run below: the Claude adapter mirrors the installed
+# user layer, so it has to exist by then. Nothing between here and the end of
+# this script writes to user/commands or commands/, so one pass is enough.
+seed_user_commands
+copy_flat "${AGENT_CREW_HOME}/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
 prune_managed_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
-copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/rules"
 copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks" "*.sh"
 prune_managed_tree "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
 copy_flat "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks" "*.sh"
@@ -376,6 +377,11 @@ merge_skills_to_discovery \
   "${AGENT_CREW_HOME}/user/skills" \
   "${AGENT_CREW_HOME}/skills"
 
+merge_rules_to_discovery \
+  "${AGENT_CREW_HOME}/system/rules" \
+  "${AGENT_CREW_HOME}/user/rules" \
+  "${AGENT_CREW_HOME}/rules"
+
 if [ "$(printf '%s' "${AGENT_CREW_HOST:-}" | tr '[:upper:]' '[:lower:]')" = "claude" ]; then
   mkdir -p "${CLAUDE_DIR}/agent-crew"
 fi
@@ -383,8 +389,6 @@ fi
 SOURCE_ROOT="${SOURCE_ROOT}" PROJECT_ROOT="${PROJECT_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/scripts/update-global-adapters.sh"
 
-copy_flat_if_absent "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
-copy_flat "${SOURCE_ROOT}/core/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 run_project_asset_migration
 
 if [ -n "${PRESERVATION_MANIFEST}" ]; then
