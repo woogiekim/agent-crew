@@ -288,6 +288,9 @@ install_path_crew_cli() {
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
 prune_managed_tree "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands"
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
+# Seed before the adapter run below: the Claude adapter mirrors the installed
+# user layer, so it has to exist by then. Nothing between here and the end of
+# this script writes to user/commands or commands/, so one pass is enough.
 seed_user_commands
 copy_flat "${AGENT_CREW_HOME}/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
@@ -386,8 +389,6 @@ fi
 SOURCE_ROOT="${SOURCE_ROOT}" PROJECT_ROOT="${PROJECT_ROOT}" AGENT_CREW_MODE=update \
   bash "${AGENT_CREW_HOME}/system/scripts/update-global-adapters.sh"
 
-seed_user_commands
-copy_flat "${AGENT_CREW_HOME}/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 run_project_asset_migration
 
 if [ -n "${PRESERVATION_MANIFEST}" ]; then
