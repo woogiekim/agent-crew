@@ -1448,7 +1448,17 @@ EOF
   if [ "${use_local}" = "1" ]; then
       local refresh_source="${source:-${PROJECT_ROOT}}"
       run_instruction_refresh "${refresh_source}"
-      local sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
+      # Prefer the source tree's installer over the one already installed, the
+      # same way the remote update path does. A release that changes the
+      # install layout has to be applied by its own installer: running the
+      # previously installed build applies the old layout while the drift
+      # verifier (always read from source) checks for the new one, so the first
+      # update would fail and only a second run would converge. The installed
+      # copy stays as the fallback for a source tree that has no installer.
+      local sync_script="${refresh_source}/core/scripts/sync-local-install.sh"
+      if [ ! -f "${sync_script}" ]; then
+        sync_script="${ASSET_ROOT}/scripts/sync-local-install.sh"
+      fi
       require_file "${sync_script}" "local sync script"
       (
         local sync_snapshot

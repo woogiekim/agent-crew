@@ -1325,6 +1325,29 @@ source from then on; files that differ are reported as diverged until the
 operator hand-merges or deletes them. No user command is overwritten by the
 migration.
 
+### `crew update --local` runs the source tree's installer
+
+`cmd_update`'s `--local` branch executed `${ASSET_ROOT}/scripts/sync-local-install.sh`
+— the installer already on the machine. Every other path reads the installer
+from the tree being installed: the remote branch runs the fresh checkout's copy,
+and the runtime-drift `sync` choice runs `${source}/core/scripts/sync-local-install.sh`.
+
+That made `--local` the outlier, and it broke any release that changes the
+install layout. The previously installed build applies the OLD layout, while the
+drift verifier — always read from source — checks for the NEW one. The first
+update after such a release fails, and only a second run converges. The user-layer
+merge release hit exactly this: the old installer projected the *source* seed
+commands into `~/.agent-crew/commands/`, so user-created commands were missing
+from the view the new verifier expected.
+
+`--local` now prefers `${refresh_source}/core/scripts/sync-local-install.sh`, and
+falls back to the installed copy only when the source tree has no installer. This
+also makes `crew update --local` able to bootstrap a home that has no install yet;
+previously `require_file` failed with exit 2.
+
+The snapshot-to-tempfile step is kept: bash reads a script incrementally, so an
+installer that overwrites its own path mid-run could otherwise corrupt execution.
+
 ### Wave A (issue #131) — Channel B adapter skill templates
 
 Wave A formalizes the dispatcher + adapter-skill pattern that the `issuer`
