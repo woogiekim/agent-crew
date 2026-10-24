@@ -337,30 +337,32 @@ if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   "hook_system": true
 }
 CAPS_EOF
-  cat > "${REVIEW_LENSES_FILE}" <<LENSES_EOF
-{
-  "lenses": [
-    {
-      "lens_id": "claude-system-review",
-      "name": "Claude system review",
-      "provider": "claude",
-      "surface": "host-native",
-      "read_only": true,
-      "mutates": false,
-      "default_enabled": true,
-      "requires_mr": "optional",
-      "requires_remote_read": "none",
-      "requires_supervisor_context": false,
-      "timeout_seconds": 120,
-      "duplicate_group": "ai-system-review",
-      "path": "${CLAUDE_DIR}/commands/review-synthesis.md",
-      "runner": "claude-current-session-review",
-      "result_source_label": "source_lens=claude-system-review"
-    }
-  ]
-}
-LENSES_EOF
 fi
+
+# Review lenses are additive per provider, so this is NOT gated behind
+# AGENT_CREW_WRITE_CAPABILITIES: the compatibility pass must still advertise the
+# Claude lens without touching another host's capabilities.json.
+mkdir -p "${STATE_DIR}"
+register_review_lens "${REVIEW_LENSES_FILE}" "$(cat <<LENS_EOF
+{
+  "lens_id": "claude-system-review",
+  "name": "Claude system review",
+  "provider": "claude",
+  "surface": "host-native",
+  "read_only": true,
+  "mutates": false,
+  "default_enabled": true,
+  "requires_mr": "optional",
+  "requires_remote_read": "none",
+  "requires_supervisor_context": false,
+  "timeout_seconds": 120,
+  "duplicate_group": "ai-system-review",
+  "path": "${CLAUDE_DIR}/commands/review-synthesis.md",
+  "runner": "claude-current-session-review",
+  "result_source_label": "source_lens=claude-system-review"
+}
+LENS_EOF
+)"
 
 # Register Agent diff PreToolUse/PostToolUse hooks into Claude settings.json
 python3 - "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-pre.sh" "Agent" "PreToolUse" <<'PYEOF'
