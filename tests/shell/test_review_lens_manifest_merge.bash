@@ -106,4 +106,57 @@ assert_eq "${before}" "$(shasum "${ST}/review-lenses.json" | cut -d' ' -f1)"
 it "the claude lens entry keeps its runner metadata"
 assert_contains "$(cat "${ST}/review-lenses.json")" '"runner": "claude-current-session-review"'
 
+# Each provider's system review is a distinct viewpoint, so the two shipped
+# lenses must not share a duplicate group — otherwise discovery promotes only
+# the higher-priority provider and suppresses the other.
+claude_group=$(grep -A1 '"lens_id": "claude-system-review"' -m1 "${REPO_ROOT}/adapters/claude/setup.sh" >/dev/null 2>&1; \
+  sed -n 's/.*"duplicate_group": "\([^"]*\)".*/\1/p' "${REPO_ROOT}/adapters/claude/setup.sh" | head -1)
+codex_group=$(sed -n 's/.*"duplicate_group": "\([^"]*\)".*/\1/p' "${REPO_ROOT}/adapters/codex/setup.sh" | head -1)
+
+it "the two shipped system-review lenses use distinct duplicate groups"
+if [ -n "${claude_group}" ] && [ "${claude_group}" != "${codex_group}" ]; then
+  _pass
+else
+  _fail "claude_group='${claude_group}' codex_group='${codex_group}' must differ and be non-empty"
+fi
+
+# End-to-end: both providers registered, both reachable by discovery.
+python3 - "${ST}/review-lenses.json" "${codex_group}" <<'PYEOF'
+import json, sys
+path, codex_group = sys.argv[1], sys.argv[2]
+data = json.load(open(path))
+data["lenses"] = [l for l in data["lenses"] if l.get("lens_id") != "codex-system-review"]
+data["lenses"].append({
+    "lens_id": "codex-system-review", "name": "Codex system review",
+    "provider": "codex", "surface": "host-native", "read_only": True,
+    "mutates": False, "default_enabled": True, "requires_mr": "optional",
+    "requires_remote_read": "none", "requires_supervisor_context": False,
+    "timeout_seconds": 120, "duplicate_group": codex_group,
+    "path": "/tmp/codex/review", "runner": "codex-system-skill",
+    "result_source_label": "source_lens=codex-system-review",
+})
+json.dump(data, open(path, "w"), indent=2)
+PYEOF
+
+lens_status() {
+  python3 "${REPO_ROOT}/core/scripts/review-lens-discovery.py" \
+    --root "${ACHOME}/user/commands" \
+    --host-lens-manifest "${ST}/review-lenses.json" --format json 2>/dev/null \
+    | python3 -c '
+import json,sys
+want=sys.argv[1]
+for l in json.load(sys.stdin)["lenses"]:
+    if l["lens_id"]==want:
+        print(l["status"]); break
+else:
+    print("absent")
+' "$1"
+}
+
+it "codex system review is eligible"
+assert_eq "eligible" "$(lens_status codex-system-review)"
+
+it "claude system review is eligible alongside it"
+assert_eq "eligible" "$(lens_status claude-system-review)"
+
 end_report

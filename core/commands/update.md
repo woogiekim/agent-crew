@@ -1371,11 +1371,17 @@ repeated runs stay byte-identical. The call sits outside the capabilities gate;
 Existing installs need no migration step: the first adapter run after this
 change merges the missing lens into whatever the manifest already holds.
 
-Note for adopters: both system-review lenses ship with
-`duplicate_group: ai-system-review`, so review lens discovery promotes only the
-highest-priority one (`codex` outranks `claude`) and reports the other as
-`duplicate-suppressed`. Registering both does not by itself make both run. Split
-the group only if parallel AI system reviews are genuinely wanted.
+The two system-review lenses ship with provider-scoped duplicate groups
+(`ai-system-review-codex`, `ai-system-review-claude`), so both stay `eligible`
+and run side by side. Each provider's review is treated as a distinct viewpoint
+rather than a redundant copy. They shared one `ai-system-review` group at first,
+which made discovery promote only the higher-priority provider (`codex` outranks
+`claude`) and report the other as `duplicate-suppressed` — registering both was
+then not enough to make both run.
+
+`duplicate_group` still suppresses genuine duplicates, such as the same lens
+discovered through two paths. Adopters who want only one AI system review can
+collapse the two groups back into a shared name.
 
 ### Wave A (issue #131) — Channel B adapter skill templates
 

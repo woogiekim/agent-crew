@@ -356,7 +356,7 @@ register_review_lens "${REVIEW_LENSES_FILE}" "$(cat <<LENS_EOF
   "requires_remote_read": "none",
   "requires_supervisor_context": false,
   "timeout_seconds": 120,
-  "duplicate_group": "ai-system-review",
+  "duplicate_group": "ai-system-review-claude",
   "path": "${CLAUDE_DIR}/commands/review-synthesis.md",
   "runner": "claude-current-session-review",
   "result_source_label": "source_lens=claude-system-review"
