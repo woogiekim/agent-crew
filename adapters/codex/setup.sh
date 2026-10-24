@@ -815,30 +815,32 @@ if [ "${AGENT_CREW_WRITE_CAPABILITIES:-1}" != "0" ]; then
   "hook_system": false
 }
 CAPS_EOF
-  cat > "${REVIEW_LENSES_FILE}" <<LENSES_EOF
-{
-  "lenses": [
-    {
-      "lens_id": "codex-system-review",
-      "name": "Codex system review",
-      "provider": "codex",
-      "surface": "host-native",
-      "read_only": true,
-      "mutates": false,
-      "default_enabled": true,
-      "requires_mr": "optional",
-      "requires_remote_read": "none",
-      "requires_supervisor_context": false,
-      "timeout_seconds": 120,
-      "duplicate_group": "ai-system-review",
-      "path": "${CODEX_HOME}/skills/.system/review-agent/SKILL.md",
-      "runner": "codex-system-skill",
-      "result_source_label": "source_lens=codex-system-review"
-    }
-  ]
-}
-LENSES_EOF
 fi
+
+# Review lenses are additive per provider, so this is NOT gated behind
+# AGENT_CREW_WRITE_CAPABILITIES: registering the Codex lens must not depend on
+# whether this pass also owns capabilities.json.
+mkdir -p "${STATE_DIR}"
+register_review_lens "${REVIEW_LENSES_FILE}" "$(cat <<LENS_EOF
+{
+  "lens_id": "codex-system-review",
+  "name": "Codex system review",
+  "provider": "codex",
+  "surface": "host-native",
+  "read_only": true,
+  "mutates": false,
+  "default_enabled": true,
+  "requires_mr": "optional",
+  "requires_remote_read": "none",
+  "requires_supervisor_context": false,
+  "timeout_seconds": 120,
+  "duplicate_group": "ai-system-review",
+  "path": "${CODEX_HOME}/skills/.system/review-agent/SKILL.md",
+  "runner": "codex-system-skill",
+  "result_source_label": "source_lens=codex-system-review"
+}
+LENS_EOF
+)"
 
 printf 'HOST: codex\n'
 printf 'INSTALLED: %s\n' "${CODEX_HOME}"

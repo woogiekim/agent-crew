@@ -1348,6 +1348,35 @@ previously `require_file` failed with exit 2.
 The snapshot-to-tempfile step is kept: bash reads a script incrementally, so an
 installer that overwrites its own path mid-run could otherwise corrupt execution.
 
+### Review lens manifest is additive per provider
+
+`${STATE_DIR}/review-lenses.json` could only ever hold one provider's lens.
+
+Two defects combined. Each adapter wrote the whole file with `cat >`, so
+whichever ran last erased the other provider's entry. And the write sat inside
+the `AGENT_CREW_WRITE_CAPABILITIES` gate, which `install.sh` and
+`update-global-adapters.sh` both set to `0`. That gate exists for a good
+reason — it stops the Claude compatibility pass from stamping its own
+`capabilities.json` over the active host's — but `capabilities.json` is an
+exclusive file while the lens manifest is a list, so the same reasoning never
+applied to it. The net effect was that a machine running `crew update` never
+registered the Claude system review lens at all.
+
+Adapters now call `register_review_lens` from `core/setup/common.sh`, which
+merges a single entry by `lens_id`, leaves every other provider's entry
+untouched, sorts by `lens_id`, and writes only when the content changes so
+repeated runs stay byte-identical. The call sits outside the capabilities gate;
+`capabilities.json` stays gated exactly as before.
+
+Existing installs need no migration step: the first adapter run after this
+change merges the missing lens into whatever the manifest already holds.
+
+Note for adopters: both system-review lenses ship with
+`duplicate_group: ai-system-review`, so review lens discovery promotes only the
+highest-priority one (`codex` outranks `claude`) and reports the other as
+`duplicate-suppressed`. Registering both does not by itself make both run. Split
+the group only if parallel AI system reviews are genuinely wanted.
+
 ### Wave A (issue #131) — Channel B adapter skill templates
 
 Wave A formalizes the dispatcher + adapter-skill pattern that the `issuer`

@@ -736,6 +736,64 @@ merge_rules_to_discovery() {
   fi
 }
 
+# Register one host-native review lens in the project's review lens manifest.
+#
+# Review lenses are additive per provider: a Claude lens and a Codex lens are
+# both valid at once, so an adapter must not write the whole manifest. Entries
+# are merged by `lens_id` — the caller's entry replaces its own id and leaves
+# every other provider's entry untouched.
+#
+# This is deliberately NOT gated behind AGENT_CREW_WRITE_CAPABILITIES. That gate
+# exists so the Claude compatibility pass cannot stamp its own
+# `capabilities.json` over the active host's, which is an exclusive file. The
+# lens manifest is a list, so the same reasoning does not apply.
+#
+# Output is sorted by `lens_id` and written only when the content changes, so
+# repeated runs stay byte-identical.
+#
+# Arguments:
+#   $1  manifest  — e.g. ${STATE_DIR}/review-lenses.json
+#   $2  entry     — one lens object as JSON
+register_review_lens() {
+  local manifest="$1"
+  local entry="$2"
+
+  mkdir -p "$(dirname "${manifest}")"
+
+  python3 - "${manifest}" "${entry}" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+entry = json.loads(sys.argv[2])
+lens_id = entry.get("lens_id")
+if not lens_id:
+    raise SystemExit("register_review_lens: entry is missing lens_id")
+
+lenses = []
+if manifest.exists():
+    try:
+        existing = json.loads(manifest.read_text(encoding="utf-8"))
+        if isinstance(existing, dict) and isinstance(existing.get("lenses"), list):
+            lenses = [
+                lens for lens in existing["lenses"]
+                if isinstance(lens, dict) and lens.get("lens_id") != lens_id
+            ]
+    except (OSError, ValueError):
+        # A malformed manifest is replaced rather than inherited: it is
+        # generated state, not user content.
+        lenses = []
+
+lenses.append(entry)
+lenses.sort(key=lambda lens: str(lens.get("lens_id", "")))
+
+content = json.dumps({"lenses": lenses}, indent=2, ensure_ascii=False) + "\n"
+if not manifest.exists() or manifest.read_text(encoding="utf-8") != content:
+    manifest.write_text(content, encoding="utf-8")
+PYEOF
+}
+
 merge_agent_crew_section() {
   local src="$1" dest="$2"
   local start="<!-- agent-crew-start -->"
