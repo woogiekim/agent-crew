@@ -64,7 +64,7 @@ Example host-native AI system review lens:
       "requires_supervisor_context": false,
       "default_enabled": true,
       "timeout_seconds": 120,
-      "duplicate_group": "ai-system-review",
+      "duplicate_group": "ai-system-review-codex",
       "runner": "codex-system-skill",
       "result_source_label": "source_lens=codex-system-review"
     }

@@ -834,7 +834,7 @@ register_review_lens "${REVIEW_LENSES_FILE}" "$(cat <<LENS_EOF
   "requires_remote_read": "none",
   "requires_supervisor_context": false,
   "timeout_seconds": 120,
-  "duplicate_group": "ai-system-review",
+  "duplicate_group": "ai-system-review-codex",
   "path": "${CODEX_HOME}/skills/.system/review-agent/SKILL.md",
   "runner": "codex-system-skill",
   "result_source_label": "source_lens=codex-system-review"
