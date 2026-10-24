@@ -124,6 +124,10 @@ all supplied (or discovered) at invocation time.
    - Decompose `CONTRACT` into atomic, checkable assertions (e.g. "field `X` exists with type
      `Y`", "param `Z` is required", "response always includes `W`", "enum value `V` means the
      same thing on both sides").
+   - Compare the deep semantic assertion axes that make the contract observable in production:
+     name, type, nullability, default, parameter, response shape, enum meaning, error mapping,
+     side effect, and transformation rule. Treat simple name or endpoint equality as only a
+     starting signal, not proof of parity.
    - Apply the assertions to every `IN_SCOPE` operation from target discovery. Search every repo
      in `REPOS` for the relevant symbol, endpoint, DTO field, table/column, or config key and read
      both the defining source and the connected call path, not just a grep hit.
