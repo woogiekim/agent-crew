@@ -129,7 +129,14 @@ def has_external_write_signal(task: str, pattern: re.Pattern) -> bool:
             continue
 
         if re.search(r"\b(?:read|review|inspect|analyze)\b|읽|검토|분석|설명", remaining, re.IGNORECASE):
-            if re.search(r"\bexecute\b|실행", remaining, re.IGNORECASE):
+            # 단위 테스트로 끝나는 독립 실행만 제외해 공유 동사를 보존한다.
+            document_execution = re.sub(
+                r"\bexecute\s+(?:the\s+)?unit\s+tests?\s*$|"
+                r"(?:^\s*|(?:읽고|검토하고|분석하고)\s+)"
+                r"단위\s*테스트(?:를)?\s*실행(?:해|하라|하세요|한다|합니다)?\s*$",
+                "", remaining, flags=re.IGNORECASE,
+            )
+            if re.search(r"\bexecute\b|실행", document_execution, re.IGNORECASE):
                 return True
 
             remaining = re.sub(

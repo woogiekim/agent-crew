@@ -381,3 +381,46 @@ def test_boundary_case_security_retains_document_execution(task):
 
     assert profile == "full_crew"
     assert "external_write" in signals
+
+
+@pytest.mark.parametrize("task", [
+    "Read deployment docs and execute unit tests. Do not deploy.",
+    "Read deployment docs\nExecute unit tests\nDo not deploy",
+    "배포 문서를 읽고 단위 테스트를 실행해. 배포는 금지한다.",
+    "Read deployment docs and execute the unit tests.",
+])
+def test_boundary_case_contract_ignores_document_mentions_with_unit_tests(task):
+    assert runtime.current_session_execution_profile(task, "read_only") == (
+        "inline_readonly", []
+    )
+    assert runtime.current_session_execution_profile(task, "workspace_write") == (
+        "inline_tdd", []
+    )
+
+
+@pytest.mark.parametrize("task", [
+    "Read the deployment manual, execute unit tests and execute it.",
+    "배포 문서를 읽고 단위 테스트를 실행하고 그대로 실행해.",
+    "Read deployment docs and execute unit tests and deploy.",
+])
+def test_boundary_case_security_retains_document_execution_alongside_unit_tests(task):
+    profile, signals = runtime.current_session_execution_profile(task, "read_only")
+
+    assert profile == "full_crew"
+    assert "external_write" in signals
+
+
+@pytest.mark.parametrize("task", [
+    "Read the deployment manual and execute unit tests and the procedure described in it.",
+    "Read the deployment manual and execute unit tests, then its steps.",
+    "Read the deployment manual and execute its steps and unit tests.",
+    "배포 문서를 읽고 문서 절차와 단위 테스트를 실행해.",
+    "배포 문서를 읽고 문서 절차 및 단위 테스트를 실행해.",
+    "배포 문서를 읽고 단위 테스트와 문서 절차를 실행해.",
+])
+def test_boundary_case_security_retains_shared_execution_verb(task):
+    for scope in ["read_only", "workspace_write"]:
+        profile, signals = runtime.current_session_execution_profile(task, scope)
+
+        assert profile == "full_crew"
+        assert "external_write" in signals
