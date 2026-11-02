@@ -312,3 +312,46 @@ def test_completed_repair_accepts_terminal_parent_resumed_subagent(tmp_path: Pat
         )
     )
     assert repair["current_session_execution_gate"]["passed"] is True
+
+
+def test_boundary_case_contract_ignores_prohibited_external_writes():
+    tasks = [
+        "push, 배포는 금지한다. 읽기 전용으로 분석하라.",
+        "Do not push or deploy. Inspect the code.",
+        "Never publish or rollback; review only.",
+        "배포하지 말고 코드를 분석하라.",
+    ]
+
+    for task in tasks:
+        assert runtime.current_session_execution_profile(task, "read_only") == (
+            "inline_readonly", []
+        ), task
+
+
+def test_boundary_case_contract_ignores_document_mentions():
+    for task in ["배포 문서만 읽고 문제를 설명하라.", "Read deployment documentation only."]:
+        assert runtime.current_session_execution_profile(task, "read_only") == (
+            "inline_readonly", []
+        ), task
+
+
+def test_boundary_case_security_preserves_positive_or_ambiguous_external_writes():
+    tasks = [
+        "Push the branch", "배포해", "배포 문서를 읽고 배포해",
+        "Do not deploy, but push the branch", "배포하지 말고 push해",
+        "Discuss whether to deploy", "push", "deploy unless tests fail",
+        "Publish documentation", "Deploy docs", "Push documentation",
+        "Do not deploy unless approved", "배포 문서 읽고 push해",
+    ]
+
+    for task in tasks:
+        profile, signals = runtime.current_session_execution_profile(task, "read_only")
+        assert profile == "full_crew", task
+        assert "external_write" in signals, task
+
+
+def test_boundary_case_contract_retains_explicit_readonly_coordination():
+    for task in ["full crew review", "여러 저장소 읽기 전용 분석", "병렬로 분석", "parallel review"]:
+        profile, signals = runtime.current_session_execution_profile(task, "read_only")
+        assert profile == "full_crew", task
+        assert signals, task

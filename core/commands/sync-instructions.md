@@ -44,6 +44,15 @@ crew:sync-instructions --hosts claude,codex
 Limits the operation to a subset of hosts. Valid host identifiers:
 `claude`, `codex`, `generic`, `repo`.
 
+## 명시적인 단일 목적지
+
+기본 경로 밖의 기존 지침은 `--hosts codex --target-file /absolute/AGENTS.md`로
+미리 확인하고 `--apply`로 적용한다. 호스트는 `claude`, `codex`, `generic` 중
+하나만 지정한다. `repo`는 전체 파일 교체 정책이므로 허용하지 않는다.
+절대 경로, 존재하는 부모 디렉터리, 심볼릭 링크가 아닌 일반 파일만 허용한다
+(새 파일 생성은 허용). 기본 호스트 대상과 필터링 동작은 바뀌지 않는다.
+관리 블록 밖의 내용은 그대로 보존하므로 중복 사용자 규칙 정리는 별도 작업이다.
+
 ## How rules flow
 
 ```text

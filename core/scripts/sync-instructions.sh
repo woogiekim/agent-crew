@@ -11,6 +11,9 @@
 #   bash core/scripts/sync-instructions.sh --apply     # rewrite host files
 #   bash core/scripts/sync-instructions.sh --hosts claude,codex --apply
 #
+# Explicit target (single host, preserves content outside the managed block):
+#   bash core/scripts/sync-instructions.sh --hosts codex --target-file /absolute/AGENTS.md --apply
+#
 # Environment:
 #   MNEMOS_BIN       path to mnemos CLI (default: ~/.local/bin/mnemos)
 #   CODEX_HOME       Codex home (default: ~/.codex)
@@ -32,16 +35,34 @@ AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
 
 MODE="--dry-run"
 HOSTS="claude,codex,generic,repo"
+TARGET_FILE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply)    MODE="--apply"; shift ;;
     --dry-run)  MODE="--dry-run"; shift ;;
-    --hosts)    HOSTS="$2"; shift 2 ;;
+    --hosts)    [ $# -ge 2 ] || exit 2; HOSTS="$2"; shift 2 ;;
+    --target-file) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--target-file requires a nonempty path" >&2; exit 2; }; TARGET_FILE="$2"; shift 2 ;;
     --help|-h)  sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "sync-instructions: unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# 명시적 목적지는 하나의 호스트 필터만 사용하며 비관리 영역을 보존한다.
+if [ -n "${TARGET_FILE}" ]; then
+  case "${HOSTS}" in
+    claude|codex|generic) ;;
+    *) echo "--target-file requires exactly one of claude, codex, generic" >&2; exit 2 ;;
+  esac
+  case "${TARGET_FILE}" in
+    /*) ;;
+    *) echo "--target-file requires an absolute path" >&2; exit 2 ;;
+  esac
+  if [ ! -d "$(dirname "${TARGET_FILE}")" ] || [ -L "${TARGET_FILE}" ] || { [ -e "${TARGET_FILE}" ] && [ ! -f "${TARGET_FILE}" ]; }; then
+    echo "--target-file requires an existing parent and a regular non-symlink file" >&2
+    exit 2
+  fi
+fi
 
 if [ ! -x "${MNEMOS_BIN}" ]; then
   echo "ERROR: mnemos CLI not found or not executable at: ${MNEMOS_BIN}" >&2
@@ -196,7 +217,7 @@ echo "[sync-instructions] collected ${RULE_COUNT} rules from mnemos"
 # Build the assembled block per host, then write/diff per host file.
 PENDING_DIFFS=0
 for host in $(echo "${HOSTS}" | tr ',' ' '); do
-  dest="$(host_path "${host}")"
+  dest="${TARGET_FILE:-$(host_path "${host}")}"
   if [ -z "${dest}" ]; then
     echo "WARN: unknown host '${host}' (skipping)" >&2
     continue
