@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_PATH = REPO_ROOT / "core" / "scripts" / "crew-runtime.py"
@@ -320,6 +322,8 @@ def test_boundary_case_contract_ignores_prohibited_external_writes():
         "Do not push or deploy. Inspect the code.",
         "Never publish or rollback; review only.",
         "배포하지 말고 코드를 분석하라.",
+        "Do not deploy, read the code and execute unit tests",
+        "배포는 금지한다, 코드를 읽고 단위 테스트를 실행해",
     ]
 
     for task in tasks:
@@ -355,3 +359,25 @@ def test_boundary_case_contract_retains_explicit_readonly_coordination():
         profile, signals = runtime.current_session_execution_profile(task, "read_only")
         assert profile == "full_crew", task
         assert signals, task
+
+
+@pytest.mark.parametrize("task", [
+    "Do not deploy without approval.",
+    "Do not deploy\nunless approved.",
+])
+def test_boundary_case_security_retains_conditional_prohibition(task):
+    profile, signals = runtime.current_session_execution_profile(task, "read_only")
+
+    assert profile == "full_crew"
+    assert "external_write" in signals
+
+
+@pytest.mark.parametrize("task", [
+    "배포 문서를 읽고 그대로 실행해.",
+    "Read the deployment manual and execute it.",
+])
+def test_boundary_case_security_retains_document_execution(task):
+    profile, signals = runtime.current_session_execution_profile(task, "read_only")
+
+    assert profile == "full_crew"
+    assert "external_write" in signals

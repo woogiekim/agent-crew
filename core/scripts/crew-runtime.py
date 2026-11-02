@@ -108,12 +108,13 @@ def has_external_write_signal(task: str, pattern: re.Pattern) -> bool:
     # 명확한 금지·문서 지칭만 제외한다. 모호한 조건문은 보수적으로 유지한다.
     operation = r"(?:push|deploy|release|publish|rollback|배포|릴리스|롤백|원격\s*(?:변경|반영))"
     operations = operation + r"(?:\s*(?:,|·|/|and|or|및|또는)\s*" + operation + r")*"
-    clauses = re.split(r"[.\n;]|\bbut\b|하지만", task, flags=re.IGNORECASE)
+    # 줄바꿈은 조건문의 의미적 끝이 아니므로 이어지는 조건을 함께 확인한다.
+    clauses = re.split(r"[.;]|\bbut\b|하지만", task, flags=re.IGNORECASE)
 
     for clause in clauses:
         if not pattern.search(clause):
             continue
-        if re.search(r"\b(?:unless|except|if)\b|경우|조건", clause, re.IGNORECASE):
+        if re.search(r"\b(?:unless|except|if|without)\b|경우|조건", clause, re.IGNORECASE):
             return True
 
         remaining = re.sub(
@@ -124,7 +125,13 @@ def has_external_write_signal(task: str, pattern: re.Pattern) -> bool:
             operations + r"\s*(?:은|는|을|를)?\s*(?:금지(?:한다|합니다)?|하지\s*(?:마(?:라|세요)|말고))",
             "", remaining, flags=re.IGNORECASE,
         )
+        if not pattern.search(remaining):
+            continue
+
         if re.search(r"\b(?:read|review|inspect|analyze)\b|읽|검토|분석|설명", remaining, re.IGNORECASE):
+            if re.search(r"\bexecute\b|실행", remaining, re.IGNORECASE):
+                return True
+
             remaining = re.sub(
                 r"\bdeployment\s+(?:documentation|docs?|manual)\b|"
                 r"(?:배포|릴리스|롤백)\s*(?:문서|매뉴얼)",
