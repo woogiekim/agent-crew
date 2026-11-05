@@ -1509,6 +1509,9 @@ def is_agent_crew_owned_skill_path(value: str) -> bool:
         "/.agent-crew/system/skills/" in normalized
         or "/.agent-crew/user/skills/" in normalized
         or "/.agent-crew/skills/" in normalized
+        or "/.agent-crew/rules/" in normalized
+        or "/.agent-crew/system/rules/" in normalized
+        or "/.agent-crew/user/rules/" in normalized
         or "/.agent-crew/system/agents/skills/" in normalized
         or "/.agent-crew/agents/skills/" in normalized
         or "/core/agents/skills/" in normalized

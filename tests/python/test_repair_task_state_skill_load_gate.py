@@ -6,9 +6,51 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "core" / "scripts" / "repair-task-state.py"
+
+
+@pytest.mark.parametrize("root", ["rules", "system/rules", "user/rules"])
+def test_installed_agent_crew_rules_are_owned_resources(tmp_path: Path, root: str):
+    task_id = "20260604-000000-0"
+    state_dir = tmp_path / "state"
+    task_dir = _write_task(state_dir, task_id)
+    (task_dir / "context" / "skill-load.md").write_text(
+        f"- /Users/wook/.agent-crew/{root}/quality-loop.md\n"
+        "- /Users/wook/.agent-crew/system/skills/tdd.md\n",
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text())
+    assert repair["skill_load_gate"]["unapproved_external_skill_paths"] == []
+
+
+def test_explicit_cc_tasks_approval_does_not_approve_unrelated_plugin(tmp_path: Path):
+    task_id = "20260604-000000-0"
+    state_dir = tmp_path / "state"
+    task_dir = _write_task(state_dir, task_id)
+    cc_tasks = "/Users/wook/.agents/skills/cc-tasks/SKILL.md"
+    unrelated = "/Users/wook/.codex/plugins/cache/example/skills/other/SKILL.md"
+    (task_dir / "context" / "skill-load.md").write_text(
+        f"- {cc_tasks}\n- {unrelated}\n", encoding="utf-8",
+    )
+    (task_dir / "context" / "external-skill-approval.json").write_text(
+        json.dumps({"approved_skill_paths": [cc_tasks], "source": "explicit_user_invocation"}),
+        encoding="utf-8",
+    )
+
+    result = _repair(state_dir, task_id)
+
+    assert result.returncode != 0
+    assert "BLOCKER: unapproved_external_skill_load" in result.stderr
+    assert unrelated in result.stderr
+    assert f"UNAPPROVED: {cc_tasks}" not in result.stderr
 
 
 def _write_task(
