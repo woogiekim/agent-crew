@@ -703,6 +703,12 @@ fi
 # `sandbox_mode` keys in frontmatter. See core/rules/capabilities/reasoning-tier.md.
 
 if [ "${AGENT_CREW_PROJECT_LOCAL_ONLY}" = "0" ] && [ -n "${SOURCE_ROOT:-}" ] && [ -d "${SOURCE_ROOT}/core/hooks" ]; then
+  # The recall hook and its memory wrapper share the provider request contract.
+  if [ -f "${SOURCE_ROOT}/core/bin/memory" ]; then
+    diff_copy "${SOURCE_ROOT}/core/bin/memory" "${AGENT_CREW_HOME}/bin/memory"
+    chmod +x "${AGENT_CREW_HOME}/bin/memory"
+  fi
+
   diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/system/hooks"
   diff_install "${SOURCE_ROOT}/core/hooks" "${AGENT_CREW_HOME}/hooks"
   chmod +x "${AGENT_CREW_HOME}/system/hooks/"*.sh "${AGENT_CREW_HOME}/hooks/"*.sh 2>/dev/null || true

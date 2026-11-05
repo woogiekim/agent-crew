@@ -184,16 +184,18 @@ elif command_name == "recall":
 
     scope_json = option_value("--scope-json")
     scope = json.loads(scope_json) if scope_json else {}
+    filters = {"layers": ["project", "global", "session", "global_candidate"]}
+    # 일반 대화의 새 기록은 분류 상태가 없을 수 있다.
+    if "--include-unclassified" not in args:
+        filters["semantic_statuses"] = ["active"]
+
     payload = {
         "schema_version": "mnemos.recall.request.v1",
         "request_id": scope.get("task_id") or "agent-crew-recall",
         "read_only": True,
         "queries": queries,
         "scope": scope,
-        "filters": {
-            "layers": ["project", "global", "session", "global_candidate"],
-            "semantic_statuses": ["active"],
-        },
+        "filters": filters,
         "budget": {
             "candidate_limit": int_option("--limit", 20),
             "selected_limit": int_option("--limit", 6),

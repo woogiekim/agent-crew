@@ -12,7 +12,7 @@ cat > "${MEMORY_BIN}" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "${CALLS}"
 cat <<'JSON'
-{"status":"ok","results":[{"memory_id":"mem-1","layer":"project","content":"과거에 검증한 재사용 가능한 결정"}]}
+{"status":"ok","results":[null,{"memory_id":"mem-1","layer":"project","content":"과거에 검증한 재사용 가능한 결정"},{"memory_id":"mem-2","semantic_status":"invalidated","content":"폐기한 결정"}]}
 JSON
 EOF
 chmod +x "${MEMORY_BIN}"
@@ -20,13 +20,14 @@ chmod +x "${MEMORY_BIN}"
 it "general memory hook recalls ordinary conversation through the memory wrapper"
 out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","prompt":"지난 결정을 참고해서 설명해줘"}' | \
   AGENT_CREW_MEMORY_BIN="${MEMORY_BIN}" bash "${HOOK}")
-assert_contains "$(cat "${CALLS}" 2>/dev/null || true)" "search 지난 결정을 참고해서 설명해줘 --limit 5"
+assert_contains "$(cat "${CALLS}" 2>/dev/null || true)" "search 지난 결정을 참고해서 설명해줘 --limit 5 --include-unclassified"
 
 it "general memory hook injects recalled content as advisory context"
 assert_contains "${out}" "과거에 검증한 재사용 가능한 결정"
+assert_not_contains "${out}" "폐기한 결정"
 
 it "general memory hook instructs explicit durable capture without automatic persistence"
-assert_contains "${out}" "memory capture"
+assert_contains "${out}" "memory capture --layer project"
 assert_contains "${out}" "자동으로 저장하지 마라"
 
 it "general memory hook emits valid UserPromptSubmit hook JSON"

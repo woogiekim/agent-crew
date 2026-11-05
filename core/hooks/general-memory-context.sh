@@ -52,7 +52,8 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
 PYEOF
 
 PROMPT="$(cat "${PROMPT_FILE}")"
-AGENT_CREW_MEMORY_STRICT=1 "${MEMORY_BIN}" search "${PROMPT}" --limit 5 >"${RECALL_FILE}" 2>/dev/null || exit 0
+MNEMOS_BACKEND="${MNEMOS_BACKEND:-default}" AGENT_CREW_MEMORY_STRICT=1 \
+  "${MEMORY_BIN}" search "${PROMPT}" --limit 5 --include-unclassified >"${RECALL_FILE}" 2>/dev/null || exit 0
 
 python3 - "${RECALL_FILE}" "${MEMORY_BIN}" <<'PYEOF' || exit 0
 import json
@@ -71,6 +72,9 @@ memories = []
 for row in payload.get("results") or []:
     if not isinstance(row, dict):
         continue
+    if row.get("semantic_status") not in (None, "active", "verified"):
+        continue
+
     content = row.get("content") or row.get("summary")
     if not isinstance(content, str) or not content.strip():
         continue
@@ -88,7 +92,9 @@ context = """[agent-crew] GENERAL MEMORY CONTEXT — read-only Mnemos recall
 
 일반 대화를 Agent 또는 workflow 실행으로 전환하지 마라.
 대화에서 새롭고 재사용 가능한 결정·제약·실패 교훈이 실제로 생긴 경우에만 최종 응답 전에
-`{memory_bin} capture --layer session --content "<간결한 사실>"`를 명시적으로 실행하라.
+`{memory_bin} capture --layer project --content "<주제와 범위를 포함한 간결한 사실>"`를 명시적으로 실행하라.
+프로젝트 범위를 넘어 적용되는 사용자 결정은 사용자가 그 범위의 저장을 요청한 경우에만 global 레이어를 사용하라.
+저장소 쓰기 권한이 필요하면 호스트의 승인 절차를 사용하고, 저장 결과의 ID를 확인하라.
 원문 대화, 비밀, 자격 증명, 일회성 상태는 저장하지 말고 hook에서 자동으로 저장하지 마라.
 capture를 실행하지 않았으면 저장했다고 말하지 마라.""".format(
     memories="\n".join(memories) if memories else "- 현재 요청과 일치하는 과거 기억 없음",

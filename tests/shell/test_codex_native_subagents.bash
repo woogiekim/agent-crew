@@ -165,6 +165,12 @@ assert_contains "${setup_hooks_out}" '"PostToolUse"' "hooks.json has PostToolUse
 it "Codex setup registers general Mnemos recall for ordinary prompts"
 assert_contains "${setup_hooks_out}" "general-memory-context.sh" "hooks.json registers general memory context"
 
+it "Codex setup installs the matching Mnemos hook and executable wrapper"
+cmp -s "${REPO_ROOT}/core/hooks/general-memory-context.sh" "${ac_home}/hooks/general-memory-context.sh"
+assert_true "$?"
+cmp -s "${REPO_ROOT}/core/bin/memory" "${ac_home}/bin/memory" && [ -x "${ac_home}/bin/memory" ]
+assert_true "$?"
+
 it "Codex setup refreshes global hooks from source checkout"
 assert_not_contains "${setup_auto_issue_hook_out}" "stale hook should be refreshed"
 assert_contains "${setup_auto_issue_hook_out}" "Advisory hook wrapper"
