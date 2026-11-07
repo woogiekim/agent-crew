@@ -355,6 +355,15 @@ After the helper runs, read the report at `${TASK_DIR}/context/capability-skills
 - `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The report already contains matched paths, duplicate resolution, unindexed user-skill gaps, and `decision_context`; the agent MUST NOT synthesize separate skill-use proof artifacts from dispatch alone.
 - DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
+검증 단계·도구 제약·완료 보고 작업에서는 `verification-before-claim`의 실제
+선택 경로를 읽고 두 절(검증 단계와 보고 범위 / 도구 기능 제약과 허용된 대안)을
+적용한다. 선택이 누락되면 먼저
+`~/.agent-crew/user/skills/verification-before-claim.md` override 존재를 확인하고
+있으면 해당 경로를 읽는다. 없으면 system 기본 경로
+`~/.agent-crew/system/agents/skills/verification-before-claim.md`를 읽는다. 주장과 실행 근거가 같은 검증 단계인지 확인하고, 허용된 대안이 미확인이라면 직접 조사·실행하여 기존 리뷰에 기록한다.
+허용 대안 조사·실행, 대안 불가 시 최소 조건, 수용된 운영 관찰 제외를 함께
+확인하며, dispatch 성공만으로 실제 로드·적용을 주장하지 않는다.
+
 For reviewer specifically, the historical compatibility token `[crew] DEGRADED | review-profile=none fallback=generic-reviewer-skills` MAY also be emitted alongside the canonical `CAPABILITY_SKILLS: none agent=reviewer` line; both refer to the same "empty match, continue with generic review skills" state.
 
 Reviewer-specific note: the reviewer may record matched profile paths in `${TASK_DIR}/context/review.md` when they are part of the review findings, but dispatch alone is not proof of skill application.

@@ -231,6 +231,15 @@ After the helper runs, read the report at `${TASK_DIR}/context/capability-skills
 - `.matched[]` non-empty → read each `.matched[].path` before the first execution step. The report already contains matched paths, duplicate resolution, unindexed user-skill gaps, and `decision_context`; the agent MUST NOT synthesize separate skill-use proof artifacts from dispatch alone.
 - DEGRADED emitted (`capability-dispatch=script_missing` / `script_failed` / `mv_failed`) → continue with declared base skills only; the supervisor surfaces the marker.
 
+검증 단계·도구 제약·완료 보고 작업에서는 `verification-before-claim`의 실제
+선택 경로를 읽고 두 절(검증 단계와 보고 범위 / 도구 기능 제약과 허용된 대안)을
+적용한다. 선택이 누락되면 먼저
+`~/.agent-crew/user/skills/verification-before-claim.md` override 존재를 확인하고
+있으면 해당 경로를 읽는다. 없으면 system 기본 경로
+`~/.agent-crew/system/agents/skills/verification-before-claim.md`를 읽는다. 실행 대상·명령·결과와 UI/하네스의 대체 범위·한계를 기존 구현 보고에 기록한다.
+허용 대안 조사·실행, 대안 불가 시 최소 조건, 수용된 운영 관찰 제외를 함께
+확인하며, dispatch 성공만으로 실제 로드·적용을 주장하지 않는다.
+
 ## Tech Stack (worked example: typescript-react axis)
 
 When the Step 0 axis resolves to `typescript-react`, the loaded Channel B

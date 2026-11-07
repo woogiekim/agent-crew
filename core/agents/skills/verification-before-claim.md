@@ -1,10 +1,10 @@
 ---
 name: verification-before-claim
 description: Require fresh evidence before claiming work is done, fixed, reflected, deployed, updated, passing, or verified.
-loaded_by: backend,frontend,devops,documenter,analyst,planner,reviewer
+loaded_by: backend,frontend,devops,documenter,analyst,planner,qa-owner,reviewer
 axis: verification-discipline
 profile_type: review-policy
-detection: completed OR done OR fixed OR reflected OR addressed OR passing OR verified OR verification OR evidence OR tests OR deployed OR updated OR 완료 OR 수정됨 OR 반영 OR 해결 OR 검증 OR 통과 OR 증거 OR 배포 OR 갱신
+detection: completed OR done OR fixed OR reflected OR addressed OR passing OR verified OR verification OR evidence OR tests OR deployed OR updated OR 완료 OR 수정됨 OR 반영 OR 해결 OR 검증 OR 통과 OR 증거 OR 배포 OR 갱신 OR 검증 단계 OR 도구 제약 OR 도구 기능 제약 OR 대안 실행 OR capability limitation OR alternative verification
 ---
 
 # Skill: verification-before-claim
@@ -173,6 +173,24 @@ Blocked: dependency is not cached and online verification needs approval.
 
 Avoid generic disclaimers such as "may need more testing" when you know the
 specific missing evidence.
+
+### 검증 단계와 보고 범위
+
+TC와 결과는 실제 UI/HTTP, 배포 코드 하네스, 서버 trace, 운영 관찰을 구분한다.
+개발 환경에서 가능한 검증은 실제 수행하고, 실행 대상·명령·결과·검증한 범위와
+남은 한계를 기존 검증 보고에 기록한다. 한 단계의 성공을 다른 단계의 성공으로
+확대하지 않는다. 운영 배포 전 확인할 수 없는 개선량·재발 여부를 개발 TC 실패나
+새 완료 차단 조건으로 삼지 않는다. 사용자가 수용한 운영 관찰 제외는 개발 TC 실패나 새로운 완료
+차단 사유로 바꾸지 않는다. 수용 조건을 무효화하는 새 증거가 있으면 별도 보고한다.
+
+### 도구 기능 제약과 허용된 대안
+
+도구가 필요한 기능을 제공하지 않으면 승인 범위 안의 기존 테스트·하네스와
+안전한 대안을 먼저 조사하고, 적합한 실행 경로가 있으면 실제 실행한다.
+배포 코드 하네스는 대상·획득 시각·hash·추출 원문 일치 여부, DOM/네트워크
+대체 범위와 서버 검증 한계를 기록한다. 대안도 없으면 시도한 경로·불가 이유·
+최소 필요 조건을 보고한다. 기능 제약은 접근 거부·승인·브라우저 보안 제한을
+우회할 권한을 부여하지 않는다. 로컬 대안의 성공은 실제 서비스 검증이 아니다.
 
 ## Anti-Patterns
 
