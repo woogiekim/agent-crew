@@ -108,8 +108,9 @@ user-facing labels such as `IMPLEMENTED`, `LOCAL_DONE`, or `POLICY_WAITING`.
 Apply `core/rules/review-evidence-style.md` when the review scope is an MR.
 Read the MR source branch remotely without checkout, label claims as fact,
 `Assumption:`, or `Unverified:`, close decision-critical unknowns with a
-confirmation loop and record report corrections, and draft MR notes as
-questions with numbered options only. Posting a note stays a separate step that
+confirmation loop and record report corrections. Draft unresolved MR confirmation
+notes as questions with numbered options. Confirmed follow-up summaries use the
+shared method-comparison format. Posting a note stays a separate step that
 requires explicit approval of the final draft.
 
 ## Review Lens Discovery
@@ -294,16 +295,29 @@ suspiciously fast or slow pass can be explained without rerunning it.
 
 읽는 사람이 한 화면에서 판단할 수 있어야 한다. 길이는 성실함의 증거가 아니다.
 
-- 항목 한 건 = 제목 한 줄 + 근거 한 줄. 두 줄을 넘기지 않는다. 설명 문단을 쓰지 않는다.
+- 일반 발견사항 한 건 = 제목 한 줄 + 근거 한 줄. 두 줄을 넘기지 않는다.
+- 방법 선택이 필요한 항목은 아래 `방법 비교와 트레이드오프` 형식을 적용하며, 2줄 제한에서 제외한다.
 - 근거는 `file:line` 으로 쓴다. 코드 인용은 판단에 꼭 필요할 때만 3줄 이내.
 - `반드시 봐야 할 문제` 최대 5건, `주의할 항목` 최대 7건. 넘치면 `그 외 N건` 한 줄로 접고
   전체 목록은 아티팩트 경로로 넘긴다. 접었다는 사실을 반드시 적는다.
 - 내용 없는 섹션은 `없음` 한 줄로 쓴다. 빈 템플릿을 남기지 않는다.
 - 같은 사실을 요약과 항목에 두 번 쓰지 않는다.
-- 전체 보고서는 80줄을 넘기지 않는다. 넘치면 항목 수를 줄인다. 문장을 줄여서 맞추지 않는다.
+- 전체 보고서는 80줄을 넘기지 않는다. 방법 비교로 넘치면 우선순위가 높은 비교를 본문에 남기고,
+  나머지는 `TASK_DIR/context/review-synthesis/method-comparison.md`로 옮겨 항목명과 경로를 명시한다.
+  본문에 남긴 비교의 채택 이유·이해득실·대안별 장단점을 분량 때문에 생략하지 않는다.
 
-상세 서술이 필요한 항목은 보고서에 한 줄로 두고, 본문은 렌즈 아티팩트
+방법 비교 외의 상세 서술이 필요한 항목은 보고서에 한 줄로 두고, 본문은 렌즈 아티팩트
 (`TASK_DIR/context/review-synthesis/<lens>.md`) 에 둔 뒤 경로만 가리킨다.
+
+## 방법 비교와 트레이드오프
+
+출력을 작성하기 전에 공통 지침 `core/rules/review-method-comparison.md`를 읽고 적용한다.
+설치 환경에서는 `~/.agent-crew/rules/review-method-comparison.md`를 읽는다.
+실제 방법명, 채택/권장/판단 보류 구분, 선택 이유, 얻는 점·감수할 점, 빈 줄과
+`방법별 비교` 소제목, 후보별 설명·장단점, 확인 근거와 한계를 포함한다.
+방법명이나 후보 개수를 고정하지 않는다. 방법 선택이 없는 항목에는 비교를 만들지 않는다.
+이 형식은 보고서·분석·계획·인계·반영 노트의 서술에 적용하며, 원문 인용과 원시 증거,
+프로토콜 필드, 상태·반영률·승인·실행 경계는 바꾸지 않는다.
 
 ## 선택지 표기
 
@@ -314,7 +328,8 @@ suspiciously fast or slow pass can be explained without rerunning it.
 - `①②③` 같은 원문자를 쓰지 않는다. GitLab·GitHub 마크다운은 원문자를 목록 기호로 보지 않아
   줄바꿈이 무시되고 선택지 전체가 한 문단으로 붙는다.
 - 목록 앞에는 빈 줄을 둔다. 빈 줄이 없으면 앞 문단에 흡수된다.
-- 선택지 한 건은 한 줄(약 60자)로 끝낸다. 이유·근거는 선택지가 아니라 본문에 둔다.
+- 다음 행동 메뉴와 단순 처리 상태 확인의 선택지 한 건은 한 줄(약 60자)로 끝낸다.
+  보고서와 MR 노트의 방법 비교는 공통 형식에 따라 설명·장단점과 빈 줄을 포함한다.
 
 ## Output
 
@@ -340,6 +355,9 @@ suspiciously fast or slow pass can be explained without rerunning it.
 
 렌즈 간 충돌/차이:
 - <conflict or none>
+
+방법 비교와 트레이드오프:
+<방법 선택이 필요한 항목만 위 전용 형식으로 작성. 해당 없으면 없음.>
 
 확인한 것:
 - <files, commands, artifacts actually checked>
@@ -392,7 +410,8 @@ The command completes when it produces a synthesis report that:
 - assigns `candidate_disposition` and `implementation_prompt_eligible` to every
   non-trivial finding, or states why they are `Unknown`;
 - separates local implementation status from remote MR status;
-- keeps each finding within two lines and the whole report within 80 lines;
+- keeps ordinary findings within two lines and the whole report within 80 lines;
+- explains method decisions with selection reasons, gains, accepted costs, and per-option pros/cons;
 - renders choices as a `1.` markdown list with no circled digits;
 - preserves unknowns and caller graph coverage;
 - states the fan-out mode and the number of dispatched units;

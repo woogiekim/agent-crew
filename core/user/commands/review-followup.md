@@ -1,5 +1,15 @@
 # /review-followup — Review Feedback Follow-up Loop Coordinator
 
+## 방법 비교와 트레이드오프
+
+출력을 작성하기 전에 공통 지침 `core/rules/review-method-comparison.md`를 읽고 적용한다.
+설치 환경에서는 `~/.agent-crew/rules/review-method-comparison.md`를 읽는다.
+실제 방법명, 채택/권장/판단 보류 구분, 선택 이유, 얻는 점·감수할 점, 빈 줄과
+`방법별 비교` 소제목, 후보별 설명·장단점, 확인 근거와 한계를 포함한다.
+방법명이나 후보 개수를 고정하지 않는다. 방법 선택이 없는 항목에는 비교를 만들지 않는다.
+이 형식은 보고서·분석·계획·인계·반영 노트의 서술에 적용하며, 원문 인용과 원시 증거,
+프로토콜 필드, 상태·반영률·승인·실행 경계는 바꾸지 않는다.
+
 ## Purpose
 
 Coordinate the user's repeated PR/MR review follow-up workflow without turning
