@@ -279,6 +279,8 @@ suspiciously fast or slow pass can be explained without rerunning it.
    - Pass `REVIEW_ARTIFACTS`, `REVIEW_SCOPE`, `PROJECT_ROOT`, `BASE_REF`, and
      `MR_ID`.
    - The coordinator reads the artifacts and produces the final synthesis.
+   - Pass `core/rules/review-synthesis-report-budget.md` and the 80-line limit
+     for the entire final response, including host-added sections, to the coordinator.
    - Preserve each lens's caller graph coverage instead of flattening it into a
      generic finding. If a lens reports BFS inventory, selective DFS deep dive,
      `No references found`, partial graph, or unknown graph status, surface that
@@ -294,6 +296,11 @@ suspiciously fast or slow pass can be explained without rerunning it.
 
 
 읽는 사람이 한 화면에서 판단할 수 있어야 한다. 길이는 성실함의 증거가 아니다.
+
+작성 전에 `core/rules/review-synthesis-report-budget.md`를 읽는다. 설치 환경에서는
+`~/.agent-crew/rules/review-synthesis-report-budget.md`를 읽는다. 출력 전 줄 수 확인은
+최종 응답의 빈 줄·제목·목록·코드 fence·앞뒤 안내 문장 전체를 포함한다. 초안은 72줄을
+목표로 배분하고, 필수 설명과 개행을 보존한 채 최종 전체가 80줄 이내인지 다시 확인한다.
 
 - 일반 발견사항 한 건 = 제목 한 줄 + 근거 한 줄. 두 줄을 넘기지 않는다.
 - 방법 선택이 필요한 항목은 아래 `방법 비교와 트레이드오프` 형식을 적용하며, 2줄 제한에서 제외한다.
@@ -337,36 +344,23 @@ suspiciously fast or slow pass can be explained without rerunning it.
 리뷰 종합 결과입니다.
 
 범위: <scope>
-기준: <base/ref/MR/current diff/unknown>
-실행 방식: <concurrent|sequential>, 디스패치 <N>건
+기준: <base/ref/MR/current diff/unknown>; 실행: <concurrent|sequential>, 디스패치 <N>건
 실행한 렌즈:
-- <lens> — <eligible|completed|not-run|suggested|blocked|degraded|duplicate-suppressed>
+- <모든 lens ID> — <상태와 이유. 같은 상태·이유만 묶기>
 
-반드시 봐야 할 문제:  (최대 5건, 한 건 2줄 이내)
+반드시 봐야 할 문제: <없으면 없음. 있으면 아래에>
 - <finding> — <lens>, <file:line>, <candidate_disposition>
-
-주의할 항목:  (최대 7건, 한 건 2줄 이내)
-- <finding> — <lens>, <file:line>, <candidate_disposition>
+주의할 항목: <같은 원칙. 각 비단순 finding의 eligible도 표시>
 
 리뷰 반영 상태:
-- 로컬 반영: <rate or not-run>
-- MR 전체 반영: <rate or not-run>
-- remote write 필요: <none or exact approval-needed action>
+- 로컬: <rate or not-run>; MR: <rate or not-run>; remote write: <none or exact action>
+렌즈 간 충돌/차이: <none or exact difference>
 
-렌즈 간 충돌/차이:
-- <conflict or none>
+<방법 선택이 필요하면 여기서 공통 형식의 완전한 비교 블록을 작성. 없으면 생략>
 
-방법 비교와 트레이드오프:
-<방법 선택이 필요한 항목만 위 전용 형식으로 작성. 해당 없으면 없음.>
-
-확인한 것:
-- <files, commands, artifacts actually checked>
-
-확인하지 않은 것:
-- <items not checked and why>
-
-Caller graph coverage:
-- <lens> — <completed|partial|No references found|unknown|not_applicable>
+확인한 것: <실제로 확인한 파일·명령·아티팩트>
+확인하지 않은 것: <미실행 항목과 이유>
+Caller graph coverage: <각 lens의 completed|partial|No references found|unknown|not_applicable>
 
 다음에 무엇을 할까요?
 
@@ -411,6 +405,7 @@ The command completes when it produces a synthesis report that:
   non-trivial finding, or states why they are `Unknown`;
 - separates local implementation status from remote MR status;
 - keeps ordinary findings within two lines and the whole report within 80 lines;
+- recounts the final response after aggregation and host additions using the report-budget rule;
 - explains method decisions with selection reasons, gains, accepted costs, and per-option pros/cons;
 - renders choices as a `1.` markdown list with no circled digits;
 - preserves unknowns and caller graph coverage;

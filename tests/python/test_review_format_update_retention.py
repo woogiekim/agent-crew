@@ -53,6 +53,35 @@ def test_retrospective_output_requires_summary_and_contextual_comparisons():
         assert required in output
 
 
+def test_synthesis_loads_budget_guidance_before_composing_output():
+    command = (ROOT / "core/user/commands/review-synthesis.md").read_text()
+
+    assert "core/rules/review-synthesis-report-budget.md" in command
+    assert "빈 줄·제목·목록·코드 fence·앞뒤 안내 문장" in command
+    assert "출력 전 줄 수 확인" in command
+
+
+def test_synthesis_budget_preserves_explanations_and_counts_entire_response():
+    rule = (ROOT / "core/rules/review-synthesis-report-budget.md").read_text()
+
+    for required in (
+        "len(report.splitlines())",
+        "72줄",
+        "선택 이유·얻는 점·감수할 점",
+        "후보별 설명·장점·단점",
+        "필수 개행",
+        "반복 설명",
+        "아티팩트",
+        "분할",
+        "각 응답도 80줄",
+        "모든 렌즈",
+        "최종 출력과 동일한 문자열",
+        "반드시 실행",
+        "측정 후 수정하면 다시",
+    ):
+        assert required in rule
+
+
 def test_seed_refreshes_pristine_commands_but_keeps_user_edits(tmp_path):
     source = tmp_path / "source"
     installed = tmp_path / "installed"
