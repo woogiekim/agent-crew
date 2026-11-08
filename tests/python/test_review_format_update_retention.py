@@ -35,6 +35,24 @@ def test_note_source_keeps_required_verification_and_mr_state():
         assert required in effective
 
 
+def test_retrospective_output_requires_summary_and_contextual_comparisons():
+    command = (ROOT / "core/user/commands/review-retrospective.md").read_text()
+    output = command.split("## Output\n", 1)[1].split("## Compatibility", 1)[0]
+
+    for required in (
+        "상태 요약만으로 전체 결과를 대신하지 않는다",
+        "### 구현 선택의 회고",
+        "### 재발 방지 교훈의 적용 범위",
+        "실제 채택과 회고 권장을 구분",
+        "session_lesson_only",
+        "원 리뷰 항목별 의도와 disposition",
+        "확인 근거와 한계",
+        "과거 실행 기록과 이번 실행 여부",
+        "후보 수를 고정하지 않는다",
+    ):
+        assert required in output
+
+
 def test_seed_refreshes_pristine_commands_but_keeps_user_edits(tmp_path):
     source = tmp_path / "source"
     installed = tmp_path / "installed"
