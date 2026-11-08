@@ -8,7 +8,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 COMMANDS = (
     "review", "generic-review", "post-audit", "mr-review-rate", "mr-review-note",
-    "review-followup", "review-synthesis", "parity-check",
+    "review-followup", "review-retrospective", "review-synthesis", "parity-check",
 )
 
 

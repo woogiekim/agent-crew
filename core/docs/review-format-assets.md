@@ -4,18 +4,18 @@
 
 | 자산 | 저장소 원본 | 설치 원본과 사본 |
 |---|---|---|
-| 리뷰 명령 8개 | `core/user/commands/*.md` | `~/.agent-crew/user/commands/` → `commands/` → Claude `commands/` |
-| Codex 진입점 8개 | `adapters/codex/skill/<name>/SKILL.md` | `~/.codex/skills/<name>/SKILL.md` |
+| 리뷰 명령 9개 | `core/user/commands/*.md` | `~/.agent-crew/user/commands/` → `commands/` → Claude `commands/` |
+| Codex 진입점 9개 | `adapters/codex/skill/<name>/SKILL.md` | `~/.codex/skills/<name>/SKILL.md` |
 | 방법 비교·증거 규칙 | `core/rules/review-method-comparison.md`, `review-evidence-style.md` | `system/rules/` + `user/rules/` → `rules/` → Claude 규칙 사본 |
 | 사용자 리뷰 에이전트 | `~/.agent-crew/user/agents/` | Claude Markdown·Codex TOML 사본 |
 | 사용자 종합 가이드 | `~/.agent-crew/user/skills/review-synthesis.md` | `skills/`와 호스트별 agent-crew 가이드 사본 |
 
 대상 명령은 `review`, `generic-review`, `post-audit`, `mr-review-rate`,
-`mr-review-note`, `review-followup`, `review-synthesis`,
+`mr-review-note`, `review-followup`, `review-retrospective`, `review-synthesis`,
 `parity-check`다. 일반 리뷰의 실제 절차는 `review`에서 관리하고 `generic-review`는
 그 명령에 위임한다. 특정 호스트의 외부 methodology 파일을 필수 원본으로 삼지 않는다.
-사용자 설치의 `review-retrospective`에도 같은 공통 형식을 적용할 수 있지만, 해당 명령의
-신규 workflow 원본과 래퍼는 별도 작업 범위로 관리한다.
+`review-retrospective`도 같은 공통 형식을 사용한다. Codex 래퍼는 이미 수록된 명령에
+위임하며, 회고의 분석·승인·실행 경계를 추가하거나 변경하지 않는다.
 
 ## 수정과 갱신
 
