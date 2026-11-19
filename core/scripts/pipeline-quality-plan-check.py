@@ -532,6 +532,7 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
         "passed": not failures,
         "required": required,
         "code_task": code_task,
+        "no_code_route": no_code_route,
         "failures": sorted(set(failures)),
         "task": task_text,
         "mutation_scope": mutation_scope,

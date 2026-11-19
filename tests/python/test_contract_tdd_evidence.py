@@ -631,3 +631,105 @@ def test_success_case_pytest_whole_module_preserves_class_scope(tmp_path):
     result = fx.load_quality_lib().contract_tdd_evidence(task)
 
     assert result['tdd_verified'] is True, result
+
+
+def noncode_plan_task(tmp_path):
+    import test_pipeline_quality_plan_check as plan_fixture
+    _, task, _ = inline._write_task(tmp_path, selected_subagents=[])
+    text = '수정한 코드의 사용법만 README에 추가해'
+    decision = plan_fixture._minimal_decision_context()
+    decision['need_analysis']['can_solve_without_code'] = 'yes'
+    pipeline = {'task': text, 'mutation_scope': 'workspace_write', 'decision_context': decision,
+                'stages': [{'agents': ['documenter']}, {'agents': ['reviewer'], 'requires_test_execution': False}]}
+    (task / 'pipeline.json').write_text(json.dumps(pipeline, ensure_ascii=False))
+    register = json.loads((task / 'register.json').read_text())
+    register['task'] = text
+    (task / 'register.json').write_text(json.dumps(register, ensure_ascii=False))
+    checker = fx.load_module(fx.SCRIPTS_DIR / 'pipeline-quality-plan-check.py', 'contract_noncode_plan')
+    assert checker.validate_pipeline_quality_plan(pipeline)['passed'] is True
+    return task, register, pipeline
+
+
+def test_success_case_valid_noncode_plan_without_optional_contract_overrides_hint(tmp_path):
+    task, _, _ = noncode_plan_task(tmp_path)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['required'] is False, result
+    assert result['status'] == 'not_required'
+    assert result['tdd_verified'] is False
+    native = fx.load_quality_lib().check_quality_loop(task, target_status='completed')
+    assert 'missing_contract_tdd_evidence' not in native['failures']
+    (task / 'context/current-session-execution.json').unlink()
+    assert fx.load_quality_lib().contract_tdd_evidence(task) == result
+
+
+@pytest.mark.parametrize('auto_completed', [False, True])
+def test_success_case_valid_noncode_optional_plan_keeps_completion_admission(tmp_path, auto_completed):
+    from types import SimpleNamespace
+    task, register, _ = noncode_plan_task(tmp_path)
+    if auto_completed:
+        (task / 'result.md').write_text('HOST_BRIDGE: auto_completed\n')
+    repair = fx.load_module(fx.REPAIR, 'contract_noncode_optional_repair')
+
+    result = repair.enforce_quality_gate(SimpleNamespace(status='completed', quality_bypass_reason=''), task, register)
+
+    assert result['passed'] is True
+    assert result['bypassed'] is False
+    assert result['contract_tdd']['required'] is False
+    assert result['tdd_verified'] is False
+
+
+@pytest.mark.parametrize('invalid', ['missing_decision', 'invalid_answer', 'planning_required', 'supervisor', 'supervisor:variant', 'backend', 'code_reviewer'])
+def test_boundary_case_noncode_route_cannot_bypass_unresolved_or_code_plan(tmp_path, invalid):
+    task, _, pipeline = noncode_plan_task(tmp_path)
+    if invalid == 'missing_decision':
+        pipeline.pop('decision_context')
+    if invalid == 'invalid_answer':
+        pipeline['decision_context']['need_analysis']['can_solve_without_code'] = 'maybe'
+    if invalid == 'planning_required':
+        pipeline['planning_required'] = True
+    if invalid in {'supervisor', 'supervisor:variant', 'backend'}:
+        pipeline['stages'][0]['agents'] = [invalid]
+    if invalid == 'code_reviewer':
+        pipeline['stages'][1]['requires_test_execution'] = True
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['required'] is True
+    assert result['tdd_verified'] is False
+
+
+def test_success_case_plain_documentation_scope_reuses_noncode_validator_exclusion(tmp_path):
+    task, _, pipeline = noncode_plan_task(tmp_path)
+    pipeline['task'] = 'Write documentation'
+    register = json.loads((task / 'register.json').read_text())
+    register['task'] = pipeline['task']
+    (task / 'register.json').write_text(json.dumps(register))
+    pipeline.pop('decision_context')
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+    checker = fx.load_module(fx.SCRIPTS_DIR / 'pipeline-quality-plan-check.py', 'plain_documentation_plan')
+    accepted = checker.validate_pipeline_quality_plan(pipeline)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert accepted['passed'] is True
+    assert accepted['required'] is False
+    assert accepted['no_code_route'] is False
+    assert result['required'] is False
+    assert result['tdd_verified'] is False
+
+
+def test_failure_case_missing_plan_task_cannot_hide_registered_code_decision_requirement(tmp_path):
+    task, register, pipeline = noncode_plan_task(tmp_path)
+    pipeline.pop('task')
+    pipeline.pop('decision_context')
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+    checker = fx.load_module(fx.SCRIPTS_DIR / 'pipeline-quality-plan-check.py', 'registered_noncode_scope')
+    assert checker.validate_pipeline_quality_plan(pipeline, task=register['task'])['passed'] is False
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['required'] is True
+    assert result['tdd_verified'] is False

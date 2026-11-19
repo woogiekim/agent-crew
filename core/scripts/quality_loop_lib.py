@@ -2698,12 +2698,20 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
     readonly = register.get('mutation_scope') == pipeline.get('mutation_scope') == 'read_only'
     shape = pipeline_shape(pipeline)
     stages = pipeline.get('stages', [])
-    planned_noncode = (bool(plans and stages) and not shape['has_implementation_stage']
-                       and all(p.get('applicable') is False and p.get('reason') for p in plans)
+    planned_noncode = (bool(stages) and not shape['has_implementation_stage']
                        and all(stage_agents(s) and not {a.split(':', 1)[0] for a in stage_agents(s)} &
                                {'supervisor', 'planner', 'resolver', 'requirements'} for s in stages)
                        and all(isinstance(s, dict) and s.get('requires_test_execution') is False
                                for s in stages if any(a.split(':', 1)[0] == 'reviewer' for a in stage_agents(s))))
+    if planned_noncode and not (plans and all(p.get('applicable') is False and p.get('reason') for p in plans)):
+        planned_noncode = False
+        spec = importlib.util.spec_from_file_location(
+            'contract_scope_plan_check', Path(__file__).with_name('pipeline-quality-plan-check.py'))
+        if spec and spec.loader:
+            checker = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(checker)
+            validated = checker.validate_pipeline_quality_plan(pipeline, task=register.get('task') or None)
+            planned_noncode = validated['passed'] and (validated['no_code_route'] or not validated['required'])
     required = not readonly and (shape['has_implementation_stage']
                                 or (not planned_noncode and inline.get('execution_profile') == 'inline_tdd'))
     result = {'required': required, 'status': 'unverified' if required else 'not_required',
