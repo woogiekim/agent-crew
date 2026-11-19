@@ -124,7 +124,7 @@ def production_paths(task_dir: Path) -> list[str]:
 
 
 def _redact(text: str) -> str:
-    return re.sub(r'(?i)(?:\b(?:token|password|secret|api[_-]?key)=\S+|\bbearer\s+\S+|\b(?:sk-|ghp_)[\w-]+)', '[REDACTED]', text)
+    return re.sub(r'(?i)(?:\b(?:token|password|passwd|secret|api[_-]?key)=\S+|\bbearer\s+\S+|(?:sk-|gh[pousr]_)[\w-]+)', '[REDACTED]', text)
 
 
 def runner_selection(argv: list[str]) -> tuple[str, list[str]]:

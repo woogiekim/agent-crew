@@ -156,3 +156,50 @@ def test_failure_case_collector_does_not_infer_arbitrary_python_execution(contra
 @pytest.mark.parametrize('argv', [['sh', '-c', 'pytest tests/preserved.py'], [sys.executable], []])
 def test_boundary_case_collector_unknown_runner_selection_is_unverified(contract, argv):
     assert contract[2].targets_bound(['tests/preserved.py'], argv) is False
+
+
+SYNTHETIC_REDACTION_VALUES = [
+    'passwd=review-dummy-value', 'password=review-dummy-value', 'TOKEN=review-dummy-value',
+    'secret=review-dummy-value', 'api-key=review-dummy-value', 'api_key=review-dummy-value',
+    'apikey=review-dummy-value', 'bearer review_dummy.value+/=', 'sk-review_dummy_value',
+    *['gh' + kind + '_review_dummy_value' for kind in 'pousr'],
+    'prefixgho_review_dummy_value', 'prefixsk-review_dummy_value',
+]
+
+
+def test_failure_case_collector_preserves_existing_redaction_in_actual_storage(contract):
+    import hashlib
+    import test_current_session_execution_gate as existing
+    task, root, runner = contract
+    values = SYNTHETIC_REDACTION_VALUES
+    assert all(existing.runtime.redact(value) != value for value in values)
+    (root / 'tests/test_redaction.py').write_text(
+        'def test_synthetic_output():\n    print(' + repr(values) + ')\n    assert False\n')
+    argv = [sys.executable, '-m', 'pytest', '-q', 'tests/test_redaction.py']
+    for index, value in enumerate(values):
+        argv += ['-o', 'review_unused_' + str(index) + '=' + value]
+
+    event = runner.execute_test(task, root, 'red', ['tests/test_redaction.py'], argv)
+    output = task / event['output_ref']
+    stored = json.dumps(event) + (task / 'tool-events.jsonl').read_text() + output.read_text()
+
+    assert event['exit_code'] == 1
+    assert event['outcome'] == 'failed'
+    assert not any(value in stored for value in values)
+    assert '[REDACTED]' in output.read_text()
+    assert event['output_sha256'] == hashlib.sha256(output.read_bytes()).hexdigest()
+
+
+def test_success_case_collector_redaction_covers_existing_runtime_policy(contract):
+    import test_current_session_execution_gate as existing
+    expected = {value: existing.runtime.redact(value) for value in SYNTHETIC_REDACTION_VALUES}
+
+    actual = {value: contract[2]._redact(value) for value in SYNTHETIC_REDACTION_VALUES}
+
+    assert actual == expected
+
+
+def test_boundary_case_collector_preserves_its_existing_broader_masks_and_plain_text(contract):
+    assert contract[2]._redact('sk-x') == '[REDACTED]'
+    assert contract[2]._redact('GHP_review_dummy_value') == '[REDACTED]'
+    assert contract[2]._redact('plain review text') == 'plain review text'
