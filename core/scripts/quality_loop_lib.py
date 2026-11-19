@@ -2687,7 +2687,7 @@ def _contract_reviewed(task_dir: Path, path: str, before: dict, after: dict) -> 
 
 def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline: dict | None = None) -> dict:
     """소스·대상·실제 실행을 연결한다. 의미적 계약 완전성을 자동 판정하지 않는다."""
-    from tdd_execution import event_payloads, snapshot, targets_bound
+    from tdd_execution import event_payloads, execution_targets, snapshot, targets_bound
 
     task_dir = Path(task_dir)
     register = register if register is not None else load_json(task_dir / 'register.json')
@@ -2696,8 +2696,16 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
              if isinstance(s, dict) and isinstance(s.get('contract_preservation'), dict)]
     inline = load_json(task_dir / 'context' / 'current-session-execution.json')
     readonly = register.get('mutation_scope') == pipeline.get('mutation_scope') == 'read_only'
-    required = not readonly and (pipeline_shape(pipeline)['has_implementation_stage']
-                                or inline.get('execution_profile') == 'inline_tdd')
+    shape = pipeline_shape(pipeline)
+    stages = pipeline.get('stages', [])
+    planned_noncode = (bool(plans and stages) and not shape['has_implementation_stage']
+                       and all(p.get('applicable') is False and p.get('reason') for p in plans)
+                       and all(stage_agents(s) and not {a.split(':', 1)[0] for a in stage_agents(s)} &
+                               {'supervisor', 'planner', 'resolver', 'requirements'} for s in stages)
+                       and all(isinstance(s, dict) and s.get('requires_test_execution') is False
+                               for s in stages if any(a.split(':', 1)[0] == 'reviewer' for a in stage_agents(s))))
+    required = not readonly and (shape['has_implementation_stage']
+                                or (not planned_noncode and inline.get('execution_profile') == 'inline_tdd'))
     result = {'required': required, 'status': 'unverified' if required else 'not_required',
               'tdd_verified': False, 'failures': [], 'warnings': [], 'run_ids': [],
               'preserved_test_targets': [], 'red_phase_passed': False,
@@ -2794,26 +2802,31 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
         if not row.get('argv') or not row.get('test_targets') or not row.get('run_id'):
             warnings.append('missing_test_target_binding')
             continue
-        runs.append(row)
+        actual = execution_targets(argv, output_text, row.get('outcome'))
+        if not actual:
+            warnings.append('missing_actual_test_selection')
+            continue
+        runs.append(dict(row, verified_targets=actual))
     if valid_exception and not failures:
         result.update(status='exception', warnings=['execution_unavailable_before_implementation'])
         return result
-    def covers(targets, actual):
-        return all(any(t == a or t.startswith(a + '::') or a.startswith(t + '::')
-                       for a in actual) for t in targets)
+    def covers(targets, row):
+        return all(any(t == a or (row.get('outcome') == 'failed' and
+                                 (a.startswith(t + '::') or a.startswith(t + '[')))
+                       for a in row['verified_targets']) for t in targets)
 
     ordered = sorted(runs, key=lambda r: _iso_epoch(r['started_at']))
     chars = [r for r in ordered if r.get('phase') == 'characterization'
              and r.get('outcome') == 'passed' and r.get('exit_code') == 0
-             and covers(preserved, r['test_targets'])]
+             and covers(preserved, r)]
     char = chars[0] if chars else None
     if preserved and not char:
         warnings.append('missing_contract_characterization')
     states, pending, cycles, refactors, reds = [(base, baseline_at)], [], [], [], []
     for row in ordered:
-        phase, targets = row.get('phase'), row['test_targets']
+        phase = row.get('phase')
         if phase == 'red' and row.get('outcome') == 'failed' and row['exit_code'] == 1:
-            if not any(covers([t], targets) for t in changed):
+            if not any(covers([t], row) for t in changed):
                 continue
             if char and _iso_epoch(row['started_at']) < _iso_epoch(char['ended_at']):
                 failures.append('characterization_after_red')
@@ -2826,7 +2839,7 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
             reds.append(row)
         if phase == 'green' and row.get('outcome') == 'passed' and row['exit_code'] == 0:
             candidates = [r for r in pending if _iso_epoch(r['ended_at']) <= _iso_epoch(row['started_at'])
-                          and covers(preserved + r['test_targets'], targets)]
+                          and covers(preserved + r['verified_targets'], row)]
             matched = [r for r in candidates if all(
                 r['tests_before'].get(t.split('::')[0]) == row['tests_before'].get(t.split('::')[0])
                 for t in r['test_targets'])]
@@ -2839,15 +2852,15 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
         if phase == 'refactor' and row.get('outcome') == 'passed' and row['exit_code'] == 0:
             matched = [(red, green) for red, green in cycles
                        if _iso_epoch(green['ended_at']) <= _iso_epoch(row['started_at'])
-                       and covers(preserved + red['test_targets'], targets)
+                       and covers(preserved + red['verified_targets'], row)
                        and all(green['tests_after'].get(t.split('::')[0]) == row['tests_after'].get(t.split('::')[0])
                                for t in red['test_targets'])]
             if matched:
                 refactors.append(row)
                 states.append((row['source_after'], _iso_epoch(row['ended_at'])))
-    result['red_phase_passed'] = all(any(covers([t], r['test_targets']) for r in reds) for t in changed)
-    result['green_phase_passed'] = all(any(covers([t], r['test_targets']) for r, g in cycles) for t in changed)
-    finals = [r for r in refactors if covers(preserved + changed, r['test_targets'])]
+    result['red_phase_passed'] = all(any(covers([t], r) for r in reds) for t in changed)
+    result['green_phase_passed'] = all(any(covers([t], r) for r, g in cycles) for t in changed)
+    finals = [r for r in refactors if covers(preserved + changed, r)]
     final = finals[-1] if finals else None
     result['refactor_phase_passed'] = bool(final and result['green_phase_passed'])
     for phase in ['red', 'green', 'refactor']:
@@ -2861,7 +2874,7 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
         if final['source_after'] != current:
             failures.append('stale_final_source')
         for target in changed:
-            matching = [(r, g) for r, g in cycles if covers([target], r['test_targets'])]
+            matching = [(r, g) for r, g in cycles if covers([target], r)]
             if matching:
                 red, green = matching[-1]
                 path = target.split('::')[0]

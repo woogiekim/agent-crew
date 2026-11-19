@@ -31,13 +31,13 @@ def test_boundary_case_collector_baseline_is_idempotent_with_dirty_source(contra
     assert sum(json.loads(v)['tdd_execution']['kind'] == 'source_baseline' for v in (task / 'tool-events.jsonl').read_text().splitlines()) == 1
 
 
-@pytest.mark.parametrize('argv,outcome', [(['missing-test-command-78213'], 'error'),
-    ([sys.executable, '-c', 'import nonexistent_dependency_78213'], 'error'),
-    ([sys.executable, '-c', 'import time;time.sleep(1)'], 'timeout')])
-def test_failure_case_collector_infrastructure_is_not_assertion_red(contract, argv, outcome):
+@pytest.mark.parametrize('argv,outcome,timeout', [(['missing-test-command-78213'], 'error', 1),
+    ([sys.executable, '-c', 'import nonexistent_dependency_78213'], 'error', 1),
+    ([sys.executable, '-c', 'import time;time.sleep(1)'], 'timeout', 0.05)])
+def test_failure_case_collector_infrastructure_is_not_assertion_red(contract, argv, outcome, timeout):
     task, root, runner = contract
 
-    result = runner.execute_test(task, root, 'red', ['tests/change.py'], argv, timeout=0.05)
+    result = runner.execute_test(task, root, 'red', ['tests/change.py'], argv, timeout=timeout)
 
     assert result['outcome'] == outcome
     assert verdict(contract)['red_phase_passed'] is False
@@ -132,3 +132,27 @@ def test_success_case_collector_documented_cli_executes_actual_target(contract):
     assert event['outcome'] == 'passed'
     assert event['test_targets'] == ['tests/preserved.py']
     assert (task/event['output_ref']).is_file()
+
+
+@pytest.mark.parametrize('code', ["print('tests/preserved.py')", "pass # tests/preserved.py"])
+def test_failure_case_collector_argv_mentions_are_not_test_execution(contract, code):
+    task, root, runner = contract
+
+    result = runner.execute_test(task, root, 'characterization', ['tests/preserved.py'], [sys.executable, '-c', code])
+
+    assert result['outcome'] == 'unverified'
+
+
+@pytest.mark.parametrize('code', [
+    "exec(open('tests/preserved.py').read());print('done')",
+    "exec(open('tests/preserved.py', 'r').read())",
+    "exec(open('tests/preserved.py').read(100))",
+    "exec(open(path).read())", "exec('tests/preserved.py')", "x = 'tests/preserved.py'", "invalid (",
+])
+def test_failure_case_collector_does_not_infer_arbitrary_python_execution(contract, code):
+    assert contract[2].targets_bound(['tests/preserved.py'], [sys.executable, '-c', code]) is False
+
+
+@pytest.mark.parametrize('argv', [['sh', '-c', 'pytest tests/preserved.py'], [sys.executable], []])
+def test_boundary_case_collector_unknown_runner_selection_is_unverified(contract, argv):
+    assert contract[2].targets_bound(['tests/preserved.py'], argv) is False

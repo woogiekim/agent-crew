@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime
 import fcntl
 import hashlib
@@ -126,12 +127,67 @@ def _redact(text: str) -> str:
     return re.sub(r'(?i)(?:\b(?:token|password|secret|api[_-]?key)=\S+|\bbearer\s+\S+|\b(?:sk-|ghp_)[\w-]+)', '[REDACTED]', text)
 
 
+def runner_selection(argv: list[str]) -> tuple[str, list[str]]:
+    """지원하는 명시 실행 형식만 해석한다. 임의 코드의 문자열 언급은 실행 증거가 아니다."""
+    if not argv:
+        return '', []
+    args = list(argv[1:])
+    python = Path(argv[0]).name.startswith('python')
+    if Path(argv[0]).name in {'pytest', 'py.test'} or (python and args[:2] == ['-m', 'pytest']):
+        args = args[2:] if python else args
+        return 'pytest', [a for a in args if not a.startswith('-') and '.py' in a
+                          and a.split('::')[0].endswith('.py')]
+    if not python:
+        return '', []
+    if len(args) == 1 and args[0].endswith('.py'):
+        return 'script', args
+    if len(args) != 2 or args[0] != '-c':
+        return '', []
+    try:
+        statements = ast.parse(args[1]).body
+        paths = []
+        for statement in statements:
+            literals = [node.value for node in ast.walk(statement)
+                        if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+            if len(literals) != 1 or not literals[0].endswith('.py'):
+                return '', []
+            path = literals[0]
+            expected = ast.parse('exec(open(%r).read())' % path).body[0]
+            if ast.dump(statement) != ast.dump(expected):
+                return '', []
+            paths.append(path)
+        return 'script', paths
+    except (SyntaxError, ValueError, TypeError):
+        return '', []
+
+
 def targets_bound(test_targets: list[str], argv: list[str]) -> bool:
-    command = ' '.join(str(arg) for arg in argv)
-    return bool(test_targets) and all(
-        target in command or target.split('::')[-1] in command
-        for target in test_targets
-    )
+    _, selected = runner_selection(argv)
+    return bool(test_targets) and all(any(t == a or t.startswith(a + '::') or a.startswith(t + '::')
+                                        for a in selected) for t in test_targets)
+
+
+def execution_targets(argv: list[str], output: str, outcome: str) -> list[str]:
+    """선택 범위와 실제 결과를 결합한다. 미지원 runner/불명확한 실패 위치는 미검증이다."""
+    kind, selected = runner_selection(argv)
+    if kind == 'script':
+        return selected if outcome == 'passed' or (outcome == 'failed' and len(selected) == 1) else []
+    if kind != 'pytest':
+        return []
+    status = 'PASSED' if outcome == 'passed' else 'FAILED'
+    nodes = re.findall(r'^([^\s]+::[^\s]+)\s+' + status + r'(?:\s|$)', output, re.MULTILINE)
+    nodes = [n for n in nodes if any(n == s or n.startswith(s + '::') or n.startswith(s + '[') for s in selected)]
+    if outcome == 'passed' and nodes and not re.search(r'\b(?:deselected|skipped|xfailed)\b', output):
+        # 전체 모듈/클래스 범위는 필터가 없는 실제 성공에만 부여한다.
+        args = argv[3:] if Path(argv[0]).name.startswith('python') else argv[1:]
+        if not any(a in {'-k', '-m', '--deselect', '--lf', '--ff', '--last-failed', '--stepwise'}
+                   or a.startswith(('-k', '-m', '--deselect=', '--ignore')) for a in args):
+            parents = {n.split('[', 1)[0] for n in nodes}
+            parents.update('::'.join(n.split('::')[:i]) for n in nodes
+                           for i in range(1, len(n.split('::'))))
+            nodes += [p for p in parents if any(p == s or p.startswith(s + '::') for s in selected)]
+            nodes += [s for s in selected if any(n == s or n.startswith(s + '::') or n.startswith(s + '[') for n in nodes)]
+    return sorted(set(nodes))
 
 
 def execute_test(task_dir: Path, project_root: Path, phase: str, test_targets: list[str],
@@ -144,6 +200,8 @@ def execute_test(task_dir: Path, project_root: Path, phase: str, test_targets: l
         raise ValueError('계획의 production_paths가 필요합니다')
     baseline = capture_baseline(task_dir, root, paths)
     before, tests = snapshot(root, paths), snapshot(root, test_targets)
+    if runner_selection(argv)[0] == 'pytest':
+        argv = list(argv) + ['--verbosity=1', '--color=no']
     started, exit_code, outcome, output = now(), None, 'error', ''
     try:
         proc = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=timeout)
@@ -155,7 +213,8 @@ def execute_test(task_dir: Path, project_root: Path, phase: str, test_targets: l
         outcome, output = 'timeout', str(exc)
     except OSError as exc:
         output = str(exc)
-    if outcome in {'passed', 'failed'} and not targets_bound(test_targets, argv):
+    if outcome in {'passed', 'failed'} and (not targets_bound(test_targets, argv)
+                                           or not execution_targets(argv, output, outcome)):
         outcome = 'unverified'
     ended, run_id = now(), str(uuid.uuid4())
     output = _redact(output)

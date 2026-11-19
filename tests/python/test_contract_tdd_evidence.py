@@ -460,3 +460,174 @@ def test_boundary_case_contract_high_risk_exception_preserves_existing_bypass(co
     assert quality['passed'] is False
     assert quality['tdd_verified'] is False
     assert quality['contract_tdd']['status'] == 'exception'
+
+
+def selector_case(tmp_path, *, selected=True):
+    root, task = tmp_path / 'project', tmp_path / 'task'
+    (root / 'tests').mkdir(parents=True)
+    (task / 'context').mkdir(parents=True)
+    (root / 'module.py').write_text('VALUE = 1\n')
+    (root / 'tests/test_preserved.py').write_text("import runpy\ndef test_preserved():\n    assert isinstance(runpy.run_path('module.py')['VALUE'], int)\n")
+    requested = 'isinstance(runpy.run_path(\'module.py\')[\'VALUE\'], int)' if selected else "runpy.run_path('module.py')['VALUE'] == 2"
+    (root / 'tests/test_change.py').write_text('import runpy\ndef test_requested():\n    assert ' + requested + "\ndef test_other():\n    assert runpy.run_path('module.py')['VALUE'] == 2\n")
+    plan = {'applicable': True, 'production_paths': ['module.py'], 'contract_sources': ['request'],
+            'preserved_test_targets': ['tests/test_preserved.py'],
+            'change_test_targets': ['tests/test_change.py::test_requested']}
+    (task / 'pipeline.json').write_text(json.dumps({'task': 'Implement behavior', 'stages': [
+        {'agents': ['backend'], 'tdd_mode': 'inline', 'contract_preservation': plan}, ['reviewer']]}))
+    (task / 'register.json').write_text(json.dumps({'project_root': str(root), 'task': 'Implement behavior'}))
+    helper().capture_baseline(task, root, ['module.py'])
+    return root, task
+
+
+def execute(root, task, phase, declared, actual):
+    return helper().execute_test(task, root, phase, declared,
+        [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', *actual])
+
+
+def test_failure_case_other_selector_cannot_supply_required_red(tmp_path):
+    root, task = selector_case(tmp_path)
+    execute(root, task, 'characterization', ['tests/test_preserved.py'], ['tests/test_preserved.py'])
+    execute(root, task, 'red', ['tests/test_change.py'], ['tests/test_change.py::test_other'])
+    (root / 'module.py').write_text('VALUE = 2\n')
+    both = ['tests/test_preserved.py', 'tests/test_change.py']
+    execute(root, task, 'green', both, both)
+    execute(root, task, 'refactor', both, both)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['tdd_verified'] is False, result
+
+
+@pytest.mark.parametrize('filters', [
+    ['-k', 'test_preserved'], ['-m', 'preserved'],
+    ['--deselect=tests/test_change.py::test_requested', '--deselect=tests/test_change.py::test_other']])
+def test_failure_case_filtered_green_cannot_skip_required_red(tmp_path, filters):
+    root, task = selector_case(tmp_path, selected=False)
+    if filters[0] == '-m':
+        path = root / 'tests/test_preserved.py'
+        path.write_text(path.read_text().replace('import runpy', 'import runpy\nimport pytest').replace('def test_preserved', '@pytest.mark.preserved\ndef test_preserved'))
+    execute(root, task, 'characterization', ['tests/test_preserved.py'], ['tests/test_preserved.py'])
+    execute(root, task, 'red', ['tests/test_change.py::test_requested'], ['tests/test_change.py::test_requested'])
+    (root / 'module.py').write_text('VALUE = 3\n')
+    both = ['tests/test_preserved.py', 'tests/test_change.py']
+    execute(root, task, 'green', both, both + filters)
+    execute(root, task, 'refactor', both, both + filters)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['tdd_verified'] is False, result
+
+
+def test_failure_case_documentation_plan_cannot_require_contract_tdd_from_hint(tmp_path):
+    _, task, _ = inline._write_task(tmp_path, selected_subagents=[])
+    plan = {'task': '수정한 코드의 사용법만 README에 추가해', 'mutation_scope': 'workspace_write',
+            'stages': [{'agents': ['documenter'], 'contract_preservation': {'applicable': False, 'reason': 'documentation-only'}},
+                       {'agents': ['reviewer'], 'requires_test_execution': False}]}
+    (task / 'pipeline.json').write_text(json.dumps(plan, ensure_ascii=False))
+    register = json.loads((task / 'register.json').read_text())
+    register['task'] = plan['task']
+    (task / 'register.json').write_text(json.dumps(register, ensure_ascii=False))
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['required'] is False, result
+
+
+@pytest.mark.parametrize('auto_completed', [False, True])
+def test_success_case_documentation_plan_preserves_inline_admission(tmp_path, auto_completed):
+    from types import SimpleNamespace
+    _, task, _ = inline._write_task(tmp_path, selected_subagents=[])
+    text = '수정한 코드의 사용법만 README에 추가해'
+    pipeline = {'task': text, 'mutation_scope': 'workspace_write', 'stages': [
+        {'agents': ['documenter'], 'contract_preservation': {'applicable': False, 'reason': 'documentation-only'}},
+        {'agents': ['reviewer'], 'requires_test_execution': False}]}
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+    register = json.loads((task / 'register.json').read_text())
+    register['task'] = text
+    (task / 'register.json').write_text(json.dumps(register))
+    if auto_completed:
+        (task / 'result.md').write_text('HOST_BRIDGE: auto_completed\n')
+    repair = fx.load_module(fx.REPAIR, 'documentation_contract_repair')
+
+    result = repair.enforce_quality_gate(SimpleNamespace(status='completed', quality_bypass_reason=''), task, register)
+
+    assert result['passed'] is True
+    assert result['bypassed'] is False
+    assert result['contract_tdd']['required'] is False
+    assert result['tdd_verified'] is False
+    assert result['pipeline_gate']['failures'] == []
+
+
+def test_success_case_pytest_whole_modules_verify_requested_selector(tmp_path):
+    root, task = selector_case(tmp_path, selected=False)
+    execute(root, task, 'characterization', ['tests/test_preserved.py'], ['tests/test_preserved.py'])
+    execute(root, task, 'red', ['tests/test_change.py'], ['tests/test_change.py'])
+    (root / 'module.py').write_text('VALUE = 2\n')
+    both = ['tests/test_preserved.py', 'tests/test_change.py']
+    execute(root, task, 'green', both, both)
+    execute(root, task, 'refactor', both, both)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['tdd_verified'] is True, result
+
+
+@pytest.mark.parametrize('stage', ['supervisor', 'supervisor:variant', 'backend'])
+def test_boundary_case_unresolved_or_code_plan_keeps_inline_tdd_required(tmp_path, stage):
+    _, task, _ = inline._write_task(tmp_path, selected_subagents=[])
+    pipeline = {'stages': [{'agents': [stage], 'contract_preservation': {'applicable': False, 'reason': 'new implementation'}}]}
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['required'] is True
+    assert result['tdd_verified'] is False
+
+
+def test_failure_case_whole_module_other_failure_cannot_supply_requested_red(tmp_path):
+    root, task = selector_case(tmp_path)
+    execute(root, task, 'characterization', ['tests/test_preserved.py'], ['tests/test_preserved.py'])
+    execute(root, task, 'red', ['tests/test_change.py'], ['tests/test_change.py'])
+    (root / 'module.py').write_text('VALUE = 2\n')
+    both = ['tests/test_preserved.py', 'tests/test_change.py']
+    execute(root, task, 'green', both, both)
+    execute(root, task, 'refactor', both, both)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['red_phase_passed'] is False
+    assert result['tdd_verified'] is False
+
+
+def test_success_case_pytest_whole_module_preserves_parameterized_request(tmp_path):
+    root, task = selector_case(tmp_path, selected=False)
+    (root / 'tests/test_change.py').write_text("import runpy\nimport pytest\n@pytest.mark.parametrize('expected', [2, 2])\ndef test_requested(expected):\n    assert runpy.run_path('module.py')['VALUE'] == expected\n")
+    execute(root, task, 'characterization', ['tests/test_preserved.py'], ['tests/test_preserved.py'])
+    execute(root, task, 'red', ['tests/test_change.py'], ['tests/test_change.py'])
+    (root / 'module.py').write_text('VALUE = 2\n')
+    both = ['tests/test_preserved.py', 'tests/test_change.py']
+    execute(root, task, 'green', both, both)
+    execute(root, task, 'refactor', both, both)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['tdd_verified'] is True, result
+
+
+def test_success_case_pytest_whole_module_preserves_class_scope(tmp_path):
+    root, task = selector_case(tmp_path, selected=False)
+    (root / 'tests/test_change.py').write_text("import runpy\nclass TestContract:\n    def test_requested(self):\n        assert runpy.run_path('module.py')['VALUE'] == 2\n")
+    pipeline = json.loads((task / 'pipeline.json').read_text())
+    pipeline['stages'][0]['contract_preservation']['change_test_targets'] = ['tests/test_change.py::TestContract']
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+    execute(root, task, 'characterization', ['tests/test_preserved.py'], ['tests/test_preserved.py'])
+    execute(root, task, 'red', ['tests/test_change.py'], ['tests/test_change.py'])
+    (root / 'module.py').write_text('VALUE = 2\n')
+    both = ['tests/test_preserved.py', 'tests/test_change.py']
+    execute(root, task, 'green', both, both)
+    execute(root, task, 'refactor', both, both)
+
+    result = fx.load_quality_lib().contract_tdd_evidence(task)
+
+    assert result['tdd_verified'] is True, result

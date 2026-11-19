@@ -27,6 +27,8 @@ python3 "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/tdd_execution.py" --tas
 
 `red`, `green`, `refactor`도 실제 대상/argv로 실행한다. helper는 기준 상태·전후 소스/TC fingerprint·실제 결과를 기존 `tool-events.jsonl`에 연결한다. 최초 characterization → 요구별 Red → Green → Refactor와 계약 회귀 순서를 지킨다. 여러 요구의 반복은 앞선 실제 Green/refactor에 연결되며 새 baseline으로 기존 상태를 덮어쓰지 않는다.
 
+pytest 실행은 helper가 개별 node 결과를 출력하도록 argv에 `--verbosity=1 --color=no`를 추가한다. 계획의 요구 선택자는 실제 `FAILED`와 이후 `PASSED`에 연결해야 하며, 다른 선택자 실패나 `-k`/`-m`/`--deselect`로 제외된 TC는 증거가 아니다. 모듈 전체 성공은 필터 없는 실제 실행에만 부여한다. 제한된 명시 Python script 실행 외의 runner나 확인할 수 없는 선택/출력 형식은 미검증으로 남긴다. 확정된 문서·비코드 계획은 이전 `inline_tdd` 힌트보다 우선하며, 미확정 계획과 신규 코드의 보존 계약 비적용은 새 동작 Red 면제가 아니다.
+
 시작 실패·의존성 실패·timeout·취소는 assertion Red나 성공이 아니다. 실행 불가라면 구현 전에 helper의 `record_exception`으로 대상·사유·대체 근거·잔여 위험과 당시 소스 상태를 기록한다. 기술 hook에 판단이나 정식 검증 문서 생성을 추가하지 않는다.
 
 파일 fingerprint의 차이만으로 기대값 변경을 단정하지 않는다. 보존 TC 변경은 변경 전 코드·호출자와 diff를 독립 reviewer가 검토하고, 기대값 변경은 명시적 요청/승인 근거에 연결한다. `contract_tdd.tdd_verified`와 완료 허용은 별개다. legacy 문서/실패→성공 trace나 `gates: passed`는 실제 TDD 수행으로 승격하지 않는다. 분기 누락·실패 원인·기대값 타당성의 의미 검토는 자동 증명의 대상이 아니다.
