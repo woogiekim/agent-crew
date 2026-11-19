@@ -273,6 +273,7 @@
     "core/scripts/evolution-proposal-lifecycle.py",
     "core/scripts/evolution-proposal-summary.py",
     "core/scripts/evolution_evidence.py",
+    "core/scripts/execution_lifecycle.py",
     "core/scripts/fake-completion-scan.py",
     "core/scripts/finalize-session.sh",
     "core/scripts/framework-review-check.py",

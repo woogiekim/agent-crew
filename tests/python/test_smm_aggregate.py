@@ -839,3 +839,45 @@ def test_build_smm_is_read_only(tmp_path: Path):
     after = _snapshot_tree(state_dir)
 
     assert before == after
+
+
+def test_lifecycle_and_diagnostics_passthrough_contract(tmp_path: Path, monkeypatch):
+    """boundary-case(contract) - telemetry 상태·진단을 전달하고 누락 기본값을 유지한다."""
+    state_dir = tmp_path / "state"
+    task_dir = _make_task(state_dir, "20260529-100600-0")
+    row = {
+        "status": "running", "objective_status": "open",
+        "execution_status": "idle", "idle_reason": "lease_expired",
+        "last_heartbeat_at": "raw-heartbeat", "lease_expires_at": "raw-expiry",
+        "resumable": True, "health": "stalled", "last_update_age_seconds": 120,
+        "guidance": ["명시적 재개 명령을 확인하세요."],
+    }
+    monkeypatch.setattr(smm.telemetry, "aggregate_task", lambda *_: row)
+    before = _snapshot_tree(state_dir)
+
+    sut = smm.build_smm(state_dir, task_dir)
+
+    for key, expected in row.items():
+        assert sut.get(key) == expected, key
+    assert _snapshot_tree(state_dir) == before
+    assert sut["guidance"] is not row["guidance"]
+    monkeypatch.setattr(smm.telemetry, "aggregate_task", lambda *_: {})
+    defaults = {
+        "objective_status": "open", "execution_status": "idle", "idle_reason": None,
+        "last_heartbeat_at": None, "lease_expires_at": None, "resumable": False,
+        "health": "unknown", "last_update_age_seconds": None, "guidance": [],
+    }
+
+    missing = smm.build_smm(state_dir, task_dir)
+
+    assert {key: missing.get(key) for key in defaults} == defaults
+
+    def unavailable(*_):
+        raise OSError("읽기 실패")
+
+    monkeypatch.setattr(smm.telemetry, "aggregate_task", unavailable)
+
+    degraded = smm.build_smm(state_dir, task_dir)
+
+    assert {key: degraded.get(key) for key in defaults} == defaults
+    assert _snapshot_tree(state_dir) == before

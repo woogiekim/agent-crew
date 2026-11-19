@@ -153,3 +153,18 @@ No capability gating. The view reuses `telemetry-aggregate.py` readers
 - `core/rules/state-files/progress-buffer-jsonl.md` — event-buffer contract
 - `core/rules/state-files/pipeline-json.md` — stage-graph contract
 ```
+
+## JSON lifecycle·진단 전달
+
+`--format json`의 각 task에는 telemetry가 산출한 `objective_status`,
+`execution_status`, `idle_reason`, `last_heartbeat_at`, `lease_expires_at`,
+`resumable`과 `health`, `last_update_age_seconds`, `guidance`를 그대로 전달한다.
+기존 JSON 필드·`status`와 텍스트 출력은 유지한다.
+
+telemetry 값을 얻지 못하면 순서대로 `open`, `idle`, `null`, `null`, `null`,
+`false`, `unknown`, `null`, `[]`를 사용한다. 상태 우선순위와 UTC lease 경계는
+`core/commands/telemetry.md`의 JSON lifecycle 표시 계약을 따른다.
+
+`resumable`과 `guidance`는 운영자 표시이며 실행 허가·자동 재개·품질 재판정이
+아니다. SMM은 상태 파일이나 owner/lease를 쓰지 않고 기존 TDD·품질 예외 기록을
+수정하지 않는다.

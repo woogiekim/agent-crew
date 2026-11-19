@@ -73,6 +73,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from core_objective_lib import capability_ceiling, format_ceiling_text
+from execution_lifecycle import derive_lifecycle
 from quality_loop_lib import review_ledger_markdown_items
 
 
@@ -849,7 +850,7 @@ def host_bridge_status(register):
     return "unknown"
 
 
-def aggregate_task(state_dir, task_dir):
+def aggregate_task(state_dir, task_dir, now=None):
     """Return a per-task dict with metrics + status. Robust to missing data."""
     task_id = task_dir.name
     reg = read_register(task_dir)
@@ -859,6 +860,12 @@ def aggregate_task(state_dir, task_dir):
     quality_metrics = read_quality_metrics(task_dir)
     cost = read_cost_file(state_dir, task_id)
     result = read_result_md(task_dir)
+    lifecycle = derive_lifecycle(
+        reg or {},
+        result.get("status"),
+        False,
+        now=now,
+    )
     review_fix_loop_summary = build_review_fix_loop_summary(task_dir, events)
     missing_boot = missing_supervisor_boot_state(
         task_dir,
@@ -1010,6 +1017,13 @@ def aggregate_task(state_dir, task_dir):
         "task_id":           task_id,
         "task":              task_field,
         "status":            status,
+        "objective_status":  lifecycle.objective_status,
+        "execution_status":  lifecycle.execution_status,
+        "idle_reason":       lifecycle.idle_reason,
+        "last_heartbeat_at": (reg or {}).get("last_heartbeat_at"),
+        "lease_expires_at":  (reg or {}).get("lease_expires_at"),
+        "resumable":         lifecycle.objective_status == "open"
+                              and lifecycle.execution_status in {"idle", "waiting_user"},
         "current_phase":     current_phase,
         "duration_seconds":  duration_seconds,
         "age_seconds":       age_seconds,
@@ -1121,6 +1135,9 @@ def aggregate_summary(rows):
         for r in rows
         if r.get("host_bridge_status")
     )
+    by_execution_status = Counter(
+        r.get("execution_status", "idle") for r in rows
+    )
     by_blocker = Counter()
     by_stale_blocker = Counter()
     for r in rows:
@@ -1153,6 +1170,13 @@ def aggregate_summary(rows):
         "total_tool_unrecovered_failures": total_tool_unrecovered_failures,
         "by_phase":                dict(by_phase),
         "by_host_bridge_status":   dict(by_host_bridge_status),
+        "by_execution_status":     dict(by_execution_status),
+        "expired_execution_leases": sum(
+            1 for r in rows if r.get("idle_reason") == "lease_expired"
+        ),
+        "invalid_execution_leases": sum(
+            1 for r in rows if r.get("idle_reason") == "invalid_lease"
+        ),
         "by_blocker":              dict(by_blocker),
         "by_stale_blocker":        dict(by_stale_blocker),
         "operational_quality":     operational_quality_metrics(rows),

@@ -1818,3 +1818,70 @@ class TestAarDebrief:
         assert memo2["meaningful"] is True
         assert memo2["loop_backs"] == 1
         assert memo2["recall_hint"]
+
+
+def test_lifecycle_metadata_and_summary_contract(tmp_path: Path):
+    """boundary-case(contract) - 상태·lease 경계와 집계를 읽기 전용으로 표시한다."""
+    from datetime import datetime, timedelta, timezone
+
+    state_dir = tmp_path / "state"
+    task_dir = state_dir / "tasks" / "20260101-120000-0"
+    task_dir.mkdir(parents=True)
+    _write_register(task_dir, task_id=task_dir.name, current_phase="phase_2")
+    register = json.loads((task_dir / "register.json").read_text())
+
+    legacy = telemetry.aggregate_task(state_dir, task_dir)
+
+    assert legacy.get("objective_status") == "open"
+    assert legacy.get("execution_status") == "idle"
+    assert legacy.get("idle_reason") == "legacy_unowned"
+    assert legacy.get("resumable") is True
+    assert legacy.get("last_heartbeat_at") is None
+    assert legacy.get("lease_expires_at") is None
+
+    now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    timestamp = lambda seconds: (now + timedelta(seconds=seconds)).isoformat()
+    cases = [
+        ({"lease_expires_at": timestamp(60)}, None, ("open", "running", None, False)),
+        ({"lease_expires_at": timestamp(0)}, None, ("open", "idle", "lease_expired", True)),
+        ({"lease_expires_at": timestamp(-60)}, None, ("open", "idle", "lease_expired", True)),
+        ({"lease_expires_at": "invalid"}, None, ("open", "idle", "invalid_lease", True)),
+        ({"lease_expires_at": "2026-01-01T12:01:00"}, None, ("open", "idle", "invalid_lease", True)),
+        ({"lease_expires_at": timestamp(600)}, None, ("open", "running", None, False)),
+        ({"lease_expires_at": timestamp(601)}, None, ("open", "idle", "invalid_lease", True)),
+        ({"approval_status": "pending"}, None, ("open", "waiting_user", None, True)),
+        ({"execution_status": "waiting_user"}, None, ("open", "waiting_user", None, True)),
+        ({"execution_status": "idle", "idle_reason": "interrupted"}, None, ("open", "idle", "interrupted", True)),
+    ]
+    for terminal in ("completed", "blocked", "cancelled"):
+        cases.append(({"approval_status": "pending", "objective_status": "blocked"}, terminal, (terminal, "terminal", None, False)))
+        cases.append(({"current_phase": terminal}, None, (terminal, "terminal", None, False)))
+        cases.append(({"objective_status": terminal}, None, (terminal, "terminal", None, False)))
+
+    rows = [legacy]
+    keys = ("objective_status", "execution_status", "idle_reason", "resumable")
+    for overrides, terminal, expected in cases:
+        current = dict(register, last_heartbeat_at="raw-heartbeat", **overrides)
+        (task_dir / "register.json").write_text(json.dumps(current))
+        result_path = task_dir / "result.md"
+        result_path.write_text("STATUS: " + terminal + "\n" if terminal else "")
+        before = {p.name: p.read_bytes() for p in task_dir.iterdir()}
+
+        row = telemetry.aggregate_task(state_dir, task_dir, now=now)
+
+        assert tuple(row.get(key) for key in keys) == expected, overrides
+        assert row["last_heartbeat_at"] == "raw-heartbeat"
+        assert row["lease_expires_at"] == overrides.get("lease_expires_at")
+        assert {p.name: p.read_bytes() for p in task_dir.iterdir()} == before
+        rows.append(row)
+
+    summary = telemetry.aggregate_summary(rows)
+
+    assert summary.get("by_execution_status") == {"idle": 7, "running": 2, "waiting_user": 2, "terminal": 9}
+    assert summary.get("expired_execution_leases") == 2
+    assert summary.get("invalid_execution_leases") == 3
+    assert telemetry.aggregate_summary([]).get("by_execution_status") == {}
+    assert telemetry.aggregate_summary([]).get("expired_execution_leases") == 0
+    old_row = dict(legacy)
+    old_row.pop("execution_status")
+    assert telemetry.aggregate_summary([old_row]).get("by_execution_status") == {"idle": 1}

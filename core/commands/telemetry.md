@@ -94,3 +94,29 @@ gracefully.
 - `core/rules/state-files/progress-buffer-jsonl.md` — event-buffer
   contract
 - `core/rules/capabilities/cost-tracking.md` — token-usage contract
+
+## JSON lifecycle 표시
+
+기존 `status`와 텍스트 출력은 유지한다. `--format json`의 각 task에는 다음
+읽기 전용 필드를 추가한다.
+
+- `objective_status`: `open | completed | blocked | cancelled`. terminal
+  `result.md`가 register보다 우선한다.
+- `execution_status`: `running | idle | waiting_user | terminal`.
+- `idle_reason`: `legacy_unowned`, `lease_expired`, `invalid_lease` 또는 register의
+  명시적 idle 사유. idle이 아니거나 사유가 없으면 `null`이다.
+- `last_heartbeat_at`, `lease_expires_at`: register 원문을 전달하며 부재는 `null`이다.
+- `resumable`: objective가 `open`이고 execution이 `idle` 또는 `waiting_user`이면
+  `true`인 표시 값이다. 실행 허가나 자동 재개를 뜻하지 않는다.
+
+UTC lease가 현재보다 미래이며 600초 이내이면 `running`이다. 현재와 같거나
+이전이면 `lease_expired`, 파싱 불가·timezone 부재·600초 초과 미래이면
+`invalid_lease`이다. lease와 명시적 상태가 없는 legacy task는
+`open/idle/legacy_unowned`로 표시한다. 승인 대기와 명시적 `waiting_user`는
+대기 상태이며 종료 objective는 항상 `terminal`이다.
+
+JSON summary에는 `by_execution_status`별 개수와
+`expired_execution_leases`·`invalid_execution_leases` 개수를 추가한다.
+`core/scripts/execution_lifecycle.py`는 순수 판단·복사 전이 helper이며, 이 조회는
+owner/lease를 기록하거나 실행기를 호출하지 않는다. 기존 품질 판정과 TDD 증거는
+이 표시로 변경하거나 보완하지 않는다.
