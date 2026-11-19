@@ -2282,7 +2282,8 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     required = (
         args.status == "completed"
         and not explicit_read_only
-        and looks_quality_gated_task(task)
+        and (looks_quality_gated_task(task)
+             or contract_tdd_evidence(task_dir, register, pipeline)["required"])
     )
     if not required:
         return {"required": False, "passed": True, "bypassed": False}

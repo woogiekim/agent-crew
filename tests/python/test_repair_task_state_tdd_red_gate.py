@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+
+import pytest
 from pathlib import Path
 
 
@@ -357,3 +359,45 @@ def test_quality_bypass_records_missing_red_phase(tmp_path: Path):
     assert repair["quality_gate"]["red_phase_evidence_paths"] == []
     assert repair["quality_gate"]["refactor_phase_passed"] is False
     assert repair["quality_gate"]["refactor_phase_evidence_paths"] == []
+
+
+@pytest.mark.parametrize('execution_mode,high_risk', [('full', True), ('inline', True), ('inline', False)])
+def test_failure_case_implementation_plan_cannot_skip_quality_gate_for_documentation_words(tmp_path, execution_mode, high_risk):
+    from types import SimpleNamespace
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import _trace_gate_fixtures as fixtures
+    import test_current_session_execution_gate as inline
+    repair = fixtures.load_module(SCRIPT, 'repair_implementation_scope')
+    if execution_mode == 'inline':
+        _, task, _ = inline._write_task(tmp_path, selected_subagents=[])
+        pipeline = {'stages': [{'agents': ['backend'], 'tdd_mode': 'inline'}, ['reviewer']]}
+    else:
+        task = _write_task(tmp_path / 'state')
+        pipeline = json.loads((task / 'pipeline.json').read_text())
+    text = 'agent-crew 코드 구현을 수정하고 tdd.md 문서를 보강해.'
+    if high_risk:
+        text += ' 전역 설치와 push, merge는 하지 마.'
+    register = json.loads((task / 'register.json').read_text())
+    register['task'] = text
+    pipeline['task'] = text
+    (task / 'register.json').write_text(json.dumps(register, ensure_ascii=False))
+    (task / 'pipeline.json').write_text(json.dumps(pipeline, ensure_ascii=False))
+    (task / 'result.md').write_text('HOST_BRIDGE: auto_completed\n' if high_risk else 'STATUS: handoff_ready\n')
+    assert (repair.quality_gate_risk_level(text, (task / 'result.md').read_text()) == 'high') is high_risk
+    assert repair.looks_quality_gated_task(text) is False
+    assert repair.looks_mutating_task(text) is True
+    shared = repair.contract_tdd_evidence(task, register, pipeline)
+    assert shared['required'] is True
+    assert shared['tdd_verified'] is False
+    args = SimpleNamespace(status='completed', evidence=[], quality_evidence=[], quality_bypass_reason='')
+
+    if high_risk:
+        with pytest.raises(SystemExit, match='quality_loop|tdd|contract'):
+            repair.enforce_quality_gate(args, task, register)
+        return
+    result = repair.enforce_quality_gate(args, task, register)
+
+    assert result['required'] is True
+    assert result['contract_tdd']['required'] is True
+    assert result['tdd_verified'] is False
