@@ -3137,3 +3137,7 @@ use this sequence:
 
 This section exists for operator troubleshooting; normal run output intentionally
 stays concise.
+
+### 구현 전 계약 실행 연결
+
+계획의 구현 stage에는 `contract_preservation`의 적용 여부/사유·production_paths·contract_sources·preserved_test_targets·change_test_targets를 연결한다. 보존 TC의 변경 전 성공과 별도 새 요구 Red를 확인한 후 수정하고 Green/Refactor/계약 회귀를 실행한다. 기존 TC를 재사용한다. native run/variants가 수집한 최초 baseline과 명시적 `${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/tdd_execution.py` runner를 current-session fallback에서도 동일하게 사용한다. `gates: passed`는 orchestration 확인이며 TDD 수행 근거가 아니다. source의 공통 checker 결과와 실행 불가 한계를 보고하고 소급 증거를 만들지 않는다. 설치/외부 변경 승인 경계는 그대로 유지한다.

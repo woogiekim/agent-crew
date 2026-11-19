@@ -58,6 +58,8 @@ def main() -> int:
                 f"risk={result.get('risk_level')} "
                 f"strict={str(bool(result.get('strict_gate_required'))).lower()}"
             )
+        contract_tdd = result.get("contract_tdd", {})
+        print("CONTRACT_TDD: " + str(contract_tdd.get("status", "unverified")))
         coverage = result.get("quality_coverage", {})
         if coverage:
             status = "pass" if coverage.get("passed_threshold") else "fail"

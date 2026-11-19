@@ -23,6 +23,7 @@ except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from project_state import resolve_project_state
 from quality_loop_lib import check_quality_loop, looks_mutating_task
+from tdd_execution import capture_baseline
 from task_capability_lib import required_capabilities_for_task
 from variant_state import operation_lock, variants_artifacts_dir, read_state, write_json as atomic_write_json
 
@@ -2920,6 +2921,8 @@ def command_run_variants(
 
         write_json(task_dir / "register.json", register)
         write_json(task_dir / "pipeline.json", pipeline)
+        if mutation_scope != "read_only" and looks_mutating_task(task):
+            capture_baseline(task_dir, variant_project_root)
         write_json(task_dir / "context" / "input-normalization.json", normalization_metadata)
         issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
         if issue_ingestions:
@@ -3197,6 +3200,8 @@ def command_run(args: argparse.Namespace) -> int:
 
     write_json(task_dir / "register.json", register)
     write_json(task_dir / "pipeline.json", pipeline)
+    if mutation_scope != "read_only" and looks_mutating_task(task):
+        capture_baseline(task_dir, project_root)
     issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
     if issue_ingestions:
         register["issue_comment_ingestion"] = issue_ingestions

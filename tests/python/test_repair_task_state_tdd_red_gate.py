@@ -235,6 +235,7 @@ def test_mutating_repair_records_advisory_without_red_phase_evidence(tmp_path: P
 
 
 def test_mutating_repair_accepts_red_and_refactor_phase_evidence(tmp_path: Path):
+    """경계케이스(계약) - 완료 허용과 문서 기반 미검증 수행 주장을 구별한다."""
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -251,20 +252,22 @@ def test_mutating_repair_accepts_red_and_refactor_phase_evidence(tmp_path: Path)
 
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
-    assert repair["quality_gate"]["red_phase_passed"] is True
+    assert repair["quality_gate"]["red_phase_passed"] is False
     assert repair["quality_gate"]["red_phase_evidence_paths"] == ["context/tdd-red.md"]
-    assert repair["quality_gate"]["green_phase_passed"] is True
-    assert repair["quality_gate"]["refactor_phase_passed"] is True
+    assert repair["quality_gate"]["green_phase_passed"] is False
+    assert repair["quality_gate"]["refactor_phase_passed"] is False
     assert repair["quality_gate"]["refactor_phase_evidence_paths"] == ["context/tdd-refactor.md"]
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
-    assert "TDD_GREEN_PHASE: passed" in result_text
-    assert "TDD_RED_PHASE: passed" in result_text
+    assert "TDD_GREEN_PHASE: passed" not in result_text
+    assert "TDD_VERIFIED: false" in result_text
+    assert "TDD_RED_PHASE: advisory" in result_text
     assert "TDD_RED_EVIDENCE: context/tdd-red.md" in result_text
-    assert "TDD_REFACTOR_PHASE: passed" in result_text
+    assert "TDD_REFACTOR_PHASE: advisory" in result_text
     assert "TDD_REFACTOR_EVIDENCE: context/tdd-refactor.md" in result_text
 
 
 def test_mutating_repair_records_advisory_with_red_but_without_refactor_phase_evidence(tmp_path: Path):
+    """경계케이스(계약) - 완료 허용과 문서 기반 미검증 수행 주장을 구별한다."""
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -277,9 +280,9 @@ def test_mutating_repair_records_advisory_with_red_but_without_refactor_phase_ev
 
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
-    assert repair["quality_gate"]["red_phase_passed"] is True
-    assert repair["quality_gate"]["red_phase_advisory"] is False
-    assert repair["quality_gate"]["refactor_phase_passed"] is True
+    assert repair["quality_gate"]["red_phase_passed"] is False
+    assert repair["quality_gate"]["red_phase_advisory"] is True
+    assert repair["quality_gate"]["refactor_phase_passed"] is False
     assert repair["quality_gate"]["refactor_phase_advisory"] is True
     assert repair["quality_gate"]["refactor_phase_evidence_paths"] == []
 
@@ -304,6 +307,7 @@ def test_mutating_repair_ignores_refactor_mentions_inside_red_artifact(tmp_path:
 
 
 def test_mutating_repair_accepts_explicit_tdd_exception(tmp_path: Path):
+    """경계케이스(계약) - 완료 허용과 문서 기반 미검증 수행 주장을 구별한다."""
     state_dir = tmp_path / "state"
     task_id = "20260604-000000-0"
     task_dir = _write_task(state_dir, task_id)
@@ -320,13 +324,13 @@ def test_mutating_repair_accepts_explicit_tdd_exception(tmp_path: Path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
-    assert repair["quality_gate"]["red_phase_passed"] is True
+    assert repair["quality_gate"]["red_phase_passed"] is False
     assert repair["quality_gate"]["tdd_exception_paths"] == ["context/tdd-exception.md"]
-    assert repair["quality_gate"]["refactor_phase_passed"] is True
+    assert repair["quality_gate"]["refactor_phase_passed"] is False
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
-    assert "TDD_RED_PHASE: exception" in result_text
+    assert "TDD_RED_PHASE: advisory" in result_text
     assert "TDD_EXCEPTION: context/tdd-exception.md" in result_text
-    assert "TDD_REFACTOR_PHASE: passed" in result_text
+    assert "TDD_REFACTOR_PHASE: advisory" in result_text
 
 
 def test_quality_bypass_records_missing_red_phase(tmp_path: Path):

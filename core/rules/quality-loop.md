@@ -542,3 +542,9 @@ pipeline.json files without the field continue to work and now opt
 their reviewer stage into the test-execution path automatically. See
 `core/agents/planner.md` § Reviewer opt-out for the strict criteria
 on when the opt-out is appropriate.
+
+## 계약 TDD 수행과 완료 허용의 구분
+
+`quality_loop_lib.contract_tdd_evidence`는 `crew run` native/variants와 current-session inline/full fallback의 공유 판정이다. 명시적 `tdd_execution.py` runner의 최초 baseline·대상·실제 결과·소스/TC 상태·순서를 확인한다. 기존 TC 재사용은 실제 실행으로 인정하고, 선언/문서/파일 존재만으로 성공을 만들지 않는다.
+
+`contract_tdd.status`의 verified/unverified/exception/contradicted와 `tdd_verified`를 그대로 보고한다. `passed` 완료 허용은 TDD 검증 완료가 아니다. 일반 위험의 단순 누락/검토 미확인은 기존 advisory 정책, high 위험은 strict 정책을 유지한다. 관찰된 순서·현재 상태 모순은 누락과 구분한다. `legacy_observations`는 과거 완료 정책의 입력이며 TDD phase 통과가 아니다. 보존/새 요구 TC fingerprint 차이는 의미적 변경 자동 증명이 아니므로 독립 diff·승인 검토가 필요하다. 직접 Agent 실행 전체나 의미적 완전성까지 검증했다고 일반화하지 않는다.

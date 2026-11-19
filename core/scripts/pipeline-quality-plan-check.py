@@ -473,6 +473,22 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
             if len(implementers) != 1:
                 failures.append("multi_agent_implementation_stage_must_split_for_tdd")
 
+            contract = stage.get("contract_preservation") if isinstance(stage, dict) else None
+            if contract is not None:
+                if not isinstance(contract, dict) or not isinstance(contract.get("applicable"), bool):
+                    failures.append("invalid_contract_preservation_plan")
+                elif not contract["applicable"] and not contract.get("reason"):
+                    failures.append("contract_preservation_nonapplicable_without_reason")
+                elif contract["applicable"] and any(
+                    not isinstance(contract.get(key), list) or not contract[key]
+                    or any(not isinstance(value, str) or not value.strip() or ".." in Path(value).parts
+                           or Path(value).is_absolute() for value in contract[key])
+                    for key in ["production_paths", "contract_sources", "preserved_test_targets", "change_test_targets"]
+                ):
+                    failures.append("incomplete_contract_preservation_plan")
+                elif set(contract.get("preserved_test_targets", [])) & set(contract.get("change_test_targets", [])):
+                    failures.append("contract_test_roles_overlap")
+
             raw_tdd_mode = stage.get("tdd_mode") if isinstance(stage, dict) else None
             if raw_tdd_mode is not None and not tdd_mode:
                 failures.append("invalid_implementation_tdd_mode")

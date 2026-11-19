@@ -347,6 +347,7 @@ AUTO_COMPLETION_RE = re.compile(
     re.IGNORECASE,
 )
 SOFT_QUALITY_FAILURES = {
+    "missing_contract_tdd_evidence",
     "missing_progress_events",
     "missing_pipeline_implementation_completion",
     "missing_pipeline_tdd_event",
@@ -2244,12 +2245,10 @@ def _trace_phase(passed: bool, source: str) -> dict:
 
 
 def trace_quality_evidence(task_dir: Path, register: dict) -> dict:
-    """F4: compose F1-F3 into per-phase trace-first / doc-fallback verdicts.
+    """실제 계약 TDD phase와 legacy 관찰을 구분하고 독립 리뷰 근거를 결합한다.
 
-    Returns per-phase ``red``/``green``/``refactor``/``review`` dicts, each
-    ``{passed, evidence_source}`` where ``evidence_source`` is
-    ``"trace"`` | ``"document"`` | ``"none"``, plus the three sub-reports under
-    ``git`` / ``tool_events`` / ``review``.
+    legacy_observations는 이전 완료 허용 정책의 입력일 뿐 TDD 수행 증명이 아니다.
+    red/green/refactor 통과는 기준 상태·대상에 연결된 실행 결과에서만 나온다.
     """
     task_dir = Path(task_dir)
 
@@ -2289,6 +2288,14 @@ def trace_quality_evidence(task_dir: Path, register: dict) -> dict:
     else:
         refactor = _trace_phase(False, "none")
 
+    observations = {name: {'observed': value['passed'], 'evidence_source': value['evidence_source']}
+                    for name, value in [('red', red), ('green', green), ('refactor', refactor)]}
+    contract = contract_tdd_evidence(task_dir, register)
+    source = 'contract_execution' if contract['run_ids'] else ('unverified' if any(v['observed'] for v in observations.values()) else 'none')
+    red = _trace_phase(contract['red_phase_passed'], source)
+    green = _trace_phase(contract['green_phase_passed'], source)
+    refactor = _trace_phase(contract['refactor_phase_passed'], source)
+
     # Review: independent corroboration when any review trace source exists.
     if review["available"]:
         reviewer = _trace_phase(review["corroborated"], "trace")
@@ -2302,6 +2309,7 @@ def trace_quality_evidence(task_dir: Path, register: dict) -> dict:
         "review": reviewer,
         "git": git,
         "tool_events": tool_events,
+        "legacy_observations": observations,
         "review_report": review,
     }
 
@@ -2637,6 +2645,245 @@ def quality_coverage_decision(coverage: dict, *, strict_gate_required: bool) -> 
     }
 
 
+def _contract_reviewed(task_dir: Path, path: str, before: dict, after: dict) -> bool:
+    text = load_text(task_dir / 'context' / 'review.md')
+    if not independent_review_evidence(task_dir)['corroborated']:
+        return False
+    for block in re.findall(r'```json\s*\n(.*?)\n```', text, re.DOTALL):
+        try:
+            reviews = json.loads(block).get('contract_test_review', [])
+        except (ValueError, AttributeError):
+            continue
+        for review in reviews:
+            if not isinstance(review, dict) or any(review.get(k) != v for k, v in
+                    [('path', path), ('before', before), ('after', after)]):
+                continue
+            evidence = review.get('diff_evidence')
+            if not isinstance(evidence, str) or not (task_dir / evidence).resolve().is_relative_to(task_dir.resolve()):
+                continue
+            if not (task_dir / evidence).is_file() or not load_text(task_dir / evidence).strip():
+                continue
+            if review.get('verdict') == 'expectations_preserved':
+                return True
+            if review.get('verdict') == 'approved_change':
+                ref = review.get('approval_ref', '')
+                approval_path = (task_dir / ref).resolve()
+                if not ref or not approval_path.is_relative_to(task_dir.resolve()):
+                    continue
+                approval = load_json(approval_path)
+                for decision in approval.get('decisions', []):
+                    changes = decision.get('bound_fields', {}).get('contract_changes', [])
+                    if not (decision.get('status') == 'approved' and decision.get('decision_at') and decision.get('idempotency_key')):
+                        continue
+                    if any(change == {'path': path, 'before': before, 'after': after} for change in changes):
+                        return True
+                    quote = review.get('approval_quote')
+                    request = load_json(task_dir / 'register.json').get('task', '')
+                    if (isinstance(quote, str) and quote.strip() and quote in request
+                            and review.get('approval_decision_id') == decision.get('decision_id')):
+                        return True
+    return False
+
+
+def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline: dict | None = None) -> dict:
+    """소스·대상·실제 실행을 연결한다. 의미적 계약 완전성을 자동 판정하지 않는다."""
+    from tdd_execution import event_payloads, snapshot, targets_bound
+
+    task_dir = Path(task_dir)
+    register = register if register is not None else load_json(task_dir / 'register.json')
+    pipeline = pipeline if pipeline is not None else load_json(task_dir / 'pipeline.json')
+    plans = [s['contract_preservation'] for s in pipeline.get('stages', [])
+             if isinstance(s, dict) and isinstance(s.get('contract_preservation'), dict)]
+    inline = load_json(task_dir / 'context' / 'current-session-execution.json')
+    readonly = register.get('mutation_scope') == pipeline.get('mutation_scope') == 'read_only'
+    required = not readonly and (pipeline_shape(pipeline)['has_implementation_stage']
+                                or inline.get('execution_profile') == 'inline_tdd')
+    result = {'required': required, 'status': 'unverified' if required else 'not_required',
+              'tdd_verified': False, 'failures': [], 'warnings': [], 'run_ids': [],
+              'preserved_test_targets': [], 'red_phase_passed': False,
+              'green_phase_passed': False, 'refactor_phase_passed': False}
+    if not required:
+        return result
+    failures, warnings = result['failures'], result['warnings']
+    root = register_project_root(register)
+    rows = event_payloads(task_dir)
+    baseline = next((r for r in rows if r.get('kind') == 'source_baseline'), None)
+    if not plans or root is None or not baseline:
+        warnings.append('missing_contract_tdd_evidence')
+        return result
+    paths = sorted({p for plan in plans for p in plan.get('production_paths', [])})
+    preserved = sorted({p for plan in plans for p in plan.get('preserved_test_targets', [])})
+    changed = sorted({p for plan in plans for p in plan.get('change_test_targets', [])})
+    if not paths or not changed or (any(p.get('applicable') for p in plans) and not preserved):
+        warnings.append('missing_contract_tdd_plan')
+        return result
+    if not baseline.get('complete') and any(
+        p not in baseline.get('files', {}) or baseline['files'][p].get('state') not in {'file', 'missing'}
+        for p in paths
+    ):
+        warnings.append('missing_contract_tdd_evidence')
+        return result
+    if str(root.resolve()) != baseline.get('project_root'):
+        failures.append('baseline_root_mismatch')
+    if any(r != baseline for r in rows if r.get('kind') == 'source_baseline'):
+        failures.append('baseline_replaced')
+    base = {p: baseline.get('files', {}).get(p, {'state': 'missing'}) for p in paths}
+    baseline_at = _iso_epoch(baseline.get('captured_at'))
+    try:
+        current = snapshot(root, paths)
+    except (ValueError, OSError):
+        failures.append('invalid_production_scope')
+        result['status'] = 'contradicted'
+        return result
+    runs = []
+    valid_exception = False
+    for row in rows:
+        if row.get('baseline_id') != baseline.get('baseline_id'):
+            continue
+        if row.get('kind') == 'execution_exception':
+            recorded = _iso_epoch(row.get('recorded_at'))
+            if (row.get('source_state') == base and baseline_at is not None and recorded is not None
+                    and recorded >= baseline_at and not any(
+                        r.get('source_before') != base or r.get('source_after') != base for r in runs
+                    ) and all(row.get(k) for k in
+                    ['reason', 'alternative_evidence', 'residual_risk'])):
+                valid_exception = True
+            else:
+                failures.append('late_or_incomplete_tdd_exception')
+        if row.get('kind') != 'test_run':
+            continue
+        started, ended = _iso_epoch(row.get('started_at')), _iso_epoch(row.get('ended_at'))
+        if (started is None or ended is None or baseline_at is None or not baseline_at <= started <= ended
+                or row.get('cwd') != str(root.resolve())):
+            failures.append('invalid_test_run_binding')
+            continue
+        if row.get('source_before') != row.get('source_after') or row.get('tests_before') != row.get('tests_after'):
+            failures.append('source_changed_during_test')
+            continue
+        targets, argv = row.get('test_targets'), row.get('argv')
+        tests = row.get('tests_before', {})
+        if (not isinstance(targets, list) or not targets_bound(targets, argv or [])
+                or type(row.get('exit_code')) is not int or not isinstance(tests, dict)
+                or any(tests.get(t.split('::')[0], {}).get('state') != 'file' for t in targets)):
+            warnings.append('missing_test_target_binding')
+            continue
+        source = row.get('source_before', {})
+        if any(p not in source or source[p].get('state') not in {'file', 'missing'} for p in paths):
+            failures.append('incomplete_test_source_state')
+            continue
+        if row.get('phase') == 'characterization' and source != base:
+            failures.append('test_after_production_mutation')
+            continue
+        output = row.get('output_ref')
+        output_path = (task_dir / str(output or '')).resolve()
+        if not output or not output_path.is_relative_to(task_dir.resolve()) or not output_path.is_file():
+            warnings.append('missing_actual_test_output')
+            continue
+        output_text = load_text(output_path)
+        if row.get('outcome') == 'failed' and (
+            not ('AssertionError' in output_text or re.search(r'\b[1-9]\d* failed\b', output_text))
+            or re.search(r'\b(?:ERROR|ImportError|ModuleNotFoundError|SyntaxError)\b', output_text)
+        ):
+            warnings.append('red_failure_not_assertion')
+            continue
+        if row.get('output_sha256'):
+            import hashlib
+            if hashlib.sha256(output_path.read_bytes()).hexdigest() != row['output_sha256']:
+                failures.append('test_output_changed')
+                continue
+        if not row.get('argv') or not row.get('test_targets') or not row.get('run_id'):
+            warnings.append('missing_test_target_binding')
+            continue
+        runs.append(row)
+    if valid_exception and not failures:
+        result.update(status='exception', warnings=['execution_unavailable_before_implementation'])
+        return result
+    def covers(targets, actual):
+        return all(any(t == a or t.startswith(a + '::') or a.startswith(t + '::')
+                       for a in actual) for t in targets)
+
+    ordered = sorted(runs, key=lambda r: _iso_epoch(r['started_at']))
+    chars = [r for r in ordered if r.get('phase') == 'characterization'
+             and r.get('outcome') == 'passed' and r.get('exit_code') == 0
+             and covers(preserved, r['test_targets'])]
+    char = chars[0] if chars else None
+    if preserved and not char:
+        warnings.append('missing_contract_characterization')
+    states, pending, cycles, refactors, reds = [(base, baseline_at)], [], [], [], []
+    for row in ordered:
+        phase, targets = row.get('phase'), row['test_targets']
+        if phase == 'red' and row.get('outcome') == 'failed' and row['exit_code'] == 1:
+            if not any(covers([t], targets) for t in changed):
+                continue
+            if char and _iso_epoch(row['started_at']) < _iso_epoch(char['ended_at']):
+                failures.append('characterization_after_red')
+                continue
+            if not any(row['source_before'] == state and _iso_epoch(row['started_at']) >= available
+                       for state, available in states):
+                failures.append('test_after_production_mutation')
+                continue
+            pending.append(row)
+            reds.append(row)
+        if phase == 'green' and row.get('outcome') == 'passed' and row['exit_code'] == 0:
+            candidates = [r for r in pending if _iso_epoch(r['ended_at']) <= _iso_epoch(row['started_at'])
+                          and covers(preserved + r['test_targets'], targets)]
+            matched = [r for r in candidates if all(
+                r['tests_before'].get(t.split('::')[0]) == row['tests_before'].get(t.split('::')[0])
+                for t in r['test_targets'])]
+            if candidates and not matched:
+                failures.append('red_test_changed')
+            for red in matched:
+                cycles.append((red, row))
+                pending.remove(red)
+                states.append((row['source_after'], _iso_epoch(row['ended_at'])))
+        if phase == 'refactor' and row.get('outcome') == 'passed' and row['exit_code'] == 0:
+            matched = [(red, green) for red, green in cycles
+                       if _iso_epoch(green['ended_at']) <= _iso_epoch(row['started_at'])
+                       and covers(preserved + red['test_targets'], targets)
+                       and all(green['tests_after'].get(t.split('::')[0]) == row['tests_after'].get(t.split('::')[0])
+                               for t in red['test_targets'])]
+            if matched:
+                refactors.append(row)
+                states.append((row['source_after'], _iso_epoch(row['ended_at'])))
+    result['red_phase_passed'] = all(any(covers([t], r['test_targets']) for r in reds) for t in changed)
+    result['green_phase_passed'] = all(any(covers([t], r['test_targets']) for r, g in cycles) for t in changed)
+    finals = [r for r in refactors if covers(preserved + changed, r['test_targets'])]
+    final = finals[-1] if finals else None
+    result['refactor_phase_passed'] = bool(final and result['green_phase_passed'])
+    for phase in ['red', 'green', 'refactor']:
+        if not result[phase + '_phase_passed']:
+            warnings.append('missing_contract_' + phase)
+    result['run_ids'] = [r['run_id'] for r in reds] + [g['run_id'] for r, g in cycles]
+    if final:
+        result['run_ids'].append(final['run_id'])
+        if snapshot(root, final.get('tests_after', {})) != final.get('tests_after'):
+            failures.append('stale_final_tests')
+        if final['source_after'] != current:
+            failures.append('stale_final_source')
+        for target in changed:
+            matching = [(r, g) for r, g in cycles if covers([target], r['test_targets'])]
+            if matching:
+                red, green = matching[-1]
+                path = target.split('::')[0]
+                if green['tests_after'].get(path) != final['tests_after'].get(path):
+                    failures.append('tests_changed_after_green')
+        if char:
+            result['preserved_test_targets'] = preserved
+            for target in preserved:
+                path = target.split('::')[0]
+                before, after = char['tests_before'].get(path), final['tests_after'].get(path)
+                if before != after and not _contract_reviewed(task_dir, path, before, after):
+                    failures.append('contract_test_review_required')
+    result['failures'] = sorted(set(failures))
+    result['warnings'] = sorted(set(warnings))
+    review_gaps = {'red_test_changed', 'tests_changed_after_green', 'contract_test_review_required'}
+    if set(failures) - review_gaps:
+        result['status'] = 'contradicted'
+    elif not failures and not warnings and all(result[p + '_phase_passed'] for p in ['red', 'green', 'refactor']):
+        result.update(status='verified', tdd_verified=True)
+    return result
+
+
 def check_quality_loop(
     task_dir: Path,
     *,
@@ -2679,6 +2926,7 @@ def check_quality_loop(
     finding_register = finding_register_status(task_dir)
     review_ledger = review_ledger_status(task_dir)
     trace_evidence = trace_quality_evidence(task_dir, register)
+    contract_tdd = contract_tdd_evidence(task_dir, register, pipeline)
     delegation_fidelity = delegation_fidelity_status(task_dir)
     human_acceptance = human_acceptance_matrix_status(task_dir)
     evaluation_metrics = evaluation_metrics_status(task_dir)
@@ -2705,6 +2953,10 @@ def check_quality_loop(
 
     failures: list[str] = []
     if required:
+        if contract_tdd["status"] == "contradicted":
+            failures.append("contract_tdd_evidence_contradicted")
+        elif contract_tdd["required"] and not contract_tdd["tdd_verified"]:
+            failures.append("missing_contract_tdd_evidence")
         if not pipeline:
             failures.append("missing_pipeline")
         if not shape["has_implementation_stage"]:
@@ -2732,13 +2984,13 @@ def check_quality_loop(
                 # Git is authoritative: test-file evidence passes only when a
                 # real test path changed in the diff. A string/doc claim with no
                 # matching git change is active fabrication (always hard).
-                if git_evidence["test_paths"]:
+                if git_evidence["test_paths"] or contract_tdd["tdd_verified"]:
                     pass
                 elif string_claims_test:
                     failures.append("test_file_claim_contradicts_git")
                 elif not has_tdd_exception(task_dir):
                     failures.append("missing_tdd_test_file")
-            elif not string_claims_test and not has_tdd_exception(task_dir):
+            elif not string_claims_test and not contract_tdd["tdd_verified"] and not has_tdd_exception(task_dir):
                 # Git unresolvable: fall back to the legacy string check.
                 failures.append("missing_tdd_test_file")
 
@@ -2870,6 +3122,7 @@ def check_quality_loop(
         "review_ledger": review_ledger,
         "delegation_fidelity": delegation_fidelity,
         "trace_evidence": trace_evidence,
+        "contract_tdd": contract_tdd,
         "human_acceptance": human_acceptance,
         "evaluation_metrics": evaluation_metrics,
         "skill_content_audit": skill_audit,

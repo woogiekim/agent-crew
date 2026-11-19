@@ -61,6 +61,10 @@ consumers. Implement the literal suggestion only when it is `contract-safe`,
 `parity-safe`, `scope-safe`, and `side-effect-safe`; otherwise preserve the
 intent through an adapted method or record the correct disposition.
 
+## 기존 계약 사전 검증
+
+API에 한정하지 않고 변경 전 코드·호출자의 정상/실패/경계·저장·rollback·부작용을 보존/승인된 변경/미확인으로 나눈다. 계획의 `contract_preservation`과 실제 TC/선택자를 확인하고 보존 TC의 변경 전 통과 → 별도 새 요구 Red → Green → Refactor/계약 회귀를 수행한다. 적절한 기존 TC를 재사용한다. `tdd.md`의 명시적 runner로 실제 결과와 기준 상태를 연결하며, 단순 passed·사후 TC·문서로 TDD 수행을 합성하지 않는다. 기준 상태나 실행이 불가능하면 구현 전에 한계·대체 근거·위험을 보고한다. 새 코드/문서/읽기 전용의 적용 차이는 공용 규칙과 계획을 따르며 scope를 임의 확대하지 않는다.
+
 ## Fallback policy
 
 **Fallback policy: degraded-fallback** (per

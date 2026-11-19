@@ -155,6 +155,10 @@ identify change point
 Record the exception explicitly (why red-first was impossible, what seam was
 introduced) so the reviewer can see the safety net was built before the change.
 
+## 관찰 계약과 TDD 증거 연결
+
+이미 테스트가 있는 코드도 변경 전 코드·호출자의 정상/실패/경계와 부작용을 먼저 점검한다. 보존할 기존 TC를 변경 전 구현에서 실행하고, 승인된 변경은 별도 Red로 시작한다. `tdd.md`의 구현 전 계약/실행 수집 순서를 따른다. 사후 TC를 이전 기준의 증거로 소급하지 않는다. 실행 불가 seam/환경 예외는 구현 전에 한계·대체 근거·잔여 위험을 기록하며, 미실행을 통과로 표시하지 않는다.
+
 ## Anti-Patterns
 - Editing untested code directly "because it is a small change".
 - Writing a characterization test that asserts intended behavior instead of

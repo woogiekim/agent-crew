@@ -332,6 +332,7 @@
     "core/scripts/sync-instructions.sh",
     "core/scripts/sync-local-install.sh",
     "core/scripts/task_capability_lib.py",
+    "core/scripts/tdd_execution.py",
     "core/scripts/telemetry-aggregate.py",
     "core/scripts/telemetry-taxonomy-check.py",
     "core/scripts/update-fingerprint.py",

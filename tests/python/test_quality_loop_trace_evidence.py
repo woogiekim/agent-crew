@@ -432,7 +432,7 @@ def test_success_case_trace_quality_evidence_all_phases_from_trace(tmp_path, sut
 
 
 def test_boundary_case_trace_quality_evidence_doc_fallback_when_trace_absent(tmp_path, sut):
-    # TC-025: red trace unavailable but legacy tdd-red.md present -> document.
+    # 기존 문서 관찰은 보존하지만 수정 전 TDD 수행으로 승격하지 않는다.
     _state_dir, _tid, task_dir = fx.make_state_task(tmp_path)
     (task_dir / "context" / "tdd-red.md").write_text(
         "TDD-RED: focused pytest failed as expected before implementation.\n",
@@ -441,7 +441,9 @@ def test_boundary_case_trace_quality_evidence_doc_fallback_when_trace_absent(tmp
 
     evidence = sut.trace_quality_evidence(task_dir, {})
 
-    assert evidence["red"]["evidence_source"] == "document"
+    assert evidence["red"]["evidence_source"] == "unverified"
+    assert evidence["red"]["passed"] is False
+    assert evidence["legacy_observations"]["red"]["evidence_source"] == "document"
 
 
 def test_boundary_case_trace_quality_evidence_none_state(tmp_path, sut):
@@ -516,16 +518,17 @@ def test_failure_case_check_quality_loop_contradiction_is_hard(tmp_path, sut):
 
 
 def test_success_case_check_quality_loop_red_green_from_tool_events(tmp_path, sut):
-    # TC-029: tool-events red-then-green satisfy red/green without tdd-red.md.
+    # 단순 실패→성공 trace는 기준 소스·대상 증거 없이 TDD가 아니다.
     repo, _base, task_dir = _passing_baseline(tmp_path, sut)
     fx.write_tool_events(task_dir, fx.red_then_green_rows())
     assert not (task_dir / "context" / "tdd-red.md").exists()
 
     payload = sut.check_quality_loop(task_dir)
 
-    assert "missing_tdd_red_phase_evidence" not in payload["failures"]
+    assert "missing_tdd_red_phase_evidence" in payload["soft_failures"]
     assert "trace_evidence" in payload
-    assert payload["trace_evidence"]["red"]["evidence_source"] == "trace"
+    assert payload["trace_evidence"]["red"]["evidence_source"] == "unverified"
+    assert payload["trace_evidence"]["legacy_observations"]["red"]["evidence_source"] == "trace"
 
 
 def test_boundary_case_check_quality_loop_legacy_docs_when_trace_unavailable(tmp_path, sut):
@@ -543,8 +546,8 @@ def test_boundary_case_check_quality_loop_legacy_docs_when_trace_unavailable(tmp
 
     payload = sut.check_quality_loop(task_dir)
 
-    assert "missing_tdd_red_phase_evidence" not in payload["failures"]
-    assert "missing_tdd_refactor_phase_evidence" not in payload["failures"]
+    assert "missing_tdd_red_phase_evidence" in payload["soft_failures"]
+    assert "missing_tdd_refactor_phase_evidence" in payload["soft_failures"]
 
 
 def test_boundary_case_check_quality_loop_labels_preserved_on_empty_evidence(tmp_path, sut):
@@ -634,7 +637,8 @@ def test_boundary_case_trace_takes_precedence_over_document(tmp_path, sut):
 
     payload = sut.check_quality_loop(task_dir)
 
-    assert payload["trace_evidence"]["red"]["evidence_source"] == "trace"
+    assert payload["trace_evidence"]["red"]["evidence_source"] == "unverified"
+    assert payload["trace_evidence"]["legacy_observations"]["red"]["evidence_source"] == "trace"
 
 
 def test_failure_case_contradiction_blocks_over_doc_fallback(tmp_path, sut):

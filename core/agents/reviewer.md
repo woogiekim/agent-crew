@@ -614,15 +614,14 @@ If `DISCOVERED == 0` AND the diff is docs-only / config-only, proceed
 to Step 1 (no test execution possible, static review continues —
 equivalent to `REQUIRES_TEST_EXECUTION: false`).
 
-### Phase 0.5 — Reject code diffs with no changed tests
+### Phase 0.5 — Verify changed tests or observed contract-test reuse
 
 If `REQUIRES_TEST_EXECUTION` is `false`, skip this phase and jump to
 Step 1.
 
 After runner discovery and before executing any runner, inspect the changed
 files in the implementation diff. A code change cannot be approved solely
-because pre-existing tests happen to pass; the diff itself must include a test
-file unless the implementation stage recorded an explicit TDD exception.
+because pre-existing tests happen to pass. 변경된 TC가 없으면 다음 공통 판정을 실제 실행한다. 최초 계약/소스 기준, 요구별 Red/Green 및 최종 회귀에 연결된 기존 TC 재사용만 허용하며 테스트 의미·분기·부작용의 독립 검토는 계속 수행한다. 공통 판정이 없거나 미확인인 경우 통과를 합성하지 않는다. 명시적 예외의 기존 승인 경계도 유지한다.
 
 ```bash
 CHANGED="${CHANGED_FILES}"
@@ -649,8 +648,22 @@ if [ -f "${TASK_DIR}/context/tdd-exception.md" ] \
 fi
 ```
 
-If `TOUCHED_CODE == 1`, `DIFF_TEST_FILE_COUNT == 0`, and
-`TDD_EXCEPTION == false`, short-circuit with:
+기존 TC 재사용 여부는 선언 문자열 대신 공통 checker의 실제 결과로 구한다.
+
+```bash
+REUSED_TESTS_VERIFIED=$(python3 - "${TASK_DIR}" "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts" <<'PYEOF'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[2])
+from quality_loop_lib import contract_tdd_evidence
+result = contract_tdd_evidence(Path(sys.argv[1]))
+print("true" if result["tdd_verified"] and result["preserved_test_targets"] else "false")
+PYEOF
+)
+```
+
+If `TOUCHED_CODE == 1`, `DIFF_TEST_FILE_COUNT == 0`,
+`TDD_EXCEPTION == false`, and `REUSED_TESTS_VERIFIED != true`, short-circuit with:
 
 ```text
 STATUS: REJECTED

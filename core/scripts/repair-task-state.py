@@ -12,7 +12,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from quality_loop_lib import check_quality_loop, looks_mutating_task as shared_looks_mutating_task
+from quality_loop_lib import (check_quality_loop, contract_tdd_evidence, quality_gate_risk_level, load_text,
+                              looks_mutating_task as shared_looks_mutating_task)
 from skill_coverage_lib import build_skill_coverage, parse_selected_skill_names_from_text
 from task_capability_lib import required_capabilities_for_task
 
@@ -2289,16 +2290,25 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     inline_gate = enforce_inline_execution_gate(args, task_dir)
     if inline_gate.get("required") and inline_gate.get("passed"):
         evidence_path = str(inline_gate.get("evidence_path") or "")
+        contract_tdd = contract_tdd_evidence(task_dir, register, pipeline)
+        strict = quality_gate_risk_level(task, load_text(task_dir / "result.md")) == "high"
+        needs_bypass = contract_tdd["status"] == "contradicted" or (strict and contract_tdd["required"] and not contract_tdd["tdd_verified"])
+        bypass_reason = getattr(args, "quality_bypass_reason", "")
+        if needs_bypass and not bypass_reason:
+            raise SystemExit("STATUS: blocked\nBLOCKER: contract_tdd_evidence_incomplete\nDETAIL: "
+                             + ", ".join(contract_tdd["failures"] + contract_tdd["warnings"]))
         return {
             "required": True,
-            "passed": True,
-            "bypassed": False,
+            "passed": not needs_bypass,
+            "bypassed": needs_bypass and bool(bypass_reason),
+            "bypass_reason": bypass_reason if needs_bypass else "",
             "execution_profile": inline_gate.get("execution_profile"),
-            "pipeline_passed": True,
+            "pipeline_passed": not needs_bypass,
             "pipeline_gate": {
-                "passed": True,
+                "passed": not needs_bypass,
                 "mode": inline_gate.get("execution_profile"),
-                "failures": [],
+                "failures": (["contract_tdd_evidence_contradicted"] if contract_tdd["status"] == "contradicted"
+                             else ["missing_contract_tdd_evidence"] if contract_tdd["required"] and not contract_tdd["tdd_verified"] else []),
                 "hard_failures": [],
                 "soft_failures": [],
             },
@@ -2307,13 +2317,15 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
             "refactor_phase_evidence_paths": [evidence_path] if evidence_path else [],
             "review_evidence_paths": [evidence_path] if evidence_path else [],
             "tdd_exception_paths": [],
-            "tdd_outcome_source": "inline_execution",
+            "tdd_outcome_source": "contract_execution" if contract_tdd["tdd_verified"] else "unverified",
             "review_outcome_source": "inline_diff_review",
-            "red_phase_passed": True,
-            "green_phase_passed": True,
-            "refactor_phase_passed": True,
-            "red_phase_advisory": False,
-            "refactor_phase_advisory": False,
+            "contract_tdd": contract_tdd,
+            "tdd_verified": contract_tdd["tdd_verified"],
+            "red_phase_passed": contract_tdd["red_phase_passed"],
+            "green_phase_passed": contract_tdd["green_phase_passed"],
+            "refactor_phase_passed": contract_tdd["refactor_phase_passed"],
+            "red_phase_advisory": not contract_tdd["red_phase_passed"],
+            "refactor_phase_advisory": not contract_tdd["refactor_phase_passed"],
             "red_phase_source": "inline_execution",
             "refactor_phase_source": "inline_execution",
             "contradiction": False,
@@ -2327,9 +2339,14 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     pipeline_hard_failures = set(pipeline_status.get("hard_failures", []))
     pipeline_failures = set(pipeline_status.get("failures", []))
     trace = pipeline_status.get("trace_evidence") or {}
-    trace_red = trace.get("red", {})
-    trace_green = trace.get("green", {})
-    trace_refactor = trace.get("refactor", {})
+    legacy = trace.get("legacy_observations", {})
+    admission_trace = {
+        name: {"passed": value.get("observed"), "evidence_source": value.get("evidence_source")}
+        for name, value in legacy.items()
+    } if not pipeline_status.get("contract_tdd", {}).get("tdd_verified") else trace
+    trace_red = admission_trace.get("red", {})
+    trace_green = admission_trace.get("green", {})
+    trace_refactor = admission_trace.get("refactor", {})
     pipeline_tdd_passed = bool(pipeline_status.get("passed") and pipeline_status.get("tdd_event_count"))
     pipeline_review_passed = bool(pipeline_status.get("passed") and pipeline_status.get("reviewer_approval_count"))
 
@@ -2340,7 +2357,7 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
 
     # Red phase — trace-first (a recorded failing test run), doc fallback only
     # when the trace source (tool-events.jsonl) is unavailable.
-    red_from_trace = trace_red.get("evidence_source") == "trace"
+    red_from_trace = trace_red.get("evidence_source") in {"trace", "contract_execution"}
     red_phase_explicit = bool(status["red_phase_evidence_paths"] or status["tdd_exception_paths"])
     red_phase_advisory = bool(
         not red_from_trace
@@ -2356,7 +2373,7 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
 
     # Green phase — trace-first (a recorded passing test run), else the legacy
     # pipeline/document tdd signal.
-    green_from_trace = trace_green.get("evidence_source") == "trace"
+    green_from_trace = trace_green.get("evidence_source") in {"trace", "contract_execution"}
     if green_from_trace:
         green_phase_passed = bool(trace_green.get("passed"))
     else:
@@ -2364,7 +2381,7 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
 
     # Refactor phase — trace-first (a green run at/after the last commit), doc
     # fallback only when the trace source is unavailable.
-    refactor_from_trace = trace_refactor.get("evidence_source") == "trace"
+    refactor_from_trace = trace_refactor.get("evidence_source") in {"trace", "contract_execution"}
     refactor_phase_explicit = bool(status["refactor_phase_evidence_paths"])
     refactor_phase_advisory = bool(
         not refactor_from_trace
@@ -2379,6 +2396,8 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
         refactor_phase_passed = refactor_phase_explicit or refactor_phase_advisory
 
     tdd_and_review_passed = bool(status["passed"] or (pipeline_tdd_passed and pipeline_review_passed))
+    status["contract_tdd"] = pipeline_status.get("contract_tdd", {})
+    status["tdd_verified"] = status["contract_tdd"].get("tdd_verified", False)
     status["pipeline_gate"] = pipeline_status
     status["pipeline_passed"] = pipeline_status["passed"]
     status["trace_evidence"] = trace
@@ -2410,6 +2429,13 @@ def enforce_quality_gate(args: argparse.Namespace, task_dir: Path, register: dic
     )
     status["bypassed"] = False
     status["bypass_reason"] = ""
+    # 완료 허용 정책과 실제 수행의 보고를 분리한다. 문서·advisory는 실행 사실이 아니다.
+    contract = status["contract_tdd"]
+    for phase in ["red", "green", "refactor"]:
+        status[phase + "_phase_passed"] = bool(contract.get(phase + "_phase_passed"))
+    status["red_phase_advisory"] = not status["red_phase_passed"]
+    status["refactor_phase_advisory"] = not status["refactor_phase_passed"]
+    status["tdd_outcome_source"] = "contract_execution" if contract.get("tdd_verified") else contract.get("status", "unverified")
     if status["passed"]:
         return status
 
@@ -2540,6 +2566,8 @@ def render_result(task: str, task_id: str, status: str, note: str, blocker: str,
             lines.append("PIPELINE_QUALITY_FAILURES: " + ", ".join(pipeline_failures))
         for path in quality_gate.get("tdd_evidence_paths", []):
             lines.append(f"TDD_EVIDENCE: {path}")
+        if "tdd_verified" in quality_gate:
+            lines.append("TDD_VERIFIED: " + str(quality_gate["tdd_verified"]).lower())
         if quality_gate.get("tdd_outcome_source"):
             lines.append(f"TDD_OUTCOME: {quality_gate.get('tdd_outcome_source')}")
         if quality_gate.get("green_phase_passed"):

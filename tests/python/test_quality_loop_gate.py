@@ -1032,6 +1032,7 @@ def test_repair_blocks_evidence_only_without_pipeline_quality_loop(tmp_path: Pat
 
 
 def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
+    """경계케이스(계약) - 기존 완료 허용과 미검증 TDD 주장을 분리한다."""
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     write_quality_loop_trace(task_dir)
     (task_dir / "context" / "tdd_log.md").write_text(
@@ -1058,14 +1059,16 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
     assert repair["quality_gate"]["passed"] is True
     assert repair["quality_gate"]["tdd_evidence_paths"] == ["context/tdd-red.md", "context/tdd_log.md"]
     assert repair["quality_gate"]["red_phase_evidence_paths"] == ["context/tdd-red.md"]
-    assert repair["quality_gate"]["green_phase_passed"] is True
+    assert repair["quality_gate"]["green_phase_passed"] is False
+    assert repair["quality_gate"]["tdd_verified"] is False
     assert repair["quality_gate"]["refactor_phase_evidence_paths"] == ["context/tdd-refactor.md"]
-    assert repair["quality_gate"]["refactor_phase_passed"] is True
+    assert repair["quality_gate"]["refactor_phase_passed"] is False
     assert repair["quality_gate"]["review_evidence_paths"] == ["context/review.md"]
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "QUALITY_LOOP: passed" in result_text
     assert "PIPELINE_QUALITY_LOOP: passed" in result_text
-    assert "TDD_GREEN_PHASE: passed" in result_text
+    assert "TDD_GREEN_PHASE: passed" not in result_text
+    assert "TDD_VERIFIED: false" in result_text
     assert "TDD_EVIDENCE: context/tdd_log.md" in result_text
     assert "TDD_RED_EVIDENCE: context/tdd-red.md" in result_text
     assert "TDD_REFACTOR_EVIDENCE: context/tdd-refactor.md" in result_text
@@ -1073,6 +1076,7 @@ def test_repair_accepts_tdd_and_reviewer_evidence(tmp_path: Path):
 
 
 def test_repair_accepts_pipeline_quality_outcomes_without_proof_files(tmp_path: Path):
+    """경계케이스(계약) - 기존 완료 허용과 미검증 TDD 주장을 분리한다."""
     state_dir, task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     write_quality_loop_trace(task_dir)
 
@@ -1081,7 +1085,7 @@ def test_repair_accepts_pipeline_quality_outcomes_without_proof_files(tmp_path: 
     assert result.returncode == 0, result.stdout + result.stderr
     repair = json.loads((task_dir / "context" / "manual-fallback-repair.json").read_text(encoding="utf-8"))
     assert repair["quality_gate"]["passed"] is True
-    assert repair["quality_gate"]["tdd_outcome_source"] == "pipeline"
+    assert repair["quality_gate"]["tdd_outcome_source"] == "unverified"
     assert repair["quality_gate"]["review_outcome_source"] == "pipeline"
     assert repair["quality_gate"]["red_phase_advisory"] is True
     assert repair["quality_gate"]["refactor_phase_advisory"] is True
@@ -1089,7 +1093,8 @@ def test_repair_accepts_pipeline_quality_outcomes_without_proof_files(tmp_path: 
     assert repair["quality_gate"]["review_evidence_paths"] == []
     result_text = (task_dir / "result.md").read_text(encoding="utf-8")
     assert "QUALITY_LOOP: passed" in result_text
-    assert "TDD_OUTCOME: pipeline" in result_text
+    assert "TDD_OUTCOME: unverified" in result_text
+    assert "TDD_VERIFIED: false" in result_text
     assert "REVIEW_OUTCOME: pipeline" in result_text
     assert "TDD_RED_PHASE: advisory" in result_text
     assert "TDD_REFACTOR_PHASE: advisory" in result_text
@@ -1344,6 +1349,7 @@ def test_checklist_only_reviewer_rejection_is_not_final_rework_rejection():
 
 
 def test_quality_loop_check_requires_tdd_red_and_refactor_artifacts(tmp_path: Path):
+    """경계케이스(계약) - 기존 완료 허용과 미검증 TDD 주장을 분리한다."""
     _state_dir, _task_id, task_dir = make_task(tmp_path, "Implement a new update gate")
     write_quality_loop_trace(task_dir)
     (task_dir / "result.md").write_text("STATUS: completed\n", encoding="utf-8")
@@ -1352,7 +1358,7 @@ def test_quality_loop_check_requires_tdd_red_and_refactor_artifacts(tmp_path: Pa
 
     assert result.returncode == 0
     assert "PASS: pipeline quality loop" in result.stdout
-    assert "WARNINGS: missing_tdd_red_phase_evidence, missing_tdd_refactor_phase_evidence" in result.stdout
+    assert "WARNINGS: missing_contract_tdd_evidence, missing_tdd_red_phase_evidence, missing_tdd_refactor_phase_evidence" in result.stdout
     assert "- missing_tdd_red_phase_evidence" in result.stdout
     assert "- missing_tdd_refactor_phase_evidence" in result.stdout
 

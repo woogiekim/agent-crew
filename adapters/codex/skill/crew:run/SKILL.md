@@ -144,3 +144,7 @@ gaps.
 Outside the current-session fallback, do not implement directly or duplicate
 supervisor logic in this skill. Inside the fallback, execute only the already
 pinned plan as the inline supervisor; do not re-plan or widen scope.
+
+### 계약 TDD 공통 검사
+
+current-session fallback도 공용 `run.md`와 `tdd.md`의 계약 사전 검증 순서 및 `tdd_execution.py` 명시적 runner를 사용한다. 실제 source baseline·대상·결과·순서가 없는 inline passed를 Red/Green/Refactor 통과로 보고하지 않는다. `contract_tdd` 판정의 미확인·사전 실행 불가 예외·실제 모순을 구별하며, standard 완료 허용과 `tdd_verified`를 분리한다. 별도 호스트 전용 검사나 스킬/설치본 수동 교체를 만들지 않는다.

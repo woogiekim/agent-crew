@@ -11,6 +11,26 @@ REFACTOR → Remove duplication; improve design without breaking tests
 **Invariant**: never write production code without a failing test first.
 **Invariant**: never refactor while a test is red.
 
+## 구현 전 기존 계약과 실제 실행
+
+운영 코드 수정 전에 변경 전 코드와 호출자를 따라 정상·실패·경계, 응답·예외·저장·rollback·관찰 가능한 부작용을 식별한다. 보존 계약, 이번 요청이 명시적으로 바꾸는 계약, 미확인을 나눈다. API 외의 파일·이벤트·도구 출력도 같은 원칙을 따른다.
+
+보존 TC는 변경 전 구현에서 먼저 통과해야 한다. 적절한 기존 TC는 재사용하고 중복 TC를 만들지 않는다. 새 요구/버그 수정은 별도 실패 TC로 시작하며, 변경 후 구현에서 기대값을 가져와 기존 계약의 근거로 쓰지 않는다. 사후 보강 TC를 구현 전 TDD 증거로 소급 인정하지 않는다.
+
+계획의 구현 stage에는 `contract_preservation`으로 `applicable`, `production_paths`, `contract_sources`, `preserved_test_targets`, `change_test_targets`를 연결한다. 신규 코드 등 보존 계약이 비적용이면 사유를 적되 새 동작의 Red를 면제하지 않는다. 누락된 계획을 구현 agent가 임의 승인하지 않고 supervisor에 반환한다.
+
+native `crew run`/variants가 최초 source baseline을 고정한다. current-session fallback도 그 기준과 `core/scripts/tdd_execution.py`의 명시적 실행 수집을 사용한다. 예를 들어 보존 TC는 다음과 같이 실행한다(경로/선택자는 실제 계획에 맞춘다).
+
+```bash
+python3 "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/scripts/tdd_execution.py" --task-dir "$TASK_DIR" --project-root "$PROJECT_ROOT" --phase characterization --test-target tests/test_legacy.py -- python3 -m pytest tests/test_legacy.py
+```
+
+`red`, `green`, `refactor`도 실제 대상/argv로 실행한다. helper는 기준 상태·전후 소스/TC fingerprint·실제 결과를 기존 `tool-events.jsonl`에 연결한다. 최초 characterization → 요구별 Red → Green → Refactor와 계약 회귀 순서를 지킨다. 여러 요구의 반복은 앞선 실제 Green/refactor에 연결되며 새 baseline으로 기존 상태를 덮어쓰지 않는다.
+
+시작 실패·의존성 실패·timeout·취소는 assertion Red나 성공이 아니다. 실행 불가라면 구현 전에 helper의 `record_exception`으로 대상·사유·대체 근거·잔여 위험과 당시 소스 상태를 기록한다. 기술 hook에 판단이나 정식 검증 문서 생성을 추가하지 않는다.
+
+파일 fingerprint의 차이만으로 기대값 변경을 단정하지 않는다. 보존 TC 변경은 변경 전 코드·호출자와 diff를 독립 reviewer가 검토하고, 기대값 변경은 명시적 요청/승인 근거에 연결한다. `contract_tdd.tdd_verified`와 완료 허용은 별개다. legacy 문서/실패→성공 trace나 `gates: passed`는 실제 TDD 수행으로 승격하지 않는다. 분기 누락·실패 원인·기대값 타당성의 의미 검토는 자동 증명의 대상이 아니다.
+
 ## Domain Behavior Checklist Gate
 
 Before writing test code, derive the domain behavior checklist from the

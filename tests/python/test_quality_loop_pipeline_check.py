@@ -739,7 +739,8 @@ def test_quality_loop_checker_reports_complete_quality_coverage(tmp_path: Path):
     assert coverage["max_score"] == 100
     assert coverage["passed_threshold"] is True
     assert coverage["hard_blockers"] == []
-    assert coverage["warnings"] == []
+    assert set(coverage["warnings"]) == {"missing_contract_tdd_evidence", "missing_tdd_red_phase_evidence", "missing_tdd_refactor_phase_evidence"}
+    assert payload["contract_tdd"]["tdd_verified"] is False
     assert all(dimension["passed"] for dimension in coverage["dimensions"])
 
     text_result = run_text_checker(task_dir)
@@ -800,6 +801,7 @@ def test_quality_loop_checker_soft_passes_low_risk_artifact_gaps_with_high_cover
     assert payload["quality_coverage"]["score"] >= payload["quality_coverage"]["threshold"]
     assert payload["hard_failures"] == []
     assert set(payload["soft_failures"]) == {
+        "missing_contract_tdd_evidence",
         "missing_tdd_red_phase_evidence",
         "missing_tdd_refactor_phase_evidence",
     }
@@ -840,6 +842,7 @@ def test_quality_loop_checker_keeps_high_risk_artifact_gaps_as_hard_failures(tmp
     assert payload["quality_gate_mode"] == "strict"
     assert payload["quality_coverage"]["passed_threshold"] is True
     assert set(payload["hard_failures"]) == {
+        "missing_contract_tdd_evidence",
         "missing_tdd_red_phase_evidence",
         "missing_tdd_refactor_phase_evidence",
     }
@@ -868,6 +871,7 @@ def test_quality_loop_checker_does_not_treat_negative_remote_constraints_as_high
     assert payload["quality_gate_mode"] == "coverage"
     assert payload["hard_failures"] == []
     assert set(payload["soft_failures"]) == {
+        "missing_contract_tdd_evidence",
         "missing_tdd_red_phase_evidence",
         "missing_tdd_refactor_phase_evidence",
     }
@@ -898,6 +902,7 @@ def test_quality_loop_checker_does_not_treat_high_risk_gate_references_as_high_r
     assert payload["quality_gate_mode"] == "coverage"
     assert payload["hard_failures"] == []
     assert set(payload["soft_failures"]) == {
+        "missing_contract_tdd_evidence",
         "missing_tdd_red_phase_evidence",
         "missing_tdd_refactor_phase_evidence",
     }
