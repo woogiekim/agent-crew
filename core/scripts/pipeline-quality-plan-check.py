@@ -82,9 +82,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+# discovery 진입은 의존성 import 전에 같은 설치 root의 canonical bundle로 이동한다.
+_SCRIPT_PATH = Path(__file__).resolve()
+_source_root = _SCRIPT_PATH.parents[2]
+_source_entry = (_SCRIPT_PATH == _source_root / 'core/scripts/pipeline-quality-plan-check.py'
+                 and (_source_root / 'adapters').is_dir() and (_source_root / 'install.sh').is_file())
+_system_entry = (_SCRIPT_PATH == _source_root / 'system/scripts/pipeline-quality-plan-check.py'
+                 and (_source_root / 'bin/crew').is_file())
+if not _source_entry and not _system_entry:
+    _canonical = _SCRIPT_PATH.parent.parent / 'system/scripts/pipeline-quality-plan-check.py'
+    if not _canonical.is_file() or _canonical.resolve() == _SCRIPT_PATH:
+        raise SystemExit('canonical checker bundle missing or recursive: ' + str(_canonical))
+
+    os.execv(sys.executable, [sys.executable, str(_canonical), *sys.argv[1:]])
 
 from quality_loop_lib import (
     is_implementation_stage,
