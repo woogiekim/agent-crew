@@ -1916,8 +1916,10 @@ PYEOF
 ```
 
 `single_agent_tdd` is authoritative for a cohesive implementation stage: Phase
-2 uses `tdd_mode: inline`, skips the checklist/test-writer pair, and retains the
-following independent reviewer. `full_crew` keeps the resolved orchestration
+2 uses `tdd_mode: inline` for one implementation owner. 모든 모드는 먼저 checklist
+작성과 독립 checklist-only 검토를 완료하고 실제 review_begin → review_end →
+test_write_open 관찰을 수집한다. 이후 구현자가 실제 TDD를 수행하며 별도의
+독립 final reviewer를 유지한다. `full_crew` keeps the resolved orchestration
 shape. `inline_readonly` runs no mutating implementation stage.
 
 Common remediation: rewrite bare code stages such as `["backend"]` or

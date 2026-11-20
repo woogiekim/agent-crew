@@ -88,7 +88,8 @@ def snapshot(root: Path, paths: list[str]) -> dict:
     return result
 
 
-def capture_baseline(task_dir: Path, project_root: Path, paths: list[str] | None = None) -> dict:
+def capture_baseline(task_dir: Path, project_root: Path, paths: list[str] | None = None,
+                     *, checklist_evidence_version: int | None = None) -> dict:
     task_dir, root = Path(task_dir), Path(project_root).resolve()
     task_dir.mkdir(parents=True, exist_ok=True)
     with (task_dir / 'tool-events.jsonl').open('a+') as stream:
@@ -112,7 +113,257 @@ def capture_baseline(task_dir: Path, project_root: Path, paths: list[str] | None
             limitations.append('source_snapshot_incomplete')
         payload = {'kind': 'source_baseline', 'baseline_id': str(uuid.uuid4()), 'project_root': str(root),
                    'captured_at': now(), 'files': files, 'complete': not limitations, 'limitations': limitations}
+        if checklist_evidence_version is not None:
+            payload['checklist_evidence_version'] = checklist_evidence_version
         stream.write(json.dumps(_event_row(task_dir, payload), ensure_ascii=False) + '\n')
+
+    return payload
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text())
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _task_file(task_dir: Path, name: str) -> Path:
+    root = Path(task_dir).resolve()
+    path = root / name
+    if not name or path.is_symlink() or not path.resolve().is_relative_to(root):
+        raise ValueError('invalid_task_reference')
+
+    return path
+
+
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _test_path(name: str) -> bool:
+    return (name.startswith(('tests/', 'test/')) or '/tests/' in name
+            or '/test/' in name or Path(name).name.startswith('test_'))
+
+
+def _checklist_scope(root: Path, baseline: dict, stage: dict) -> tuple[list[str], list[str], list[str]]:
+    contract = stage.get('contract_preservation', {})
+    targets = contract.get('preserved_test_targets', []) + contract.get('change_test_targets', [])
+    authorized = stage.get('authorized_test_paths', [])
+    inventory = set(baseline.get('files', {}))
+    if (root / '.git').exists():
+        proc = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+                              capture_output=True, check=True, timeout=10)
+        inventory.update(proc.stdout.decode().strip('\0').split('\0'))
+    if not (root / '.git').exists():
+        inventory.update(p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file())
+    paths = {p for p in inventory if _test_path(p)}
+    paths.update(str(p).split('::')[0] for p in targets)
+    paths.update(authorized)
+
+    return sorted(paths), targets, authorized
+
+
+def _approved_checklist(text: str, *, require_must: bool = True) -> bool:
+    return (bool(re.search(r'^\s*(?:(?:REVIEW|STATUS)\s*:\s*)?APPROVED\b', text, re.I | re.M))
+            and (not require_must or bool(re.search(r'^\s*[-*]?\s*Missing\s+MUST\s*:\s*(?:none|no|n/a|na|0|\[\])\s*$', text, re.I | re.M)))
+            and not re.search(r'^\s*CHECKLIST_REVIEW_RESULT\s*:\s*(?!approved\b)\S+', text, re.I | re.M))
+
+
+def _host_review_errors(task_dir: Path, begin: dict, end: dict, opened: dict | None) -> list[str]:
+    execution = end.get('execution', {})
+    invocation, span = execution.get('host_invocation_id'), execution.get('span_id')
+    identity = execution.get('reviewer_identity')
+    reserved = begin.get('execution', {}).get('reviewer_invocation_reservation') or begin.get('execution', {}).get('host_invocation_id')
+    lifecycle = _read_json(_task_file(task_dir, execution.get('lifecycle_ref', '')))
+    errors = []
+    reserved_execution = begin.get('execution', {})
+    for key in ['lifecycle_ref', 'delegation_ref', 'review_output_ref', 'review_report_ref',
+                'review_mode', 'implementation_stage_index', 'attempt']:
+        if reserved_execution.get(key) != execution.get(key):
+            errors.append('checklist_review_reference_mismatch')
+    if not invocation or not span or identity != invocation or reserved != invocation:
+        errors.append('checklist_reviewer_identity_mismatch')
+    if (lifecycle.get('invocation_id') != invocation or lifecycle.get('agent') != 'reviewer'
+            or lifecycle.get('attempt') != end.get('attempt')
+            or lifecycle.get('stage_index') != execution.get('stage_index')
+            or lifecycle.get('outcome', {}).get('terminal_state') != 'terminal_completed'
+            or execution.get('review_mode') != 'test-checklist' or execution.get('status') != 'completed'
+            or execution.get('implementation_stage_index') != end.get('implementation_stage_index')):
+        errors.append('checklist_reviewer_lifecycle_mismatch')
+    timing = lifecycle.get('timing', {})
+    if not (begin.get('captured_at', '') <= timing.get('dispatched_at', '')
+            <= timing.get('terminal_at', '') <= end.get('captured_at', '')
+            and timing.get('dispatched_at') and timing.get('terminal_at')):
+        errors.append('checklist_review_boundary_mismatch')
+    delegation = _task_file(task_dir, execution.get('delegation_ref', ''))
+    try:
+        rows = [json.loads(line) for line in delegation.read_text().splitlines()]
+    except (OSError, ValueError):
+        rows = []
+    matched = [r for r in rows if r.get('span_id') == span and r.get('agent_role') == 'reviewer'
+               and r.get('host_invocation_id', r.get('invocation_id')) == invocation
+               and r.get('review_mode') == 'test-checklist'
+               and r.get('implementation_stage_index') == end.get('implementation_stage_index')
+               and r.get('attempt') == end.get('attempt')]
+    if not {'started', 'completed'}.issubset({r.get('status') for r in matched}):
+        errors.append('checklist_review_span_missing')
+    for key in ['review_output_ref', 'review_report_ref']:
+        ref = end.get(key, '')
+        path = _task_file(task_dir, ref)
+        if (not path.is_file() or ref != execution.get(key) or _digest(path) != end.get(key.replace('_ref', '_digest'))
+                or not _approved_checklist(path.read_text(), require_must=key == 'review_report_ref')):
+            errors.append('checklist_review_output_mismatch')
+    report_path = _task_file(task_dir, end.get('review_report_ref', ''))
+    if report_path.is_file():
+        report = report_path.read_text()
+        bound = re.search(r'^reviewed_checklist_sha256:\s*(\S+)', report, re.M)
+        if bound and bound.group(1) != begin.get('checklist_digest'):
+            errors.append('checklist_reviewed_content_mismatch')
+    if not opened:
+        return errors
+    actor = opened.get('execution', {})
+    implementer = actor.get('implementer_identity')
+    impl_lifecycle = _read_json(_task_file(task_dir, actor.get('implementer_lifecycle_ref', '')))
+    if (not implementer or implementer == identity or actor.get('implementer_invocation_id') != implementer
+            or actor.get('implementer_span_id') != impl_lifecycle.get('span_id', implementer)
+            or impl_lifecycle.get('invocation_id') != implementer
+            or impl_lifecycle.get('agent') in {None, 'reviewer'}
+            or impl_lifecycle.get('stage_index') != end.get('implementation_stage_index')
+            or impl_lifecycle.get('attempt') != end.get('attempt')
+            or not end['captured_at'] <= impl_lifecycle.get('timing', {}).get('dispatched_at', '') <= opened['captured_at']):
+        errors.append('checklist_implementer_identity_mismatch')
+    for key in ['host_invocation_id', 'span_id', 'reviewer_identity', 'lifecycle_ref', 'review_mode', 'attempt', 'implementation_stage_index']:
+        if actor.get(key) != execution.get(key):
+            errors.append('checklist_write_execution_mismatch')
+    for key in ['review_output_ref', 'review_report_ref', 'review_output_digest', 'review_report_digest']:
+        if opened.get(key) != end.get(key):
+            errors.append('checklist_write_review_mismatch')
+
+    return errors
+
+
+def checklist_preflight_status(task_dir: Path, *, for_test_write: bool = False) -> dict:
+    """실제 관찰 사슬을 검사한다. legacy 완료 기록은 변경하거나 소급 인증하지 않는다."""
+    task_dir = Path(task_dir)
+    rows = event_payloads(task_dir)
+    baseline = next((r for r in rows if r.get('kind') == 'source_baseline'), {})
+    pipeline = _read_json(task_dir / 'pipeline.json')
+    markers = [baseline.get('checklist_evidence_version'), pipeline.get('checklist_evidence_version')]
+    markers.extend(s.get('checklist_evidence_version') for s in pipeline.get('stages', []) if isinstance(s, dict))
+    markers.extend(r.get('evidence_version') for r in rows if r.get('kind') in {
+        'checklist_review_begin', 'checklist_review_end', 'test_write_open'})
+    versions = [v for v in markers if v is not None]
+    result = {'required': bool(versions), 'version': 1 if versions else None, 'valid': True,
+              'errors': [], 'begin_ref': None, 'end_ref': None, 'write_open_ref': None}
+    if not versions:
+        return result
+    errors = result['errors']
+    if any(type(v) is not int or v != 1 for v in versions) or pipeline.get('checklist_evidence_version') != 1:
+        errors.append('checklist_evidence_version_mismatch')
+    kinds = ['checklist_review_begin', 'checklist_review_end']
+    if not for_test_write:
+        kinds.append('test_write_open')
+    selected = [next((r for r in rows if r.get('kind') == k), None) for k in kinds]
+    if not all(selected):
+        errors.append('missing_checklist_preflight_observation')
+        result['valid'] = False
+        return result
+    begin, end = selected[:2]
+    opened = selected[2] if len(selected) == 3 else None
+    result.update(begin_ref=begin.get('event_id'), end_ref=end.get('event_id'),
+                  write_open_ref=opened.get('event_id') if opened else None)
+    try:
+        root = Path(baseline['project_root']).resolve()
+        stage_index = begin['implementation_stage_index']
+        stage = pipeline['stages'][stage_index - 1]
+        if not isinstance(stage, dict) or stage.get('attempt', 1) != begin.get('attempt'):
+            raise ValueError('checklist_stage_mismatch')
+        paths, targets, authorized = _checklist_scope(root, baseline, stage)
+        initial = {p: baseline.get('files', {}).get(p, {'state': 'missing'}) for p in paths}
+        if not baseline.get('complete') or baseline.get('limitations'):
+            errors.append('checklist_baseline_incomplete')
+        if any(v.get('state') not in {'file', 'missing'} for v in initial.values()):
+            errors.append('checklist_baseline_incomplete')
+        previous, position = None, rows.index(baseline)
+        for event in selected:
+            if (event.get('evidence_version') != 1 or event.get('baseline_id') != baseline.get('baseline_id')
+                    or event.get('task_id') != task_dir.name or event.get('implementation_stage_index') != stage_index
+                    or event.get('attempt') != begin.get('attempt') or event.get('review_mode') != 'test-checklist'
+                    or not event.get('event_id') or event.get('previous_event_id') != previous
+                    or rows.index(event) <= position or event.get('captured_at', '') < baseline.get('captured_at', '')):
+                errors.append('checklist_observation_chain_mismatch')
+            if (event.get('test_paths') != paths or event.get('test_targets') != targets
+                    or event.get('authorized_test_paths') != authorized
+                    or event.get('tests_before') != initial or event.get('tests_after') != initial):
+                errors.append('checklist_tests_changed_before_write')
+            checklist = _task_file(task_dir, event.get('checklist_ref', ''))
+            if (not checklist.is_file() or _digest(checklist) != event.get('checklist_digest')
+                    or event.get('checklist_digest') != begin.get('checklist_digest')):
+                errors.append('checklist_content_changed')
+            previous, position = event.get('event_id'), rows.index(event)
+        errors.extend(_host_review_errors(task_dir, begin, end, opened))
+        current = snapshot(root, paths)
+        if any(v.get('state') not in {'file', 'missing'} for v in current.values()):
+            errors.append('checklist_current_tests_incomplete')
+        if any(current[p] != initial[p] for p in paths if not opened or p not in authorized):
+            errors.append('checklist_test_change_outside_authorized_scope')
+        if opened and any(rows.index(r) < rows.index(opened) or r.get('started_at', '') < opened['captured_at']
+                          for r in rows if r.get('kind') == 'test_run'):
+            errors.append('checklist_test_run_before_write_open')
+    except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError) as exc:
+        errors.append('checklist_observation_invalid:' + type(exc).__name__)
+    result['errors'] = sorted(set(errors))
+    result['valid'] = not errors
+
+    return result
+
+
+def observe_checklist_phase(task_dir: Path, project_root: Path, phase: str, execution: dict) -> dict:
+    """현 상태를 직접 관찰한다. caller snapshot이나 시각을 인증으로 받지 않는다."""
+    kinds = {'review_begin': 'checklist_review_begin', 'review_end': 'checklist_review_end', 'test_write_open': 'test_write_open'}
+    if phase not in kinds:
+        raise ValueError('invalid_checklist_phase')
+    task_dir, root = Path(task_dir), Path(project_root).resolve()
+    rows = event_payloads(task_dir)
+    baseline = next((r for r in rows if r.get('kind') == 'source_baseline'), {})
+    pipeline = _read_json(task_dir / 'pipeline.json')
+    stage_index = execution['implementation_stage_index']
+    stage = pipeline['stages'][stage_index - 1]
+    paths, targets, authorized = _checklist_scope(root, baseline, stage)
+    observed = snapshot(root, paths)
+    initial = {p: baseline.get('files', {}).get(p, {'state': 'missing'}) for p in paths}
+    if (not baseline.get('complete') or baseline.get('limitations') or observed != initial
+            or str(root) != baseline.get('project_root')
+            or any(v.get('state') not in {'file', 'missing'} for v in observed.values())):
+        raise ValueError('checklist_preflight_failed:baseline_or_tests_changed')
+    if phase == 'test_write_open':
+        status = checklist_preflight_status(task_dir, for_test_write=True)
+        if not status['required'] or not status['valid']:
+            raise ValueError('checklist_preflight_failed:' + ','.join(status['errors']))
+    previous = next((r for r in reversed(rows) if r.get('kind') in kinds.values()), {})
+    payload = {'kind': kinds[phase], 'evidence_version': 1, 'event_id': str(uuid.uuid4()),
+               'previous_event_id': previous.get('event_id'), 'baseline_id': baseline.get('baseline_id'),
+               'task_id': task_dir.name, 'implementation_stage_index': stage_index,
+               'attempt': execution['attempt'], 'review_mode': 'test-checklist', 'captured_at': now(),
+               'checklist_ref': 'context/test-checklist.md', 'checklist_digest': _digest(task_dir / 'context/test-checklist.md'),
+               'test_paths': paths, 'test_targets': targets, 'authorized_test_paths': authorized,
+               'tests_before': observed, 'tests_after': snapshot(root, paths), 'execution': dict(execution)}
+    if phase != 'review_begin':
+        for key in ['review_output_ref', 'review_report_ref']:
+            payload[key] = execution[key]
+            payload[key.replace('_ref', '_digest')] = _digest(_task_file(task_dir, execution[key]))
+
+        begin = next((r for r in rows if r.get('kind') == 'checklist_review_begin'), {})
+        end = payload
+        opened = None
+        if phase == 'test_write_open':
+            end = next((r for r in rows if r.get('kind') == 'checklist_review_end'), {})
+            opened = payload
+        errors = _host_review_errors(task_dir, begin, end, opened)
+        if errors:
+            raise ValueError('checklist_preflight_failed:' + ','.join(errors))
+    append_event(task_dir, payload)
 
     return payload
 
@@ -199,6 +450,13 @@ def execute_test(task_dir: Path, project_root: Path, phase: str, test_targets: l
     if not paths:
         raise ValueError('계획의 production_paths가 필요합니다')
     baseline = capture_baseline(task_dir, root, paths)
+    preflight = checklist_preflight_status(task_dir)
+    if preflight['required'] and not preflight['valid']:
+        raise ValueError('checklist_preflight_failed:' + ','.join(preflight['errors']))
+    if phase == 'characterization' and preflight['required']:
+        observed = snapshot(root, test_targets)
+        if any(value != baseline['files'].get(name) for name, value in observed.items()):
+            raise ValueError('checklist_preflight_failed:characterization_tests_changed')
     before, tests = snapshot(root, paths), snapshot(root, test_targets)
     if runner_selection(argv)[0] == 'pytest':
         argv = list(argv) + ['--verbosity=1', '--color=no']

@@ -962,7 +962,12 @@ def test_checklist_status(task_dir: Path) -> dict:
     if checklist_path.is_file() and mapping_path.is_file() and invalid_must_mapping_ids:
         errors.append("missing_must_test_case_mapping")
 
+    from tdd_execution import checklist_preflight_status
+    preflight = checklist_preflight_status(task_dir)
+    errors.extend(preflight["errors"])
+
     return {
+        "preflight": preflight,
         "required": False,
         "valid": not errors,
         "errors": errors,
@@ -1508,10 +1513,16 @@ def is_implementation_stage(stage) -> bool:
 
 
 def is_reviewer_stage(stage) -> bool:
+    if isinstance(stage, dict) and (stage.get("review_mode") == "test-checklist" or stage.get("mode") == "test-checklist"):
+        return False
+
     return "reviewer" in stage_agents(stage)
 
 
 def is_single_reviewer_stage(stage) -> bool:
+    if not is_reviewer_stage(stage):
+        return False
+
     return stage_agents(stage) == ["reviewer"]
 
 
@@ -1761,10 +1772,46 @@ def event_has_quality_metrics(row: dict, task_dir: Path | None = None) -> bool:
 def event_is_reviewer_approved(row: dict, task_dir: Path | None = None) -> bool:
     agent = str(row.get("agent", ""))
     text = event_text(row)
+    if (row.get("review_mode") == "test-checklist" or row.get("mode") == "test-checklist"
+            or "MODE=test-checklist" in text or "CHECKLIST_REVIEW_RESULT" in text):
+        return False
     approved = (
         (agent == "reviewer" and bool(REVIEW_APPROVED_RE.search(text)))
         or "STAGE_STREAMING_REVIEW_DONE" in text and "final_verdict=ok" in text
     )
+    if approved and task_dir is not None:
+        from tdd_execution import checklist_preflight_status, event_payloads, _task_file, _read_json
+        preflight = checklist_preflight_status(task_dir)
+        if preflight['required']:
+            opened = next((r for r in event_payloads(task_dir) if r.get('kind') == 'test_write_open'), {})
+            invocation = row.get('host_invocation_id')
+            try:
+                lifecycle = _read_json(_task_file(task_dir, row.get('lifecycle_ref', '')))
+            except ValueError:
+                return False
+            try:
+                delegations = [json.loads(line) for line in (Path(task_dir) / 'delegation.jsonl').read_text().splitlines()]
+            except (OSError, ValueError):
+                delegations = []
+            implementation_attempt = row.get('implementation_attempt', row.get('attempt'))
+            lifecycle_target = lifecycle.get('implementation_attempt', lifecycle.get('attempt'))
+            span_bound = any(d.get('span_id') == row.get('span_id') and d.get('host_invocation_id') == invocation
+                             and d.get('agent_role') == 'reviewer' and d.get('review_mode') == 'final'
+                             and d.get('status') == 'completed' and d.get('attempt') == row.get('attempt')
+                             and d.get('implementation_stage_index') == row.get('implementation_stage_index')
+                             and d.get('implementation_attempt', d.get('attempt')) == implementation_attempt
+                             for d in delegations)
+            if (not span_bound or not preflight['valid'] or row.get('review_mode') != 'final' or not invocation
+                    or not row.get('span_id') or lifecycle.get('invocation_id') != invocation
+                    or lifecycle.get('agent') != 'reviewer'
+                    or lifecycle.get('outcome', {}).get('terminal_state') != 'terminal_completed'
+                    or row.get('implementation_stage_index') != opened.get('implementation_stage_index')
+                    or implementation_attempt != opened.get('attempt')
+                    or lifecycle_target != implementation_attempt
+                    or lifecycle.get('attempt') != row.get('attempt')
+                    or invocation == opened.get('execution', {}).get('implementer_identity')):
+                return False
+
     return approved and event_has_quality_metrics(row, task_dir)
 
 
@@ -2179,6 +2226,10 @@ def tool_event_test_runs(task_dir: Path, *, last_commit_ct: int | None = None) -
 
 
 def _event_is_reviewer_approved_text(row: dict) -> bool:
+    if (row.get("review_mode") == "test-checklist" or row.get("mode") == "test-checklist"
+            or "MODE=test-checklist" in event_text(row) or "CHECKLIST_REVIEW_RESULT" in event_text(row)):
+        return False
+
     return (
         str(row.get("agent") or "").strip().lower() == "reviewer"
         and bool(REVIEW_APPROVED_RE.search(event_text(row)))
@@ -2687,7 +2738,7 @@ def _contract_reviewed(task_dir: Path, path: str, before: dict, after: dict) -> 
 
 def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline: dict | None = None) -> dict:
     """소스·대상·실제 실행을 연결한다. 의미적 계약 완전성을 자동 판정하지 않는다."""
-    from tdd_execution import event_payloads, execution_targets, snapshot, targets_bound
+    from tdd_execution import event_payloads, execution_targets, snapshot, targets_bound, checklist_preflight_status
 
     task_dir = Path(task_dir)
     register = register if register is not None else load_json(task_dir / 'register.json')
@@ -2721,6 +2772,12 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
     if not required:
         return result
     failures, warnings = result['failures'], result['warnings']
+    preflight = checklist_preflight_status(task_dir)
+    result['checklist_preflight'] = preflight
+    if preflight['required'] and not preflight['valid']:
+        failures.extend(preflight['errors'])
+        result['status'] = 'contradicted'
+        return result
     root = register_project_root(register)
     rows = event_payloads(task_dir)
     baseline = next((r for r in rows if r.get('kind') == 'source_baseline'), None)

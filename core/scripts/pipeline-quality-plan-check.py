@@ -420,6 +420,9 @@ def validate_pipeline_quality_plan(pipeline: dict, task: str | None = None) -> d
     )
 
     failures: list[str] = []
+    if 'checklist_evidence_version' in pipeline and (
+            type(pipeline['checklist_evidence_version']) is not int or pipeline['checklist_evidence_version'] != 1):
+        failures.append('unsupported_checklist_evidence_version')
     implementation_stage_results: list[dict] = []
     if pipeline.get("planning_required"):
         failures.append("unplanned_handoff")

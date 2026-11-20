@@ -66,9 +66,11 @@ delegation.
 Read `{TASK_DIR}/context/current-session-execution.json` and obey its wait and
 lifecycle bounds. Its `execution_profile` is authoritative:
 
-- `inline_tdd`: keep the whole simple implementation in the current session;
-  do not spawn requirements, brainstorm, analyst, planner, test-writer, or
-  reviewer children. Perform the listed quality gates inline.
+- `inline_tdd`: 구현 소유권은 현재 세션에 유지한다. pinned plan의 checklist
+  작성자·독립 checklist-only reviewer와 별도 final reviewer는 실제 실행한다.
+  `review_begin` → `review_end` → `test_write_open` 관찰을 기존 공용 helper로
+  수집하고 승인된 사슬 이전에 테스트를 작성·실행하지 않는다. inline gate 메모는
+  실제 독립 실행과 TDD 근거를 대신하지 않는다.
 - `inline_readonly`: perform the read-only investigation and inline review in
   the current session without manufacturing a TDD cycle.
 - `full_crew`: delegate only the independently bounded specialist units needed

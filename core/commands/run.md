@@ -3032,10 +3032,11 @@ use this sequence:
      `inline_tdd` for a simple local mutation, `inline_readonly` for a simple
      read-only task, and `full_crew` when the input explicitly requires full
      crew, multiple repositories, parallel work, or external writes.
-   - For an inline profile, execute in the current session with no requirements,
-     brainstorm, analyst, planner, test-writer, or reviewer child turns. Preserve
-     their quality contracts through the `required_quality_gates` list and
-     record completed gates in `context/inline-execution.json`.
+   - inline profile은 구현 소유권을 현재 세션에 유지한다. pinned plan에 선언된
+     checklist 작성자와 독립 checklist-only reviewer, 별도 final reviewer는 실제
+     실행한다. review_begin → review_end → test_write_open을 기존 tdd_execution
+     helper로 실제 수집하며 사후 문자열이나 inline gate 메모로 대체하지 않는다.
+     `required_quality_gates`는 실제 근거로만 기록한다.
    - If execution discovers scope ambiguity, cross-repository dependencies,
      useful parallel units, an external write, or hard-to-reverse risk, escalate
      to `full_crew` and record the reason. Delegate only independently bounded

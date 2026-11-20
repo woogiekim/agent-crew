@@ -726,23 +726,21 @@ Dispatch routing:
 
 When `STAGE_TDD_MODE` is not `none`:
 
-`inline skips checklist and checklist review`: dispatch no `test-writer` and no
-checklist reviewer. The implementer owns the focused checklist,
-`test-case-mapping.md`, `test-coverage.md`, Red evidence, production changes,
-final Green, and refactor rerun.
+모든 `inline`, `sequential_pair`, `isolated_parallel` 모드는 같은 선행 검토를 요구한다.
+inline은 구현자 하나가 Red/Green/refactor를 맡는 정책이며 독립 검토를 생략하지 않는다.
 
-1. For `sequential_pair` and `isolated_parallel`, compose a `test-writer`
-   prompt with `MODE=checklist`. This preflight reads
-   only the spec and writes `${TASK_DIR}/context/test-checklist.md`; it must
-   not write test code. The expected normal return is
-   `CHECKLIST_REVIEW_REQUIRED: true` with `STATUS: completed`; this is a
-   non-terminal checklist handoff, not a pipeline blocker.
+1. 모든 모드에서 `test-writer`를 `MODE=checklist`로 호출한다. spec만 읽고
+   `${TASK_DIR}/context/test-checklist.md`만 작성하며 테스트 실행·편집은 금지한다.
+   `CHECKLIST_REVIEW_REQUIRED: true`와 `STATUS: completed`는 다음 검토로 이어지는
+   non-terminal handoff다.
 
-2. For those two modes only, run `reviewer` with `MODE=test-checklist`. The reviewer performs the
-   checklist-only review and writes
-   `${TASK_DIR}/context/test-checklist-review.md`. If the verdict is not
-   `REVIEW: APPROVED`, re-loop to the checklist preflight. Do not dispatch the
-   implementer and do not write tests while a Missing MUST remains.
+2. supervisor는 기존 `tdd_execution.observe_checklist_phase`로 `review_begin`을
+   실제 독립 호출 직전에 수집하고 `reviewer`를 `MODE=test-checklist`로 호출한다.
+   실제 host invocation/span/lifecycle와 원문 output/report를 저장한 다음
+   `review_end`를 관찰한다. APPROVED와 Missing MUST: none 및 정확한 내용 digest,
+   최초 baseline과 전체 tests inventory가 일치해야 한다. 이후 실제 구현자 identity로
+   `test_write_open`을 관찰한다. `checklist_preflight_status`가 valid가 아니면
+   테스트 작성·실행과 구현 dispatch를 열지 않는다. 실패·사후 보완을 소급 승인하지 않는다.
 
 3. For `inline`, compose only the implementer prompt and require focused Red
    before production code. For `sequential_pair`, compose and dispatch the

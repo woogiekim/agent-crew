@@ -381,7 +381,8 @@ def test_single_agent_profile_only_overrides_implementation_stage_modes():
     assert guard in bootstrap
 
 
-def test_inline_dispatch_skips_checklist_and_fanout_consumes_tdd_mode():
+def test_inline_dispatch_requires_checklist_and_fanout_consumes_tdd_mode():
+    """success-case(contract) - inline도 테스트 작성 전에 독립 checklist 검토를 요구한다."""
     stages = (REPO_ROOT / "core" / "agents" / "supervisor-stages.md").read_text(
         encoding="utf-8"
     )
@@ -392,11 +393,11 @@ def test_inline_dispatch_skips_checklist_and_fanout_consumes_tdd_mode():
         "### Streaming Review Dispatch", 1
     )[0]
 
-    assert "inline skips checklist and checklist review" in tdd_section
+    assert "inline skips checklist and checklist review" not in tdd_section
     assert "STAGE_TDD_PARALLEL ==" not in tdd_section
-    assert tdd_section.index("inline skips checklist and checklist review") < tdd_section.index(
-        "MODE=checklist"
-    )
+    assert "MODE=checklist" in tdd_section
+    assert "MODE=test-checklist" in tdd_section
+    assert "review_begin" in tdd_section and "test_write_open" in tdd_section
     assert "STAGE_TDD_MODE == sequential_pair" in fanout_section
     assert "STAGE_TDD_PARALLEL == 1" not in fanout_section
     assert "final Green after integrated fan-out changes" in fanout_section
@@ -1186,3 +1187,12 @@ def test_plan_checker_reports_multiple_distinct_placeholder_tokens(tmp_path: Pat
     payload = json.loads(result.stdout)
     assert "prd_placeholder_tbd" in payload["failures"]
     assert "prd_placeholder_fixme" in payload["failures"]
+
+
+def test_failure_case_checklist_only_stage_cannot_supply_final_quality_gate(tmp_path):
+    """failure-case(authorization) - checklist-only reviewer는 final plan gate를 채우지 않는다."""
+    pipeline = _passing_pipeline()
+    pipeline['stages'][1] = {'agents': ['reviewer'], 'review_mode': 'test-checklist'}
+    result = subprocess.run(['python3', str(CHECKER), '--pipeline', str(write_pipeline(tmp_path, pipeline))], capture_output=True, text=True)
+
+    assert result.returncode != 0

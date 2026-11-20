@@ -203,3 +203,158 @@ def test_boundary_case_collector_preserves_its_existing_broader_masks_and_plain_
     assert contract[2]._redact('sk-x') == '[REDACTED]'
     assert contract[2]._redact('GHP_review_dummy_value') == '[REDACTED]'
     assert contract[2]._redact('plain review text') == 'plain review text'
+
+
+@pytest.mark.parametrize('phase', ['red', 'green', 'refactor'])
+def test_failure_case_test_execution_requires_approved_checklist_preflight(contract, phase):
+    """failure-case(authorization) - 선행 관찰이 없으면 runner 부수효과 전에 거부한다."""
+    task, root, runner = contract
+    pipeline = json.loads((task / 'pipeline.json').read_text())
+    pipeline['checklist_evidence_version'] = 1
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+    target = root / 'runner-started'
+    rejected = False
+    try:
+        runner.execute_test(task, root, phase, ['tests/change.py'],
+                            [sys.executable, '-c', "open('runner-started','w').write('started')"])
+    except ValueError as error:
+        rejected = 'checklist_preflight_failed' in str(error)
+
+    assert rejected is True
+    assert not target.exists()
+
+
+def test_success_case_observer_collects_real_boundaries(tmp_path):
+    """success-case(audit) - 관찰기가 직접 읽은 begin/end/open으로 검사한다."""
+    from test_contract_tdd_evidence import checklist_case
+    task, root, sut = checklist_case(tmp_path)
+    events = sut.event_payloads(task)
+    execution = events[-1]['execution']
+    (task / 'tool-events.jsonl').write_text(json.dumps(sut._event_row(task, events[0])) + '\n')
+    begin = sut.observe_checklist_phase(task, root, 'review_begin', execution)
+    lifecycle = json.loads((task / execution['lifecycle_ref']).read_text())
+    lifecycle['timing'] = {'dispatched_at': sut.now(), 'terminal_at': sut.now()}
+    (task / execution['lifecycle_ref']).write_text(json.dumps(lifecycle))
+    end = sut.observe_checklist_phase(task, root, 'review_end', execution)
+    impl = json.loads((task / execution['implementer_lifecycle_ref']).read_text())
+    impl['timing']['dispatched_at'] = sut.now()
+    (task / execution['implementer_lifecycle_ref']).write_text(json.dumps(impl))
+    opened = sut.observe_checklist_phase(task, root, 'test_write_open', execution)
+
+    assert sut.checklist_preflight_status(task)['valid'] is True
+    assert opened['previous_event_id'] == end['event_id']
+    assert end['previous_event_id'] == begin['event_id']
+    assert sut.event_payloads(task)[0] == events[0]
+    with pytest.raises(ValueError):
+        sut.observe_checklist_phase(task, root, 'unsupported', execution)
+    (root / 'tests/change.py').write_text('assert True\n')
+    with pytest.raises(ValueError, match='checklist_preflight_failed'):
+        sut.execute_test(task, root, 'characterization', ['tests/change.py'], [sys.executable, 'tests/change.py'])
+    with pytest.raises(ValueError, match='checklist_preflight_failed'):
+        sut.observe_checklist_phase(task, root, 'review_begin', execution)
+
+
+def test_success_case_version_marker_is_optional_and_first_baseline_is_immutable(tmp_path):
+    """success-case(idempotency) - 새 version은 최초 관찰에만 결속한다."""
+    task, root = tmp_path / 'task', tmp_path / 'root'
+    root.mkdir()
+    sut = helper()
+    first = sut.capture_baseline(task, root, [], checklist_evidence_version=1)
+
+    assert first['checklist_evidence_version'] == 1
+    assert sut.capture_baseline(task, root, []) == first
+
+
+def test_failure_case_checklist_only_is_not_final_approval(tmp_path):
+    """failure-case(authorization) - checklist 전용 승인은 final approval이 아니다."""
+    import _trace_gate_fixtures as fixtures
+    sut = fixtures.load_quality_lib()
+    assert sut.event_is_reviewer_approved({'agent': 'reviewer', 'detail': 'REVIEW: APPROVED\nCHECKLIST_REVIEW_RESULT: approved'}, tmp_path) is False
+
+
+@pytest.mark.parametrize('fault', ['none', 'mode', 'stage', 'attempt', 'self', 'lifecycle', 'span'])
+def test_boundary_case_final_review_requires_target_and_independent_identity(tmp_path, monkeypatch, fault):
+    """boundary-case(authorization) - 최종 승인은 해당 구현의 독립 실제 실행에 결속된다."""
+    import _trace_gate_fixtures as fixtures
+    from test_contract_tdd_evidence import checklist_case
+    task, root, runner = checklist_case(tmp_path)
+    sut = fixtures.load_quality_lib()
+    monkeypatch.setattr(sut, 'event_has_quality_metrics', lambda *args: True)
+    lifecycle = {'agent': 'reviewer', 'invocation_id': 'final-child', 'stage_index': 3, 'attempt': 1,
+                 'outcome': {'terminal_state': 'terminal_completed'}}
+    (task / 'context/final-lifecycle.json').write_text(json.dumps(lifecycle))
+    row = {'agent': 'reviewer', 'detail': 'REVIEW: APPROVED', 'review_mode': 'final',
+           'host_invocation_id': 'final-child', 'span_id': 'final-child',
+           'implementation_stage_index': 1, 'attempt': 1, 'lifecycle_ref': 'context/final-lifecycle.json'}
+    delegation = {'agent_role': 'reviewer', 'host_invocation_id': 'final-child', 'span_id': 'final-child',
+                  'review_mode': 'final', 'implementation_stage_index': 1, 'attempt': 1, 'status': 'completed'}
+    with (task / 'delegation.jsonl').open('a') as stream:
+        stream.write(json.dumps(delegation) + '\n')
+    if fault == 'mode':
+        row['review_mode'] = 'test-checklist'
+    if fault == 'stage':
+        row['implementation_stage_index'] = 2
+    if fault == 'attempt':
+        row['attempt'] = 2
+    if fault == 'self':
+        row['host_invocation_id'] = 'backend-child'
+    if fault == 'lifecycle':
+        row['lifecycle_ref'] = 'context/reviewer-lifecycle.json'
+    if fault == 'span':
+        row['span_id'] = 'unrelated'
+
+    assert sut.event_is_reviewer_approved(row, task) is (fault == 'none')
+
+
+def test_failure_case_observer_refuses_missing_preflight_and_self_actor(tmp_path):
+    """failure-case(authorization) - 관찰 API도 open 전에 누락·자가 실행을 차단한다."""
+    from test_contract_tdd_evidence import checklist_case
+    task, root, sut = checklist_case(tmp_path)
+    rows = (task / 'tool-events.jsonl').read_text().splitlines()
+    execution = sut.event_payloads(task)[-1]['execution']
+    (task / 'tool-events.jsonl').write_text('\n'.join(rows[:2]) + '\n')
+
+    with pytest.raises(ValueError, match='checklist_preflight_failed'):
+        sut.observe_checklist_phase(task, root, 'test_write_open', execution)
+
+    (task / 'tool-events.jsonl').write_text('\n'.join(rows[:3]) + '\n')
+    execution['implementer_identity'] = execution['reviewer_identity']
+
+    with pytest.raises(ValueError, match='checklist_preflight_failed'):
+        sut.observe_checklist_phase(task, root, 'test_write_open', execution)
+
+
+@pytest.mark.parametrize('review_attempt', [1, 2])
+@pytest.mark.parametrize('fault', ['none', 'implementation', 'lifecycle_target', 'delegation_target', 'role_lifecycle', 'role_delegation'])
+def test_boundary_case_final_review_retry_keeps_implementation_target(tmp_path, monkeypatch, review_attempt, fault):
+    """boundary-case(regression) - reviewer 재시도와 대상 구현 attempt를 별도로 검증한다."""
+    import _trace_gate_fixtures as fixtures
+    from test_contract_tdd_evidence import checklist_case
+    task, root, runner = checklist_case(tmp_path)
+    sut = fixtures.load_quality_lib()
+    monkeypatch.setattr(sut, 'event_has_quality_metrics', lambda *args: True)
+    invocation = 'final-retry-' + str(review_attempt)
+    lifecycle = {'agent': 'reviewer', 'invocation_id': invocation, 'stage_index': 3,
+                 'attempt': review_attempt, 'implementation_attempt': 1,
+                 'outcome': {'terminal_state': 'terminal_completed'}}
+    row = {'agent': 'reviewer', 'detail': 'REVIEW: APPROVED', 'review_mode': 'final',
+           'host_invocation_id': invocation, 'span_id': invocation, 'implementation_stage_index': 1,
+           'implementation_attempt': 1, 'attempt': review_attempt, 'lifecycle_ref': 'context/final-retry.json'}
+    delegation = {'agent_role': 'reviewer', 'host_invocation_id': invocation, 'span_id': invocation,
+                  'review_mode': 'final', 'implementation_stage_index': 1, 'implementation_attempt': 1,
+                  'attempt': review_attempt, 'status': 'completed'}
+    if fault == 'implementation':
+        row['implementation_attempt'] = 2
+    if fault == 'lifecycle_target':
+        lifecycle['implementation_attempt'] = 2
+    if fault == 'delegation_target':
+        delegation['implementation_attempt'] = 2
+    if fault == 'role_lifecycle':
+        lifecycle['attempt'] = 3
+    if fault == 'role_delegation':
+        delegation['attempt'] = 3
+    (task / 'context/final-retry.json').write_text(json.dumps(lifecycle))
+    with (task / 'delegation.jsonl').open('a') as stream:
+        stream.write(json.dumps(delegation) + '\n')
+
+    assert sut.event_is_reviewer_approved(row, task) is (fault == 'none')

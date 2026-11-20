@@ -733,3 +733,175 @@ def test_failure_case_missing_plan_task_cannot_hide_registered_code_decision_req
 
     assert result['required'] is True
     assert result['tdd_verified'] is False
+
+
+def checklist_case(tmp_path):
+    """PRD의 신뢰된 host 관찰 fixture; 실제 사용자 state는 사용하지 않는다."""
+    import hashlib
+    import copy
+    task, root, runner = contract.__wrapped__(tmp_path)
+    pipeline = json.loads((task / 'pipeline.json').read_text())
+    stage = pipeline['stages'][0]
+    stage['authorized_test_paths'] = ['tests/preserved.py', 'tests/change.py']
+    pipeline['checklist_evidence_version'] = 1
+    (task / 'pipeline.json').write_text(json.dumps(pipeline))
+    (task / 'tool-events.jsonl').unlink()
+    baseline = runner.capture_baseline(task, root, ['module.py', *stage['authorized_test_paths']])
+    checklist = task / 'context/test-checklist.md'
+    checklist.write_text('| TC-ID | Level |\n| --- | --- |\n| TC-001 | MUST |\n')
+    approved = 'REVIEW: APPROVED\nCHECKLIST_REVIEW_RESULT: approved\nMissing MUST: none\n'
+    for name in ['test-checklist-review.md', 'output.md']:
+        (task / 'context' / name).write_text(approved)
+    (task / 'context/test-case-mapping.md').write_text('| TC-ID | Test | Covered |\n| --- | --- | --- |\n| TC-001 | tests/change.py | YES |\n')
+    execution = {'host_invocation_id': 'review-child', 'span_id': 'review-child',
+                 'reviewer_identity': 'review-child', 'review_mode': 'test-checklist',
+                 'implementation_stage_index': 1, 'stage_index': 2, 'attempt': 1,
+                 'lifecycle_ref': 'context/reviewer-lifecycle.json', 'status': 'completed',
+                 'delegation_ref': 'delegation.jsonl', 'review_output_ref': 'context/output.md',
+                 'review_report_ref': 'context/test-checklist-review.md',
+                 'implementer_identity': 'backend-child', 'implementer_invocation_id': 'backend-child',
+                 'implementer_span_id': 'backend-child', 'implementer_lifecycle_ref': 'context/backend-lifecycle.json',
+                 'write_stage_index': 1}
+    lifecycle = {'invocation_id': 'review-child', 'agent': 'reviewer', 'stage_index': 2,
+                 'attempt': 1, 'timing': {'dispatched_at': runner.now(), 'terminal_at': runner.now()},
+                 'outcome': {'terminal_state': 'terminal_completed'}}
+    begin_at = runner.now()
+    lifecycle['timing']['dispatched_at'] = runner.now()
+    (task / 'context/backend-lifecycle.json').write_text(json.dumps({'invocation_id': 'backend-child', 'agent': 'backend', 'stage_index': 1, 'attempt': 1, 'timing': {'dispatched_at': runner.now()}}))
+    lifecycle['timing']['terminal_at'] = runner.now()
+    (task / execution['lifecycle_ref']).write_text(json.dumps(lifecycle))
+    (task / 'delegation.jsonl').write_text(''.join(json.dumps({'host_invocation_id': 'review-child', 'span_id': 'review-child', 'agent_role': 'reviewer', 'stage_index': 2, 'implementation_stage_index': 1, 'attempt': 1, 'review_mode': 'test-checklist', 'status': status}) + '\n' for status in ['started', 'completed']))
+    digest = lambda name: hashlib.sha256((task / name).read_bytes()).hexdigest()
+    previous = None
+    for index, kind in enumerate(['checklist_review_begin', 'checklist_review_end', 'test_write_open']):
+        event = {'kind': kind, 'event_id': 'event-' + str(index), 'previous_event_id': previous,
+                 'evidence_version': 1, 'baseline_id': baseline['baseline_id'], 'task_id': task.name,
+                 'implementation_stage_index': 1, 'attempt': 1, 'review_mode': 'test-checklist',
+                 'captured_at': begin_at if index == 0 else runner.now(),
+                 'checklist_ref': 'context/test-checklist.md', 'checklist_digest': digest('context/test-checklist.md'),
+                 'test_paths': sorted(stage['authorized_test_paths']),
+                 'test_targets': stage['contract_preservation']['preserved_test_targets'] + stage['contract_preservation']['change_test_targets'],
+                 'authorized_test_paths': stage['authorized_test_paths'],
+                 'tests_before': runner.snapshot(root, stage['authorized_test_paths']),
+                 'tests_after': runner.snapshot(root, stage['authorized_test_paths']), 'execution': copy.deepcopy(execution)}
+        if index:
+            for key in ['review_output_ref', 'review_report_ref']:
+                event[key] = execution[key]
+                event[key.replace('_ref', '_digest')] = digest(execution[key])
+        if index == 2:
+            (task / 'context/backend-lifecycle.json').write_text(json.dumps({'invocation_id': 'backend-child', 'agent': 'backend', 'stage_index': 1, 'attempt': 1, 'timing': {'dispatched_at': event['captured_at']}}))
+        runner.append_event(task, event)
+        previous = event['event_id']
+    return task, root, runner
+
+
+@pytest.mark.parametrize('fault', ['missing', 'posthoc', 'self', 'must', 'checklist', 'output', 'ref', 'attempt', 'baseline', 'span', 'lifecycle', 'order', 'scope', 'incomplete', 'version', 'downgrade', 'during', 'backdated', 'inventory', 'unapproved', 'early_run', 'stage', 'plan_downgrade', 'identity', 'missing_lifecycle', 'outside_ref', 'report_binding', 'baseline_state', 'current_symlink', 'write_actor', 'stage_attempt', 'delegation', 'begin_ref', 'implementer_span', 'missing_checklist', 'empty_checklist', 'missing_review', 'empty_review'])
+def test_failure_case_posthoc_checklist_approval_is_rejected(tmp_path, fault):
+    """failure-case(contract) - 사후 문자열이나 잘못된 실행으로 선행 승인을 대체하지 못한다."""
+    task, root, runner = checklist_case(tmp_path)
+    rows = [json.loads(line) for line in (task / 'tool-events.jsonl').read_text().splitlines()]
+    events = [row['tdd_execution'] for row in rows]
+    begin, end, opened = events[1:]
+    if fault == 'missing_checklist':
+        (task / 'context/test-checklist.md').unlink()
+    if fault == 'empty_checklist':
+        (task / 'context/test-checklist.md').write_text('')
+    if fault == 'missing_review':
+        (task / 'context/test-checklist-review.md').unlink()
+    if fault == 'empty_review':
+        (task / 'context/test-checklist-review.md').write_text('')
+    if fault == 'begin_ref':
+        begin['execution']['lifecycle_ref'] = 'context/unrelated.json'
+    if fault == 'implementer_span':
+        opened['execution']['implementer_span_id'] = 'unrelated'
+    if fault == 'plan_downgrade':
+        plan = json.loads((task / 'pipeline.json').read_text())
+        plan.pop('checklist_evidence_version')
+        (task / 'pipeline.json').write_text(json.dumps(plan))
+    if fault == 'identity':
+        end['execution']['reviewer_identity'] = 'backend-child'
+    if fault == 'missing_lifecycle':
+        (task / 'context/reviewer-lifecycle.json').unlink()
+    if fault == 'outside_ref':
+        end['execution']['lifecycle_ref'] = '../outside.json'
+    if fault == 'report_binding':
+        with (task / 'context/test-checklist-review.md').open('a') as stream:
+            stream.write('reviewed_checklist_sha256: different-content\n')
+    if fault == 'baseline_state':
+        events[0]['files']['tests/change.py'] = {'state': 'unsupported'}
+    if fault == 'current_symlink':
+        (root / 'tests/change.py').unlink()
+        (root / 'tests/change.py').symlink_to(root / 'module.py')
+    if fault == 'write_actor':
+        opened['execution']['reviewer_identity'] = 'unrelated'
+    if fault == 'stage_attempt':
+        plan = json.loads((task / 'pipeline.json').read_text())
+        plan['stages'][0]['attempt'] = 2
+        (task / 'pipeline.json').write_text(json.dumps(plan))
+    if fault == 'delegation':
+        (task / 'delegation.jsonl').write_text('invalid json')
+    if fault == 'during':
+        end['tests_after']['tests/change.py'] = {'state': 'missing'}
+    if fault == 'backdated':
+        begin['captured_at'] = '1900-01-01T00:00:00Z'
+    if fault == 'inventory':
+        begin['test_paths'] = []
+    if fault == 'unapproved':
+        (task / 'context/output.md').write_text('REVIEW: REJECTED\nMissing MUST: TC-001\n')
+    if fault == 'early_run':
+        rows.insert(1, {'tdd_execution': {'kind': 'test_run', 'started_at': runner.now()}})
+    if fault == 'stage':
+        opened['implementation_stage_index'] = 2
+    if fault == 'missing':
+        rows.pop(1)
+    if fault == 'posthoc':
+        begin['tests_before']['tests/change.py'] = {'state': 'file', 'sha256': 'posthoc'}
+    if fault == 'self':
+        opened['execution']['implementer_identity'] = 'review-child'
+    if fault == 'must':
+        (task / 'context/test-checklist-review.md').write_text('REVIEW: APPROVED\nMissing MUST: TC-001\n')
+    if fault == 'checklist':
+        (task / 'context/test-checklist.md').write_text('changed checklist')
+    if fault == 'output':
+        (task / 'context/output.md').write_text('changed output')
+    if fault == 'ref':
+        end['review_output_ref'] = 'context/test-checklist.md'
+    if fault == 'attempt':
+        end['attempt'] = 2
+    if fault == 'baseline':
+        end['baseline_id'] = 'other-baseline'
+    if fault == 'span':
+        end['execution']['span_id'] = 'unrelated'
+    if fault == 'lifecycle':
+        (task / 'context/reviewer-lifecycle.json').write_text('{}')
+    if fault == 'order':
+        rows[1], rows[2] = rows[2], rows[1]
+    if fault == 'scope':
+        (root / 'tests/unauthorized.py').write_text('assert True\n')
+    if fault == 'incomplete':
+        events[0]['complete'] = False
+    if fault == 'version':
+        begin['evidence_version'] = 2
+    if fault == 'downgrade':
+        events[0]['checklist_evidence_version'] = 1
+        plan = json.loads((task / 'pipeline.json').read_text())
+        plan.pop('checklist_evidence_version')
+        (task / 'pipeline.json').write_text(json.dumps(plan))
+    (task / 'tool-events.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in rows))
+
+    result = fx.load_quality_lib().test_checklist_status(task)
+
+    assert result['valid'] is False, (fault, result)
+    assert result['errors']
+    shared = fx.load_quality_lib().contract_tdd_evidence(task)
+    assert shared.get('checklist_preflight', {}).get('valid') is False
+    assert shared['tdd_verified'] is False
+
+
+def test_success_case_independent_checklist_preflight_allows_real_cycle(tmp_path):
+    """success-case(contract) - 독립 선행 관찰 뒤 실행과 공용 완료 검사가 같은 판정이다."""
+    fixture = checklist_case(tmp_path)
+    cycle(fixture)
+
+    assert fx.load_quality_lib().test_checklist_status(fixture[0])['valid'] is True
+    assert verdict(fixture)['tdd_verified'] is True

@@ -12,6 +12,20 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# discovery 진입은 의존성 import 전에 같은 설치 root의 canonical bundle로 이동한다.
+_SCRIPT_PATH = Path(__file__).resolve()
+_source_root = _SCRIPT_PATH.parents[2]
+_source_entry = (_SCRIPT_PATH == _source_root / 'core/scripts/repair-task-state.py'
+                 and (_source_root / 'adapters').is_dir() and (_source_root / 'install.sh').is_file())
+_system_entry = (_SCRIPT_PATH == _source_root / 'system/scripts/repair-task-state.py'
+                 and (_source_root / 'bin/crew').is_file())
+if not _source_entry and not _system_entry:
+    _canonical = _SCRIPT_PATH.parent.parent / 'system/scripts/repair-task-state.py'
+    if not _canonical.is_file() or _canonical.resolve() == _SCRIPT_PATH:
+        raise SystemExit('canonical repair bundle missing or recursive: ' + str(_canonical))
+
+    os.execv(sys.executable, [sys.executable, str(_canonical), *sys.argv[1:]])
+
 from quality_loop_lib import (check_quality_loop, contract_tdd_evidence, quality_gate_risk_level, load_text,
                               looks_mutating_task as shared_looks_mutating_task)
 from skill_coverage_lib import build_skill_coverage, parse_selected_skill_names_from_text

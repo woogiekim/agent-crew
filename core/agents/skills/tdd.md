@@ -431,6 +431,20 @@ Reviewer guidance: flag changed tests that add unnecessary Given/When/Then
 phase-marker comments as `test_phase_marker_comment_noise` unless a
 project-local convention explicitly requires those comments.
 
+### 실제 선행 검토 증거
+
+모든 TDD mode는 동일한 선행 검토를 따른다. 새 explicit run/variants는 최초
+source_baseline과 pipeline에 `checklist_evidence_version=1`을 고정한다.
+기존 `tdd_execution.observe_checklist_phase`의 `review_begin`, `review_end`,
+`test_write_open`은 실제 파일 inventory와 정확한 checklist/output digest,
+독립 host identity/span/lifecycle 및 task/stage/attempt를 관찰한다.
+`checklist_preflight_status`가 유효한 뒤 테스트를 작성한다. red/green/refactor는
+같은 preflight를 subprocess 전에 검사한다. characterization은 baseline에서
+변경되지 않은 기존 TC 실행만 허용하며 새 테스트 작성 인증을 만들지 않는다.
+자가 시각·mtime·승인 문자열·무관한 reviewer 이벤트는 증거가 아니다. 기존 완료
+기록과 baseline은 다시 만들지 않으며 legacy 예외는 v1 proof를 면제하지 않는다.
+
+
 ## Test Target Variable Naming
 
 Default the object, function wrapper, component instance, hook result, or other

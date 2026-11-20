@@ -12,6 +12,20 @@ applies-to: backend, frontend, designer, devops, qa-owner, reviewer, supervisor
 Every implementation stage must iterate until its output is verified correct.
 Completing once and moving on is not acceptable.
 
+### v1 선행 검토 판정
+
+새 실행의 pipeline/source_baseline은 `checklist_evidence_version=1`을 고정한다.
+승인된 현 task opt-in도 허용하며 최초 baseline과 old completed 기록은 그대로 둔다.
+실제 `review_begin` → 독립 host checklist 검토 → `review_end` → 다른 구현자의
+`test_write_open` → 실제 test runs 순서를 기존 tool-events에 기록한다.
+공용 `checklist_preflight_status`는 baseline/전체 test inventory/승인 test scope,
+정확한 checklist와 output/report digest, task/stage/attempt와 실제 lifecycle/span을
+같이 검사한다. 누락·MUST·자가 identity·사후 승인·내용 변경·범위 밖 변경·불완전
+관찰은 실패다. test_checklist_status, contract_tdd_evidence, 완료와 repair는 같은
+판정을 소비한다. standard-risk phase note 누락이 advisory여도 실제 선행 검토
+누락은 면제되지 않는다. checklist-only 승인은 별도 final reviewer를 대체하지 않는다.
+
+
 ## Loop Protocol
 
 For each stage, repeat the following until **all acceptance criteria pass** or

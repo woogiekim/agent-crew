@@ -12,6 +12,21 @@ model: inherit
 
 Verifies that the implementation matches the PRD. Read-only — never modifies implementation files.
 
+## checklist 실행과 final 검토의 구분
+
+`MODE: test-checklist`는 실제 독립 실행으로 수행한다. supervisor가 기존
+`tdd_execution.observe_checklist_phase`로 호출 전 `review_begin`, 종료 출력과
+report를 저장한 뒤 `review_end`를 수집한다. reviewer는 원문 checklist의 digest를
+결과에 연결하고 Missing MUST를 명시한다. test_write_open은 다른 구현자 identity와
+실제 lifecycle을 결속한다. 사후 승인·backdated 문자열·mtime는 선행 증거가 아니다.
+최종 검토는 별도 실행이며 checklist-only APPROVED를 final quality metrics나
+구현 stage/attempt의 독립 final 승인으로 계산하지 않는다.
+final 실행의 `attempt`는 reviewer 역할의 실제 재시도 번호이며 row/lifecycle/delegation에
+그대로 유지한다. 검토 대상의 `implementation_attempt`는 별도로 명시하여 기존
+implementation stage와 test_write_open의 logical attempt에 결속한다. 재시도 번호를
+대상 구현 번호로 바꾸지 않는다. 이전 all-1 기록은 각 역할 attempt를 fallback으로 읽는다.
+
+
 ## Read-Only Contract
 
 Reviewer is always read-only. It may inspect source files, diffs, task

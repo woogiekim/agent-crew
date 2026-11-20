@@ -1612,8 +1612,10 @@ EOF
     return 0
   fi
 
-  local repair="${ASSET_ROOT}/scripts/repair-task-state.py"
-  sync_source_runtime_assets_if_drifted
+  local repair="${AGENT_CREW_HOME}/system/scripts/repair-task-state.py"
+  if [ "${ASSET_ROOT}" = "${SOURCE_ROOT}/core" ] && [ -d "${SOURCE_ROOT}/adapters" ]; then
+    repair="${ASSET_ROOT}/scripts/repair-task-state.py"
+  fi
   require_file "${repair}" "task repair script"
   python3 "${repair}" --state-dir "${STATE_DIR}" "$@"
 }

@@ -2920,9 +2920,10 @@ def command_run_variants(
         result += host_bridge_next_line(task_dir, task_id, False)
 
         write_json(task_dir / "register.json", register)
+        pipeline["checklist_evidence_version"] = 1
         write_json(task_dir / "pipeline.json", pipeline)
         if mutation_scope != "read_only" and looks_mutating_task(task):
-            capture_baseline(task_dir, variant_project_root)
+            capture_baseline(task_dir, variant_project_root, checklist_evidence_version=1)
         write_json(task_dir / "context" / "input-normalization.json", normalization_metadata)
         issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
         if issue_ingestions:
@@ -3199,9 +3200,10 @@ def command_run(args: argparse.Namespace) -> int:
         result += blocked_next
 
     write_json(task_dir / "register.json", register)
+    pipeline["checklist_evidence_version"] = 1
     write_json(task_dir / "pipeline.json", pipeline)
     if mutation_scope != "read_only" and looks_mutating_task(task):
-        capture_baseline(task_dir, project_root)
+        capture_baseline(task_dir, project_root, checklist_evidence_version=1)
     issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
     if issue_ingestions:
         register["issue_comment_ingestion"] = issue_ingestions

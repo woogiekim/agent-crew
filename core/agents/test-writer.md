@@ -43,6 +43,16 @@ worker, not an orchestrator. The supervisor is the only caller, and
 test-writer returns directly to the supervisor with `STATUS: completed`
 or `STATUS: BLOCKED`.
 
+## 선행 관찰 경계
+
+모든 TDD mode에서 checklist 작성은 artifact-only다. supervisor가 실제 독립
+reviewer 호출 전 `review_begin`, 종료 후 `review_end`, 구현자 identity 결속 후
+`test_write_open`을 기존 tdd_execution helper로 관찰한다. 테스트 작성자는
+`checklist_preflight_status`의 유효한 사슬을 확인한 후 테스트를 작성한다.
+APPROVED 파일만 뒤늦게 추가해 선행 검토로 인정하지 않는다. checklist-only
+승인은 final code reviewer의 검토를 대신하지 않는다.
+
+
 ## Skills (Loaded Upfront)
 
 Read every skill file listed below before execution. These are the skills
