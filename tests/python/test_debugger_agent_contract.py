@@ -164,3 +164,40 @@ def test_runtime_agent_routing_uses_declarative_table_for_debugger() -> None:
 
     assert '"debugger"' not in function_body
     assert "read_agent_routing_rules" in function_body
+
+
+def test_debugger_hypothesis_phase_requires_predictions_before_discriminating_evidence() -> None:
+    text = DEBUGGER_PATH.read_text(encoding="utf-8")
+    phase = text.split("### Phase 3 — Hypothesis", 1)[1].split("### Phase 4", 1)[0]
+    phase = " ".join(phase.lower().split())
+
+    assert "before retrieving evidence that distinguishes the hypotheses" in phase
+    assert "expected observations" in phase and "observations that would rule it out" in phase
+    assert "same criteria" in phase and "user's proposed cause" in phase
+    assert "compare competing hypotheses against the same observations" in phase
+    assert "file and line" in phase and "trace id" in phase
+
+
+def test_debugger_closeout_phase_requires_sample_proof_and_one_decisive_next_check() -> None:
+    text = DEBUGGER_PATH.read_text(encoding="utf-8")
+    phase = text.split("### Phase 4 — Diagnostic Close-Out", 1)[1].split("## Project Memory Capture", 1)[0]
+    phase = " ".join(phase.lower().split())
+
+    assert "supported, ruled out, or undetermined" in phase
+    assert "only when evidence links the cause to the failure in this sample" in phase
+    assert "lookup fails" in phase and "leave it undetermined" in phase
+    assert "confirm collection coverage" in phase
+    assert "one next check" in phase and "lookup key" in phase and "distinguishes the hypotheses" in phase
+
+
+def test_debugger_closeout_traces_what_extended_a_lock_hold() -> None:
+    text = DEBUGGER_PATH.read_text(encoding="utf-8")
+    phase = text.split("### Phase 4 — Diagnostic Close-Out", 1)[1].split("## Project Memory Capture", 1)[0]
+    phase = " ".join(phase.lower().split())
+
+    assert "blocker identity" in phase and "activity that extended the lock hold" in phase
+    assert "acquisition through release" in phase
+    assert all(interval in phase for interval in ("query", "write", "commit"))
+    assert "compare their observed timestamps or durations" in phase
+    assert "same key and time window" in phase
+    assert "separate the competing explanations" in phase

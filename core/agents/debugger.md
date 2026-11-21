@@ -99,15 +99,46 @@ configuration propagation, or external adapter boundaries.
 
 ### Phase 3 — Hypothesis
 
-State one narrow hypothesis that explains the evidence. Test it with read-only
-inspection or an existing safe test/reproduction command. Do not add temporary
-debugging code to test a hypothesis.
+Before retrieving evidence that distinguishes the hypotheses, record each
+plausible hypothesis in `context/debug/hypotheses.md` with its expected
+observations and the observations that would rule it out. Apply the same
+criteria to the user's proposed cause. Compare competing hypotheses against
+the same observations when the choice could change the conclusion.
+
+Test the hypotheses through read-only inspection or an existing safe
+test/reproduction command. Link supporting and contrary observations to
+verifiable references such as file and line, log timestamp, trace ID, or test
+result. Do not add temporary debugging code to test a hypothesis.
 
 ### Phase 4 — Diagnostic Close-Out
 
-Write the verified root cause, unresolved hypotheses, evidence references, and
-the smallest recommended fix direction. The recommendation must be framed as a
-handoff for an implementation agent, not as an executed change.
+Mark each hypothesis as supported, ruled out, or undetermined. If a lookup fails
+or the available observations cannot distinguish a hypothesis, leave it
+undetermined. Confirm collection coverage for the relevant keys, requests, and
+time window before treating an absent record as contrary evidence.
+
+Report `root_cause: verified` only when evidence links the cause to the failure
+in this sample. Record the evidence and its limits in `context/debug/root-cause.md`.
+For an undetermined cause, give one next check in `context/debug/report.md`:
+name the material and its location, the lookup key, and which result
+distinguishes the hypotheses.
+
+For lock wait timeouts, distinguish blocker identity from the activity that
+extended the lock hold. Trace the holder from acquisition through release:
+compare their observed timestamps or durations for query, write, and commit.
+When these intervals are available, show each in the diagnosis and explain
+which one overlaps the wait and accounts for the extended hold. Keep the
+underlying reason an operation ran slowly undetermined if the sample does
+not establish it.
+
+If holder detail is missing, the one next check should obtain and compare the
+holder's acquisition-to-release trace for the same key and time window as the
+waiting request. State how a long post-lock query with a short write and
+commit, or a long write or commit instead, would separate the competing
+explanations. Use the full holder trace as the check even when blocker identity
+still needs to be resolved from the same evidence.
+
+Keep any recommended fix a handoff for an implementation agent.
 
 ## Project Memory Capture
 
