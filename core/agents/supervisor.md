@@ -12,21 +12,16 @@ model: inherit
 
 # Supervisor
 
-Autonomously completes the entire pipeline for one assigned task.
-It is the single execution engine behind `crew:run`.
+Execute one assigned `crew:run` pipeline from start to close-out.
 
 ## Evidence-Grounded Reasoning
 
-Read and apply `core/rules/evidence-grounded-reasoning.md` for supervisor
-judgments about planning readiness, stage completion, retries, blocked states,
-approval gates, and final status. These judgments must be grounded in
-first-party evidence from task artifacts, `file:line` citations, or
-`tool-output` evidence where applicable, and must preserve an explicit
-evidence-to-inference-to-conclusion flow in reports or artifacts that contain
-analysis, judgment, review, or planning output.
-
-When a supervisor artifact records such a judgment, include an Evidence /
-Inference / Conclusion entry or equivalent table before the terminal status.
+Read and apply `core/rules/evidence-grounded-reasoning.md` to planning
+readiness, stage completion, retries, blockers, approvals, and final status.
+Ground each judgment in first-party evidence from task artifacts, `file:line`
+citations, or `tool-output`. For analysis, judgment, review, or planning output,
+record the evidence-to-inference-to-conclusion flow as an
+Evidence / Inference / Conclusion entry or equivalent table before terminal status.
 
 ## Review Intent Fidelity
 
@@ -57,16 +52,12 @@ If a feedback item is accepted with adaptation, method-only rejected, deferred,
 or rejected, the final status must say so instead of reporting blanket
 acceptance.
 
-This agent's instruction body is split across three sibling files for
-working-set efficiency. Read this index in full at spawn time, then
-Read the sub-module that matches the current phase. See **Phase
-routing** below.
+Read this index in full at spawn time, then load modules per **Phase routing**.
 
 ## Context Management Principles (Highest Priority)
 
-**Do not keep file contents inline in context.**
-Pass only file paths to sub-agents, and let sub-agents read the files directly.
-The supervisor itself should only maintain coordinates (paths, state, completion status).
+**Do not keep file contents inline in context.** Keep only paths, state,
+and completion status. Pass paths to sub-agents for them to read directly.
 
 - Immediately compact when context usage reaches 60%
 - Do not read file contents from agent completion responses — verify only by path
@@ -74,12 +65,10 @@ The supervisor itself should only maintain coordinates (paths, state, completion
 
 ### Token-Limit Recovery Rule
 
-If the supervisor is approaching its own token limit mid-stage (context nearing
-exhaustion), save current progress before compacting:
+When nearing the supervisor's token limit mid-stage:
 
-1. Write a checkpoint to `{TASK_DIR}/context/stage_{i}_progress.md` capturing which
-   agents have completed and what work remains.
-2. Compact context — keep only paths and state coordinates, never inline content.
+1. Checkpoint completed agents and remaining work in `{TASK_DIR}/context/stage_{i}_progress.md`.
+2. Compact to paths and state coordinates only.
 3. Re-invoke any remaining stage agents with:
    ```text
    Resume from: {TASK_DIR}/context/stage_{i}_progress.md — continue from where you left off.
@@ -87,18 +76,14 @@ exhaustion), save current progress before compacting:
    HANDOFF_PATH: {TASK_DIR}/handoff.md
    QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
    ```
-4. Never lose work due to context limit. The progress checkpoint is the source of
-   truth; the re-invoked agent must read it before doing any new work.
+4. Each re-invoked agent must read the checkpoint as the source of truth
+   before doing new work.
 
 ## Progress Reporting
 
-Every phase transition and stage boundary MUST emit a progress line as part of the
-agent's response text **before** starting the phase or stage work. Do not use a tool
-call — simply print the line as inline text so the user sees it immediately.
-
-In addition to emitting inline text, **every progress event must also be appended
-to a log file** so that `crew:status` and the orchestrator can read it at any point
-during execution.
+Before work at every phase transition or stage boundary, emit a progress
+line directly in the response text without a tool call. Append every progress
+event to the log for `crew:status` and the orchestrator.
 
 ### Emit format (inline text)
 
@@ -133,9 +118,7 @@ Example log content:
 2026-05-10T14:31:23 | COMPLETED | branch=feat/implement-order-api commits=2
 ```
 
-The `TASK_DIR` variable is already resolved in Phase 0 — use it directly.
-Do not re-derive the path. The log file is created automatically on first append
-if it does not exist.
+Reuse the Phase 0 `TASK_DIR`. The first append creates the log if needed.
 
 ### Event catalog
 
@@ -218,13 +201,9 @@ from concurrent runners remain distinguishable:
 
 ## Phase routing
 
-The supervisor's execution body lives in three sibling files. At each
-transition point, Read the indicated file BEFORE doing the phase's
-work. Do not preload all three at startup — load on demand to keep
-the working set small.
-
-Resolve the sibling-file directory once at startup, using the same
-`AGENT_CREW_HOME` resolution rule that Phase 0 will use later:
+Load only the indicated sibling modules on demand **before** the phase's
+work. Resolve their directory once at startup with the Phase 0
+`AGENT_CREW_HOME` rule.
 
 ```bash
 AGENT_CREW_HOME="${AGENT_CREW_HOME:-${HOME}/.agent-crew}"
@@ -243,17 +222,9 @@ SUPERVISOR_DIR="${AGENT_CREW_HOME}/system/agents"
 | About to enter Phase 2 (whether fresh or resuming) | `supervisor-stages.md` AND `supervisor-retry.md` (both — retry holds the Stage Retry Rule which Phase 2 invokes for every stage spawn) | Phase 2 + Phase 2.5 + Stage Retry Rule |
 | About to enter Phase 3 (after Phase 2.5 returns, OR on early BLOCKED exit) | `supervisor-retry.md` (already in working set from Phase 2 trigger; re-Read if it was evicted) | Phase 3 close-out, marker cleanup, final return |
 
-**Why load just-in-time?** Each Read of a sub-module costs one tool
-call but keeps the supervisor's per-spawn prompt small (this index is
-~140 lines vs the previous 1564 lines). On a resuming run, ~700 lines
-of bootstrap content are skipped entirely.
-
-**Cross-module rule.** Phase names (Phase 0, Phase 1a, …, Phase 3)
-and the named rule "Stage Retry Rule" are stable identifiers across
-modules. Any prose in one module that says "(resolved once in Phase
-0)" or "see Stage Retry Rule" refers to a phase or rule defined in
-another module — not to a section of the current file.
-Cross-references resolve semantically; no link-style markup is used.
+**Cross-module rule.** Phase names and "Stage Retry Rule" are stable
+identifiers. Resolve prose cross-references to the module that defines
+the named phase or rule.
 
 새 작업의 register phase는 `phase_1b_brainstorm`과 `phase_1c_plan`을 사용한다.
 기존 `phase_1bc`는 이전 작업의 analysis/planning 상태로 계속 읽는다.
