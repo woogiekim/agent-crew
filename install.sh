@@ -38,18 +38,20 @@ install_path_crew_cli() {
   local src="${SOURCE_DIR}/bin/crew"
   local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
   local dest="${dest_dir}/crew"
+  [ "${AGENT_CREW_SKIP_PATH_CLI:-0}" != "1" ] || return 0
   [ -f "${src}" ] || return 0
 
   mkdir -p "${dest_dir}"
-  if [ -f "${dest}" ] \
+  if [ -L "${dest}" ] || { [ -e "${dest}" ] \
     && ! grep -q "experimental Codex launcher for agent-crew" "${dest}" 2>/dev/null \
-    && ! grep -q "deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null; then
+    && ! grep -q "deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null; }; then
     log_warn "Skipping PATH crew CLI; unmanaged file exists at ${dest}"
     return 0
   fi
 
   cp -f "${src}" "${dest}"
   chmod +x "${dest}"
+  installed_path_cli="$(cd "${dest_dir}" && pwd -P)/crew"
   log_info "Native crew CLI installed → ${dest}"
 }
 
@@ -119,6 +121,11 @@ install_global() {
     || log_error "core source directory not found — expected ${SOURCE_DIR}"
   [ -d "${ADAPTERS_DIR}" ] \
     || log_error "adapter directory not found — expected ${ADAPTERS_DIR}"
+
+  local baseline_helper="${SOURCE_DIR}/scripts/runtime-install-baseline.py"
+  local baseline_digest baseline_host="none" installed_path_cli=""
+  [ -f "${baseline_helper}" ] || log_error "Runtime baseline helper missing in ${SOURCE_ROOT}."
+  baseline_digest="$(python3 "${baseline_helper}" fingerprint --source "${SOURCE_ROOT}")"
 
   # Load shared functions (sync_system_agents, migrate_legacy_agents,
   # merge_agents_to_discovery, diff_copy, diff_install, print_diff_summary).
@@ -353,7 +360,28 @@ install_global() {
   merge_global_agents "${SOURCE_DIR}/global-agents.md" "${AGENT_CREW_HOME}/AGENTS.md"
   log_info "Global agent guidance applied → ${AGENT_CREW_HOME}/AGENTS.md"
 
+  diff_install "${SOURCE_DIR}/policies" "${AGENT_CREW_HOME}/system/policies"
+  diff_install "${SOURCE_DIR}/policies" "${AGENT_CREW_HOME}/policies"
+  diff_install "${SOURCE_DIR}/agents/skills" "${AGENT_CREW_HOME}/system/skills"
+  merge_skills_to_discovery "${AGENT_CREW_HOME}/system/skills" "${AGENT_CREW_HOME}/user/skills" "${AGENT_CREW_HOME}/skills"
+  merge_rules_to_discovery "${AGENT_CREW_HOME}/system/rules" "${AGENT_CREW_HOME}/user/rules" "${AGENT_CREW_HOME}/rules"
+
   install_claude_compat
+
+  local system_command command_name user_command
+  for system_command in "${SOURCE_DIR}/commands/"*.md; do
+    command_name="$(basename "${system_command}")"
+    user_command="${AGENT_CREW_DIR}/user/commands/${command_name}"
+    [ -f "${user_command}" ] || continue
+    diff_copy "${user_command}" "${AGENT_CREW_DIR}/commands/${command_name}"
+  done
+
+  local publish_args=(--expected-digest "${baseline_digest}" --active-host "${baseline_host}")
+  if [ -n "${installed_path_cli}" ]; then
+    publish_args+=(--managed-path-cli "${installed_path_cli}")
+  fi
+  CLAUDE_DIR="${CLAUDE_DIR}" python3 "${baseline_helper}" publish --home "${AGENT_CREW_HOME}" --source "${SOURCE_ROOT}" \
+    "${publish_args[@]}"
 
   if [ -n "${TEMP_DIR}" ]; then
     rm -rf "$TEMP_DIR"
@@ -379,17 +407,7 @@ install_claude_compat() {
   AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" \
     AGENT_CREW_WRITE_CAPABILITIES=0 SOURCE_ROOT="${SOURCE_ROOT}" \
     "${AGENT_CREW_HOME}/setup/setup-host.sh" "$(pwd)" >/dev/null
-  merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/auto-route.sh"
-  merge_global_settings "${CLAUDE_DIR}/settings.json" "${CLAUDE_DIR}/agent-crew/hooks/general-memory-context.sh"
-  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task|Delegate" "${CLAUDE_DIR}/agent-crew/hooks/context-guard.sh"
-  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Edit|Write" "${CLAUDE_DIR}/agent-crew/hooks/direct-edit-guard.sh"
-  # Issue #130: AI-agnostic input normalization enforcement.
-  merge_global_pretooluse "${CLAUDE_DIR}/settings.json" "Agent|Task" "${CLAUDE_DIR}/agent-crew/hooks/normalize-task-guard.sh"
-  merge_global_pretooluse  "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-pre.sh"
-  merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "Agent" "${CLAUDE_DIR}/agent-crew/hooks/agent-diff-post.sh"
-  merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "*"     "${CLAUDE_DIR}/agent-crew/hooks/cost-tracker.sh"
-  merge_global_posttooluse "${CLAUDE_DIR}/settings.json" "*"     "${CLAUDE_DIR}/agent-crew/hooks/mnemos-capture-guard.sh"
-  log_info "Agent diff + cost-tracker + mnemos-capture-guard hooks registered → ${CLAUDE_DIR}/settings.json"
+  baseline_host="claude"
   log_info "Claude compatibility layer installed → ${CLAUDE_DIR}/"
 }
 

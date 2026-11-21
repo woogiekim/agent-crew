@@ -193,7 +193,7 @@ sync_managed_path_crew_cli() {
   for candidate in "${candidates[@]}"; do
     resolved="$(absolute_file_path "${candidate}" 2>/dev/null || true)"
     [ -n "${resolved}" ] || continue
-    [ -f "${resolved}" ] || continue
+    [ -f "${resolved}" ] && [ ! -L "${resolved}" ] || continue
     resolved_running="${running}"
     if [ -n "${resolved_running}" ] && [ "${resolved}" = "${resolved_running}" ]; then
       continue
@@ -394,6 +394,12 @@ PY
 
 runtime_managed_path_clis() {
   local candidate resolved running seen="|" path_dir
+  local recorded="${1:-}"
+  if [ -n "${recorded}" ]; then
+    printf '%s\n' "${recorded}"
+    seen="${seen}${recorded}|"
+  fi
+
   running="$(absolute_file_path "${BASH_SOURCE[0]}" 2>/dev/null || true)"
   local candidates=("${running}" "$(command -v crew 2>/dev/null || true)" "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}/crew")
   while IFS= read -r path_dir; do
@@ -413,7 +419,7 @@ runtime_managed_path_clis() {
 }
 
 runtime_install_drift_payload() {
-  local source="$1" verifier output rc=0 active_host managed_path_cli
+  local source="$1" recorded_path_cli="${2:-}" verifier output rc=0 active_host managed_path_cli candidate
   local managed_args=()
   verifier="${source}/core/scripts/verify-install-drift.py"
   [ -f "${verifier}" ] || {
@@ -422,7 +428,7 @@ runtime_install_drift_payload() {
   }
 
   active_host="$(runtime_active_host)"
-  managed_path_cli="$(runtime_managed_path_clis 2>/dev/null || true)"
+  managed_path_cli="$(runtime_managed_path_clis "${recorded_path_cli}" 2>/dev/null || true)"
   if [ -n "${managed_path_cli}" ]; then
     while IFS= read -r candidate; do
       [ -n "${candidate}" ] && managed_args+=(--managed-path-cli "${candidate}")
@@ -448,19 +454,41 @@ runtime_install_drift_payload() {
 
 runtime_drift_preflight() {
   local mutation_scope="$1"; shift
-  local source payload status action sync_rc=0 active_host prompt options question_id decision installed_cli managed_path_cli
+  local source="" payload="" status action sync_rc=0 active_host prompt options question_id decision installed_cli managed_path_cli
+  local receipt recorded_path_cli=""
   [ "${AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN:-1}" = "1" ] || return 0
 
-  source="$(find_source_checkout 2>/dev/null || true)"
-  [ -n "${source}" ] || return 0
-  payload="$(runtime_install_drift_payload "${source}")"
+  if [ -n "${AGENT_CREW_SOURCE_DIR:-}" ]; then
+    source="$(cd "${AGENT_CREW_SOURCE_DIR}" 2>/dev/null && pwd)" || {
+      printf 'crew: invalid runtime source in AGENT_CREW_SOURCE_DIR\n' >&2
+      return 2
+    }
+  elif [ "${SOURCE_ROOT}" != "${ASSET_ROOT}" ]; then
+    source="${SOURCE_ROOT}"
+  else
+    local baseline="${AGENT_CREW_HOME}/system/scripts/runtime-install-baseline.py"
+    if [ ! -f "${baseline}" ]; then
+      printf 'crew: no runtime baseline helper; use crew update to establish a verified runtime baseline\n' >&2
+      payload='{"status":"UNKNOWN","error":"runtime baseline helper missing"}'
+    elif receipt="$(python3 "${baseline}" resolve --home "${AGENT_CREW_HOME}" --with-path-cli)"; then
+      source="${receipt%%$'\n'*}"
+      if [ "${source}" != "${receipt}" ]; then
+        recorded_path_cli="${receipt#*$'\n'}"
+      fi
+    else
+      payload='{"status":"UNKNOWN","error":"installed runtime baseline missing or invalid"}'
+    fi
+  fi
+  if [ -z "${payload}" ]; then
+    payload="$(runtime_install_drift_payload "${source}" "${recorded_path_cli}")"
+  fi
   status="$(DRIFT_PAYLOAD="${payload}" python3 -c 'import json,os; print(json.loads(os.environ["DRIFT_PAYLOAD"]).get("status","UNKNOWN"))' 2>/dev/null || printf 'UNKNOWN')"
 
   case "${status}" in
-    MATCH|NOT_APPLICABLE)
+    MATCH)
       return 0
       ;;
-    UNKNOWN)
+    UNKNOWN|NOT_APPLICABLE)
       printf 'DRIFT_DIAGNOSTICS: %s\n' "$(printf '%s' "${payload}" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin),ensure_ascii=False,separators=(",",":")))' 2>/dev/null || printf '{}')" >&2
       printf 'crew: runtime install drift status is UNKNOWN; run blocked before execution\n' >&2
       return 2
@@ -527,9 +555,9 @@ runtime_drift_preflight() {
         printf 'crew: sync is unavailable for read-only execution\n' >&2
         return 2
       fi
-      managed_path_cli="$(runtime_managed_path_clis 2>/dev/null | head -1 || true)"
+      managed_path_cli="$(runtime_managed_path_clis "${recorded_path_cli}" 2>/dev/null | head -1 || true)"
       if [ -n "${managed_path_cli}" ]; then
-        AGENT_CREW_DISABLE_FAST_NOOP_UPDATE=1 \
+        AGENT_CREW_DISABLE_FAST_NOOP_UPDATE=1 AGENT_CREW_SKIP_PATH_CLI=0 \
           AGENT_CREW_HOST="${active_host}" \
           AGENT_CREW_PATH_BIN="$(dirname "${managed_path_cli}")" \
           bash "${source}/core/scripts/sync-local-install.sh" "${source}" "${PROJECT_ROOT}" || sync_rc=$?
@@ -538,7 +566,7 @@ runtime_drift_preflight() {
           bash "${source}/core/scripts/sync-local-install.sh" "${source}" "${PROJECT_ROOT}" || sync_rc=$?
       fi
       [ "${sync_rc}" -ne 0 ] || sync_managed_path_crew_cli "${source}/core/bin/crew"
-      payload="$(runtime_install_drift_payload "${source}")"
+      payload="$(runtime_install_drift_payload "${source}" "${recorded_path_cli}")"
       status="$(DRIFT_PAYLOAD="${payload}" python3 -c 'import json,os; print(json.loads(os.environ["DRIFT_PAYLOAD"]).get("status","UNKNOWN"))')"
       if [ "${sync_rc}" -ne 0 ] || [ "${status}" != "MATCH" ]; then
         printf 'crew: runtime asset sync/re-verification returned rc=%s status=%s; run blocked without another prompt\n' \

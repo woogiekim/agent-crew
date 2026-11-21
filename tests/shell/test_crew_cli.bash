@@ -854,7 +854,7 @@ assert_contains "${out}" "STATUS: runtime_drift_selection_required"
 cp "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh" "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh.saved"
 printf '#!/usr/bin/env bash\n# sync-local-install.sh\nexit 9\n' > "${RUNTIME_SYNC_PROJECT}/core/scripts/sync-local-install.sh"
 out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
-  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "sync failure task" 2>&1)
+  AGENT_CREW_SOURCE_DIR="${RUNTIME_SYNC_PROJECT}" AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "sync failure task" 2>&1)
 rc=$?
 assert_exit 3 "${rc}"
 FAILED_SYNC_QUESTION_ID=$(printf '%s\n' "${out}" | awk -F': ' '/^QUESTION_ID:/ {print $2; exit}')
@@ -867,7 +867,7 @@ python3 "${REPO_ROOT}/core/scripts/interactive-question-state.py" record \
 
 it "crew run blocks when sync exits nonzero even if verification is rerun"
 out=$(HOME="${RUNTIME_SYNC_USER_HOME}" CODEX_HOME="${RUNTIME_SYNC_CODEX}" PATH="${RUNTIME_SYNC_BIN}:${PATH}" AGENT_CREW_HOME="${RUNTIME_SYNC_HOME}" PROJECT_ROOT="${RUNTIME_SYNC_PROJECT}" \
-  AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "sync failure task" 2>&1)
+  AGENT_CREW_SOURCE_DIR="${RUNTIME_SYNC_PROJECT}" AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN=1 "${RUNTIME_SYNC_BIN}/crew" run "sync failure task" 2>&1)
 rc=$?
 assert_exit 2 "${rc}"
 assert_contains "${out}" "sync/re-verification returned rc=9"

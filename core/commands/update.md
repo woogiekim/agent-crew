@@ -64,6 +64,10 @@ UPDATE_REGISTRY="${AGENT_CREW_HOME}/state/update-registry.json"
 
 ## Source Acquisition
 
+정상 설치와 `crew:update`는 성공한 소스 입력을 설치 루트에 비교 기준으로 보관한다.
+갱신 소스가 임시 clone이어도 이후 실행을 비교할 수 있다. 동일 세대는 재사용하고,
+실패하면 직전 활성 기준을 보존한다. 실행 시 작업 트리는 별도로 사용한다.
+
 `crew:update` always starts from a fresh remote checkout. It does not depend on
 an existing local source clone.
 

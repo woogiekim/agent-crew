@@ -39,6 +39,12 @@ CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 SOURCE_ROOT="$(cd "${SOURCE_ROOT}" && pwd)"
 PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 ASSET_ROOT="${SOURCE_ROOT}/core"
+BASELINE_HELPER="${ASSET_ROOT}/scripts/runtime-install-baseline.py"
+if [ ! -f "${BASELINE_HELPER}" ]; then
+  printf 'sync-local-install: missing runtime baseline helper in %s\n' "${SOURCE_ROOT}" >&2
+  exit 2
+fi
+BASELINE_DIGEST="$(python3 "${BASELINE_HELPER}" fingerprint --source "${SOURCE_ROOT}")"
 if [ -f "${SOURCE_ROOT}/core/scripts/project-state.sh" ]; then
   # shellcheck source=/dev/null
   . "${SOURCE_ROOT}/core/scripts/project-state.sh"
@@ -122,6 +128,16 @@ run_project_asset_migration() {
   print_update_phase "project_asset_migration"
 }
 
+publish_runtime_baseline() {
+  local publish_args=(--expected-digest "${BASELINE_DIGEST}") path_bin
+  if [ "${PATH_CREW_CLI_MANAGED}" = "1" ]; then
+    path_bin="$(cd "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}" && pwd -P)" || return 2
+    publish_args+=(--managed-path-cli "${path_bin}/crew")
+  fi
+  CLAUDE_DIR="${CLAUDE_DIR}" python3 "${BASELINE_HELPER}" publish --home "${AGENT_CREW_HOME}" --source "${SOURCE_ROOT}" \
+    "${publish_args[@]}"
+}
+
 write_update_integrity_manifest() {
   local integrity_dir="${STATE_DIR}/integrity"
 
@@ -148,7 +164,7 @@ fi
 
 path_crew_cli_is_managed() {
   local dest="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}/crew"
-  [ -f "${dest}" ] || return 1
+  [ -f "${dest}" ] && [ ! -L "${dest}" ] || return 1
   grep -q "experimental Codex launcher for agent-crew\\|deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null
 }
 
@@ -186,7 +202,9 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
       --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
       --prune-extra
     )
-    if ! path_crew_cli_is_managed; then
+    if path_crew_cli_is_managed; then
+      PATH_CREW_CLI_MANAGED=1
+    else
       verify_args+=(--skip-path-bin)
     fi
     python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" "${verify_args[@]}"
@@ -194,6 +212,7 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
     record_global_update_scope
     run_project_asset_migration
     write_update_integrity_manifest
+    publish_runtime_baseline
     print_update_total
     printf 'sync-local-install: no source/user/output drift detected; skipped adapter refresh\n'
     exit 0
@@ -270,9 +289,7 @@ install_path_crew_cli() {
   [ -f "${src}" ] || return 0
 
   mkdir -p "${dest_dir}"
-  if [ -f "${dest}" ] \
-    && ! grep -q "experimental Codex launcher for agent-crew" "${dest}" 2>/dev/null \
-    && ! grep -q "deterministic shell entrypoint for agent-crew" "${dest}" 2>/dev/null; then
+  if [ -L "${dest}" ] || { [ -e "${dest}" ] && ! path_crew_cli_is_managed; }; then
     printf 'sync-local-install: skipping PATH crew CLI; unmanaged file exists at %s\n' "${dest}"
     PATH_CREW_CLI_MANAGED=0
     return 0
@@ -430,7 +447,11 @@ if [ -f "${AGENT_CREW_HOME}/system/scripts/update-fingerprint.py" ]; then
   print_update_phase "fingerprint_write"
 fi
 
+write_update_integrity_manifest
+if ! publish_runtime_baseline; then
+  # The fingerprint describes a refresh whose verified baseline was never published.
+  rm -f -- "${UPDATE_FINGERPRINT}"
+  exit 2
+fi
 print_update_total
 printf 'sync-local-install: refreshed installed assets from %s\n' "${SOURCE_ROOT}"
-
-write_update_integrity_manifest

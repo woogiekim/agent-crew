@@ -100,10 +100,19 @@ def compare_tree(src: Path, dest: Path, *, prune_extra: bool) -> dict:
     return compare_trees([src], dest, prune_extra=prune_extra)
 
 
-def compare_trees(src_roots: list[Path], dest: Path, *, prune_extra: bool) -> dict:
+def compare_trees(
+    src_roots: list[Path], dest: Path, *, prune_extra: bool, overrides: Path | None = None
+) -> dict:
     src_map: dict[str, Path] = {}
     for src in src_roots:
         src_map.update(source_files(src))
+    applied_overrides = {}
+    if overrides is not None:
+        for path in overrides.glob("*.md"):
+            if path.name in src_map and path.is_file():
+                src_map[path.name] = path
+                applied_overrides[path.name] = sha256_file(path)
+
     dest_map = dest_files(dest)
     missing = []
     mismatched = []
@@ -124,7 +133,7 @@ def compare_trees(src_roots: list[Path], dest: Path, *, prune_extra: bool) -> di
         if prune_extra:
             dest_path.unlink()
 
-    return {
+    check = {
         "source": ", ".join(str(src) for src in src_roots),
         "destination": str(dest),
         "missing": missing,
@@ -132,11 +141,15 @@ def compare_trees(src_roots: list[Path], dest: Path, *, prune_extra: bool) -> di
         "extra": extra,
         "passed": not missing and not mismatched and (not extra or prune_extra),
     }
+    if applied_overrides:
+        material = json.dumps(applied_overrides, sort_keys=True).encode()
+        check["source_projection"] = hashlib.sha256(material).hexdigest()
+    return check
 
 
-def compare_expected_trees(src_roots: list[Path], dest: Path) -> dict:
+def compare_expected_trees(src_roots: list[Path], dest: Path, *, overrides: Path | None = None) -> dict:
     """Compare source-owned files without treating shared-destination extras as drift."""
-    result = compare_trees(src_roots, dest, prune_extra=False)
+    result = compare_trees(src_roots, dest, prune_extra=False, overrides=overrides)
     result["extra"] = []
     result["passed"] = not result["missing"] and not result["mismatched"]
     return result
@@ -349,11 +362,13 @@ def compare_codex_generated_agents(source_root: Path, home: Path, dest: Path) ->
             "Agent-crew system agent:",
             "# This is a Codex adapter bootstrap for an agent-crew user agent.",
         )
-        for rel, installed in dest_files(dest).items():
+        for installed in sorted(dest.glob("*.toml")):
+            if not installed.is_file() or installed.name in expected:
+                continue
             text = installed.read_text(encoding="utf-8", errors="replace")
-            if rel not in expected and any(marker in text for marker in markers):
-                extra.append(rel)
-                installed_projection[f"extra:{rel}"] = sha256_file(installed)
+            if any(marker in text for marker in markers):
+                extra.append(installed.name)
+                installed_projection[f"extra:{installed.name}"] = sha256_file(installed)
     return {
         "source": ", ".join(str(path) for path in (
             source_root / "core" / "agents",
@@ -847,7 +862,9 @@ def runtime_checks(
             continue
         if source_name == "commands":
             checks.append(compare_trees([source], home / "system" / destination_name, prune_extra=False))
-            checks.append(compare_expected_trees([source], home / destination_name))
+            checks.append(compare_expected_trees(
+                [source], home / destination_name, overrides=home / "user/commands"
+            ))
             continue
 
         checks.append(compare_trees([source], home / "system" / destination_name, prune_extra=False))
@@ -905,8 +922,18 @@ def runtime_checks(
         checks.append(compare_claude_managed_hooks(claude_dir / "settings.json", claude_dir))
     if not skip_path_bin:
         candidates = managed_path_clis or [path_bin / "crew"]
-        for candidate in dict.fromkeys(path.resolve() for path in candidates):
-            checks.append(compare_file(source_root / "core" / "bin" / "crew", candidate))
+        for candidate in dict.fromkeys(candidates):
+            expected = source_root / "core" / "bin" / "crew"
+            if candidate.is_symlink():
+                check = {
+                    "source": str(expected), "destination": str(candidate), "missing": [],
+                    "mismatched": [str(candidate)], "extra": [], "passed": False,
+                }
+            else:
+                check = compare_file(expected, candidate)
+                if check["passed"] and not os.access(candidate, os.X_OK):
+                    check.update(mismatched=[str(candidate)], passed=False)
+            checks.append(check)
     return checks
 
 

@@ -102,16 +102,17 @@ crew:run "Fix bug B"
 
 ### 0. Runtime Install Drift Choice
 
-The native `crew run` entry first proves source identity with the installer,
-native CLI marker, and local-sync entrypoint, then performs a side-effect-free
-SHA-256 comparison before this command definition is executed. It compares the
-system-owned trees managed by `sync-local-install.sh`, including stale extras
-and a managed PATH CLI. User layers and unmanaged PATH executables are ignored.
-Only the active host adapter is checked: explicit `AGENT_CREW_HOST`, current
-host environment signal, matching capabilities, then provider-neutral core.
+일반 설치 CLI는 마지막 성공한 설치·업데이트가 보관한 소스 세대를 검증한 후
+읽기 전용 SHA-256 비교를 실행한다. 현재 프로젝트는 작업 위치와 상태 키를
+정한다. 직접 실행한 소스 CLI나 명시한 `AGENT_CREW_SOURCE_DIR`는 개발 비교에
+사용한다. 정식 기준이 없거나 손상된 기존 설치는 `crew update`로 갱신하거나
+검증할 소스를 직접 지정한다. Codex agent 비교에는 최상위의 활성 `*.toml`만
+포함한다. 검사는 관리 파일의 누락·변경·추가와 설치 시 기록한 관리 PATH CLI를
+확인한다. 명령 탐색 경로에는 설치기의 사용자 명령 우선순위를 적용한다.
+활성 호스트는 명시한 `AGENT_CREW_HOST`, 현재 호스트 환경 신호, 저장된
+capabilities 순으로 정한다. 해당 신호가 없으면 공용 core를 검사한다.
 
 - `MATCH`: proceed silently.
-- `NOT_APPLICABLE`: proceed silently when no valid source checkout is available.
 - `UNKNOWN`: stop before execution and report that the comparison could not be
   completed.
 - `MISMATCH`: emit a selection-required status, structured option metadata, and
