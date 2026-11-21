@@ -35,10 +35,9 @@ pytest 실행은 helper가 개별 node 결과를 출력하도록 argv에 `--verb
 
 ## Domain Behavior Checklist Gate
 
-Before writing test code, derive the domain behavior checklist from the
-requirements. The goal is domain behavior coverage, not more tests and not
-line coverage. Line coverage is not sufficient to prove that important domain
-behaviors were tested.
+Derive the checklist from requirements before writing test code. Aim for
+domain behavior coverage. Line coverage is not sufficient evidence that
+important domain behaviors were tested.
 
 Required sequence:
 
@@ -74,17 +73,15 @@ Mandatory categories to inspect for every feature:
 - External Dependency Failure
 - Regression
 
-If a category does not apply, record `N/A` with the reason. Silent omission is
-invalid because it hides missing domain behavior coverage.
+Record `N/A` and the reason for each inapplicable category. Cover every category.
 
-After checklist-only review is approved, every generated or updated test must
-use descriptive names that communicate behavior through the test naming
-contract below. TC-ID is an internal checklist/mapping identifier and is not
-required in test names, display names, subtest labels, or docstrings. After
-writing tests, produce `context/test-case-mapping.md` so every TC-ID maps to
-either a concrete test reference with `Covered = YES` or a reviewer-accepted
-explanation for why that case cannot be implemented. Every MUST item must be
-implemented or explicitly explained.
+After checklist-only review approval, name each new or changed test by its
+behavior using the convention below. TC-ID is an internal checklist/mapping
+identifier and is not required in test names, display names, subtest labels,
+or docstrings.
+After writing tests, map every TC-ID in `context/test-case-mapping.md` to a
+concrete test with `Covered = YES` or a reviewer-accepted reason it cannot be
+implemented. Implement or explicitly explain every MUST.
 
 ## Durable Contract vs Temporary Repair Evidence
 
@@ -96,32 +93,23 @@ Before keeping a new or changed test in the final diff, classify it as one of:
 - **temporary internal-repair evidence**: supports local diagnosis, repair, or
   revert confidence but is not itself a durable product contract.
 
-Do not keep a test that only proves that a bad intermediate implementation was
-reverted. For revert-only or internal-repair work, prefer temporary local
-checks, focused command output, diff evidence, or task-context notes. Temporary
-repair evidence can be mentioned in task artifacts, review notes, or command
-logs, but it should not widen the product contract by remaining as a permanent
-test.
+For revert-only or internal-repair work, prefer temporary local checks, focused
+command output, diff evidence, or task-context notes. Keep repair evidence in
+artifacts, review notes, or command logs. Do not keep a test that only proves
+that a bad intermediate implementation was reverted.
 
-Durable regression tests are still required when the behavior is backed by a
-real contract source. Record that source in the checklist reason, test-case
-mapping, test name/docstring, or nearby task evidence so reviewers can
-distinguish valid regression coverage from short-lived repair evidence.
+Keep durable regression tests for real contracts. Record the contract source
+in the checklist reason, mapping, test name/docstring, or nearby task evidence.
 
 ## Behavior Contract Before Implementation Detail
 
-Do not write tests that justify an accidental implementation detail. A test
-should pin a policy, contract, side effect, or regression that matters outside
-the implementation shape. If a patch sets a field to null, adds a null
-assignment, extracts a helper, skips a branch, or calls a new method, the
-durable test should prove the
-observable behavior that required that choice, not the mechanical detail
-itself.
+Test observable behavior such as a policy, contract, side effect, or
+regression. Cover the behavior that requires a null assignment, extraction,
+branch skip, or method call; avoid assertions about the mechanism alone.
 
-When responsibility moves into a domain object, consider a focused unit test
-for that domain behavior instead of relying only on a broad service test that
-passes by accident. Service tests remain useful for orchestration and external
-side effects; domain behavior tests make the owned decision explicit.
+When responsibility moves to a domain object, consider a focused unit test
+that makes the decision explicit. Use service tests for orchestration and
+external side effects.
 
 ## Boundary Contract Test Matrix
 
@@ -447,15 +435,11 @@ source_baseline과 pipeline에 `checklist_evidence_version=1`을 고정한다.
 
 ## Test Target Variable Naming
 
-Default the object, function wrapper, component instance, hook result, or other
-primary test target to `sut` (system under test) when a test introduces a local
-variable or field for it.
-
-Use domain-specific names for collaborators, inputs, expected values, fixtures,
-and observed results. Do not rename those to `sut`; only the primary target
-being exercised gets the `sut` name. If an existing project has an explicit,
-documented test-target naming convention, follow the project convention and
-record the exception in the TDD log.
+Default a new local variable or field for the primary test target (object,
+function wrapper, component, or hook result) to `sut` (system under test).
+Give collaborators, inputs, expected values, fixtures, and observed results
+domain-specific names. Follow documented project naming conventions and record
+any exception in the TDD log.
 
 ---
 

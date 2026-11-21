@@ -1,18 +1,19 @@
 # Skill: requirement-gathering
 
 ## Purpose
-Enables the requirements agent to conduct structured multi-round interviews, detect ambiguity in user input, and produce a validated REQUIREMENTS block that downstream agents can consume without further clarification.
+Run structured multi-round interviews, detect ambiguity, and return a validated
+REQUIREMENTS block.
 
 ## When to Apply
-- Whenever a new task arrives without a pre-existing REQUIREMENTS block
-- When the planner delegates requirement collection before PRD creation
-- When scope, target, or constraints are undefined or contradictory
+- New task without a REQUIREMENTS block, planner delegation before PRD creation,
+  or missing or contradictory scope, target, or constraints.
 
 ---
 
 ## User Story Format (Mike Cohn, "User Stories Applied", 2004)
 
-Express requirements in user story form to keep focus on user value:
+Describe user value with a user story, then make it testable with acceptance
+criteria:
 
 ```
 As a <role>,
@@ -26,8 +27,6 @@ As a store manager,
 I want to filter orders by status and date range,
 So that I can quickly identify pending orders that need attention.
 ```
-
-User stories are not requirements documents — they are conversation starters. The acceptance criteria below make them testable.
 
 ---
 
@@ -92,12 +91,11 @@ criterion becomes a test case for the reviewer agent's coverage matrix.
 
 ## Pre-Supplied Requirements Handling
 
-If the caller provides a structured `REQUIREMENTS` block or equivalent explicit answers, treat it as the completed interview input. Do not ask duplicate questions. Instead:
-
-1. Validate that `scope`, `target`, and `constraints` are present.
-2. Normalize ambiguous free-form answers into the closest supported category.
-3. Record `source: provided` in `{TASK_DIR}/context/requirements.md`.
-4. Ask only for missing or contradictory fields.
+Treat a supplied `REQUIREMENTS` block or equivalent explicit answers as
+completed interview input. Validate `scope`, `target`, and `constraints`,
+normalize ambiguous free text to the closest supported category, and record
+`source: provided` in `{TASK_DIR}/context/requirements.md`. Ask only about
+missing or contradictory fields.
 
 ---
 
@@ -136,7 +134,7 @@ After Round 1, scan answers for signals of under-specified scope:
 
 ## Non-Functional Requirements Categories
 
-Capture NFRs explicitly. Missed NFRs are the most common source of rework.
+Capture NFRs explicitly.
 
 | Category | Example Questions |
 |---|---|

@@ -1,19 +1,21 @@
 # Skill: pipeline-planning
 
 ## Purpose
-Enables the planner agent to translate a structured requirements block into a concrete agent pipeline, produce a PRD, and write handoff artifacts that downstream agents can consume immediately without further clarification.
+Turn structured requirements into a PRD, an agent pipeline, and a handoff
+that downstream agents can use without clarification.
 
 ## When to Apply
-- After requirements have been collected (either passed in or gathered via the requirements agent)
-- When a request spans multiple domains (backend + frontend, feature + deploy, etc.)
-- When the correct agent sequence or parallelization strategy is unclear
-- When evaluating whether a custom agent is needed for a specialized role
+- After requirements are supplied or collected.
+- For work across domains, unclear sequencing or parallelization, or a
+  decision about custom agents.
 
 ---
 
 ## PRD Authoring from Requirements
 
-Translate scope/target/constraints answers into a structured Product Requirements Document. Keep goals declarative and implementation-agnostic. For tooling, documentation, prompt, or agent-skill work, frame the PRD around workflow reliability and safety rather than product screens or API behavior.
+Use scope, target, and constraints to write the PRD. Keep goals declarative
+and implementation-agnostic. For tooling, docs, prompts, or agent-skill work,
+focus on workflow reliability and safety.
 
 For any implementation or workflow change, include documentation integration in
 the PRD when the change affects public behavior, commands, domain language,
@@ -129,13 +131,9 @@ For `L` or `XL`, add `smaller_alternatives_rejected` with concrete reasons.
 
 ## Stage Dependency Analysis — Critical Path
 
-Before assigning agents to stages, map data dependencies:
-
-1. List every artifact each agent **produces** and **consumes**.
-2. Draw a dependency graph (can be mental or written).
-3. Non-code agents with no dependency on each other's outputs → same stage
-   (parallel).
-4. Agent B that consumes Agent A's output → later stage (sequential).
+Before assigning stages, list each agent's produced and consumed artifacts
+and map dependencies (mentally or in writing). Run independent non-code
+agents in parallel and schedule consumers after producers.
 
 ```
 designer produces: design-spec.md
@@ -147,7 +145,8 @@ frontend consumes: design-spec.md + OpenAPI contract
 → reviewer follows implementation
 ```
 
-**Critical path rule:** the pipeline duration is bounded by the longest sequential chain, not the sum of all work. Maximize parallelism on the critical path.
+**Critical path rule:** maximize parallelism on the longest sequential chain
+that bounds pipeline duration.
 
 ---
 

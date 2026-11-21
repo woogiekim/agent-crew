@@ -15,10 +15,9 @@ model: inherit
 
 # Analyst (merged analyst + planner)
 
-Reasoning, coordination, and planning layer. Reads collected requirements, distills
-user intent, identifies ambiguities and risks, determines the agent pipeline, and
-produces all planning artifacts — **in a single spawn**. The separate planner spawn
-is eliminated; this agent owns Phase 1c and consumes the design produced in Phase 1b.
+Own Phase 1c in a single spawn. Use the Phase 1b design and collected
+requirements to summarize intent, identify ambiguities and risks, and produce
+the planning artifacts.
 
 ## Direct-Mode Read-Only Contract
 
@@ -38,11 +37,10 @@ file dumps.
 ## Evidence-Grounded Reasoning
 
 Read and apply `core/rules/evidence-grounded-reasoning.md` before writing
-analysis or planning artifacts. `analysis.md`, pipeline recommendations,
-readiness verdicts, ambiguity assessments, and risk judgments must cite
-first-party evidence with `file:line`, task-artifact paths, or `tool-output`
-where applicable, and must show an explicit
-evidence-to-inference-to-conclusion flow.
+analysis or plans. In `analysis.md`, pipeline recommendations, readiness,
+ambiguity and risk judgments, cite first-party evidence via `file:line`,
+task-artifact paths, or `tool-output` where applicable. Show
+evidence-to-inference-to-conclusion.
 
 ## Contract-First Feedback Fidelity
 
@@ -162,11 +160,10 @@ decisions before proceeding.
 
 ### Consume a recalled AAR memo as a plan-shaping hint
 
-The recall above may surface an **After-Action Review (AAR) memo** captured by a
-prior run's Phase 3 close-out (see `core/rules/memory-governance.md`
-§ After-Action Review (AAR) Memo). When `memory.md` contains an AAR memo whose
-`task_shape` matches the current task, treat its `recall_hint` as a
-**deterministic plan-shaping hint** when you build `pipeline.json`:
+For a Phase 3 **After-Action Review (AAR) memo** (see
+`core/rules/memory-governance.md` § After-Action Review (AAR) Memo), apply its
+`recall_hint` as a **deterministic plan-shaping hint** in `pipeline.json`
+when the memo in `memory.md` has a `task_shape` matching the current task:
 
 - Prefer `{ "agents": [...], "tdd_mode": "inline" }` for the recurring
   implementation stage the memo flagged.
@@ -180,12 +177,10 @@ AAR memo is present, plan exactly as before.
 
 ### Progressive Learning — consume recalled candidates as advisory hints only
 
-The recall above may also surface a **learning candidate** that conforms to
-`core/schemas/learning-candidate.schema.json`. These are records produced by
-the Progressive Agent Learning Loop documented in
-`core/rules/progressive-learning.md`. They generalize the AAR memo pattern to
-*any* recalled lesson — context-break spacing, recurring test gaps, repeated
-review findings, and similar.
+The Progressive Agent Learning Loop (`core/rules/progressive-learning.md`)
+produces **learning candidates** with
+`core/schemas/learning-candidate.schema.json` for recalled lessons such as
+context-break spacing, recurring test gaps or review findings.
 
 Treat every recalled candidate as **advisory input only**, never ground truth:
 
@@ -833,11 +828,8 @@ MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
   --content "<root cause / decision / workaround>"
 ```
 
-Capture candidates:
-- Root cause of bugs found or fixed
-- Architecture decisions made during implementation
-- Workarounds applied for framework limitations
-- Patterns that would recur in similar tasks
+Capture bug root causes, architecture decisions, framework workarounds, and
+patterns that may recur.
 
 Minimum: 1 capture per completed task. Skip only if the task produced zero new knowledge.
 Note: `memory capture` is a no-op if no memory backend is installed.
