@@ -16,10 +16,9 @@
 
 ### Phase 0: Resume Check + Context Bootstrap
 
-**Read-once context bootstrap**: Resolve all runtime paths once at startup and
-store them as variables. Do not re-read or re-resolve these paths in later phases.
-This block runs FIRST so the `log_progress` helper (defined below) can access
-`TASK_DIR`, `SESSION_ID`, etc. when the first canonical `STARTED` event fires.
+**Read-once context bootstrap**: Run this block FIRST so `log_progress` has
+`TASK_DIR`, `SESSION_ID`, and other runtime paths for the first canonical
+`STARTED` event. Reuse the resolved variables throughout.
 
 ```bash
 # Resolve paths once — reuse these variables throughout all phases
@@ -67,10 +66,9 @@ EOF
 fi
 ```
 
-These six variables (`QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`,
-`PRD_PATH`, `CAPABILITIES_PATH`, `STATE_DIR`) plus `SESSION_ID` and
-`MUTATION_SCOPE` must be
-passed as-is to all sub-agents. Never re-derive them inline.
+Pass `QUALITY_RULE_PATH`, `PIPELINE_PATH`, `HANDOFF_PATH`, `PRD_PATH`,
+`CAPABILITIES_PATH`, `STATE_DIR`, `SESSION_ID`, and `MUTATION_SCOPE` as-is
+to all sub-agents. Never re-derive them inline.
 
 When `MUTATION_SCOPE=read_only`, task-local state under `TASK_DIR` is the only
 write authority. The supervisor must not dispatch a mutating Agent or Tool,
@@ -88,8 +86,7 @@ creation or rewrite so terminal and fallback artifacts retain the contract.
 flags. 현재 host와 일치하지 않는 legacy capability도 all-false로 처리한다.
 파일을 갱신하거나 setup을 호출하지 않는다. 명시적 `AGENT_CREW_HOST`, 현재 host
 환경 순서로 판정하며 둘 다 없을 때만 legacy host 정보를 사용한다.
-Four flags are loaded once in Phase 0 and reused through every later
-phase — never re-read the file inline.
+Load all four flags once in Phase 0 and reuse them in later phases.
 
 ```bash
 # Single Python process reads capabilities.json once and emits all four flags,
@@ -119,23 +116,16 @@ except Exception:
 " 2>/dev/null)
 ```
 
-**Deferred tool schema eager-load (Phase B1)**: Claude Code registers task
-tools (`TaskCreate`, `TaskUpdate`, `TaskGet`, `TaskList`, `TaskOutput`) as
-deferred — their schemas are not loaded until `ToolSearch` is called.
-Calling them without loading their schemas results in a silent
-`InputValidationError` that skips the call entirely. When `HAS_TASK_TOOLS == 1`,
-load all task tool schemas immediately after the capability read, before any
-phase that issues a task tool call:
+**Deferred tool schema eager-load (Phase B1)**: When `HAS_TASK_TOOLS == 1`,
+use `ToolSearch` once immediately after the capability read to load all five
+deferred Claude Code task schemas. Task calls without a loaded schema are
+silently skipped with `InputValidationError`.
 
 ```text
 if [ "${HAS_TASK_TOOLS}" = "1" ]; then
   ToolSearch("select:TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput")
 fi
 ```
-
-This is a one-time bootstrap call. Every subsequent `TaskCreate`, `TaskUpdate`,
-`TaskGet`, `TaskList`, and `TaskOutput` call in all phases reuses the loaded
-schema and will not silently fail.
 
 `HAS_TASK_TOOLS` gates every `TaskCreate` / `TaskList` / `TaskGet` /
 `TaskUpdate` call. `HAS_AGENT_BACKGROUND` gates the background fan-out path in
@@ -1782,9 +1772,7 @@ cat "${PIPELINE_PATH}"
 
 #### Phase 1c analyst skill-read evidence gate
 
-Before trusting `pipeline.json`, verify that the analyst recorded its mandatory
-skill reads. This converts the analyst's "MANDATORY: Read X" instructions from
-prose-only guidance into a supervisor-enforced artifact contract.
+Verify the analyst's mandatory skill-read evidence before accepting `pipeline.json`.
 
 ```bash
 ANALYST_SKILL_LOAD="${TASK_DIR}/context/analyst-skill-load.md"
@@ -1965,26 +1953,18 @@ fi
 
 #### Phase 1c-bis: Per-stage host task DAG mirror (P3 — capability-gated)
 
-If `HAS_TASK_TOOLS == 1`, after the analyst (merged analyst+planner) has written `pipeline.json`, create
-one child host task per stage and persist the `blockedBy` DAG so operators can
-see the pipeline structure in the host UI.
+If `HAS_TASK_TOOLS == 1`, mirror the analyst's completed `pipeline.json` in
+the host UI with one child task per stage agent and the `blockedBy` DAG.
 
 ```bash
 register_update current_phase phase_1c_bis
 ```
- The per-stage task ids are written
-back to `pipeline.json.host_task_ids` as a parallel array to `stages`. Each
-entry is itself a map `{agent_name: host_task_id}` so parallel stages with
-multiple agents all get individual host tasks.
 
-The DAG rule is straightforward:
-
-- Stage 0 agents: `blockedBy = [parent task id]` (the parent task created in
-  Phase 0 — read from `${TASK_DIR}/host-task-id.txt`).
-- Stage `i` agents (i > 0): `blockedBy = [every host task id from stage i-1]`.
-
-Pseudocode (host tool calls are issued by the runtime; the runner persists ids
-only):
+Write one `{agent_name: host_task_id}` map per stage to
+`pipeline.json.host_task_ids`, parallel to `stages`. The runtime issues
+host calls and the runner persists IDs. Stage 0 agents depend on the Phase 0
+parent from `${TASK_DIR}/host-task-id.txt`. Each later agent depends on every
+host task in the preceding stage.
 
 ```text
 HOST_TASK_ID=$(cat "${TASK_DIR}/host-task-id.txt")
@@ -2010,15 +1990,10 @@ for i, stage in enumerate(stages):
 write host_task_ids back into pipeline.json under key "host_task_ids"
 ```
 
-The single source of truth for stage status remains
-`pipeline.json.stage_agent_status` and the file-based `progress.log`. Host
-tasks are an observability mirror only — if any `TaskCreate` call fails or is
-unavailable, silently fall back to running without the DAG mirror (the rest of
-the pipeline must not depend on `host_task_ids` being populated).
-
-If `HAS_TASK_TOOLS == 0`: skip this entire sub-phase. `pipeline.json` will not
-contain a `host_task_ids` key and every later phase MUST treat its absence as
-equivalent to "DAG mirror disabled".
+Read stage status from `pipeline.json.stage_agent_status` and `progress.log`.
+If `TaskCreate` fails or is unavailable, silently continue without the DAG
+mirror. If `HAS_TASK_TOOLS == 0`, skip this sub-phase and omit `host_task_ids`.
+Every later phase MUST treat its absence as "DAG mirror disabled".
 
 ---
 
@@ -2345,21 +2320,13 @@ adapters continue to receive the same choice contract.
 
 #### Speculative I/O Prefetch (idle-window optimization)
 
-While the user reviews the plan above (typically 30 s – several minutes), spawn
-a **background shell job** that pre-warms the OS page cache for files the next
-stages will touch. This eliminates stage cold-start latency. The prefetch is:
+Before firing the structured user-choice intent, start a **background shell job**
+to warm the OS page cache during plan review.
 
-- **read-only** and **idempotent** — failures degrade silently and MUST NEVER
-  fail the pipeline.
-- **token-free** — pure shell I/O (`cat`, `wc`, `git status`, `ls`). No agent
-  spawns and no LLM-bound calls.
-- **plain shell background** — does NOT require `HAS_AGENT_BACKGROUND`. Uses
-  `&` + `disown` so the job is detached from the supervisor's foreground.
-- **race-safe** — the approval-polling logic below is not modified. The
-  prefetch's PID is captured into a sentinel file (`prefetch.pid`) so it can
-  be killed cleanly regardless of approval outcome.
-
-Spawn the prefetch BEFORE firing the structured user-choice intent:
+- **read-only** and **idempotent**. Failures degrade silently and MUST NEVER fail the pipeline.
+- **token-free** shell I/O (`cat`, `wc`, `git status`, `ls`). No agent or LLM calls.
+- Detach with `&` and `disown` without requiring `HAS_AGENT_BACKGROUND`.
+- Keep approval polling independent. Record the PID in `prefetch.pid` for cleanup on every choice.
 
 ```bash
 PREFETCH_PID_FILE="${TASK_DIR}/context/prefetch.pid"
@@ -2483,14 +2450,9 @@ echo "${PREFETCH_PID}" > "${PREFETCH_PID_FILE}" 2>/dev/null || true
 log_progress "PHASE_1D_PREFETCH_STARTED" "pid=${PREFETCH_PID} files=${PREFETCH_FILE_COUNT}"
 ```
 
-The prefetch runs concurrently with the approval gate below. It will either:
-
-- Finish on its own (page cache fully warmed) and emit `PHASE_1D_PREFETCH_DONE`.
-- Still be alive when the user responds — in which case the cleanup block
-  immediately after the approval intent kills it and emits
-  `PHASE_1D_PREFETCH_KILLED`.
-
-Either outcome is acceptable. The pipeline must not block on the prefetch.
+Continue without waiting for prefetch. It emits `PHASE_1D_PREFETCH_DONE` if it
+finishes on its own. If still running at the user's response, cleanup kills
+it and emits `PHASE_1D_PREFETCH_KILLED`.
 
 Then fire a **structured user-choice intent** (see
 `core/rules/capabilities/interactive-question.md`):
@@ -2507,10 +2469,8 @@ Then fire a **structured user-choice intent** (see
 
 #### Prefetch cleanup (post-approval)
 
-Immediately after the user's choice is observed (regardless of which option
-they picked), run this idempotent cleanup. It MUST run before any
-option-specific branching below so the background job never outlives the
-approval gate:
+Run this idempotent cleanup immediately after any user choice, before
+branching on that choice.
 
 ```bash
 # Determine the reason label for the KILLED event from the user's choice.
@@ -2535,15 +2495,9 @@ unset PREFETCH_PID PREFETCH_PID_FILE PREFETCH_FILES_LIST PREFETCH_LOG \
       PREFETCH_FILE_COUNT PREFETCH_KILL_REASON
 ```
 
-Notes on this cleanup:
-
-- It is safe to run when the prefetch already finished — `kill -0` returns
-  non-zero, the kill branch is skipped, and the PID file is simply removed.
-- On Approve, the background process is killed (if still alive) only to keep
-  the worktree clean; the OS page cache it already warmed remains valid and
-  is consumed naturally by the upcoming stages — no explicit hand-off needed.
-- On Cancel or Request changes, prefetch results are discarded silently. The
-  warmed pages cost nothing extra; they will simply age out of the cache.
+If prefetch already exited, `kill -0` fails and cleanup removes the PID file
+without sending a signal. On Approve, subsequent stages use the warmed
+pages directly. On Cancel or Request changes, discard the prefetch results silently.
 
 **If Approve:** 사용자가 본 pending hashes와 공통 gate 결과를 다시 대조한다. 일치할 때만
 Bounded combined 결정 또는 Architectural execution 결정을 `approved`로 atomic 저장하고
