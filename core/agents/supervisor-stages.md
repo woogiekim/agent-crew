@@ -1,15 +1,11 @@
 # Supervisor — Stage Execution (Phase 2 + Phase 2.5)
 
-> This module is read by the `supervisor` agent at the start of stage
-> execution. Read it together with `supervisor-retry.md` (which holds
-> the Stage Retry Rule that Phase 2 invokes for every stage spawn).
+> Read this module and `supervisor-retry.md` at stage entry. Apply the
+> Stage Retry Rule to every Phase 2 spawn. Always run the Phase 2.5
+> Stage Action Gate after Phase 2, including when no stage returns a PLAN.
 >
-> Phase 2 is the stage-loop dispatcher; Phase 2.5 is the Stage Action
-> Gate that always runs after Phase 2 (whether or not any stage returned
-> a PLAN block).
->
-> Phase names referenced from here (Phase 0, Phase 1c-bis, Phase 3) are
-> defined in `supervisor-bootstrap.md` and `supervisor-retry.md`.
+> See `supervisor-bootstrap.md` for Phases 0 and 1c-bis and
+> `supervisor-retry.md` for Phase 3.
 
 ---
 
@@ -20,14 +16,10 @@ quality coverage instead of asking agents for extra proof-only artifacts.
 
 #### Plan-Critical Review (pre-stage gate)
 
-Run this gate immediately before the Phase 2 stage loop begins (after
-Phase 1.5 agent-creation, before the first stage spawn). It is the
-last opportunity to catch a plan-quality issue (gap, contradiction,
-unclear stage brief) without consuming any stage retry budget.
-
-Gating env var: `AGENT_CREW_PLAN_CRITICAL_REVIEW` (default ON). When
-set to `"0"`, this subsection is a strict no-op — pipeline behavior
-is identical to pre-gate runs.
+Run after Phase 1.5 agent creation and before the first Phase 2 spawn.
+Check plan gaps, contradictions, and unclear briefs without spending stage
+retries. `AGENT_CREW_PLAN_CRITICAL_REVIEW` defaults on. `"0"` makes the
+gate a strict no-op.
 
 ```bash
 if [ "${AGENT_CREW_PLAN_CRITICAL_REVIEW:-1}" = "0" ]; then
@@ -105,14 +97,10 @@ RETRY_ATTEMPT=1             # reset per stage; Stage Retry Rule bumps it per ret
 STAGE_START_EPOCH="$(date +%s)"  # Phase I11 — stage-timeout reference point
 ```
 
-For parallel stages (`### Parallel Agents` below), set `STAGE_AGENT` per
-inner-loop iteration so each parallel agent's emits carry the correct
-agent name. `STAGE_START_EPOCH` is set ONCE per stage (not per parallel
-agent) so the timeout budget applies to the slowest agent in the stage,
-not to each parallel agent individually. At the end of the stage
-iteration (after `STAGE_DONE`), `unset STAGE_INDEX STAGE_AGENT
-RETRY_ATTEMPT STAGE_START_EPOCH` so subsequent Phase 2.5 and Phase 3
-events emit with `stage=0`, `agent=""`, `attempt=0`.
+Set `STAGE_AGENT` per parallel agent so its events carry the correct name.
+Set `STAGE_START_EPOCH` once per stage so all parallel agents share one timeout
+budget. After `STAGE_DONE`, `unset STAGE_INDEX STAGE_AGENT RETRY_ATTEMPT STAGE_START_EPOCH`
+so Phase 2.5 and Phase 3 emit `stage=0`, `agent=""`, `attempt=0`.
 
 #### Provider-neutral child lifecycle controller
 
@@ -364,10 +352,8 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%S) | RETRY | attempt {n} — {reason}" >> "${TA
 
 #### Per-stage memory context reuse (P44.3)
 
-Before composing the agent prompt, the supervisor reuses the task-scoped mnemos
-recall file created during Phase 1b bootstrap. This keeps the legacy
-`context/memory.md` result format intact while avoiding additional per-agent
-searches or overwrites of the shared memory context file.
+Before composing each stage prompt, reuse the Phase 1b mnemos recall file
+`context/memory.md` as-is. Avoid per-agent searches and writes to this file.
 
 ```bash
 MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
@@ -377,10 +363,8 @@ if [ -s "${TASK_DIR}/context/memory.md" ]; then
 fi
 ```
 
-When `MEMORY_CONTEXT_PATH` is non-empty, append `MEMORY_CONTEXT_PATH:` to the
-agent prompt (see the prompt format below) so the agent knows a pre-populated
-memory file is available. Mnemos absence or Phase 1b search failure leaves this
-path empty and stage execution continues unchanged.
+Append `MEMORY_CONTEXT_PATH:` to the prompt only when non-empty. If mnemos
+is absent or the Phase 1b search failed, continue with an empty path.
 
 #### Task-scoped user convention snapshot (Issue #191)
 
@@ -555,11 +539,9 @@ Do not modify handoff.md.
 Save outputs only to your own result files.
 ```
 
-**Per-agent completion tracking (parallel stages only):** After each agent in a
-parallel stage responds, immediately record its result in `PIPELINE_PATH` under
-`stage_agent_status`. For parallel stages this intermediate write is necessary
-because multiple agents may crash independently. Use the atomic tempfile + rename
-pattern to avoid truncation if two writes interleave:
+**Per-agent completion tracking (parallel stages only):** Immediately record
+each response in `PIPELINE_PATH` under `stage_agent_status`. Use atomic
+tempfile + rename to avoid truncation if writes interleave.
 
 ```bash
 python3 -c "
@@ -583,11 +565,9 @@ except Exception:
 
 Where `${status}` is `completed`, `crashed`, or `blocked` based on the agent response.
 
-**Sequential stage batching**: For stages that contain only a single agent,
-skip the intermediate per-agent write above. Instead, write a single combined
-update that sets both `stage_agent_status` and `completed_stages` in one
-`json.dump` call after the agent returns. This halves the number of pipeline.json
-writes for typical sequential pipelines.
+**Sequential stage batching**: After the sole agent returns, set
+`stage_agent_status` and `completed_stages` in one `json.dump` call. Omit
+the intermediate per-agent write.
 
 **Selective retry for crashed parallel agents:** If one or more agents in a parallel
 stage crash (no `STATUS:` line), do not restart the entire stage. Only retry the
@@ -1117,14 +1097,10 @@ fi
 # unit_count=1 correctly without further branching.
 ```
 
-The conflict log is appended (never truncated) so multiple stages with
-fan-out can each contribute. When the resolver successfully mediates,
-the structured report at `${TASK_DIR}/context/fanout-conflict.md` and
-the resolver's rewritten plan at
-`${TASK_DIR}/context/fanout-resolved.md` are both retained for
-post-hoc inspection; the Phase 3 close-out continues to surface a
-"## Fan-Out Conflicts" section in `result.md` with a `resolved` /
-`unresolvable` marker per stage.
+Append each stage's conflicts to the log. After successful mediation, retain
+`${TASK_DIR}/context/fanout-conflict.md` and
+`${TASK_DIR}/context/fanout-resolved.md`. In Phase 3, the "## Fan-Out Conflicts"
+section of `result.md` shows each stage's `resolved` or `unresolvable` marker.
 
 **Backwards compatibility.** This entire block runs only inside the
 `STAGE_UNITS_COUNT >= 2` branch (see § Read the unit list above), so
@@ -1300,11 +1276,8 @@ When `STAGE_UNITS_COUNT >= 2`:
      "stage=${i} units=${STAGE_UNITS_COUNT} type=${IMPL_AGENT}"
    ```
 
-4. Issue all N Agent tool calls in a **single response** — the same
-   host parallel-spawn convention used by § Parallel Agents and § TDD
-   Mode Dispatch above. The supervisor's response message
-   contains one Agent call per unit; the host dispatches them
-   concurrently.
+4. Issue one Agent call per unit in a **single response** so the host
+   dispatches all N concurrently, as in § Parallel Agents and § TDD Mode Dispatch.
 
    With `STAGE_TDD_MODE == sequential_pair`, dispatch one `test-writer` first
    and wait for its Red evidence and terminal completion before issuing the N
@@ -1508,18 +1481,15 @@ may carry the streaming reviewer in the same host message.
 
 #### Capture the pre-stage HEAD
 
-The reviewer needs an immutable starting point for its `git log` poll.
-Capture HEAD **before** issuing the host dispatch:
+Capture HEAD **before** dispatch to pin the reviewer's `git log` starting point.
 
 ```bash
 PRE_STAGE_HEAD=$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo "")
 echo "${PRE_STAGE_HEAD}" > "${TASK_DIR}/context/streaming-review-head-${i}.txt"
 ```
 
-The per-stage filename allows multiple streaming-review stages in a
-single pipeline to coexist (each reviewer reads its own HEAD file).
-The Phase 3 close-out preserves these files for audit; no per-stage
-cleanup is required.
+Each reviewer reads its own stage's HEAD file. Keep these files through
+Phase 3 close-out for audit.
 
 #### Dispatch — selected agents + reviewer in one host message
 
@@ -1686,17 +1656,10 @@ pipeline that predates this feature is affected.
 
 #### Post-stage handoff page-out (Phase 3.5, opt-in)
 
-After each stage's terminal completion has been recorded
-(`completed_stages` incremented, `STAGE_DONE` emitted), measure
-`handoff.md` and conditionally invoke the documenter in `MODE=page-out`
-to keep the per-stage working set bounded. The supervisor never reads
-`handoff.md` contents directly — only its size via `wc -m`.
-
-**Default: disabled.** When `AGENT_CREW_HANDOFF_AUTO_PAGEOUT` is unset
-or any value other than `1`, skip the entire block — do not measure,
-do not log. Behavior is identical to pre-3.5.
-
-When enabled:
+**Default: disabled.** Skip measurement and logging unless
+`AGENT_CREW_HANDOFF_AUTO_PAGEOUT=1`. After incrementing `completed_stages`
+and emitting `STAGE_DONE`, measure only the size of `handoff.md` via `wc -m`
+and conditionally invoke the documenter in `MODE=page-out`.
 
 ```bash
 if [ "${AGENT_CREW_HANDOFF_AUTO_PAGEOUT:-0}" = "1" ]; then
