@@ -1,19 +1,12 @@
 # Supervisor — Retry, Recovery, Close-out
 
-> This module is read by the `supervisor` agent at the start of Phase 2
-> (so the Stage Retry Rule is available while stages dispatch) and again
-> at Phase 3 close-out. It holds three concerns:
+> Load this module at Phase 2 entry and Phase 3 close-out. Apply the Stage
+> Retry Rule to every stage spawn and BLOCKED Recovery to exhausted retries
+> or `STATUS: BLOCKED`. Phase 3 writes the result, closes host tasks, clears
+> markers, cleans up worktrees, and returns to the orchestrator.
 >
-> 1. **Stage Retry Rule** — the validation 3x / crash 5x budget that
->    wraps every stage spawn, plus the P7 capability-gated crash
->    classifier.
-> 2. **BLOCKED Recovery** — escalation contract when retry budgets are
->    exhausted or any agent returns `STATUS: BLOCKED`.
-> 3. **Phase 3 close-out** — `result.md` write, host-task close, marker
->    cleanup, worktree teardown, final return value to the orchestrator.
->
-> Phase names (Phase 0, Phase 1c, Phase 2, Phase 2.5) referenced below
-> are defined in `supervisor-bootstrap.md` and `supervisor-stages.md`.
+> See `supervisor-bootstrap.md` for Phases 0 and 1c and
+> `supervisor-stages.md` for Phases 2 and 2.5.
 
 ---
 
@@ -50,13 +43,10 @@ STAGE_HOST_STATUS=$(TaskGet(taskId=host_task_ids[i-1][agent_name]).status)
 # cancelled → treat as cancellation (halt with STATUS: blocked)
 ```
 
-This distinguishes "agent died on a missing import in 30 s" (`error`) from
-"agent ran 90 % of the way and ran out of tokens" (host says `completed`, but
-no `STATUS:` line in the captured response). The latter is **token-limit
-truncation**, not a crash — the response so far is preserved, so re-invoking
-with a resume hint pointing at `${TASK_DIR}/progress.log` and the latest
-`stage_{i}_progress.md` checkpoint usually completes the work in one extra
-spawn instead of burning all 5 crash retries.
+Host `completed` with no `STATUS:` in the captured response signals
+**token-limit truncation**. Preserve the partial response and resume once
+with a hint pointing to `${TASK_DIR}/progress.log` and the latest
+`stage_{i}_progress.md` checkpoint before using the crash budget.
 
 **Legacy fallback when `HAS_TASK_TOOLS == 0` or the host-task id is absent**:
 use the same provider-neutral lifecycle artifact and bounded wait as the native
@@ -176,15 +166,10 @@ should be reserved for true reviewer-driven re-loops.
 
 ### Pre-retry clean state for fan-out units
 
-When the failed agent is a **sub-task fan-out unit** (i.e., the current
-stage has `STAGE_UNITS_COUNT >= 2` and the crashing agent carries a
-`UNIT_ID`), the supervisor MUST restore the unit's worktree to a clean
-state **before** re-spawning. A crashed unit may have left partial
-uncommitted changes in its git worktree; retrying against dirty state
-risks incorrect behavior or a corrupt commit on the retry path.
-
-Required steps (run immediately after incrementing `crash_attempts`,
-before the next `invoke agent` call):
+For a crashing **sub-task fan-out unit** (`STAGE_UNITS_COUNT >= 2` and a
+`UNIT_ID`), the supervisor MUST clean the unit worktree. Run these steps
+immediately after incrementing `crash_attempts` and before the next
+`invoke agent` call.
 
 1. For each glob in `UNIT_FILES` (the unit's declared `files` array):
    - `git -C ${UNIT_WORKTREE_PATH} checkout HEAD -- <glob>` — restore tracked
@@ -200,12 +185,9 @@ before the next `invoke agent` call):
    prevent the retry — the unit may have legitimately staged some work
    before crashing, and the glob-scoped cleanup above is best-effort.
 
-These steps are idempotent. When `UNIT_WORKTREE_PATH` no longer exists
-(e.g., it was removed by a concurrent cleanup step), skip silently and
-proceed with the retry against `PROJECT_ROOT` as a fallback.
-
-See `supervisor-stages.md` § Selective per-unit retry for the bash
-implementation that encodes these steps in the fan-out dispatch section.
+These steps are idempotent. If `UNIT_WORKTREE_PATH` is gone, skip cleanup
+silently and retry against `PROJECT_ROOT`. See the bash implementation in
+`supervisor-stages.md` § Selective per-unit retry.
 
 ### Stage Timeout (Phase I11)
 
@@ -691,10 +673,6 @@ devops failure in Phase 2.5) halts the pipeline. The supervisor MUST:
 4. Return `STATUS: blocked` to the orchestrator with the same final
    return value contract used for completed runs.
 
-The crash-exhaustion path (Stage Retry Rule budget reached) and the
-explicit-BLOCKED path are identical from this point on — the close-out
-is uniform.
-
 ### Architecture Recovery Before Quality-Loop Exhaustion
 
 Before writing terminal `quality_loop_exhausted` after three reviewer or QA
@@ -766,11 +744,8 @@ fi
 
 #### 2. Save concise result to `{TASK_DIR}/result.md`
 
-(Do not re-quote contents)
-
-All fields below are required. The orchestrator reads these fields to build
-the Step 7 Run Summary — missing fields will cause the summary to be incomplete
-or skipped.
+Write every field below for the orchestrator's Step 7 Run Summary. Do not
+re-quote contents.
 
 Read `TASK_START_HEAD` from `${TASK_DIR}/context/start-head.txt` when writing the result:
 
@@ -849,24 +824,17 @@ The `FINAL_HOST_STATUS` mapping:
 
 ##### Defensive per-stage sweep (issue #128)
 
-Step 2b above transitions the supervisor's own parent host task. Per-stage
-child host tasks (recorded under `pipeline.json.host_task_ids` by Phase
-1c-bis) are normally transitioned at each stage's `STAGE_DONE` block in
-`supervisor-stages.md`. Those per-stage transitions can be missed when the
-stage was reached on the BLOCKED Recovery path, when a token-truncation
-interrupted the supervisor between `STAGE_DONE` and Phase 3, or when the host
-encountered a transient error on the per-stage call. Issue #128 reports this
-as stale `in_progress`/`pending` host TaskList rows after the task is
-actually terminal.
+Phase 1c-bis records child IDs in `pipeline.json.host_task_ids`. The usual
+`STAGE_DONE` transition may be missed on BLOCKED Recovery, token truncation
+between `STAGE_DONE` and Phase 3, or transient host errors, leaving stale
+`in_progress`/`pending` rows.
 
-Run the planner script once after Step 2b's parent transition. It reads
-`result.md` + `pipeline.json` + `host-task-id.txt` and emits a JSON plan
-listing every `(host_task_id, target_status)` transition the host should
-make. The supervisor then iterates **stage-scope** entries only (the parent
-was already handled above) and issues an idempotent `TaskGet`-then-`TaskUpdate`
-for each. The sweep is gated on `HAS_TASK_TOOLS == 1`; missing or non-terminal
-`result.md` and host transient errors are absorbed silently — this is a
-best-effort defensive sweep and must never block Phase 3 close-out.
+With `HAS_TASK_TOOLS == 1`, run the planner once after the Step 2b parent
+transition. It reads `result.md`, `pipeline.json`, and `host-task-id.txt` and
+returns JSON `(host_task_id, target_status)` transitions. Apply only
+**stage-scope** entries with idempotent `TaskGet`-then-`TaskUpdate`.
+Silently tolerate missing or non-terminal `result.md` and transient host
+errors. The sweep must never block Phase 3 close-out.
 
 ```bash
 if [ "${HAS_TASK_TOOLS}" = "1" ]; then
@@ -945,20 +913,13 @@ If `HAS_TASK_TOOLS == 0` or the file is absent: skip this step entirely.
 
 #### 2c. AAR debrief — close the learning loop (After-Action Review)
 
-This step closes agent-crew's one open feedback loop: post-run signals
-(retries, reviewer `NEEDS_CHANGES` loop-backs, blockers) already exist in
-telemetry but never feed the NEXT plan. The debrief distills them into a
-compact After-Action Review (AAR) memo and captures it to memory so the
-analyst/planner can recall it as a deterministic **plan-time** hint on a
-future task of similar shape (see `core/agents/analyst.md` and
-`core/agents/planner.md` § plan-construction). This is a plan-time-feedback
-loop only — it makes **no** change to verification, the reviewer stage, or
-the quality loop. See `core/rules/memory-governance.md`
-§ After-Action Review (AAR) Memo for the full contract.
-
-Run this step after the `COMPLETED` event is emitted (so an interrupt before
-it never blocks task close-out). It is **out of band** of stage retries and
-**never** fails the pipeline.
+After emitting `COMPLETED`, distill retries, reviewer `NEEDS_CHANGES`
+loop-backs, and blockers into an After-Action Review (AAR) memory memo.
+The analyst/planner uses it only as a deterministic **plan-time** hint on
+similar tasks. See `core/agents/analyst.md`, `core/agents/planner.md`
+§ plan-construction, and `core/rules/memory-governance.md` § After-Action
+Review (AAR) Memo. Keep this step outside verification, review, the quality
+loop, and stage retries. It must never fail the pipeline.
 
 ```bash
 # Distill the just-finished task into an AAR memo (reuses aggregate_task()).
@@ -1034,19 +995,14 @@ no-op — it logs nothing and never blocks close-out (out-of-band rule).
 
 #### 2d. Evolution report — report-only reusable asset analysis
 
-This step creates the first Self-Evolving Agent Operating System artifact:
-a deterministic post-task learning report at
+After the AAR debrief, write deterministic **report-only** findings to
 `{TASK_DIR}/context/evolution-report.json` and
-`{TASK_DIR}/context/evolution-report.md`.
-
-The analyzer is intentionally **report-only** in this phase. It may observe
-retries, reviewer loop-backs, blockers, changed files, reused pipeline assets,
-and skill-content-audit signals, but it must not generate, register, modify,
-or select any Agent, Skill, Command, Rule, Template, Workflow, Prompt,
-Checklist, Playbook, or Documentation asset.
-
-Run this step after the AAR debrief. It is out of band of stage retries and
-must never fail task close-out.
+`{TASK_DIR}/context/evolution-report.md`. Observe retries, reviewer
+loop-backs, blockers, changed files, reused pipeline assets, and
+skill-content-audit signals. Do not generate, register, modify, or select
+any Agent, Skill, Command, Rule, Template, Workflow, Prompt, Checklist,
+Playbook, or Documentation asset. Keep this step outside stage retries and
+never fail task close-out.
 
 ```bash
 EVOLUTION_MODE="${AGENT_CREW_EVOLUTION_MODE:-report}"
