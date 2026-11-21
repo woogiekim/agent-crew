@@ -614,6 +614,10 @@ def compare_required_text(dest: Path, required: str, source_label: str) -> dict:
     }
 
 
+def contains_symlink(root: Path) -> bool:
+    return root.is_symlink() or any(path.is_symlink() for path in root.rglob("*"))
+
+
 def compare_codex_command_skills(src: Path, dest: Path, *, prune_extra: bool) -> dict:
     missing = []
     mismatched = []
@@ -629,9 +633,18 @@ def compare_codex_command_skills(src: Path, dest: Path, *, prune_extra: bool) ->
             "passed": True,
         }
 
-    for src_skill in sorted(path for path in src.iterdir() if path.is_dir()):
+    if dest.is_symlink():
+        return {
+            "source": str(src), "destination": str(dest), "missing": [],
+            "mismatched": ["symlink at Codex skill root"], "extra": [], "passed": False,
+        }
+
+    for src_skill in sorted(path for path in src.iterdir() if (path / "SKILL.md").is_file()):
         rel_root = src_skill.name
         dest_skill = dest / rel_root
+        if contains_symlink(dest_skill):
+            mismatched.append(f"{rel_root} (symlink in managed skill)")
+            continue
         src_files = source_files(src_skill)
 
         for rel, src_path in src_files.items():
@@ -649,6 +662,9 @@ def compare_codex_command_skills(src: Path, dest: Path, *, prune_extra: bool) ->
 
     for legacy_name in (*LEGACY_CODEX_DASH_SKILLS, "agent-crew"):
         legacy_path = dest / legacy_name
+        if contains_symlink(legacy_path):
+            mismatched.append(f"{legacy_name} (symlink in legacy skill)")
+            continue
         if not legacy_path.exists():
             continue
         extra.append(legacy_name)
@@ -668,6 +684,136 @@ def compare_codex_command_skills(src: Path, dest: Path, *, prune_extra: bool) ->
         "extra": extra,
         "passed": not missing and not mismatched and (not extra or prune_extra),
     }
+
+
+COMMAND_REFERENCE = re.compile(r"~/.agent-crew/commands/([A-Za-z0-9._-]+\.md)")
+LEGACY_COMMAND_NAME = re.compile(r"[a-z][a-z0-9-]*")
+
+
+def regular_file_under(root: Path, path: Path) -> bool:
+    """Recognize only real files inside a configured installation root."""
+    return safe_install_path(root, path) and path.is_file()
+
+
+def safe_install_path(root: Path, path: Path) -> bool:
+    if not path.is_relative_to(root):
+        return False
+    return all(not part.is_symlink() for part in (path, *path.parents) if part == root or root in part.parents)
+
+
+def command_names(root: Path, directory: Path) -> set[str]:
+    if not safe_install_path(root, directory):
+        return set()
+    return {path.name for path in directory.glob("*.md") if regular_file_under(root, path)}
+
+
+def wrapper_references(path: Path) -> set[str]:
+    return set(COMMAND_REFERENCE.findall(path.read_text(encoding="utf-8", errors="replace")))
+
+
+def legacy_crew_wrappers(home: Path):
+    plugin = home / "plugins" / "crew"
+    for host, directory, prefix in (("claude", "skills", "/"), ("codex", "skills-codex", "$")):
+        manifest = plugin / f".{host}-plugin" / "plugin.json"
+        if not regular_file_under(home, manifest):
+            continue
+        try:
+            metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        except (ValueError, UnicodeError):
+            continue
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("name") != "crew"
+            or metadata.get("author") != {"name": "agent-crew"}
+            or (host == "codex" and metadata.get("skills") != "./skills-codex/")
+        ):
+            continue
+
+        skill_root = plugin / directory
+        if not safe_install_path(home, skill_root):
+            continue
+        for path in sorted(skill_root.glob("*/SKILL.md")):
+            name = path.parent.name
+            if not LEGACY_COMMAND_NAME.fullmatch(name) or not regular_file_under(home, path):
+                continue
+            target = f"{name}.md"
+            invocation = f"{prefix}crew:{name}"
+            flags = "disable-model-invocation: true\nuser-invocable: true\n" if host == "claude" else ""
+            # The retired package has no receipt. Only its original generated page
+            # is owned; filenames and a shared command reference are insufficient.
+            generated = (
+                f"---\nname: {name}\ndescription: Use only when the user explicitly invokes {invocation}. "
+                f"Loads the provider-neutral crew:{name} command.\n{flags}---\n\n"
+                f"# crew:{name}\n\nOrdinary natural language does not activate agent-crew.\n\n"
+                f"1. Preserve all text after `{invocation}` as immutable raw input.\n"
+                f"2. Read `~/.agent-crew/commands/{target}` in full.\n"
+                "3. Execute that provider-neutral definition without selecting another command.\n"
+                "4. Do not load unrelated host/plugin skills without explicit user approval.\n"
+            )
+            if path.read_bytes() == generated.encode("utf-8"):
+                yield path, target
+
+
+def check_command_wrappers(source_root: Path, home: Path, codex_home: Path, *, reconcile: bool) -> dict:
+    source_skills = source_root / "adapters/codex/skill"
+    active = (
+        command_names(source_root, source_root / "core/commands")
+        | command_names(home, home / "user/commands")
+    )
+    shipped = {path.parent.name: path for path in source_skills.glob("*/SKILL.md") if regular_file_under(source_root, path)}
+    missing = [
+        f"{path} -> {target}"
+        for path in sorted(shipped.values())
+        for target in sorted(wrapper_references(path) - active)
+    ]
+    legacy = [(path, target) for path, target in legacy_crew_wrappers(home) if target not in active]
+
+    previous = home / "system/adapters/codex/skill"
+    retired_native = []
+    previous_skills = previous.glob("*/SKILL.md") if safe_install_path(home, previous) else ()
+    for old in sorted(previous_skills):
+        name = old.parent.name
+        installed = codex_home / "skills" / name / "SKILL.md"
+        if (
+            name not in shipped
+            and regular_file_under(home, old)
+            and regular_file_under(codex_home, installed)
+            and old.read_bytes() == installed.read_bytes()
+        ):
+            retired_native.extend((installed, target) for target in sorted(wrapper_references(old) - active))
+
+    retired = [*legacy, *retired_native]
+    if reconcile and not missing:
+        for path in sorted({path for path, _target in retired}):
+            path.unlink()
+
+        previous_commands = home / "system/commands"
+        for name in sorted(command_names(home, previous_commands) - active):
+            installed = home / "commands" / name
+            if regular_file_under(home, installed) and installed.read_bytes() == (previous_commands / name).read_bytes():
+                installed.unlink()
+    else:
+        missing.extend(f"{path} -> {target}" for path, target in retired)
+
+    return {
+        "source": str(source_skills),
+        "destination": "managed command wrapper targets",
+        "missing": missing,
+        "mismatched": [],
+        "extra": [],
+        "passed": not missing,
+    }
+
+
+def compare_claude_command_projection(source_root: Path, claude_dir: Path) -> dict:
+    source = source_root / "core/commands"
+    dest = claude_dir / "commands/crew"
+    if not safe_install_path(claude_dir, dest) or contains_symlink(dest):
+        return {
+            "source": str(source), "destination": str(dest), "missing": [],
+            "mismatched": ["symlink in managed Claude command path"], "extra": [], "passed": False,
+        }
+    return compare_tree(source, dest, prune_extra=False)
 
 
 def runtime_checks(
@@ -769,11 +915,12 @@ def main() -> int:
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--agent-crew-home", default=os.environ.get("AGENT_CREW_HOME", str(Path.home() / ".agent-crew")))
     parser.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    parser.add_argument("--claude-dir", default=os.environ.get("CLAUDE_DIR", str(Path.home() / ".claude")))
+    parser.add_argument("--claude-dir")
     parser.add_argument("--path-bin", default=os.environ.get("AGENT_CREW_PATH_BIN", str(Path.home() / ".local" / "bin")))
     parser.add_argument("--skip-path-bin", action="store_true")
     parser.add_argument("--managed-path-cli", action="append", default=[])
     parser.add_argument("--prune-extra", action="store_true")
+    parser.add_argument("--reconcile-retired-command-wrappers", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile", choices=["install", "runtime-readonly"], default="install")
     parser.add_argument("--active-host", choices=["none", "codex", "claude", "generic"], default="none")
     parser.add_argument("--format", choices=["text", "json"], default="text")
@@ -782,8 +929,17 @@ def main() -> int:
     source_root = Path(args.source_root).expanduser().resolve()
     home = Path(args.agent_crew_home).expanduser().resolve()
     codex_home = Path(args.codex_home).expanduser().resolve()
-    claude_dir = Path(args.claude_dir).expanduser().resolve()
+    claude_location = args.claude_dir or os.environ.get("CLAUDE_DIR", str(Path.home() / ".claude"))
+    claude_dir = Path(claude_location).expanduser().resolve()
     path_bin = Path(args.path_bin).expanduser().resolve()
+
+    if args.reconcile_retired_command_wrappers:
+        if args.profile != "install":
+            parser.error("command wrapper reconciliation requires the install profile")
+        check = check_command_wrappers(source_root, home, codex_home, reconcile=True)
+        for reference in check["missing"]:
+            print(f"Missing managed command target: {reference}")
+        return 0 if check["passed"] else 1
 
     identity = source_identity(source_root)
     if args.profile == "runtime-readonly" and not identity["valid"]:
@@ -868,6 +1024,12 @@ def main() -> int:
                 prune_extra=args.prune_extra,
             )
         )
+        checks.append(check_command_wrappers(source_root, home, codex_home, reconcile=False))
+        claude_commands = claude_dir / "commands/crew"
+        if args.claude_dir and (
+            (claude_dir / "agent-crew").is_dir() or claude_commands.exists() or claude_commands.is_symlink()
+        ):
+            checks.append(compare_claude_command_projection(source_root, claude_dir))
         if not args.skip_path_bin:
             checks.append(compare_file(source_root / "core" / "bin" / "crew", path_bin / "crew"))
 
@@ -898,7 +1060,7 @@ def main() -> int:
                 print("  missing: " + ", ".join(check["missing"]))
             if check["mismatched"]:
                 print("  mismatched: " + ", ".join(check["mismatched"]))
-            if check["extra"] and not args.prune_extra:
+            if check["extra"]:
                 print("  extra: " + ", ".join(check["extra"]))
 
     return 0 if payload["passed"] else 1

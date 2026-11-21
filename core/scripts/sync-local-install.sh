@@ -182,6 +182,7 @@ if [ "${AGENT_CREW_DISABLE_FAST_NOOP_UPDATE:-0}" != "1" ] \
       --source-root "${SOURCE_ROOT}"
       --agent-crew-home "${AGENT_CREW_HOME}"
       --codex-home "${CODEX_HOME:-${HOME}/.codex}"
+      --claude-dir "${CLAUDE_DIR}"
       --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
       --prune-extra
     )
@@ -285,13 +286,18 @@ install_path_crew_cli() {
   printf 'sync-local-install: installed native crew CLI at %s\n' "${dest}"
 }
 
+# Seed the user layer before resolving effective command targets. Keep the old
+# system command and skill mirrors intact until their retired copies are checked.
+seed_user_commands
+python3 "${SOURCE_ROOT}/core/scripts/verify-install-drift.py" \
+  --source-root "${SOURCE_ROOT}" \
+  --agent-crew-home "${AGENT_CREW_HOME}" \
+  --codex-home "${CODEX_HOME:-${HOME}/.codex}" \
+  --reconcile-retired-command-wrappers
+
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
 prune_managed_tree "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/system/commands"
 copy_flat "${SOURCE_ROOT}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
-# Seed before the adapter run below: the Claude adapter mirrors the installed
-# user layer, so it has to exist by then. Nothing between here and the end of
-# this script writes to user/commands or commands/, so one pass is enough.
-seed_user_commands
 copy_flat "${AGENT_CREW_HOME}/user/commands" "${AGENT_CREW_HOME}/commands" "*.md"
 copy_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
 prune_managed_tree "${SOURCE_ROOT}/core/rules" "${AGENT_CREW_HOME}/system/rules"
@@ -401,6 +407,7 @@ verify_args=(
   --source-root "${SOURCE_ROOT}"
   --agent-crew-home "${AGENT_CREW_HOME}"
   --codex-home "${CODEX_HOME:-${HOME}/.codex}"
+  --claude-dir "${CLAUDE_DIR}"
   --path-bin "${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
   --prune-extra
 )

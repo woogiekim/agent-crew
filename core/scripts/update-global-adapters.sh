@@ -80,8 +80,21 @@ if [ -d "${SOURCE_DIR}/hooks" ]; then
   printf '[update-global-adapters] Global hooks refreshed → %s/hooks\n' "${AGENT_CREW_HOME}"
 fi
 
+require_safe_managed_tree() {
+  local path="$1"
+  if [ -L "${path}" ] || { [ -d "${path}" ] && [ -n "$(find "${path}" -type l -print -quit)" ]; }; then
+    printf '[update-global-adapters] ERROR: symlink in managed path: %s\n' "${path}" >&2
+    return 1
+  fi
+}
+
 # ── Claude global paths ───────────────────────────────────────────────────────
 if [ -d "${CLAUDE_DIR}/agent-crew" ]; then
+  if [ -L "${CLAUDE_DIR}/commands" ]; then
+    printf '[update-global-adapters] ERROR: symlink at Claude commands root: %s\n' "${CLAUDE_DIR}/commands" >&2
+    exit 1
+  fi
+  require_safe_managed_tree "${CLAUDE_DIR}/commands/crew"
   printf '[update-global-adapters] Updating Claude global paths → %s/agent-crew/\n' "${CLAUDE_DIR}"
   AGENT_CREW_HOST=claude AGENT_CREW_MODE="${AGENT_CREW_MODE}" AGENT_CREW_WRITE_CAPABILITIES=0 SOURCE_ROOT="${SOURCE_ROOT}" \
     bash "${AGENT_CREW_HOME}/setup/setup-host.sh" "${PROJECT_ROOT:-$(pwd)}" >/dev/null 2>&1 || \
@@ -136,9 +149,11 @@ prune_legacy_codex_dash_skills() {
     crew-telemetry \
     crew-update \
     crew-workflow; do
+    require_safe_managed_tree "${dest}/${legacy_name}"
     rm -rf "${dest}/${legacy_name}"
   done
 
+  require_safe_managed_tree "${dest}/agent-crew"
   rm -rf "${dest}/agent-crew"
 }
 
@@ -468,13 +483,18 @@ for src_path in sorted(src.glob("*.toml")):
 PYEOF
 }
 
+if [ -L "${CODEX_NATIVE_SKILLS_DIR}" ]; then
+  printf '[update-global-adapters] ERROR: symlink at native skill root: %s\n' "${CODEX_NATIVE_SKILLS_DIR}" >&2
+  exit 1
+fi
 mkdir -p "${CODEX_NATIVE_SKILLS_DIR}"
 printf '[update-global-adapters] Updating Codex native command skills → %s\n' "${CODEX_NATIVE_SKILLS_DIR}"
 prune_legacy_codex_dash_skills "${CODEX_NATIVE_SKILLS_DIR}"
 if [ -d "${ADAPTERS_DIR}/codex/skill" ]; then
   for skill_src in "${ADAPTERS_DIR}/codex/skill"/*; do
-    [ -d "${skill_src}" ] || continue
+    [ -f "${skill_src}/SKILL.md" ] || continue
     skill_name="$(basename "${skill_src}")"
+    require_safe_managed_tree "${CODEX_NATIVE_SKILLS_DIR}/${skill_name}"
     prune_and_copy_dir "${skill_src}" "${CODEX_NATIVE_SKILLS_DIR}/${skill_name}"
   done
   printf '[update-global-adapters] Codex native command skills refreshed → %s\n' "${CODEX_NATIVE_SKILLS_DIR}"

@@ -575,6 +575,11 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   identical to source. Shared user-owned host files are not whole-file
   replaced; they use ownership-aware merge/prune helpers that preserve
   unrelated content and fail closed when ownership or schema is unknown.
+- 원본과 설치된 사용자 계층 모두에서 사라진 명령은 이전 관리 사본임을 확인한
+  wrapper와 discovery 파일만 함께 정리한다. 같은 위치의 사용자 override와 동반
+  파일은 보존한다. 현 소스가 유효한 대상 없이 관리 wrapper를 배포하거나 관리
+  참조가 끊어진 상태로 남으면 설치 검사가 실패하며, 빠른 업데이트에도 같은
+  검사가 적용된다.
 - Any locally-created custom agents at `~/.agent-crew/user/agents/` are
   preserved — `sync_system_agents` and `merge_agents_to_discovery` only
   operate on the `system/agents/` layer.
