@@ -84,6 +84,10 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 
 ## Execution
 
+관리 `crew` 실행 파일은 같은 디렉터리의 임시 파일에 내용을 쓰고 실행 권한을
+설정한 뒤 교체한다. 이미 실행 중인 프로세스는 이전 파일을 끝까지 읽을 수 있고,
+다음 실행은 준비가 끝난 새 파일을 사용한다.
+
 1. For plain managed file-copy categories below, use Bash `cp -f` (or
    `cp -rf`) to copy source files to the destination. These categories are
    byte-for-byte replaced. Categories that share a user-owned host file use

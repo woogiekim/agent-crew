@@ -297,6 +297,17 @@ sync_source_runtime_assets_if_drifted() {
     return 0
   fi
 
+  local source_cli="${source}/core/bin/crew" installed_cli="${AGENT_CREW_HOME}/bin/crew" publisher executable
+  if [ -L "${installed_cli}" ] || [ ! -x "${installed_cli}" ] || ! cmp -s "${source_cli}" "${installed_cli}"; then
+    publisher="${source}/core/scripts/publish-crew-cli.py"
+    if [ ! -f "${publisher}" ]; then
+      publisher="${ASSET_ROOT}/scripts/publish-crew-cli.py"
+    fi
+    require_file "${publisher}" "CLI publisher"
+    mkdir -p "${AGENT_CREW_HOME}/bin"
+    python3 "${publisher}" "${source_cli}" "${installed_cli}"
+  fi
+
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/system/commands" "*.md"
   copy_flat_assets "${source}/core/commands" "${AGENT_CREW_HOME}/commands" "*.md"
   copy_flat_assets_if_absent "${source}/core/user/commands" "${AGENT_CREW_HOME}/user/commands" "*.md"
@@ -313,7 +324,10 @@ sync_source_runtime_assets_if_drifted() {
   copy_tree_assets "${source}/core/policies" "${AGENT_CREW_HOME}/policies"
   copy_tree_assets "${source}/core/agents" "${AGENT_CREW_HOME}/system/agents"
   copy_tree_assets "${source}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
-  copy_flat_assets "${source}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
+  for executable in "${source}/core/bin/"*; do
+    [ -f "${executable}" ] && [ "${executable##*/}" != "crew" ] || continue
+    cp -f "${executable}" "${AGENT_CREW_HOME}/bin/" 2>/dev/null || true
+  done
   sync_managed_path_crew_cli "${source}/core/bin/crew"
   copy_flat_assets "${source}/core/schemas" "${AGENT_CREW_HOME}/system/schemas" "*.json"
   copy_flat_assets "${source}/core/schemas" "${AGENT_CREW_HOME}/schemas" "*.json"

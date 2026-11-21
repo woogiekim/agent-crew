@@ -49,8 +49,7 @@ install_path_crew_cli() {
     return 0
   fi
 
-  cp -f "${src}" "${dest}"
-  chmod +x "${dest}"
+  python3 "${SOURCE_DIR}/scripts/publish-crew-cli.py" "${src}" "${dest}"
   installed_path_cli="$(cd "${dest_dir}" && pwd -P)/crew"
   log_info "Native crew CLI installed → ${dest}"
 }
@@ -237,8 +236,8 @@ install_global() {
 
   if [ -f "${SOURCE_DIR}/bin/crew" ]; then
     mkdir -p "${AGENT_CREW_DIR}/bin"
-    cp "${SOURCE_DIR}/bin/crew" "${AGENT_CREW_DIR}/bin/crew"
-    chmod +x "${AGENT_CREW_DIR}/bin/crew"
+    python3 "${SOURCE_DIR}/scripts/publish-crew-cli.py" \
+      "${SOURCE_DIR}/bin/crew" "${AGENT_CREW_DIR}/bin/crew"
     log_info "crew CLI installed → ${AGENT_CREW_DIR}/bin/crew"
     install_path_crew_cli
   fi

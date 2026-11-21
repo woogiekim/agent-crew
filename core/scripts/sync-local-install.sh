@@ -281,7 +281,6 @@ install_path_crew_cli() {
   local src="${SOURCE_ROOT}/core/bin/crew"
   local dest_dir="${AGENT_CREW_PATH_BIN:-${HOME}/.local/bin}"
   local dest="${dest_dir}/crew"
-  local tmp
   if [ "${AGENT_CREW_SKIP_PATH_CLI:-0}" = "1" ]; then
     PATH_CREW_CLI_MANAGED=0
     return 0
@@ -295,10 +294,7 @@ install_path_crew_cli() {
     return 0
   fi
 
-  tmp="$(mktemp "${dest}.tmp.XXXXXX")"
-  cp -f "${src}" "${tmp}"
-  chmod 755 "${tmp}"
-  mv -f "${tmp}" "${dest}"
+  python3 "${SOURCE_ROOT}/core/scripts/publish-crew-cli.py" "${src}" "${dest}"
   PATH_CREW_CLI_MANAGED=1
   printf 'sync-local-install: installed native crew CLI at %s\n' "${dest}"
 }
@@ -344,7 +340,12 @@ copy_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/adapters"
 prune_managed_tree "${SOURCE_ROOT}/adapters" "${AGENT_CREW_HOME}/adapters"
 copy_tree "${SOURCE_ROOT}/core/agents" "${AGENT_CREW_HOME}/system/agents"
 copy_tree "${SOURCE_ROOT}/core/agents/skills" "${AGENT_CREW_HOME}/system/skills"
-copy_flat "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin" "*"
+for executable in "${SOURCE_ROOT}/core/bin/"*; do
+  [ -f "${executable}" ] && [ "${executable##*/}" != "crew" ] || continue
+  cp -f "${executable}" "${AGENT_CREW_HOME}/bin/" 2>/dev/null || true
+done
+python3 "${SOURCE_ROOT}/core/scripts/publish-crew-cli.py" \
+  "${SOURCE_ROOT}/core/bin/crew" "${AGENT_CREW_HOME}/bin/crew"
 prune_managed_tree "${SOURCE_ROOT}/core/bin" "${AGENT_CREW_HOME}/bin"
 install_path_crew_cli
 print_update_phase "asset_copy"
