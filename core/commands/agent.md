@@ -1,14 +1,12 @@
 # crew:agent — Direct Agent Invocation
 
-Invoke a named agent directly — without the full crew:run → supervisor →
-pipeline orchestration overhead. No worktree, no pipeline.json, no TASK_DIR
-state. The result is displayed inline and returned to the caller.
+Invoke one agent directly and return its result inline to the caller.
+Skip supervisor orchestration, worktree creation, `pipeline.json`, and
+`TASK_DIR` allocation.
 
-Provider-neutral system agent capability definitions and auto-routing rules
-live in **`core/rules/agent-routing.md`** (the DIP abstraction). User and
-project agent definitions are discovered dynamically from their installed layer
-files for explicit-name invocation. This command depends only on those
-abstractions — it does not hard-code any user-specific agent name in its logic.
+**`core/rules/agent-routing.md`** defines provider-neutral system capabilities
+and auto-routing rules. Explicit invocation discovers user and project agents
+from installed layer files. Keep user-specific names out of command logic.
 
 ## When to use crew:agent vs crew:run
 
@@ -84,18 +82,16 @@ In **explicit mode**:
 
 ### Host bridge support
 
-You can configure direct-agent auto-resume in one of two ways:
+Configure direct-agent auto-resume with either form:
 
 ```text
 AGENT_CREW_HOST_BRIDGE_COMMAND="your-host-bridge-command"
 crew:agent --host-bridge-command "your-host-bridge-command" analyst "question"
 ```
 
-When a bridge command is configured, the runtime invokes it immediately after
-creating the handoff. The command is parsed into argv and executed without an
-implicit shell; use `bash -c '...'` when shell features are required. A zero
-exit status marks the request as:
-`HOST_BRIDGE: auto_completed`.
+For a configured bridge, the runtime parses the command into argv and runs
+it immediately after the handoff, without an implicit shell. Use `bash -c '...'`
+for shell features. Exit code 0 marks `HOST_BRIDGE: auto_completed`.
 
 In **auto-routing mode**:
 ```
@@ -111,15 +107,13 @@ For a question/Q-shaped task that matches the session-state rule:
               task: "방금 어떤 에이전트가 동작한거야?"
 ```
 
-The visibility line is **mandatory** — it is always emitted before the agent
-is invoked so the user always knows what is running.
+Always emit the visibility line before invoking the agent.
 
 ### Auto-routing mode — agent selection only
 
-When the user explicitly invokes `crew:agent` without an agent name,
-conversational questions and implementation-shaped requests use the same
-agent-selection table. This is agent selection only; it does not choose between
-`crew:agent` and `crew:run`.
+On explicit `crew:agent` invocation without a name, use the same table for
+questions and implementation requests. Select the agent only and keep the
+`crew:agent` entry point.
 
 - Codebase Q ("explain how X works") → analyst (row 7)
 - Session/git/project-state Q ("어떤 에이전트", "what just ran",
@@ -449,9 +443,7 @@ Stop silently. Do not emit an error message — the user dismissed the dialog.
 
 ## Escape hatch: host-native subagents
 
-This section documents **when host-native subagents (Explore, Plan, and other
-Claude Code built-in types) are officially permitted** and when they must route
-through `crew:agent` instead.
+Apply these boundaries to Explore, Plan, and other host-native subagents.
 
 ### Permitted: read-only utility within an already-dispatched agent context
 
@@ -476,10 +468,6 @@ Example of a permitted bypass:
 subagent_type="Explore"
 prompt="Find all callers of UserService.cancelOrder"
 ```
-
-This is acceptable because: the outer task was crew-routed, the Explore call
-is read-only, and the result feeds back into the crew-dispatched agent's work
-rather than producing independent user-visible output.
 
 ### Forbidden: direct use for crew-routable work
 
@@ -528,9 +516,8 @@ When a built-in subagent runs outside crew routing:
 - **No agent registry validation** — restricted agents (reviewer, devops,
   resolver) can be silently invoked, bypassing the supervisor's approval gate.
 
-The permitted bypass above (read-only utility within an already-dispatched
-agent) is the narrow case where these losses are acceptable because the outer
-crew routing already fired and the inner call is purely mechanical.
+The exception is limited to read-only utility inside an already-dispatched
+crew agent.
 
 ---
 
@@ -560,8 +547,7 @@ Always emit this line before invoking the agent:
               task: "{TASK_STRING}"
 ```
 
-This line is non-negotiable. The user must always know which agent is running
-and why before the agent is spawned.
+Show the selected agent and its selection reason before spawn.
 
 ### Step 7 — Invoke the agent
 
@@ -609,8 +595,6 @@ requires `crew:run`).
 
 ## Lightweight guarantees
 
-`crew:agent` provides the following guarantees that distinguish it from `crew:run`:
-
 | Property | crew:run | crew:agent |
 |---|---|---|
 | New git branch / worktree | Yes (per task) | No — current branch |
@@ -623,9 +607,8 @@ requires `crew:run`).
 | Cost tracking | Yes (capability-gated) | No |
 | Telemetry / progress events | Yes | Routing-gap only (routing-misses.log) |
 
-Because `crew:agent` skips the reviewer stage, code produced by direct
-invocation has not been independently verified. For production-bound changes,
-use `crew:run` to get the full pipeline including the reviewer stage.
+Direct invocation omits independent review. For production-bound changes,
+use the `crew:run` reviewer stage.
 
 ---
 
