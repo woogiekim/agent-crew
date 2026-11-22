@@ -11,10 +11,8 @@ detection: completed OR done OR fixed OR reflected OR addressed OR passing OR ve
 
 ## Purpose
 
-Give agents a general, provider-neutral discipline for turning evidence into
-claims. Use it to prevent summaries, review follow-ups, closeouts, and status
-reports from saying "done", "fixed", "passing", "updated", or "deployed" more
-strongly than the current evidence supports.
+Use this provider-neutral skill to keep summaries, review follow-ups,
+closeouts, and status claims within the current evidence.
 
 ## References
 
@@ -40,11 +38,10 @@ External references:
 
 - Before saying a task is complete, fixed, reflected, addressed, passing,
   deployed, updated, verified, or safe to merge.
-- Before reporting that a review comment, requirement, bug, incident cause,
-  migration, documentation update, or external note has been handled.
-- Before converting a successful tool/process exit into a semantic conclusion.
-- When reusing memory, old logs, prior summaries, or user-provided statements
-  to support a current claim.
+- Before closing out a review comment, requirement, bug, incident cause,
+  migration, documentation update, or external note.
+- Before drawing a semantic conclusion from a successful tool or process.
+- When using memory, old logs, summaries, or user statements for a current claim.
 
 Skip only for tiny factual answers that make no completion, verification,
 remote-state, or behavioral claim.
@@ -53,8 +50,7 @@ remote-state, or behavioral claim.
 
 ### Rule 1: Name the claim before checking it
 
-Write the claim in one short sentence, then identify the evidence type needed
-for that exact claim.
+State the claim in one short sentence and name the evidence it requires.
 
 ```text
 Claim: tests pass
@@ -91,9 +87,8 @@ instead of becoming blanket proof.
 
 ### Rule 3: Separate transport success from semantic success
 
-A command, bridge, workflow, API call, or script returning success only proves
-that the transport or tool step completed. It does not prove the requested
-behavior changed.
+A successful command, bridge, workflow, API call, or script proves that step
+completed. Verify the requested behavior separately.
 
 ```text
 Tool success: glab command returned 0
@@ -120,8 +115,7 @@ Diff shows code path changed             | local code changed
 No live traffic/log/API check             | runtime behavior unverified
 ```
 
-If only local evidence exists, say local. If remote or runtime evidence is not
-checked, say it is unverified.
+Label local-only evidence as local and unchecked remote or runtime state as unverified.
 
 ### Rule 5: Use disposition labels for review follow-up
 
@@ -141,7 +135,7 @@ summary.
 
 ### Rule 6: Report evidence in a reusable shape
 
-Prefer short, parseable evidence lines over prose-heavy reassurance:
+Prefer short, parseable evidence lines.
 
 ```text
 VERIFY:
@@ -162,7 +156,7 @@ VERIFY:
 
 ### Rule 7: If blocked, name the missing edge
 
-State the exact edge that prevents the stronger claim:
+Name the exact missing evidence.
 
 ```text
 Unknown: remote MR body was not re-read in this run.
@@ -170,9 +164,6 @@ Unknown: runtime API behavior was not checked.
 Blocked: policy decision is needed before implementing idempotency.
 Blocked: dependency is not cached and online verification needs approval.
 ```
-
-Avoid generic disclaimers such as "may need more testing" when you know the
-specific missing evidence.
 
 ### 검증 단계와 보고 범위
 
@@ -207,14 +198,10 @@ TC와 결과는 실제 UI/HTTP, 배포 코드 하네스, 서버 trace, 운영 �
 
 ## Interaction with Other Skills
 
-- `tdd.md`: provides implementation-cycle evidence. This skill controls the
-  final claim made from that evidence.
-- `systematic-debugging.md`: root-cause claims must cite reproduction and code
-  path evidence before recommending a fix.
-- `documentation-impact.md`: documentation updates are claimed only after the
-  owning document or no-owner search was checked.
-- `code-review.md` and `review-intent-fidelity.md`: review follow-up claims must
-  preserve reviewer intent and map each item to evidence.
+- `tdd.md` supplies implementation-cycle evidence. Apply this skill to the final claim.
+- `systematic-debugging.md`: Cite reproduction and code path evidence before recommending a root-cause fix.
+- `documentation-impact.md`: Check the owning document or the no-owner search before claiming an update.
+- `code-review.md` and `review-intent-fidelity.md`: Preserve reviewer intent and map each item to evidence.
 
 ## Checklist
 
