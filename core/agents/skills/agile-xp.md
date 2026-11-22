@@ -16,8 +16,7 @@
 
 ## Core Rules
 
-The common software development three principles map directly into this skill:
-KISS is Rule 5, YAGNI is Rule 2, and DRY is Rule 5's no-duplication criterion.
+Rule 2 covers YAGNI. Rule 5 covers KISS and DRY.
 
 ### Rule 1: Test-First — write the test before the code (XP's core discipline)
 > Source: Beck, Ch. 18 "Test-First Programming"; Fowler, Refactoring Ch. 4
@@ -31,9 +30,8 @@ See `core/agents/skills/tdd.md` for the full RED → GREEN → REFACTOR cycle.
 ### Rule 2: YAGNI — You Aren't Gonna Need It
 > Source: Beck, Ch. 17 "Incremental Design"; Jeffries et al., Part II
 
-Do not write code for anticipated future requirements. Implement only what the
-current user story / task demands. Premature generalisation is waste: it
-increases complexity, must be maintained, and is often wrong.
+Implement only what the current story or task requires. Premature
+generalisation adds complexity and maintenance work.
 
 ```
 // YAGNI violations to avoid:
@@ -42,9 +40,6 @@ increases complexity, must be maintained, and is often wrong.
 - Adding a feature flag framework before there is a second flag
 - Building an abstraction with one concrete implementation
 ```
-
-Every line of code that is not needed by the current story is technical debt
-waiting to be accumulated.
 
 ### Rule 3: Continuous Integration — integrate and test at least daily
 > Source: Beck, Ch. 7 "Continuous Integration"; Fowler, *Continuous Integration* (2006)
@@ -78,12 +73,9 @@ Implementation implications:
 ### Rule 4: Small Releases — ship the smallest useful increment
 > Source: Beck, Ch. 4 "Small Releases"; Scrum Guide § Sprint
 
-Release in the smallest increment that has value. Short feedback cycles surface
-incorrect assumptions early. An unreleased feature is a liability, not an asset.
-
-For agent-crew context: a stage should produce a commit that is independently
-comprehensible, passes tests, and advances the task by one coherent step —
-not a single massive commit covering the entire feature.
+Release the smallest useful increment to test assumptions early. Each stage
+should produce a self-contained, test-passing commit that advances the task
+one coherent step. Avoid feature-wide commits that combine multiple steps.
 
 ### Rule 5: Simple Design — KISS and DRY
 > Source: Beck, Ch. 12 "Simple Design"; Fowler, Refactoring introduction
@@ -125,13 +117,8 @@ Always refactor with tests green. Never refactor and add features simultaneously
 ### Rule 7: Collective Ownership — any developer (or agent) may improve any code
 > Source: Beck, Ch. 7 "Collective Code Ownership"
 
-No developer or agent owns a file exclusively. Anyone may improve any code at
-any time. This prevents knowledge silos, bus-factor, and "that's not my code"
-stagnation.
-
-Implementation implication for agents: when a stage agent discovers a better
-design in an existing file, it should refactor it (with tests) rather than
-working around it.
+Any developer or agent may improve shared code. When a stage agent finds a
+better design in an existing file, refactor it with tests to avoid a workaround.
 
 ### Rule 8: Pair Programming / Code Review — all production code is reviewed
 > Source: Beck, Ch. 7 "Pair Programming"; Scrum Guide § Definition of Done
@@ -143,13 +130,9 @@ Review catches bugs, spreads knowledge, and maintains collective ownership.
 ### Rule 9: On-Site Customer — requirements are conversations, not documents
 > Source: Beck, Ch. 7 "On-Site Customer"
 
-Requirements are not complete specifications handed over a wall. They are
-conversations with the customer (or their representative — the product owner,
-the handoff.md, the PRD). When the spec is ambiguous, the right action is to
-ask — not to guess.
-
-Implementation implication for agents: when a task is ambiguous, flag it in
-the result and request clarification rather than silently choosing an interpretation.
+Clarify requirements with the customer or their representative, including the
+product owner, handoff.md, or PRD. Flag ambiguity in the result and ask for
+clarification before choosing an interpretation.
 
 ### Rule 10: Done means shippable — the Definition of Done is non-negotiable
 > Source: Scrum Guide § Definition of Done; XP "Done Done"
