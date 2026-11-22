@@ -11,10 +11,9 @@ detection: scope OR boundary OR ownership OR owner OR out of scope OR exclude OR
 
 ## Purpose
 
-Prevent the agent from widening work because a command, imported skill, current
-directory, or nearby code hints at a larger system. Scope must come from the
-explicit request, source-of-truth contract, approved plan, and observable owner
-boundary.
+Ground scope in the explicit request, source-of-truth contract, approved plan,
+and observable ownership. Keep that boundary when commands, imported skills,
+the current directory, or nearby code suggest broader work.
 
 ## References
 
@@ -26,11 +25,11 @@ boundary.
 
 ## When to Apply
 
-- A task mentions scope, owner, boundary, approval, remote mutation, or an
-  imported command whose origin could be mistaken for the target.
-- The work crosses repository, module, producer/consumer, generated artifact,
+- Tasks involving scope, boundaries, ownership, approval, remote mutation, or an imported
+  command whose origin could be confused with the target.
+- Work crossing repository, module, producer/consumer, generated artifact,
   deployment, issue, MR, push, merge, or external-write boundaries.
-- The current working root conflicts with the ticket, contract, or user note.
+- Conflicts between the working root and the ticket, contract, or user note.
 
 ## Boundary Rules
 
@@ -45,10 +44,9 @@ Treat destructive, external-write, deployment, push, merge, release,
 permission, and credential actions as separate approvals. Local completion does
 not imply permission to mutate a remote system.
 
-Keep unrelated generated files, sibling systems, legacy paths, and already
-MATCH behavior closed unless the request explicitly reopens them. If scope
-remains ambiguous after checking evidence, stop before mutation and ask for a
-specific boundary decision.
+Keep unrelated generated files, sibling systems, legacy paths, and existing
+MATCH behavior closed unless the request reopens them explicitly. If evidence
+leaves scope ambiguous, ask for a specific boundary decision before mutation.
 
 Fix problems introduced by the current change inside the current scope. Do not
 leave a new problem because similar legacy code already exists nearby. Do not
@@ -56,12 +54,11 @@ expand into repository-wide legacy cleanup because the same smell exists in
 older code. Clean the code you touched, and split broad legacy cleanup into a
 separate follow-up with its own scope and evidence.
 
-Before crossing or changing a boundary, trace the bounded caller graph for the
-approved scope. Include entrypoints, scheduled jobs, callbacks, adapters,
-external consumers, producer paths, persistence or API contracts, and
-configuration wiring that can observe the change. If the graph is incomplete,
-call it a partial graph and keep the plan or review conclusion limited to the
-paths actually checked.
+Before crossing or changing a boundary, trace the bounded caller graph within approved
+scope. Cover affected entrypoints, scheduled jobs, callbacks, adapters, external
+consumers, producer paths, persistence or API contracts, and configuration
+wiring. Label incomplete coverage a partial graph and limit plan or review
+conclusions to checked paths.
 
 ## Checklist
 
