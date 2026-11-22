@@ -17,7 +17,7 @@
 ### Rule 1: Static factory methods over constructors
 > Source: Bloch, Item 1 "Consider static factory methods instead of constructors"
 
-Static factories have names, can return cached instances, and can return subtypes.
+Named static factories can return cached instances or subtypes.
 
 ```java
 // BAD — unnamed constructor, no caching opportunity
@@ -31,8 +31,8 @@ Order.of(customerId, items)
 ### Rule 2: Builder pattern for classes with many parameters
 > Source: Bloch, Item 2 "Consider a builder when faced with many constructor parameters"
 
-When a class has more than three or four parameters, use the Builder pattern.
-Telescoping constructors are unreadable and error-prone.
+Use a builder for classes with more than three or four parameters to avoid
+error-prone telescoping constructors.
 
 ```java
 // BAD
@@ -49,8 +49,8 @@ Order.builder()
 ### Rule 3: Singletons via enum; avoid double-checked locking
 > Source: Bloch, Item 3 "Enforce the singleton property with a private constructor or an enum type"
 
-A single-element enum is the most concise, correct, and serialisation-safe
-singleton. Avoid `static volatile + synchronized` gymnastics.
+Use a single-element enum for a serialisation-safe singleton. Avoid
+`static volatile + synchronized`.
 
 ```java
 // GOOD — serialisation-safe, reflection-resistant singleton
@@ -63,9 +63,9 @@ public enum EventBus {
 ### Rule 4: Prefer interfaces over abstract classes
 > Source: Bloch, Item 20 "Prefer interfaces to abstract classes"
 
-Interfaces allow multiple-type simulation and retrofitting. Abstract classes
-restrict the implementation class hierarchy. Use abstract skeletal implementations
-(e.g., `AbstractList`) to combine the benefits.
+Use interfaces to retrofit types without constraining class hierarchies and
+to let a class implement multiple types. Use skeletal implementations such as
+`AbstractList` to share implementation.
 
 ```java
 // PREFER
@@ -80,9 +80,9 @@ public interface OrderRepository {
 ### Rule 5: Override equals, hashCode, and toString consistently
 > Source: Bloch, Items 10–12
 
-If you override `equals`, you MUST override `hashCode` with the same fields.
-Always override `toString` for domain objects to aid debugging. Use
-`Objects.equals` and `Objects.hash` to avoid NPE.
+Override `hashCode` with the same fields whenever you override `equals`.
+Use `Objects.equals` and `Objects.hash` to avoid null pointer errors. Always
+override `toString` on domain objects for debugging.
 
 ```java
 @Override public boolean equals(Object o) {
@@ -123,8 +123,8 @@ public void addAll(Iterable<? extends OrderItem> src, Collection<? super OrderIt
 ### Rule 7: Prefer lambdas and streams; avoid anonymous classes for functional interfaces
 > Source: Bloch, Items 42–48 "Lambdas and Streams" chapter
 
-Use lambda expressions for single-method functional interfaces. Use streams for
-sequence operations. Avoid side effects inside stream pipelines.
+Use lambdas for single-method functional interfaces and streams for sequence
+operations. Avoid side effects in stream pipelines.
 
 ```java
 // BAD — verbose anonymous class
@@ -148,8 +148,8 @@ Map<OrderId, Money> totals = orders.stream()
 ### Rule 8: Prefer Optional to null for method return types
 > Source: Bloch, Item 55 "Return optionals judiciously"
 
-Use `Optional<T>` only as a method return type when absence is a valid outcome.
-Never use `Optional` as a field type, parameter type, or in collections.
+Use `Optional<T>` only as a return type for valid absence. Keep `Optional`
+out of fields, parameters, and collections.
 
 ```java
 // BAD
@@ -182,9 +182,8 @@ Map<Long, String> names = Collections.emptyMap();
 ### Rule 10: Make defensive copies at trust boundaries
 > Source: Bloch, Item 50 "Make defensive copies when needed"
 
-Copy mutable inputs and outputs when an object must protect its invariants.
-Do not store caller-owned mutable collections directly, and do not return
-internal mutable state.
+Protect invariants by copying mutable inputs and outputs. Avoid storing
+caller-owned mutable collections or exposing internal mutable state.
 
 ```java
 public final class Schedule {
@@ -271,8 +270,8 @@ public void placeOrder(Order order) {
 ### Rule 14: Favour composition over inheritance
 > Source: Bloch, Item 18 "Favour composition over inheritance"; Martin, Ch. 10
 
-Inheritance breaks encapsulation. Extend only when the relationship is a genuine
-"is-a" and you control the superclass. Otherwise, wrap via composition.
+Extend only for a genuine "is-a" relationship when you control the superclass.
+Use composition in other cases to preserve encapsulation.
 
 ```java
 // BAD — fragile inheritance

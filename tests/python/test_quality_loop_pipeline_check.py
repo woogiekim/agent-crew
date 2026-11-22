@@ -7,6 +7,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CHECKER = REPO_ROOT / "core" / "scripts" / "quality-loop-check.py"
@@ -22,7 +24,10 @@ def _load_module(path: Path, name: str):
     return module
 
 
-quality_loop = _load_module(QUALITY_LIB, "quality_loop_lib")
+@pytest.fixture
+def quality_loop(monkeypatch):
+    monkeypatch.syspath_prepend(str(QUALITY_LIB.parent))
+    return _load_module(QUALITY_LIB, "quality_loop_lib")
 
 
 def write_test_checklist_artifacts(task_dir: Path) -> None:
@@ -749,7 +754,9 @@ def test_quality_loop_checker_reports_complete_quality_coverage(tmp_path: Path):
     assert "QUALITY_COVERAGE: 100/100 threshold=80 status=pass" in text_result.stdout
 
 
-def test_quality_loop_checker_blocks_when_skill_content_audit_fails(monkeypatch, tmp_path: Path):
+def test_quality_loop_checker_blocks_when_skill_content_audit_fails(
+    monkeypatch, tmp_path: Path, quality_loop
+):
     task_dir = tmp_path / "task"
     write_task(
         task_dir,
@@ -1034,7 +1041,7 @@ def test_quality_loop_checker_blocks_schema_invalid_quality_metrics_artifact(tmp
     }
 
 
-def test_quality_loop_library_helpers_cover_schema_and_path_edges(tmp_path: Path):
+def test_quality_loop_library_helpers_cover_schema_and_path_edges(tmp_path: Path, quality_loop):
     assert quality_loop.load_json(tmp_path) == {}
     assert quality_loop.load_text(tmp_path) == ""
 
@@ -1085,7 +1092,9 @@ def test_quality_loop_library_helpers_cover_schema_and_path_edges(tmp_path: Path
     assert quality_loop.task_description(tmp_path, {}, {}, "# Result heading\n") == "Result heading"
 
 
-def test_quality_loop_library_reports_missing_required_pipeline_and_events(tmp_path: Path):
+def test_quality_loop_library_reports_missing_required_pipeline_and_events(
+    tmp_path: Path, quality_loop
+):
     missing_pipeline = tmp_path / "missing-pipeline"
     write_task(missing_pipeline, [], pipeline={})
 
