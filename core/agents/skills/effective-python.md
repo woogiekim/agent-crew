@@ -18,9 +18,8 @@
 ### Rule 1: Follow PEP 8; use a linter (ruff / flake8) and formatter (black)
 > Source: PEP 8; Slatkin, Item 2
 
-Consistent style reduces cognitive load. Configure `pyproject.toml` with ruff
-or black. Never commit code that fails the linter. Line length ≤ 88 (black
-default) unless project overrides.
+Configure ruff or black in `pyproject.toml`. Commit only lint-clean code.
+Use a line limit of 88 (black's default) unless the project overrides it.
 
 ```python
 # BAD — inconsistent spacing, naming
@@ -34,9 +33,8 @@ def get_order_by_id(order_id: str) -> Order | None:
 ### Rule 2: Use type annotations on all public functions and class attributes
 > Source: Slatkin, Items 90; PEP 484, PEP 526
 
-Type annotations are verified by mypy/pyright. They serve as machine-checked
-documentation. All public functions must have full annotations. Internal helpers
-at minimum annotate return types.
+Check annotations with mypy or pyright. Fully annotate public functions
+and class attributes. Annotate at least the return type of internal helpers.
 
 ```python
 # BAD
@@ -78,8 +76,8 @@ class Order:
 ### Rule 4: Prefer generators over list comprehensions for large sequences
 > Source: Slatkin, Items 31–32 "Use Generator Expressions for Large List Comprehensions"
 
-Generators are lazy — they do not materialise the entire sequence in memory.
-Use `(x for x in …)` when you only iterate once and the sequence may be large.
+Use `(x for x in …)` for a potentially large, single-pass sequence to avoid
+materialising it in memory.
 
 ```python
 # BAD — materialises entire list
@@ -93,8 +91,8 @@ grand_total = sum(totals)
 ### Rule 5: Use context managers for resource management; never rely on `__del__`
 > Source: Slatkin, Item 66 "Consider contextlib and with Statements for Reusable try/finally Behavior"
 
-Context managers guarantee cleanup even on exceptions. Use `contextlib.contextmanager`
-for lightweight cases. Never rely on `__del__` for resource release.
+Use context managers for cleanup even on exceptions and
+`contextlib.contextmanager` for lightweight cases. Never rely on `__del__`.
 
 ```python
 # BAD — resource leak on exception
@@ -136,15 +134,15 @@ except OrderNotFoundError:
 ### Rule 7: Use `__slots__` in high-volume classes; avoid premature optimisation
 > Source: Slatkin, Item 48 "Accept Functions Instead of Classes for Simple Interfaces"
 
-For classes instantiated millions of times (e.g., value objects in bulk processing),
-`__slots__` reduces memory footprint significantly. For typical domain objects,
-skip `__slots__` until profiling shows it necessary.
+Use `__slots__` to save memory on classes instantiated millions of times,
+such as bulk-processing value objects. For typical domain objects, wait for
+profiling evidence.
 
 ### Rule 8: Prefer keyword-only arguments for functions with many parameters
 > Source: Slatkin, Item 25 "Enforce Clarity with Keyword-Only and Positional-Only Arguments"
 
-Functions with boolean flags or more than three positional arguments should use
-keyword-only arguments (after `*`) to prevent caller confusion.
+For boolean flags or more than three positional arguments, use
+keyword-only arguments after `*` to keep calls clear.
 
 ```python
 # BAD — bool trap, order matters
@@ -165,8 +163,7 @@ def create_order(
 ### Rule 9: Use `pathlib.Path` over `os.path` string manipulation
 > Source: Slatkin, Item 3; PEP 428
 
-`pathlib.Path` provides a type-safe, platform-agnostic API. String manipulation
-of paths is fragile and error-prone.
+Use `pathlib.Path` for type-safe, platform-independent path operations.
 
 ```python
 # BAD
