@@ -9,8 +9,7 @@ applies-to: backend, frontend, designer, devops, qa-owner, reviewer, supervisor
 
 # Quality Loop Rule
 
-Every implementation stage must iterate until its output is verified correct.
-Completing once and moving on is not acceptable.
+Verify every implementation stage's output before reporting completion.
 
 ### v1 선행 검토 판정
 
@@ -270,11 +269,9 @@ Two optional pipeline fields add task-specific completion evidence:
 | `requires_human_acceptance: true` | `context/human-acceptance-matrix.md` or `.json` | `missing_human_acceptance_matrix` |
 | `eval_command: "..."` | `context/evaluation-metrics.json` | `missing_evaluation_metrics` |
 
-Human acceptance follows `core/rules/human-acceptance-matrix.md` and is used
-for user-facing behavior that needs manual or browser-observable proof.
-Evaluation-Driven Development follows
-`core/rules/evaluation-driven-development.md` and is used for prompt,
-retrieval, or agentic workflow metrics.
+For user-facing behavior requiring manual or browser-observable proof, follow
+`core/rules/human-acceptance-matrix.md`. For prompt, retrieval, or agentic
+workflow metrics, follow `core/rules/evaluation-driven-development.md`.
 
 ## Reporting
 
@@ -322,12 +319,9 @@ retry attempt.
 | `balanced`|                 150,000 | `AGENT_CREW_BUDGET_BALANCED`  |
 | `light`   |                 100,000 | `AGENT_CREW_BUDGET_LIGHT`     |
 
-The **task-level budget** is `max(tier_budget)` over the tiers of all
-agents that have been invoked for the task so far. A pipeline running
-`analyst (xhigh) + backend (deep) + reviewer (xhigh)` therefore gets
-the xhigh budget (300,000). Rationale: a lower-tier implementation stage
-should not shrink the headroom of the surrounding highest-impact analysis
-and review work.
+The **task-level budget** is `max(tier_budget)` across agents already
+invoked for the task. For `analyst (xhigh) + backend (deep) + reviewer (xhigh)`,
+it is 300,000 tokens.
 
 ### Thresholds
 
@@ -337,22 +331,16 @@ and review work.
 | `≥ 50%` AND not yet warned | **soft warning** — emit one progress line, continue. |
 | `≥ 100%` | **hard stop** — return `STATUS: blocked`, `BLOCKER: cost_budget_exceeded`. Skip BLOCKED Recovery. |
 
-The breaker fires **before every stage spawn and before every retry**
-(both validation and crash retries). It does **not** fire mid-stage;
-once an agent is dispatched, it runs to completion.
-
-The breaker is gated on `cost_tracking == true`. When the capability
-is false (or the per-task cost file is missing), the breaker is a
-no-op and behavior is identical to the retry-count-only discipline
-above.
+Check **before every stage spawn and every validation or crash retry**.
+Let dispatched agents finish. The breaker requires `cost_tracking == true`
+and a per-task cost file. Otherwise apply only the retry limits.
 
 ### Cost data source
 
-Per-call token usage is captured by the adapter via the contract in
-`core/rules/capabilities/cost-tracking.md` and aggregated by
-`core/scripts/cost-aggregate.py --task-id $TASK_ID --check-breaker`.
-The script returns one of `ok` / `warn` / `exceeded` on stdout with
-exit code `0` / `1` / `2`, which the supervisor branches on.
+The adapter records per-call tokens per `core/rules/capabilities/cost-tracking.md`.
+The supervisor branches on stdout and exit code from
+`core/scripts/cost-aggregate.py --task-id $TASK_ID --check-breaker`:
+`ok` (exit `0`), `warn` (exit `1`), or `exceeded` (exit `2`).
 
 ### Why "skip BLOCKED Recovery" on a cost overrun
 
@@ -365,34 +353,19 @@ request, or abort), not to retry smaller.
 
 ## Page-Out As Hygiene Operation (Phase 3.5)
 
-The supervisor may invoke the documenter in `MODE=page-out` between
-stages when `AGENT_CREW_HANDOFF_AUTO_PAGEOUT == 1` and `handoff.md`
-exceeds `AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD` (default 8000
-characters). This is a working-set hygiene operation, not a stage in
-the pipeline. It is governed by a relaxed cost and retry policy:
+Between stages, the supervisor may invoke the documenter in `MODE=page-out`
+when `AGENT_CREW_HANDOFF_AUTO_PAGEOUT == 1` and `handoff.md` exceeds
+`AGENT_CREW_HANDOFF_PAGEOUT_THRESHOLD` (default 8000 characters).
+Page-out runs outside the pipeline stages under these limits:
 
-- **Cost accounting.** The page-out invocation IS a real LLM call
-  (light tier) and IS counted against the per-task token budget by
-  the cost circuit breaker. If the breaker is already at `exceeded`
-  when a page-out would otherwise fire, the supervisor SKIPS the
-  page-out (logging `HANDOFF_PAGEOUT_SKIPPED | reason=cost_exceeded`)
-  and continues with the un-paged handoff. The breaker is not
-  re-evaluated specifically for page-out — it uses the same per-stage
-  check.
-- **Retry budget.** Page-out is **not retried**. If the documenter
-  returns `STATUS: BLOCKED` or crashes during a page-out, the
-  supervisor logs `HANDOFF_PAGEOUT_FAILED` and continues. Page-out
-  does NOT consume validation (3) or crash (5) retries from the
-  next stage's budget. Rationale: page-out is hygiene — if it fails,
-  the pipeline can still finish with a larger handoff (potentially
-  slower or more expensive per-stage prompts, but functionally
-  correct).
-- **No BLOCKED Recovery.** Decomposition does not apply. There is no
-  smaller sub-task that recovers a failed summary — either the
-  documenter produced a usable digest or it did not.
-- **Out of band of stage retries.** Page-out invocations occur
-  between stage spawns, so failures NEVER leak into the
-  just-completed or next-to-spawn stage's retry counters.
+- **Cost accounting.** Count the light-tier LLM call toward the per-task token
+  budget. Use the existing per-stage breaker result for page-out. If it is
+  `exceeded`, log `HANDOFF_PAGEOUT_SKIPPED | reason=cost_exceeded`
+  and continue with the un-paged handoff.
+- **Retry budget.** Page-out is **not retried**. On `STATUS: BLOCKED` or a
+  crash, log `HANDOFF_PAGEOUT_FAILED` and continue with the existing handoff.
+  Leave validation (3) and crash (5) counters unchanged for both stages.
+- **No BLOCKED Recovery.** Skip decomposition for page-out failures.
 
 The default is OFF. When `AGENT_CREW_HANDOFF_AUTO_PAGEOUT` is unset,
 none of this section applies — no page-out ever fires.
