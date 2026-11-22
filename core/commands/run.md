@@ -1,10 +1,7 @@
 # crew:run - Unified Task Orchestration
 
-Run one or more tasks through the same execution engine.
-Every task is executed by a `supervisor`. A single request spawns one
-`supervisor`; multiple requests spawn multiple `supervisor` agents.
-
-`crew:run` is the canonical workflow entry point.
+`crew:run` is the canonical workflow entry point. It delegates one
+`supervisor` per task.
 
 ```text
 [orchestrator] crew:run "Task A" | "Task B" | "Task C"
@@ -312,22 +309,17 @@ operation and is not performed by preset selection.
 
 #### What is task injection?
 
-Task injection allows a user to submit new tasks while an existing `crew:run`
-parallel fan-out is still in progress. Injected tasks join the live session:
-they get their own TASK_ID, TASK_DIR, git worktree, and supervisor, and they
-participate in the final result collection, resolver, and approval gates
-alongside the original tasks.
-
-The canonical reference for the injection protocol is
-`core/rules/task-injection.md`.
+During a live `crew:run` parallel fan-out, users can inject new tasks.
+Each gets its own TASK_ID, TASK_DIR, git worktree, and supervisor. It shares
+the session's result collection, resolver, and approval gates. See
+`core/rules/task-injection.md` for the canonical protocol.
 
 #### Operator-facing brevity
 
-When Step 1.5 or Step 1.6 detects active work, keep default output short:
-include the session id, task id, current status/phase, and one next command
-when available. Reserve policy detail, duplicate rationale, stale-session
-diagnostics, and full workflow narration for explicit verbose or
-troubleshooting requests.
+When Step 1.5 or 1.6 finds active work, show the session id, task id, current
+status/phase, and one next command if available. Give policy detail, duplicate
+rationale, stale-session diagnostics, or full workflow narration only on
+explicit verbose or troubleshooting requests.
 
 #### Live session detection
 
@@ -474,12 +466,11 @@ print(json.load(open('${SESSION_FILE}')).get('execution_policy', 'legacy_unknown
 fi
 ```
 
-With `BACKGROUND_FINALIZER_ACTIVE=1`, skip new task preparation, requirements,
-and supervisor spawn, then jump to the `BACKGROUND_FINALIZER_COLLECTION` entry
-inside Step 6. Wait for every registered supervisor to reach a terminal state,
-read each canonical `result.md`, call the registry-close helper, and then
-continue into Step 7 summary/final gates. `crew:status` remains read-only
-monitoring.
+With `BACKGROUND_FINALIZER_ACTIVE=1`, skip task preparation, requirements,
+and supervisor spawn. Enter Step 6 at `BACKGROUND_FINALIZER_COLLECTION`,
+wait for every registered supervisor's terminal state, read each canonical
+`result.md`, close the registry via its helper, then run Step 7 summary and
+final gates. `crew:status` remains read-only.
 
 #### Inject-intent detection (Phase J14)
 
@@ -825,9 +816,7 @@ The fast path runs only when **all** of the following are true:
    destructive fast-path intents fall through to the regular pipeline; the
    read-only `status` and non-destructive `commit_only` paths still run inline.
 
-If any of the above is false, **skip this step entirely and proceed to Step 2
-unchanged.** The fast path is purely additive — it never breaks the existing
-pipeline contract.
+If any condition fails, **skip this step and proceed to Step 2 unchanged.**
 
 > **Step 5 Exception (explicit).** The framework's standing "NEVER-SKIP" rule
 > on Step 5 (Collect Requirements) does not apply when the Step 1.7 classifier
@@ -1866,13 +1855,12 @@ presenting that task's next dependent interaction.
 
 ### 6. Run Supervisors
 
-For every normal Brainstorm task, this is the immediate next step after task
-context preparation. Do not require an orchestrator-created `requirements.md`:
-the Supervisor first persists preliminary classification, then performs its
-classification-adaptive Phase 1a requirements gate, persists final
-classification, and only then enters Phase 1b. A preliminary artifact on
-resume returns to that same requirements boundary without asking duplicate
-questions.
+For normal Brainstorm tasks, delegate immediately after task context
+preparation, without requiring an orchestrator-created `requirements.md`.
+The Supervisor persists preliminary classification, runs the adaptive Phase 1a
+requirements gate, persists final classification, then enters Phase 1b.
+Resume from a preliminary artifact at the same requirements boundary without
+repeating questions.
 
 > **MANDATORY DELEGATION RULE — non-negotiable.** The orchestrator (the Claude
 > instance loaded with this `run.md`) MUST spawn a `supervisor` subagent for
@@ -1898,12 +1886,9 @@ questions.
 > - Editing project source files from the orchestrator. The orchestrator only
 >   writes to `${TASK_DIR}` (state files) and to remotes during Step 11.
 >
-> Why this matters: `supervisor.md` Phase 1c is the only place that creates
-> the active task marker the `direct-edit-guard` PreToolUse hook checks for. If
-> the orchestrator skips delegation, Phase 1c never executes, the marker is
-> never created, and every subsequent Edit/Write to project source is blocked by
-> the hook. Every observed "hook blocked my edit" symptom in this repo traces back
-> to a missing delegation here.
+> Only Phase 1c in `supervisor.md` creates the active task marker required by
+> the `direct-edit-guard` PreToolUse hook for project Edit/Write. Without
+> delegation, the marker is absent and the hook blocks those writes.
 
 > **Plan Approval Gate (N == 1):** For single-task runs, the plan approval gate is
 > handled **inside** the supervisor at Phase 1d. The supervisor reads `pipeline.json`
@@ -2539,11 +2524,9 @@ faster wakeup; it never removes the file contract.
 
 #### Session-Aware Task List
 
-When `session.json` exists (all `N > 1` runs), the orchestrator derives its
-task list dynamically from the session file rather than from a static list
-built at Step 4. This ensures that injected tasks (added via Step 1.5 after
-Step 6 runs) are included in result collection, the merger, and the final
-summary without any orchestrator restart.
+When `session.json` exists (all `N > 1` runs), derive the current task list
+from it. Include tasks injected via Step 1.5 after Step 6 in result collection,
+merge, and the final summary without restarting the orchestrator.
 
 ```bash
 # Read the current task list from the session file
@@ -2602,10 +2585,8 @@ loop picks them up on the next `session.json` re-read.
 
 #### Live Progress
 
-Task-runners emit `[crew]`-prefixed lines throughout execution to surface
-real-time lifecycle events. These lines appear inline as each phase and stage
-boundary is crossed — the orchestrator does NOT suppress them. Example output
-visible during a pipeline run:
+Show the task-runners' inline `[crew]` lines at each phase and stage boundary.
+The orchestrator does NOT suppress them.
 
 ```
 [crew] 20260510-140000-0 | STARTED | implement order API
@@ -2623,12 +2604,10 @@ visible during a pipeline run:
 In parallel runs (N > 1), each supervisor's TASK_ID prefix makes interleaved
 lines from concurrent runners easy to distinguish.
 
-**File-based progress log:** In addition to inline `[crew]` lines, every progress
-event is written to `{TASK_DIR}/progress.log` as a timestamped line. Because
-sub-agent inline output may be buffered until the agent completes, the progress
-log provides a reliable source of truth for current pipeline state at any point
-during execution. Run `crew:status` at any time to see the current pipeline state
-read from this log. For N > 1, `crew:status` shows the most recently active task.
+**File-based progress log:** Append every event with a timestamp to
+`{TASK_DIR}/progress.log`. This is the source of truth while inline output
+is buffered. `crew:status` reads the log and shows the most recently active
+task when N > 1.
 
 After all supervisors finish, the orchestrator prints the full Run Summary below.
 
