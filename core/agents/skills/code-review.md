@@ -1,19 +1,18 @@
 # Skill: code-review
 
 ## Purpose
-Enables the reviewer agent to systematically verify that an implementation matches the PRD, covers non-functional requirements, and contains no obvious quality or security issues — without modifying any implementation files.
+Verify PRD compliance, non-functional requirements, code quality, and security. Leave implementation files untouched.
 
 ## When to Apply
-- As the final stage of every agent pipeline (always spawned by supervisor)
-- After any implementation agent (backend, frontend, devops) completes its work
-- When the supervisor needs a quality gate before marking a task complete
+- As every pipeline's final stage, spawned by the supervisor.
+- After any implementation agent finishes (backend, frontend, devops).
+- When the supervisor needs a pre-completion quality gate.
 
 ---
 
 ## Delete-First Review Order
 
-Before correctness/style review, check whether the implementation should be
-smaller:
+Before checking correctness or style, look for ways to simplify the implementation.
 
 1. What can be deleted?
 2. What is duplicated?
@@ -36,9 +35,8 @@ insufficient.
 
 ## Evidence-first reporting
 
-For bug reports, incident analysis, root-cause claims, review verdicts, and
-quality-gate decisions, check that the report follows
-`core/rules/evidence-grounded-reasoning.md`.
+Check bug reports, incident analysis, root-cause claims, review verdicts,
+and quality-gate decisions against `core/rules/evidence-grounded-reasoning.md`.
 
 - [ ] Proven Facts are backed by concrete repository, test, log, trace, git, or
       tool-output evidence.
@@ -87,9 +85,6 @@ Run review in this order:
    architecture, security, tests, and style. Return `REVIEW: NEEDS_CHANGES` with
    `REASON: code_quality` for blocking code-quality findings.
 
-This ordering keeps implementation loop-backs focused: complete missing
-behavior before polishing code that may still need structural changes.
-
 ## Re-Review Scope and New Must Policy
 
 Reviewer retries are scoped differently from the first review:
@@ -125,7 +120,7 @@ reviewer, not the implementer.
 
 ## Git Diff Analysis
 
-Use git history to scope the review to only what changed in this task:
+Use git history to scope the review to this task's changes.
 
 ```bash
 git log --oneline -10
@@ -141,7 +136,8 @@ git diff "$BASE"..HEAD --stat
 git diff "$BASE"..HEAD -- {file}
 ```
 
-When reporting a finding, include the narrowest useful file and line reference. If a finding is inferred from omitted behavior, name the missing file, test, or artifact.
+Cite the narrowest useful file and line. For missing behavior, name the
+missing file, test, or artifact.
 
 ---
 

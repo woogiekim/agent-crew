@@ -100,17 +100,22 @@ def test_refactoring_catalog_defines_intent_preserving_refactor_hygiene() -> Non
         assert required in text
 
 
-def test_tdd_guidance_rejects_tests_that_freeze_implementation_details() -> None:
-    text = compact(TDD)
+def test_tdd_guidance_requires_tests_of_observable_behavior() -> None:
+    _, heading, remainder = read(TDD).partition("## Behavior Contract Before Implementation Detail\n")
+    assert heading, "Missing TDD behavior contract section"
+
+    section, _, _ = remainder.partition("\n## ")
+    guidance = " ".join(section.casefold().split())
 
     for required in (
-        "Do not write tests that justify an accidental implementation detail",
+        "test observable behavior",
         "policy, contract, side effect, or regression",
         "null assignment",
-        "domain behavior",
+        "avoid assertions about the mechanism alone",
+        "domain object",
         "focused unit test",
     ):
-        assert required in text
+        assert required in guidance
 
 
 def test_scope_boundary_distinguishes_new_problems_from_legacy_cleanup() -> None:
