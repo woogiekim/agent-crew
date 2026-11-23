@@ -1,13 +1,13 @@
 # Skill: observability
 
 ## Purpose
-Enables the devops and backend agents to instrument services with the three pillars of observability — structured logging, distributed tracing, and metrics — so that production failures can be diagnosed without requiring a code change.
+Instrument services with structured logs, distributed traces, and metrics to diagnose production failures from existing signals.
 
 ## When to Apply
-- When adding a new service, endpoint, or background job
-- When configuring a CI/CD pipeline or production deployment
-- When debugging a production incident (what to look for and how)
-- When defining SLOs for a new feature
+- Adding services, endpoints, or background jobs
+- Configuring CI/CD or production deployment
+- Diagnosing production incidents
+- Defining SLOs for new features
 
 ---
 
@@ -18,10 +18,10 @@ Enables the devops and backend agents to instrument services with the three pill
 | Pillar | What it answers | Tool examples |
 |---|---|---|
 | **Logs** | What happened at a specific time | Loki, Elasticsearch, CloudWatch Logs |
-| **Metrics** | How healthy is the system right now? Trends over time? | Prometheus, Datadog, CloudWatch Metrics |
-| **Traces** | Which code path caused this latency? Which service failed? | Jaeger, Zipkin, OpenTelemetry, AWS X-Ray |
+| **Metrics** | Current health and trends | Prometheus, Datadog, CloudWatch Metrics |
+| **Traces** | Where latency or failure occurred | Jaeger, Zipkin, OpenTelemetry, AWS X-Ray |
 
-Observability is NOT just logging. A system is observable if you can understand any novel failure mode purely from its external outputs — without deploying new code.
+Diagnose unfamiliar failures from external outputs without deploying new code.
 
 ---
 
@@ -30,10 +30,10 @@ Observability is NOT just logging. A system is observable if you can understand 
 (Reference: The Twelve-Factor App, Factor XI — Logs; OpenTelemetry logging spec)
 
 ### Principles
-- Log in JSON (or key=value) — never free-form strings
-- Include trace context in every line (`trace_id`, `span_id`, `request_id`)
-- Never log sensitive data (PII, secrets, tokens) — log IDs only
-- Log at boundaries: request in/out, DB calls, external API calls, domain event emission
+- Use structured JSON or key=value for every log line.
+- Include `trace_id`, `span_id`, and `request_id` in every line.
+- Never log sensitive data such as PII, secrets, or tokens. Use IDs instead.
+- Log request entry and exit, DB and external API calls, and domain event emission.
 
 ### Kotlin + SLF4J + Logback Structured Logging
 
@@ -74,10 +74,10 @@ log.info("Order placed for customer ${customerId}")
 
 | Level | Use for |
 |---|---|
-| `ERROR` | Unexpected failures that need immediate attention; always include trace context |
+| `ERROR` | Unexpected failures needing immediate attention. Always include trace context. |
 | `WARN` | Expected failure paths (retry eligible, circuit breaker open) |
-| `INFO` | Business-significant events (order placed, payment received, user registered) |
-| `DEBUG` | Developer diagnostic information (never in production default config) |
+| `INFO` | Business events (orders, payments, registrations) |
+| `DEBUG` | Developer diagnostics. Off by default in production. |
 | `TRACE` | Full request/response bodies, detailed state transitions (development only) |
 
 ---
@@ -88,9 +88,9 @@ log.info("Order placed for customer ${customerId}")
 
 ### Core concepts
 
-- **Trace**: the complete path of one request through all services
-- **Span**: a single unit of work within a trace (one HTTP call, one DB query)
-- **Context Propagation**: W3C TraceContext header (`traceparent`) carries trace ID across service boundaries
+- **Trace** — one request's full path across services.
+- **Span** — one unit of work in a trace, such as an HTTP call or DB query.
+- **Context propagation** — W3C TraceContext's `traceparent` carries the trace ID across services.
 
 ### Spring Boot + OpenTelemetry auto-instrumentation
 
