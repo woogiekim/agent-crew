@@ -5,26 +5,19 @@
 - Kent Beck, *Tidy First? A Personal Exercise in Empirical Software Design*, 2023
 
 ## When to Apply
-- Before or after any feature change, when the surrounding code shows a code
-  smell (long function, duplicated code, feature envy, data clumps, primitive
-  obsession, shotgun surgery, divergent change).
-- During the REFACTOR step of the TDD cycle, once every test is green.
-- When a diff mixes structural change (renames, moves, extractions) with
-  behavioral change and the two should be separated for review.
-- When a small structural cleanup ("tidying") would make an imminent behavior
-  change easier to land safely.
-- When reviewing a change and deciding whether a smell justifies a named
-  refactoring versus a note.
+- Before or after a feature change when nearby code shows a smell listed in Rule 5.
+- During TDD REFACTOR, once every test is green.
+- To split structural and behavioral changes for review.
+- To make the next behavior change safer with a small tidying.
+- In review, to decide whether a smell warrants a named refactoring or a note.
 
 ## Core Rules
 
 ### Rule 1: Wear only one hat at a time
 > Source: Fowler, *Refactoring* 2e — ch. 2 "The Two Hats"
 
-At any moment you are either **adding behavior** (new capability, new test
-going red-to-green) or **refactoring** (restructuring without changing
-observable behavior). Never do both in the same edit. Name which hat you are
-wearing before you type. Switching is fine and frequent; blending is not.
+Name the hat before each edit: **adding behavior** through a red-to-green test
+or **refactoring** while preserving observable behavior. Switch hats between edits.
 
 ```text
 # BAD — one edit both adds a discount rule AND renames/moves helpers
@@ -35,27 +28,20 @@ wearing before you type. Switching is fine and frequent; blending is not.
 ### Rule 2: Refactor only on green
 > Source: Fowler, *Refactoring* 2e — ch. 2, ch. 4 "Building Tests"
 
-Never start a refactoring while any test is red. A failing test means behavior
-is in flux; restructuring on top of it destroys your ability to tell a
-regression from an in-progress change. Get to green first, then refactor.
+Start refactoring only when every test is green, to distinguish regressions from existing failures.
 
 ### Rule 3: Take small steps and run tests between every step
 > Source: Fowler, *Refactoring* 2e — ch. 2 "Small Steps"
 
-Each refactoring move must be small enough that the test suite can run after
-it. Extract one function, run tests. Rename one symbol, run tests. If a step
-is too large to verify with a single test run, split it. The safety of
-refactoring comes from the frequency of verification, not the cleverness of
-the move.
+Make one testable move at a time, such as extracting a function or renaming a symbol.
+Run the test suite after each move. Split any step that one run cannot verify.
 
 ### Rule 4: Separate structural and behavioral changes into different commits
 > Source: Beck, *Tidy First?* — Part II "Managing"; Fowler, *Refactoring* 2e — ch. 2
 
-A **structural** change (rename, move, extract, inline, reorder) must never
-change observable behavior. A **behavioral** change must never restructure.
-Commit them separately: a structural commit is safe to revert in isolation, and
-a reviewer can verify a behavioral commit against tests without wading through
-mechanical noise. When a diff mixes both, split it before committing.
+Preserve observable behavior in **structural** edits (rename, move, extract, inline, reorder).
+Keep **behavioral** edits free of restructuring. Split mixed diffs before committing
+so structural commits stay independently revertible and behavioral commits stay testable.
 
 ```text
 # commit A (structural): "refactor: extract PricingPolicy, no behavior change"
@@ -65,8 +51,7 @@ mechanical noise. When a diff mixes both, split it before committing.
 ### Rule 5: Map each smell to its named refactoring
 > Source: Fowler, *Refactoring* 2e — ch. 3 "Bad Smells in Code"
 
-Do not improvise. When a smell appears, reach for the catalogued refactoring
-that resolves it:
+Use the named refactoring that resolves the smell:
 
 | Code smell | Named refactoring |
 |---|---|
@@ -85,10 +70,8 @@ that resolves it:
 ### Rule 6: Extract Function to kill Long Function and Duplicated Code
 > Source: Fowler, *Refactoring* 2e — "Extract Function"
 
-When a function does more than one thing, or a fragment repeats, extract the
-fragment into a well-named function. The name must state intent, not
-mechanism. A function whose body needs a comment to explain a block is a
-function waiting to be extracted.
+Extract repeated fragments or separate responsibilities into functions named for their intent.
+A block that needs an explanatory comment is a candidate for extraction.
 
 ```text
 # BAD
@@ -108,40 +91,32 @@ def report(order):
 ### Rule 7: Introduce Parameter Object / Preserve Whole Object for Data Clumps
 > Source: Fowler, *Refactoring* 2e — "Introduce Parameter Object"
 
-When the same group of data items travels together through multiple signatures
-(e.g. `startDate, endDate` or `x, y, width, height`), bundle them into a single
-object. This kills Data Clumps and Long Parameter List at once and gives the
-group a home for behavior.
+Bundle data that travels together across signatures (e.g. `startDate, endDate` or
+`x, y, width, height`) into one object that can own the group's behavior.
 
 ### Rule 8: Replace Primitive with Object for Primitive Obsession
 > Source: Fowler, *Refactoring* 2e — "Replace Primitive with Object"
 
-When a primitive (string, int) carries domain meaning and validation
-(`money`, `phoneNumber`, `currencyCode`), wrap it in a small value type so the
-invariant lives in one place and cannot be bypassed. This complements
-`oop-principles.md` (Wrap Primitive Types) and DDD value objects.
+Wrap domain primitives such as `money`, `phoneNumber`, and `currencyCode` in small
+value types that centralize and enforce their invariants. See `oop-principles.md` and DDD value objects.
 
 ### Rule 9: Move Function for Feature Envy and Shotgun Surgery
 > Source: Fowler, *Refactoring* 2e — "Move Function"; ch. 3 smells
 
-When a function is more interested in another module's data than its own
-(Feature Envy), move it next to the data it uses. When one conceptual change
-forces edits scattered across many modules (Shotgun Surgery), move the scattered
-pieces together so the change has a single home.
+For Feature Envy, move the function next to the data it uses most.
+For Shotgun Surgery, group the code that changes together in one place.
 
 ### Rule 10: Split Phase for Divergent Change
 > Source: Fowler, *Refactoring* 2e — "Split Phase"; ch. 3 "Divergent Change"
 
-When one module changes for several unrelated reasons, separate it into phases
-or classes so each has exactly one reason to change (Single Responsibility).
-Split a computation from its formatting; split parsing from evaluation.
+Split modules with unrelated reasons to change into phases or classes with one
+responsibility each. Separate computation from formatting and parsing from evaluation.
 
 ### Rule 11: Apply Beck's tidyings as the smallest safe structural moves
 > Source: Beck, *Tidy First?* — Part I "Tidyings"
 
-Prefer a tiny tidying over a large redesign when the goal is only to make the
-next change easier. The fifteen tidyings, each a self-contained structural move
-that must not change behavior:
+To ease the next change, prefer a small tidying. Apply each of these 15 structural moves
+independently and preserve behavior:
 
 1. **Guard Clauses** — replace nested conditionals with early returns.
 2. **Dead Code** — delete code that is never reached or referenced.
@@ -172,17 +147,13 @@ that must not change behavior:
 ### Rule 12: Establish a test safety net before restructuring untested code
 > Source: Fowler, *Refactoring* 2e — ch. 4 "Building Tests"
 
-Refactoring is only safe under tests. If the code you want to restructure has
-no tests, stop and build the net first. For untested legacy code, use
-characterization tests (see `legacy-code-seams.md`) to pin current behavior,
-then refactor on green.
+Add tests before restructuring untested code. For legacy code, pin current behavior
+with characterization tests (see `legacy-code-seams.md`), then refactor on green.
 
 ### Rule 13: Commit at every green and keep each commit revertible
 > Source: Fowler, *Refactoring* 2e — ch. 2; Beck, *Tidy First?* — "Batch Sizes"
 
-Commit whenever the suite is green and one coherent structural or behavioral
-move is complete. Small, frequent, single-purpose commits make bisection and
-revert cheap and keep review focused.
+Commit each coherent structural or behavioral move on green. Keep each commit small, single-purpose, and independently revertible.
 
 ### Rule 14: Reveal intent instead of merely shortening code
 
