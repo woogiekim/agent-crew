@@ -5,10 +5,9 @@
 - JetBrains, *Kotlin Coding Conventions*, https://kotlinlang.org/docs/coding-conventions.html
 
 ## When to Apply
-- Before writing any Kotlin class, function, or data model
-- Before choosing between `var` and `val`, class and data class, interface and abstract class
-- Before writing extension functions, lambdas, or coroutine-based async code
-- During refactor: when simplifying existing Kotlin code
+- Before writing or refactoring Kotlin classes, functions, or data models
+- Before choosing `var` vs. `val`, class vs. data class, or interface vs. abstract class
+- Before writing extensions, lambdas, or coroutine-based code
 
 ---
 
@@ -17,9 +16,8 @@
 ### Rule 1: Prefer immutability — `val` over `var`, immutable collections
 > Source: Moskala, Item 1 "Limit mutability"
 
-Mutable state is a source of bugs. Prefer `val` for properties; use
-`List`/`Set`/`Map` (not `MutableList`) in public APIs. Change state only
-through dedicated mutation functions that return new values.
+Prefer `val` properties and expose read-only `List`, `Set`, and `Map` in public APIs.
+Change state only via dedicated functions that return new values.
 
 ```kotlin
 // BAD
@@ -33,8 +31,7 @@ val total = items.sumOf { it.price }
 ### Rule 2: Eliminate platform types — annotate Java interop return types
 > Source: Moskala, Item 3 "Eliminate platform types as soon as possible"
 
-When calling Java code, annotate the result immediately at the call site to
-prevent `NullPointerException`s from propagating:
+Declare the Java result type and its nullability at the call site.
 
 ```kotlin
 // BAD — javaApi.getUser() returns a platform type T!
@@ -47,8 +44,7 @@ val user: User? = javaApi.getUser()   // explicit at the boundary
 ### Rule 3: Specify return types explicitly on public functions
 > Source: Moskala, Item 4 "Infer return types of public functions carefully"
 
-Public API functions must have explicit return types. Inferred types in public
-interfaces cause unexpected signature changes after refactoring.
+Declare return types for all public API functions to prevent signature drift during refactoring.
 
 ```kotlin
 // BAD
@@ -61,8 +57,7 @@ fun getActiveOrders(): List<Order> = repository.findAll().filter { it.isActive }
 ### Rule 4: Prefer data classes for value objects; no logic in data classes
 > Source: Moskala, Item 37 "Use data modifier to represent a bundle of data"
 
-Data classes are for pure data bundles. Do not add business logic to them —
-that logic belongs in the aggregate or domain service.
+Keep data classes as pure data bundles. Put business logic in the aggregate or domain service.
 
 ```kotlin
 // BAD — business logic in data class
@@ -78,9 +73,8 @@ class CurrencyConverter { fun convert(money: Money, target: String): Money = TOD
 ### Rule 5: Use sealed classes / sealed interfaces for exhaustive when
 > Source: Moskala, Item 39 "Prefer sealed classes and interfaces to represent restricted hierarchies"
 
-When branching on a type hierarchy, `sealed class`/`sealed interface` + `when`
-gives compile-time exhaustiveness. Never use string literals or open class
-hierarchies for discriminated unions.
+Pair sealed types with `when` for compile-time exhaustiveness.
+Never model discriminated unions with string literals or open hierarchies.
 
 ```kotlin
 // BAD
@@ -104,8 +98,7 @@ fun handle(event: DomainEvent) = when (event) {
 ### Rule 6: Prefer extension functions to utility classes
 > Source: Moskala, Item 46 "Use extension functions instead of utility functions"
 
-Kotlin extension functions attach cleanly to the type they extend, are
-discoverable via IDE completion, and avoid Util / Helper class proliferation.
+Put type-specific utilities on the receiver as extensions for IDE discovery.
 
 ```kotlin
 // BAD
@@ -120,7 +113,6 @@ fun Order.calculateTax(): Money = TODO()
 ### Rule 7: Use scope functions sparingly and consistently
 > Source: Moskala, Item 15 "Consider referencing receivers explicitly"
 
-Choose the correct scope function for the intent:
 - `let` — nullable safe-call chain, result transformation
 - `apply` — object configuration (returns receiver)
 - `run` — computation on receiver, result needed
@@ -132,9 +124,8 @@ Do not nest scope functions more than two levels deep.
 ### Rule 8: Avoid checked exceptions — use Result / Either for domain errors
 > Source: Moskala, Item 7 "Prefer Null or Failure Result when the lack of result is expected"
 
-Domain errors are not exceptional. Use `Result<T>` or a domain-specific
-`Either<Error, T>` to make failure paths explicit in the type system. Reserve
-exceptions for programming errors and infrastructure failures.
+Return `Result<T>` or a domain-specific `Either<Error, T>` for domain failures.
+Reserve exceptions for programming errors and infrastructure failures.
 
 ```kotlin
 // BAD
@@ -149,9 +140,9 @@ fun findOrder(id: OrderId): Result<Order> =
 ### Rule 9: Coroutines — structured concurrency, never GlobalScope
 > Source: Moskala, Item 52 "Use structured concurrency"; JetBrains Coroutine Best Practices
 
-All coroutines must be launched within a `CoroutineScope` whose lifecycle
-matches the caller (e.g., `viewModelScope`, `lifecycleScope`, or an
-injected scope). `GlobalScope.launch` leaks work and bypasses cancellation.
+Launch every coroutine in a caller-lifetime `CoroutineScope`, such as
+`viewModelScope`, `lifecycleScope`, or an injected scope. Never use `GlobalScope`.
+The caller's scope keeps work tied to its cancellation.
 
 ```kotlin
 // BAD
