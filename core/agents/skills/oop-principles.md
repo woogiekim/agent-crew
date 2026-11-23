@@ -2,15 +2,13 @@
 
 ## Scope
 
-These principles apply to all code written by agents, regardless of language,
-tool, framework, host adapter, or runtime environment. Kotlin examples in this
-file are illustrative only; apply the same rules to Java, JSP/JSPF, Python,
-TypeScript, JavaScript, Go, Rust, Ruby, Shell, SQL, Groovy, Scala, Swift, PHP,
-C/C++, C#, Dart, Vue, Svelte, XML, YAML, and comparable source files.
+Apply to all agent-written code across languages, tools, frameworks, hosts,
+and runtimes. The Kotlin examples also illustrate rules for Java, JSP/JSPF,
+Python, TypeScript, JavaScript, Go, Rust, Ruby, Shell, SQL, Groovy, Scala, Swift,
+PHP, C/C++, C#, Dart, Vue, Svelte, XML, YAML, and comparable source files.
 
-When this skill and `core/rules/code-quality.md` overlap, treat them as the
-same baseline. Language-specific skills may add stricter guidance, but they do
-not make these principles Kotlin-only.
+Overlapping rules in `core/rules/code-quality.md` share this baseline.
+Language-specific skills may add stricter rules.
 
 ## SOLID (Robert C. Martin, "Agile Software Development", 2002)
 
@@ -134,8 +132,6 @@ class MySQLOrderRepository : OrderRepository {
 
 ## Object Calisthenics (Jeff Bay, "The ThoughtWorks Anthology", 2008)
 
-Nine rules that make SOLID concrete at the method/class level.
-
 ### 1. Only One Level of Indentation per Method
 
 ```kotlin
@@ -208,7 +204,7 @@ class Order(val items: OrderItems)
 ### 5. Use Only One Dot per Line (Law of Demeter)
 
 > "Only talk to your immediate friends." (Ian Holland, 1987)
-> A method should only call methods on: itself, its parameters, objects it creates, its direct fields.
+> Call methods only on self, parameters, locally created objects, or direct fields.
 
 ```kotlin
 // BAD — traverses the object graph: violates LoD
@@ -254,7 +250,7 @@ class Customer(val name: String, val address: Address)
 
 ### 9. Tell, Don't Ask (Martin Fowler, "Refactoring", 1999)
 
-> "Don't ask an object for its state and then make decisions for it — tell it what to do."
+Tell the object what to do. Keep decisions based on its state inside the object.
 
 ```kotlin
 // BAD — extracting state, deciding externally
