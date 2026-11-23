@@ -6,10 +6,9 @@
 - Alistair Cockburn, *Hexagonal Architecture*, https://alistair.cockburn.us/hexagonal-architecture/ (2005)
 
 ## When to Apply
-- Before designing any new module, package, or service boundary
-- Before choosing where to place business logic, data access, or external API calls
-- Before deciding on dependencies between layers
-- During review: when evaluating whether a change violates architectural invariants
+- Before designing module, package, or service boundaries or choosing layer dependencies
+- Before placing business logic, data access, or external API calls
+- When reviewing architectural invariants
 
 ---
 
@@ -52,9 +51,8 @@ class OrderJpaEntity(val id: UUID, val status: String)      // adapter layer
 ### Rule 2: Depend on abstractions, not concretions (DIP)
 > Source: Martin, Ch. 11 "The Dependency Inversion Principle"
 
-Use cases and entities depend on interfaces (ports). Concrete implementations
-(adapters) are injected at runtime via the DI container — never imported
-directly.
+Use cases and entities depend on interfaces (ports). Inject concrete
+adapters through the DI container at runtime. Never import them directly.
 
 ```kotlin
 // BAD — use case coupled to concrete repository
@@ -74,9 +72,9 @@ class PostgresOrderRepository(private val db: DataSource) : OrderRepository { �
 ### Rule 3: Use cases are the primary unit of application behaviour
 > Source: Martin, Ch. 17 "Screaming Architecture"; Ch. 20 "Business Rules"
 
-A use case encapsulates a single user goal. It orchestrates domain entities,
-calls repositories, and dispatches events. It must NOT contain framework code,
-SQL, or HTTP concerns.
+Each use case serves one user goal by orchestrating entities, calling
+repositories, and dispatching events. Keep framework code, SQL, and HTTP
+concerns outside it.
 
 ```
 PlaceOrderUseCase.execute(PlaceOrderCommand):
@@ -137,9 +135,8 @@ class OrderController {
 ### Rule 6: The Common Closure Principle — group things that change together
 > Source: Martin, Ch. 13 "Component Cohesion — The CCP"
 
-Classes that change for the same reason and at the same time belong in the
-same component. This is SRP at the component level. Feature cohesion trumps
-technical cohesion.
+Apply SRP to components by grouping classes that change together for the
+same reason. Group by feature first.
 
 ```
 // BAD — technical layering only
@@ -163,18 +160,15 @@ src/
 ### Rule 7: Stable dependencies — depend toward stability
 > Source: Martin, Ch. 14 "Component Coupling — The Stable Dependencies Principle"
 
-A component should depend only on components that are more stable than itself.
-Volatile (frequently-changing) components must not be dependencies of stable
-(rarely-changing) ones. The domain/entity layer is the most stable — nothing
-stable should depend on volatile adapter layers.
+Depend only on components more stable than your own. Domain entities are the
+most stable layer. Keep volatile adapters out of stable components' dependencies.
 
 ### Rule 8: The Humble Object pattern — separate testable logic from I/O
 > Source: Martin, Ch. 23 "Presenters and Humble Objects"
 
-I/O-coupled code (GUI rendering, DB queries, HTTP calls) is hard to unit-test.
-Extract the testable logic into a "humble" object (view model, presenter,
-use case) that can be tested without I/O. The I/O object becomes thin ("humble")
-and needs only integration / E2E tests.
+Extract logic into a view model, presenter, or use case for unit tests
+without I/O. Keep GUI rendering, DB queries, and HTTP calls in thin I/O
+objects covered by integration or E2E tests.
 
 ---
 
