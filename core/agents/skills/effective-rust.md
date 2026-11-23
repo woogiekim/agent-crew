@@ -6,10 +6,10 @@
 - Rust API Guidelines, https://rust-lang.github.io/api-guidelines/
 
 ## When to Apply
-- Before writing any Rust struct, enum, trait, or function
-- Before deciding on ownership, borrowing, or lifetimes
-- Before choosing between `Result` / `Option` and panicking
-- During refactor: when eliminating `unwrap`, `clone`, or unsafe blocks
+- Writing Rust structs, enums, traits, or functions
+- Choosing ownership, borrowing, or lifetimes
+- Choosing `Result`, `Option`, or panic
+- Removing `unwrap`, `clone`, or unsafe blocks during refactoring
 
 ---
 
@@ -18,9 +18,8 @@
 ### Rule 1: Never use `unwrap` or `expect` in production code — propagate errors with `?`
 > Source: Rust Book Ch. 9 "Error Handling"; Gjengset Ch. 4
 
-`unwrap` panics at runtime if the value is `None` or `Err`. Use `?` to propagate
-errors up the call stack. Reserve `unwrap` / `expect` for tests and provably
-safe scenarios with a comment explaining why.
+Propagate errors with `?`. Use `unwrap` or `expect` only in tests or provably
+safe cases. Document why any such case is safe.
 
 ```rust
 // BAD
@@ -36,8 +35,7 @@ let order = repository.find(id).expect("test fixture must have order ORD-1");
 ### Rule 2: Model domain errors with `enum` and `thiserror`; use `anyhow` only at application boundaries
 > Source: Gjengset Ch. 4 "Error Handling"; Rust API Guidelines § Error types
 
-Library / domain crates define typed error enums. Application / CLI crates
-use `anyhow::Error` for ergonomic error propagation.
+Use typed error enums in libraries and domain crates. Use `anyhow::Error` at application and CLI boundaries.
 
 ```rust
 // Domain crate — typed errors
@@ -61,9 +59,8 @@ fn main() -> Result<()> {
 ### Rule 3: Prefer borrowing over cloning; clone only at ownership boundaries
 > Source: Rust Book Ch. 4 "Ownership"; Gjengset Ch. 1
 
-Cloning is safe but allocates. Pass `&T` when the callee only needs to read.
-Pass `&mut T` when it needs to mutate. Clone only when ownership must transfer
-and the caller still needs the value.
+Pass `&T` for reads and `&mut T` for mutation. Clone only when the callee
+needs ownership and the caller must retain the value.
 
 ```rust
 // BAD — unnecessary clone
@@ -76,8 +73,7 @@ fn format_order(order: &Order) -> String { format!("{:?}", order) }
 ### Rule 4: Use `Option` and `Result` combinators; avoid nested `match` chains
 > Source: Rust Book Ch. 6 "Enums and Pattern Matching"
 
-Prefer `map`, `and_then`, `unwrap_or_else`, `ok_or` to nested `match`. They
-express intent more concisely and compose well.
+Prefer `map`, `and_then`, `unwrap_or_else`, or `ok_or` to nested `match`.
 
 ```rust
 // BAD — nested match
@@ -95,10 +91,8 @@ let total = calculate(items)
 ### Rule 5: Define trait objects with `dyn Trait`; prefer generics for zero-cost abstraction
 > Source: Rust Book Ch. 17 "Object Oriented Features"; Gjengset Ch. 2
 
-Use `dyn Trait` (dynamic dispatch) when the concrete type is not known at
-compile time (heterogeneous collections, plugin systems). Use generic bounds
-`<T: Trait>` when the concrete type is known at monomorphisation time —
-zero-cost dispatch.
+Use `dyn Trait` for runtime dispatch in heterogeneous collections or plugin
+systems. Use `<T: Trait>` for static dispatch when the concrete type is known.
 
 ```rust
 // Static dispatch — zero-cost, requires knowing T at compile time
@@ -111,8 +105,7 @@ fn process(repo: &dyn OrderRepository) -> Result<(), OrderError> { … }
 ### Rule 6: Leverage the type system for state machines — never represent invalid states
 > Source: Gjengset Ch. 3 "Designing Interfaces"; Rust type-state pattern
 
-Use distinct types for each state so invalid transitions are compile errors.
-The type-state pattern eliminates runtime state-machine bugs.
+Give each state a type so invalid transitions fail at compile time.
 
 ```rust
 // BAD — runtime check for every transition
@@ -130,15 +123,14 @@ impl PendingOrder {
 ### Rule 7: Use `clippy` and `rustfmt`; treat warnings as errors in CI
 > Source: Rust API Guidelines § Documentation; Rust community consensus
 
-Run `cargo clippy -- -D warnings` in CI. `rustfmt` is the canonical formatter
-(configured via `rustfmt.toml`). Never disable clippy lints without a
-`// SAFETY:` comment (for `unsafe`) or `// allow(lint_name): reason` comment.
+Run `cargo clippy -- -D warnings` in CI and format with `rustfmt` using
+`rustfmt.toml`. Explain any lint suppression with `// SAFETY:` for `unsafe`
+or `// allow(lint_name): reason`.
 
 ### Rule 8: Document public API with doc-comments; include examples that compile
 > Source: Rust API Guidelines § Documentation; Rust Book Ch. 14
 
-Every public item (`pub fn`, `pub struct`, `pub trait`) must have a doc-comment.
-Code examples in doc-comments are run by `cargo test` — use them.
+Document every public item. Add compilable doc-comment examples that `cargo test` exercises.
 
 ```rust
 /// Calculates the total price of all items in an order.
@@ -154,17 +146,16 @@ pub fn total(&self) -> Money { … }
 ### Rule 9: Avoid `unsafe` unless absolutely necessary; document every unsafe block
 > Source: Rust Book Ch. 19 "Unsafe Rust"; Gjengset Ch. 8
 
-`unsafe` bypasses borrow-checker guarantees. If it is unavoidable (FFI,
-performance-critical intrinsics), isolate it in a small module, wrap it in a
-safe public API, and document with a `// SAFETY:` comment explaining why the
-invariants hold.
+If `unsafe` is unavoidable, as with FFI or performance-critical intrinsics,
+isolate it behind a safe public API in a small module. In each `// SAFETY:`
+comment, explain why the invariants hold.
 
 ### Rule 10: Prefer `Arc<Mutex<T>>` over `Rc<RefCell<T>>` in async/threaded code
 > Source: Rust Book Ch. 16 "Fearless Concurrency"
 
-`Rc<RefCell<T>>` is single-threaded only. `Arc<Mutex<T>>` is `Send + Sync` and
-safe for multi-threaded contexts. When using async (tokio), prefer
-`tokio::sync::Mutex` over `std::sync::Mutex` for async-aware locking.
+Keep `Rc<RefCell<T>>` single-threaded. Use `Arc<Mutex<T>>` for threaded
+sharing. For async-aware locking in Tokio, prefer `tokio::sync::Mutex` over
+`std::sync::Mutex`.
 
 ---
 
