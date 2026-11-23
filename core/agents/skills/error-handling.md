@@ -1,19 +1,19 @@
 # Skill: error-handling
 
 ## Purpose
-Enables the backend and frontend agents to design explicit, composable error flows using typed error hierarchies, Railway-Oriented Programming, and structured error contracts — eliminating silent failures and untyped exception paths.
+Use typed errors, explicit failure flows, and structured contracts in backend and frontend work.
 
 ## When to Apply
-- When designing any function that can fail (I/O, validation, domain rule violation)
-- When defining API error contracts
-- When refactoring try/catch spaghetti into typed error flows
-- Before writing any repository, service, or controller code
+- Designing fallible functions for I/O, validation, or domain rules
+- Defining API error contracts
+- Refactoring tangled try/catch blocks into typed error flows
+- Before writing repository, service, or controller code
 
 ---
 
 ## Exception Hierarchy Design
 
-Structure exceptions in three layers. Each layer has a distinct owner and propagation rule.
+Separate domain, application, and infrastructure exceptions by owner and propagation boundary.
 
 ```kotlin
 // Layer 1 — Domain exceptions (business rule violations; always intentional)
@@ -35,13 +35,13 @@ class ExternalServiceException(service: String, cause: Throwable)
 // Use standard library or framework exceptions; wrap at the boundary
 ```
 
-**Rule:** Domain exceptions must never contain infrastructure concerns. Infrastructure exceptions must be caught at the boundary and translated to Application or Domain exceptions before crossing into business logic.
+Keep infrastructure details out of domain exceptions. At the boundary, catch, log, and translate infrastructure exceptions into application or domain errors before they reach business logic.
 
 ---
 
 ## Railway-Oriented Programming (Scott Wlaschin, "Domain Modeling Made Functional", 2018)
 
-Model operations as a railway: success stays on the happy track, failures switch to the error track without throwing.
+Compose typed results. Success continues through the chain. Expected failure stops it without throwing.
 
 ```kotlin
 // Result type (Kotlin Arrow or stdlib Result)
@@ -73,8 +73,6 @@ when (val result = processOrder(id)) {
 }
 ```
 
-**Benefits:** errors are explicit in the return type, compose without nesting, and cannot be silently swallowed.
-
 ---
 
 ## Kotlin Result / Arrow Either — When to Use Each
@@ -86,13 +84,13 @@ when (val result = processOrder(id)) {
 | `sealed class Error` enum-style | Multiple distinct failure modes | Combine with either; exhaustive `when` |
 | Plain `throw` | Programming errors (bugs, illegal state) | Errors the caller cannot meaningfully handle |
 
-**Rule:** `throw` for programmer errors (contract violations, impossible states). Return `Either` / `Result` for expected failures that the caller is expected to handle.
+Throw for programmer errors such as contract violations or impossible states. Return `Either` or `Result` for expected failures callers must handle.
 
 ---
 
 ## Validation — Accumulating Errors
 
-Use a validation applicative (Arrow `Validated` / `Either` with `zip`) to collect ALL errors before reporting — not fail-fast.
+Collect all API field errors with Arrow `Validated` or `Either` with `zip`. In domain logic, stop at the first invariant violation.
 
 ```kotlin
 // Fail-fast (Either) — stops at first error
@@ -109,8 +107,6 @@ fun validateOrder(req: CreateOrderRequest): ValidatedOrder {
     return ValidatedOrder(customerId, items)
 }
 ```
-
-Prefer accumulating validation at API boundaries (show all field errors at once). Prefer fail-fast in domain logic (stop at first invariant violation).
 
 ---
 
@@ -147,7 +143,7 @@ fun handleDomain(ex: DomainException): ResponseEntity<ProblemDetail> =
     }
 ```
 
-**Rule:** never let infrastructure exceptions (`DataAccessException`, `IOException`, `HttpClientErrorException`) propagate past their boundary layer. Always catch, log, and translate.
+Apply the same boundary rule to `DataAccessException`, `IOException`, and `HttpClientErrorException`.
 
 ---
 
@@ -169,10 +165,9 @@ log.error(e.message)
 throw e
 ```
 
-**Rules:**
-- Log at the boundary where the error is **translated** (not where it's re-thrown)
-- Never log sensitive data (PII, tokens, passwords) — log the ID or type only
-- Include correlation IDs in every error log line (`trace_id`, `request_id`)
+- Log where the boundary translates the error.
+- Log only the ID or error type in place of PII, tokens, passwords, or other sensitive data.
+- Include correlation IDs (`trace_id`, `request_id`) on every error log line.
 
 ---
 
