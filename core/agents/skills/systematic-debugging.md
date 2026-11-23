@@ -11,10 +11,8 @@ detection: bug OR exception OR stack trace OR failing test OR build failure OR i
 
 ## Purpose
 
-Diagnose bugs, failed checks, integration mismatches, and repeated fix failures
-from first-party evidence before proposing root causes or implementation
-changes. The skill keeps facts, hypotheses, and fixes separate so agents do not
-guess from symptoms.
+Keep facts, hypotheses, and fixes separate. Use first-party evidence before
+proposing a cause or change.
 
 ## Source
 
@@ -34,27 +32,25 @@ provider-neutral evidence discipline.
 
 ### Phase 1 — Root cause investigation
 
-Collect first-party evidence before proposing a fix. Read the failing test,
-error output, relevant code path, recent diff, and any task-local artifacts.
-Write the observed failure in concrete terms.
+Before proposing a fix, read first-party evidence: the failing test, error
+output, relevant code path, recent diff, and task-local artifacts. Record the
+observed failure in concrete terms.
 
 For `debugger`, keep this phase read-only. Existing tests, safe reproduction
 commands, log lookups, `git diff`, `git log`, and static analysis are allowed.
 Source edits, temporary debugging code, external system or DB changes, deploys,
 commits, pushes, merges, and destructive commands are forbidden.
 
-When `TASK_DIR` is present, write structured diagnostic evidence under
-`context/debug`, especially `context/debug/reproduction.md` and
-`context/debug/evidence.json`. Do not dump raw logs wholesale; record only the
-minimum lines, paths, timestamps, and command outputs needed to support the
-diagnosis.
+With `TASK_DIR` present, write structured evidence under `context/debug`,
+especially `context/debug/reproduction.md` and `context/debug/evidence.json`.
+Keep only the log lines, paths, timestamps, and command outputs needed to
+support the diagnosis.
 
 ### Phase 2 — Pattern analysis
 
-Compare the failing path with nearby working paths. Identify whether the
-failure is isolated, repeated across a boundary, or caused by a shared
-contract such as path resolution, state shape, schema, routing, or lifecycle
-ordering.
+Compare the failing path with nearby working paths. Check for isolated
+failure, recurrence across a boundary, or a shared contract cause in path
+resolution, state shape, schema, routing, or lifecycle ordering.
 
 Use caller graph traversal to keep the comparison bounded and complete enough
 for the claim. Start with BFS inventory from the observed symptom to collect
@@ -85,9 +81,9 @@ implementation agent when appropriate, but do not make the fix.
 
 ### Three failures means question architecture
 
-After 3 failed fix attempts on the same surface, stop local patching and
-question the architecture. Ask whether the stage should be decomposed, the
-contract should move, or the workflow should re-plan before the next patch.
+After 3 failed fixes on the same surface, stop local patching and question
+the architecture. Before another patch, consider decomposing the stage,
+moving the contract, or re-planning the workflow.
 
 ## Memory Contract for Debugger
 
