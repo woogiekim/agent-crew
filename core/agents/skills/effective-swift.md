@@ -6,10 +6,10 @@
 - Swift.org, *API Design Guidelines*, https://www.swift.org/documentation/api-design-guidelines/
 
 ## When to Apply
-- Before writing any Swift struct, class, protocol, or enum
-- Before choosing between `struct` and `class`, `enum` with associated values, or `protocol` with `associatedtype`
-- Before writing async/await, Combine, or SwiftUI code
-- During refactor: when eliminating optionals misuse, reference cycles, or excessive `class` usage
+- Writing Swift structs, classes, protocols, or enums
+- Choosing value or reference types, associated values, or `associatedtype`
+- Writing async/await, Combine, or SwiftUI code
+- Refactoring optional misuse, retain cycles, or excessive class use
 
 ---
 
@@ -18,9 +18,8 @@
 ### Rule 1: Prefer `struct` over `class` for value semantics; use `class` only for shared identity
 > Source: Swift Book Ch. "Structures and Classes"; Apple WWDC 2015 "Building Better Apps with Value Types"
 
-`struct` uses value semantics — no shared mutable state, no reference cycles.
-Use `class` only when you need shared identity (e.g., view controllers,
-delegate objects, or reference counting semantics).
+Use structs for value semantics. Reserve classes for shared identity,
+such as view controllers, delegates, or reference-counted lifetimes.
 
 ```swift
 // BAD — class for a pure value object
@@ -39,8 +38,7 @@ struct Money: Equatable, Hashable {
 ### Rule 2: Never force-unwrap (`!`) in production code — use `guard let` or `if let`
 > Source: Swift Book Ch. "Optional Chaining"; Swift API Design Guidelines
 
-Force-unwrap crashes on `nil`. Use `guard let` for early-exit unwrapping and
-`if let` for conditional execution. Use `?? defaultValue` for safe fallbacks.
+Unwrap with `guard let` for early exit, `if let` for conditional work, or `?? defaultValue` for a fallback.
 
 ```swift
 // BAD
@@ -59,8 +57,7 @@ let label = order.label ?? "No label"
 ### Rule 3: Use `enum` with associated values for typed domain errors
 > Source: Swift Book Ch. "Enumerations"; Apple WWDC 2016 "Swift Error Handling"
 
-Swift's `Error` protocol + `enum` produces exhaustive, typed error handling that
-the compiler enforces.
+Use an enum conforming to `Error` for typed cases and exhaustive handling.
 
 ```swift
 // BAD — string-based errors, unchecked
@@ -84,9 +81,7 @@ func placeOrder(_ command: PlaceOrderCommand) throws -> Order {
 ### Rule 4: Use `async`/`await` over completion handlers; never block the main thread
 > Source: Swift Book Ch. "Concurrency"; Apple WWDC 2021 "Meet async/await in Swift"
 
-`async`/`await` is the canonical Swift concurrency model since Swift 5.5.
-Mark functions `async throws` for async-failable operations. Use
-`@MainActor` on UI-update functions. Never call blocking APIs on the main thread.
+Use `async throws` for fallible async work and `@MainActor` for UI updates. Keep blocking APIs off the main thread.
 
 ```swift
 // BAD — callback pyramid
@@ -107,8 +102,7 @@ func loadOrder(id: String) async throws -> Order {
 ### Rule 5: Protocols over inheritance for polymorphism; use `protocol` + `extension` for default behaviour
 > Source: Swift API Design Guidelines; Apple WWDC 2015 "Protocol-Oriented Programming"
 
-Swift's protocol-oriented design prefers composition. Provide default
-implementations via `extension` rather than requiring subclassing.
+Prefer composition and provide default implementations in protocol extensions.
 
 ```swift
 // BAD — class hierarchy for shared behaviour
@@ -124,13 +118,11 @@ struct Dog: Animal { let sound = "Woof" }
 ### Rule 6: `let` over `var`; immutable by default
 > Source: Swift Book Ch. "The Basics"; Swift API Design Guidelines
 
-Declare `let` by default. Switch to `var` only when mutation is genuinely
-needed. Immutable properties are thread-safe and easier to reason about.
+Default to `let`. Use `var` only for values that need mutation.
 
 ### Rule 7: Use descriptive names at call sites; omit redundant words
 > Source: Swift API Design Guidelines § Naming
 
-Swift API design guideline: name should read fluently at the call site.
 - Use first argument label as part of the name: `insert(_ value: T, at index: Int)`
 - Omit words that merely repeat the type: `removeElement(element:)` → `remove(_ element:)`
 - Boolean properties: `isEnabled`, `isEmpty`, `hasItems`
@@ -157,8 +149,7 @@ func testOrderTotal() throws {
 ### Rule 9: `Codable` for serialisation; never hand-roll JSON parsing
 > Source: Swift Book Ch. "Encoding and Decoding Types"
 
-Use `Codable` (`Encodable + Decodable`) for all model serialisation.
-Use `CodingKeys` to map between Swift naming and JSON keys.
+Serialize all models with `Codable` (`Encodable + Decodable`). Map Swift names to JSON with `CodingKeys`.
 
 ```swift
 struct Order: Codable {
@@ -176,8 +167,7 @@ struct Order: Codable {
 ### Rule 10: Avoid retain cycles — use `[weak self]` in closures that outlive the current scope
 > Source: Swift Book Ch. "Automatic Reference Counting"
 
-Strong captures in escaping closures create retain cycles when `self` owns the
-closure (e.g., stored as a property or passed to a long-lived object).
+Use weak captures in escaping closures that would otherwise retain their owner.
 
 ```swift
 // BAD — retain cycle
