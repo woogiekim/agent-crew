@@ -1,21 +1,18 @@
 # Skill: git-workflow
 
 ## Purpose
-Enables all agents to follow consistent branching, committing, and review practices — minimizing merge conflicts, keeping history clean, and enabling safe continuous delivery.
+Use consistent branching, commits, and reviews to limit conflicts, keep history clear, and deliver safely.
 
 ## When to Apply
-- Before creating any branch or making the first commit on a task
-- When writing a commit message
-- When preparing a pull request
-- When deciding how to integrate a feature branch into main
+- Before creating a branch or making a task's first commit
+- When writing commit messages or preparing pull requests
+- When choosing how to integrate a feature branch into `main`
 
 ---
 
 ## Trunk-Based Development (Paul Hamant, "Trunk Based Development", trunkbaseddevelopment.com)
 
-The recommended branching model for teams practicing CI/CD.
-
-**Core rule**: Developers integrate to `main` (trunk) at least once per day. Feature branches are short-lived (< 2 days).
+Recommended for CI/CD: integrate into `main` (trunk) at least daily and keep feature branches under two days.
 
 ```
 main ────●────●────●────●────●─────────► (always deployable)
@@ -67,7 +64,7 @@ chore/upgrade-spring-boot-3.2
 
 ## Conventional Commits (conventionalcommits.org)
 
-Structured commit messages enable automated changelog generation, semantic versioning bumps, and clear history.
+Structured messages support automated changelogs, SemVer, and readable history.
 
 ```
 <type>(<scope>): <description>
@@ -114,7 +111,7 @@ Closes #142
 
 (Reference: Martin Fowler, "Feature Toggles", 2016)
 
-Feature flags decouple **deployment** from **release**. Code ships to production behind a flag; the flag enables the feature when ready.
+Feature flags separate deployment from release. Enable the flag when the feature is ready.
 
 ```kotlin
 // Flag evaluation at runtime
@@ -146,7 +143,7 @@ fun cancelOrder(@PathVariable id: UUID): ResponseEntity<*> {
 | Ops flag | Kill switch for production incidents | Indefinite; document in runbook |
 | Permission flag | Gradual rollout (10% → 50% → 100%) | Until full rollout |
 
-**Rule:** delete release flags within 1 sprint of full rollout. Accumulating dead flags is a maintenance burden.
+**Rule:** delete release flags within 1 sprint of full rollout.
 
 ---
 
