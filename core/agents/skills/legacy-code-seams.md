@@ -20,10 +20,7 @@
 ### Rule 1: Treat code without tests as legacy code and net it before changing it
 > Source: Feathers, *WELC* — Preface, ch. 2 "Working with Feedback"
 
-Legacy code is code without tests. Before you edit any untested code, establish
-a test safety net around the behavior you are about to touch. Editing untested
-code without a net is the change that causes regressions; the net is not
-optional overhead, it is the precondition for a safe change.
+Legacy code is code without tests. Establish a safety net for the affected behavior before editing it.
 
 ### Rule 2: Write characterization tests to pin current actual behavior
 > Source: Feathers, *WELC* — ch. 13 "I Need to Make a Change, but I Don't Know What Tests to Write"
@@ -38,42 +35,31 @@ should do. Procedure:
    and encodes current behavior.
 5. Repeat for the branches you need to cover.
 
-Only after the behavior is pinned do you modify. A surprising or even buggy
-observed behavior is still encoded first; correcting it is a separate,
-test-driven behavioral change.
+Pin the observed behavior before modifying it, even if it is surprising or buggy.
+Correct it in a separate test-driven change.
 
 ### Rule 3: Find a seam before you insert a test
 > Source: Feathers, *WELC* — ch. 4 "The Seam Model"
 
-A **seam** is a place where you can alter behavior without editing in that
-place. Every seam has an **enabling point** where you choose which behavior
-runs. Locate a seam around the dependency that blocks testing, then use it to
-substitute a test double — instead of rewriting the untested body.
+A **seam** lets you alter behavior without editing that code. Its **enabling point**
+selects the behavior. Find the seam around the blocking dependency and substitute a test double
+while keeping the untested body intact.
 
 ### Rule 4: Prefer object seams over preprocessing and link seams
 > Source: Feathers, *WELC* — ch. 4 "Seam Types"
 
-Enumerate the seam types and prefer the most maintainable:
-
-- **Object seam** — override a method or inject a collaborator via an
-  interface/subclass; the enabling point is object construction or dependency
-  injection. **Prefer this.**
-- **Preprocessing seam** — alter behavior via macros/preprocessor before
-  compilation; language-limited and hard to reason about.
-- **Link seam** — swap an implementation at link/classpath/module-resolution
-  time; useful when source cannot be changed, but the enabling point is far
-  from the code.
-
-Reach for object seams first because their enabling point is explicit in code
-and visible to readers.
+- **Object seam** — prefer overriding a method or injecting a collaborator via an
+  interface or subclass. Construction or injection makes the enabling point explicit.
+- **Preprocessing seam** — macros change behavior before compilation. This is language-limited
+  and harder to reason about.
+- **Link seam** — swap the implementation at link, classpath, or module resolution. Useful when
+  source is unavailable to edit. The enabling point is farther from the code.
 
 ### Rule 5: Use Sprout Method to add new behavior in tested code
 > Source: Feathers, *WELC* — ch. 6 "Sprout Method"
 
-When you must add behavior to an untested method, do not grow the untested
-body. Write the new behavior as a new, fully test-driven method, and call it
-from the legacy site with a single line. The new code is born under test; the
-old code is untouched except for the one call.
+Add behavior in a new, fully test-driven method. Call it with one line from
+the legacy method and preserve the rest of the untested body.
 
 ```text
 # BAD — new logic buried inside the untested method
@@ -91,18 +77,14 @@ def post_entries(entries):
 ### Rule 6: Use Sprout Class when the sprout needs its own home
 > Source: Feathers, *WELC* — ch. 6 "Sprout Class"
 
-When the new behavior is substantial, or the legacy class cannot even be
-instantiated under test, put the new behavior in a new class that is fully
-tested, and call into it from the legacy site. This gives new logic a clean,
-tested home without depending on the untestable host.
+If new behavior is substantial or the legacy class cannot be instantiated under test,
+put the behavior in a fully tested class and delegate to it from the legacy site.
 
 ### Rule 7: Use Wrap Method to run new behavior around unchanged old behavior
 > Source: Feathers, *WELC* — ch. 7 "Wrap Method"
 
-To add behavior that always runs with an existing method, rename the old method
-and create a new method with the original name that calls the renamed original
-plus the new behavior. The untested body is preserved verbatim; the addition is
-isolated and testable.
+Rename the original method and preserve its body verbatim. Under the original name,
+add a wrapper that calls both the renamed method and the new, independently testable behavior.
 
 ```text
 # rename original pay() -> dispatch_payment(); new pay() wraps it
@@ -114,28 +96,22 @@ def pay():
 ### Rule 8: Use Wrap Class (decorator) to add behavior across a whole interface
 > Source: Feathers, *WELC* — ch. 7 "Wrap Class"
 
-When new behavior must apply around many methods, wrap the existing class in a
-decorator that implements the same interface, adds the new behavior, and
-delegates to the wrapped instance. The original class stays untouched and
-untested-body-preserving; the wrapper is small and testable.
+For behavior spanning multiple methods, add a small, testable decorator with
+the same interface. Delegate to the original instance and leave its class untouched.
 
 ### Rule 9: Break dependencies with the least behavior-changing move available
 > Source: Feathers, *WELC* — ch. 25 "Dependency-Breaking Techniques"
 
-To get code into a test harness you often must break a dependency (Extract
-Interface, Parameterize Constructor, Extract and Override Factory Method,
-Introduce Static Setter). Choose the technique that changes the least
-production behavior and can itself be applied without tests (these enabling
-edits are the sanctioned exception; see Rule 11). Once a seam exists, the real
-change is test-driven.
+Choose the dependency break with the least effect on production behavior: Extract Interface,
+Parameterize Constructor, Extract and Override Factory Method, or Introduce Static Setter.
+The technique must be safe to apply without tests under Rule 11's enabling-edit exception.
+Once the seam exists, make the real change test-first.
 
 ### Rule 10: Cover the change points and the effect sketch, not the whole class
 > Source: Feathers, *WELC* — ch. 11 "I Need to Make a Change. What Methods Should I Test?"
 
-You do not need to characterize an entire legacy class before changing one
-method. Identify the change points, sketch how effects propagate from them
-(the "effect sketch"), and put characterization tests at the boundary of that
-effect. Test what your change can break, not everything that exists.
+Identify the change points and make an effect sketch of how their effects propagate.
+Characterize the boundary of that effect to cover behavior the change could break.
 
 ### Rule 11: Characterization tests are the sanctioned re-entry into the TDD cycle
 > Source: Feathers, *WELC* — ch. 13; agent-crew `tdd.md` (new-code authority)
