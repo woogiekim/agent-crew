@@ -6,20 +6,19 @@
 - graphql-java/java-dataloader, project README
 
 ## When to Apply
-- Before changing a DGS GraphQL field resolver that loads related data for a list field or nested object field
-- Before calling a Feign, REST, gRPC, or repository dependency from a resolver for each parent object
-- When a resolver enriches products, orders, shops, options, prices, inventory, reviews, or promotions by ID
-- When downstream services expose or need a batch endpoint such as `findByIds(ids)`
-- During review when a GraphQL query can return many parent rows and each row triggers another remote or database call
+- Before changing DGS list or nested field resolvers that load related data
+- Before a resolver calls Feign, REST, gRPC, or a repository per parent
+- For ID-based enrichment of products, orders, shops, options, prices, inventory, reviews, or promotions
+- When a downstream service exposes or needs a batch endpoint such as `findByIds(ids)`
+- In reviews of queries that can trigger a remote or DB call per parent row
 
 ## Core Rules
 
 ### Rule 1: Batch nested resolver dependencies
 > Source: Netflix DGS Data Loaders (N+1), "Implementing a Data Loader"
 
-Use a DGS DataLoader for nested fields that resolve related records by key.
-Do not call a Feign client, repository, or service once per parent object from
-the field resolver.
+Batch keyed nested fields with a DGS DataLoader. Keep per-parent calls to
+Feign, repositories, and services out of field resolvers.
 
 ```kotlin
 // BAD: N parents produce N downstream calls.
@@ -43,9 +42,8 @@ fun shop(dfe: DgsDataFetchingEnvironment): CompletableFuture<Shop?> {
 ### Rule 2: Require a real batch boundary
 > Source: Netflix DGS Data Loaders (N+1), "What If My Service Doesn't Support Loading in Batches?"
 
-The loader must call a batch-capable dependency. If a Feign client only exposes
-`getById(id)`, add or request a bulk endpoint such as `getByIds(ids)` before
-claiming the resolver is batched.
+Call a batch-capable dependency. For Feign clients limited to `getById(id)`,
+add or request a bulk endpoint such as `getByIds(ids)` before claiming batching.
 
 ```kotlin
 // BAD: hides N calls inside the loader.
@@ -60,9 +58,8 @@ override fun load(keys: List<Long>): CompletionStage<List<Shop?>> =
 ### Rule 3: Preserve key-to-value mapping explicitly
 > Source: Netflix DGS Data Loaders (N+1), "MappedBatchLoader"
 
-Use `MappedBatchLoader<K, V>` when some keys may be missing or when the
-downstream response order is not guaranteed. For `BatchLoader<K, V>`, return
-values in exactly the same order as the incoming keys.
+Use `MappedBatchLoader<K, V>` for missing keys or uncertain response order.
+With `BatchLoader<K, V>`, return values in exact input-key order.
 
 ```kotlin
 @DgsDataLoader(name = "shopsById")
@@ -79,10 +76,9 @@ class ShopsByIdLoader(
 ### Rule 4: Keep DataLoader caches request-scoped
 > Source: GraphQL Java Batching, "Per Request Data Loaders"
 
-Do not store `DataLoader` instances in singleton service fields or global
-objects. Treat the loader cache as request-scoped unless a shared cache is
-explicitly designed with user, tenant, locale, and authorization in the cache
-key.
+Keep `DataLoader` instances out of singleton fields and global objects.
+Scope the cache to the request. Any explicitly designed shared cache must
+key on user, tenant, locale, and authorization.
 
 ```kotlin
 // BAD: singleton field can leak cached data across users.
@@ -95,9 +91,8 @@ val shopsLoader = dfe.getDataLoader<Long, Shop>("shopsById")
 ### Rule 5: Keep asynchronous work inside the batch loader
 > Source: GraphQL Java Batching, "Async Calls On Your Batch Loader Function Only"
 
-Do not call `DataLoader.load` from a delayed off-thread block inside the data
-fetcher. Schedule the load synchronously in the resolver and put asynchronous
-I/O inside the loader implementation.
+Call `DataLoader.load` synchronously during field resolution. Run asynchronous
+I/O inside the batch loader.
 
 ```kotlin
 // BAD: the GraphQL engine may not see this delayed load in time to dispatch it.
@@ -112,10 +107,8 @@ return dfe.getDataLoader<Long, Shop>("shopsById").load(product.shopId)
 ### Rule 6: Verify batching with a measurable call-count test
 > Source: graphql-java/java-dataloader README, statistics and batching behavior
 
-Add a unit or integration test that executes a query returning multiple parents
-and asserts the downstream batch dependency is called once with all expected
-IDs. For Feign clients, mock the bulk method and verify the single aggregated
-request.
+In a unit or integration test, query multiple parents and verify one bulk call
+with all expected IDs. For Feign, mock the bulk method and verify the aggregated request.
 
 ```kotlin
 verify(exactly = 1) { shopClient.getShops(match { it.containsAll(shopIds) }) }
