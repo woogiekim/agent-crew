@@ -1,13 +1,13 @@
 # Skill: database-design
 
 ## Purpose
-Enables the backend agent to design normalized, performant database schemas, define indexing strategies, and identify query anti-patterns before writing implementation code.
+Normalize schemas, plan indexes, and identify query anti-patterns before implementation.
 
 ## When to Apply
-- During Phase 1 (Requirement Analysis) when the PRD introduces persistent data
-- When designing new tables, collections, or aggregate roots
-- When reviewing existing schemas for normalization or performance issues
-- Before writing any ORM entity or repository code
+- When the PRD introduces persistent data in Phase 1 (Requirement Analysis)
+- When designing tables, collections, or aggregate roots
+- When reviewing normalization or schema performance
+- Before writing ORM entities or repositories
 
 ---
 
@@ -16,9 +16,8 @@ Enables the backend agent to design normalized, performant database schemas, def
 Target **3NF** for transactional data. BCNF or 4NF for stricter requirements.
 
 ### 1NF — Eliminate repeating groups
-- Each column holds atomic (indivisible) values
-- No arrays or comma-separated lists in a single column
-- Each row is uniquely identifiable
+- Store atomic values. Exclude arrays and comma-separated lists from columns.
+- Give each row a unique identity.
 
 ```sql
 -- BAD: phone_numbers is multi-valued
@@ -37,7 +36,7 @@ CREATE TABLE customer_phones (
 ```
 
 ### 2NF — Eliminate partial dependencies (applies only to composite PKs)
-- Every non-key column depends on the **whole** primary key, not part of it
+- Each non-key column depends on the full primary key.
 
 ```sql
 -- BAD: product_name depends only on product_id, not on (order_id, product_id)
@@ -58,7 +57,7 @@ CREATE TABLE products (id UUID PRIMARY KEY, name TEXT);
 ```
 
 ### 3NF — Eliminate transitive dependencies
-- Every non-key column depends on the primary key **only**, not on another non-key column
+- Each non-key column depends only on the primary key.
 
 ```sql
 -- BAD: zip_code → city (transitive: customer_id → zip_code → city)
@@ -72,12 +71,11 @@ CREATE TABLE customers (id UUID PRIMARY KEY, zip_code TEXT REFERENCES zip_codes(
 ```
 
 ### Intentional Denormalization
-Denormalize **only with documented justification** (performance measurement, not assumption):
-- Read-heavy aggregates (e.g., pre-computed `order_total`)
-- Event-sourcing read models / CQRS projections
-- Report tables with SLA requirements
+Denormalize only with measured performance evidence. Record the tradeoff in a schema comment or `design.md`.
 
-Always record the tradeoff in the schema comment or `design.md`.
+- Read-heavy aggregates (e.g., precomputed `order_total`)
+- Event-sourcing read models or CQRS projections
+- Report tables with SLA requirements
 
 ---
 
@@ -111,8 +109,7 @@ CREATE INDEX idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX idx_orders_status_created ON orders(status, created_at DESC);
 ```
 
-**Leftmost-prefix rule**: a composite index on `(A, B, C)` can be used for
-queries filtering on `A`, `(A, B)`, or `(A, B, C)`, but NOT on `B` or `C` alone.
+**Leftmost-prefix rule** — for `(A, B, C)`, use prefixes `A`, `(A, B)`, or `(A, B, C)`. Avoid relying on it for `B` or `C` alone.
 
 ### Partial index — index only the rows you query
 ```sql
@@ -136,7 +133,7 @@ CREATE INDEX idx_orders_covering ON orders(customer_id) INCLUDE (status, total);
 
 ## N+1 Query Detection and Prevention
 
-N+1 occurs when fetching N records then issuing one query per record.
+N+1 fetches N records, then queries again for each record.
 
 ```kotlin
 // BAD — N+1: one query for orders + N queries for each order's items
@@ -157,7 +154,7 @@ spring.jpa.properties.hibernate.generate_statistics=true
 logging.level.org.hibernate.stat=DEBUG
 ```
 
-Look for repeated `select * from order_items where order_id=?` patterns.
+Look for repeated `select * from order_items where order_id=?`.
 
 **Fix strategies:**
 - `JOIN FETCH` in JPQL / `fetch = FetchType.EAGER` scoped to the query
@@ -201,7 +198,7 @@ WHERE created_at >= '2024-01-01' AND created_at < '2024-01-02'
 | Drop column | After 2 deploys | App must stop reading before drop |
 | Add NOT NULL constraint | ✗ No | Backfill first → add constraint |
 
-Always use `CREATE INDEX CONCURRENTLY` to avoid locking in production:
+Use `CREATE INDEX CONCURRENTLY` for production indexes.
 ```sql
 CREATE INDEX CONCURRENTLY idx_orders_status ON orders(status);
 ```
