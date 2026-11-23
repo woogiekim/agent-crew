@@ -154,6 +154,7 @@ menu from `core/rules/workflow-presets.md` instead of a plain free-text retry.
 Accept:
 
 - One task: `crew:run "implement order API"`
+- 이슈와 작업 브랜치: `crew:run ENRBE-421 feat/ENRBE-421`
 - Multiple tasks: `crew:run "Order API" | "Product API" | "User API"`
 - Explicit background execution: `crew:run --background "implement order API"`
 - Finalize an explicit background session: `crew:run --finalize-background`
@@ -192,6 +193,21 @@ than silently combining finalization with a new task.
 Preserve each input task verbatim with cardinality `N >= 1`. Do not translate
 Korean or other non-English task text to English before planning, handoff, or
 agent execution. The exact user text is the canonical downstream task text.
+
+#### 이슈와 작업 브랜치
+
+이슈 번호와 브랜치를 명시한 단일 작업은 현재 작업 경로에서 native
+`crew run ISSUE WORK_BRANCH`로 시작한다. 호스트가 입력을 하나의 문자열로
+받으면 `crew run -- "$RAW_INPUT"`로 그대로 전달한다. 한 문자열에서는
+`feat/ENRBE-421`처럼 슬래시가 있는 브랜치를 인식한다. 일반 작업 설명과
+이슈 번호만 넘기는 호출은 기존 흐름을 사용한다.
+
+native 진입은 호출 시점 HEAD에서 upstream 없이 로컬 브랜치를 생성한다.
+detached HEAD를 포함해 기존 작업 경로를 그대로 사용한다. 출력된 핸드오프를
+이어서 처리하고 Step 4에서 브랜치나 작업 트리를 다시 만들지 않는다.
+체크아웃 확인에 실패하면 요구사항 수집이나 이슈 처리를 시작하지 않는다.
+원격 게시가 별도로 승인된 경우에만 첫 푸시에
+`git push -u origin WORK_BRANCH`를 사용한다.
 
 #### Issue Comment Ingestion
 
@@ -1129,7 +1145,7 @@ Per-intent commands (executed inline only after Approve):
 | Intent | Command |
 |---|---|
 | `merge`    | `git checkout main && git merge --no-ff "${SOURCE_BRANCH}" -m "merge: ${SOURCE_BRANCH} into main"` where `${SOURCE_BRANCH}` is the branch token extracted from TASK (the first `feat/...` / `fix/...` / etc. pattern, or the branch named after "branch" / "into main"). When no branch is identified, prompt via the host's interactive question mechanism (see `core/rules/capabilities/interactive-question.md`) for the branch name before composing the PLAN. |
-| `push`     | `git push origin "$(git rev-parse --abbrev-ref HEAD)"` for a feature branch, or `git push origin main` when the current branch is `main`. The PLAN line names the exact branch. |
+| `push`     | 승인 계획에 정확한 브랜치를 적는다. upstream 없는 작업 브랜치의 첫 푸시는 `git push -u origin WORK_BRANCH`로 같은 이름을 게시하고 추적을 설정한다. 이후 작업 브랜치는 `git push origin WORK_BRANCH`, main은 `git push origin main`을 사용한다. |
 | `deploy`   | Defer to the project's deploy script when one is recorded. When none is recorded, fall through to the regular pipeline — the fast path does not invent deploy commands. |
 | `tag`      | `git tag "${TAG_NAME}" && git push origin "${TAG_NAME}"` where `${TAG_NAME}` is extracted from TASK (e.g. `tag v1.0.0` → `v1.0.0`). When the tag name is missing, prompt via the host's interactive question mechanism (see `core/rules/capabilities/interactive-question.md`) before composing the PLAN. |
 | `rollback` | `git revert --no-edit HEAD` for "rollback" / "revert last commit". For broader rollback intents (revert deploy, reset to tag), fall through to the regular pipeline. |

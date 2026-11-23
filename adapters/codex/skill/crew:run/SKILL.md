@@ -13,8 +13,13 @@ crew:run
 
 ## Execution
 
-1. Invoke the native `crew run` entry. If it returns
-   `STATUS: runtime_drift_selection_required`, present the emitted choices with
+1. Invoke the native `crew run` entry. Pass an issue plus its work branch as
+   the original single string (e.g. `crew run -- "ENRBE-421 feat/ENRBE-421"`).
+   When the user explicitly identifies an unqualified branch, pass the issue
+   and branch as separate arguments.
+   Continue from the returned handoff after checkout succeeds. A checkout
+   failure ends the invocation before requirements or issue work.
+   If it returns `STATUS: runtime_drift_selection_required`, present the emitted choices with
    the emitted `QUESTION_ID`, `QUESTION_PROMPT`, `OPTIONS_JSON`, and
    `QUESTION_STATE_DIR`, and `DRIFT_DIAGNOSTICS`. In Plan mode, use `request_user_input`; in Default mode,
    render the same options as structured Markdown. Record the canonical chosen

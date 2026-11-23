@@ -67,6 +67,7 @@ Commands:
                                     Refresh installed assets
   run [--read-only] [--variants N] "task"
                                     Write state and host handoff for a task
+  run ISSUE WORK_BRANCH             Check out a local branch before issue handoff
   evolve status|approve|apply      Inspect and operate on approved learning proposals
   relay [args]                     Package a prompt for another AI session
   sessions [args]                  List recent AI session candidates
@@ -1548,6 +1549,10 @@ cmd_run() {
 usage: crew run [--read-only] [--mutation-scope read_only|workspace_write]
                 [--variants N]
                 [--fake-host-result completed] [--host-bridge-command CMD] "task"
+       crew run ISSUE WORK_BRANCH
+
+ISSUE WORK_BRANCH creates a local branch at the current HEAD without upstream
+and continues only after verifying checkout in the current working tree.
 
 Creates deterministic local task state and a supervisor handoff. If no external
 host bridge is configured, the run ends as STATUS: handoff_ready after writing

@@ -3038,8 +3038,72 @@ def command_run_variants(
     return 0
 
 
+def parse_issue_branch_input(task: str, work_branch: str | None) -> tuple[str, str, str]:
+    issue_pattern = r"(?:#?[0-9]+|[A-Z][A-Z0-9]*-[0-9]+)"
+    if work_branch is not None:
+        if not re.fullmatch(issue_pattern, task) or not work_branch:
+            raise ValueError("두 인자는 이슈 번호와 작업 브랜치여야 합니다.")
+        return f"{task} {work_branch}", task, work_branch
+
+    # Host wrappers pass original input as one argument. A namespaced branch
+    # distinguishes this form from an ordinary two-word issue description.
+    match = re.fullmatch(
+        rf"[ \t]*({issue_pattern})[ \t]+([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._/-]+)[ \t]*",
+        task,
+    )
+    if match:
+        return task, match[1], match[2]
+    return task, "", ""
+
+
+def checkout_issue_branch(project_root: Path, branch: str) -> str:
+    start_head = current_git_head(project_root)
+    if not start_head:
+        raise ValueError("작업 브랜치의 시작점이 될 Git HEAD를 확인할 수 없습니다.")
+
+    git = ["git", "-C", str(project_root)]
+    validated = subprocess.run(
+        [*git, "check-ref-format", "--branch", branch], capture_output=True, text=True,
+    )
+    if validated.returncode or validated.stdout.strip() != branch:
+        raise ValueError(f"유효하지 않은 작업 브랜치입니다: {branch}")
+
+    subprocess.run(
+        [*git, "switch", "--no-track", "--create", branch, start_head],
+        check=True, capture_output=True, text=True,
+    )
+    active_ref = subprocess.check_output(
+        [*git, "symbolic-ref", "--quiet", "HEAD"], stderr=subprocess.PIPE, text=True,
+    ).strip()
+    if active_ref != f"refs/heads/{branch}" or current_git_head(project_root) != start_head:
+        raise ValueError(f"지정한 시작점에서 작업 브랜치 체크아웃을 확인할 수 없습니다: {branch}")
+
+    upstream = subprocess.check_output(
+        [*git, "for-each-ref", "--format=%(upstream)", active_ref], stderr=subprocess.PIPE, text=True,
+    ).strip()
+    if upstream:
+        raise ValueError(f"작업 브랜치에 이미 upstream이 설정되어 있습니다: {branch}")
+    return start_head
+
+
 def command_run(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve() if args.project_root else git_root()
+    variants = getattr(args, "variants", 1)
+    mutation_scope = getattr(args, "mutation_scope", "workspace_write")
+    if variants < 1:
+        print("error: --variants must be a positive integer", file=sys.stderr)
+        return 2
+
+    try:
+        raw_task, issue_ref, work_branch = parse_issue_branch_input(args.task, getattr(args, "work_branch", None))
+        if issue_ref and (variants != 1 or mutation_scope == "read_only"):
+            raise ValueError("작업 브랜치 지정은 쓰기 가능한 단일 작업에서만 지원합니다.")
+        pre_run_head = checkout_issue_branch(project_root, work_branch) if issue_ref else ""
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        print(f"error: {detail.strip()}", file=sys.stderr)
+        return 2
+
     agent_crew_home = Path(os.environ.get("AGENT_CREW_HOME", Path.home() / ".agent-crew")).expanduser()
     state_info = resolve_project_state(
         home=agent_crew_home,
@@ -3055,10 +3119,6 @@ def command_run(args: argparse.Namespace) -> int:
     now = datetime.now(timezone.utc)
     now_z = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     session_id = now.strftime("%Y%m%d-%H%M%S")
-    variants = getattr(args, "variants", 1)
-    if variants < 1:
-        print("error: --variants must be a positive integer", file=sys.stderr)
-        return 2
     if variants > 1:
         try:
             with operation_lock(state_dir, ".variants.lock"):
@@ -3081,10 +3141,8 @@ def command_run(args: argparse.Namespace) -> int:
     context_dir = task_dir / "context"
     context_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_task = args.task
     normalization_metadata = input_normalization_metadata(raw_task, next_target="crew run supervisor")
     task = raw_task
-    mutation_scope = getattr(args, "mutation_scope", "workspace_write")
 
     fake_completed_requested = args.fake_host_result == "completed"
     fake_quality_blocked = fake_completed_requested and looks_mutating_task(task)
@@ -3123,7 +3181,7 @@ def command_run(args: argparse.Namespace) -> int:
         "task_id": task_id,
         "session_id": session_id,
         "task": task,
-        "branch": f"crew/{slug(task)}",
+        "branch": work_branch or f"crew/{slug(task)}",
         "project_root": str(project_root),
         "project_name": project_name,
         "project_state_key": state_info["project_state_key"],
@@ -3174,6 +3232,12 @@ def command_run(args: argparse.Namespace) -> int:
         f"STATUS: {result_status}\n"
         f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
     )
+    if issue_ref:
+        register["issue_ref"] = issue_ref
+        register["pre_run_head"] = pre_run_head
+        (task_dir / "branch.txt").write_text(f"{work_branch}\n", encoding="utf-8")
+        (task_dir / "pre-run-head.txt").write_text(f"{pre_run_head}\n", encoding="utf-8")
+        handoff += f"ISSUE_REF: {issue_ref}\nBRANCH: {work_branch}\n"
     if result_status == "blocked":
         handoff += "BLOCKER: host AI bridge has not completed this handoff\n"
 
@@ -3204,7 +3268,8 @@ def command_run(args: argparse.Namespace) -> int:
     write_json(task_dir / "pipeline.json", pipeline)
     if mutation_scope != "read_only" and looks_mutating_task(task):
         capture_baseline(task_dir, project_root, checklist_evidence_version=1)
-    issue_ingestions = record_issue_ingestion_evidence(task_dir, raw_task)
+    issue_input = f"#{issue_ref}" if issue_ref.isdecimal() else issue_ref
+    issue_ingestions = record_issue_ingestion_evidence(task_dir, issue_input if issue_ref else raw_task)
     if issue_ingestions:
         register["issue_comment_ingestion"] = issue_ingestions
         write_json(task_dir / "register.json", register)
@@ -4277,6 +4342,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="create deterministic crew run state")
     run.add_argument("task")
+    run.add_argument("work_branch", nargs="?")
     run.add_argument("--project-root")
     run.add_argument(
         "--mutation-scope",
