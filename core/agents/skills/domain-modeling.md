@@ -1,19 +1,19 @@
 # Skill: domain-modeling
 
 ## Purpose
-Enables the planner and backend agents to discover domain concepts through Event Storming, define Aggregate boundaries, establish Bounded Contexts, and produce a domain model that drives the implementation layer.
+Use Event Storming, Aggregates, and Bounded Contexts to build the domain model that guides implementation.
 
 ## When to Apply
-- When the PRD introduces new business capabilities not covered by existing entities
-- When designing the boundary between microservices or modules
-- When refactoring an Anemic Domain Model into a rich domain model
-- Before writing any entity, repository, or use-case class
+- When the PRD adds capabilities beyond existing entities
+- When defining service or module boundaries
+- When adding behavior to an Anemic Domain Model
+- Before writing entities, repositories, or use cases
 
 ---
 
 ## Event Storming (Alberto Brandolini, 2012)
 
-A collaborative modeling technique that discovers the domain by focusing on **Domain Events** (things that happened).
+Map **Domain Events** together to discover domain behavior.
 
 ### Workshop flow (condensed — for solo analysis)
 
@@ -54,7 +54,7 @@ A collaborative modeling technique that discovers the domain by focusing on **Do
 
 (Reference: Eric Evans, "Domain-Driven Design", 2003; Vaughn Vernon, "Implementing Domain-Driven Design", 2013)
 
-A **Bounded Context** is an explicit boundary within which a domain model applies with a consistent meaning of terms. The same word may mean different things in different contexts.
+A **Bounded Context** defines where a model and its vocabulary apply. Meanings can vary across contexts.
 
 ```
 ┌─────────────────────────────┐     ┌─────────────────────────────┐
@@ -81,7 +81,7 @@ A **Bounded Context** is an explicit boundary within which a domain model applie
 
 ## Aggregate Design
 
-An **Aggregate** is a cluster of domain objects treated as a unit for data changes. Each Aggregate has a single **Aggregate Root** that controls all access.
+An **Aggregate** groups domain objects into one unit of change. One **Aggregate Root** controls all access.
 
 ### Rules (Vernon, "Implementing DDD")
 
@@ -164,7 +164,7 @@ order.pullEvents().forEach { event -> eventPublisher.publish(event) }
 
 ## Ubiquitous Language
 
-Build a shared vocabulary between domain experts and engineers. Document in `design.md`:
+Agree on vocabulary with domain experts and engineers. Record it in `design.md`.
 
 ```markdown
 ## Ubiquitous Language — Order Context
@@ -177,7 +177,7 @@ Build a shared vocabulary between domain experts and engineers. Document in `des
 | Backorder | An Order that cannot be immediately fulfilled due to insufficient inventory |
 ```
 
-**Rule:** Never use a term in code that doesn't appear in the Ubiquitous Language dictionary. Rename classes and methods when the language evolves.
+Use only dictionary terms in code. Rename classes and methods as the shared vocabulary evolves.
 
 ---
 
