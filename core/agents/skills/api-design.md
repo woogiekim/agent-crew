@@ -1,19 +1,19 @@
 # Skill: api-design
 
 ## Purpose
-Enables the backend agent to design RESTful and domain-driven API contracts before writing implementation code, ensuring the API surface is coherent, versioned, and aligned with the domain model derived from the PRD.
+Design a coherent, versioned REST API contract from the PRD's domain model before implementation.
 
 ## When to Apply
-- During Phase 1 (Requirement Analysis) before any TDD cycle begins
-- When the PRD introduces new resources, relationships, or workflows
-- When the frontend or designer agent needs an API contract to define integration points
-- When refactoring an existing API surface to align with domain model changes
+- During Phase 1 (Requirement Analysis), before TDD
+- For new PRD resources, relationships, or workflows
+- When frontend or design needs an API integration contract
+- When aligning existing endpoints with domain-model changes
 
 ---
 
 ## REST Maturity Model (Leonard Richardson, 2008)
 
-Target **Level 2** at minimum; Level 3 (HATEOAS) is optional unless the client is generic.
+Target **Level 2** or higher. Require Level 3 (HATEOAS) for generic clients.
 
 | Level | Name | Characteristics |
 |---|---|---|
@@ -44,7 +44,7 @@ Target **Level 2** at minimum; Level 3 (HATEOAS) is optional unless the client i
 
 ## Resource-Oriented URL Design
 
-Model endpoints around domain resources, not actions. Use HTTP verbs for semantics.
+Name endpoints for domain resources and express operations through HTTP methods.
 
 ```
 POST   /orders                       # Create
@@ -64,7 +64,7 @@ DELETE /orders/{id}                  # Remove
 
 ## Request / Response Contract Definition
 
-Define typed shapes before coding. Document in `{TASK_DIR}/context/design.md`.
+Define typed requests and responses in `{TASK_DIR}/context/design.md` before coding.
 
 ```kotlin
 // Request
@@ -87,7 +87,7 @@ data class OrderResponse(
 
 ## Error Contract — RFC 7807 Problem Details
 
-Standardize error responses using the Problem Details format (RFC 7807):
+Use RFC 7807 Problem Details for errors.
 
 ```kotlin
 data class ProblemDetail(
@@ -114,7 +114,7 @@ Domain exception → HTTP status mapping:
 
 ## Pagination Patterns
 
-Choose one strategy per collection endpoint and document it in design.md.
+Document one pagination strategy per collection endpoint in `design.md`.
 
 ### Offset Pagination (simple, UI-friendly)
 ```
@@ -129,7 +129,7 @@ data class PageResponse<T>(
     val hasNext: Boolean
 )
 ```
-**Limitation:** unstable under concurrent insertions (items shift between pages).
+Concurrent insertions can shift items between pages.
 
 ### Cursor Pagination (stable, preferred for real-time data)
 ```
@@ -142,25 +142,23 @@ data class CursorPageResponse<T>(
     val hasMore: Boolean
 )
 ```
-**Use when:** feed-style lists, real-time updates, large datasets.
+Use for feeds, real-time updates, and large datasets.
 
 ---
 
 ## Aggregate Root Alignment (DDD)
 
-Each API resource should correspond to an **Aggregate Root**. Never expose internal entities directly.
+Map each API resource to an **Aggregate Root**. Check before coding:
 
-**Checklist before coding:**
-- Does each endpoint operate on exactly one Aggregate Root?
-- Are IDs external (UUID) rather than internal (auto-increment)?
-- Are response objects free of lazy-loaded child collections?
-- Does the response DTO hide internal domain state?
+- Each endpoint operates on exactly one Aggregate Root.
+- IDs are external UUIDs.
+- Response DTOs omit lazy-loaded children and hide internal entities and domain state.
 
 ---
 
 ## Conditional Requests — ETag (RFC 7232)
 
-Use ETags to prevent stale updates (optimistic locking over HTTP):
+Use ETags for optimistic locking to prevent stale updates.
 
 ```http
 # Server response
@@ -190,7 +188,7 @@ Return **429 Too Many Requests** when the limit is exceeded.
 
 ## Versioning Strategy
 
-Document the chosen approach in design.md before any client contract is published:
+Record the strategy in `design.md` before publishing any client contract.
 
 | Strategy | Example | Notes |
 |---|---|---|
@@ -198,13 +196,13 @@ Document the chosen approach in design.md before any client contract is publishe
 | Header-based | `Accept: application/vnd.api+json;version=2` | Cleanest; harder to test in browser |
 | Query param | `/orders?version=2` | Easiest for clients; pollutes query space |
 
-**Preferred for greenfield:** path-based (`/v2/`) — easy to discover and cache.
+For new APIs, prefer discoverable, cache-friendly paths such as `/v2/`.
 
 ---
 
 ## OpenAPI Contract-First Approach
 
-Write the OpenAPI 3.x spec **before** implementation; generate server stubs and client SDKs from it.
+Write the OpenAPI 3.x spec **before** implementation. Generate server stubs and client SDKs from it.
 
 ```yaml
 # openapi.yaml (abbreviated)
