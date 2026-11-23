@@ -6,10 +6,10 @@
 - Typelevel, *Scala Best Practices*, https://nrinaudo.github.io/scala-best-practices/
 
 ## When to Apply
-- Before writing any Scala class, trait, case class, or object
-- Before choosing between `val`/`var`, `Option` / `Either` / `Try`, and collection operations
-- Before using implicits, type classes, or higher-kinded types
-- During refactor: when eliminating `null`, `throw`, or mutable state in Scala code
+- Writing Scala classes, traits, case classes, or objects
+- Choosing `val` or `var`, `Option` / `Either` / `Try`, or collection operations
+- Using implicits, type classes, or higher-kinded types
+- Removing `null`, `throw`, or mutable state during refactoring
 
 ---
 
@@ -18,9 +18,8 @@
 ### Rule 1: Prefer immutability — `val`, immutable collections, case classes
 > Source: Twitter Effective Scala § Immutability; Odersky Ch. 4
 
-Mutable state is a concurrency hazard and a source of reasoning bugs. Prefer
-`val` over `var`. Use `scala.collection.immutable.*` by default. Model value
-objects as `case class` (immutable, `copy`-able).
+Default to `val` and `scala.collection.immutable.*`. Model value objects
+as immutable case classes with `copy`.
 
 ```scala
 // BAD
@@ -55,8 +54,8 @@ def findOrder(id: OrderId): Either[OrderError, Order] =
 ### Rule 3: Pattern matching over `isInstanceOf` / `asInstanceOf`
 > Source: Twitter Effective Scala § Pattern matching; Odersky Ch. 15
 
-Pattern matching is exhaustive on sealed hierarchies, readable, and
-prevents `ClassCastException`. Never use `isInstanceOf` in application code.
+Use pattern matching for exhaustiveness checks on sealed types and to avoid cast failures.
+Never use `isInstanceOf` in application code.
 
 ```scala
 // BAD
@@ -73,8 +72,7 @@ event match {
 ### Rule 4: Sealed traits for domain discriminated unions — exhaustiveness enforced
 > Source: Twitter Effective Scala § Types; Odersky Ch. 15
 
-Sealed traits restrict subclasses to the current file — the compiler warns on
-non-exhaustive pattern matches.
+Sealed traits confine subclasses to one file and let the compiler flag incomplete matches.
 
 ```scala
 sealed trait OrderStatus
@@ -92,9 +90,8 @@ def label(status: OrderStatus): String = status match {
 ### Rule 5: Keep implicits narrow and explicit — prefer explicit parameters when readable
 > Source: Twitter Effective Scala § Implicits; Typelevel best practices
 
-Implicits are powerful but make code hard to trace. Use `given`/`using`
-(Scala 3) or `implicit` (Scala 2) only for type-class instances and context
-propagation. Never use implicits for domain logic or to save typing.
+Reserve Scala 3 `given`/`using` and Scala 2 `implicit` for type-class instances
+and context propagation. Pass domain logic and convenience arguments explicitly.
 
 ```scala
 // BAD — implicit conversion for convenience
@@ -109,8 +106,7 @@ given Ordering[Money] with
 ### Rule 6: Prefer for-comprehensions over nested `map`/`flatMap` chains
 > Source: Twitter Effective Scala § Functional programming
 
-For-comprehensions desugar to `flatMap` / `map` / `withFilter` but are more
-readable for sequences of monadic operations.
+Use for-comprehensions to express monadic sequences clearly. They desugar to `flatMap`, `map`, and `withFilter`.
 
 ```scala
 // BAD — nested
@@ -131,9 +127,9 @@ def placeOrder(cmd: PlaceOrderCommand): Either[DomainError, Order] =
 ### Rule 7: Avoid mutable collections; use `Vector` for indexed, `List` for prepend-heavy
 > Source: Twitter Effective Scala § Collections
 
-`List` is O(1) prepend, O(n) indexed access — good for functional recursion.
-`Vector` is effectively O(1) random access — good for general purpose.
-Never use `ArrayBuffer` / `ListBuffer` in public APIs.
+Use `List` for recursive, prepend-heavy work (O(1) prepend, O(n) indexing).
+Use `Vector` for general use and effectively O(1) random access.
+Never expose `ArrayBuffer` or `ListBuffer` in public APIs.
 
 ### Rule 8: ScalaTest / MUnit — descriptive test names, avoid `AnyFlatSpec` boilerplate
 > Source: ScalaTest documentation; community consensus
@@ -152,15 +148,12 @@ class OrderServiceSpec extends AnyFunSpec {
 ### Rule 9: No `var` in `object` scope; use `lazy val` for deferred initialisation
 > Source: Twitter Effective Scala § Objects; Typelevel best practices
 
-Mutable `object` state is effectively global mutable state. Use `lazy val` for
-expensive once-computed values; use dependency injection for services.
+Use `lazy val` for expensive one-time initialization. Inject services as dependencies.
 
 ### Rule 10: Format with `scalafmt`; lint with `scalafix`; both enforced in CI
 > Source: Scala community consensus
 
-`scalafmt` is the canonical formatter. `scalafix` rules (`OrganizeImports`,
-`RemoveUnused`, `DisableSyntax`) prevent accumulation of dead code and
-dangerous constructs.
+Format with `scalafmt`. Use `OrganizeImports`, `RemoveUnused`, and `DisableSyntax` in `scalafix`.
 
 ---
 
