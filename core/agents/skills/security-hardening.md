@@ -1,13 +1,13 @@
 # Skill: security-hardening
 
 ## Purpose
-Enables the backend and devops agents to apply authentication, authorization, secrets management, and transport security patterns correctly — preventing the most common application security failures without requiring a security specialist.
+Backend and devops guidance for authentication, authorization, secrets, and transport security.
 
 ## When to Apply
-- When designing authentication or authorization for a new API
-- When adding or modifying how credentials and secrets are stored
-- When configuring CORS, HTTPS, or security headers
-- When setting up CI/CD pipelines that handle secrets
+- Designing authentication or authorization for a new API
+- Adding or changing credential or secret storage
+- Configuring CORS, HTTPS, or security headers
+- Setting up CI/CD that handles secrets
 
 ---
 
@@ -40,7 +40,7 @@ eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImV4cCI6MTcxNTg2NTYwMH0.sig
 | `ES256` | Asymmetric (ECDSA P-256) | Smaller key size; same security as RS256 |
 | `HS256` | Symmetric (HMAC) | Single service only; secret must never leave server |
 
-**Never use `alg: none`**. Reject any token that presents `alg: none` or an unexpected algorithm.
+Never issue tokens with `alg: none`. Reject unsigned tokens and unexpected signing algorithms.
 
 ### Token lifetime
 
@@ -49,7 +49,7 @@ eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMyIsImV4cCI6MTcxNTg2NTYwMH0.sig
 | Access token | 15 min – 1 hour | In-memory (JS); HttpOnly cookie (web) |
 | Refresh token | 7–30 days | HttpOnly, Secure, SameSite=Strict cookie |
 
-Store access tokens in memory (not `localStorage`) — XSS cannot read memory but can read `localStorage`.
+Keep JavaScript access tokens in memory. Avoid `localStorage`.
 
 ### Spring Boot JWT validation
 
@@ -119,7 +119,7 @@ class OrderSecurityEvaluator(private val orderRepository: OrderRepository) {
 }
 ```
 
-**IDOR prevention rule:** never trust client-supplied IDs for ownership checks. Always verify against the authenticated user's identity server-side.
+**IDOR prevention** — Verify ownership server-side using the authenticated user's identity. Client-supplied IDs identify the resource only.
 
 ---
 
@@ -194,9 +194,8 @@ class CorsConfig : WebMvcConfigurer {
 }
 ```
 
-**Rules:**
-- Never combine `allowCredentials(true)` with `allowedOrigins("*")` — browsers block it, and it indicates a security misconfiguration
-- Always specify the method allowlist; don't use `allowedMethods("*")`
+- With `allowCredentials(true)`, require explicit origins. Browsers reject `allowedOrigins("*")` with credentials.
+- Always list allowed methods explicitly. Never use `allowedMethods("*")`.
 
 ---
 
@@ -255,7 +254,7 @@ data class OrderItemRequest(
 fun createOrder(@Valid @RequestBody request: CreateOrderRequest): ResponseEntity<OrderResponse>
 ```
 
-**SQL Injection prevention:** always use parameterized queries / prepared statements. Never build SQL via string concatenation.
+**SQL Injection prevention** — Use parameterized queries or prepared statements. Never build SQL by concatenation.
 
 ```kotlin
 // GOOD — parameterized
