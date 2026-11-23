@@ -6,10 +6,10 @@
 - Dave Cheney, *Practical Go: Real World Advice for Writing Maintainable Go Programs*, https://dave.cheney.net/practical-go
 
 ## When to Apply
-- Before writing any Go package, struct, or interface
-- Before choosing between value and pointer receivers, goroutines and channels
-- Before writing error handling, interface definitions, or package-level variables
-- During refactor: when simplifying existing Go code
+- Writing Go packages, structs, and interfaces
+- Choosing value or pointer receivers and using goroutines or channels
+- Handling errors, defining interfaces, or adding package-level variables
+- Refactoring Go code
 
 ---
 
@@ -18,10 +18,9 @@
 ### Rule 1: Return errors explicitly; never panic for expected failure
 > Source: Effective Go § Error handling; Cheney "Errors" chapter
 
-The Go error handling idiom is `(value, error)`. Return `error` as the last
-return value; callers must check it. `panic` is reserved for programming errors
-(nil pointer, out-of-bounds) and package init failures — never for expected
-domain failures.
+Return `error` last, as in `(value, error)`, and check it at the call site.
+Reserve `panic` for programming errors such as nil dereferences or bounds
+violations, and for package initialization failures.
 
 ```go
 // BAD — panic for expected failure
@@ -42,8 +41,8 @@ func FindOrder(id string) (*Order, error) {
 ### Rule 2: Wrap errors with context; use `fmt.Errorf("…: %w", err)`
 > Source: Effective Go; Go 1.13 errors wrapping (pkg/errors pattern)
 
-Add context at each layer so stack traces are self-explanatory. Use `%w` to
-preserve the original error for `errors.Is` / `errors.As` unwrapping.
+Add context at each layer. Wrap with `%w` so `errors.Is` and `errors.As`
+can inspect the original error.
 
 ```go
 // BAD — opaque error
@@ -56,9 +55,8 @@ return nil, fmt.Errorf("findOrder(%s): %w", id, err)
 ### Rule 3: Prefer small interfaces; accept interfaces, return structs
 > Source: Effective Go § Interfaces; Cheney "Interface segregation"
 
-Keep interfaces small (1–3 methods). Functions that accept interfaces are
-easier to test. Functions that return structs preserve concrete behaviour for
-callers.
+Keep interfaces to 1–3 methods. Accept interfaces for testability and return
+structs to expose concrete behavior.
 
 ```go
 // BAD — large interface forces mock complexity
@@ -79,9 +77,8 @@ type OrderWriter interface { Save(order Order) error }
 ### Rule 4: Use goroutines and channels for concurrency; always handle cancellation
 > Source: Effective Go § Goroutines; Go blog "Pipelines and Cancellation"
 
-Pass `context.Context` as the first argument to any function that may block.
-Cancel contexts to stop goroutines — never leave goroutines running after the
-caller no longer needs them.
+Pass `context.Context` first to any function that may block.
+Cancel it and stop its goroutines when the caller no longer needs them.
 
 ```go
 // BAD — goroutine leak
@@ -101,7 +98,7 @@ func ProcessOrder(ctx context.Context, id string) error {
 ### Rule 5: Initialise structs with named fields; avoid positional literals
 > Source: Uber Go Style Guide § Initializing Structs
 
-Named field initialisation is resistant to struct evolution and is self-documenting.
+Name fields for clarity and to keep literals stable as structs evolve.
 
 ```go
 // BAD
@@ -119,8 +116,8 @@ order := Order{
 ### Rule 6: Use `defer` for cleanup; keep deferred functions simple
 > Source: Effective Go § Defer
 
-`defer` runs on function exit (including panic recovery). Use it for resource
-cleanup (close, unlock, span end). Avoid complex logic in deferred calls.
+Use simple deferred calls for cleanup on exit, including panic recovery
+(e.g. close, unlock, end a span).
 
 ```go
 func loadConfig(path string) (Config, error) {
@@ -134,9 +131,7 @@ func loadConfig(path string) (Config, error) {
 ### Rule 7: Package names are lowercase, single-word; avoid `util`, `common`, `helpers`
 > Source: Effective Go § Package names; Cheney "Package design"
 
-Package names are part of the API. Vague names (`util`) make it impossible to
-understand what the package does. Name packages by their purpose
-(`orders`, `payments`, `events`).
+Name packages by purpose, such as `orders`, `payments`, or `events`. The name is part of the API.
 
 ```go
 // BAD
@@ -151,8 +146,7 @@ package events  // clear responsibility
 ### Rule 8: Table-driven tests with `t.Run` subtests
 > Source: Go blog "Using Subtests and Sub-benchmarks"; Uber Go Style Guide
 
-Table-driven tests reduce boilerplate and make it easy to add cases.
-`t.Run` provides named subtests for clear failure messages.
+Add cases to the table and name each `t.Run` subtest so failures identify the case.
 
 ```go
 func TestCalculateTotal(t *testing.T) {
@@ -176,8 +170,7 @@ func TestCalculateTotal(t *testing.T) {
 ### Rule 9: Avoid global mutable state; use dependency injection via constructors
 > Source: Uber Go Style Guide § Global Variables; Cheney "Dependency injection"
 
-Global variables create hidden coupling and make tests non-deterministic.
-Pass dependencies as constructor parameters.
+Pass dependencies to constructors to expose coupling and keep tests deterministic.
 
 ```go
 // BAD
@@ -193,9 +186,8 @@ func NewOrderService(repo OrderRepository) *OrderService {
 ### Rule 10: `gofmt` and `golangci-lint` are mandatory
 > Source: Effective Go § Formatting; Go community consensus
 
-All Go code must pass `gofmt` (canonical formatter, no configuration). Run
-`golangci-lint` with at minimum the `errcheck`, `staticcheck`, and `unused`
-linters enabled. CI must enforce both.
+Enforce `gofmt` and `golangci-lint` in CI on all Go code. Enable at least
+`errcheck`, `staticcheck`, and `unused`.
 
 ---
 
