@@ -18,9 +18,8 @@
 ### Rule 1: Ubiquitous Language — name classes and methods after domain concepts
 > Source: Evans, Ch. 2 "Communication and the Use of Language"
 
-Every class, method, variable, and module name must come from the business
-domain language agreed upon with domain experts. Technical names
-(`Manager`, `Handler`, `Processor`, `Helper`) are forbidden in the domain layer.
+Name every class, method, variable, and module in the language agreed with domain experts.
+Forbid technical names such as `Manager`, `Handler`, `Processor`, and `Helper` in the domain layer.
 
 ```kotlin
 // BAD — technical naming
@@ -33,10 +32,8 @@ class OrderPlacementService { fun place(command: PlaceOrderCommand): Order { …
 ### Rule 2: Aggregate — one root per consistency boundary; one repository per aggregate
 > Source: Evans, Ch. 6 "The Life Cycle of a Domain Object"; Vernon, Ch. 10
 
-An **Aggregate** is a cluster of domain objects with a single **Aggregate Root**
-that controls all invariant enforcement and access. External objects hold
-references to the root only (never to internal entities). Each aggregate has
-exactly one Repository.
+An **Aggregate** groups domain objects under one **Aggregate Root**, which controls all access and enforces invariants.
+External objects may reference only the root. Each aggregate has exactly one repository.
 
 ```kotlin
 // BAD — external object holds reference to inner entity
@@ -50,10 +47,8 @@ val item = order.findItem(itemId)
 ### Rule 3: Entities have identity; Value Objects have no identity
 > Source: Evans, Ch. 5 "A Model Expressed in Software"
 
-- **Entity**: defined by a continuous identity (e.g., `Order` with `OrderId`).
-  Two orders are different entities even if all their fields are equal.
-- **Value Object**: defined entirely by its attributes (e.g., `Money`, `Address`).
-  Two `Money(1000, KRW)` instances are interchangeable. Value Objects are immutable.
+- **Entity**: has a stable identity, such as `OrderId`. Distinct identities stay distinct when other fields match.
+- **Value Object**: immutable and interchangeable when all attributes match, as with two `Money(1000, KRW)` instances.
 
 ```kotlin
 // Entity — identity matters
@@ -71,8 +66,7 @@ data class Money(val amount: BigDecimal, val currency: Currency) {
 ### Rule 4: Protect aggregate invariants — never expose internal collections as mutable
 > Source: Evans, Ch. 6; Vernon, Ch. 10
 
-Aggregates enforce business rules. Never expose mutable internal collections
-directly. Provide behaviour methods that enforce invariants.
+Keep mutable internal collections private. Enforce invariants in behavior methods.
 
 ```kotlin
 // BAD — invariant can be bypassed
@@ -94,8 +88,7 @@ class Order(private val _items: MutableList<OrderItem> = mutableListOf()) {
 ### Rule 5: Domain Events — publish what happened, not what to do
 > Source: Vernon, Ch. 8 "Domain Events"; Evans (supplemental patterns)
 
-Domain Events represent facts that have occurred in the domain. They are named
-in the past tense and contain all the data a subscriber needs to react.
+Name domain events in the past tense. Include all data subscribers need to react to the fact.
 
 ```kotlin
 // BAD — command-style event (imperative)
@@ -113,9 +106,8 @@ data class OrderPlaced(
 ### Rule 6: Domain Services for operations that don't naturally belong to any entity
 > Source: Evans, Ch. 5 "Domain Services"
 
-When a domain operation involves multiple aggregates or does not fit as a method
-on a single entity, use a **Domain Service**. Domain Services are stateless.
-They are not the same as Application Services (use cases).
+Use a stateless **Domain Service** for operations spanning aggregates or lacking a natural entity owner.
+Keep application use-case orchestration in Application Services.
 
 ```kotlin
 // Domain Service — cross-aggregate invariant check
@@ -136,9 +128,8 @@ class TransferFundsService(
 ### Rule 7: Bounded Contexts — explicit model boundaries; Anti-Corruption Layer at boundaries
 > Source: Evans, Ch. 14 "Maintaining Model Integrity"; Vernon, Ch. 2
 
-Each **Bounded Context** has its own Ubiquitous Language and model. When two
-contexts interact, map between them via an **Anti-Corruption Layer (ACL)** —
-never leak one context's model into another.
+Give each **Bounded Context** its own Ubiquitous Language and model.
+Translate across contexts through an **Anti-Corruption Layer (ACL)** to keep models isolated.
 
 ```
 Orders Context    ← ACL →    Inventory Context
@@ -149,9 +140,8 @@ Orders Context    ← ACL →    Inventory Context
 ### Rule 8: Repository interface in domain layer; implementation in infrastructure layer
 > Source: Evans, Ch. 6; Vernon, Ch. 12
 
-The `OrderRepository` interface belongs in the domain layer. The
-`PostgresOrderRepository` (JPA, Hibernate, etc.) belongs in the infrastructure layer.
-The domain layer never imports infrastructure classes.
+Keep `OrderRepository` in the domain and its implementation, such as `PostgresOrderRepository`, in infrastructure.
+The domain never imports infrastructure classes.
 
 ```kotlin
 // Domain layer
@@ -170,10 +160,8 @@ class PostgresOrderRepository(private val jpa: OrderJpaRepository) : OrderReposi
 ### Rule 9: Continuous Model Integration — keep code and docs in one shared model
 > Source: Evans, Ch. 2 "Communication and the Use of Language"; Beck, Ch. 7 "Continuous Integration"
 
-In DDD work, documentation is part of the shared model, not an after-the-fact
-report. When a change adds, removes, renames, or reinterprets a domain concept,
-the agent must update the durable documentation that carries the Ubiquitous
-Language before the work can be considered integrated.
+In DDD, documentation is part of the shared model. Before integration, update durable documentation
+that carries the Ubiquitous Language whenever a domain concept is added, removed, renamed, or reinterpreted.
 
 Treat these artifacts as model-integration surfaces:
 
@@ -193,9 +181,7 @@ its handoff, PRD, review, or result artifact:
 - Docs synchronized: `docs/orders.md`, `README.md`
 ```
 
-If no tracked documentation needs an update, record the reason explicitly
-(`doc_impact: none`) so reviewers can distinguish a deliberate no-op from an
-omission.
+When no tracked documentation needs an update, record `doc_impact: none` and explain why.
 
 ---
 
