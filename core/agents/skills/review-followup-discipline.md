@@ -11,9 +11,7 @@ detection: review OR comment OR feedback OR reflected OR addressed OR note OR di
 
 ## Purpose
 
-Handle review feedback as traceable work, not as a generic "done" summary.
-Each comment needs an intent, disposition, evidence, and remaining decision
-state so reviewers can see what changed and what is intentionally waiting.
+Record each comment's intent, disposition, evidence, and pending decisions.
 
 ## References
 
@@ -25,12 +23,9 @@ state so reviewers can see what changed and what is intentionally waiting.
 
 ## When to Apply
 
-- A task asks to reflect review comments, rate review follow-up, leave an MR
-  note, update a review summary, or explain policy-waiting items.
-- Reviewer comments include behavioral, contract, test, audit, documentation,
-  or operational concerns.
-- Some feedback is implemented while another part is deferred, not applicable,
-  blocked by policy, or unknown.
+- Address or rate review feedback, prepare or post an MR note, update a review summary, or explain policy waits.
+- Triage behavior, contract, test, audit, documentation, or operational concerns.
+- Track mixed outcomes, including deferred, inapplicable, policy-blocked, and unknown items.
 
 ## Disposition Model
 
@@ -43,58 +38,42 @@ Use two disposition axes per review item:
 
 Existing user-facing lifecycle labels remain valid:
 
-- `IMPLEMENTED`: code, docs, tests, or config changed and focused verification
-  supports the claim.
-- `LOCAL_DONE`: local evidence exists, but no remote note, push, MR update, or
-  CI mutation was performed.
-- `PARTIAL`: some reviewer intent is covered, with explicit remaining gap.
-- `POLICY_WAITING`: implementation is intentionally held pending a business,
-  operational, or product decision.
-- `NOT_APPLICABLE`: evidence shows the comment does not apply to this scope.
-- `UNKNOWN`: evidence is insufficient; do not claim completion.
+- `IMPLEMENTED`: focused checks verify the code, docs, test, or config change.
+- `LOCAL_DONE`: evidence is for local work before any remote note, push, MR update, or CI mutation.
+- `PARTIAL`: some reviewer intent is covered. State the remaining gap.
+- `POLICY_WAITING`: implementation awaits a business, operational, or product decision.
+- `NOT_APPLICABLE`: evidence places the comment outside the scope.
+- `UNKNOWN`: insufficient evidence. Withhold the completion claim.
 
 Reviewer validation maps `IMPLEMENTED` and `LOCAL_DONE` to the canonical
 ledger lifecycle `implemented`; `PARTIAL`, `POLICY_WAITING`, `DEFERRED`, and
 `UNKNOWN` to `deferred`; and `NOT_APPLICABLE` to `not-applicable`. These labels
 must not replace the contract triage axis.
 
-Do not merge policy waits into implementation summaries. Do not claim remote
-MR, issue, or CI status unless the external mutation or query actually ran.
+List policy waits separately. Claim remote MR, issue, or CI status only
+after executing the corresponding external mutation or query.
 
 ## Contract And Test Evidence
 
-For every item reported as reflected, record whether the accepted response is
-`contract-safe`, `parity-safe`, `scope-safe`, and `side-effect-safe`. If any
-label cannot be proven, keep the item as `PARTIAL`, `UNKNOWN`, or
-`POLICY_WAITING` instead of summarizing it as complete.
+For each reflected item, record evidence for `contract-safe`, `parity-safe`,
+`scope-safe`, and `side-effect-safe`. For any unproven label, keep the item
+`PARTIAL`, `UNKNOWN`, or `POLICY_WAITING`.
 
-For any review item that can affect behavior, persistence, events, logs,
-network calls, generated output, UI state, or another external side effect,
-include caller graph status before claiming the item is reflected. Use BFS
-inventory to identify the reachable surface and selective DFS deep dive for the
-risk-bearing path. If the graph is partial or the search only proves
-`No references found` inside a bounded scope, keep the related safety label
-unknown rather than upgrading the item to complete.
+Record caller graph status before claiming any item that may affect behavior,
+persistence, events, logs, network calls, generated output, UI state, or other
+side effects is reflected. Use BFS inventory for the reachable surface and
+selective DFS for risk-bearing paths. With a partial graph or bounded
+`No references found` result, keep the related safety label unknown.
 
-Focused verification must explain what contract it proves. The test proves the
-original behavior contract only when it checks the behavior, value, state, or
-side effect that the review item was concerned about. In reviewer-facing
-summaries, say that the test proves the original behavior contract only when
-that claim is supported by evidence. Tests that only freeze the implementation
-shape introduced by the patch are not enough; tests only freeze the
-implementation shape when they assert the patch mechanics but not the
-reviewer's behavior, value, state, or side-effect concern.
+State what focused verification proves. Say the test proves the original behavior contract
+only when it checks the behavior, value, state, or side effect raised in the
+review. Where tests only freeze the implementation shape, add evidence about
+the original concern before claiming it is covered.
 
-Be especially careful with negative interaction assertions. A check that a
-dependency was not called can be useful only when the removed call was not part
-of an existing side-effect contract. If the call previously updated persistence,
-logs, events, network state, files, UI state, or other observable behavior, the
-follow-up must prove that the side effect is intentionally preserved, replaced,
-or explicitly removed.
-
-Rule of thumb: tests only freeze the implementation shape when they assert
-patch mechanics without proving the reviewer's behavior, value, state, or
-side-effect concern.
+Use negative interaction assertions as evidence only when the absent call
+carried no side-effect contract. If it changed persistence, logs, events,
+network state, files, UI state, or other observable behavior, prove that
+the effect is preserved, replaced, or explicitly removed.
 
 ## Note Shape
 
