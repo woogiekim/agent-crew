@@ -1,19 +1,15 @@
 # Skill: ui-component-design
 
 ## Purpose
-Enables the frontend agent to decompose a design specification into an implementable component tree, define clear prop interfaces and state boundaries, and verify compliance against the design spec before committing.
+Turn the design spec into a component tree, typed props, and state boundaries. Verify design compliance before committing.
 
 ## When to Apply
-- During Phase 1 (Implement) when translating `design-spec.md` into source code
-- When deciding how to split a screen into reusable components
-- When defining the boundary between local state and global/server state
-- When establishing API integration point contracts for the backend agent
+- Phase 1 (Implement), when turning `design-spec.md` into code
+- Screen decomposition, local/global/server state boundaries, and API contracts for the backend agent
 
 ---
 
 ## Atomic Design (Brad Frost, "Atomic Design", 2013)
-
-Organize components into five levels of abstraction:
 
 | Level | Examples | Rule |
 |---|---|---|
@@ -38,7 +34,7 @@ src/
 
 ## Component Tree Decomposition
 
-Break each screen into a hierarchy before writing any code:
+Draw each screen’s component tree before coding.
 
 ```
 OrderListPage                       ← Page
@@ -55,16 +51,15 @@ OrderListPage                       ← Page
         └── Pagination              ← Molecule
 ```
 
-Rules:
-- A component does one thing — if it does two, split it
-- Page-level components assemble feature components; they do not contain business logic
-- Shared UI elements go in `atoms/` or `molecules/` — never duplicated
+- Give each component one responsibility.
+- Pages compose feature components. Keep business logic outside page components.
+- Reuse shared UI from `atoms/` or `molecules/`.
 
 ---
 
 ## Prop Interface Definition
 
-Define TypeScript prop types before implementing the component body.
+Define TypeScript props before implementing components.
 
 ```typescript
 // Atoms — minimal, generic
@@ -90,7 +85,7 @@ interface OrderTableRowProps {
 
 ## State Boundary Decision
 
-Determine the correct state layer before writing component logic:
+Choose the state layer before writing component logic.
 
 | State Type | Tool | When |
 |---|---|---|
@@ -100,13 +95,13 @@ Determine the correct state layer before writing component logic:
 | Server data (async, cacheable) | React Query / SWR / TanStack Query | API-fetched, needs invalidation |
 | URL-driven state | `useSearchParams` / router query | Filter, pagination, tabs |
 
-**Rule:** prefer the smallest scope. Lift state only when two unrelated sibling components need it.
+Use the smallest scope. Lift state only when two unrelated sibling components need it.
 
 ---
 
 ## Container / Presenter Pattern
 
-Separate data-fetching concerns from rendering concerns:
+Separate fetching from rendering.
 
 ```typescript
 // Container — owns fetching, error, loading
@@ -129,7 +124,7 @@ function OrderTable({ orders, onCancel }: OrderTableProps) {
 }
 ```
 
-Presenters are unit-testable with `renderWithProviders(jsx)` and no network mocking.
+Keep presenters testable with `renderWithProviders(jsx)` without network mocks.
 
 ---
 
@@ -185,7 +180,7 @@ const pendingCount = useMemo(() => orders.filter(o => o.status === 'PENDING').le
 
 ## API Integration Point Interface
 
-Document before implementing API calls. Write to `{TASK_DIR}/context/api-contract.md`.
+Document API calls in `{TASK_DIR}/context/api-contract.md` before implementing them.
 
 ```typescript
 // GET /orders
@@ -205,12 +200,11 @@ interface OrderListResponse {
 
 ## Design Spec Compliance Verification
 
-After implementing each component:
-- Screen name and URL match design-spec.md
-- All major UI elements are present
-- Interaction flows (form submit, error states, transitions) are implemented
-- Loading, empty, and error states are handled
-- No elements added that are not in the design spec
+After each component, check against `design-spec.md`:
+- Screen name, URL, and all major UI elements
+- Interactions including form submits, errors, and transitions
+- Loading, empty, and error states
+- Spec-defined UI only
 
 ---
 
