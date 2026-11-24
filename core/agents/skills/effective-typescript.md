@@ -5,10 +5,9 @@
 - TypeScript Team, *TypeScript Handbook*, https://www.typescriptlang.org/docs/handbook/
 
 ## When to Apply
-- Before writing any TypeScript type, interface, or function signature
-- Before choosing between `interface` and `type`, `unknown` and `any`, `enum` and union
-- Before writing generic code, type guards, or mapped/conditional types
-- During refactor: when tightening type safety in existing TypeScript code
+- Before writing TypeScript types, interfaces, or signatures, including generics, guards, and mapped or conditional types
+- When choosing `interface` vs. `type`, `unknown` vs. `any`, or `enum` vs. union
+- When tightening type safety during refactoring
 
 ---
 
@@ -17,9 +16,7 @@
 ### Rule 1: Understand the difference between TypeScript and JavaScript runtime
 > Source: Vanderkam, Items 1–3 "TypeScript and JavaScript" chapter
 
-TypeScript type annotations are erased at runtime. Never rely on them for
-runtime validation. Validate external data (API responses, user input) with
-a runtime parser (Zod, io-ts, etc.) — types alone are insufficient.
+Type annotations are erased at runtime. Validate external data (API responses, user input) with a runtime parser such as Zod or io-ts.
 
 ```typescript
 // BAD — type assertion without validation
@@ -34,8 +31,7 @@ const order = OrderSchema.parse(await response.json());
 ### Rule 2: Avoid `any`; prefer `unknown` for truly unknown values
 > Source: Vanderkam, Items 5, 41 "Use unknown Instead of any"
 
-`any` disables type checking everywhere the value flows. `unknown` forces the
-caller to narrow before use — preserving safety without losing flexibility.
+`any` disables checking wherever the value flows. Narrow `unknown` before use.
 
 ```typescript
 // BAD
@@ -54,9 +50,7 @@ function processEvent(event: unknown) {
 ### Rule 3: Use structural typing; prefer interfaces for public API shapes
 > Source: Vanderkam, Items 4, 11 "Distinguish Between Type and Interface"
 
-TypeScript uses structural (duck) typing. Prefer `interface` for public API
-shapes (they can be extended / merged by consumers). Use `type` for aliases,
-unions, intersections, and mapped types.
+TypeScript uses structural typing. Prefer `interface` for public API shapes that consumers can extend or merge. Use `type` for aliases, unions, intersections, and mapped types.
 
 ```typescript
 // PREFER interface for shapes that may be extended
@@ -73,8 +67,7 @@ type PartialOrder = Partial<Order> & { id: string };
 ### Rule 4: Prefer union types and discriminated unions over optional fields
 > Source: Vanderkam, Items 28, 32 "Prefer Unions of Interfaces to Interfaces of Unions"
 
-Optional fields hide invariants. Discriminated unions make valid states
-explicit and eliminate impossible states.
+Use discriminated unions to encode invariants and rule out impossible states.
 
 ```typescript
 // BAD — isConfirmed could be true while confirmedAt is undefined
@@ -93,8 +86,7 @@ type Order =
 ### Rule 5: Use type guards and narrowing; never cast with `as`
 > Source: Vanderkam, Items 22, 9 "Prefer Type Declarations to Type Assertions"
 
-Type assertions (`as T`) bypass type-checking. Use user-defined type guards
-(`is` predicates) or `instanceof` checks to narrow correctly.
+Narrow with user-defined `is` predicates or `instanceof` checks. Assertions (`as T`) bypass type checking.
 
 ```typescript
 // BAD
@@ -110,8 +102,7 @@ if (isOrder(data)) { /* safely narrowed */ }
 ### Rule 6: Prefer `readonly` for immutable data; use `as const` for literals
 > Source: Vanderkam, Items 17 "Use readonly to Avoid Errors Associated with Mutation"
 
-Immutable references prevent accidental mutation in functions and callbacks.
-Use `as const` to infer literal types for config objects and lookup tables.
+Use immutable references to prevent mutation in functions and callbacks. Infer literal types for config objects and lookups with `as const`.
 
 ```typescript
 // BAD — array can be mutated by called function
@@ -131,8 +122,7 @@ const ORDER_STATUS_LABELS = {
 ### Rule 7: Prefer mapped types and `keyof`/`typeof` over manual type duplication
 > Source: Vanderkam, Items 35, 14 "Use Type Operations and Generics to Avoid Repeating Yourself"
 
-When two types share shape, derive one from the other. Manual duplication
-causes drift.
+Derive shared shapes to prevent drift.
 
 ```typescript
 // BAD — two types maintained separately
@@ -147,8 +137,7 @@ type PartialOrderUpdate = Partial<Pick<Order, 'total' | 'customerId'>>;
 ### Rule 8: Avoid `enum`; prefer union types or `as const` objects
 > Source: Vanderkam, Item 53 "Prefer ECMAScript Features to TypeScript-Specific Features"
 
-TypeScript `enum` generates runtime code, has surprising `const enum` pitfalls,
-and cannot be extended. Union types are zero-cost and more composable.
+`enum` emits runtime code and cannot be extended. `const enum` has pitfalls of its own. Use composable union types with no runtime cost.
 
 ```typescript
 // BAD
@@ -164,9 +153,7 @@ type OrderStatus = typeof OrderStatus[keyof typeof OrderStatus];
 ### Rule 9: Enable strict mode; treat compiler errors as bugs
 > Source: Vanderkam, Item 2 "Know Which TypeScript Options You're Using"
 
-Always enable `"strict": true` in `tsconfig.json`. This enables `strictNullChecks`,
-`noImplicitAny`, `strictFunctionTypes`, and more. Never suppress errors with
-`@ts-ignore`; fix the root cause instead.
+Set `"strict": true` in `tsconfig.json` for checks including `strictNullChecks`, `noImplicitAny`, and `strictFunctionTypes`. Fix errors at the source. Never use `@ts-ignore` to suppress them.
 
 ```json
 // tsconfig.json — minimum strict config
@@ -182,8 +169,7 @@ Always enable `"strict": true` in `tsconfig.json`. This enables `strictNullCheck
 ### Rule 10: Write small, composable functions; leverage type inference for internal helpers
 > Source: Vanderkam, Items 26, 23 "Be Consistent in Your Use of Type Declarations"
 
-Explicit return types are mandatory on public functions (API surface). Internal
-helpers may use inference when the type is obvious from the implementation.
+Declare public function return types. Infer internal helper types when obvious from the implementation.
 
 ```typescript
 // Public API — explicit return type
