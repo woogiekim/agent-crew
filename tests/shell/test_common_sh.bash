@@ -422,6 +422,48 @@ it "sync_owned_mirror without a prior manifest removes nothing"
 sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${TMP}/state/commands.json" >/dev/null 2>&1
 assert_file_exists "${TMP}/dest/feature-step.md"
 
+TMP=$(make_tmp)
+mkdir -p "${TMP}/src" "${TMP}/dest" "${TMP}/outside"
+printf 'managed v1\n' > "${TMP}/src/managed.md"
+printf 'managed v1\n' > "${TMP}/src/edited.md"
+printf 'source command\n' > "${TMP}/src/untracked.md"
+printf 'third-party command\n' > "${TMP}/dest/untracked.md"
+printf 'matching bytes\n' > "${TMP}/src/matching.md"
+cp "${TMP}/src/matching.md" "${TMP}/dest/matching.md"
+printf 'source command\n' > "${TMP}/src/linked.md"
+printf 'external bytes\n' > "${TMP}/outside/linked.md"
+ln -s "${TMP}/outside/linked.md" "${TMP}/dest/linked.md"
+MANIFEST="${TMP}/state/commands.json"
+
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${MANIFEST}" >/dev/null 2>&1
+printf 'host edit\n' > "${TMP}/dest/edited.md"
+printf 'managed v2\n' > "${TMP}/src/managed.md"
+printf 'managed v2\n' > "${TMP}/src/edited.md"
+output=$(sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${MANIFEST}" 2>&1)
+
+it "sync_owned_mirror refreshes an unchanged managed command"
+assert_eq "managed v2" "$(cat "${TMP}/dest/managed.md")"
+
+it "sync_owned_mirror reports edits to active managed commands"
+assert_contains "${output}" "edited.md"
+
+it "sync_owned_mirror keeps an edited host command while it remains in source"
+assert_eq "host edit" "$(cat "${TMP}/dest/edited.md")"
+
+it "sync_owned_mirror keeps a conflicting untracked command"
+assert_eq "third-party command" "$(cat "${TMP}/dest/untracked.md")"
+
+it "sync_owned_mirror keeps the target of a host command symlink"
+assert_eq "external bytes" "$(cat "${TMP}/outside/linked.md")"
+
+rm "${TMP}/src/matching.md" "${TMP}/src/edited.md"
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${MANIFEST}" >/dev/null 2>&1
+it "sync_owned_mirror does not claim an untracked file with matching bytes"
+assert_eq "matching bytes" "$(cat "${TMP}/dest/matching.md" 2>/dev/null || true)"
+
+it "sync_owned_mirror preserves a host edit after its source is removed"
+assert_eq "host edit" "$(cat "${TMP}/dest/edited.md" 2>/dev/null || true)"
+
 # A recorded relative path no longer identifies a host copy when its parent
 # was replaced with a link to another directory.
 TMP=$(make_tmp)

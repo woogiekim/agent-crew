@@ -86,11 +86,8 @@ install_claude_user_commands() {
       "${AGENT_CREW_HOME}/system/seed-manifest/commands.json" || true
   fi
 
-  # The installed user layer is authoritative for the host mirror: it carries
-  # both the seeds and any operator edit. ${dest} is shared with commands from
-  # other tooling, so the mirror is tracked by an ownership manifest: a command
-  # renamed or dropped from the user layer is removed from the host, and files
-  # this installer never wrote are left alone.
+  # The installed user layer supplies the mirror. Only copies that still match
+  # the installation manifest can be refreshed or removed from this shared path.
   local host_manifest="${AGENT_CREW_HOME}/system/host-manifest/claude-commands.json"
   if [ -d "${installed_user_commands}" ]; then
     sync_owned_mirror "${installed_user_commands}" "${dest}" "${host_manifest}"

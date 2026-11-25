@@ -623,12 +623,11 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
 - User commands mirrored into the shared Claude command path
   `~/.claude/commands/` are tracked in
   `~/.agent-crew/system/host-manifest/claude-commands.json` (sha256 of every
-  file the installer wrote). A command renamed or dropped from
-  `~/.agent-crew/user/commands/` is removed from the host on the next run only
-  while its content still matches that record; an edited copy is kept and
-  reported, and a file the installer never wrote is never touched. A host file
-  that predates the manifest has no ownership evidence and is left in place.
-  Cleanup also skips recorded paths that now cross a symbolic link.
+  file the installer wrote). An existing host copy can be refreshed or removed
+  when its current content still matches that record. A copy edited in Claude
+  and a pre-existing file with no record are preserved, including when the user
+  layer still supplies a command with the same name. Matching bytes alone do
+  not establish ownership. Sync skips paths that cross a symbolic link.
 - Channel B adapter skill templates seeded from
   `core/agents/skills/templates/` use copy-if-absent semantics: the
   framework installs the template at

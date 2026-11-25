@@ -254,32 +254,20 @@ sync_dir_contents_prune() {
 #
 # Mirror src into a host directory that is SHARED with other tooling.
 #
-# `sync_dir_contents_prune` is unsafe there (it deletes every file absent from
-# src, including third-party ones) and a plain copy never removes a file that
-# was renamed or dropped upstream. This helper records the sha256 of every file
-# it writes in <manifest_path>; on a later run a file that left src is removed
-# only when its content still matches that record.
-#
-#   in src                        → copied, recorded
-#   left src, content unchanged   → removed (this installer wrote it)
-#   left src, content changed     → kept and reported (operator edited it)
-#   never recorded                → never touched
-#
-# A dest file that predates the manifest has no ownership evidence and is left
-# in place even when its name is absent from src.
+# The manifest records the SHA-256 of files written by this installer. Only
+# those files may be refreshed or removed while their contents match the record.
+# Pre-existing files, local edits, and paths through symlinks stay untouched.
 sync_owned_mirror() {
   local src="$1" dest="$2" manifest="$3"
   [ -d "${src}" ] || return 0
-
-  diff_install "${src}" "${dest}"
-
-  command -v python3 >/dev/null 2>&1 || return 0
   mkdir -p "$(dirname "${manifest}")"
 
   python3 - "${src}" "${dest}" "${manifest}" <<'PYEOF'
 import hashlib
 import json
 import os
+import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -293,6 +281,37 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def host_path(rel: str):
+    relative = Path(rel)
+    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+        return None
+
+    path = dest
+    for part in relative.parts:
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            return None
+        path /= part
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        return None
+    return path
+
+
+def copy_command(source: Path, target: Path, existing: bool) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE((target if existing else source).stat().st_mode)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    os.close(fd)
+    try:
+        shutil.copyfile(source, temp_name)
+        os.chmod(temp_name, mode)
+        if existing:
+            os.replace(temp_name, target)
+        else:
+            os.link(temp_name, target)
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
+
+
 previous = {}
 if manifest_path.is_file():
     try:
@@ -302,50 +321,56 @@ if manifest_path.is_file():
     except (OSError, ValueError):
         previous = {}
 
+source_files = {
+    path.relative_to(src).as_posix(): path
+    for path in sorted(src.rglob("*"))
+    if path.is_file() and not path.is_symlink() and path.name != ".DS_Store"
+}
 current = {}
-for source_file in sorted(src.rglob("*")):
-    if not source_file.is_file() or source_file.name == ".DS_Store":
+for rel, source_file in source_files.items():
+    mirrored = host_path(rel)
+    if mirrored is None:
+        print(f"[agent-crew] Preserving {rel} in {dest}: path is a link or has an incompatible type")
         continue
-    rel = source_file.relative_to(src).as_posix()
-    mirrored = dest / rel
-    if mirrored.is_file():
-        current[rel] = sha256(mirrored)
 
-def recorded_host_file(rel: str):
-    relative = Path(rel)
-    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
-        return None
+    source_hash = sha256(source_file)
+    installed_hash = sha256(mirrored) if mirrored.is_file() else None
+    recorded_hash = previous.get(rel)
+    if installed_hash is not None and installed_hash != recorded_hash:
+        if recorded_hash is not None:
+            current[rel] = recorded_hash
+        if installed_hash != source_hash:
+            reason = "edited locally" if recorded_hash is not None else "ownership unproven"
+            print(f"[agent-crew] Preserving {rel} in {dest}: {reason}")
+        continue
 
-    path = dest
-    if path.is_symlink():
-        return None
-    for part in relative.parts:
-        path /= part
-        if path.is_symlink():
-            return None
-    return path if path.is_file() else None
+    if installed_hash != source_hash:
+        copy_command(source_file, mirrored, existing=installed_hash is not None)
+        action = "Update" if installed_hash is not None else "Install"
+        print(f"{action}({mirrored})")
+    current[rel] = source_hash
 
-
-for rel in sorted(set(previous) - set(current)):
-    leftover = recorded_host_file(rel)
-    if leftover is None:
+for rel in sorted(set(previous) - set(source_files)):
+    leftover = host_path(rel)
+    if leftover is None or not leftover.is_file():
         continue
     if sha256(leftover) == previous[rel]:
         print(f"[agent-crew] Removing stale file from {dest}: {rel}")
         leftover.unlink()
     else:
-        print(
-            f"[agent-crew] Preserving {rel} in {dest}: removed upstream but edited locally"
-        )
+        print(f"[agent-crew] Preserving {rel} in {dest}: removed upstream but edited locally")
 
 if current != previous or not manifest_path.is_file():
     fd, temp_name = tempfile.mkstemp(
         prefix=f".{manifest_path.name}.", suffix=".tmp", dir=manifest_path.parent
     )
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(current, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    os.replace(temp_name, manifest_path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(current, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temp_name, manifest_path)
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
 PYEOF
 }
 
