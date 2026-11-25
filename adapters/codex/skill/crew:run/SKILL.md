@@ -123,20 +123,9 @@ Repair reports missing or incomplete skill-load coverage as advisory gaps. It
 still rejects an external host/plugin skill load when explicit user approval is
 missing.
 
-Optional skill-use notes may be recorded in
-`{TASK_DIR}/context/skill-use.json` or `{TASK_DIR}/context/skill-use.md`, but
-they are diagnostic coverage, not required proof artifacts. TDD and other
-loaded skills are covered first by real task outcomes, tests, diffs, reviews,
-pipeline/progress state, reviewer quality metrics, and tool events; repair
-should report missing or incomplete notes as advisory gaps instead of rejecting
-standard-risk completion.
-
-Optional operational understanding notes may be recorded in
-`{TASK_DIR}/context/skill-plan.json` or `{TASK_DIR}/context/skill-plan.md` and
-linked from `rule_evidence` in `context/skill-use.json`, but these notes are
-diagnostic coverage only. Repair should surface missing skill-plan or
-rule-evidence notes as advisory gaps when actual task outcomes, tests, diffs,
-reviews, or tool events are sufficient.
+Follow the loaded `run.md` Host Bridge Handoff Recovery guidance for
+optional `skill-use`, `skill-plan`, and `rule_evidence` notes. Use actual
+execution evidence for standard-risk closeout.
 
 For implementation or other production-code mutations with a testable surface,
 do not patch production code until the focused test target is identified, added
