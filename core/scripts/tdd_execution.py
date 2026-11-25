@@ -103,6 +103,28 @@ def _git_changed_paths(root: Path, head: str) -> set[str]:
     return {path.decode('utf-8') for data in (changed, untracked) for path in data.split(b'\0') if path}
 
 
+def _checkout_blob(root: Path, head: str, path: str, tree_path: str, oid: str) -> bytes:
+    attr_source = '--attr-source=' + head
+    try:
+        attributes = _git(root, attr_source, 'check-attr', '-z', 'filter', '--', path)
+    except subprocess.CalledProcessError as exc:
+        if b'unknown option: --attr-source=' not in exc.stderr:
+            raise
+        return _git(root, 'cat-file', 'blob', oid)
+
+    driver = attributes.split(b'\0')[2].decode('utf-8')
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+', driver):
+        raise ValueError('unsupported_git_baseline_filter')
+    # Git의 내장 체크아웃 변환만 사용하고 외부 필터는 호출하지 않는다.
+    return _git(
+        root, attr_source,
+        '-c', f'filter.{driver}.process=',
+        '-c', f'filter.{driver}.smudge=',
+        '-c', f'filter.{driver}.required=false',
+        'cat-file', '--filters', '--path=' + tree_path, oid,
+    )
+
+
 def baseline_file_states(root: Path, baseline: dict, paths: list[str]) -> dict:
     """Resolve hashes for explicitly requested TDD targets from a saved baseline."""
     recorded = baseline.get('files', {})
@@ -110,6 +132,7 @@ def baseline_file_states(root: Path, baseline: dict, paths: list[str]) -> dict:
     if head and not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head):
         raise ValueError('invalid_git_baseline_head')
     states = {}
+    prefix = None
     for name in paths:
         relative = Path(os.path.abspath(root / name.split('::')[0])).relative_to(root)
         path = relative.as_posix()
@@ -129,7 +152,12 @@ def baseline_file_states(root: Path, baseline: dict, paths: list[str]) -> dict:
         if kind != b'blob' or mode not in {b'100644', b'100755'} or int(size) > 2_000_000:
             states[path] = {'state': 'unsupported'}
             continue
-        content = _git(root, 'cat-file', 'blob', oid.decode('ascii'))
+        if prefix is None:
+            prefix = _git(root, 'rev-parse', '--show-prefix').decode('utf-8').removesuffix('\n')
+        content = _checkout_blob(root, head, path, prefix + path, oid.decode('ascii'))
+        if len(content) > 2_000_000:
+            states[path] = {'state': 'unsupported'}
+            continue
         states[path] = {'state': 'file', 'sha256': hashlib.sha256(content).hexdigest()}
     return states
 

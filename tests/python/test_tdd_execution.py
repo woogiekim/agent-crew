@@ -456,12 +456,19 @@ def test_git_baseline_rejects_test_delta_before_checklist_review(tmp_path, chang
         sut.observe_checklist_phase(task, root, 'review_begin', {'implementation_stage_index': 1})
 
 
-def test_git_baseline_proves_tdd_against_the_original_commit(tmp_path):
+@pytest.mark.parametrize('checkout', ['lf', 'crlf'])
+def test_git_baseline_proves_tdd_against_the_original_commit(tmp_path, checkout):
     import _trace_gate_fixtures as fixtures
     from test_contract_tdd_evidence import cycle
 
     task, root, sut = contract.__wrapped__(tmp_path)
     fixtures.init_git_repo(root)
+    if checkout == 'crlf':
+        (root / '.gitattributes').write_text('*.py text eol=crlf\n')
+        for path in root.rglob('*.py'):
+            path.write_bytes(path.read_bytes().replace(b'\n', b'\r\n'))
+        fixtures._git(root, 'add', '.')
+        fixtures._git(root, 'commit', '-qm', 'CRLF worktree fixtures')
     (task / 'tool-events.jsonl').unlink()
     baseline = sut.capture_baseline(task, root)
     assert baseline['files'] == {}
@@ -576,3 +583,62 @@ def test_maven_evidence_over_retention_limit_stays_unverified():
 
     assert 'Surefire evidence exceeds retention limit' in bounded
     assert sut.execution_targets(argv, bounded, 'passed', [target]) == []
+
+
+@pytest.mark.parametrize('checkout', ['lf', 'crlf', 'autocrlf'])
+def test_git_baseline_matches_checkout_and_detects_content_changes(tmp_path, checkout):
+    import _trace_gate_fixtures as fixtures
+
+    repo = tmp_path / 'repo'
+    fixtures.init_git_repo(repo)
+    fixtures._git(repo, 'config', 'core.autocrlf', 'true' if checkout == 'autocrlf' else 'false')
+    if checkout != 'autocrlf':
+        other_eol = 'lf' if checkout == 'crlf' else 'crlf'
+        (repo / '.gitattributes').write_text(
+            f'/Value.java text eol={other_eol}\n/module/Value.java text eol={checkout}\n'
+        )
+    root = repo / 'module'
+    root.mkdir()
+    target = root / 'Value.java'
+    eol = b'\n' if checkout == 'lf' else b'\r\n'
+    target.write_bytes(b'class Value {}' + eol)
+    fixtures._git(repo, 'add', '.')
+    fixtures._git(repo, 'commit', '-qm', 'checkout fixture')
+    assert fixtures._git(repo, 'status', '--porcelain') == ''
+    sut = helper()
+
+    baseline = sut.capture_baseline(tmp_path / 'task', root)
+    clean = sut.snapshot(root, ['Value.java'])
+
+    assert baseline['files'] == {}
+    assert sut.baseline_file_states(root, baseline, ['Value.java']) == clean
+    target.write_bytes(b'class Changed {}' + eol)
+    assert sut.baseline_file_states(root, baseline, ['Value.java']) != sut.snapshot(root, ['Value.java'])
+    dirty = sut.capture_baseline(tmp_path / 'dirty-task', root)
+    dirty_state = sut.snapshot(root, ['Value.java'])
+    target.write_bytes(b'class Value {}' + eol)
+    assert sut.baseline_file_states(root, dirty, ['Value.java']) == dirty_state
+
+
+def test_git_baseline_pins_attributes_and_disables_external_checkout_filter(tmp_path):
+    import _trace_gate_fixtures as fixtures
+
+    root = tmp_path / 'repo'
+    fixtures.init_git_repo(root)
+    (root / '.gitattributes').write_text('*.java text eol=crlf filter=fixture\n')
+    target = root / 'Value.java'
+    target.write_bytes(b'class Value {}\r\n')
+    fixtures._git(root, 'add', '.')
+    fixtures._git(root, 'commit', '-qm', 'initial checkout attributes')
+    sut = helper()
+    baseline = sut.capture_baseline(tmp_path / 'task', root)
+    expected = sut.snapshot(root, ['Value.java'])
+
+    (root / '.gitattributes').write_text('*.java text eol=lf filter=fixture\n')
+    fixtures._git(root, 'config', 'filter.fixture.smudge', 'touch smudge-ran && cat')
+    fixtures._git(root, 'config', 'filter.fixture.process', 'touch process-ran')
+    fixtures._git(root, 'config', 'filter.fixture.required', 'true')
+
+    assert sut.baseline_file_states(root, baseline, ['Value.java']) == expected
+    assert not (root / 'smudge-ran').exists()
+    assert not (root / 'process-ran').exists()
