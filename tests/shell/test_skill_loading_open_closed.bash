@@ -362,8 +362,14 @@ assert_contains "${FRONTEND_CONTENT}" "primary system under test variable to \`s
 it "test-writer.md defaults test target variables to sut"
 assert_contains "${TEST_WRITER_CONTENT}" "primary test target variable \`sut\`"
 
-it "tdd.md defines system under test variable naming"
-assert_contains "${TDD_CONTENT}" "primary test target to \`sut\`"
+it "tdd.md defaults the primary test target variable to sut"
+TDD_NAMING_RULE="$(printf '%s\n' "${TDD_CONTENT}" | awk '
+  /^## Test Target Variable Naming$/ { in_section = 1; next }
+  in_section && /^## / { exit }
+  in_section { printf "%s ", $0 }
+')"
+printf '%s\n' "${TDD_NAMING_RULE}" | grep -Ei '^[[:space:]]*default[[:space:]][^.]*primary test target[^.]* to `sut`' >/dev/null
+assert_true "$?" "the naming rule should default the primary test target to sut"
 
 it "reviewer.md rejects missing context-break blank lines"
 assert_contains "${REVIEWER_CONTENT}" "context_break_missing_blank_line"
@@ -426,8 +432,15 @@ assert_contains "${CODE_REVIEW_CONTENT}" "KISS, YAGNI, and DRY are checked"
 it "code-review skill checks DRY Naming"
 assert_contains "${CODE_REVIEW_CONTENT}" "DRY Naming is checked"
 
-it "agile-xp skill maps the three principles"
-assert_contains "${AGILE_XP_CONTENT}" "KISS is Rule 5, YAGNI is Rule 2, and DRY"
+it "agile-xp maps YAGNI to Rule 2"
+printf '%s\n' "${AGILE_XP_CONTENT}" | grep -E '^### Rule 2: .*YAGNI' >/dev/null
+assert_true "$?" "Rule 2 should cover YAGNI"
+
+it "agile-xp maps KISS and DRY to Rule 5"
+printf '%s\n' "${AGILE_XP_CONTENT}" | grep -E '^### Rule 5: .*KISS' >/dev/null
+assert_true "$?" "Rule 5 should cover KISS"
+printf '%s\n' "${AGILE_XP_CONTENT}" | grep -E '^### Rule 5: .*DRY' >/dev/null
+assert_true "$?" "Rule 5 should cover DRY"
 
 it "agile-xp skill applies DRY to names"
 assert_contains "${AGILE_XP_CONTENT}" "DRY also applies to names"

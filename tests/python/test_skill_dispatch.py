@@ -224,20 +224,17 @@ def test_dgs_graphql_contract_skill_ships_with_dispatchable_frontmatter() -> Non
     assert "detection: DGS OR GraphQL resolver" in text
 
 
-def test_verification_before_claim_skill_ships_with_dispatchable_frontmatter() -> None:
-    assert VERIFICATION_BEFORE_CLAIM_SKILL.is_file()
+def test_verification_before_claim_skill_ships_with_review_policy_guidance() -> None:
     text = VERIFICATION_BEFORE_CLAIM_SKILL.read_text(encoding="utf-8")
 
     assert text.startswith("---\n")
-    assert "loaded_by: backend,frontend,devops,documenter,analyst,planner,reviewer" in text
-    assert "axis: verification-discipline" in text
-    assert "profile_type: review-policy" in text
-    assert "detection: completed OR done OR fixed" in text
-    assert "## Purpose" in text
-    assert "## When to Apply" in text
-    assert "## Checklist" in text
-    assert "Testing Computer Software" in text
-    assert "완료" in text
+    frontmatter, guidance = text.removeprefix("---\n").split("\n---\n", 1)
+    assert "profile_type: review-policy" in frontmatter.splitlines()
+    assert "## Purpose" in guidance
+    assert "## When to Apply" in guidance
+    assert "## Checklist" in guidance
+    assert "Testing Computer Software" in guidance
+    assert "완료" in guidance
 
 
 @pytest.mark.parametrize(
@@ -1591,8 +1588,21 @@ def test_detection_matches_korean_task_terms(tmp_path: Path) -> None:
     ]
 
 
-def test_system_verification_before_claim_detection_matches_completion_claim(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "agent",
+    [
+        "backend",
+        "frontend",
+        "devops",
+        "documenter",
+        "analyst",
+        "planner",
+        "qa-owner",
+        "reviewer",
+    ],
+)
+def test_verification_before_claim_dispatches_for_completion_reporting(
+    tmp_path: Path, agent: str
 ) -> None:
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
@@ -1605,16 +1615,17 @@ def test_system_verification_before_claim_detection_matches_completion_claim(
     project_root.mkdir(parents=True)
 
     payload = _run_cli(
-        "--agent", "backend",
+        "--agent", agent,
         "--skills-dir", str(skills_dir),
         "--project-root", str(project_root),
         "--task", "수정 완료했고 테스트 통과했다고 보고해줘",
         "--format", "json",
     )
 
-    assert [m["name"] for m in payload["matched"]] == [
-        "verification-before-claim"
-    ]
+    (match,) = payload["matched"]
+    assert match["name"] == "verification-before-claim"
+    assert match["axis"] == "verification-discipline"
+    assert match["matched_by"] == "detection"
 
 
 @pytest.mark.parametrize(
