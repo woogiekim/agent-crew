@@ -2738,7 +2738,7 @@ def _contract_reviewed(task_dir: Path, path: str, before: dict, after: dict) -> 
 
 def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline: dict | None = None) -> dict:
     """소스·대상·실제 실행을 연결한다. 의미적 계약 완전성을 자동 판정하지 않는다."""
-    from tdd_execution import event_payloads, execution_targets, snapshot, targets_bound, checklist_preflight_status
+    from tdd_execution import baseline_file_states, event_payloads, execution_targets, runner_selection, snapshot, targets_bound, checklist_preflight_status
 
     task_dir = Path(task_dir)
     register = register if register is not None else load_json(task_dir / 'register.json')
@@ -2800,11 +2800,11 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
         failures.append('baseline_root_mismatch')
     if any(r != baseline for r in rows if r.get('kind') == 'source_baseline'):
         failures.append('baseline_replaced')
-    base = {p: baseline.get('files', {}).get(p, {'state': 'missing'}) for p in paths}
     baseline_at = _iso_epoch(baseline.get('captured_at'))
     try:
+        base = baseline_file_states(root, baseline, paths)
         current = snapshot(root, paths)
-    except (ValueError, OSError):
+    except (ValueError, OSError, subprocess.SubprocessError):
         failures.append('invalid_production_scope')
         result['status'] = 'contradicted'
         return result
@@ -2853,7 +2853,7 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
             warnings.append('missing_actual_test_output')
             continue
         output_text = load_text(output_path)
-        if row.get('outcome') == 'failed' and (
+        if row.get('outcome') == 'failed' and runner_selection(argv)[0] != 'maven' and (
             not ('AssertionError' in output_text or re.search(r'\b[1-9]\d* failed\b', output_text))
             or re.search(r'\b(?:ERROR|ImportError|ModuleNotFoundError|SyntaxError)\b', output_text)
         ):
@@ -2867,7 +2867,7 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
         if not row.get('argv') or not row.get('test_targets') or not row.get('run_id'):
             warnings.append('missing_test_target_binding')
             continue
-        actual = execution_targets(argv, output_text, row.get('outcome'))
+        actual = execution_targets(argv, output_text, row.get('outcome'), targets)
         if not actual:
             warnings.append('missing_actual_test_selection')
             continue
@@ -2904,6 +2904,7 @@ def contract_tdd_evidence(task_dir: Path, register: dict | None = None, pipeline
             reds.append(row)
         if phase == 'green' and row.get('outcome') == 'passed' and row['exit_code'] == 0:
             candidates = [r for r in pending if _iso_epoch(r['ended_at']) <= _iso_epoch(row['started_at'])
+                          and any(r['source_before'][path] != row['source_after'][path] for path in paths)
                           and covers(preserved + r['verified_targets'], row)]
             matched = [r for r in candidates if all(
                 r['tests_before'].get(t.split('::')[0]) == row['tests_before'].get(t.split('::')[0])
@@ -2975,7 +2976,8 @@ def check_quality_loop(
     task = task_description(task_dir, register, pipeline, result_text)
     completed = is_completed(target_status, register, result_text)
     bypassed = bool(QUALITY_BYPASS_RE.search(result_text))
-    required = completed and looks_mutating_task(task) and not bypassed
+    contract_tdd = contract_tdd_evidence(task_dir, register, pipeline)
+    required = completed and not bypassed and (contract_tdd["required"] or looks_mutating_task(task))
 
     shape = pipeline_shape(pipeline)
     events = load_jsonl(task_dir / "progress.buffer.jsonl")
@@ -3004,7 +3006,6 @@ def check_quality_loop(
     finding_register = finding_register_status(task_dir)
     review_ledger = review_ledger_status(task_dir)
     trace_evidence = trace_quality_evidence(task_dir, register)
-    contract_tdd = contract_tdd_evidence(task_dir, register, pipeline)
     delegation_fidelity = delegation_fidelity_status(task_dir)
     human_acceptance = human_acceptance_matrix_status(task_dir)
     evaluation_metrics = evaluation_metrics_status(task_dir)

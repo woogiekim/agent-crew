@@ -22,7 +22,7 @@ try:
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from project_state import resolve_project_state
-from quality_loop_lib import check_quality_loop, looks_mutating_task
+from quality_loop_lib import check_quality_loop, contract_tdd_evidence, looks_mutating_task
 from tdd_execution import capture_baseline
 from task_capability_lib import required_capabilities_for_task
 from variant_state import operation_lock, variants_artifacts_dir, read_state, write_json as atomic_write_json
@@ -3038,17 +3038,19 @@ def command_run_variants(
     return 0
 
 
+ISSUE_REF_PATTERN = r"(?:#?[0-9]+|[A-Z][A-Z0-9]*-[0-9]+)"
+
+
 def parse_issue_branch_input(task: str, work_branch: str | None) -> tuple[str, str, str]:
-    issue_pattern = r"(?:#?[0-9]+|[A-Z][A-Z0-9]*-[0-9]+)"
     if work_branch is not None:
-        if not re.fullmatch(issue_pattern, task) or not work_branch:
+        if not re.fullmatch(ISSUE_REF_PATTERN, task) or not work_branch:
             raise ValueError("두 인자는 이슈 번호와 작업 브랜치여야 합니다.")
         return f"{task} {work_branch}", task, work_branch
 
     # Host wrappers pass original input as one argument. A namespaced branch
     # distinguishes this form from an ordinary two-word issue description.
     match = re.fullmatch(
-        rf"[ \t]*({issue_pattern})[ \t]+([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._/-]+)[ \t]*",
+        rf"[ \t]*({ISSUE_REF_PATTERN})[ \t]+([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._/-]+)[ \t]*",
         task,
     )
     if match:
@@ -3266,7 +3268,7 @@ def command_run(args: argparse.Namespace) -> int:
     write_json(task_dir / "register.json", register)
     pipeline["checklist_evidence_version"] = 1
     write_json(task_dir / "pipeline.json", pipeline)
-    if mutation_scope != "read_only" and looks_mutating_task(task):
+    if mutation_scope != "read_only" and (issue_ref or re.fullmatch(ISSUE_REF_PATTERN, task.strip()) or looks_mutating_task(task)):
         capture_baseline(task_dir, project_root, checklist_evidence_version=1)
     issue_input = f"#{issue_ref}" if issue_ref.isdecimal() else issue_ref
     issue_ingestions = record_issue_ingestion_evidence(task_dir, issue_input if issue_ref else raw_task)
@@ -3421,7 +3423,8 @@ def command_run(args: argparse.Namespace) -> int:
         if bridge_record["returncode"] == 0 and not host_bridge_reported_blocked(bridge_record):
             latest_register = load_json(task_dir / "register.json", register)
             latest_pipeline = load_json(task_dir / "pipeline.json", pipeline)
-            if looks_mutating_task(str(latest_register.get("task", args.task))):
+            if (looks_mutating_task(str(latest_register.get("task", args.task)))
+                    or contract_tdd_evidence(task_dir, latest_register, latest_pipeline)["required"]):
                 quality_result = check_quality_loop(task_dir, target_status="completed")
                 if not quality_result["passed"]:
                     mark_quality_loop_blocked(

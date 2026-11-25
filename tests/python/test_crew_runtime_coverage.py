@@ -922,6 +922,34 @@ def test_command_run_bridge_success_preserves_raw_task_despite_normalized_task_o
     assert "TASK: 기능을 추가해줘" in handoff_text
 
 
+def test_command_run_bridge_checks_implementation_plan_even_for_vague_input(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv('AGENT_CREW_HOME', str(tmp_path / 'home'))
+    project = tmp_path / 'project'
+    project.mkdir()
+    raw_task = '진행해주세요'
+    assert runtime.looks_mutating_task(raw_task) is False
+
+    def bridge(*_args, task_dir, **_kwargs):
+        pipeline_path = task_dir / 'pipeline.json'
+        pipeline = json.loads(pipeline_path.read_text())
+        pipeline.update(mutation_scope='workspace_write', stages=[{'agents': ['backend'], 'tdd_mode': 'inline'}, ['reviewer']])
+        pipeline_path.write_text(json.dumps(pipeline))
+        return {'returncode': 0, 'stdout': '', 'stderr': '', 'status': 'completed'}
+
+    monkeypatch.setattr(runtime, 'invoke_host_bridge', bridge)
+    args = argparse.Namespace(task=raw_task, project_root=str(project), fake_host_result=None, host_bridge_command='bridge')
+
+    exit_code = runtime.command_run(args)
+
+    assert exit_code == 3
+    assert 'HOST_BRIDGE: quality_blocked' in capsys.readouterr().out
+    check_path, = (tmp_path / 'home' / 'state').glob('*/tasks/*/context/quality-loop-runtime-check.json')
+    check = json.loads(check_path.read_text())
+    assert check['required'] is True
+    assert check['contract_tdd']['tdd_verified'] is False
+    assert 'contract_tdd_evidence_contradicted' in check['failures']
+
+
 def test_command_agent_error_paths(monkeypatch, tmp_path: Path, capsys):
     """direct-agent routing rejects invalid targets, not mutating wording."""
     root = tmp_path / "runtime-root"
@@ -1338,3 +1366,23 @@ def test_command_issue_ingest_error_and_output(monkeypatch, tmp_path: Path, caps
     assert "ISSUE: 9" in out
     assert f"EVIDENCE: {output}" in out
     assert json.loads(output.read_text(encoding="utf-8"))["comment_count"] == 1
+
+
+def test_command_run_issue_only_captures_clean_git_baseline(monkeypatch, tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import _trace_gate_fixtures as fixtures
+    from tdd_execution import event_payloads
+
+    home = tmp_path / 'home'
+    monkeypatch.setenv('AGENT_CREW_HOME', str(home))
+    project = tmp_path / 'project'
+    head = fixtures.init_git_repo(project)
+    args = argparse.Namespace(task='ENRBE-360', project_root=str(project), fake_host_result=None, host_bridge_command=None)
+
+    assert runtime.command_run(args) == 0
+
+    task_dir, = (home / 'state').glob('*/tasks/*')
+    baseline, = [event for event in event_payloads(task_dir) if event['kind'] == 'source_baseline']
+    assert baseline['git_head'] == head
+    assert baseline['complete'] is True
+    assert baseline['files'] == {}

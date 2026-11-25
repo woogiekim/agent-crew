@@ -88,6 +88,52 @@ def snapshot(root: Path, paths: list[str]) -> dict:
     return result
 
 
+def _git(root: Path, *args: str) -> bytes:
+    return subprocess.run(
+        ['git', '--no-optional-locks', '-C', str(root), *args],
+        capture_output=True, check=True, timeout=10,
+    ).stdout
+
+
+def _git_changed_paths(root: Path, head: str) -> set[str]:
+    if not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head):
+        raise ValueError('invalid_git_baseline_head')
+    changed = _git(root, 'diff', '--no-ext-diff', '--no-renames', '--relative', '--name-only', '-z', head, '--')
+    untracked = _git(root, 'ls-files', '-z', '--others', '--exclude-standard')
+    return {path.decode('utf-8') for data in (changed, untracked) for path in data.split(b'\0') if path}
+
+
+def baseline_file_states(root: Path, baseline: dict, paths: list[str]) -> dict:
+    """Resolve hashes for explicitly requested TDD targets from a saved baseline."""
+    recorded = baseline.get('files', {})
+    head = baseline.get('git_head')
+    if head and not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head):
+        raise ValueError('invalid_git_baseline_head')
+    states = {}
+    for name in paths:
+        relative = Path(os.path.abspath(root / name.split('::')[0])).relative_to(root)
+        path = relative.as_posix()
+        if path in recorded:
+            states[path] = recorded[path]
+            continue
+        if not head:
+            states[path] = {'state': 'missing'}
+            continue
+
+        entry = _git(root, 'ls-tree', '-lz', head, '--', ':(literal)' + path)
+        if not entry:
+            states[path] = {'state': 'missing'}
+            continue
+
+        mode, kind, oid, size = entry.split(b'\t', 1)[0].split()
+        if kind != b'blob' or mode not in {b'100644', b'100755'} or int(size) > 2_000_000:
+            states[path] = {'state': 'unsupported'}
+            continue
+        content = _git(root, 'cat-file', 'blob', oid.decode('ascii'))
+        states[path] = {'state': 'file', 'sha256': hashlib.sha256(content).hexdigest()}
+    return states
+
+
 def capture_baseline(task_dir: Path, project_root: Path, paths: list[str] | None = None,
                      *, checklist_evidence_version: int | None = None) -> dict:
     task_dir, root = Path(task_dir), Path(project_root).resolve()
@@ -99,12 +145,12 @@ def capture_baseline(task_dir: Path, project_root: Path, paths: list[str] | None
         if previous:
             return previous
         limitations = []
+        git_head = None
         if paths is None:
             try:
-                proc = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-                                      capture_output=True, check=True, timeout=10)
-                paths = sorted(set(proc.stdout.decode('utf-8').strip('\0').split('\0')) - {''})
-            except (OSError, subprocess.SubprocessError, UnicodeError, AttributeError):
+                git_head = _git(root, 'rev-parse', '--verify', 'HEAD').decode('ascii').strip()
+                paths = sorted(_git_changed_paths(root, git_head))
+            except (OSError, subprocess.SubprocessError, UnicodeError, ValueError):
                 paths, limitations = [], ['git_inventory_unavailable']
         if len(paths) > 10000:
             paths, limitations = paths[:10000], limitations + ['file_count_limit']
@@ -113,6 +159,8 @@ def capture_baseline(task_dir: Path, project_root: Path, paths: list[str] | None
             limitations.append('source_snapshot_incomplete')
         payload = {'kind': 'source_baseline', 'baseline_id': str(uuid.uuid4()), 'project_root': str(root),
                    'captured_at': now(), 'files': files, 'complete': not limitations, 'limitations': limitations}
+        if git_head is not None:
+            payload['git_head'] = git_head
         if checklist_evidence_version is not None:
             payload['checklist_evidence_version'] = checklist_evidence_version
         stream.write(json.dumps(_event_row(task_dir, payload), ensure_ascii=False) + '\n')
@@ -146,22 +194,46 @@ def _test_path(name: str) -> bool:
             or '/test/' in name or Path(name).name.startswith('test_'))
 
 
-def _checklist_scope(root: Path, baseline: dict, stage: dict) -> tuple[list[str], list[str], list[str]]:
+def _checklist_scope(root: Path, baseline: dict, stage: dict,
+                     changed_paths: set[str] | None = None) -> tuple[list[str], list[str], list[str]]:
     contract = stage.get('contract_preservation', {})
     targets = contract.get('preserved_test_targets', []) + contract.get('change_test_targets', [])
     authorized = stage.get('authorized_test_paths', [])
     inventory = set(baseline.get('files', {}))
-    if (root / '.git').exists():
+    if changed_paths is not None:
+        inventory.update(changed_paths)
+    elif (root / '.git').exists():
         proc = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
                               capture_output=True, check=True, timeout=10)
         inventory.update(proc.stdout.decode().strip('\0').split('\0'))
-    if not (root / '.git').exists():
+    else:
         inventory.update(p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file())
     paths = {p for p in inventory if _test_path(p)}
     paths.update(str(p).split('::')[0] for p in targets)
     paths.update(authorized)
 
     return sorted(paths), targets, authorized
+
+
+def _checklist_states(root: Path, baseline: dict, stage: dict):
+    head = baseline.get('git_head')
+    changed = _git_changed_paths(root, head) if head else None
+    paths, targets, authorized = _checklist_scope(root, baseline, stage, changed)
+    recorded = baseline.get('files', {})
+    default = {'state': 'missing'} if changed is None else {'state': 'git_head'}
+    initial = {path: recorded.get(path, default) for path in paths}
+    if changed is None:
+        observed = snapshot(root, paths)
+    else:
+        # Explicit targets still count if an ignore rule hides an untracked file.
+        declared = {target.split('::')[0] for target in targets} | set(authorized)
+        if declared:
+            ignored = _git(root, 'ls-files', '-z', '--others', '--ignored', '--exclude-standard',
+                           '--', *(':(literal)' + path for path in sorted(declared)))
+            changed.update(path.decode('utf-8') for path in ignored.split(b'\0') if path)
+        observed = snapshot(root, [path for path in paths if path in changed])
+        observed = {path: observed.get(path, default) for path in paths}
+    return paths, targets, authorized, initial, observed
 
 
 def _approved_checklist(text: str, *, require_must: bool = True) -> bool:
@@ -279,11 +351,12 @@ def checklist_preflight_status(task_dir: Path, *, for_test_write: bool = False) 
         stage = pipeline['stages'][stage_index - 1]
         if not isinstance(stage, dict) or stage.get('attempt', 1) != begin.get('attempt'):
             raise ValueError('checklist_stage_mismatch')
-        paths, targets, authorized = _checklist_scope(root, baseline, stage)
-        initial = {p: baseline.get('files', {}).get(p, {'state': 'missing'}) for p in paths}
+        paths, targets, authorized, initial, current = _checklist_states(root, baseline, stage)
+        if opened:
+            result['authorized_test_paths'] = authorized
         if not baseline.get('complete') or baseline.get('limitations'):
             errors.append('checklist_baseline_incomplete')
-        if any(v.get('state') not in {'file', 'missing'} for v in initial.values()):
+        if any(v.get('state') not in {'file', 'missing', 'git_head'} for v in initial.values()):
             errors.append('checklist_baseline_incomplete')
         previous, position = None, rows.index(baseline)
         for event in selected:
@@ -303,8 +376,7 @@ def checklist_preflight_status(task_dir: Path, *, for_test_write: bool = False) 
                 errors.append('checklist_content_changed')
             previous, position = event.get('event_id'), rows.index(event)
         errors.extend(_host_review_errors(task_dir, begin, end, opened))
-        current = snapshot(root, paths)
-        if any(v.get('state') not in {'file', 'missing'} for v in current.values()):
+        if any(v.get('state') not in {'file', 'missing', 'git_head'} for v in current.values()):
             errors.append('checklist_current_tests_incomplete')
         if any(current[p] != initial[p] for p in paths if not opened or p not in authorized):
             errors.append('checklist_test_change_outside_authorized_scope')
@@ -330,12 +402,10 @@ def observe_checklist_phase(task_dir: Path, project_root: Path, phase: str, exec
     pipeline = _read_json(task_dir / 'pipeline.json')
     stage_index = execution['implementation_stage_index']
     stage = pipeline['stages'][stage_index - 1]
-    paths, targets, authorized = _checklist_scope(root, baseline, stage)
-    observed = snapshot(root, paths)
-    initial = {p: baseline.get('files', {}).get(p, {'state': 'missing'}) for p in paths}
+    paths, targets, authorized, initial, observed = _checklist_states(root, baseline, stage)
     if (not baseline.get('complete') or baseline.get('limitations') or observed != initial
             or str(root) != baseline.get('project_root')
-            or any(v.get('state') not in {'file', 'missing'} for v in observed.values())):
+            or any(v.get('state') not in {'file', 'missing', 'git_head'} for v in observed.values())):
         raise ValueError('checklist_preflight_failed:baseline_or_tests_changed')
     if phase == 'test_write_open':
         status = checklist_preflight_status(task_dir, for_test_write=True)
@@ -348,7 +418,7 @@ def observe_checklist_phase(task_dir: Path, project_root: Path, phase: str, exec
                'attempt': execution['attempt'], 'review_mode': 'test-checklist', 'captured_at': now(),
                'checklist_ref': 'context/test-checklist.md', 'checklist_digest': _digest(task_dir / 'context/test-checklist.md'),
                'test_paths': paths, 'test_targets': targets, 'authorized_test_paths': authorized,
-               'tests_before': observed, 'tests_after': snapshot(root, paths), 'execution': dict(execution)}
+               'tests_before': observed, 'execution': dict(execution)}
     if phase != 'review_begin':
         for key in ['review_output_ref', 'review_report_ref']:
             payload[key] = execution[key]
@@ -363,15 +433,23 @@ def observe_checklist_phase(task_dir: Path, project_root: Path, phase: str, exec
         errors = _host_review_errors(task_dir, begin, end, opened)
         if errors:
             raise ValueError('checklist_preflight_failed:' + ','.join(errors))
+    after_paths, _, _, _, after = _checklist_states(root, baseline, stage)
+    if after_paths != paths or after != observed:
+        raise ValueError('checklist_preflight_failed:baseline_or_tests_changed')
+    payload['tests_after'] = after
     append_event(task_dir, payload)
 
     return payload
 
 
-def production_paths(task_dir: Path) -> list[str]:
+def _contract_paths(task_dir: Path, field: str) -> list[str]:
     pipeline = json.loads((Path(task_dir) / 'pipeline.json').read_text())
     return sorted({p for stage in pipeline.get('stages', []) if isinstance(stage, dict)
-                   for p in stage.get('contract_preservation', {}).get('production_paths', [])})
+                   for p in stage.get('contract_preservation', {}).get(field, [])})
+
+
+def production_paths(task_dir: Path) -> list[str]:
+    return _contract_paths(task_dir, 'production_paths')
 
 
 def _redact(text: str) -> str:
@@ -383,7 +461,14 @@ def runner_selection(argv: list[str]) -> tuple[str, list[str]]:
     if not argv:
         return '', []
     args = list(argv[1:])
-    python = Path(argv[0]).name.startswith('python')
+    executable = Path(argv[0]).name
+    if executable in {'mvn', 'mvnw'} and args[-1:] == ['test']:
+        selectors = [arg[len('-Dtest='):] for arg in args if arg.startswith('-Dtest=')]
+        if len(selectors) == 1 and re.fullmatch(r'[\w.]+(?:,[\w.]+)*', selectors[0]):
+            return 'maven', selectors[0].split(',')
+        return '', []
+
+    python = executable.startswith('python')
     if Path(argv[0]).name in {'pytest', 'py.test'} or (python and args[:2] == ['-m', 'pytest']):
         args = args[2:] if python else args
         return 'pytest', [a for a in args if not a.startswith('-') and '.py' in a
@@ -412,15 +497,77 @@ def runner_selection(argv: list[str]) -> tuple[str, list[str]]:
         return '', []
 
 
+def _maven_selected_class(target: str, selected: list[str]) -> str:
+    match = re.fullmatch(r'src/test/java/([\w/]+)\.java', target)
+    if not match:
+        return ''
+    name = match[1].replace('/', '.')
+    return name if name in selected or name.rsplit('.', 1)[-1] in selected else ''
+
+
 def targets_bound(test_targets: list[str], argv: list[str]) -> bool:
-    _, selected = runner_selection(argv)
+    kind, selected = runner_selection(argv)
+    if kind == 'maven':
+        return bool(test_targets) and all(_maven_selected_class(target, selected) for target in test_targets)
     return bool(test_targets) and all(any(t == a or t.startswith(a + '::') or a.startswith(t + '::')
                                         for a in selected) for t in test_targets)
 
 
-def execution_targets(argv: list[str], output: str, outcome: str) -> list[str]:
+_MAVEN_COLOR = re.compile(r'\x1b\[[0-9;]*m')
+_SUREFIRE_GOAL = re.compile(r'^\[INFO\] --- (?:maven-)?surefire(?:-plugin)?:[^:]+:test ', re.MULTILINE)
+_SUREFIRE_SUMMARY = re.compile(
+    r'^\[(?:INFO|ERROR|WARNING)\] Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+),'
+    r' Time elapsed: [^\n]+? -+ in ([\w.$]+)[^\S\n]*$', re.MULTILINE,
+)
+_SUREFIRE_FAILURE = re.compile(
+    r'^\[ERROR\] Failed to execute goal org\.apache\.maven\.plugins:maven-surefire-plugin:[^:]+:test .*There are test failures\.',
+    re.MULTILINE,
+)
+_MAVEN_BUILD = re.compile(r'^\[INFO\] BUILD (SUCCESS|FAILURE)[^\S\n]*$', re.MULTILINE)
+_SUREFIRE_EVIDENCE = '\n[retained Surefire evidence]\n'
+
+
+def _bounded_test_output(output: str, kind: str) -> str:
+    output = _redact(output)
+    if len(output) <= 120_000:
+        return output
+
+    bounded = output[:120_000] + '\n[bounded output]\n' + output[-8_000:]
+    if kind != 'maven':
+        return bounded
+
+    lines = _MAVEN_COLOR.sub('', output).splitlines()
+    evidence = '\n'.join(line for line in lines if any(
+        pattern.match(line) for pattern in (_SUREFIRE_GOAL, _SUREFIRE_SUMMARY, _SUREFIRE_FAILURE, _MAVEN_BUILD)
+    ))
+    if len(evidence) > 32_000:
+        evidence = '[Surefire evidence exceeds retention limit]'
+    return bounded + _SUREFIRE_EVIDENCE + evidence + '\n'
+
+
+def _maven_execution_targets(selected: list[str], output: str, outcome: str, targets: list[str]) -> list[str]:
+    if _SUREFIRE_EVIDENCE in output:
+        output = output.rsplit(_SUREFIRE_EVIDENCE, 1)[1]
+    output = _MAVEN_COLOR.sub('', output)
+    expected = {'passed': 'SUCCESS', 'failed': 'FAILURE'}.get(outcome)
+    if not expected or expected not in _MAVEN_BUILD.findall(output) or not _SUREFIRE_GOAL.search(output):
+        return []
+    if outcome == 'failed' and not _SUREFIRE_FAILURE.search(output):
+        return []
+
+    summaries = _SUREFIRE_SUMMARY.findall(output)
+    if any(int(errors) for _, _, errors, _, _ in summaries):
+        return []
+    verified = {name for count, failures, _, skipped, name in summaries
+                if int(count) > 0 and int(skipped) == 0 and bool(int(failures)) == (outcome == 'failed')}
+    return [target for target in targets if _maven_selected_class(target, selected) in verified]
+
+
+def execution_targets(argv: list[str], output: str, outcome: str, targets: list[str] | None = None) -> list[str]:
     """선택 범위와 실제 결과를 결합한다. 미지원 runner/불명확한 실패 위치는 미검증이다."""
     kind, selected = runner_selection(argv)
+    if kind == 'maven':
+        return _maven_execution_targets(selected, output, outcome, targets or [])
     if kind == 'script':
         return selected if outcome == 'passed' or (outcome == 'failed' and len(selected) == 1) else []
     if kind != 'pytest':
@@ -455,28 +602,40 @@ def execute_test(task_dir: Path, project_root: Path, phase: str, test_targets: l
         raise ValueError('checklist_preflight_failed:' + ','.join(preflight['errors']))
     if phase == 'characterization' and preflight['required']:
         observed = snapshot(root, test_targets)
-        if any(value != baseline['files'].get(name) for name, value in observed.items()):
+        initial = baseline_file_states(root, baseline, test_targets)
+        authorized = set(preflight.get('authorized_test_paths', []))
+        if any(value != initial[name]
+               and (name not in authorized or initial[name]['state'] != 'missing' or value['state'] != 'file')
+               for name, value in observed.items()):
             raise ValueError('checklist_preflight_failed:characterization_tests_changed')
+    kind, _ = runner_selection(argv)
+    if phase == 'green' and Path(argv[0]).name in {'mvn', 'mvnw'}:
+        missing = [p for p in _contract_paths(task_dir, 'preserved_test_targets')
+                   if p not in test_targets or not targets_bound([p], argv)]
+        if missing:
+            raise ValueError('maven_green_missing_preserved_tests: ' + ', '.join(missing))
+
     before, tests = snapshot(root, paths), snapshot(root, test_targets)
-    if runner_selection(argv)[0] == 'pytest':
+    if kind == 'pytest':
         argv = list(argv) + ['--verbosity=1', '--color=no']
     started, exit_code, outcome, output = now(), None, 'error', ''
     try:
         proc = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=timeout)
         exit_code, output = proc.returncode, proc.stdout + proc.stderr
         outcome = 'passed' if exit_code == 0 else 'error'
-        if exit_code == 1 and ('AssertionError' in output or re.search(r'\b[1-9]\d* failed\b', output)) and not re.search(r'\b(?:ERROR|ImportError|ModuleNotFoundError|SyntaxError)\b', output):
+        if exit_code == 1 and kind == 'maven' and execution_targets(argv, output, 'failed', test_targets):
+            outcome = 'failed'
+        if exit_code == 1 and kind != 'maven' and ('AssertionError' in output or re.search(r'\b[1-9]\d* failed\b', output)) and not re.search(r'\b(?:ERROR|ImportError|ModuleNotFoundError|SyntaxError)\b', output):
             outcome = 'failed'
     except subprocess.TimeoutExpired as exc:
         outcome, output = 'timeout', str(exc)
     except OSError as exc:
         output = str(exc)
     if outcome in {'passed', 'failed'} and (not targets_bound(test_targets, argv)
-                                           or not execution_targets(argv, output, outcome)):
+                                           or not execution_targets(argv, output, outcome, test_targets)):
         outcome = 'unverified'
     ended, run_id = now(), str(uuid.uuid4())
-    output = _redact(output)
-    output = output[:120000] + ('\n[bounded output]\n' + output[-8000:] if len(output) > 120000 else '')
+    output = _bounded_test_output(output, kind)
     relative = 'context/test-run-' + run_id + '.log'
     (task_dir / 'context').mkdir(exist_ok=True)
     (task_dir / relative).write_text(output)

@@ -77,6 +77,34 @@ def test_success_case_contract_reused_tests_and_real_order_are_verified(contract
     assert result['preserved_test_targets'] == ['tests/preserved.py']
 
 
+@pytest.mark.parametrize('implement_after_retry', [False, True])
+def test_contract_green_requires_production_change_after_red(contract, implement_after_retry):
+    _, root, _ = contract
+    (root / 'tests/change.py').write_text(
+        "import runpy\nfrom pathlib import Path\n"
+        "assert runpy.run_path('module.py')['VALUE'] == 2 or Path('retry-marker').exists()\n"
+    )
+    run(contract, 'characterization')
+    red = run(contract, 'red')
+    (root / 'retry-marker').touch()
+    retry = run(contract, 'green')
+
+    assert red['outcome'] == 'failed'
+    assert retry['outcome'] == 'passed'
+    assert retry['source_after'] == red['source_before']
+
+    if implement_after_retry:
+        (root / 'retry-marker').unlink()
+        (root / 'module.py').write_text('VALUE = 2\n')
+        run(contract, 'green')
+    run(contract, 'refactor')
+
+    result = verdict(contract)
+    assert result['red_phase_passed'] is True
+    assert result['green_phase_passed'] is implement_after_retry
+    assert result['tdd_verified'] is implement_after_retry
+
+
 def test_failure_case_contract_post_mutation_tests_are_contradicted(contract):
     (contract[1] / 'module.py').write_text('VALUE = 2\n')
     run(contract, 'characterization')
@@ -735,7 +763,7 @@ def test_failure_case_missing_plan_task_cannot_hide_registered_code_decision_req
     assert result['tdd_verified'] is False
 
 
-def checklist_case(tmp_path):
+def checklist_case(tmp_path, *, new_preserved_test=False):
     """PRD의 신뢰된 host 관찰 fixture; 실제 사용자 state는 사용하지 않는다."""
     import hashlib
     import copy
@@ -746,6 +774,8 @@ def checklist_case(tmp_path):
     pipeline['checklist_evidence_version'] = 1
     (task / 'pipeline.json').write_text(json.dumps(pipeline))
     (task / 'tool-events.jsonl').unlink()
+    if new_preserved_test:
+        (root / 'tests/preserved.py').unlink()
     baseline = runner.capture_baseline(task, root, ['module.py', *stage['authorized_test_paths']])
     checklist = task / 'context/test-checklist.md'
     checklist.write_text('| TC-ID | Level |\n| --- | --- |\n| TC-001 | MUST |\n')
@@ -904,4 +934,22 @@ def test_success_case_independent_checklist_preflight_allows_real_cycle(tmp_path
     cycle(fixture)
 
     assert fx.load_quality_lib().test_checklist_status(fixture[0])['valid'] is True
+    assert verdict(fixture)['tdd_verified'] is True
+
+
+def test_checklist_allows_new_authorized_characterization_before_implementation(tmp_path):
+    fixture = checklist_case(tmp_path, new_preserved_test=True)
+    _, root, _ = fixture
+    (root / 'tests/preserved.py').write_text(
+        "import runpy\nassert isinstance(runpy.run_path('module.py')['VALUE'], int)\n"
+    )
+
+    characterization = run(fixture, 'characterization')
+    red = run(fixture, 'red')
+    (root / 'module.py').write_text('VALUE = 2\n')
+    run(fixture, 'green')
+    run(fixture, 'refactor')
+
+    assert characterization['outcome'] == 'passed'
+    assert red['outcome'] == 'failed'
     assert verdict(fixture)['tdd_verified'] is True
