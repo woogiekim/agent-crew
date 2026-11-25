@@ -161,14 +161,27 @@ assert_eq "user-scribe" "${actual}"
 # Regression: merge_agents_to_discovery must not treat the shared host
 # dest/skills/ directory as wholly agent-crew-owned. Third-party skills placed
 # there by other tooling must survive crew:update.
+#
+# The host scans dest/ recursively for agent definitions, so a skill file with
+# `name:` frontmatter placed under dest/skills/ is registered as an agent.
+# Skills therefore must not be installed there at all, and copies a previous
+# install left behind are removed only when they are byte-identical to the
+# system skill (the ownership evidence).
 TMP=$(make_tmp)
-mkdir -p "${TMP}/sys-agents/skills" "${TMP}/user-agents" "${TMP}/dest/skills"
+mkdir -p "${TMP}/sys-agents/skills/templates" "${TMP}/user-agents" "${TMP}/dest/skills/templates"
+echo "sys-agent" > "${TMP}/sys-agents/sys.md"
 echo "agent-crew-skill" > "${TMP}/sys-agents/skills/tdd.md"
+echo "agent-crew-skill-not-yet-mirrored" > "${TMP}/sys-agents/skills/api-design.md"
+echo "agent-crew-edited-upstream" > "${TMP}/sys-agents/skills/code-review.md"
+echo "agent-crew-template" > "${TMP}/sys-agents/skills/templates/backend-kotlin-spring.md"
+echo "agent-crew-skill" > "${TMP}/dest/skills/tdd.md"
+echo "locally-diverged-copy" > "${TMP}/dest/skills/code-review.md"
+echo "agent-crew-template" > "${TMP}/dest/skills/templates/backend-kotlin-spring.md"
 echo "third-party-devstack" > "${TMP}/dest/skills/devstack.md"
 
 it "merge_agents_to_discovery preserves third-party dest skill files"
-merge_agents_to_discovery \
-  "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest" >/dev/null 2>&1
+output=$(merge_agents_to_discovery \
+  "${TMP}/sys-agents" "${TMP}/user-agents" "${TMP}/dest" 2>&1)
 rc=$?
 assert_exit 0 "${rc}"
 
@@ -179,8 +192,24 @@ it "merge_agents_to_discovery preserves third-party dest skill contents"
 actual=$(cat "${TMP}/dest/skills/devstack.md" 2>/dev/null || true)
 assert_eq "third-party-devstack" "${actual}"
 
-it "merge_agents_to_discovery still copies agent-crew system skills"
-assert_file_exists "${TMP}/dest/skills/tdd.md"
+it "merge_agents_to_discovery still copies system agents next to skills"
+assert_file_exists "${TMP}/dest/sys.md"
+
+it "merge_agents_to_discovery does not install system skills into agent discovery"
+assert_file_absent "${TMP}/dest/skills/api-design.md"
+
+it "merge_agents_to_discovery removes a previously mirrored skill identical to the system copy"
+assert_file_absent "${TMP}/dest/skills/tdd.md"
+
+it "merge_agents_to_discovery removes a previously mirrored nested template identical to the system copy"
+assert_file_absent "${TMP}/dest/skills/templates/backend-kotlin-spring.md"
+
+it "merge_agents_to_discovery keeps a same-named dest skill whose content differs"
+actual=$(cat "${TMP}/dest/skills/code-review.md" 2>/dev/null || true)
+assert_eq "locally-diverged-copy" "${actual}"
+
+it "merge_agents_to_discovery reports the dest skill it could not prove ownership of"
+assert_contains "${output}" "code-review.md"
 
 # Now create a conflict
 TMP=$(make_tmp)
@@ -322,5 +351,90 @@ it "merge_agent_crew_section is idempotent across repeated setup runs"
 snapshot=$(cat "${TMP}/dest.md")
 merge_agent_crew_section "${TMP}/source.md" "${TMP}/dest.md"
 assert_eq "${snapshot}" "$(cat "${TMP}/dest.md")"
+
+# --------------------------------------------------------------------------- #
+# sync_owned_mirror — shared host directory with ownership manifest           #
+# --------------------------------------------------------------------------- #
+
+# The host command directory is shared with other tooling, so a plain
+# "not in source → delete" prune is unsafe and a plain copy never removes a
+# command renamed or dropped upstream. The manifest records what this
+# installer wrote; only those files may be removed later.
+TMP=$(make_tmp)
+mkdir -p "${TMP}/src" "${TMP}/dest"
+echo "stager-v1" > "${TMP}/src/stager.md"
+echo "renamed-away" > "${TMP}/src/feature-step.md"
+echo "edited-later" > "${TMP}/src/reply.md"
+echo "third-party-feat" > "${TMP}/dest/feat.md"
+MANIFEST="${TMP}/state/host-manifest/commands.json"
+
+it "sync_owned_mirror first run exits 0"
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${MANIFEST}" >/dev/null 2>&1
+rc=$?
+assert_exit 0 "${rc}"
+
+it "sync_owned_mirror copies source files"
+assert_file_exists "${TMP}/dest/feature-step.md"
+
+it "sync_owned_mirror records a manifest"
+assert_file_exists "${MANIFEST}"
+
+it "sync_owned_mirror first run keeps third-party file"
+assert_file_exists "${TMP}/dest/feat.md"
+
+rm "${TMP}/src/feature-step.md" "${TMP}/src/reply.md"
+echo "operator-edit" > "${TMP}/dest/reply.md"
+
+it "sync_owned_mirror second run exits 0"
+output=$(sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${MANIFEST}" 2>&1)
+rc=$?
+assert_exit 0 "${rc}"
+
+it "sync_owned_mirror removes an untouched file dropped from source"
+assert_file_absent "${TMP}/dest/feature-step.md"
+
+it "sync_owned_mirror keeps a dropped file the operator edited"
+actual=$(cat "${TMP}/dest/reply.md" 2>/dev/null || true)
+assert_eq "operator-edit" "${actual}"
+
+it "sync_owned_mirror reports the edited file it kept"
+assert_contains "${output}" "reply.md"
+
+it "sync_owned_mirror keeps files still in source"
+assert_file_exists "${TMP}/dest/stager.md"
+
+it "sync_owned_mirror never removes a file it did not install"
+assert_file_exists "${TMP}/dest/feat.md"
+
+it "sync_owned_mirror is idempotent when nothing changed"
+snapshot=$(cat "${MANIFEST}")
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${MANIFEST}" >/dev/null 2>&1
+assert_eq "${snapshot}" "$(cat "${MANIFEST}")"
+
+# A dest file that predates the manifest carries no ownership evidence, even
+# when its name later disappears from source.
+TMP=$(make_tmp)
+mkdir -p "${TMP}/src" "${TMP}/dest"
+echo "current" > "${TMP}/src/stager.md"
+echo "pre-manifest-leftover" > "${TMP}/dest/feature-step.md"
+
+it "sync_owned_mirror without a prior manifest removes nothing"
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${TMP}/state/commands.json" >/dev/null 2>&1
+assert_file_exists "${TMP}/dest/feature-step.md"
+
+# A recorded relative path no longer identifies a host copy when its parent
+# was replaced with a link to another directory.
+TMP=$(make_tmp)
+mkdir -p "${TMP}/src/nested" "${TMP}/outside"
+printf 'mirrored command\n' > "${TMP}/src/nested/retired.md"
+printf 'mirrored command\n' > "${TMP}/outside/retired.md"
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${TMP}/state/commands.json" >/dev/null 2>&1
+rm "${TMP}/src/nested/retired.md" "${TMP}/dest/nested/retired.md"
+rmdir "${TMP}/dest/nested"
+ln -s "${TMP}/outside" "${TMP}/dest/nested"
+
+it "sync_owned_mirror preserves files reached through a replacement symlink"
+sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${TMP}/state/commands.json" >/dev/null 2>&1
+assert_file_exists "${TMP}/outside/retired.md"
 
 end_report

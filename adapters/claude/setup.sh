@@ -6,7 +6,8 @@ PROJECT_ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 # AGENT_CREW_MODE: "install" (default) or "update". Update mode never prompts
 # and never resets state; the copy operations below are idempotent in both
-# modes (cp -R overwrites but does not delete extraneous files).
+# modes. Shared host paths are pruned only with ownership evidence: see
+# sync_owned_mirror and merge_agents_to_discovery in core/setup/common.sh.
 AGENT_CREW_MODE="${AGENT_CREW_MODE:-install}"
 AGENT_CREW_PROJECT_LOCAL_ONLY="${AGENT_CREW_PROJECT_LOCAL_ONLY:-0}"
 
@@ -86,11 +87,15 @@ install_claude_user_commands() {
   fi
 
   # The installed user layer is authoritative for the host mirror: it carries
-  # both the seeds and any operator edit.
+  # both the seeds and any operator edit. ${dest} is shared with commands from
+  # other tooling, so the mirror is tracked by an ownership manifest: a command
+  # renamed or dropped from the user layer is removed from the host, and files
+  # this installer never wrote are left alone.
+  local host_manifest="${AGENT_CREW_HOME}/system/host-manifest/claude-commands.json"
   if [ -d "${installed_user_commands}" ]; then
-    diff_install "${installed_user_commands}" "${dest}"
+    sync_owned_mirror "${installed_user_commands}" "${dest}" "${host_manifest}"
   elif [ -n "${source_user_commands}" ] && [ -d "${source_user_commands}" ]; then
-    diff_install "${source_user_commands}" "${dest}"
+    sync_owned_mirror "${source_user_commands}" "${dest}" "${host_manifest}"
   fi
 }
 

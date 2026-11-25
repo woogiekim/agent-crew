@@ -41,6 +41,9 @@ cp "${REPO_ROOT}/core/commands/run.md" "${ACHOME}/commands/run.md"
 cp "${REPO_ROOT}/core/commands/agent.md" "${ACHOME}/commands/agent.md"
 printf '# /stager\n\nuser-owned command\n' > "${ACHOME}/user/commands/stager.md"
 printf '# /post-audit\n\nuser-owned command\n' > "${ACHOME}/user/commands/post-audit.md"
+# Not shipped in core/user/commands, so the seeder cannot restore it once the
+# operator drops it from the user layer.
+printf '# /local-renamed\n\noperator command\n' > "${ACHOME}/user/commands/local-renamed.md"
 printf 'legacy flat run\n' > "${CLAUDE_DIR_T}/commands/run.md"
 printf 'legacy flat agent\n' > "${CLAUDE_DIR_T}/commands/agent.md"
 
@@ -79,6 +82,37 @@ assert_file_absent "${CLAUDE_DIR_T}/commands/run.md"
 
 it "claude setup prunes legacy flat agent command"
 assert_file_absent "${CLAUDE_DIR_T}/commands/agent.md"
+
+# A user command renamed or dropped from the user layer must leave the shared
+# host command directory on the next run, without touching commands that other
+# tooling placed there. The real setup also must not mirror system skills into
+# the host agent discovery path, where the host would register them as agents.
+printf '# /feat\n\nthird-party command\n' > "${CLAUDE_DIR_T}/commands/feat.md"
+rm "${ACHOME}/user/commands/local-renamed.md"
+mkdir -p "${ACHOME}/system/agents/skills"
+printf -- '---\nname: tdd\n---\nskill body\n' > "${ACHOME}/system/agents/skills/tdd.md"
+
+it "claude setup rerun exits 0"
+AGENT_CREW_HOME="${ACHOME}" \
+CLAUDE_DIR="${CLAUDE_DIR_T}" \
+SOURCE_ROOT="${REPO_ROOT}" \
+AGENT_CREW_MODE=update \
+AGENT_CREW_WRITE_CAPABILITIES=0 \
+  bash "${REPO_ROOT}/adapters/claude/setup.sh" "${PROJECT_ROOT_T}" >/dev/null 2>&1
+rc=$?
+assert_exit 0 "${rc}" "claude setup rerun"
+
+it "claude setup removes a user command dropped from the user layer"
+assert_file_absent "${CLAUDE_DIR_T}/commands/local-renamed.md"
+
+it "claude setup keeps user commands still in the user layer"
+assert_file_exists "${CLAUDE_DIR_T}/commands/stager.md"
+
+it "claude setup keeps third-party flat commands"
+assert_file_exists "${CLAUDE_DIR_T}/commands/feat.md"
+
+it "claude setup does not mirror system skills into host agent discovery"
+assert_file_absent "${CLAUDE_DIR_T}/agents/skills/tdd.md"
 
 TMP_CAPS=$(make_tmp)
 ACHOME_CAPS="${TMP_CAPS}/agent-crew-home"

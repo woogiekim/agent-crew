@@ -611,9 +611,24 @@ ADAPTERS_DIR="${SOURCE_ROOT}/adapters"
   so it can be hand-merged. An installed file with no manifest entry is
   assumed to be the operator's.
 - Third-party skill files under the shared Claude discovery path
-  `~/.claude/agents/skills/` are preserved. `merge_agents_to_discovery`
-  refreshes agent-crew system agent skills there, but does not delete unknown
-  skill files without ownership evidence.
+  `~/.claude/agents/skills/` are preserved. `merge_agents_to_discovery` does
+  NOT install agent-crew skills there: Claude Code scans `~/.claude/agents/`
+  recursively, so a skill file carrying `name:` frontmatter in that path is
+  registered as an agent. Agents read skills from
+  `~/.agent-crew/system/agents/skills/`; the Claude mirror is
+  `~/.claude/agent-crew/skills/`. A copy left by an earlier install is removed
+  only when it is byte-identical to the system skill. A same-named file whose
+  content differs, and any unknown file, is kept and reported — no deletion
+  without ownership evidence.
+- User commands mirrored into the shared Claude command path
+  `~/.claude/commands/` are tracked in
+  `~/.agent-crew/system/host-manifest/claude-commands.json` (sha256 of every
+  file the installer wrote). A command renamed or dropped from
+  `~/.agent-crew/user/commands/` is removed from the host on the next run only
+  while its content still matches that record; an edited copy is kept and
+  reported, and a file the installer never wrote is never touched. A host file
+  that predates the manifest has no ownership evidence and is left in place.
+  Cleanup also skips recorded paths that now cross a symbolic link.
 - Channel B adapter skill templates seeded from
   `core/agents/skills/templates/` use copy-if-absent semantics: the
   framework installs the template at

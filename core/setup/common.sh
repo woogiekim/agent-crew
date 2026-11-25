@@ -250,6 +250,105 @@ sync_dir_contents_prune() {
   find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
 }
 
+# sync_owned_mirror <src_dir> <dest_dir> <manifest_path>
+#
+# Mirror src into a host directory that is SHARED with other tooling.
+#
+# `sync_dir_contents_prune` is unsafe there (it deletes every file absent from
+# src, including third-party ones) and a plain copy never removes a file that
+# was renamed or dropped upstream. This helper records the sha256 of every file
+# it writes in <manifest_path>; on a later run a file that left src is removed
+# only when its content still matches that record.
+#
+#   in src                        → copied, recorded
+#   left src, content unchanged   → removed (this installer wrote it)
+#   left src, content changed     → kept and reported (operator edited it)
+#   never recorded                → never touched
+#
+# A dest file that predates the manifest has no ownership evidence and is left
+# in place even when its name is absent from src.
+sync_owned_mirror() {
+  local src="$1" dest="$2" manifest="$3"
+  [ -d "${src}" ] || return 0
+
+  diff_install "${src}" "${dest}"
+
+  command -v python3 >/dev/null 2>&1 || return 0
+  mkdir -p "$(dirname "${manifest}")"
+
+  python3 - "${src}" "${dest}" "${manifest}" <<'PYEOF'
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+src = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+manifest_path = Path(sys.argv[3])
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+previous = {}
+if manifest_path.is_file():
+    try:
+        loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            previous = {str(k): str(v) for k, v in loaded.items()}
+    except (OSError, ValueError):
+        previous = {}
+
+current = {}
+for source_file in sorted(src.rglob("*")):
+    if not source_file.is_file() or source_file.name == ".DS_Store":
+        continue
+    rel = source_file.relative_to(src).as_posix()
+    mirrored = dest / rel
+    if mirrored.is_file():
+        current[rel] = sha256(mirrored)
+
+def recorded_host_file(rel: str):
+    relative = Path(rel)
+    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+        return None
+
+    path = dest
+    if path.is_symlink():
+        return None
+    for part in relative.parts:
+        path /= part
+        if path.is_symlink():
+            return None
+    return path if path.is_file() else None
+
+
+for rel in sorted(set(previous) - set(current)):
+    leftover = recorded_host_file(rel)
+    if leftover is None:
+        continue
+    if sha256(leftover) == previous[rel]:
+        print(f"[agent-crew] Removing stale file from {dest}: {rel}")
+        leftover.unlink()
+    else:
+        print(
+            f"[agent-crew] Preserving {rel} in {dest}: removed upstream but edited locally"
+        )
+
+if current != previous or not manifest_path.is_file():
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{manifest_path.name}.", suffix=".tmp", dir=manifest_path.parent
+    )
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(current, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(temp_name, manifest_path)
+PYEOF
+}
+
 register_local_git_excludes() {
   local project_root="$1"
   shift
@@ -509,25 +608,52 @@ merge_agents_to_discovery() {
     fi
   done < <(find "${dest}" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
 
-  # Preserve third-party skills in the shared dest/skills/ discovery path.
+  # dest/skills/ is a shared host path, and the host scans dest/ recursively for
+  # agent definitions: a skill file carrying `name:` frontmatter there is
+  # registered as an agent. Skills are therefore never installed under dest/.
+  # A copy left by an earlier install is removed only when it is byte-identical
+  # to the system skill — the one ownership evidence available without a
+  # manifest. Anything else is kept and reported.
   if [ -d "${dest}/skills" ]; then
     while IFS= read -r -d '' dest_skill; do
-      local basename_file
-      basename_file=$(basename "${dest_skill}")
+      local rel_skill
+      rel_skill="${dest_skill#"${dest}/skills/"}"
 
-      local in_system_skill=0
-      local in_user_skill=0
-      [ -f "${system_agents}/skills/${basename_file}" ] && in_system_skill=1
-      [ -f "${user_agents}/skills/${basename_file}" ] && in_user_skill=1
-
-      if [ "${in_system_skill}" -eq 0 ] && [ "${in_user_skill}" -eq 0 ]; then
-        printf '[agent-crew] Preserving non-agent-crew skill in discovery: %s\n' "${basename_file}"
+      if [ -f "${system_agents}/skills/${rel_skill}" ]; then
+        if cmp -s "${system_agents}/skills/${rel_skill}" "${dest_skill}"; then
+          printf '[agent-crew] Removing agent-crew skill from agent discovery: %s\n' "${rel_skill}"
+          rm -f "${dest_skill}"
+        else
+          printf '[agent-crew] Preserving skill in agent discovery (differs from system copy, ownership unproven): %s\n' "${rel_skill}"
+        fi
+      elif [ ! -f "${user_agents}/skills/${rel_skill}" ]; then
+        printf '[agent-crew] Preserving non-agent-crew skill in discovery: %s\n' "${rel_skill}"
       fi
-    done < <(find "${dest}/skills" -maxdepth 1 -name "*.md" -print0 2>/dev/null)
+    done < <(find "${dest}/skills" -type f ! -name ".DS_Store" -print0 2>/dev/null)
+
+    find "${dest}/skills" -depth -type d -empty -delete 2>/dev/null || true
   fi
 
-  # Copy system agents first (idempotent — cp -R overwrites existing files)
-  copy_dir_contents "${system_agents}" "${dest}"
+  # Copy system agents first (idempotent — overwrites existing files). The
+  # skills/ subtree is skipped; see above.
+  if [ -d "${system_agents}" ]; then
+    local system_entry
+    for system_entry in "${system_agents}"/*; do
+      [ -e "${system_entry}" ] || continue
+      local entry_name
+      entry_name=$(basename "${system_entry}")
+
+      if [ -d "${system_entry}" ]; then
+        [ "${entry_name}" = "skills" ] && continue
+        copy_dir_contents "${system_entry}" "${dest}/${entry_name}"
+      elif [ "${AGENT_CREW_COPY_DETAIL:-0}" = "1" ]; then
+        diff_copy "${system_entry}" "${dest}/${entry_name}"
+      else
+        cp "${system_entry}" "${dest}/${entry_name}"
+      fi
+    done
+    find "${dest}" -name ".DS_Store" -delete 2>/dev/null || true
+  fi
 
   # Merge user agents with conflict detection
   if [ -d "${user_agents}" ]; then
