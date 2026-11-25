@@ -642,3 +642,65 @@ def test_git_baseline_pins_attributes_and_disables_external_checkout_filter(tmp_
     assert sut.baseline_file_states(root, baseline, ['Value.java']) == expected
     assert not (root / 'smudge-ran').exists()
     assert not (root / 'process-ran').exists()
+
+
+@pytest.mark.parametrize('checkout', ['lf', 'crlf'])
+def test_large_git_target_matches_checkout_without_hashing_clean_startup(tmp_path, checkout, monkeypatch):
+    import hashlib
+    import _trace_gate_fixtures as fixtures
+
+    root = tmp_path / 'repo'
+    fixtures.init_git_repo(root)
+    (root / '.gitattributes').write_text(f'*.txt text eol={checkout}\n')
+    eol = b'\r\n' if checkout == 'crlf' else b'\n'
+    contents = (b'x' * 99 + eol) * 30_000
+    name = 'target.txt'
+    file = root / name
+    file.write_bytes(contents)
+    fixtures._git(root, 'add', '.')
+    fixtures._git(root, 'commit', '-qm', 'large target fixture')
+    assert fixtures._git(root, 'status', '--porcelain') == ''
+    runner = helper()
+
+    raw_read = Path.read_bytes
+
+    def reject_full_target_read(path):
+        assert path != file, 'large target must be hashed in chunks'
+        return raw_read(path)
+
+    monkeypatch.setattr(Path, 'read_bytes', reject_full_target_read)
+    baseline = runner.capture_baseline(tmp_path / 'clean-task', root)
+    expected = {'state': 'file', 'sha256': hashlib.sha256(contents).hexdigest()}
+
+    assert baseline['complete'] is True
+    assert baseline['files'] == {}
+    assert runner.baseline_file_states(root, baseline, [name]) == {name: expected}
+    assert runner.snapshot(root, [name]) == {name: expected}
+
+    changed = b'y' + contents[1:]
+    file.write_bytes(changed)
+    dirty = runner.capture_baseline(tmp_path / 'dirty-task', root)
+    assert dirty['complete'] is True
+    assert dirty['files'][name] == {'state': 'file', 'sha256': hashlib.sha256(changed).hexdigest()}
+    assert runner.baseline_file_states(root, baseline, [name]) != runner.snapshot(root, [name])
+
+
+def test_expanded_crlf_target_larger_than_file_limit_is_unsupported(tmp_path):
+    import _trace_gate_fixtures as fixtures
+
+    root = tmp_path / 'repo'
+    fixtures.init_git_repo(root)
+    runner = helper()
+    (root / '.gitattributes').write_text('*.txt text eol=crlf\n')
+    path = root / 'target.txt'
+    path.write_bytes(b'\r\n' * (runner.MAX_SNAPSHOT_FILE_BYTES // 2 + 1))
+    fixtures._git(root, 'add', '.')
+    fixtures._git(root, 'commit', '-qm', 'expanded checkout fixture')
+
+    baseline = runner.capture_baseline(tmp_path / 'task', root)
+
+    assert baseline['complete'] is True
+    assert baseline['files'] == {}
+    expected = {'target.txt': {'state': 'unsupported'}}
+    assert runner.baseline_file_states(root, baseline, ['target.txt']) == expected
+    assert runner.snapshot(root, ['target.txt']) == expected

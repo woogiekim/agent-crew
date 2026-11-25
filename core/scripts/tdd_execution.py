@@ -10,8 +10,10 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import uuid
 from pathlib import Path
+from typing import BinaryIO
 
 
 def now() -> str:
@@ -56,6 +58,25 @@ def append_event(task_dir: Path, payload: dict) -> None:
         stream.write(json.dumps(_event_row(task_dir, payload), ensure_ascii=False) + '\n')
 
 
+MAX_SNAPSHOT_FILE_BYTES = 8 * 1024 * 1024
+SNAPSHOT_CHUNK_BYTES = 128 * 1024
+
+
+def _hash_stream(stream: BinaryIO, limit: int) -> tuple[str | None, int]:
+    digest = hashlib.sha256()
+    remaining = limit
+    while remaining:
+        chunk = stream.read(min(SNAPSHOT_CHUNK_BYTES, remaining))
+        if not chunk:
+            return digest.hexdigest(), limit - remaining
+        digest.update(chunk)
+        remaining -= len(chunk)
+
+    if stream.read(1):
+        return None, limit
+    return digest.hexdigest(), limit
+
+
 def snapshot(root: Path, paths: list[str]) -> dict:
     root = Path(root).resolve()
     result = {}
@@ -77,22 +98,28 @@ def snapshot(root: Path, paths: list[str]) -> dict:
                 result[key] = {'state': 'missing'}
                 continue
             size = path.stat().st_size
-            if not path.is_file() or size > 2_000_000 or size > budget:
+            if not path.is_file() or size > min(MAX_SNAPSHOT_FILE_BYTES, budget):
                 result[key] = {'state': 'unsupported'}
                 continue
-            content = path.read_bytes()
-            budget -= len(content)
-            result[key] = {'state': 'file', 'sha256': hashlib.sha256(content).hexdigest()}
+
+            with path.open('rb') as stream:
+                digest, consumed = _hash_stream(stream, size)
+            budget -= consumed
+            if digest is None or consumed != size:
+                result[key] = {'state': 'unsupported'}
+                continue
+            result[key] = {'state': 'file', 'sha256': digest}
         except OSError:
             result[key] = {'state': 'unreadable'}
     return result
 
 
-def _git(root: Path, *args: str) -> bytes:
+def _git(root: Path, *args: str, output: BinaryIO | None = None) -> bytes:
     return subprocess.run(
         ['git', '--no-optional-locks', '-C', str(root), *args],
-        capture_output=True, check=True, timeout=10,
-    ).stdout
+        stdout=output if output is not None else subprocess.PIPE,
+        stderr=subprocess.PIPE, check=True, timeout=10,
+    ).stdout or b''
 
 
 def _git_changed_paths(root: Path, head: str) -> set[str]:
@@ -103,26 +130,32 @@ def _git_changed_paths(root: Path, head: str) -> set[str]:
     return {path.decode('utf-8') for data in (changed, untracked) for path in data.split(b'\0') if path}
 
 
-def _checkout_blob(root: Path, head: str, path: str, tree_path: str, oid: str) -> bytes:
+def _checkout_blob_hash(root: Path, head: str, path: str, tree_path: str, oid: str) -> str | None:
     attr_source = '--attr-source=' + head
     try:
         attributes = _git(root, attr_source, 'check-attr', '-z', 'filter', '--', path)
     except subprocess.CalledProcessError as exc:
         if b'unknown option: --attr-source=' not in exc.stderr:
             raise
-        return _git(root, 'cat-file', 'blob', oid)
+        args = ('cat-file', 'blob', oid)
+    else:
+        driver = attributes.split(b'\0')[2].decode('utf-8')
+        if not re.fullmatch(r'[A-Za-z0-9_.-]+', driver):
+            raise ValueError('unsupported_git_baseline_filter')
+        # Git의 내장 체크아웃 변환만 사용하고 외부 필터는 호출하지 않는다.
+        args = (
+            attr_source,
+            '-c', f'filter.{driver}.process=',
+            '-c', f'filter.{driver}.smudge=',
+            '-c', f'filter.{driver}.required=false',
+            'cat-file', '--filters', '--path=' + tree_path, oid,
+        )
 
-    driver = attributes.split(b'\0')[2].decode('utf-8')
-    if not re.fullmatch(r'[A-Za-z0-9_.-]+', driver):
-        raise ValueError('unsupported_git_baseline_filter')
-    # Git의 내장 체크아웃 변환만 사용하고 외부 필터는 호출하지 않는다.
-    return _git(
-        root, attr_source,
-        '-c', f'filter.{driver}.process=',
-        '-c', f'filter.{driver}.smudge=',
-        '-c', f'filter.{driver}.required=false',
-        'cat-file', '--filters', '--path=' + tree_path, oid,
-    )
+    with tempfile.TemporaryFile() as output:
+        _git(root, *args, output=output)
+        output.seek(0)
+        digest, _ = _hash_stream(output, MAX_SNAPSHOT_FILE_BYTES)
+    return digest
 
 
 def baseline_file_states(root: Path, baseline: dict, paths: list[str]) -> dict:
@@ -149,16 +182,16 @@ def baseline_file_states(root: Path, baseline: dict, paths: list[str]) -> dict:
             continue
 
         mode, kind, oid, size = entry.split(b'\t', 1)[0].split()
-        if kind != b'blob' or mode not in {b'100644', b'100755'} or int(size) > 2_000_000:
+        if kind != b'blob' or mode not in {b'100644', b'100755'} or int(size) > MAX_SNAPSHOT_FILE_BYTES:
             states[path] = {'state': 'unsupported'}
             continue
         if prefix is None:
             prefix = _git(root, 'rev-parse', '--show-prefix').decode('utf-8').removesuffix('\n')
-        content = _checkout_blob(root, head, path, prefix + path, oid.decode('ascii'))
-        if len(content) > 2_000_000:
+        digest = _checkout_blob_hash(root, head, path, prefix + path, oid.decode('ascii'))
+        if digest is None:
             states[path] = {'state': 'unsupported'}
             continue
-        states[path] = {'state': 'file', 'sha256': hashlib.sha256(content).hexdigest()}
+        states[path] = {'state': 'file', 'sha256': digest}
     return states
 
 
