@@ -36,6 +36,7 @@ The supported operations are:
 
 Supported adapters (loaded by convention):
 - `plane` → skill `issuer-plane` (installed at `~/.agent-crew/user/skills/issuer-plane.md`)
+- `ace` → skill `issuer-ace` when installed in `~/.agent-crew/user/skills/`
 - `github` → skill `issuer-github` (installed at `~/.agent-crew/user/skills/issuer-github.md`)
 - Future: `jira` → `issuer-jira`, `linear` → `issuer-linear`
 
@@ -90,9 +91,10 @@ After the helper runs, read the report at `${TASK_DIR}/context/capability-skills
   labels, priority, assignees, title, start date, due date, estimate,
   description, or backend-specific custom fields.
 - `BACKEND_ADAPTER` — Which issue tracking backend to use. When omitted (or set to
-  `"auto"`), the dispatcher auto-detects the correct adapter from `git remote get-url
-  origin` (Step 0). Explicit values bypass auto-detection and load
-  `issuer-{BACKEND_ADAPTER}` directly. Known values: `github`, `gitlab`, `plane`.
+  `"auto"`), resolve a tracker explicitly named in the request before inspecting
+  the Git remote (Step 0). Explicit values load `issuer-{BACKEND_ADAPTER}` directly
+  after checking for conflicting target instructions. Known values: `github`,
+  `gitlab`, `plane`, `ace`.
 - `DRY_RUN` — Set to `true` to print all resolved work item payloads without
   making any create calls. Default: `false`.
 - `TASK_DIR` — Task state directory (injected automatically by `crew:run`).
@@ -246,19 +248,27 @@ This change makes the requested workflow easier to understand and verify.
 
 ## Workflow
 
-### Step 0 — Tracker Resolution (auto-detect from git remote)
+### Step 0 — Tracker Resolution
 
-Before dispatching to any adapter, resolve which issue tracker backend to use by
-inspecting the current repository's git remote. This step MUST run before
-`BACKEND_ADAPTER` is consumed or defaulted.
+Resolve the requested tracker and any explicit adapter parameter before
+consulting the Git remote.
 
 **Algorithm:**
 
-1. If `BACKEND_ADAPTER` is already explicitly set by the caller (non-empty, not the
-   string `"auto"`), skip this step entirely and proceed to Step 0.5 (Dispatch).
+1. Inspect the original task text for an explicitly named tracker destination.
+   A destination at the end of the request counts as explicit. For example,
+   `플레인이슈로 발행` selects `BACKEND_ADAPTER=plane` and
+   `에이스이슈로 발행` selects `BACKEND_ADAPTER=ace`. A tracker mentioned only
+   in an issue title, body, migration source, or key prefix does not select it.
+   If the destination conflicts with a non-auto `BACKEND_ADAPTER` or more than
+   one tracker is named as the destination, ask which single tracker to use
+   before continuing. Once a single explicit tracker is resolved, bypass the Git remote,
+   record `source: explicit` in item 6, and proceed to Step 0.5. Preserve the original task text
+   and carry the resolved backend as a separate field.
 
-2. Run the following command in `PROJECT_ROOT` (or the current working directory
-   when `PROJECT_ROOT` is not set):
+2. If neither the request nor `BACKEND_ADAPTER` specifies a tracker, run the
+   following command in `PROJECT_ROOT` (or the current working directory when
+   `PROJECT_ROOT` is not set):
 
    ```bash
    git remote get-url origin 2>/dev/null
@@ -331,6 +341,13 @@ inspecting the current repository's git remote. This step MUST run before
 1. Resolve `BACKEND_ADAPTER` from Step 0 above (already set; no default override).
 
 2. Resolve `OPERATION_MODE` using Operation Classification above.
+
+   For Ace publication, `이슈 발행해줘` is a `create` request. If there is no
+   `ISSUES_FILE` or issue content, ask for the file path or the issue title and
+   any description before resolving the target. If the caller supplies the issue
+   content inline, keep the original request intact and write a derived issue
+   file in the task context using Issue File Format. Pass that path as
+   `ISSUES_FILE`. If task context is unavailable, ask for a file path.
 
 3. **Load the skill `issuer-{BACKEND_ADAPTER}` before any tool-specific call.**
    The skill is installed at `~/.agent-crew/user/skills/issuer-{BACKEND_ADAPTER}.md`.

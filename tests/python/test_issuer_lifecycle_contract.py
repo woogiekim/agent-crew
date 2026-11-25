@@ -65,3 +65,50 @@ def test_issuer_capability_manifest_mentions_lifecycle_dispatch():
     assert "issue_lifecycle_dispatch" in text
     assert "transition" in text
     assert "field-update" in text
+
+
+def test_named_tracker_destinations_bypass_remote_detection():
+    routing = ISSUER_PATH.read_text(encoding="utf-8").split("### Step 0 —", 1)[1]
+    explicit, _ = routing.split("\n2. ", 1)
+    explicit = " ".join(explicit.split())
+
+    assert "`플레인이슈로 발행` selects `BACKEND_ADAPTER=plane`" in explicit
+    assert "`에이스이슈로 발행` selects `BACKEND_ADAPTER=ace`" in explicit
+    assert "bypass the Git remote" in explicit
+    assert "`source: explicit`" in explicit
+    assert "Preserve the original task text" in explicit
+
+
+def test_conflicting_tracker_targets_require_a_choice_before_dispatch():
+    routing = ISSUER_PATH.read_text(encoding="utf-8").split("### Step 0 —", 1)[1]
+    explicit, _ = routing.split("\n2. ", 1)
+    explicit = " ".join(explicit.split())
+
+    assert "conflicts with a non-auto `BACKEND_ADAPTER`" in explicit
+    assert "more than one tracker is named as the destination" in explicit
+    assert "ask which single tracker to use before continuing" in explicit
+    assert "issue title, body, migration source, or key prefix does not select it" in explicit
+
+
+def test_remote_resolution_runs_only_without_an_explicit_target():
+    routing = ISSUER_PATH.read_text(encoding="utf-8").split("### Step 0 —", 1)[1]
+    _, fallback = routing.split("\n2. ", 1)
+    fallback = fallback.split("### Step 0.5", 1)[0]
+
+    assert "If neither the request nor `BACKEND_ADAPTER` specifies a tracker" in fallback
+    assert "git remote get-url origin" in fallback
+    assert "`BACKEND_ADAPTER=github`" in fallback
+    assert "`BACKEND_ADAPTER=gitlab`" in fallback
+    assert "No remote — interactive resolution" in fallback
+    assert "Unknown remote — explicit consent fallback" in fallback
+
+
+def test_ace_create_requires_issue_content_before_adapter_dispatch():
+    dispatch = ISSUER_PATH.read_text(encoding="utf-8").split("### Step 0.5 —", 1)[1]
+    operation, _ = dispatch.split("\n3. ", 1)
+    operation = " ".join(operation.split())
+
+    assert "For Ace publication, `이슈 발행해줘` is a `create` request." in operation
+    assert "If there is no `ISSUES_FILE` or issue content, ask" in operation
+    assert "keep the original request intact" in operation
+    assert "Pass that path as `ISSUES_FILE`" in operation
