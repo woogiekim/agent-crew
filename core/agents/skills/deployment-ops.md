@@ -1,20 +1,18 @@
 # Skill: deployment-ops
 
 ## Purpose
-Enables the devops agent to safely plan, validate, and execute deployments and infrastructure changes by following a pre-flight → build → tag → deploy → verify sequence with mandatory approval gates.
+Plan and validate deployments and infrastructure changes. Follow pre-flight → build → tag → deploy → verify, with mandatory approval gates.
 
 ## When to Apply
-- When a deployment or release is requested after feature implementation
-- When setting up or modifying CI/CD pipelines
-- When managing containers, IaC (Terraform, Kubernetes), or shared modules
-- When creating a release tag or GitHub Release
-- After the supervisor pipeline reaches the deploy stage
+- Deployment or release after implementation, including release tags and GitHub Releases
+- CI/CD setup or changes, containers, IaC (Terraform, Kubernetes), or shared modules
+- Supervisor pipeline deploy stage
 
 ---
 
 ## Semantic Versioning (semver.org)
 
-Given a version `MAJOR.MINOR.PATCH`:
+Use `MAJOR.MINOR.PATCH`.
 
 | Increment | When | Example |
 |---|---|---|
@@ -24,7 +22,7 @@ Given a version `MAJOR.MINOR.PATCH`:
 
 Pre-release: `1.5.0-alpha.1`, `1.5.0-rc.2`. Build metadata: `1.5.0+build.42`.
 
-Always read the current version before proposing a new tag:
+Read the current version before proposing a tag.
 
 ```bash
 # Gradle
@@ -41,7 +39,7 @@ cat VERSION 2>/dev/null || git describe --tags --abbrev=0
 
 ## Deployment Strategies
 
-Choose based on risk tolerance and infrastructure capability:
+Choose for the risk tolerance and infrastructure capabilities.
 
 | Strategy | Description | Rollback speed | Risk |
 |---|---|---|---|
@@ -66,14 +64,14 @@ aws elbv2 modify-listener --listener-arn ${LB_ARN} \
 
 ## Approval Ownership
 
-Do not issue deployment, push, merge, rollback, or branch-cleanup approvals from inside the devops agent. Write the planned actions to `{TASK_DIR}/context/action-plan.md`, return a `PLAN:` block, and wait for the approval signal. The supervisor owns approval for single-task runs; the crew orchestrator owns approval for parallel runs.
+The supervisor approves single-task runs. The crew orchestrator approves parallel runs. DevOps cannot approve deployments, pushes, merges, rollbacks, or branch cleanup.
 
-The approval signal is delivered through **two paths**:
+Write `{TASK_DIR}/context/action-plan.md`, return a `PLAN:` block, and wait:
 
-1. **File-based (always available)**: Poll `approval.md` for `APPROVED` or `CANCELLED` every 5 seconds up to 60 seconds.
-2. **Capability-gated wakeup (`task_tools=true`)**: When `${TASK_DIR}/host-task-id.txt` exists, long-poll `TaskGet(taskId).status` instead of sleeping. Always re-read `approval.md` for the final verdict after either path resolves.
+- Poll `approval.md` every 5 seconds for up to 60 seconds for `APPROVED` or `CANCELLED`.
+- With `task_tools=true` and `${TASK_DIR}/host-task-id.txt`, long-poll `TaskGet(taskId).status` instead.
 
-Never execute `git push`, create remote tags, run deployment scripts, or modify production infrastructure before `APPROVED` is present.
+Re-read `approval.md` for the final verdict after either path. Require `APPROVED` before `git push`, remote tags, deployment scripts, or production infrastructure changes.
 
 ---
 
@@ -91,7 +89,7 @@ git branch --show-current
 ls deploy.sh scripts/deploy.sh Makefile docker-compose.yml 2>/dev/null
 ```
 
-Block deployment if: uncommitted changes exist, unmerged PRs are open, build scripts are missing, or approval has not been written to `{TASK_DIR}/context/approval.md`.
+Block deployment for uncommitted changes, open unmerged PRs, missing build scripts, or missing approval in `{TASK_DIR}/context/approval.md`.
 
 ---
 
@@ -104,13 +102,13 @@ Block deployment if: uncommitted changes exist, unmerged PRs are open, build scr
 | `Makefile` | `make build` | `make test` |
 | `Dockerfile` | `docker build .` | — |
 
-Never proceed to deployment if tests fail.
+Block deployment if tests fail.
 
 ---
 
 ## Git Tagging and Release
 
-After approval, create an annotated local tag. Record remote tag pushes and GitHub Release creation in the action plan for orchestrator-owned execution:
+After approval, create an annotated local tag. Record remote tag pushes and GitHub Releases in the action plan for the orchestrator.
 
 ```bash
 git tag -a v{VERSION} -m "Release v{VERSION}: {summary}"
@@ -128,7 +126,7 @@ Execute in this order:
 3. `make deploy` (if Makefile has a deploy target)
 4. `docker-compose up -d`
 
-If no script exists, write the missing deployment method to the action plan and return `STATUS: plan_ready`.
+If no script exists, record the missing deployment method in the action plan and return `STATUS: plan_ready`.
 
 ---
 
@@ -148,7 +146,7 @@ kubectl rollout status deployment/{DEPLOYMENT_NAME} --timeout=120s
 kubectl get pods -l app={APP_LABEL} -o wide
 ```
 
-Treat non-zero exit codes as deployment failure. Never mark deployment as successful without verification.
+Non-zero exits mean deployment failure. Claim success only after verification.
 
 ---
 
@@ -166,7 +164,7 @@ Treat non-zero exit codes as deployment failure. Never mark deployment as succes
 
 ## DORA Four Key Metrics (Reference: Google DORA Research)
 
-Capture these in the deployment report when data is available:
+Report available metrics.
 
 | Metric | Elite | High | Medium | Low |
 |---|---|---|---|---|
@@ -179,7 +177,7 @@ Capture these in the deployment report when data is available:
 
 ## 12-Factor App Compliance (Reference: 12factor.net)
 
-When writing or modifying CI/CD configs, check:
+Check when editing CI/CD configs.
 
 | Factor | Check |
 |---|---|
