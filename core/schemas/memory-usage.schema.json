@@ -56,6 +56,15 @@
             "type": "string",
             "minLength": 1
           },
+          "source_review": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["excerpt", "relevance"],
+            "properties": {
+              "excerpt": {"type": "string", "minLength": 1},
+              "relevance": {"type": "string", "minLength": 1}
+            }
+          },
           "applications": {
             "type": "array",
             "items": {

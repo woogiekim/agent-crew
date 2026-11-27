@@ -202,8 +202,8 @@ Treat every recalled candidate as **advisory input only**, never ground truth:
 Use this order for memory-aware analysis:
 
 1. Read requirements.
-2. Read `${TASK_DIR}/context/memory-retrieval.json` and
-   `${TASK_DIR}/context/memory.md`.
+2. Read `${TASK_DIR}/context/memory.md`. If it does not cover a decision in the
+   request, read `${TASK_DIR}/context/memory-candidates.json` for source locations.
 3. Decide conflicts against current requirements, code evidence, and managed
    rules.
 4. Write `${TASK_DIR}/context/analysis.md`.
@@ -212,12 +212,12 @@ Use this order for memory-aware analysis:
 7. Write `${TASK_DIR}/handoff.md`.
 8. Write `${TASK_DIR}/context/memory-usage.json` as the single source of truth
    for memory use. Do not guess `applied` locations before the artifacts exist.
-9. Run `validate-memory-usage.py --task-dir "${TASK_DIR}"`
+9. Run `validate-memory-usage.py --task-dir "${TASK_DIR}" --project-root "${PROJECT_ROOT}" --memory-bin "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"`
    after writing `memory-usage.json`. In normal mode, warning exit code `1`
    records that the affected memory must not receive later feedback and the
    base workflow continues. If `AGENT_CREW_MEMORY_STRICT=1`, schema or invariant
    failures are blocking.
-10. Run `memory-feedback.py --task-dir "${TASK_DIR}" --event applied` after the
+10. Run `memory-feedback.py --task-dir "${TASK_DIR}" --project-root "${PROJECT_ROOT}" --event applied` after the
     validator step. The helper honors `AGENT_CREW_MEMORY_FEEDBACK`; when the
     flag is `0`, no provider call is made. Applied feedback is advisory
     transport only and must not change the task result.
@@ -229,6 +229,17 @@ not cause a separate artifact change. Use `ignored`, `superseded`,
 `conflict_with_current_requirements`, or `conflict_with_managed_rule` when the
 memory cannot be used. `memory-usage.json` is the single source of truth; do
 not independently write `memory-evidence.json`.
+
+`memory.md`에 질문의 판단 근거가 없으면 `memory-candidates.json`의 경로와 섹션으로 원본을 찾는다.
+이 목록은 검색 순서와 원본 위치만 알려 준다. 이전 실행에서 목록 파일이 생성되지 않았다면
+`memory-retrieval.json`의 `provider_response.results`에서 같은 체크아웃의 활성 후보를 찾는다.
+원본 Markdown 섹션과 섹션에서 인용한 근거를 열어 요청의 적용 조건·대상·행동을 각각 확인한다.
+사용을 기록할 때는 해당 ID를
+`memory-retrieval.json`의 `provider_response.results`와 대조한다. 근거의 일부만
+해당하면 그 범위 안에서 판단한다. 실제 작업 산출물을 바꾼 경우에만 `applied`에
+`reason_code: source_reviewed_candidate`와 `source_review`를 기록한다. `source_review.excerpt`에는
+현재 섹션 본문에서 가져온 완전한 줄을, `source_review.relevance`에는 어떤 대상과 판단이
+일치하는지 적는다. 변경한 위치는 기존 `applications`에 기록한다.
 
 ## Capability Dispatch (Loaded By Metadata)
 

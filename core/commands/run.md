@@ -2835,6 +2835,11 @@ Use the structured user-choice mechanism from
 All merge, push, PR, and discard actions remain subject to the centralized
 approval gate. A plain-text "shall I?" prompt is still forbidden.
 
+작업자가 검증한 교훈의 저장을 명시적으로 요청한 경우, 원본을 대조한
+교훈 문서에 `memory closeout <lesson.md> --project-root <root> --verified`를
+실행할 수 있다. 적용 조건과 원본 표기 규약은
+`docs/memory-provider-contract.md`를 따른다.
+
 ---
 
 ### 10. Deployment Approval

@@ -422,13 +422,14 @@ Reviewer-specific note: the reviewer may record matched profile paths in `${TASK
 ## Before Work — Recall from Memory
 
 ```bash
-MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
-if command -v "${MEMORY}" >/dev/null 2>&1; then
-  "${MEMORY}" search "${TASK}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+MEMORY_CONTEXT_PATH="${MEMORY_CONTEXT_PATH:-${TASK_DIR:+${TASK_DIR}/context/memory.md}}"
+if [ -s "${MEMORY_CONTEXT_PATH:-}" ]; then
+  cat "${MEMORY_CONTEXT_PATH}"
 fi
 ```
 
-If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior decisions before proceeding.
+작업 호출에 제공된 `MEMORY_CONTEXT_PATH`를 읽고 현재 요구사항과 일치하는 교훈만 적용한다.
+준비된 파일이 없으면 기억 없이 진행한다. 작업 기억 파일을 다시 생성하거나 변경하지 않는다.
 
 Read `USER_CONVENTIONS_PATH` before reviewing changed code when the stage
 prompt supplies it. Cite changed lines that violate applicable user conventions.
@@ -1525,6 +1526,14 @@ implementer/TDD stage, then re-run reviewer until approval or budget exhaustion.
 - Return within 6 lines for `final` mode (the optional `TEST_RUN_RESULT:` and
   `QUALITY_METRICS:` lines extend the historical 4-line contract); 5 lines for
   `streaming` mode
+
+최종 리뷰에서 `source_reviewed_candidate`로 적용된 교훈이 있다면, 현재 요청의 대상과 행동을
+`MEMORY_RETRIEVAL_PATH`에서 해당 ID의 `source_path`와 `source_section`으로 찾은 현재 원본 및
+실제 `applications` 위치와 대조한다. 일치하는 건만 `REPORT:`가 가리키는 리뷰 보고서에
+`MEMORY_USE_APPROVED: <memory_id> <usage_sha256> <retrieval_sha256>` 한 줄을 기록한다.
+해시는 현재 검토한 `context/memory-usage.json`과 `context/memory-retrieval.json`의
+파일 SHA-256을 순서대로 쓴다. 문장과 출처만 일치하는 경우에는 교훈 사용을 승인하지 않는다.
+이 기록은 리뷰 보고서에 쓰고 최종 반환 줄에는 추가하지 않는다.
 
 ## On Completion — Capture to memory
 

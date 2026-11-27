@@ -361,10 +361,31 @@ MEMORY_CONTEXT_PATH=""
 if [ -s "${TASK_DIR}/context/memory.md" ]; then
   MEMORY_CONTEXT_PATH="${TASK_DIR}/context/memory.md"
 fi
+
+ANALYSIS_CONTEXT_PATH=""
+MEMORY_USAGE_PATH=""
+MEMORY_RETRIEVAL_PATH=""
+if [ -s "${TASK_DIR}/context/analysis.md" ] \
+  && [ -s "${TASK_DIR}/context/memory-usage.json" ] \
+  && [ -s "${TASK_DIR}/context/memory-retrieval.json" ]; then
+  ANALYSIS_CONTEXT_PATH="${TASK_DIR}/context/analysis.md"
+  MEMORY_USAGE_PATH="${TASK_DIR}/context/memory-usage.json"
+  MEMORY_RETRIEVAL_PATH="${TASK_DIR}/context/memory-retrieval.json"
+fi
 ```
 
 Append `MEMORY_CONTEXT_PATH:` to the prompt only when non-empty. If mnemos
 is absent or the Phase 1b search failed, continue with an empty path.
+
+분석 단계가 원본을 확인한 후보를 `applied` 및 `source_reviewed_candidate`로 기록한 경우,
+분석·사용·조회 기록이 모두 준비되었을 때 `ANALYSIS_CONTEXT_PATH`, `MEMORY_USAGE_PATH`,
+`MEMORY_RETRIEVAL_PATH`를 함께 전달한다. 후속 역할은 사용 기록의 `memory_id`로 조회 기록의
+`provider_response.results`에서 해당 교훈의 `source_path`와 `source_section`을 찾는다.
+자기 단계에 해당하는 `applications` 위치와 프로젝트 루트의 현재 원본을 대조한 뒤 해당 판단을
+사용한다. 누락된 산출물이나 확인할 수 없는 근거가 있으면 현재 요구사항과 소스를 근거로 진행한다.
+기존 사용 기록을 재사용하기 전에 `validate-memory-usage.py`에 현재 작업 루트와 `MEMORY` 경로를
+각각 `--project-root`, `--memory-bin`으로 전달한다. 조회와 현재 루트가 다르거나 교훈이 폐기됐으면
+그 교훈의 판단 대신 현재 위치의 요구사항과 원본을 근거로 삼는다.
 
 #### Task-scoped user convention snapshot (Issue #191)
 
@@ -416,10 +437,15 @@ HANDOFF_PATH: {TASK_DIR}/handoff.md
 QUALITY_RULE_PATH: {QUALITY_RULE_PATH}
 {CODEX_SKILL_CONTEXT_PATH: {TASK_DIR}/context/codex-skill-context.md  ← include only when file exists}
 {MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  ← include only when MEMORY_CONTEXT_PATH non-empty}
+{ANALYSIS_CONTEXT_PATH: {TASK_DIR}/context/analysis.md  ← include with both memory evidence paths for an applied source-reviewed candidate}
+{MEMORY_USAGE_PATH: {TASK_DIR}/context/memory-usage.json  ← include with ANALYSIS_CONTEXT_PATH and MEMORY_RETRIEVAL_PATH}
+{MEMORY_RETRIEVAL_PATH: {TASK_DIR}/context/memory-retrieval.json  ← include with ANALYSIS_CONTEXT_PATH and MEMORY_USAGE_PATH}
 {USER_CONVENTIONS_PATH: {CONVENTION_CONTEXT_PATH}  ← include only when CONVENTION_CONTEXT_PATH non-empty}
 
 Read the handoff content directly from HANDOFF_PATH.
 Read the PRD directly from {TASK_DIR}/context/prd.md.
+`MEMORY_CONTEXT_PATH`가 있으면 읽기 전용으로 사용한다. 분석·사용·조회 기록을 전달받았다면
+현재 단계에 적용되는 교훈 ID의 산출물 위치와 원본 섹션을 확인하고, 확인한 판단만 적용한다.
 If CODEX_SKILL_CONTEXT_PATH is present, preserve and apply that context while
 performing the assigned work.
 If USER_CONVENTIONS_PATH is present, read it and apply relevant local user

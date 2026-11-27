@@ -411,13 +411,19 @@ NEEDS_CHANGES` to `action=retry`. `REVIEW: APPROVED` maps to
 the referenced quality-metrics artifact exists.
 
 When `REVIEW_ACTION=approve`, run
-`memory-feedback.py --task-dir "${TASK_DIR}" --event validated --review-response "${TASK_DIR}/context/reviewer-response.txt"`
+`memory-feedback.py --task-dir "${TASK_DIR}" --project-root "${PROJECT_ROOT}" --event all --review-response "${TASK_DIR}/context/reviewer-response.txt"`
 before advancing to the next stage or Phase 3 close-out. The helper sends
 validated feedback only for already applied memory events, only when
 `AGENT_CREW_MEMORY_FEEDBACK=1`, and only once per deterministic event ID. A
 feedback timeout or provider error records
 `${TASK_DIR}/context/memory-feedback-outbox.jsonl` and must not turn the
 approved task result into a failure.
+
+최종 승인 시 아직 성공 응답을 받지 못한 `applied` 피드백도 같은 이벤트 ID로 재시도한다.
+
+`source_reviewed_candidate`의 `validated` 피드백에는 최종 `REPORT:`의 해당 교훈 ID와
+현재 조회·사용 파일 해시를 결속한 `MEMORY_USE_APPROVED` 기록이 필요하다.
+후보 교훈 검토가 빠지면 해당 피드백만 보류한다.
 
 Re-loop logic (executed by Phase 2's stage loop wrapper around the
 reviewer stage spawn — runs at the same point in the dispatch flow as

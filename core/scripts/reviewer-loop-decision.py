@@ -452,6 +452,7 @@ def classify(text: str, task_dir: str | None = None, explicit_review_mode: str |
             "reason": "review_approved",
             "directive": "",
             "quality_metrics": metrics_path,
+            "report": report_path(text),
             "retry_target": "",
             "review_mode": active_review_mode,
         }

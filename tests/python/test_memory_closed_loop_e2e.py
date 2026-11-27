@@ -274,6 +274,454 @@ def _run_feedback(task_dir: Path, mnemos_bin: Path, mnemos_root: Path, *args: st
     )
 
 
+def test_project_context_reaches_memory_md_through_default_recall(tmp_path: Path) -> None:
+    mnemos_root = tmp_path / "mnemos-repo"
+    _write_mnemos_policy(mnemos_root)
+    mnemos_bin, call_log = _mnemos_cli(tmp_path)
+    env = _mnemos_env(mnemos_root, mnemos_bin, {"MNEMOS_BACKEND": "default", "MNEMOS_QMD_ENABLED": "false"})
+    project_root = tmp_path / "project-a"
+    foreign_root = tmp_path / "foreign" / project_root.name
+    task_dir = tmp_path / "task"
+
+    for root, body in [
+        (project_root, "Shared verification requires checking the original test log."),
+        (foreign_root, "Shared verification uses a foreign workspace checklist."),
+    ]:
+        path = root / "docs" / "decisions.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(f"# Shared verification\n\n{body}\n", encoding="utf-8")
+        capture = subprocess.run(
+            [str(mnemos_bin), "project-context", "capture", str(path), "--project-id", root.name,
+             "--project-root", str(root), "--json"],
+            env=env, capture_output=True, text=True, check=False,
+        )
+        assert capture.returncode == 0, capture.stderr
+        assert len(json.loads(capture.stdout)["created"]) == 1
+
+    prior_hashes = _hash_memory_items(mnemos_root)
+    recall = subprocess.run(
+        [sys.executable, str(RECALL_SCRIPT), "--task", "Shared verification",
+         "--task-dir", str(task_dir), "--project-root", str(project_root),
+         "--memory-bin", str(MEMORY_WRAPPER), "--mode", "v2", "--task-shape", "bugfix"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+
+    assert recall.returncode == 0, recall.stderr
+    assert len(_calls(call_log, "recall")) == 1
+    assert _hash_memory_items(mnemos_root) == prior_hashes
+    assert len(_selected_ids(task_dir)) == 1
+    rendered = (task_dir / "context" / "memory.md").read_text(encoding="utf-8")
+    assert "Shared verification requires checking the original test log." in rendered
+    assert "- source_path: docs/decisions.md" in rendered
+    assert "- source_section: Shared verification" in rendered
+    assert "foreign workspace checklist" not in rendered
+    section_file = project_root / "docs" / "decisions.md"
+    captured_section = section_file.read_text(encoding="utf-8")
+    retrieval_path = task_dir / "context" / "memory-retrieval.json"
+    selected, = json.loads(retrieval_path.read_text(encoding="utf-8"))["results"]
+    assert selected["source_content_hash"] == hashlib.sha256(captured_section.strip().encode("utf-8")).hexdigest()
+
+    (task_dir / "analysis.md").write_text("# Check the original test log\n", encoding="utf-8")
+    _write_usage(task_dir, [{
+        "memory_id": _selected_ids(task_dir)[0],
+        "disposition": "applied",
+        "reason_code": "matched_project_section",
+        "applications": [{
+            "artifact": "analysis.md",
+            "locator_type": "markdown_heading",
+            "locator": "Check the original test log",
+            "effect": "verify_existing_evidence",
+        }],
+    }])
+
+    feedback = _run_feedback(task_dir, mnemos_bin, mnemos_root, "--event", "applied")
+
+    assert feedback.returncode == 0, feedback.stdout + feedback.stderr
+    calls = _calls(call_log, "feedback")
+    assert len(calls) == 1
+    assert calls[0]["request"]["project_id"] == project_root.name
+
+    validate = [sys.executable, str(VALIDATOR_SCRIPT), "--task-dir", str(task_dir), "--strict", "--format", "json"]
+    section_file.write_text(captured_section + "\n# Another note\n\nUnrelated change.\n", encoding="utf-8")
+    unchanged = subprocess.run(validate, env=env, capture_output=True, text=True, check=False)
+    assert unchanged.returncode == 0, unchanged.stdout
+
+    section_file.write_text(captured_section.replace("original test log", "dashboard summary"), encoding="utf-8")
+    changed = subprocess.run(validate, env=env, capture_output=True, text=True, check=False)
+    assert changed.returncode == 2
+    assert [finding["code"] for finding in json.loads(changed.stdout)["findings"]] == ["project_source_changed"]
+
+    feedback = _run_feedback(task_dir, mnemos_bin, mnemos_root, "--event", "applied")
+    assert json.loads(feedback.stdout)["status"] == "validation_failed"
+    assert len(_calls(call_log, "feedback")) == 1
+
+    section_file.write_text(captured_section.replace("# Shared verification", "# Retired verification"), encoding="utf-8")
+    renamed = subprocess.run(validate, env=env, capture_output=True, text=True, check=False)
+    assert renamed.returncode == 2
+    assert [finding["code"] for finding in json.loads(renamed.stdout)["findings"]] == ["project_source_section_missing"]
+
+
+def test_memory_use_and_feedback_reject_another_checkout_with_identical_source(tmp_path: Path) -> None:
+    mnemos_root = tmp_path / "mnemos-repo"
+    _write_mnemos_policy(mnemos_root)
+    mnemos_bin, _ = _mnemos_cli(tmp_path)
+    env = _mnemos_env(mnemos_root, mnemos_bin, {"MNEMOS_BACKEND": "default", "MNEMOS_QMD_ENABLED": "false",
+                                             "AGENT_CREW_MEMORY_FEEDBACK": "1"})
+    original = tmp_path / "original" / "project-a"
+    other = tmp_path / "other" / "project-a"
+    title = "Retried save preserves the original record"
+    for project in (original, other):
+        project.mkdir(parents=True)
+        (project / "decisions.md").write_text(f"# {title}\n\nKeep the original record.\n", encoding="utf-8")
+    capture = subprocess.run([str(mnemos_bin), "project-context", "capture", str(original), "--project-id", original.name,
+                              "--project-root", str(original), "--json"], env=env, capture_output=True, text=True, check=True)
+    mid, = json.loads(capture.stdout)["created"]
+    task = tmp_path / "task"
+    subprocess.run([sys.executable, str(RECALL_SCRIPT), "--task", title + "?", "--task-dir", str(task),
+                    "--project-root", str(original), "--memory-bin", str(MEMORY_WRAPPER), "--mode", "v2"],
+                   env=env, capture_output=True, text=True, check=True)
+    retrieval_path = task / "context/memory-retrieval.json"
+    retrieval = json.loads(retrieval_path.read_text(encoding="utf-8"))
+    assert [row["memory_id"] for row in retrieval["results"]] == [mid]
+    (task / "analysis.md").write_text("# Save\n\nKeep the original record.\n", encoding="utf-8")
+    _write_usage(task, [{"memory_id": mid, "disposition": "applied", "reason_code": "source_verified",
+                        "applications": [{"artifact": "analysis.md", "locator_type": "markdown_heading",
+                                          "locator": "Save", "effect": "Preserve prior record"}]}])
+
+    def validate(root, *args):
+        return subprocess.run([sys.executable, str(VALIDATOR_SCRIPT), "--task-dir", str(task), "--strict", "--format", "json", *args],
+                              env={**env, "PROJECT_ROOT": str(root)}, cwd=root, capture_output=True, text=True, check=False)
+
+    assert validate(original).returncode == 0
+    same_root_alias = tmp_path / "same-root-alias"
+    same_root_alias.symlink_to(original, target_is_directory=True)
+    assert validate(same_root_alias).returncode == 0
+    assert validate(other, "--project-root", str(original)).returncode == 0
+    aliased = validate(other)
+    assert aliased.returncode == 2
+    assert [f["code"] for f in json.loads(aliased.stdout)["findings"]] == ["project_retrieval_root_mismatch"]
+    blocked = subprocess.run([sys.executable, str(FEEDBACK_SCRIPT), "--task-dir", str(task), "--memory-bin", str(MEMORY_WRAPPER),
+                              "--format", "json"], env={**env, "PROJECT_ROOT": str(other)}, cwd=other,
+                             capture_output=True, text=True, check=True)
+    assert json.loads(blocked.stdout)["status"] == "validation_failed"
+    assert _feedback_events(mnemos_root) == []
+
+    retrieval["project_root"] = str(other)
+    retrieval_path.write_text(json.dumps(retrieval), encoding="utf-8")
+    mismatched_hash = validate(other)
+    assert mismatched_hash.returncode == 2
+    assert [f["code"] for f in json.loads(mismatched_hash.stdout)["findings"]] == ["project_retrieval_root_mismatch"]
+
+    retrieval["project_root"] = str(original)
+    retrieval_path.write_text(json.dumps(retrieval), encoding="utf-8")
+    applied = _run_feedback(task, mnemos_bin, mnemos_root, "--project-root", str(original), "--event", "applied")
+    assert json.loads(applied.stdout)["status"] == "sent"
+    stored, = _feedback_events(mnemos_root)
+    assert (stored["event"], stored["memory_id"]) == ("applied", mid)
+
+    before_check = _hash_memory_items(mnemos_root)
+    preflight_args = ("--memory-bin", str(MEMORY_WRAPPER))
+    assert validate(original, *preflight_args).returncode == 0
+    assert _hash_memory_items(mnemos_root) == before_check
+    retired = {"schema_version": "mnemos.feedback.request.v1", "event_id": "retire-mid",
+               "event": "invalidated", "memory_id": mid, "task_id": "retirement-check"}
+    retirement_file = tmp_path / "retirement.json"
+    retirement_file.write_text(json.dumps(retired), encoding="utf-8")
+    retirement = subprocess.run([str(mnemos_bin), "feedback", "--json", "--request-file", str(retirement_file)],
+                                env=env, capture_output=True, text=True, check=True)
+    assert json.loads(retirement.stdout)["status"] == "ok"
+    stale = validate(original, *preflight_args)
+    assert stale.returncode == 2
+    assert [f["code"] for f in json.loads(stale.stdout)["findings"]] == ["memory_no_longer_eligible"]
+    assert json.loads(stale.stdout)["memory_feedback_allowed_ids"] == []
+
+    approval = _write_review_approved(task)
+    late = _run_feedback(task, mnemos_bin, mnemos_root, "--project-root", str(original), "--event", "validated",
+                         "--review-response", str(approval))
+    late_result = json.loads(late.stdout)
+    assert late_result["status"] == "feedback_failed"
+    assert late_result["failed_events"][0]["provider_response"]["error"]["code"] == "memory_inactive"
+    assert [entry["event"] for entry in _feedback_events(mnemos_root)] == ["applied", "invalidated"]
+
+
+def test_wide_candidate_window_finds_current_sources_in_one_recall(tmp_path: Path) -> None:
+    mnemos_root = tmp_path / "mnemos-repo"
+    _write_mnemos_policy(mnemos_root)
+    mnemos_bin, call_log = _mnemos_cli(tmp_path)
+    env = _mnemos_env(mnemos_root, mnemos_bin, {"MNEMOS_BACKEND": "default", "MNEMOS_QMD_ENABLED": "false"})
+    project = tmp_path / "project-a"
+    project.mkdir()
+    title = "Retried save preserves the original record"
+    for index in range(7):
+        (project / f"note-{index}.md").write_text(f"# {title}\n\nKeep the original record.\n", encoding="utf-8")
+    subprocess.run([str(mnemos_bin), "project-context", "capture", str(project), "--project-id", project.name,
+                    "--project-root", str(project), "--json"], env=env, capture_output=True, text=True, check=True)
+
+    def recall(name):
+        task = tmp_path / name
+        subprocess.run([sys.executable, str(RECALL_SCRIPT), "--task", title + "?", "--task-dir", str(task),
+                        "--project-root", str(project), "--memory-bin", str(MEMORY_WRAPPER), "--mode", "v2"],
+                       env=env, capture_output=True, text=True, check=True)
+        return json.loads((task / "context/memory-retrieval.json").read_text(encoding="utf-8"))
+
+    baseline = recall("baseline")
+    assert len(_calls(call_log, "recall")) == 1
+    first_page = baseline["provider_response"]["results"][:6]
+    assert len(baseline["provider_response"]["results"]) == 7
+    assert len(baseline["results"]) == 6
+    assert len(first_page) == 6
+    (project / first_page[0]["source_path"]).unlink()
+    partial = recall("partial")
+    expected_paths = {item.name for item in project.glob("note-*.md")}
+    assert {row["source_path"] for row in partial["results"]} == expected_paths
+    assert len(_calls(call_log, "recall")) == 2
+
+    for row in first_page[1:]:
+        (project / row["source_path"]).unlink()
+    survivor, = project.glob("note-*.md")
+
+    recovered = recall("recovered")
+
+    selected, = recovered["results"]
+    assert selected["source_path"] == survivor.name
+    requests = [call["request"] for call in _calls(call_log, "recall")]
+    assert len(requests) == 3
+    assert all(request["queries"] == requests[0]["queries"] and request["scope"] == requests[0]["scope"]
+               for request in requests)
+    assert all(request["budget"]["selected_limit"] == 6 and request["budget"]["candidate_limit"] == 24
+               for request in requests)
+    assert len(recovered["diagnostics"]["source_rejections"]) == 6
+
+    survivor.unlink()
+    exhausted = recall("exhausted")
+    assert exhausted["results"] == []
+    assert len(exhausted["diagnostics"]["source_rejections"]) == 7
+    assert len(_calls(call_log, "recall")) == 4
+
+
+@pytest.mark.parametrize("has_answer", [True, False])
+def test_wide_candidate_window_finds_applicable_lesson_in_one_recall(tmp_path: Path, has_answer: bool) -> None:
+    mnemos_root = tmp_path / "mnemos-repo"
+    _write_mnemos_policy(mnemos_root)
+    mnemos_bin, call_log = _mnemos_cli(tmp_path)
+    env = _mnemos_env(mnemos_root, mnemos_bin, {"MNEMOS_BACKEND": "default", "MNEMOS_QMD_ENABLED": "false"})
+    project = tmp_path / "project-a"
+    project.mkdir()
+    question = "What plugin types does the config support, and where are project overrides stored?"
+    for index in range(6):
+        (project / f"topic-{index}.md").write_text(
+            "# Project overrides\n\nProject overrides affect hook order. Plugin types are discussed elsewhere.\n",
+            encoding="utf-8",
+        )
+    (project / "answer.md").write_text(
+        "# Configuration location\n\nPlugins can be hooks or validators.\n"
+        + ("Project overrides live in the local config file." if has_answer else "Project overrides affect execution.")
+        + "\n\n" + ("Configuration notes vary by platform. " * 20),
+        encoding="utf-8",
+    )
+    subprocess.run([str(mnemos_bin), "project-context", "capture", str(project), "--project-id", project.name,
+                    "--project-root", str(project), "--json"], env=env, capture_output=True, text=True, check=True)
+
+    task = tmp_path / "task"
+    subprocess.run([sys.executable, str(RECALL_SCRIPT), "--task", question, "--task-dir", str(task),
+                    "--project-root", str(project), "--memory-bin", str(MEMORY_WRAPPER), "--mode", "v2"],
+                   env=env, capture_output=True, text=True, check=True)
+    result = json.loads((task / "context/memory-retrieval.json").read_text(encoding="utf-8"))
+    assert result["diagnostics"]["source_rejections"] == []
+    assert [row["source_path"] for row in result["results"]] == (["answer.md"] if has_answer else [])
+    assert len(result["provider_response"]["results"]) == 7
+    request, = [call["request"] for call in _calls(call_log, "recall")]
+    assert request["queries"][0] == {"type": "literal", "text": question}
+    assert request["budget"]["selected_limit"] == 6 and request["budget"]["candidate_limit"] == 24
+    rendered = (task / "context/memory.md").read_text(encoding="utf-8")
+    assert ("- source_path: answer.md" in rendered) is has_answer
+    assert ("- source_section: Configuration location" in rendered) is has_answer
+    assert "affect hook order" not in rendered
+
+
+def test_verified_closeout_checks_current_evidence_before_injection_and_use(tmp_path: Path) -> None:
+    mnemos_root = tmp_path / "mnemos-repo"
+    _write_mnemos_policy(mnemos_root)
+    mnemos_bin, _ = _mnemos_cli(tmp_path)
+    env = _mnemos_env(mnemos_root, mnemos_bin, {"MNEMOS_BACKEND": "default", "MNEMOS_QMD_ENABLED": "false"})
+    project = tmp_path / "project-a"
+    project.mkdir()
+    evidence = project / "ledger.py"
+    evidence.write_text("def retains_record():\n    return True\n", encoding="utf-8")
+    lesson = project / "decisions.md"
+    title = "Retried save preserves the original record"
+    question = title + "?"
+    lesson.write_text(f"# {title}\n\n- Condition: A saved operation is retried.\n"
+                      "- Decision: Keep the original record.\n- Evidence: ledger.py:2\n", encoding="utf-8")
+
+    def closeout():
+        result = subprocess.run([str(MEMORY_WRAPPER), "closeout", str(lesson), "--project-root", str(project), "--verified"],
+                                env=env, capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+
+    def recall(name):
+        task = tmp_path / name
+        subprocess.run([sys.executable, str(RECALL_SCRIPT), "--task", question, "--task-dir", str(task),
+                        "--project-root", str(project), "--memory-bin", str(MEMORY_WRAPPER), "--mode", "v2"],
+                       env=env, capture_output=True, text=True, check=True)
+        return task, json.loads((task / "context/memory-retrieval.json").read_text(encoding="utf-8"))
+
+    generic_capture = [str(mnemos_bin), "project-context", "capture", str(lesson), "--project-id", project.name,
+                       "--project-root", str(project), "--json"]
+    unverified = subprocess.run(generic_capture, env=env, capture_output=True, text=True, check=True)
+    mid, = json.loads(unverified.stdout)["created"]
+    unverified_task, initial = recall("unverified")
+    raw, = initial["provider_response"]["results"]
+    assert raw["memory_id"] == mid
+    assert initial["results"] == []
+    assert initial["diagnostics"]["source_rejections"] == [{"memory_id": mid, "reason": "project_evidence_unverified"}]
+    assert json.loads((unverified_task / "context/memory-candidates.json").read_text())["candidates"] == []
+
+    initial["results"] = [raw]
+    (unverified_task / "context/memory-retrieval.json").write_text(json.dumps(initial), encoding="utf-8")
+    (unverified_task / "analysis.md").write_text("# Save\n\nKeep the original record.\n", encoding="utf-8")
+    _write_usage(unverified_task, [{"memory_id": mid, "disposition": "applied", "reason_code": "verified",
+                                   "applications": [{"artifact": "analysis.md", "locator_type": "markdown_heading",
+                                                     "locator": "Save", "effect": "Preserve prior record"}]}])
+    legacy_validation = subprocess.run([sys.executable, str(VALIDATOR_SCRIPT), "--task-dir", str(unverified_task),
+                                        "--project-root", str(project), "--strict", "--format", "json"],
+                                       capture_output=True, text=True, check=False)
+    assert legacy_validation.returncode == 2
+    assert [x["code"] for x in json.loads(legacy_validation.stdout)["findings"]] == ["project_evidence_unverified"]
+    assert _feedback_events(mnemos_root) == []
+
+    assert closeout()["updated"] == [mid]
+    task, original = recall("fresh")
+    assert [row["memory_id"] for row in original["results"]] == [mid]
+    initial_row, = original["results"]
+    evidence_tag, = [tag for tag in initial_row["tags"] if tag.startswith("evidence-sha256:")]
+    binding_values = [question, mid, *[initial_row[key] for key in (
+        "project_id", "project_root_hash", "source_path", "source_section", "source_content_hash",
+    )], evidence_tag]
+    binding = hashlib.sha256("\0".join(binding_values).encode("utf-8")).hexdigest()
+    (task / "analysis.md").write_text("# Save\n\nKeep the original record.\n", encoding="utf-8")
+    _write_usage(task, [{"memory_id": mid, "disposition": "applied", "reason_code": "source_reviewed_candidate",
+                        "applications": [{"artifact": "analysis.md", "locator_type": "markdown_heading",
+                                          "locator": "Save", "effect": "Preserve prior record"}]}])
+    response = _write_review_approved(task)
+    context = task / "context"
+    hashes = [hashlib.sha256((context / name).read_bytes()).hexdigest()
+              for name in ("memory-usage.json", "memory-retrieval.json")]
+    (context / "review.md").write_text(f"MEMORY_USE_APPROVED: {mid} {' '.join(hashes)}\n", encoding="utf-8")
+    feedback = _run_feedback(task, mnemos_bin, mnemos_root, "--event", "validated", "--review-response", str(response))
+    assert json.loads(feedback.stdout)["status"] == "sent"
+    assert _feedback_events(mnemos_root)[0]["metadata"]["reviewed_source_binding"] == binding
+    assert recall("reviewed")[1]["results"][0]["score_components"]["reviewed_source_binding"] == binding
+    original_lesson = lesson.read_bytes()
+    evidence.write_text("def retains_record():\n    return False\n", encoding="utf-8")
+
+    _, stale = recall("stale")
+    assert stale["results"] == []
+    assert stale["diagnostics"]["source_rejections"] == [{"memory_id": mid, "reason": "project_evidence_changed"}]
+    validation = subprocess.run([sys.executable, str(VALIDATOR_SCRIPT), "--task-dir", str(task), "--strict", "--format", "json"],
+                                env=env, capture_output=True, text=True, check=False)
+    assert validation.returncode == 2
+    assert [f["code"] for f in json.loads(validation.stdout)["findings"]] == ["project_evidence_changed"]
+
+    for name, content in (("updated-note", original_lesson + b"\nAdditional context.\n"),
+                          ("restored-note", original_lesson)):
+        lesson.write_bytes(content)
+        recaptured = subprocess.run(generic_capture, env=env, capture_output=True, text=True, check=True)
+        assert json.loads(recaptured.stdout)["updated"] == [mid]
+        latest = recall(name)[1]
+        assert latest["results"] == []
+        assert latest["diagnostics"]["source_rejections"] == [{"memory_id": mid, "reason": "project_evidence_changed"}]
+    evidence.unlink()
+    _, missing = recall("missing")
+    assert missing["results"] == []
+    assert missing["diagnostics"]["source_rejections"] == [{"memory_id": mid, "reason": "project_evidence_unavailable"}]
+
+    evidence.write_text("def retains_record():\n    return bool(1)\n", encoding="utf-8")
+    assert closeout()["updated"] == [mid]
+    assert closeout()["skipped"] == [mid]
+    current, = recall("reverified")[1]["results"]
+    assert current["memory_id"] == mid
+    assert evidence_tag not in current["tags"]
+    assert "reviewed_source_binding" not in current["score_components"]
+    assert lesson.read_bytes() == original_lesson
+
+
+def test_reviewed_candidate_can_be_reused_only_for_same_request_and_source(tmp_path: Path) -> None:
+    mnemos_root = tmp_path / "mnemos-repo"
+    _write_mnemos_policy(mnemos_root)
+    mnemos_bin, _ = _mnemos_cli(tmp_path)
+    env = _mnemos_env(mnemos_root, mnemos_bin, {"MNEMOS_BACKEND": "default", "MNEMOS_QMD_ENABLED": "false"})
+    project = tmp_path / "project-a"
+    project.mkdir()
+    note = project / "decisions.md"
+    excerpt = "질문 말풍선의 양끝 개행만 표시 단계에서 제거한다."
+    initial = f"# 말풍선 개행\n\n{excerpt}\n"
+    note.write_text(initial, encoding="utf-8")
+    query = "질문 말풍선 위아래에 빈 줄이 붙을 때 원본 채팅이나 들여쓰기도 정리해?"
+
+    def capture(root=project):
+        result = subprocess.run([str(mnemos_bin), "project-context", "capture", str(root / "decisions.md"),
+                                 "--project-id", root.name, "--project-root", str(root), "--json"],
+                                env=env, capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+
+    def recall(name, question=query, root=project):
+        task = tmp_path / name
+        subprocess.run([sys.executable, str(RECALL_SCRIPT), "--task", question, "--task-dir", str(task),
+                        "--project-root", str(root), "--memory-bin", str(MEMORY_WRAPPER), "--mode", "v2"],
+                       env=env, capture_output=True, text=True, check=True)
+        data = json.loads((task / "context/memory-retrieval.json").read_text())
+        return task, [row["memory_id"] for row in data["results"]]
+
+    mid, = capture()["created"]
+    task, before = recall("first")
+    assert before == []
+    summaries = json.loads((task / "context/memory-candidates.json").read_text())
+    assert summaries["candidates"] == [
+        {"memory_id": mid, "rank": 1, "source_path": "decisions.md", "source_section": "말풍선 개행"}
+    ]
+    assert excerpt not in (task / "context/memory.md").read_text()
+    (task / "analysis.md").write_text("# 표시 값 검증\n", encoding="utf-8")
+    _write_usage(task, [{"memory_id": mid, "disposition": "applied", "reason_code": "source_reviewed_candidate",
+                        "source_review": {"excerpt": excerpt, "relevance": "질문 말풍선의 표시 단계에 같은 계약 적용"},
+                        "applications": [{"artifact": "analysis.md", "locator_type": "markdown_heading",
+                                          "locator": "표시 값 검증", "effect": "보존 범위를 정함"}]}])
+    assert json.loads(_run_feedback(task, mnemos_bin, mnemos_root, "--event", "applied").stdout)["status"] == "sent"
+    assert recall("after-applied")[1] == []
+    context = task / "context"
+    hashes = [hashlib.sha256((context / name).read_bytes()).hexdigest()
+              for name in ("memory-usage.json", "memory-retrieval.json")]
+    (context / "quality-metrics.json").write_text("{}", encoding="utf-8")
+    (context / "review.md").write_text(f"MEMORY_USE_APPROVED: {mid} {' '.join(hashes)}\n", encoding="utf-8")
+    response = context / "reviewer-response.txt"
+    response.write_text("REVIEW: APPROVED\nREPORT: context/review.md\nQUALITY_METRICS: context/quality-metrics.json\n", encoding="utf-8")
+    assert json.loads(_run_feedback(task, mnemos_bin, mnemos_root, "--event", "validated", "--review-response", str(response)).stdout)["status"] == "sent"
+
+    injected_task, injected = recall("same-request")
+    assert injected == [mid]
+    assert json.loads((injected_task / "context/memory-candidates.json").read_text())["candidates"] == []
+    assert recall("different-request", query + " 원격 백업에도 적용해?")[1] == []
+    other = tmp_path / "duplicate" / project.name
+    other.mkdir(parents=True)
+    (other / "decisions.md").write_text(initial, encoding="utf-8")
+    other_id, = capture(other)["created"]
+    assert other_id != mid
+    other_task, selected = recall("other-root", root=other)
+    assert selected == []
+    raw = json.loads((other_task / "context/memory-retrieval.json").read_text())
+    matching_row, = [row for row in raw["provider_response"]["results"] if row["memory_id"] == other_id]
+    assert matching_row["project_root_hash"] == hashlib.sha256(str(other.resolve()).encode()).hexdigest()[:16]
+    assert "reviewed_source_binding" not in matching_row["score_components"]
+    assert recall("same-request-after-other-capture")[1] == [mid]
+
+    note.write_text(initial + "\n표시 계약 개정.\n", encoding="utf-8")
+    stale_task, stale = recall("stale-source")
+    assert stale == []
+    assert json.loads((stale_task / "context/memory-candidates.json").read_text())["candidates"] == []
+    assert capture()["updated"] == [mid]
+    assert recall("recaptured-source")[1] == []
+
+
 def test_mnemos_closed_loop_uses_temp_repo_and_sends_applied_then_validated_feedback(tmp_path: Path) -> None:
     mnemos_root = tmp_path / "mnemos-repo"
     _write_mnemos_policy(mnemos_root)
@@ -488,6 +936,33 @@ def test_mnemos_e2e_distinguishes_no_results_from_provider_failure_and_feedback_
     assert failed_feedback.returncode == 0
     assert json.loads(failed_feedback.stdout)["status"] == "feedback_failed"
     assert (feedback_failure_task / "context" / "memory-feedback-outbox.jsonl").is_file()
+    assert (feedback_failure_task / "result.md").read_text(encoding="utf-8") == "STATUS: completed\n"
+    assert _feedback_events(mnemos_root) == []
+
+    lost_reply_bin = tmp_path / "lost-feedback-reply"
+    lost_reply_bin.write_text(
+        f'#!/bin/bash\nif [ "$1" = feedback ]; then\n  "{mnemos_bin}" "$@" > /dev/null\nelse\n  exec "{mnemos_bin}" "$@"\nfi\n',
+        encoding="utf-8",
+    )
+    lost_reply_bin.chmod(0o755)
+    lost_reply = _run_feedback(feedback_failure_task, lost_reply_bin, mnemos_root, "--event", "applied")
+    assert json.loads(lost_reply.stdout)["status"] == "feedback_failed"
+    stored, = _feedback_events(mnemos_root)
+    assert (stored["event"], stored["memory_id"]) == ("applied", "mem-feedback-failure")
+
+    approval = _write_review_approved(feedback_failure_task)
+    retry_args = ("--event", "all", "--review-response", str(approval))
+    retry = _run_feedback(feedback_failure_task, mnemos_bin, mnemos_root, *retry_args)
+    assert retry.returncode == 0, retry.stderr
+    applied, validated = json.loads(retry.stdout)["sent_events"]
+    assert applied["event"] == "applied" and applied["provider_response"]["event"]["duplicate"]
+    assert validated["event"] == "validated"
+
+    again = _run_feedback(feedback_failure_task, mnemos_bin, mnemos_root, *retry_args)
+    assert json.loads(again.stdout)["status"] == "already_sent"
+    records = _feedback_events(mnemos_root)
+    assert [row["event"] for row in records] == ["applied", "validated"]
+    assert records[0]["event_id"] == stored["event_id"] == applied["event_id"]
     assert (feedback_failure_task / "result.md").read_text(encoding="utf-8") == "STATUS: completed\n"
 
 
