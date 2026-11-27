@@ -20,12 +20,19 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    from project_memory_source import reviewed_source_binding
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from project_memory_source import reviewed_source_binding
 
 
 def utc_now_z() -> str:
@@ -55,40 +62,26 @@ def load_validator():
     return module
 
 
-def existing_event_ids(path: Path) -> set[str]:
-    payload = read_json(path)
-    ids = set()
-    for key in ("sent_events", "failed_events", "skipped_events"):
-        rows = payload.get(key)
-        if not isinstance(rows, list):
-            continue
-        for row in rows:
-            if isinstance(row, dict) and row.get("event_id"):
-                ids.add(str(row["event_id"]))
-    return ids
-
-
 def event_id(*, task_id: str, memory_id: str, event: str, artifact: str, locator: str) -> str:
     raw = "\x1f".join([task_id, memory_id, event, artifact, locator])
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
     return f"memfb-{digest}"
 
 
-def review_is_final_approved(task_dir: Path, review_response: str | None) -> bool:
+def final_approved_review(task_dir: Path, review_response: str | None) -> dict[str, Any] | None:
     if not review_response:
-        return False
+        return None
     response = Path(review_response)
     if not response.is_absolute():
         response = task_dir / response
     if not response.is_file():
-        return False
-    text = response.read_text(encoding="utf-8", errors="replace")
-    last_review_index = text.upper().rfind("REVIEW:")
-    if last_review_index >= 0:
-        text = text[last_review_index:]
+        return None
+    original = response.read_text(encoding="utf-8", errors="replace")
+    verdicts = list(re.finditer(r"^[ \t]*REVIEW:", original, re.IGNORECASE | re.MULTILINE))
+    text = original[verdicts[-1].start():] if verdicts else original
     temp_path = None
     classifier_response = response
-    if text != response.read_text(encoding="utf-8", errors="replace"):
+    if text != original:
         handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False)
         try:
             handle.write(text)
@@ -118,12 +111,35 @@ def review_is_final_approved(task_dir: Path, review_response: str | None) -> boo
         except OSError:
             pass
     if result.returncode != 0:
-        return False
+        return None
     try:
         payload = json.loads(result.stdout)
     except Exception:
-        return False
-    return payload.get("action") == "approve"
+        return None
+    return payload if payload.get("action") == "approve" else None
+
+
+def reviewed_candidate_ids(task_dir: Path, approved_review: dict[str, Any] | None) -> set[str]:
+    if not approved_review or not approved_review.get("report"):
+        return set()
+    try:
+        root = task_dir.resolve()
+        report = (root / approved_review["report"]).resolve(strict=True)
+        report.relative_to(root)
+        hashes = tuple(hashlib.sha256((root / "context" / name).read_bytes()).hexdigest()
+                       for name in ("memory-usage.json", "memory-retrieval.json"))
+        reviewed = set()
+        inside_code = False
+        for line in report.read_text(encoding="utf-8").splitlines():
+            if line.lstrip().startswith(("```", "~~~")):
+                inside_code = not inside_code
+            if not inside_code and line.startswith("MEMORY_USE_APPROVED: "):
+                fields = line[len("MEMORY_USE_APPROVED: "):].split()
+                if len(fields) == 3 and tuple(fields[1:]) == hashes:
+                    reviewed.add(fields[0])
+        return reviewed
+    except (OSError, ValueError, RuntimeError):
+        return set()
 
 
 def feedback_requests(
@@ -133,6 +149,7 @@ def feedback_requests(
     usage: dict[str, Any],
     retrieval: dict[str, Any],
     agent_role: str,
+    memory_project_ids: dict[str, str | None],
 ) -> list[dict[str, Any]]:
     scope = retrieval.get("request", {}).get("scope", {}) if isinstance(retrieval.get("request"), dict) else {}
     project_id = str(scope.get("project_id") or "")
@@ -164,7 +181,7 @@ def feedback_requests(
                     "event": event,
                     "memory_id": memory_id,
                     "task_id": task_id,
-                    "project_id": project_id,
+                    "project_id": memory_project_ids.get(memory_id) or project_id,
                     "agent_role": agent_role,
                     "application": application,
                     "reason_code": reason_code,
@@ -173,23 +190,35 @@ def feedback_requests(
     return requests
 
 
+def feedback_acknowledged(payload: Any) -> bool:
+    return isinstance(payload, dict) and payload.get("status") == "ok" and payload.get("exit_code") == 0
+
+
 def send_feedback(memory_bin: Path, request: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-    result = subprocess.run(
-        [str(memory_bin), "feedback", "--request-json", json.dumps(request, ensure_ascii=False, sort_keys=True)],
-        check=False,
-        text=True,
-        capture_output=True,
-        env={**os.environ, "AGENT_CREW_MEMORY_FEEDBACK": "1"},
-    )
     try:
-        payload = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
-    except Exception:
+        result = subprocess.run(
+            [str(memory_bin), "feedback", "--request-json", json.dumps(request, ensure_ascii=False, sort_keys=True)],
+            check=False,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "AGENT_CREW_MEMORY_FEEDBACK": "1"},
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return False, {"status": "timeout"}
+    except OSError as exc:
+        return False, {"status": "provider_unavailable", "error": str(exc)}
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        payload = None
+    if not isinstance(payload, dict):
         payload = {"status": "invalid_json", "stdout": result.stdout}
     payload["exit_code"] = result.returncode
     if result.stderr:
         payload["stderr"] = result.stderr
-    ok = result.returncode == 0 and payload.get("status", "ok") == "ok"
-    return ok, payload
+    return feedback_acknowledged(payload), payload
 
 
 def append_outbox(path: Path, row: dict[str, Any]) -> None:
@@ -224,34 +253,51 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     context_dir = task_dir / "context"
     report_path = context_dir / "memory-feedback.json"
     outbox_path = context_dir / "memory-feedback-outbox.jsonl"
+    sent_rows = read_json(report_path).get("sent_events")
+    previous_sent = [
+        row for row in sent_rows
+        if isinstance(row, dict) and feedback_acknowledged(row.get("provider_response"))
+    ] if isinstance(sent_rows, list) else []
     if os.environ.get("AGENT_CREW_MEMORY_FEEDBACK", "0") != "1":
-        report = build_report(status="disabled", task_dir=task_dir)
+        report = build_report(status="disabled", task_dir=task_dir, sent_events=previous_sent)
         write_json(report_path, report)
         return report
 
     validator = load_validator()
-    validation = validator.validate_usage(task_dir, strict=True)
+    validation = validator.validate_usage(task_dir, strict=True, project_root=args.project_root)
     if not validation.get("passed"):
-        report = build_report(status="validation_failed", task_dir=task_dir, validation=validation)
+        report = build_report(status="validation_failed", task_dir=task_dir, validation=validation, sent_events=previous_sent)
         write_json(report_path, report)
         return report
 
-    if args.event == "validated" and not review_is_final_approved(task_dir, args.review_response):
-        report = build_report(status="review_not_approved", task_dir=task_dir, validation=validation)
+    approval = final_approved_review(task_dir, args.review_response) if args.event != "applied" else None
+    if args.event == "validated" and approval is None:
+        report = build_report(status="review_not_approved", task_dir=task_dir, validation=validation, sent_events=previous_sent)
         write_json(report_path, report)
         return report
 
     usage = read_json(context_dir / "memory-usage.json")
     retrieval = read_json(context_dir / "memory-retrieval.json")
+    scope = retrieval.get("request", {}).get("scope", {}) if isinstance(retrieval.get("request"), dict) else {}
+    project_memories = {
+        validator.memory_id(row): row
+        for row in [*validator.provider_results(retrieval), *validator.retrieval_results(retrieval)]
+        if row.get("layer") == "project"
+    }
+    memory_project_ids = {mid: validator.matched_project_id(row, scope) for mid, row in project_memories.items()}
+    request_queries = retrieval.get("request", {}).get("queries", []) if isinstance(retrieval.get("request"), dict) else []
+    first_query = request_queries[0] if isinstance(request_queries, list) and request_queries else None
+    literal = first_query.get("query") if isinstance(first_query, dict) and first_query.get("kind") == "literal" else None
     requested_events = [args.event] if args.event in {"applied", "validated"} else ["applied", "validated"]
-    sent_ids = existing_event_ids(report_path)
+    sent_ids = {str(row["event_id"]) for row in previous_sent if row.get("event_id")}
     sent_events: list[dict[str, Any]] = []
     skipped_events: list[dict[str, Any]] = []
     failed_events: list[dict[str, Any]] = []
     memory_bin = Path(args.memory_bin or Path(args.agent_crew_home).expanduser() / "bin" / "memory")
+    reviewed = reviewed_candidate_ids(task_dir, approval)
 
     for event_name in requested_events:
-        if event_name == "validated" and not review_is_final_approved(task_dir, args.review_response):
+        if event_name == "validated" and approval is None:
             continue
         for request in feedback_requests(
             task_dir=task_dir,
@@ -259,7 +305,16 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             usage=usage,
             retrieval=retrieval,
             agent_role=args.agent_role,
+            memory_project_ids=memory_project_ids,
         ):
+            if (event_name == "validated" and request["reason_code"] == "source_reviewed_candidate"
+                    and request["memory_id"] not in reviewed):
+                skipped_events.append({"memory_id": request["memory_id"], "reason": "candidate_use_not_reviewed"})
+                continue
+            if event_name == "validated" and request["reason_code"] == "source_reviewed_candidate" and isinstance(literal, str):
+                binding = reviewed_source_binding(literal, project_memories.get(request["memory_id"], {}))
+                if binding:
+                    request["metadata"] = {"reviewed_source_binding": binding}
             if request["event_id"] in sent_ids:
                 skipped_events.append({"event_id": request["event_id"], "reason": "duplicate"})
                 continue
@@ -281,12 +336,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         status = "feedback_failed"
     elif sent_events:
         status = "sent"
-    elif skipped_events:
+    elif any(row["reason"] == "duplicate" for row in skipped_events):
         status = "already_sent"
     else:
         status = "no_events"
-    previous = read_json(report_path)
-    previous_sent = previous.get("sent_events") if isinstance(previous.get("sent_events"), list) else []
     report = build_report(
         status=status,
         task_dir=task_dir,
@@ -302,6 +355,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-dir", required=True)
+    parser.add_argument("--project-root", default=os.environ.get("PROJECT_ROOT"))
     parser.add_argument("--event", choices=("applied", "validated", "all"), default="applied")
     parser.add_argument("--review-response")
     parser.add_argument("--agent-role", default="analyst")

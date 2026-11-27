@@ -122,13 +122,19 @@ invocation in SKILL.md; generic adds guidance).
   to provider `mnemos gc`. Agent Crew does not read provider FTS indexes or own
   retention scoring.
 - `memory-recall-context.py` — task-scoped Memory Recall V2 context builder. It
-  creates at most three deterministic queries, passes project identity and
-  analyst scope through the memory wrapper, preserves raw provider JSON in
-  `context/memory-retrieval.json`, and renders filtered, budgeted context to
-  `context/memory.md` without applying feedback.
+  sends the original task and up to two short candidate queries through the
+  memory wrapper. It checks candidate text and headings against the original
+  task, including named technical terms, before rendering bounded context to
+  `context/memory.md`. The retrieval JSON preserves the raw provider response
+  and lists the rendered entries in `results` for usage validation.
+  한국어 팔레트 재열기 질문에서 검색창 포커스 복구를 묻는 경우에는 영어 후보
+  검색어 하나를 추가합니다. 재열기와 검색창 포커스의 근거는 같은 문장에서 확인합니다.
 - `validate-memory-usage.py` — validates `context/memory-usage.json` as the
   single source of truth for recalled memory application, checks concrete
   artifact locators, and blocks invalid deterministic use of advisory memory.
+  조회 산출물에 프로젝트 루트가 있으면 적용한 프로젝트 섹션의 원본을
+  해당 루트 안에서 열 수 있는지도 확인합니다. Markdown 섹션은 제목이
+  남아 있는지 확인하고, 공급자가 섹션 해시를 제공하면 현재 본문과 대조합니다.
 - `memory-feedback.py` — sends idempotent Mnemos feedback from validated
   `memory-usage.json`: `applied` after analyst usage validation and
   `validated` only after final reviewer approval. It honors

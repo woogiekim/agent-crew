@@ -3,6 +3,7 @@
 # Usage: memory capture --quiet --layer session --content "..."
 #        memory search "query"
 #        memory gc --format json [--apply]
+#        memory closeout lesson.md --project-root . --verified
 #
 # Sub-agents must use this wrapper (not `mnemos` directly) so that pipelines
 # depend on the stable memory provider contract, not backend internals.
@@ -37,6 +38,20 @@ if [ "${1:-}" = "convention" ]; then
     exit 2
   fi
   exec python3 "${CONVENTION_SCRIPT}" "$@"
+fi
+
+if [ "${1:-}" = "closeout" ]; then
+  shift
+  for candidate in \
+    "${AGENT_CREW_HOME}/scripts/memory-closeout.py" \
+    "${AGENT_CREW_HOME}/system/scripts/memory-closeout.py" \
+    "${SCRIPT_DIR}/../scripts/memory-closeout.py"; do
+    if [ -f "${candidate}" ]; then
+      exec python3 "${candidate}" "${SCRIPT_DIR}/memory" "$@"
+    fi
+  done
+  echo "[memory] closeout helper missing" >&2
+  exit 2
 fi
 
 BOUNDED=""
@@ -197,7 +212,7 @@ elif command_name == "recall":
         "scope": scope,
         "filters": filters,
         "budget": {
-            "candidate_limit": int_option("--limit", 20),
+            "candidate_limit": int_option("--candidate-limit", int_option("--limit", 20)),
             "selected_limit": int_option("--limit", 6),
             "max_selected_chars": 3600,
         },

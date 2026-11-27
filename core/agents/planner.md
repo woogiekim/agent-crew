@@ -76,14 +76,14 @@ Check the following values from the prompt:
 ## Before Work — Recall from Memory
 
 ```bash
-MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
-if command -v "${MEMORY}" >/dev/null 2>&1; then
-  PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
-  "${MEMORY}" search "architecture decisions ${PROJECT_NAME}" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+MEMORY_CONTEXT_PATH="${MEMORY_CONTEXT_PATH:-${TASK_DIR:+${TASK_DIR}/context/memory.md}}"
+if [ -s "${MEMORY_CONTEXT_PATH:-}" ]; then
+  cat "${MEMORY_CONTEXT_PATH}"
 fi
 ```
 
-If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior architecture decisions, pipeline patterns, and agent recommendations before generating the pipeline.
+작업 호출에 제공된 `MEMORY_CONTEXT_PATH`를 읽고 현재 요구사항과 일치하는 교훈만 적용한다.
+준비된 파일이 없으면 기억 없이 진행한다. 작업 기억 파일을 다시 생성하거나 변경하지 않는다.
 
 ### Consume a recalled AAR memo as a plan-shaping hint
 
@@ -134,7 +134,7 @@ When you fold a recalled candidate into `pipeline.json`:
 When planner is used as a standalone legacy agent, mirror the analyst
 memory-usage contract: write `${TASK_DIR}/context/memory-usage.json` only after
 `pipeline.json` exists, record concrete artifact locators for every `applied`
-memory, then run `validate-memory-usage.py --task-dir "${TASK_DIR}"`.
+memory, then run `validate-memory-usage.py --task-dir "${TASK_DIR}" --project-root "${PROJECT_ROOT}" --memory-bin "${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"`.
 `memory-usage.json` is the usage SSOT; do not independently write
 `memory-evidence.json`.
 

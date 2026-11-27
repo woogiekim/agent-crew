@@ -207,13 +207,14 @@ correct surface.
 ## Before Work — Recall from Memory
 
 ```bash
-MEMORY="${AGENT_CREW_HOME:-${HOME}/.agent-crew}/bin/memory"
-if command -v "${MEMORY}" >/dev/null 2>&1; then
-  "${MEMORY}" search "documentation patterns" --limit 5 > "${TASK_DIR}/context/memory.md" 2>/dev/null || true
+MEMORY_CONTEXT_PATH="${MEMORY_CONTEXT_PATH:-${TASK_DIR:+${TASK_DIR}/context/memory.md}}"
+if [ -s "${MEMORY_CONTEXT_PATH:-}" ]; then
+  cat "${MEMORY_CONTEXT_PATH}"
 fi
 ```
 
-If `${TASK_DIR}/context/memory.md` is non-empty, read it and incorporate relevant prior documentation patterns (result.md structures, changelog formats, README section conventions) before synthesizing artifacts.
+작업 호출에 제공된 `MEMORY_CONTEXT_PATH`를 읽고 현재 요구사항과 일치하는 교훈만 적용한다.
+준비된 파일이 없으면 기억 없이 진행한다. 작업 기억 파일을 다시 생성하거나 변경하지 않는다.
 
 ## Workflow
 
