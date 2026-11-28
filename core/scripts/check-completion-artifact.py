@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
-from completion_artifact_lib import validate
+from completion_artifact_lib import validate, validate_planning_artifacts
 
 
 def read_response(path: str | None) -> tuple[str, str | None]:
@@ -40,15 +41,23 @@ def main() -> int:
     parser.add_argument("--agent", required=True)
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--response")
+    parser.add_argument("--planning-design-hash", help="Validate fixed Phase 1c analyst artifacts against this hash.")
     parser.add_argument("--format", choices=("json", "text"), default="text")
     args = parser.parse_args()
 
-    text, error = read_response(args.response)
-    if error:
-        print(error, file=sys.stderr)
-        return 2
+    if args.planning_design_hash is not None:
+        if args.agent != "analyst" or args.response is not None:
+            parser.error("--planning-design-hash requires --agent analyst and excludes --response")
+        if not re.fullmatch(r"[0-9a-f]{64}", args.planning_design_hash):
+            parser.error("--planning-design-hash requires a canonical SHA-256 digest")
+        result = validate_planning_artifacts(Path(args.task_dir), args.planning_design_hash)
+    else:
+        text, error = read_response(args.response)
+        if error:
+            print(error, file=sys.stderr)
+            return 2
+        result = validate(args.agent, Path(args.task_dir), text)
 
-    result = validate(args.agent, Path(args.task_dir), text)
     if args.format == "json":
         json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")

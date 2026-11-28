@@ -284,10 +284,8 @@ def test_success_case_regression_removes_dead_generic_semantic_retry() -> None:
 
 def test_success_case_contract_handles_blocked_analyst_before_artifact_validation() -> None:
     """success-case(contract) - blocked readiness preserves its real blocker."""
-    # given
     text = SUPERVISOR_BOOTSTRAP.read_text(encoding="utf-8")
 
-    # when
     delegate_index = text.index("Delegate to the **analyst agent**")
     extract_index = text.index("Extract the `ANALYSIS` block", delegate_index)
     blocked_index = text.index("readiness: BLOCKED", extract_index)
@@ -295,13 +293,13 @@ def test_success_case_contract_handles_blocked_analyst_before_artifact_validatio
         "Bind the exact returned text to `ANALYST_RESPONSE`", delegate_index
     )
     validator_index = text.index("check-completion-artifact.py", delegate_index)
-    pipeline_index = text.index("After completion, read only `pipeline.json`")
+    pipeline_index = text.index("After artifact validation, read only `pipeline.json`")
 
-    # then
     assert delegate_index < binding_index < extract_index
     assert extract_index < blocked_index < validator_index < pipeline_index
     assert "Validate only a `readiness: READY` response" in text
     assert '--agent "analyst"' in text[validator_index:pipeline_index]
+    assert '--planning-design-hash "${BRAINSTORM_DESIGN_HASH}"' in text[validator_index:pipeline_index]
     assert "completion_artifact_validation_exhausted" in text
 
 
@@ -337,3 +335,44 @@ def test_success_case_reviewer_persists_early_rejection_report_before_return() -
     contract = " ".join(reviewer[contract_index:contract_end].split())
     assert "must write `${TASK_DIR}/context/review.md` before returning" in contract
     assert "REASON" in contract
+
+
+@pytest.mark.parametrize(
+    ("handoff", "prd", "reason"),
+    [
+        ("current", "current", ""),
+        (None, "current", "completion_artifact_missing"),
+        ("", "current", "completion_artifact_empty"),
+        ("stale", "current", "planning_artifact_design_hash_mismatch"),
+        ("current", "stale", "planning_artifact_design_hash_mismatch"),
+        ("escape", "current", "completion_artifact_outside_task"),
+    ],
+)
+def test_supervisor_validates_fixed_planning_artifacts(
+    tmp_path: Path, handoff: str | None, prd: str, reason: str
+) -> None:
+    task = tmp_path / "task"
+    (task / "context").mkdir(parents=True)
+    digest = "a" * 64
+    handoff_file = task / "handoff.md"
+    if handoff == "escape":
+        outside = tmp_path / "outside.md"
+        outside.write_text(f"BRAINSTORM_DESIGN_HASH: {digest}\n")
+        handoff_file.symlink_to(outside)
+    elif handoff is not None:
+        handoff_file.write_text(
+            "" if handoff == "" else f"BRAINSTORM_DESIGN_HASH: {digest if handoff == 'current' else 'b' * 64}\n"
+        )
+    (task / "context/prd.md").write_text(
+        f"brainstorm_design_hash: {digest if prd == 'current' else 'b' * 64}\n"
+    )
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT), "--agent", "analyst", "--task-dir", str(task),
+         "--planning-design-hash", digest, "--format", "json"],
+        input="ANALYSIS:\n  readiness: READY\nSTATUS: completed\n",
+        text=True, capture_output=True,
+    )
+
+    assert result.returncode == bool(reason), result.stdout + result.stderr
+    assert json.loads(result.stdout)["reason"] == reason

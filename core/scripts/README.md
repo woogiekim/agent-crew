@@ -90,6 +90,8 @@ invocation in SKILL.md; generic adds guidance).
   and reviewer completion responses point to existing task-local regular files.
   It reads only enough UTF-8 content to reject empty or whitespace-only
   artifacts and returns validation-retry reasons without mutating task state.
+  Phase 1c uses `--planning-design-hash` to validate the fixed handoff and PRD
+  files and their design bindings independently of the analyst response.
   `completion_artifact_lib.py` provides the same validation to runtime
   classifiers without launching another process.
 - `smoke-test-state.sh` — end-to-end regression test for the F4

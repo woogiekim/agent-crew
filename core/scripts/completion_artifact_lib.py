@@ -68,30 +68,57 @@ def validate(agent: str, task_dir: Path, text: str) -> dict[str, str]:
         if len(values) != 1:
             return reject("completion_artifact_ambiguous", field=field)
 
-        raw_path = values[0]
-        try:
-            candidate = Path(raw_path).expanduser()
-            if not candidate.is_absolute():
-                candidate = task_root / candidate
-            resolved = candidate.resolve()
-            if not is_within(resolved, task_root):
-                return reject(
-                    "completion_artifact_outside_task", field=field, path=raw_path
-                )
-            if not resolved.exists():
-                return reject(
-                    "completion_artifact_missing", field=field, path=raw_path
-                )
-            if not resolved.is_file():
-                return reject(
-                    "completion_artifact_not_file", field=field, path=raw_path
-                )
-            has_content = has_non_whitespace_content(resolved)
-        except (OSError, RuntimeError, UnicodeError, ValueError):
-            return reject(
-                "completion_artifact_unreadable", field=field, path=raw_path
-            )
-        if not has_content:
-            return reject("completion_artifact_empty", field=field, path=raw_path)
+        failure = validate_path(task_root, field, values[0])
+        if failure:
+            return failure
 
+    return accept()
+
+
+def accept() -> dict[str, str]:
     return {"action": "accept", "reason": "", "field": "", "path": ""}
+
+
+def validate_path(
+    task_root: Path, field: str, raw_path: str, *, binding: tuple[str, str] | None = None
+) -> dict[str, str] | None:
+    try:
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = task_root / candidate
+        resolved = candidate.resolve()
+        if not is_within(resolved, task_root):
+            return reject("completion_artifact_outside_task", field=field, path=raw_path)
+        if not resolved.exists():
+            return reject("completion_artifact_missing", field=field, path=raw_path)
+        if not resolved.is_file():
+            return reject("completion_artifact_not_file", field=field, path=raw_path)
+        if not has_non_whitespace_content(resolved):
+            return reject("completion_artifact_empty", field=field, path=raw_path)
+        if binding:
+            label, expected = binding
+            with resolved.open(encoding="utf-8") as artifact:
+                values = [value for line in artifact for value in extract_values(line, label)]
+            if values != [expected]:
+                return reject("planning_artifact_design_hash_mismatch", field=field, path=raw_path)
+    except (OSError, RuntimeError, UnicodeError, ValueError):
+        return reject("completion_artifact_unreadable", field=field, path=raw_path)
+
+    return None
+
+
+def validate_planning_artifacts(task_dir: Path, design_hash: str) -> dict[str, str]:
+    try:
+        task_root = task_dir.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return reject("completion_artifact_unreadable", path=str(task_dir))
+
+    for field, path, label in (
+        ("HANDOFF", "handoff.md", "BRAINSTORM_DESIGN_HASH"),
+        ("PRD", "context/prd.md", "brainstorm_design_hash"),
+    ):
+        failure = validate_path(task_root, field, path, binding=(label, design_hash))
+        if failure:
+            return failure
+
+    return accept()
