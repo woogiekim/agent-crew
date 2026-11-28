@@ -330,6 +330,7 @@ def test_native_run_guides_candidate_collection_to_variants_command(candidate, t
         ["bash", str(ROOT / "core/bin/crew"), "run", "--variants", "3", "compare candidates"],
         cwd=base, env={**os.environ, "AGENT_CREW_HOME": str(tmp_path / "crew-home"),
                        "PROJECT_ROOT": str(base), "AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN": "0",
+                       "AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN": "0",
                        "AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN": "0"},
         text=True, capture_output=True,
     )

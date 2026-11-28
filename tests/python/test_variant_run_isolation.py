@@ -11,6 +11,7 @@ def run(base, home):
     return subprocess.run(
         ["bash", str(ROOT / "core/bin/crew"), "run", "--variants", "2", "implement"],
         cwd=base, env={**os.environ, "AGENT_CREW_HOME": str(home), "PROJECT_ROOT": str(base),
+                       "AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN": "0",
                        "AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN": "0", "AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN": "0"},
         text=True, capture_output=True)
 

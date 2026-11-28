@@ -21,7 +21,8 @@ def load_readiness_workload_module():
     return module
 
 
-def test_readiness_workload_validate_generates_clean_workload_evidence(tmp_path: Path):
+def test_readiness_workload_validate_generates_clean_workload_evidence(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN", "0")
     output = tmp_path / "workload.json"
 
     result = subprocess.run(

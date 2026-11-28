@@ -85,7 +85,8 @@ def test_mutating_variants_reject_non_git_before_handoffs(tmp_path):
     home = tmp_path / "home"
     result = subprocess.run(
         ["bash", str(ROOT / "core/bin/crew"), "run", "--variants", "2", "implement"],
-        cwd=project, env={**os.environ, "AGENT_CREW_HOME": str(home), "PROJECT_ROOT": str(project)},
+        cwd=project, env={**os.environ, "AGENT_CREW_HOME": str(home), "PROJECT_ROOT": str(project),
+                          "AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN": "0"},
         text=True, capture_output=True)
     assert result.returncode != 0
     assert "Git" in result.stdout + result.stderr
@@ -97,9 +98,11 @@ def test_read_only_variants_cannot_create_git_worktrees(v2, tmp_path):
     before = git(base, "worktree", "list", "--porcelain")
     result = subprocess.run(
         ["bash", str(ROOT / "core/bin/crew"), "run", "--read-only", "--variants", "2", "inspect"],
-        cwd=base, env={**os.environ, "AGENT_CREW_HOME": str(tmp_path / "home"), "PROJECT_ROOT": str(base)},
+        cwd=base, env={**os.environ, "AGENT_CREW_HOME": str(tmp_path / "home"), "PROJECT_ROOT": str(base),
+                       "AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN": "0"},
         text=True, capture_output=True)
     assert result.returncode != 0
+    assert "synthesis requires workspace_write approval" in result.stderr
     assert git(base, "worktree", "list", "--porcelain") == before
 
 
@@ -131,6 +134,7 @@ def test_new_run_records_synthesis_contract_and_pinned_base(v2, tmp_path):
     home = tmp_path / "crew-home"
     result = subprocess.run(["bash", str(ROOT / "core/bin/crew"), "run", "--variants", "2", "원문 그대로"],
                             cwd=base, env={**os.environ, "AGENT_CREW_HOME": str(home), "PROJECT_ROOT": str(base),
+                                           "AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN": "0",
                                            "AGENT_CREW_AUTO_SYNC_RUNTIME_ON_RUN": "0", "AGENT_CREW_AUTO_SYNC_HOOKS_ON_RUN": "0"},
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
