@@ -363,7 +363,7 @@ assert_eq "${snapshot}" "$(cat "${TMP}/dest.md")"
 TMP=$(make_tmp)
 mkdir -p "${TMP}/src" "${TMP}/dest"
 echo "stager-v1" > "${TMP}/src/stager.md"
-echo "renamed-away" > "${TMP}/src/feature-step.md"
+echo "retired-command" > "${TMP}/src/retired-command.md"
 echo "edited-later" > "${TMP}/src/reply.md"
 echo "third-party-feat" > "${TMP}/dest/feat.md"
 MANIFEST="${TMP}/state/host-manifest/commands.json"
@@ -374,7 +374,7 @@ rc=$?
 assert_exit 0 "${rc}"
 
 it "sync_owned_mirror copies source files"
-assert_file_exists "${TMP}/dest/feature-step.md"
+assert_file_exists "${TMP}/dest/retired-command.md"
 
 it "sync_owned_mirror records a manifest"
 assert_file_exists "${MANIFEST}"
@@ -382,7 +382,7 @@ assert_file_exists "${MANIFEST}"
 it "sync_owned_mirror first run keeps third-party file"
 assert_file_exists "${TMP}/dest/feat.md"
 
-rm "${TMP}/src/feature-step.md" "${TMP}/src/reply.md"
+rm "${TMP}/src/retired-command.md" "${TMP}/src/reply.md"
 echo "operator-edit" > "${TMP}/dest/reply.md"
 
 it "sync_owned_mirror second run exits 0"
@@ -391,7 +391,7 @@ rc=$?
 assert_exit 0 "${rc}"
 
 it "sync_owned_mirror removes an untouched file dropped from source"
-assert_file_absent "${TMP}/dest/feature-step.md"
+assert_file_absent "${TMP}/dest/retired-command.md"
 
 it "sync_owned_mirror keeps a dropped file the operator edited"
 actual=$(cat "${TMP}/dest/reply.md" 2>/dev/null || true)
@@ -416,11 +416,11 @@ assert_eq "${snapshot}" "$(cat "${MANIFEST}")"
 TMP=$(make_tmp)
 mkdir -p "${TMP}/src" "${TMP}/dest"
 echo "current" > "${TMP}/src/stager.md"
-echo "pre-manifest-leftover" > "${TMP}/dest/feature-step.md"
+echo "pre-manifest-leftover" > "${TMP}/dest/retired-command.md"
 
 it "sync_owned_mirror without a prior manifest removes nothing"
 sync_owned_mirror "${TMP}/src" "${TMP}/dest" "${TMP}/state/commands.json" >/dev/null 2>&1
-assert_file_exists "${TMP}/dest/feature-step.md"
+assert_file_exists "${TMP}/dest/retired-command.md"
 
 TMP=$(make_tmp)
 mkdir -p "${TMP}/src" "${TMP}/dest" "${TMP}/outside"
