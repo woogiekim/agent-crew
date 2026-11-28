@@ -409,7 +409,9 @@ def test_codex_hook_config_probe_flags_absent_stop_hook_as_stale_signal(tmp_path
     assert "Stop hook timeout indicates stale session or external hook source" in report["detail"]
 
 
-def test_codex_shell_startup_probe_warns_before_hook_timeout():
+def test_codex_shell_startup_probe_warns_before_hook_timeout(tmp_path: Path):
+    shell = tmp_path / "zsh"
+    shell.touch()
     calls: list[tuple[Path, float]] = []
     ticks = iter((100.0, 102.5))
 
@@ -418,7 +420,7 @@ def test_codex_shell_startup_probe_warns_before_hook_timeout():
         return True, ""
 
     report = diagnostics.codex_shell_startup_probe(
-        shell_path=Path("/bin/zsh"),
+        shell_path=shell,
         parallelism=7,
         budget_seconds=2.0,
         runner=run_shell,
@@ -427,16 +429,18 @@ def test_codex_shell_startup_probe_warns_before_hook_timeout():
 
     assert report["status"] == "warn"
     assert report["elapsed_seconds"] == 2.5
-    assert len(calls) == 7
+    assert calls == [(shell, 4.0)] * 7
     assert "before hook body" in report["detail"]
     assert "~/.zshenv" in report["detail"]
 
 
-def test_codex_shell_startup_probe_passes_with_parallel_headroom():
+def test_codex_shell_startup_probe_passes_with_parallel_headroom(tmp_path: Path):
+    shell = tmp_path / "zsh"
+    shell.touch()
     ticks = iter((100.0, 100.25))
 
     report = diagnostics.codex_shell_startup_probe(
-        shell_path=Path("/bin/zsh"),
+        shell_path=shell,
         parallelism=7,
         budget_seconds=2.0,
         runner=lambda _shell, _timeout: (True, ""),
@@ -446,6 +450,22 @@ def test_codex_shell_startup_probe_passes_with_parallel_headroom():
     assert report["status"] == "pass"
     assert "parallel=7" in report["detail"]
     assert "elapsed=0.250s" in report["detail"]
+
+
+def test_codex_shell_startup_probe_reports_unavailable_shell(tmp_path: Path):
+    shell = tmp_path / "zsh"
+    calls = []
+
+    def run_shell(shell_path: Path, timeout_seconds: float) -> tuple[bool, str]:
+        calls.append((shell_path, timeout_seconds))
+        return True, ""
+
+    report = diagnostics.codex_shell_startup_probe(shell_path=shell, runner=run_shell)
+
+    assert report["status"] == "info"
+    assert report["elapsed_seconds"] is None
+    assert "startup probe unavailable" in report["detail"]
+    assert not calls
 
 
 def test_cmd_shell_startup_returns_warning_status(monkeypatch, capsys):
