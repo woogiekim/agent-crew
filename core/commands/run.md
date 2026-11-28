@@ -3025,10 +3025,13 @@ use this sequence:
    - `crew repair <TASK_ID> --status completed --note "<summary>"`
 3. In current-session fallback runs, `HOST_BRIDGE: current_session_required`
    means the host adapter requires the current host session to continue the
-   handoff; no background bridge is still running. Continue from `handoff.md` in
-   the current host session, then repair after completion. The current host
-   session is the supervisor for the pinned plan. It must not spawn or select a
-   second top-level `supervisor` child.
+   handoff; no background bridge is still running. Use `crew resume <TASK_ID>`
+   from the original project to locate the existing `handoff.md`. In the current
+   host session, run Supervisor Phase 0 and follow its approval and resume gate.
+   An unplanned handoff starts at Phase 1a under the same task ID. Existing
+   planning evidence and approvals determine the resume point when present.
+   Repair after completion. The current host session owns the supervisor work
+   and must not spawn or select a second top-level `supervisor` child.
    - Read `context/current-session-execution.json`. The runtime selects
      `inline_tdd` for a simple local mutation, `inline_readonly` for a simple
      read-only task, and `full_crew` when the input explicitly requires full

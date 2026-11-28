@@ -10,6 +10,8 @@
 > `supervisor-retry.md`.
 
 `planning_required: true`인 native handoff는 파일이 있어도 fresh run이다.
+이 표시가 없는 초기 Codex 인계는 읽기 전용 helper가 임시 파이프라인과
+동일 작업의 브리지 기록을 대조해 판정한다.
 아래 `START_MODE` 판정이 파일 존재만 사용하는 모든 resume 설명보다 우선한다.
 
 ---
@@ -707,6 +709,10 @@ def atomic_write(path, value):
 def inspect():
     classifier = runpy.run_path(str(crew_home / "scripts/brainstorm-classification.py"))
     canonical_hash = classifier["canonical_hash"]
+    start = runpy.run_path(str(crew_home / "scripts/supervisor-start-mode.py"))
+    pipeline_path = task_dir / "pipeline.json"
+    pipeline = read_json(pipeline_path, {})
+    has_plan = bool(pipeline.get("stages")) and not start["requires_initial_planning"](pipeline_path, pipeline)
     classification = read_json(context / "brainstorm-classification.json")
     dialogue = read_json(context / "brainstorm-dialogue.json", {})
     approval_path = context / "brainstorm-approval.json"
@@ -716,11 +722,9 @@ def inspect():
         if dialogue or approval["decisions"] or design_path.exists():
             raise ValueError("classification missing for existing Brainstorm state")
         register = read_json(task_dir / "register.json", {})
-        pipeline = read_json(task_dir / "pipeline.json", {})
         signal_path = context / "approval.md"
         signal = signal_path.read_text(encoding="utf-8").strip() if signal_path.exists() else ""
-        valid_plan = (bool(pipeline.get("task")) and bool(pipeline.get("stages"))
-                      and pipeline.get("planning_required") is not True)
+        valid_plan = bool(pipeline.get("task")) and has_plan
         legacy_evidence = {
             "start_mode": start_mode == "resume",
             "register_phase": register.get("current_phase") == "phase_1bc",
@@ -769,8 +773,6 @@ def inspect():
         for item in dialogue.get("section_acknowledgements", [])
         if item.get("design_hash") == design_hash
     }
-    pipeline = read_json(task_dir / "pipeline.json", {})
-    has_plan = bool(pipeline.get("stages")) and pipeline.get("planning_required") is not True
     runtime_keys = {"completed_stages", "stage_agent_status", "host_task_ids"}
     plan_fields = {key: value for key, value in pipeline.items() if key not in runtime_keys}
     plan_hash = canonical_hash({"pipeline": plan_fields}) if has_plan else None

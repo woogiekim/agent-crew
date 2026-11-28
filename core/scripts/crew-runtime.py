@@ -1572,6 +1572,8 @@ def host_bridge_current_session_next_line(task_dir: Path, task_id: str) -> str:
     handoff_path = str(task_dir / "handoff.md")
     lines = [
         f"NEXT: Continue this existing crew:run handoff in the current Codex session from {handoff_path}.",
+        f"RESUME: `crew resume {task_id}` reuses this task ID. Start with Supervisor Phase 0; "
+        "begin Phase 1a only if the gate finds no existing planning evidence.",
         "DETAIL: Codex refused nested bridge execution because this command is already running inside Codex; no background bridge is still running.",
         f"REPAIR: After completing the handoff, run `crew repair {task_id} --status completed --note \"<summary>\"`.",
     ]
@@ -3217,6 +3219,8 @@ def command_run(args: argparse.Namespace) -> int:
             }
         },
     }
+    if not args.fake_host_result:
+        pipeline["planning_required"] = True
 
     handoff = (
         f"# Supervisor Handoff\n\n"
@@ -3376,7 +3380,7 @@ def command_run(args: argparse.Namespace) -> int:
                 f"MODE: native-cli\n"
                 f"STATUS: handoff_ready\n"
                 f"HOST_BRIDGE: current_session_required\n"
-                f"REPAIR: crew repair {task_id} --status completed --note \"<summary>\"\n"
+                f"{current_next}"
             )
 
             result = (
