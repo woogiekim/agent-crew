@@ -744,7 +744,8 @@ def test_success_case_supervisor_passes_brainstorm_contract_to_analyst():
 
     assert "BRAINSTORM_CLASSIFICATION_PATH: {TASK_DIR}/context/brainstorm-classification.json" in sut
     assert "BRAINSTORM_DESIGN_PATH: {TASK_DIR}/context/brainstorm-design.md" in sut
-    assert "BRAINSTORM_DESIGN_HASH: {approved or accepted canonical hash}" in sut
+    assert "BRAINSTORM_DESIGN_HASH: {BRAINSTORM_DESIGN_HASH from this dispatch preflight}" in sut
+    assert sut.index("analyst_planning_preflight_failed") < sut.index("Delegate to the **analyst agent**")
     assert "MODE: supervisor" in sut
 
 
@@ -1015,3 +1016,38 @@ def test_failure_case_stale_design_acknowledgement_is_not_reused(tmp_path):
 
     assert resumed["resume_at"] == "phase_1b_design_review"
     assert resumed["next_design_section"] == "goals_and_scope"
+
+
+@pytest.mark.parametrize(
+    ("phase", "digest", "bound", "dispatched"),
+    [
+        ("phase_1c_plan", "a" * 64, "", True),
+        ("phase_1c_plan", None, "", False),
+        ("phase_1b_design_approval", "a" * 64, "", False),
+        ("phase_1d_plan_approval", "a" * 64, "", False),
+        ("phase_1d_plan_approval", "a" * 64, "a" * 64, True),
+        ("phase_1d_plan_approval", "b" * 64, "a" * 64, False),
+        ("phase_2", "a" * 64, "a" * 64, False),
+    ],
+)
+def test_phase_1c_dispatch_requires_current_eligible_design_hash(phase, digest, bound, dispatched):
+    sut = section("**Analyst dispatch preflight.**", "Delegate to the **analyst agent**")
+    script = sut.split("```bash\n", 1)[1].split("\n```", 1)[0]
+    environment = {
+        **os.environ,
+        "BRAINSTORM_GATE_JSON": json.dumps({"resume_at": phase, "design_hash": digest}),
+        "BOUND_ANALYST_DESIGN_HASH": bound,
+    }
+
+    result = subprocess.run(
+        ["bash", "-c", script + '\nprintf "%s" "$BRAINSTORM_DESIGN_HASH"'],
+        env=environment, text=True, capture_output=True,
+    )
+
+    if dispatched:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == digest
+    else:
+        assert result.returncode != 0
+        assert not result.stdout
+        assert "analyst_planning_preflight_failed" in result.stderr

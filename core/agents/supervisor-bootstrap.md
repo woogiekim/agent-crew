@@ -1695,6 +1695,34 @@ if [ -f "${MEMORY_CONTEXT_HELPER}" ]; then
 fi
 ```
 
+**Analyst dispatch preflight.** Immediately before each analyst call, execute
+the common Brainstorm approval and resume gate again with the current task
+files. Capture its stdout in `BRAINSTORM_GATE_JSON` only on exit 0. The initial
+call requires `phase_1c_plan`. A validation retry may report
+`phase_1d_plan_approval` because the previous analyst wrote a draft. Keep the
+first dispatch hash in `BOUND_ANALYST_DESIGN_HASH` across retries. If the gate
+fails, the phase is ineligible, or the design changes during a retry, stop the
+analyst dispatch and follow the gate's current resume position.
+
+```bash
+BRAINSTORM_DESIGN_HASH=$(python3 - "${BRAINSTORM_GATE_JSON}" "${BOUND_ANALYST_DESIGN_HASH:-}" <<'PYEOF'
+import json
+import re
+import sys
+
+gate = json.loads(sys.argv[1])
+bound = sys.argv[2]
+digest = gate.get("design_hash")
+allowed = {"phase_1c_plan", "phase_1d_plan_approval"} if bound else {"phase_1c_plan"}
+if (gate.get("resume_at") not in allowed or not isinstance(digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", digest) or (bound and bound != digest)):
+    sys.exit("BLOCKER: analyst_planning_preflight_failed")
+print(digest)
+PYEOF
+) || exit 1
+BOUND_ANALYST_DESIGN_HASH="${BRAINSTORM_DESIGN_HASH}"
+```
+
 Delegate to the **analyst agent** (blocking). The analyst is the merged
 analyst+planner — it produces all planning artifacts in one spawn:
 
@@ -1708,7 +1736,7 @@ REQUIREMENTS: {REQUIREMENTS — always present at this point}
 MEMORY_CONTEXT_PATH: {TASK_DIR}/context/memory.md  (read this file if non-empty for prior context)
 BRAINSTORM_CLASSIFICATION_PATH: {TASK_DIR}/context/brainstorm-classification.json
 BRAINSTORM_DESIGN_PATH: {TASK_DIR}/context/brainstorm-design.md
-BRAINSTORM_DESIGN_HASH: {approved or accepted canonical hash}
+BRAINSTORM_DESIGN_HASH: {BRAINSTORM_DESIGN_HASH from this dispatch preflight}
 
 Distill intent, identify ambiguities and risks, determine the agent pipeline,
 write {TASK_DIR}/context/analysis.md, {TASK_DIR}/context/prd.md,
@@ -1747,14 +1775,17 @@ analyst's blocker explanation and stop. This preserves legitimate blocked
 responses, for which the analyst contract intentionally omits `pipeline.json`
 and `handoff.md`.
 
-Validate only a `readiness: READY` response. Before reading `pipeline.json`, run:
+Validate only a `readiness: READY` response. The supervisor owns `HANDOFF_PATH`
+and `PRD_PATH` from Phase 0. Verify the two fixed task-local files and their
+binding to the dispatched design. The analyst need not echo their paths.
+Before reading `pipeline.json`, run:
 
 ```bash
-printf '%s\n' "${ANALYST_RESPONSE}" |
-  python3 "${AGENT_CREW_HOME}/system/scripts/check-completion-artifact.py" \
-    --agent "analyst" \
-    --task-dir "${TASK_DIR}" \
-    --format json
+python3 "${AGENT_CREW_HOME}/system/scripts/check-completion-artifact.py" \
+  --agent "analyst" \
+  --task-dir "${TASK_DIR}" \
+  --planning-design-hash "${BRAINSTORM_DESIGN_HASH}" \
+  --format json
 ```
 
 On `retry_validation`, increment `ANALYST_VALIDATION_ATTEMPTS`, log the returned
@@ -1765,7 +1796,8 @@ crash counter. When `ANALYST_VALIDATION_ATTEMPTS > 3`, write
 `result.md` and stop. The source-checkout fallback is
 `${PROJECT_ROOT}/core/scripts/check-completion-artifact.py`.
 
-After completion, read only `pipeline.json` (never read `handoff.md` contents).
+After artifact validation, read only `pipeline.json` into the supervisor context.
+The validation helper inspects the handoff binding without returning its contents.
 Use the `PIPELINE_PATH` variable resolved in Phase 0:
 
 ```bash

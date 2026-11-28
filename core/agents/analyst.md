@@ -785,6 +785,7 @@ applying the checklist.
 ### Step 7.6 — Write handoff.md
 
 Write handoff content to `{TASK_DIR}/handoff.md`:
+- `BRAINSTORM_DESIGN_HASH: {BRAINSTORM_DESIGN_HASH}` on its own line
 - Summarized requirements
 - Preserved skill context path when `requirements.md` contains
   `skill_context` other than `(none)`
@@ -808,10 +809,11 @@ ANALYSIS:
   pipeline: {stages summary e.g. [designer] → [backend+tdd] → [reviewer] → [frontend+tdd] → [reviewer]}
   readiness: {READY | NEEDS_CLARIFICATION | BLOCKED}
 PIPELINE: {stages summary}
-HANDOFF: {TASK_DIR}/handoff.md
-PRD: {TASK_DIR}/context/prd.md
 STATUS: completed
 ```
+
+Phase 1c validates the fixed handoff and PRD files using the dispatched design
+hash. The inline response carries the planning readiness and stage summary.
 
 ## Rules
 

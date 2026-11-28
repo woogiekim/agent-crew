@@ -34,7 +34,9 @@ STATUS: completed
 - For analysis, judgment, review, or planning output, every
   artifact field required by the agent contract must reference a task-local
   regular file that already exists. A one-line summary cannot replace this
-  artifact path.
+  artifact path. In supervisor Phase 1c, the supervisor validates the fixed
+  handoff and PRD files directly against the dispatched design hash. The analyst
+  response reports readiness without repeating these paths.
 - A one-line summary is allowed only for operational status with no reusable
   semantic content. It must not be accepted as semantic stage completion.
 - Implementation agents keep their agent-specific `FILES`, `VERIFIED`, and
