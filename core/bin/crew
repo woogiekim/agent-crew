@@ -1372,7 +1372,11 @@ print(f"STAGES: {completed}/{len(stages) if isinstance(stages, list) else 'unkno
 if task:
     print(f"TASK: {task}")
 print(f"HANDOFF: {handoff}")
-print(f"NEXT: Continue in the host prompt runtime from {handoff}.")
+if register.get("host_bridge_status") == "current_session_required":
+    print(f"NEXT: Continue this task in the current Codex session from {handoff}.")
+    print("START: Run Supervisor Phase 0 and follow its gate. Begin Phase 1a if planning has not started.")
+else:
+    print(f"NEXT: Continue in the host prompt runtime from {handoff}.")
 PYEOF
 }
 

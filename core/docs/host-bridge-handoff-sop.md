@@ -57,7 +57,12 @@ artifacts or commentary but did not return a terminal `STATUS:`. Artifact
 readiness alone is not success: verify required outputs, subprocess/CPU/log
 progress, and the bounded terminal grace decision first.
 
-3. If this is intentionally manual/non-hosted execution:
+3. `HOST_BRIDGE: current_session_required`이면 원래 프로젝트에서
+   `crew resume "${TASK_ID}"`를 실행하고 출력된 `handoff.md`를 현재 Codex 세션에서 연다.
+   Supervisor Phase 0의 게이트가 지정한 위치를 따른다. 계획 전 인계는 동일 작업 ID의
+   Phase 1a부터 진행하고, 기존 설계·계획·승인이 있으면 해당 재개 위치를 따른다.
+
+4. If this is intentionally manual/non-hosted execution:
 
 ```bash
 # Finish task manually after writing a short summary

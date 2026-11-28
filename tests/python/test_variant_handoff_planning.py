@@ -1,12 +1,100 @@
 """native handoff placeholder는 승인된 계획의 재개 상태가 아니다."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 
 import pytest
 
+from tests.python.test_brainstorm_supervisor_contract import run_workflow_gate_with_mode
+
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_nested_codex_handoff_can_start_planning_on_the_same_task(tmp_path, legacy):
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / "crew"
+    env = {
+        **os.environ,
+        "AGENT_CREW_HOME": str(home),
+        "PROJECT_ROOT": str(project),
+        "AGENT_CREW_HOST": "codex",
+        "AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN": "0",
+    }
+    crew = ["bash", str(ROOT / "core/bin/crew")]
+    raw_task = '원문 유지 `literal` "인용"'
+    bridge = "bash -c 'echo AGENT_CREW_BRIDGE_STATUS: current_session_required >&2; exit 2'"
+    result = subprocess.run(
+        [*crew, "run", "--host-bridge-command", bridge, "--read-only", raw_task],
+        cwd=project, env=env, text=True, capture_output=True, check=True,
+    )
+    assert "HOST_BRIDGE: current_session_required" in result.stdout
+    task_dir = next(path for path in (home / "state").glob("*/tasks/*") if path.is_dir())
+    pipeline_path = task_dir / "pipeline.json"
+    pipeline = json.loads(pipeline_path.read_text())
+    if legacy:
+        pipeline.pop("planning_required", None)
+        pipeline_path.write_text(json.dumps(pipeline, ensure_ascii=False))
+    else:
+        assert pipeline["planning_required"] is True
+    before = {name: (task_dir / name).read_bytes() for name in ("pipeline.json", "register.json", "handoff.md")}
+
+    mode = subprocess.check_output(
+        [sys.executable, str(ROOT / "core/scripts/supervisor-start-mode.py"), "--pipeline", str(pipeline_path)],
+        text=True,
+    ).strip()
+    assert mode == "fresh"
+    gate, _ = run_workflow_gate_with_mode(task_dir, mode)
+    assert gate["resume_at"] == "phase_1a_preliminary"
+    resume = subprocess.check_output([*crew, "resume", task_dir.name], cwd=project, env=env, text=True)
+
+    assert f"TASK_ID: {task_dir.name}" in resume
+    assert f"TASK: {raw_task}" in resume
+    assert "Supervisor Phase 0" in resume
+    assert "Phase 1a" in resume
+    assert [path for path in task_dir.parent.iterdir() if path.is_dir()] == [task_dir]
+    assert {name: (task_dir / name).read_bytes() for name in before} == before
+
+
+@pytest.mark.parametrize("legacy_evidence", ["plan", "approval", "other_task"])
+def test_legacy_native_placeholder_does_not_discard_execution_evidence(tmp_path, legacy_evidence):
+    context = tmp_path / "context"
+    context.mkdir()
+    pipeline = {
+        "schema_version": 1, "task": "inspect", "stages": ["supervisor"],
+        "completed_stages": 0, "stage_agent_status": {"1": {"supervisor": "blocked"}},
+    }
+    register = {
+        "task_id": tmp_path.name, "task": "inspect", "execution_mode": "single",
+        "current_phase": "handoff_ready", "approval_status": "not_required",
+        "host_bridge_status": "current_session_required",
+    }
+    bridge = {
+        "task_id": tmp_path.name, "status": "current_session_required",
+        "failure_class": "current_session_required", "direct_agent": False,
+    }
+    if legacy_evidence == "plan":
+        pipeline["needs_creation"] = []
+    elif legacy_evidence == "approval":
+        (context / "approval.md").write_text("PLAN_READY\n")
+    else:
+        bridge["task_id"] = "other-task"
+    path = tmp_path / "pipeline.json"
+    path.write_text(json.dumps(pipeline))
+    (tmp_path / "register.json").write_text(json.dumps(register))
+    (context / "host-bridge-invocation.json").write_text(json.dumps(bridge))
+
+    mode = subprocess.check_output(
+        [sys.executable, str(ROOT / "core/scripts/supervisor-start-mode.py"), "--pipeline", str(path)],
+        text=True,
+    ).strip()
+
+    assert mode == "resume"
+    with pytest.raises(AssertionError, match="legacy_resume_evidence_incomplete"):
+        run_workflow_gate_with_mode(tmp_path, mode)
 
 
 @pytest.mark.parametrize("pipeline,expected,code", [
