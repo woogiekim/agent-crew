@@ -40,6 +40,7 @@ def configure_subprocess_coverage(env: dict[str, str]) -> dict[str, str]:
 
     coverage_site = Path(coverage.__file__).resolve().parent.parent
     env["COVERAGE_PROCESS_START"] = str(REPO_ROOT / ".coveragerc")
+    env["COVERAGE_FILE"] = str(Path(env.get("COVERAGE_FILE") or REPO_ROOT / ".coverage").resolve())
     _prepend_env_path(env, "PYTHONPATH", [COVERAGE_STARTUP_DIR, coverage_site])
     return env
 

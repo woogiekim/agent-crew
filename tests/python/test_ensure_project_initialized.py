@@ -97,6 +97,8 @@ def test_boundary_case_existing_runtime_state_is_preserved(tmp_path: Path, exist
 @pytest.mark.parametrize('list_sessions_first', [False, True])
 def test_success_case_cli_run_without_setup_preserves_raw_input(tmp_path: Path, list_sessions_first: bool):
     home, project, env = make_home(tmp_path)
+    # 이 fixture는 소스 CLI로 프로젝트 상태만 초기화하며 전역 설치는 구성하지 않는다.
+    env['AGENT_CREW_RUNTIME_DRIFT_CHECK_ON_RUN'] = '0'
     if list_sessions_first:
         listed = run_cli(env, 'sessions')
         assert listed.returncode == 0, listed.stderr
